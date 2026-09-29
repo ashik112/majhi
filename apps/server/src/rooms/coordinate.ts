@@ -25,7 +25,7 @@ export interface TurnEnd {
   mentions: readonly string[];
   state: RoomState;
   limits: { maxAgentTurns: number; reviewRounds: number };
-  /** For the reviewer in the review loop: what it said about the work. */
+  /** For a reviewer: what it said about the work (always in the review loop, in lead mode when it woke nobody). */
   verdict?: Verdict | undefined;
 }
 
@@ -94,6 +94,9 @@ export function planTurn(input: TurnEnd): Plan {
         handoffs: mentioned.map((to) => ({ to, via: "mention" as const })),
         state: { ...state },
       };
+      // The reviewer approved and woke nobody: the lead's work is done, the owner decides.
+      if (input.verdict === "approved" && mentioned.length === 0)
+        plan.toOwner = `@${from} approved the work.`;
       break;
     case "pipeline":
       plan = pipelineTurn(input, ownerAsked);

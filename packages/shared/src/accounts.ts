@@ -315,6 +315,10 @@ export const OrgViewSchema = z.object({
   context: OrgConfigSchema.shape.context,
   /** This org's own `resume.auto`, when it overrides majhi's. */
   resume: OrgConfigSchema.shape.resume,
+  /** This org's own loop guard, when it overrides majhi's. */
+  rooms: OrgConfigSchema.shape.rooms,
+  /** The default team for new tasks, when set. */
+  team: OrgConfigSchema.shape.team,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });
