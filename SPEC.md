@@ -126,12 +126,12 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 - Dark theme first. IBM Plex Sans and IBM Plex Mono, as in the demo.
 
 ### 3.5 Workspace roots
-Set during onboarding (3.6) and changed later from the palette or by the boss. Adding or removing a root needs a restart, because container mounts are fixed at start. majhi says so and shows the command.
+Set during onboarding (3.6) and changed later from the palette or by the boss. The owner never types a path: a folder browser lists folders on the host (via the host helper, 4.2), marks git repos, and suggests likely roots (folders under home that hold repos, with their repo counts). Typing a path stays possible for keyboard users. Container mounts are fixed at start, so when a new root is saved, the host helper regenerates the mounts and restarts majhi on its own; the UI shows "Restarting to mount ~/X" and comes back with the new repos. Only when no host helper is connected does majhi show the `make up` command.
 
 ### 3.6 Onboarding
 The first run is a short guided flow. Nothing else shows until it is done, and it can be reopened later from the palette.
 
-1. **Workspace roots:** pick the folders that hold projects (3.5). majhi scans them and shows what it found.
+1. **Workspace roots:** pick the folders that hold projects (3.5), from suggestions or the folder browser. majhi mounts them, scans them and shows what it found.
 2. **First account:** add a Claude Code or Codex account, personal or for an org, by signing in through the embedded terminal or pasting an API key.
 3. **Choose the boss:** pick the account, model and effort for the boss (5.16), or keep the suggested defaults. It is created as a root agent file the owner can edit later.
 4. **Hand-off to the boss:** the boss opens its chat and finishes the setup as a conversation. It proposes orgs from the repos it found (remotes, folder names), asks one question at a time, adds more accounts and agents, sets limits, and registers projects. Everything it does follows the approval policy and can be undone.
@@ -176,6 +176,13 @@ docker compose
 │              the server spawns agent processes here
 └── laya       local Laya decision model (Python), behind a compose profile
                that is on by default; see 5.12
+
+host helper   `apps/host`, a small Node process on the owner's machine (not in
+              Docker), installed by `make up` as a login item (macOS LaunchAgent).
+              It opens no port: it long-polls the server over the published
+              127.0.0.1 port with a token from `~/.majhi/host.token`, and does
+              only fixed jobs: list host folders, suggest roots, remount roots.
+              Later it is also where MAJHI_RUNNER=native spawns agents.
 
 v1 can merge `server` and `runner` into one container if that is simpler. Keep the process-spawning code behind an interface so agents can later run in their own container per run.
 
@@ -267,7 +274,7 @@ projects:
 
 ### 4.5 Docker details
 
-- Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so `make up` generates `docker-compose.override.yml` with one mount per root from `majhi.yaml` (using the server image, so the host needs only Docker). Changing roots means running `make up` again.
+- Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so majhi generates `docker-compose.override.yml` with one mount per root from `majhi.yaml`. The host helper regenerates it and recreates the server container whenever roots change; `make up` does the same on first start. Only roots are mounted, never the whole home folder, so agents cannot reach other credentials in it.
 - Mount `~/.ssh/config` and `known_hosts` read-only. Forward the host SSH agent (Docker Desktop: `/run/host-services/ssh-auth.sock`; OrbStack exposes its own socket). Private keys never enter the container.
 - Mount `~/.majhi` read-write.
 - The macOS Keychain is not reachable from Linux containers. Login credentials live in each account's config home under `~/.majhi/accounts/<id>/`. Tracker tokens and API keys live in `secrets.age`, decrypted at startup with a key passed as a Docker secret.

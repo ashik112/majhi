@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   ConfigStateSchema,
+  RemountSchema,
   ReposResponseSchema,
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import { DirListingSchema, HostResultSchemas, HostStatusSchema } from "./host.ts";
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
@@ -47,6 +49,30 @@ export const commands = {
     summary: "Set the workspace roots and the tasks folder",
     input: WorkspacesUpdateSchema,
     output: WorkspacesUpdateResultSchema,
+  },
+  "workspaces.remount": {
+    risk: "change",
+    summary: "Mount every root in majhi.yaml by restarting majhi through the host helper",
+    input: Empty,
+    output: z.object({ remount: RemountSchema, unmounted: z.array(z.string()) }),
+  },
+  "host.status": {
+    risk: "read",
+    summary: "Show whether the host helper is connected",
+    input: Empty,
+    output: HostStatusSchema,
+  },
+  "fs.listDirs": {
+    risk: "read",
+    summary: "List the subfolders of a folder on the host (default: home)",
+    input: z.object({ path: z.string().optional(), showHidden: z.boolean().optional() }),
+    output: DirListingSchema,
+  },
+  "fs.suggestRoots": {
+    risk: "read",
+    summary: "Suggest workspace roots: folders under home that hold git repos",
+    input: Empty,
+    output: HostResultSchemas.suggestRoots,
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

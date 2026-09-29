@@ -84,10 +84,20 @@ export type WorkspacesUpdate = z.infer<typeof WorkspacesUpdateSchema>;
 /** The command that remounts workspace roots and restarts majhi, run in the majhi folder on the host. */
 export const RESTART_COMMAND = "make up";
 
+/**
+ * What happens to roots the server cannot see yet:
+ * - `not-needed`: every root is already visible.
+ * - `restarting`: the host helper is remounting; majhi restarts and comes back with them.
+ * - `manual`: no host helper is connected; the owner runs `restartCommand`.
+ */
+export const RemountSchema = z.enum(["not-needed", "restarting", "manual"]);
+export type Remount = z.infer<typeof RemountSchema>;
+
 export const WorkspacesUpdateResultSchema = z.object({
   state: ConfigStateSchema,
-  /** Roots the server cannot see yet. Non-empty means the owner must restart with `make up`. */
+  /** Roots the server cannot see yet. */
   unmounted: z.array(z.string()),
+  remount: RemountSchema,
   restartCommand: z.string(),
 });
 export type WorkspacesUpdateResult = z.infer<typeof WorkspacesUpdateResultSchema>;
