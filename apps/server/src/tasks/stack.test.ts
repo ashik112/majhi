@@ -43,7 +43,8 @@ describe("a ready dependency", () => {
     expect((await h.cmd("tasks.create", { text: "add the model to api", start: true })).status).toBe(200);
     expect((await h.cmd("tasks.create", { text: "add the view to api", start: false })).status).toBe(200);
     expect(
-      (await h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1", when: "ready" })).status,
+      (await h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1", when: "ready" }))
+        .status,
     ).toBe(200);
     expect((await h.cmd("tasks.start", { id: "ACM-2" })).status).toBe(409);
 

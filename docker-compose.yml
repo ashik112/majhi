@@ -28,6 +28,9 @@ services:
       MAJHI_RUNNER_NETWORK: majhi-runners
       MAJHI_RUNNER_USER: "${HOST_UID:-1000}:${HOST_GID:-1000}"
       MAJHI_RUNNER_MCP_HOST: majhi-server
+      # Laya in Docker, used when the Mac's native Laya is not there (Linux, Windows, Intel Macs).
+      MAJHI_LAYA_URL: http://majhi-laya:8000
+      MAJHI_LAYA_CONTAINER: majhi-laya
       # Days, weeks and months of tokens and cost follow the owner's zone. `make up` reads it from the Mac.
       TZ: ${MAJHI_TZ:-UTC}
     volumes:
@@ -61,10 +64,31 @@ services:
     image: majhi-runner:dev
     profiles: [runner]
 
+  # Laya, the local decision model, on PyTorch CPU (SPEC 5.12). For Linux, Windows and Intel Macs;
+  # Apple silicon runs it natively through the host helper. `make up` adds the profile there. The
+  # server starts it on the first question and stops it after 10 idle minutes. Only the server's
+  # network reaches it: runners are on their own network, and no port is published.
+  laya:
+    build:
+      context: .
+      dockerfile: docker/laya.Dockerfile
+    image: majhi-laya:dev
+    container_name: majhi-laya
+    profiles: [laya]
+    init: true
+    restart: "no"
+    mem_limit: 3g
+    volumes:
+      - laya-cache:/home/laya/.cache/huggingface
+
 networks:
   # Runners join this network. From it, the server answers only /mcp.
   runners:
     name: majhi-runners
+
+volumes:
+  # Laya's model weights, downloaded once on first use.
+  laya-cache:
 
 secrets:
   # The age key for ~/.majhi/secrets.age. `make up` creates it when missing.

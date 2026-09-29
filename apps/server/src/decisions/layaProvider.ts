@@ -1,5 +1,6 @@
 import type { DecideRequest, LayaStatus } from "@majhi/shared";
 import type { HostLink } from "../host/link.ts";
+import type { LayaDocker } from "./layaDocker.ts";
 import { fromLayaAnswer, toLayaQuestion } from "./layaMap.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { trimState } from "./trim.ts";
@@ -8,14 +9,31 @@ import { trimState } from "./trim.ts";
 const DECIDE_TIMEOUT_MS = 20_000;
 const STATUS_TIMEOUT_MS = 3_000;
 
-/** Laya on the owner's Mac, through the host helper. */
+/**
+ * Laya: natively on the owner's Mac through the host helper, else in the `laya` Docker service
+ * (PyTorch CPU) on Linux, Windows and Intel Macs, or when the native one is not set up (5.12).
+ */
 export class LayaProvider implements DecisionProvider {
   readonly id = "laya" as const;
 
-  constructor(private readonly host: HostLink | undefined) {}
+  constructor(
+    private readonly host: HostLink | undefined,
+    private readonly docker?: LayaDocker,
+  ) {}
+
+  /** The native one when it is set up or can be, else Laya in Docker when there is one. */
+  async status(): Promise<LayaStatus> {
+    const native = await this.nativeStatus();
+    if (this.docker === undefined || native.state === "ready" || native.state === "loaded") return native;
+    if (native.state === "installing" || native.state === "downloading") return native;
+    const docker = await this.docker.status();
+    // On a Mac with Apple silicon the native one is the goal: offer it until Docker's is built.
+    if (docker.state === "not-installed" && native.state === "not-installed") return native;
+    return docker;
+  }
 
   /** The helper's own answer, or its last poll header, or a reason it is not there. */
-  async status(): Promise<LayaStatus> {
+  private async nativeStatus(): Promise<LayaStatus> {
     const link = this.host;
     if (link === undefined || !link.isConnected()) {
       return { state: "unsupported", detail: "The host helper is not connected, so Laya cannot run." };
@@ -31,6 +49,8 @@ export class LayaProvider implements DecisionProvider {
 
   async install(): Promise<LayaStatus> {
     const link = this.host;
+    // Laya in Docker is built with the other images; there is nothing to install from here.
+    if ((link === undefined || !link.isConnected()) && this.docker !== undefined) return this.docker.status();
     if (link === undefined || !link.isConnected()) {
       return {
         state: "unsupported",
@@ -41,6 +61,13 @@ export class LayaProvider implements DecisionProvider {
   }
 
   async unavailable(): Promise<string | undefined> {
+    const native = this.nativeUnavailable();
+    if (native === undefined || this.docker === undefined) return native;
+    const docker = await this.docker.unavailable();
+    return docker === undefined ? undefined : `${native}. ${docker}`;
+  }
+
+  private nativeUnavailable(): string | undefined {
     const link = this.host;
     if (link === undefined || !link.isConnected()) return "The host helper is not connected";
     // The poll header is at most 25 seconds old, which is fine for skipping.
@@ -51,6 +78,8 @@ export class LayaProvider implements DecisionProvider {
   }
 
   async decide(request: DecideRequest) {
+    if (this.nativeUnavailable() !== undefined && this.docker !== undefined)
+      return this.docker.decide(request);
     const link = this.host;
     if (link === undefined) throw new Error("No host helper");
     const { text, trimmed } = trimState(request.state);

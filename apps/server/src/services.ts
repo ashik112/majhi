@@ -11,6 +11,7 @@ import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { ConfigService } from "./config/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
+import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
 import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
@@ -58,6 +59,8 @@ export interface ServiceOptions {
   probe?: Probe;
   /** Replaces `docker network inspect` for the runner network. */
   runnerInspect?: Inspect;
+  /** Laya in Docker, so tests can play laya-serve. Default: from `MAJHI_LAYA_URL`. */
+  layaDocker?: LayaDocker;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -168,12 +171,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const usageService = new UsageService({ repo: usageRepo, config });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
+  const layaDocker =
+    options.layaDocker ??
+    (env.laya === undefined
+      ? undefined
+      : new LayaDocker({
+          url: env.laya.url,
+          container: env.laya.container,
+          docker: dockerCli(env.runner.cliEnv),
+        }));
   const decideTokens = new DecideTokens();
   const decisions = new DecisionService({
     config,
     log: new DecisionLog(store.raw),
     tokens: decideTokens,
-    laya: new LayaProvider(options.hostLink),
+    laya: new LayaProvider(options.hostLink, layaDocker),
     acp: new AcpProvider({
       config,
       agents: agentStore,
@@ -277,6 +289,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      layaDocker?.close();
       await runs.closeAll();
       await usageRecorder.flush();
       store.close();
