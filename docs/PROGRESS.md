@@ -6,8 +6,10 @@ Branch `phase-0-skeleton`. The plan below is kept for reference; the result come
 
 ### What works
 
-- `make up` builds one image, generates the mounts from `majhi.yaml`, starts majhi on http://127.0.0.1:7070 and waits until it is healthy.
-- Onboarding step 1: pick workspace roots (and optionally the tasks folder). Roots that are not mounted yet show a card with `make up`.
+- `make up` builds one image, installs the host helper, generates the mounts from `majhi.yaml`, starts majhi on http://127.0.0.1:7070 and waits until it is healthy. It is the only manual command; `make down` stops majhi and removes the helper.
+- Host helper (`apps/host`): a small Node process on the Mac, run as a LaunchAgent. It links to the server, suggests roots (home folders that hold git repos), lists folders for the browser, and remounts roots by regenerating the compose override and recreating the container. `make host-logs` follows its log.
+- Onboarding step 1: pick workspace roots from suggestions or a folder browser, no typing. Saving a new root restarts majhi with the mount and reloads when it is healthy. If the helper is offline, the typed-path form comes back with a one-line hint.
+- Unmounted roots on the repos screen get a "Mount now" button when the helper can remount.
 - Repos screen: every git repo under each root, grouped by root, with branch, host (GitHub, GitLab, Bitbucket, other), SSH alias, and a details panel. `/` searches, `j`/`k` move, `Enter` copies the path, `r` rescans.
 - Config errors in `majhi.yaml` show the file and each error, with Retry.
 - Every change goes through a typed command (`POST /api/cmd/<name>`). `~/.majhi` is a git repo; each change is a commit with who and why. Hand edits are committed separately first.
@@ -15,20 +17,22 @@ Branch `phase-0-skeleton`. The plan below is kept for reference; the result come
 
 ### How to try it
 
-1. `make up`, open http://127.0.0.1:7070.
-2. Enter `~/Work`, save. On a first install the root is not mounted yet: run `make up` again, then Reload.
+1. `make up`, open http://127.0.0.1:7070. The top bar pill should read Online.
+2. Pick `~/Work` from the suggestions (or browse to it), save. majhi restarts with the mount and reloads by itself.
 3. The repos screen lists everything under `~/Work`. Try `/`, `j`, `k`, `Enter`, `r`.
 4. `make doctor`. `git -C ~/.majhi log` shows the config history.
 5. Checks: `make ci` (Biome, typecheck, unit and integration tests, builds, Playwright).
 
 ### Verified
 
-- 74 unit and integration tests and 5 Playwright tests pass.
+- `make ci`: Biome clean, typecheck, 126 unit and integration tests, both builds, 8 Playwright tests pass.
+- Host helper in real Docker (isolated copy, temp home): suggestions from the real home in 13 to 34 ms, folder listing, and a remount that added `~/Documents` and recreated the container healthy with the new mount.
 - In Docker, against the real `~/Work` (with a temporary config folder): 68 repos found in 75 ms, doctor all green, the SSH agent reachable through OrbStack, a config change from the UI committed on the host mount, 34 MB memory used, a cross-origin write rejected with 403.
 
 ### Left for later phases and known issues
 
-- Adding a root needs a second `make up` (by design, see DECISIONS).
+- The first mount of a folder macOS protects (Documents, Desktop, Downloads) triggers a macOS privacy prompt for OrbStack. Docker hangs until it is answered. majhi does not warn about this yet.
+- The helper is macOS only (LaunchAgent). Linux would need a systemd user unit.
 - A custom `tasks_dir` outside every root is not mounted yet. Phase 2 needs it and will add it.
 - The SSH agent has no keys loaded on this Mac right now. Doctor passes, but git over SSH will need `ssh-add` before Phase 5.
 - Web bundle is 590 kB (185 kB gzipped), served from localhost. Route-level code splitting can come with the Phase 10 performance pass.
