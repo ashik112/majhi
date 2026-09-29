@@ -4,7 +4,7 @@ import { z } from "zod";
 export const ConfigPath = z
   .string()
   .trim()
-  .min(1, "Path is empty")
+  .min(1, { message: "Path is empty", abort: true })
   .refine((p) => p.startsWith("/") || p === "~" || p.startsWith("~/"), {
     message: "Use an absolute path, or one starting with ~/",
   });

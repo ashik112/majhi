@@ -81,6 +81,9 @@ export const WorkspacesUpdateSchema = z.object({
 });
 export type WorkspacesUpdate = z.infer<typeof WorkspacesUpdateSchema>;
 
+/** The command that remounts workspace roots and restarts majhi, run in the majhi folder on the host. */
+export const RESTART_COMMAND = "make up";
+
 export const WorkspacesUpdateResultSchema = z.object({
   state: ConfigStateSchema,
   /** Roots the server cannot see yet. Non-empty means the owner must restart with `make up`. */
