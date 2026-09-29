@@ -56,6 +56,8 @@ export class AgentRun {
   adminToken: string | undefined;
   /** The majhi-decide token of this session, revoked when it ends. */
   decideToken: string | undefined;
+  /** majhi-room and majhi-tasks tokens of this session, revoked when it ends. */
+  roomTokens: { server: "room" | "tasks"; token: string }[] | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
   preambleDue = false;
   drive: Promise<void> | undefined;

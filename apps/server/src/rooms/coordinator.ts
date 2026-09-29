@@ -5,6 +5,7 @@ import {
   type DecisionResult,
   OWNER_HANDLE,
   parseMentions,
+  type RoomItem,
   type Task,
   type TaskId,
 } from "@majhi/shared";
@@ -12,7 +13,9 @@ import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
+import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
+import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -22,6 +25,8 @@ import { loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coor
 const DECISION_FLOOR = 0.6;
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
+/** read_recent cuts each message to this, in the middle. */
+const READ_ITEM_MAX = 1200;
 
 export interface CoordinatorDeps {
   store: Store;
@@ -73,7 +78,6 @@ export class RoomCoordinator {
     const role = team.find((m) => m.id === turn.agent)?.role;
     const verdict = await this.verdict(task, turn.agent, role, text, mentions);
     const settings = await this.deps.config.settings();
-    const org = task.org === undefined ? undefined : (await this.deps.config.sections()).orgs[task.org];
     const plan = planTurn({
       mode: task.mode,
       team,
@@ -81,7 +85,7 @@ export class RoomCoordinator {
       mentions,
       state: store.tasks.roomState(task.id),
       limits: {
-        maxAgentTurns: org?.rooms?.max_agent_turns ?? settings.rooms.max_agent_turns,
+        maxAgentTurns: await this.maxAgentTurns(task),
         reviewRounds: settings.rooms.review_rounds,
       },
       verdict,
@@ -105,6 +109,56 @@ export class RoomCoordinator {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
       }
     }
+  }
+
+  /**
+   * majhi-room `mention`: hands work to a teammate now, during the caller's turn. Adds the agent
+   * when it may join. Counts toward the loop guard, which refuses instead of pausing.
+   */
+  async mention(caller: { task: string; agent: string }, to: string, text: string): Promise<string> {
+    let task = this.deps.store.tasks.get(caller.task);
+    if (task === undefined) throw new UserError(`Task ${caller.task} does not exist.`, 404);
+    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    if (to === caller.agent) throw new UserError("You cannot hand work to yourself.");
+    if (to === OWNER_HANDLE)
+      throw new UserError("To reach the owner, say so in your reply and mention @owner.");
+    if (!task.team.includes(to)) task = await this.deps.tasks.addToTeam(task.id, to, { by: caller.agent });
+    const state = this.deps.store.tasks.roomState(task.id);
+    const max = await this.maxAgentTurns(task);
+    if (state.agentTurns + 1 > max) {
+      throw new UserError(
+        `${state.agentTurns} agent turns without the owner. Ask the owner in your reply before handing on.`,
+        409,
+      );
+    }
+    this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: state.agentTurns + 1 });
+    this.deps.runs.handoff(task, { from: caller.agent, to, via: "tool", text });
+    return `Handed to @${to}. It gets your message on its next turn.`;
+  }
+
+  /** majhi-room `read_recent`: the last messages, newest first, each trimmed in the middle (5.13). */
+  readRecent(task: string, limit: number, beforeSeq: number | undefined): string {
+    this.deps.room.flush(task);
+    const page = this.deps.store.room.page(task, Math.min(200, limit * 4), beforeSeq);
+    const lines: string[] = [];
+    let oldest: number | undefined;
+    for (const item of page.items) {
+      const line = readLine(item);
+      if (line === undefined) continue;
+      lines.push(`[${item.seq}] ${trimMiddle(line, READ_ITEM_MAX)}`);
+      oldest = item.seq;
+      if (lines.length >= limit) break;
+    }
+    if (lines.length === 0) return "The room has no messages yet.";
+    const more =
+      page.more || lines.length >= limit ? `\n\nOlder: call read_recent with before_seq ${oldest}.` : "";
+    return `Room of ${task}, newest first:\n${lines.join("\n")}${more}`;
+  }
+
+  private async maxAgentTurns(task: Task): Promise<number> {
+    const settings = await this.deps.config.settings();
+    const org = task.org === undefined ? undefined : (await this.deps.config.sections()).orgs[task.org];
+    return org?.rooms?.max_agent_turns ?? settings.rooms.max_agent_turns;
   }
 
   /**
@@ -177,6 +231,24 @@ export class RoomCoordinator {
 
 function members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
   return task.team.map((id) => ({ id, role: agents.find((a) => a.id === id)?.role ?? "Builder" }));
+}
+
+/** A message in the room for read_recent, or undefined for items that are not conversation. */
+function readLine(item: RoomItem): string | undefined {
+  switch (item.type) {
+    case "owner":
+      return `Owner${item.to === undefined ? "" : ` to @${item.to}`}: ${item.text}`;
+    case "agent":
+      return item.text.trim() === "" ? undefined : `@${item.agent}: ${item.text}`;
+    case "handoff":
+      return `@${item.from} handed to @${item.to}`;
+    case "system":
+      return `majhi: ${item.text}`;
+    case "approval":
+      return `@${item.agent} asked to run ${item.command}: ${item.state}`;
+    default:
+      return undefined;
+  }
 }
 
 function firstLine(text: string): string {

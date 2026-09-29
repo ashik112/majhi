@@ -9,6 +9,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
+import type { RoomAccess } from "../rooms/access.ts";
 import { handoffPrompt } from "../rooms/handoff.ts";
 import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -58,6 +59,8 @@ export interface RunDeps {
   admin?: AdminAccess;
   /** The decision provider: majhi-decide for every session, and model picks for `auto` agents. */
   decisions?: Decisions;
+  /** majhi-room for team members and majhi-tasks for leads (Phase 3). */
+  rooms?: RoomAccess;
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
@@ -885,6 +888,7 @@ export class RunManager {
       run.perms = fm.perms;
       run.adminToken = opened.adminToken;
       run.decideToken = opened.decideToken;
+      run.roomTokens = opened.roomTokens;
       run.turns = 0;
       run.usage = undefined;
       run.runId = deps.store.runs.start({
@@ -1045,6 +1049,8 @@ export class RunManager {
     run.adminToken = undefined;
     if (run.decideToken !== undefined) this.deps.decisions?.revoke(run.decideToken);
     run.decideToken = undefined;
+    if (run.roomTokens !== undefined) this.deps.rooms?.revoke(run.roomTokens);
+    run.roomTokens = undefined;
     if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
     run.idleTimer = undefined;
     this.permissions.cancelAll(run);

@@ -9,6 +9,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import type { RoomAccess } from "../rooms/access.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
@@ -60,6 +61,8 @@ export interface LaunchDeps {
   majhiHome: string;
   admin?: AdminAccess | undefined;
   decisions?: Decisions | undefined;
+  /** majhi-room and majhi-tasks (Phase 3). */
+  rooms?: RoomAccess | undefined;
 }
 
 export interface Launched {
@@ -71,6 +74,7 @@ export interface Launched {
   ranBefore: boolean;
   adminToken?: string | undefined;
   decideToken?: string | undefined;
+  roomTokens?: { server: "room" | "tasks"; token: string }[] | undefined;
   /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
   model?: string | undefined;
   effort?: string | undefined;
@@ -104,7 +108,13 @@ export async function launch(
   const ranBefore = resume !== undefined || deps.store.runs.ranBefore(run.task, run.agent);
   const admin = deps.admin?.attach({ task: run.task, agent: run.agent }, fm, boss);
   const decide = deps.decisions?.attachTool(run.task, run.agent);
-  const mcpServers = [admin?.server, decide?.server].flatMap((s) => (s === undefined ? [] : [s]));
+  const rooms = deps.rooms?.attach({ task: run.task, agent: run.agent }, fm, {
+    teamSize: task.team.length,
+    boss,
+  });
+  const mcpServers = [admin?.server, decide?.server, ...(rooms?.servers ?? [])].flatMap((s) =>
+    s === undefined ? [] : [s],
+  );
   let session: AgentSession;
   try {
     session = await deps.runtime.startSession({
@@ -120,6 +130,7 @@ export async function launch(
   } catch (err) {
     if (admin !== undefined) deps.admin?.revoke(admin.token);
     if (decide !== undefined) deps.decisions?.revoke(decide.token);
+    if (rooms !== undefined) deps.rooms?.revoke(rooms.tokens);
     throw err;
   }
   return {
@@ -129,6 +140,7 @@ export async function launch(
     ranBefore,
     adminToken: admin?.token,
     decideToken: decide?.token,
+    roomTokens: rooms?.tokens,
     model,
     effort,
   };

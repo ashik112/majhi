@@ -24,6 +24,7 @@ import type { HostLink } from "./host/link.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
+import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
@@ -75,6 +76,10 @@ export interface Services {
   decisions: DecisionService;
   /** Bearer tokens of `majhi-decide`. */
   decideTokens: DecideTokens;
+  /** Who gets majhi-room and majhi-tasks, and their tokens. */
+  roomAccess: RoomAccess;
+  /** Routes agent messages in team rooms (5.3). */
+  coordinator: RoomCoordinator;
   orgs: OrgService;
   accounts: AccountService;
   terminals: TerminalManager;
@@ -184,8 +189,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     adminMcpUrl: () => adminTokens.mcpUrl,
   });
+  const roomAccess = new RoomAccess(() => adminTokens.mcpUrl);
   const runs = new RunManager({
     store,
+    rooms: roomAccess,
     usage: usageRecorder,
     room,
     runtime,
@@ -256,6 +263,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agentStore,
     decisions,
     decideTokens,
+    roomAccess,
+    coordinator,
     store,
     uploads,
     projects,

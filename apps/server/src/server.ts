@@ -82,6 +82,16 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     },
     mcp: { tokens: services.adminTokens, admin: services.admin },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
+    roomMcp: {
+      tasks: services.tasks,
+      access: services.roomAccess,
+      coordinator: services.coordinator,
+      admin: services.admin,
+      room: services.room,
+      store: services.store,
+      agents: services.agentStore,
+      projects: services.projects,
+    },
     ...(services.runner === undefined
       ? {}
       : { isRunner: (address: string | undefined) => services.runner?.network.isRunner(address) ?? false }),

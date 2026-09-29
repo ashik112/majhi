@@ -10,6 +10,7 @@ import type { Dispatch } from "../commands/dispatch.ts";
 import { type DecideMcpDeps, decideMcpRoutes } from "../decisions/mcp.ts";
 import { errorMessage } from "../errors.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
+import { type RoomMcpDeps, roomMcpRoutes } from "../rooms/mcp.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import { isLoopbackOrigin } from "./origin.ts";
@@ -32,6 +33,8 @@ export interface AppDeps {
   mcp?: { tokens: AdminTokens; admin: AdminService };
   /** The majhi-decide MCP server at `/mcp/decide`. */
   decideMcp?: DecideMcpDeps;
+  /** majhi-room at `/mcp/room` and majhi-tasks at `/mcp/tasks`. */
+  roomMcp?: RoomMcpDeps;
   /** True for a request from an agent's runner container: it may reach only `/mcp` (Phase 2c). */
   isRunner?: (remoteAddress: string | undefined) => boolean;
 }
@@ -82,6 +85,7 @@ export function createApp(deps: AppDeps): Hono {
 
   if (deps.mcp !== undefined) app.route("/", mcpRoutes(deps.mcp));
   if (deps.decideMcp !== undefined) app.route("/", decideMcpRoutes(deps.decideMcp));
+  if (deps.roomMcp !== undefined) app.route("/", roomMcpRoutes(deps.roomMcp));
   app.route("/api/host", hostRoutes(deps.host));
   app.route("/api/uploads", uploadRoutes(deps.uploads));
   app.route("/api/tasks", taskFileRoutes(deps.taskFiles));
