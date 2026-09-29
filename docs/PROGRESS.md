@@ -1,8 +1,38 @@
 # Progress
 
-## Phase 0: Skeleton (in progress)
+## Phase 0: Skeleton (done, waiting for owner review)
 
-All questions answered. Building on branch `phase-0-skeleton`.
+Branch `phase-0-skeleton`. The plan below is kept for reference; the result comes first.
+
+### What works
+
+- `make up` builds one image, generates the mounts from `majhi.yaml`, starts majhi on http://127.0.0.1:7070 and waits until it is healthy.
+- Onboarding step 1: pick workspace roots (and optionally the tasks folder). Roots that are not mounted yet show a card with `make up`.
+- Repos screen: every git repo under each root, grouped by root, with branch, host (GitHub, GitLab, Bitbucket, other), SSH alias, and a details panel. `/` searches, `j`/`k` move, `Enter` copies the path, `r` rescans.
+- Config errors in `majhi.yaml` show the file and each error, with Retry.
+- Every change goes through a typed command (`POST /api/cmd/<name>`). `~/.majhi` is a git repo; each change is a commit with who and why. Hand edits are committed separately first.
+- `make doctor` checks config, the config folder, git, each root's mount, the SSH agent and disk space.
+
+### How to try it
+
+1. `make up`, open http://127.0.0.1:7070.
+2. Enter `~/Work`, save. On a first install the root is not mounted yet: run `make up` again, then Reload.
+3. The repos screen lists everything under `~/Work`. Try `/`, `j`, `k`, `Enter`, `r`.
+4. `make doctor`. `git -C ~/.majhi log` shows the config history.
+5. Checks: `make ci` (Biome, typecheck, unit and integration tests, builds, Playwright).
+
+### Verified
+
+- 74 unit and integration tests and 5 Playwright tests pass.
+- In Docker, against the real `~/Work` (with a temporary config folder): 68 repos found in 75 ms, doctor all green, the SSH agent reachable through OrbStack, a config change from the UI committed on the host mount, 34 MB memory used, a cross-origin write rejected with 403.
+
+### Left for later phases and known issues
+
+- Adding a root needs a second `make up` (by design, see DECISIONS).
+- A custom `tasks_dir` outside every root is not mounted yet. Phase 2 needs it and will add it.
+- The SSH agent has no keys loaded on this Mac right now. Doctor passes, but git over SSH will need `ssh-add` before Phase 5.
+- Web bundle is 590 kB (185 kB gzipped), served from localhost. Route-level code splitting can come with the Phase 10 performance pass.
+- `PRODUCT.md` (design context for the UI skill) was written from SPEC section 1 without an interview. Edit it if anything is off.
 
 ### Goal
 

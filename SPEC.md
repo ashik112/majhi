@@ -126,7 +126,17 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 - Dark theme first. IBM Plex Sans and IBM Plex Mono, as in the demo.
 
 ### 3.5 Workspace roots
-Set on first run (majhi shows a picker before anything else) and changed later from the palette. Adding or removing a root needs a restart, because container mounts are fixed at start. majhi says so and shows the command.
+Set during onboarding (3.6) and changed later from the palette or by the boss. Adding or removing a root needs a restart, because container mounts are fixed at start. majhi says so and shows the command.
+
+### 3.6 Onboarding
+The first run is a short guided flow. Nothing else shows until it is done, and it can be reopened later from the palette.
+
+1. **Workspace roots:** pick the folders that hold projects (3.5). majhi scans them and shows what it found.
+2. **First account:** add a Claude Code or Codex account, personal or for an org, by signing in through the embedded terminal or pasting an API key.
+3. **Choose the boss:** pick the account, model and effort for the boss (5.16), or keep the suggested defaults. It is created as a root agent file the owner can edit later.
+4. **Hand-off to the boss:** the boss opens its chat and finishes the setup as a conversation. It proposes orgs from the repos it found (remotes, folder names), asks one question at a time, adds more accounts and agents, sets limits, and registers projects. Everything it does follows the approval policy and can be undone.
+
+Each step is one entry in a step list, so later phases add steps without redesigning the flow. The owner can skip ahead after step 3 and continue the setup with the boss at any time.
 
 ---
 
@@ -522,7 +532,7 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - `docker compose up` starts the server and web. Healthchecks. `doctor` command.
 - First-run workspace root picker. Load `majhi.yaml`. Scan every workspace root for git repos and show them. Generate the compose override with one mount per root.
 - The command layer (5.16) for the Phase 0 config changes, and `~/.majhi` as a git repository with one commit per change.
-- **Done when:** a fresh clone runs with one command, lets the owner pick workspace roots, and shows detected repos.
+- **Done when:** a fresh clone runs with one command, onboarding step 1 lets the owner pick workspace roots, and majhi shows detected repos.
 
 ### Phase 1: Accounts and agents
 - Account model (login and API key), per-account config homes, login through the embedded terminal.
@@ -530,7 +540,8 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - Agent files: load, validate, watch for changes, write from the UI.
 - Per-agent homes and the credential-linking check from 5.2. Log the result.
 - Studio Agents and Accounts tabs.
-- **Done when:** the owner can add two Claude accounts for one org and three agents on them from the UI, add one API-key account, and each agent's health check passes.
+- Onboarding steps 2 and 3 (3.6): first account and choosing the boss.
+- **Done when:** a fresh install walks through onboarding to a created boss agent whose health check passes; the owner can add two Claude accounts for one org and three agents on them from the UI, add one API-key account, and each agent's health check passes.
 
 ### Phase 2: One agent, one repo, end to end
 - ACP client wrapper, spawning with a clean environment, streaming to the room.
@@ -538,7 +549,7 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - Room UI with streaming messages, permission prompts, attachments (images, docs, links).
 - Context budget from 5.13: usage meter per agent, native compaction at the threshold, handoff to a fresh session, `max_turns` rotation.
 - Live control from 5.15: plan and tool calls streamed in the room, "now doing" status, Esc to stop a turn, Stop all, queue or interrupt with a new message, inline permission prompts, slash commands, `@file` mentions. Task kind `chat`.
-- The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Agents on demand and concurrency limits (5.17).
+- The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents). Agents on demand and concurrency limits (5.17).
 - **Done when:** "add a health endpoint to api from develop" produces a working branch in a worktree, with the whole run visible in the room, and a fake agent pushed past 80% context gets compacted with the event shown in the room.
 
 ### Phase 3: Teams and rooms
@@ -571,7 +582,7 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - **Done when:** unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work. A simulated limit error hands off to the fallback.
 
 ### Phase 9: Root agents and trackers
-- Setup, Dispatcher and Housekeeper shipped as default agent files; first-run setup happens as a conversation with the boss. `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves.
+- Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves.
 - Decision provider interface with Laya, Jev, ACP simulation and rules. `majhi-decide` MCP tool for every agent and "Ask the decision model" in the palette. Model and effort picking for `auto` agents.
 - Jira, ClickUp and GitHub Issues adapters. Push a local task to a tracker.
 - **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, a Jira item flows into a room and gets its MR link written back, and an `auto` agent gets a model picked with the decision recorded on the run.
