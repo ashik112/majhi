@@ -1,5 +1,27 @@
 # Progress
 
+## Phase 3: Teams, rooms and decisions (in progress)
+
+Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c merged). Lead orchestration (PRV-32), background processes (PRV-33) and more agents per task from the task box (PRV-45) are their own tasks. Task ids that open a drawer (PRV-34) are done.
+
+### Goal
+
+Done when: lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round; a new task gets its default team picked by the decision provider, with the decision recorded.
+
+### What I will build, in order
+
+1. **Contract.** A coordination mode per task (`lead`, `pipeline`, `review-loop`), per-task agent overrides (model, effort, repos), a `handoff` room item, `rooms` settings (`max_agent_turns` 12, `review_rounds` 5, orgs override `max_agent_turns`), and commands `team.add`, `team.remove`, `team.swap`, `team.set`, `tasks.split`, plus `mode` on `tasks.create` and `tasks.update`.
+2. **Routing.** Every agent turn's final message is parsed for @mentions. A mention wakes that agent with a handoff prompt: the message, the TASK.md pointer, a short room summary and the diff stat. Owner messages go to the mentioned agent, else the lead. Mentioning an agent outside the team adds it when it may work in the org. The three modes and the loop guard (pause with reason `owner` after 12 agent turns without the owner) are one pure module. A worktree lock per edit turn, so two agents never edit one worktree at once.
+3. **MCP servers.** `majhi-room` (`post`, `mention`, `read_recent`) and `majhi-tasks` (`create`, `list`, `get`, `update`, `split`, `link`) at `/mcp/room` and `/mcp/tasks`, one bearer token per session, `majhi-tasks` through the boss's approval policy and limited to the agent's org.
+4. **Dependencies.** Waiting tasks start on their own (built in 2b); `ready` dependencies stack the branch on the dependency's working branch and rebase when it moves.
+5. **Decisions in teams.** The default team for a new task is picked by the decision provider from teams built of the org's agents, with the decision recorded on the task; whether an agent message needs the owner, and whether a reviewer approved. Laya in Docker (`laya-serve`, PyTorch CPU) for Linux and Windows, behind a compose profile, started on first use and stopped when idle.
+6. **Web.** Handoff lines in the room, the mode picker, team editing in "In this room" (add, remove, swap, model and effort).
+
+### How I will test it
+
+- Unit: mention parsing, routing per mode, the loop guard, worktree locks, the approval rules, the team options.
+- Integration with fake sessions: the done-when scenario (lead delegates, builder, reviewer asks for a fix, builder fixes, reviewer approves, task goes to review), pipeline order, the review loop's round cap, the loop guard pause, locks between two builders, `majhi-room` and `majhi-tasks` over HTTP with a real MCP client, a `ready` dependency stacked and rebased, the team decision recorded.
+
 ## Phase 2c: Tokens, cost and runner isolation (built, waiting for owner review)
 
 Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phase 2b merged). Desktop notifications and the two backups are their own tasks (PRV-29, PRV-30, PRV-31) and are not part of this branch. The plan below is kept for reference; the result comes first.
