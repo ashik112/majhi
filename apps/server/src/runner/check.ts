@@ -35,6 +35,8 @@ export interface RunnerCheckInput {
 export interface RunnerVerdict {
   ok: boolean;
   detail: string;
+  /** Rebuilding majhi fixes it: the runner image is missing or Docker is out of reach. */
+  rebuild?: boolean;
 }
 
 /** Paths a run must never see. */
@@ -94,22 +96,22 @@ export async function checkRunnerIsolation(input: RunnerCheckInput): Promise<Run
     }
     return { ok: false, detail: out || "The runner check gave no answer." };
   } catch (err) {
-    return { ok: false, detail: explain(err, cfg.image) };
+    return { ok: false, ...explain(err, cfg.image) };
   } finally {
     await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-function explain(err: unknown, image: string): string {
+function explain(err: unknown, image: string): { detail: string; rebuild?: boolean } {
   const stdout = (err as { stdout?: unknown }).stdout;
   const said = typeof stdout === "string" ? stdout.trim().split("\n").pop() : undefined;
-  if (said) return said;
+  if (said) return { detail: said };
   const message = errorMessage(err);
   if (/No such image|Unable to find image|pull access denied/i.test(message)) {
-    return `The runner image ${image} is missing. Update majhi to build it.`;
+    return { detail: `The runner image ${image} is missing, so agents cannot run.`, rebuild: true };
   }
   if (/permission denied.*docker\.sock|Cannot connect to the Docker daemon/i.test(message)) {
-    return "majhi cannot reach Docker to start agent runs. Update majhi to reconnect it.";
+    return { detail: "majhi cannot reach Docker to start agent runs.", rebuild: true };
   }
-  return message.split("\n", 1)[0] ?? message;
+  return { detail: message.split("\n", 1)[0] ?? message };
 }

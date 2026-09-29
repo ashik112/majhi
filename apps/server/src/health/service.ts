@@ -20,6 +20,8 @@ export interface HealthDeps {
   sshHosts?: SshHostProbe | undefined;
   /** Asks the helper to remount when roots are missing. */
   remount: (unmounted: readonly string[]) => Promise<Remount>;
+  /** Rebuilds majhi through the host helper once no agent is working (`system.update`). */
+  rebuild?: () => Promise<CommandOutput<"system.update">>;
 }
 
 type RunOutput = CommandOutput<"health.run">;
@@ -113,6 +115,18 @@ export class HealthService {
         return health.ok
           ? { ok: true, detail: `${account} answered.` }
           : { ok: false, detail: health.steps.find((s) => !s.ok)?.detail ?? `${account} did not answer.` };
+      }
+      if (id === "runner" && this.deps.rebuild !== undefined) {
+        this.toolCache.delete("runner");
+        const result = await this.deps.rebuild();
+        if (result.state === "manual") return { ok: false, detail: result.reason ?? "Run `make up` once." };
+        return {
+          ok: true,
+          detail:
+            result.state === "waiting"
+              ? "majhi rebuilds once the agents finish their turns, then restarts."
+              : "majhi is rebuilding and restarts in a few minutes.",
+        };
       }
       if (id === "host-helper") {
         await hostLink.call("restart", {});

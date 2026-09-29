@@ -409,6 +409,7 @@ async function checkRunner(ctx: CheckContext): Promise<Check[]> {
     name: "Agent runner",
     status: verdict.ok ? "pass" : "fail",
     detail: verdict.detail,
+    ...(verdict.rebuild ? { fix: { label: "Rebuild majhi" } } : {}),
   };
   ctx.toolCache?.set("runner", { at: now(), check });
   return [check];

@@ -182,8 +182,10 @@ describe("the runner isolation check", () => {
       detail: `a run can see ${env.secretsKeyFile}`,
     });
     const missing = new Error("Unable to find image 'majhi-runner:dev' locally");
-    expect((await checkRunnerIsolation({ ...input, docker: () => Promise.reject(missing) })).detail).toBe(
-      "The runner image majhi-runner:dev is missing. Update majhi to build it.",
-    );
+    expect(await checkRunnerIsolation({ ...input, docker: () => Promise.reject(missing) })).toEqual({
+      ok: false,
+      detail: "The runner image majhi-runner:dev is missing, so agents cannot run.",
+      rebuild: true,
+    });
   });
 });
