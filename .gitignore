@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+docker-compose.override.yml
+test-results/
+playwright-report/
+blob-report/
+*.tsbuildinfo
+.DS_Store
