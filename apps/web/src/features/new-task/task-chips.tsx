@@ -1,8 +1,9 @@
 import type { TaskSummary } from "@majhi/shared";
-import { ChoiceChip } from "@/components/ui/choice-chip";
+import { Plus, X } from "lucide-react";
+import { Menu } from "@/components/ui/menu";
 
 /**
- * Open tasks as chips, as in the demo's "Depends on" row: None, then one chip per task.
+ * A compact task picker: the chosen tasks as chips, and "Choose" for a menu of open tasks.
  * `selected` is a list; with `single` a new pick replaces the old one.
  */
 export function TaskChips({
@@ -18,37 +19,52 @@ export function TaskChips({
   onChange: (next: string[]) => void;
   single?: boolean;
 }) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const toggle = (id: string) => {
+    const on = selected.includes(id);
+    if (single) onChange(on ? [] : [id]);
+    else onChange(on ? selected.filter((x) => x !== id) : [...selected, id]);
+  };
+
   return (
-    <fieldset
-      aria-label={label}
-      className="m-0 flex max-h-[104px] min-w-0 flex-wrap gap-1.5 overflow-y-auto border-0 p-0"
-    >
-      <ChoiceChip
-        pressed={selected.length === 0}
-        className="h-8 rounded-lg px-2.5 text-xs"
-        onClick={() => onChange([])}
-      >
-        None
-      </ChoiceChip>
-      {tasks.map((t) => {
-        const on = selected.includes(t.id);
-        return (
-          <ChoiceChip
-            key={t.id}
-            pressed={on}
-            title={t.title}
-            className="h-8 max-w-[240px] rounded-lg px-2.5 text-xs"
-            onClick={() =>
-              onChange(
-                single ? (on ? [] : [t.id]) : on ? selected.filter((x) => x !== t.id) : [...selected, t.id],
-              )
-            }
+    <fieldset aria-label={label} className="m-0 flex min-w-0 flex-wrap items-center gap-1.5 border-0 p-0">
+      {selected.map((id) => (
+        <span
+          key={id}
+          className="flex h-8 max-w-[280px] items-center gap-1.5 rounded-lg border border-blue-line bg-blue-wash pr-1 pl-2.5 text-xs"
+        >
+          <span className="font-mono">{id}</span>
+          <span className="min-w-0 truncate text-fg-muted">{byId.get(id)?.title}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${id}`}
+            onClick={() => toggle(id)}
+            className="grid size-6 cursor-pointer place-items-center rounded-sm text-fg-faint hover:text-fg"
           >
-            <span className="font-mono">{t.id}</span>
-            <span className="min-w-0 truncate text-fg-faint">{t.title}</span>
-          </ChoiceChip>
-        );
-      })}
+            <X aria-hidden="true" className="size-3.5" />
+          </button>
+        </span>
+      ))}
+      <Menu
+        label={`Choose ${label.toLowerCase()}`}
+        align="left"
+        items={tasks.map((t) => ({
+          label: `${t.id} · ${t.title.length > 60 ? `${t.title.slice(0, 59)}…` : t.title}`,
+          checked: selected.includes(t.id),
+          onSelect: () => toggle(t.id),
+        }))}
+        trigger={({ ref, ...props }) => (
+          <button
+            ref={ref}
+            type="button"
+            {...props}
+            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-line-control px-2.5 text-xs text-fg-muted hover:border-line-hover hover:text-fg"
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+            {selected.length === 0 ? "Choose" : single ? "Change" : "Add"}
+          </button>
+        )}
+      />
     </fieldset>
   );
 }
