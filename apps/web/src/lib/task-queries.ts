@@ -1,5 +1,6 @@
 import type { CommandInput, CommandOutput, ProjectView, Task, TaskSummary } from "@majhi/shared";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -20,6 +21,25 @@ export function useTasks(enabled = true) {
     queryFn: () => cmd("tasks.list", { includeDone: true }),
     enabled,
   });
+}
+
+const idsOf = (list: TaskSummary[]) =>
+  list
+    .map((t) => t.id)
+    .toSorted()
+    .join(" ");
+
+/**
+ * The ids of every task, for turning ids in messages into links. A string compares by value, so
+ * messages render again only when a task is added or removed, not on every status change.
+ */
+export function useTaskIds(): ReadonlySet<string> {
+  const key = useQuery<TaskSummary[], ApiRequestError, string>({
+    queryKey: [...queryKeys.tasks, "list"],
+    queryFn: () => cmd("tasks.list", { includeDone: true }),
+    select: idsOf,
+  }).data;
+  return useMemo(() => new Set(key ? key.split(" ") : []), [key]);
 }
 
 export function useTask(id: string | undefined) {
