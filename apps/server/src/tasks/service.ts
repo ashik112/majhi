@@ -273,7 +273,9 @@ export class TaskService {
     const fm = agents.find((a) => a.id === task.team[0]);
     const md = renderTaskMd(
       task,
-      fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
+      fm === undefined
+        ? undefined
+        : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort, perms: fm.perms },
       orgName,
       related,
     );
@@ -573,7 +575,9 @@ export class TaskService {
       const fm = agents.find((a) => a.id === task.team[0]);
       const md = renderTaskMd(
         task,
-        fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
+        fm === undefined
+          ? undefined
+          : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort, perms: fm.perms },
         sections.orgs[task.org ?? ""]?.name,
         this.relatedOf(task),
       );
