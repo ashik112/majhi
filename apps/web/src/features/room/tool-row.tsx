@@ -16,7 +16,7 @@ import {
 import { type ComponentType, memo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { DiffView } from "./diff-view";
-import { hasToolDetail, shortPath, toolTarget, trimOutput } from "./model";
+import { hasToolDetail, isQuietTool, shortPath, toolLabel, toolTarget, trimOutput } from "./model";
 
 type ToolItem = Extract<RoomItem, { type: "tool" }>;
 
@@ -40,6 +40,9 @@ const STATUS_LABEL: Record<ToolItem["status"], string> = {
 /** One tool call as a compact row: icon by kind, title, status and target. Expands to its output. */
 export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem; folder: string }) {
   const [open, setOpen] = useState(false);
+  if (isQuietTool(item.title)) {
+    return <p className="px-1 text-xs text-fg-faint">{toolLabel(item.title)}</p>;
+  }
   const Icon = KIND_ICON[item.kind] ?? Wrench;
   const full = toolTarget(item);
   const target = full === undefined ? undefined : shortPath(full, folder);
@@ -55,7 +58,9 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
         <span aria-hidden="true" className="size-3 shrink-0" />
       )}
       <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
-      <span className="min-w-0 shrink truncate text-fg-soft">{item.title}</span>
+      <span className="min-w-0 shrink truncate text-fg-soft" title={item.title}>
+        {toolLabel(item.title)}
+      </span>
       {target && target !== item.title && (
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-faint" title={full}>
           {target}

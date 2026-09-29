@@ -1,5 +1,6 @@
 import {
   type AgentLive,
+  commands,
   type RoomItem,
   type RoomServerMessage,
   RoomServerMessageSchema,
@@ -511,4 +512,39 @@ export function nearBottom(
   slack = 48,
 ): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= slack;
+}
+
+// Tool names ------------------------------------------------------------------
+
+/** CLI tools that only load other tools: shown as a quiet line, not as work. */
+const QUIET_TOOLS = new Set(["ToolSearch"]);
+
+export function isQuietTool(title: string): boolean {
+  return QUIET_TOOLS.has(title.trim());
+}
+
+/**
+ * A tool call's title in plain words. The CLIs name MCP tools `mcp__<server>__<tool>`; majhi's own
+ * become "majhi: <what the command does>", others "server: tool".
+ */
+export function toolLabel(title: string): string {
+  const t = title.trim();
+  if (isQuietTool(t)) return "Loaded tools";
+  const mcp = /^mcp__([^_]+(?:[-_][^_]+)*?)__(.+)$/.exec(t);
+  if (!mcp) return title;
+  const server = mcp[1] ?? "";
+  const tool = mcp[2] ?? "";
+  if (server === "majhi-decide") return "majhi: Ask the decision model";
+  if (server === "majhi-admin") {
+    if (tool === "majhi_request_secret") return "majhi: Ask you for a secret";
+    const name = tool.replace(/^majhi_/, "").replace(/_/g, ".");
+    const summary = (commands as Record<string, { summary: string } | undefined>)[name]?.summary;
+    return `majhi: ${summary ? firstSentence(summary) : name}`;
+  }
+  return `${server}: ${tool.replace(/_/g, " ")}`;
+}
+
+function firstSentence(text: string): string {
+  const cut = text.indexOf(". ");
+  return cut === -1 ? text.replace(/\.$/, "") : text.slice(0, cut);
 }

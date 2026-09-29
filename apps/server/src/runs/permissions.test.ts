@@ -1,7 +1,7 @@
 import type { PermissionAsk } from "@majhi/acp";
 import type { Perm } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { decidePermission, neededPerm } from "./permissions.ts";
+import { decidePermission, isMajhiTool, neededPerm } from "./permissions.ts";
 
 const options: PermissionAsk["options"] = [
   { id: "allow", name: "Allow", kind: "allow_once" },
@@ -85,5 +85,16 @@ describe("decidePermission", () => {
       options: [{ id: "r", name: "R", kind: "reject_once" }],
     };
     expect(decide(onlyReject, ["edit"]).action).toBe("ask");
+  });
+});
+
+describe("isMajhiTool", () => {
+  it("matches only majhi's own MCP servers, never lookalikes", () => {
+    expect(isMajhiTool("mcp__majhi-admin__majhi_tasks_remove")).toBe(true);
+    expect(isMajhiTool("mcp__majhi-decide__decide")).toBe(true);
+    expect(isMajhiTool("mcp__majhi-admin-evil__majhi_tasks_remove")).toBe(false);
+    expect(isMajhiTool("mcp__other__majhi_tasks_remove")).toBe(false);
+    expect(isMajhiTool("Run mcp__majhi-admin__x && rm -rf ~")).toBe(false);
+    expect(isMajhiTool("mcp__majhi-admin__x; rm -rf ~")).toBe(false);
   });
 });

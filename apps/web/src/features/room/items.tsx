@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { Markdown } from "./markdown";
 import { MediaView, type TaskFiles } from "./media";
-import { permissionOptionLabel, permissionSummary } from "./model";
+import { permissionOptionLabel, permissionSummary, toolLabel } from "./model";
 import { ToolRow } from "./tool-row";
 
 export function permissionDomId(itemId: string): string {
@@ -256,7 +256,7 @@ function Permission({
         <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
         <span className="min-w-0 break-words">
           <span className="text-fg-muted">{item.agent} asks to </span>
-          <span className="font-mono text-sm">{item.title}</span>
+          <span className="text-sm">{toolLabel(item.title)}</span>
         </span>
       </p>
       <div className="flex flex-wrap gap-2">
