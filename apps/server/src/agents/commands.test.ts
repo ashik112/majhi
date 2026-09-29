@@ -205,4 +205,31 @@ describe("agents.health", () => {
     const orphan = (await h.cmd("agents.health", { id: "orphan" })).body;
     expect(orphan.steps[0].detail).toBe('Account "claude-gone" is not in majhi.yaml');
   });
+  it("edits only the named fields, can clear optional ones, and refuses an invalid result", async () => {
+    await setup();
+    await h.cmd("agents.create", {
+      id: "builder",
+      ...draft({ perms: ["edit", "shell"], model: "sonnet", fallback: "builder" }),
+    });
+    const edited = await h.cmd("agents.edit", {
+      id: "builder",
+      set: { model: null, role: "Lead" },
+      instructions: "Lead the work.\n",
+    });
+    expect(edited.status).toBe(200);
+    const fm = edited.body.agent.frontmatter;
+    expect(fm).toMatchObject({
+      role: "Lead",
+      perms: ["edit", "shell"],
+      fallback: "builder",
+      account: "claude-acme",
+    });
+    expect(fm.model).toBeUndefined();
+    expect(edited.body.agent.instructions).toBe("Lead the work.\n");
+
+    const before = await readFile(join(agentsDir(), "builder.md"), "utf8");
+    const bad = await h.cmd("agents.edit", { id: "builder", set: { perms: ["fly"] } });
+    expect(bad.status).toBe(400);
+    expect(await readFile(join(agentsDir(), "builder.md"), "utf8")).toBe(before);
+  });
 });

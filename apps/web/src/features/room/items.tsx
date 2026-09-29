@@ -253,10 +253,23 @@ function Permission({
   const summary = permissionSummary(item);
   if (!summary.pending) {
     return (
-      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
-        <ShieldQuestion aria-hidden="true" className="size-3.5" />
-        {summary.text}
-      </p>
+      <details className="group pl-[38px] text-sm text-fg-faint">
+        <summary
+          className={cn(
+            "flex list-none items-center gap-2",
+            summary.full ? "cursor-pointer hover:text-fg-muted" : "pointer-events-none",
+          )}
+        >
+          <ShieldQuestion aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="shrink-0">{summary.verdict}</span>
+          <code className="min-w-0 truncate font-mono text-xs">{summary.short}</code>
+        </summary>
+        {summary.full && (
+          <pre className="mt-1.5 max-h-72 overflow-auto rounded-md border border-line bg-sunken p-2.5 font-mono text-xs whitespace-pre-wrap text-fg-soft">
+            {summary.full}
+          </pre>
+        )}
+      </details>
     );
   }
   return (

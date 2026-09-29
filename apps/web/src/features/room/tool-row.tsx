@@ -16,7 +16,7 @@ import {
 import { type ComponentType, memo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { DiffView } from "./diff-view";
-import { hasToolDetail, isQuietTool, shortPath, toolLabel, toolTarget, trimOutput } from "./model";
+import { hasToolDetail, isQuietTool, oneLine, shortPath, toolLabel, toolTarget, trimOutput } from "./model";
 
 type ToolItem = Extract<RoomItem, { type: "tool" }>;
 
@@ -59,7 +59,7 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
       )}
       <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
       <span className="min-w-0 shrink truncate text-fg-soft" title={item.title}>
-        {toolLabel(item.title)}
+        {oneLine(toolLabel(item.title))}
       </span>
       {target && target !== item.title && (
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-faint" title={full}>

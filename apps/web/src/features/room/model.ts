@@ -183,17 +183,38 @@ export function permissionOptionLabel(option: PermissionItem["options"][number])
   return option.name;
 }
 
-export type PermissionSummary = { pending: true } | { pending: false; text: string };
+export type PermissionSummary =
+  | { pending: true }
+  | {
+      pending: false;
+      /** "Allowed by rule", "Denied", "Allowed for this task". */
+      verdict: string;
+      /** The request in one short line. */
+      short: string;
+      /** The whole request when it did not fit on one line, shown on demand. */
+      full?: string;
+    };
+
+/** The first line of a tool title or command, cut to `max` characters. */
+export function oneLine(text: string, max = 90): string {
+  const first = text.trim().split("\n")[0] ?? "";
+  const cut = first.length > max ? `${first.slice(0, max - 1)}…` : first;
+  return text.trim().includes("\n") && !cut.endsWith("…") ? `${cut} …` : cut;
+}
 
 /** One line for a permission prompt that no longer waits: "Allowed: npm test, by rule". */
 export function permissionSummary(item: PermissionItem): PermissionSummary {
   if (item.state === "pending") return { pending: true };
-  if (item.state === "cancelled") return { pending: false, text: `Cancelled: ${item.title}` };
+  const title = toolLabel(item.title);
+  const short = oneLine(title);
+  const full = short === title.trim() ? undefined : title.trim();
+  const base = full === undefined ? { short } : { short, full };
+  if (item.state === "cancelled") return { pending: false, verdict: "Cancelled", ...base };
   const option = item.options.find((o) => o.id === item.chosen);
   const allowed = option ? option.kind.startsWith("allow") : true;
-  const by = item.state === "auto" ? ", by rule" : "";
   const extra = option?.kind === "allow_always" ? " for this task" : "";
-  return { pending: false, text: `${allowed ? "Allowed" : "Denied"}${extra}: ${item.title}${by}` };
+  const by = item.state === "auto" ? " by rule" : "";
+  return { pending: false, verdict: `${allowed ? "Allowed" : "Denied"}${extra}${by}`, ...base };
 }
 
 // Touched files -------------------------------------------------------------

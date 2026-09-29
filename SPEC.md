@@ -542,6 +542,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
   - Model and effort can be changed mid-session (5.1).
   - Permission prompts show inline with Allow once, Allow for this task, and Deny.
 - **Media and pages from agents.** Agents show the owner things by saving them in the task folder and linking them in a message with markdown (`![chart](media/chart.png)`, `[report](media/report.html)`), or by sending ACP image content. The room renders images, video and audio inline, and shows pages, PDFs and other files as cards that open in a new browser tab. Web links are clickable. Task files are served only from inside the task folder, and HTML runs sandboxed in its own origin, so an agent's page cannot call majhi's API. The generated `AGENTS.md` tells agents how to do this.
+- **Background processes.** majhi offers ACP's client terminals, so every command an agent runs is a process majhi owns. Long-running ones (dev servers, watchers, test runs in the background) show in a Processes card in the task view: command, running time, port, live output tail, and a Stop button. Agents list, stop and restart their task's processes through majhi tools, and are told what is already running so they do not start a second copy. Stopping or closing the task stops its processes; a per-task limit caps how many run at once.
 - **CLI parity.** Slash commands the agent advertises over ACP work from the composer. `@file` mentions autocomplete from the task's worktrees. Pasted images and files attach. Any past session can be resumed. An embedded terminal opens in the task folder, and any file path opens in the owner's editor.
 
 ### 5.16 The boss and the control plane
@@ -646,6 +647,8 @@ Delivered in two parts, each usable and reviewed on its own.
 - A "Tokens and cost" section on the Health and usage page: totals for today, this week and this month, filters by org, project, agent, account and model, a daily chart and the top tasks. Each task shows its total in the task view; org cards show theirs.
 - Commands `usage.summary` and `usage.breakdown`, so the boss can answer questions like "what did Acme cost this week?"
 - Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
+- Desktop notifications when a task needs the owner (review, permission prompt, limit, failed run), with per-event settings.
+- Backups: the secrets key kept in the macOS Keychain with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
 - **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions
@@ -653,12 +656,16 @@ Delivered in two parts, each usable and reviewed on its own.
 - Team editing in the room: add, remove, swap agent, change model.
 - `majhi-tasks` MCP tool: a lead splits a task into children and adds dependencies. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
 - Decisions in teams: choosing the default team for a new task, and whether an agent message needs the owner, with the decision provider from Phase 2b. Laya in Docker (`laya`, PyTorch CPU) for Linux and Windows.
+- Lead orchestration: a lead (or the boss) given a parent task drives it to the end without the owner: it splits the work into child tasks, is told when a child finishes, reviews what was delivered, starts the next child, and reports when the parent is done. Approvals for destructive and outbound actions still wait for the owner.
+- Background processes from 5.15: the Processes card, Stop by the owner or the agent, cleanup with the task.
+- Task ids mentioned in any message (`PRV-15`) are links that open the task's details in a drawer.
 - **Done when:** lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round; a new task gets its default team picked by the decision provider, with the decision recorded.
 
 ### Phase 4: Multi-repo and MRs
 - Multiple task repos, merge order from links, pushing via SSH aliases, MRs on GitHub, GitLab and Bitbucket with sibling links, merge policies.
 - Changes tab with per-repo diffs.
 - `merged` dependencies (5.4a): a waiting task starts when its dependency's MRs are merged.
+- Full-text search across rooms; review comments on lines in the Changes view sent to the agent as one review; open files and worktrees in the owner's editor; an embedded terminal in the task folder.
 - **Done when:** one task changes two repos on two different hosts and ends with two linked MRs merged in order.
 
 
@@ -680,11 +687,13 @@ Delivered in two parts, each usable and reviewed on its own.
 
 ### Phase 8: Root agents
 - Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves. The Dispatcher routes new tasks to an org, repos and team with the decision provider.
+- Cleanup of done tasks: worktrees, merged task branches and old room logs after N days, previewed and approved.
 - **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, and the Dispatcher routes a new task with its decision recorded.
 
 ### Phase 9: Token receipts and polish
 - Token receipts per task and agent, Serena wiring, tool gating per role, cache-friendly prompts.
 - Command palette complete, keyboard shortcuts, performance pass against the targets in 5.17.
+- Budgets per org and account with alerts at 80% and 100%; an audit log page; optional phone access on the local network (off by default, with a login).
 - **Done when:** receipts show where tokens go, and the owner can run a full day of work without touching a terminal.
 
 
