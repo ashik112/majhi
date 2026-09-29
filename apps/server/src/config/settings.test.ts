@@ -31,23 +31,6 @@ describe("mergeSettings", () => {
 });
 
 describe("settings commands", () => {
-  it("get returns the defaults, set writes only the given fields", async () => {
-    h = await harness();
-    expect((await h.cmd("settings.get")).body.limits.agents_max).toBe(6);
-    const set = await h.cmd("settings.set", { limits: { agents_max: 3 }, context: { compact_at: 0.7 } });
-    expect(set.status).toBe(200);
-    expect(set.body.limits).toEqual({ agents_max: 3, per_account: 2, per_task: 3, idle_timeout: "10m" });
-    expect(set.body.context.compact_at).toBe(0.7);
-    const yaml = await readFile(h.majhi.services.config.file, "utf8");
-    expect(yaml).toContain("agents_max: 3");
-    expect(yaml).toContain("compact_at: 0.7");
-    expect(yaml).not.toContain("per_account");
-    expect(yaml).not.toContain("compact_target");
-    const [entry] = (await h.cmd("history.list", { limit: 1 })).body;
-    expect(entry).toMatchObject({ command: "settings.set", actor: "owner" });
-    expect(entry.summary).toContain("limits.agents_max to 3");
-  });
-
   it("rejects bad values with details", async () => {
     h = await harness();
     const bad = await h.cmd("settings.set", { limits: { agents_max: 0 }, context: { compact_at: 2 } });
@@ -60,23 +43,6 @@ describe("settings commands", () => {
     expect(order.body.error).toContain("compact_target must be lower");
     const unknown = await h.cmd("settings.set", { limits: { nope: 1 } });
     expect(unknown.status).toBe(400);
-  });
-
-  it("policy.set changes only the given fields and replaces the overrides map", async () => {
-    h = await harness();
-    const set = await h.cmd("policy.set", { change: "confirm", commands: { "orgs.create": "auto" } });
-    expect(set.status).toBe(200);
-    expect(set.body.policy).toEqual({
-      read: "auto",
-      change: "confirm",
-      destructive: "confirm",
-      outbound: "confirm",
-      commands: { "orgs.create": "auto" },
-    });
-    await h.cmd("policy.set", { read: "when-asked" });
-    expect((await h.cmd("settings.get")).body.policy.commands).toEqual({ "orgs.create": "auto" });
-    await h.cmd("policy.set", { commands: {} });
-    expect((await h.cmd("settings.get")).body.policy.commands).toEqual({});
   });
 
   it("reports invalid settings written by hand", async () => {

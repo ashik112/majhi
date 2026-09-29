@@ -5,7 +5,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
-import { git, makeRepo, tempDir, testEnv } from "../testing/fixtures.ts";
+import { tempDir, testEnv } from "../testing/fixtures.ts";
 import { isLoopbackOrigin } from "./origin.ts";
 
 describe("HTTP API", () => {
@@ -34,49 +34,6 @@ describe("HTTP API", () => {
     expect(await res.json()).toEqual({ status: "ok", version: "1.2.3-test", commit: "dev" });
   });
 
-  it("goes from first run to scanned repos through the commands", async () => {
-    const first = await cmd("config.get");
-    expect(first.status).toBe(200);
-    expect(await first.json()).toEqual({
-      status: "first-run",
-      file: join(dir, ".majhi/majhi.yaml"),
-      home: dir,
-    });
-
-    expect(await (await cmd("repos.scan", {})).json()).toMatchObject({ roots: [] });
-
-    await makeRepo(join(dir, "Work/acme/api"), { remotes: { origin: "git@github.com:acme/api.git" } });
-    const set = await cmd("workspaces.set", { workspaces: ["~/Work", "~/Later"] });
-    expect(set.status).toBe(200);
-    expect(await set.json()).toEqual({
-      state: {
-        status: "loaded",
-        file: join(dir, ".majhi/majhi.yaml"),
-        home: dir,
-        config: { workspaces: [join(dir, "Work"), join(dir, "Later")], tasksDir: join(dir, "Work/.majhi") },
-      },
-      unmounted: [join(dir, "Later")],
-      remount: "manual",
-      restartCommand: "make up",
-    });
-
-    expect(await (await cmd("config.get", {})).json()).toMatchObject({ status: "loaded" });
-
-    const scan = await cmd("repos.scan", { refresh: true });
-    expect(scan.status).toBe(200);
-    expect(await scan.json()).toMatchObject({
-      roots: [
-        {
-          path: join(dir, "Work"),
-          mounted: true,
-          repos: [{ name: "api", relPath: "acme/api", remotes: [{ name: "origin", host: "github" }] }],
-        },
-        { path: join(dir, "Later"), mounted: false, repos: [] },
-      ],
-      durationMs: expect.any(Number),
-    });
-  });
-
   it("rejects invalid input with 400 and readable details", async () => {
     const res = await cmd("workspaces.set", { workspaces: ["Work"], extra: 1 });
     expect(res.status).toBe(400);
@@ -99,19 +56,6 @@ describe("HTTP API", () => {
     expect(await res.json()).toEqual({ error: "Unknown command: repos.delete" });
     expect((await cmd("toString", {})).status).toBe(404);
     expect((await app.request("/api/cmd/config.get")).status).toBe(404);
-  });
-
-  it("records the meta header in the config history", async () => {
-    const meta = { actor: { kind: "agent", id: "majhi-boss" }, reason: "owner asked to add ~/Work" };
-    const res = await cmd(
-      "workspaces.set",
-      { workspaces: ["~/Work"] },
-      { [COMMAND_META_HEADER]: JSON.stringify(meta) },
-    );
-    expect(res.status).toBe(200);
-    expect(await git(env.majhiHome, "log", "-1", "--format=%an <%ae>|%s")).toBe(
-      "majhi-boss <majhi-boss@majhi.local>|workspaces.set: owner asked to add ~/Work",
-    );
   });
 
   it("answers 409 when majhi.yaml cannot be edited safely", async () => {

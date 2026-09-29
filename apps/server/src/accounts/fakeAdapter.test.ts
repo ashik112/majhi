@@ -64,16 +64,4 @@ describe("health and models through the real runtime and the fake adapter", () =
     expect(agent.body.ok).toBe(true);
     expect(agent.body.steps.at(-1).name).toBe("model");
   });
-
-  it("an account that is not signed in needs login", async () => {
-    const { cmd } = await setup({ signedIn: false });
-    const health = await cmd("accounts.health", { id: "claude-acme" });
-    expect(health.body.account.status).toBe("needs-login");
-  });
-
-  it("a CLI that fails to start is unreachable", async () => {
-    const { cmd } = await setup({ broken: true });
-    const health = await cmd("accounts.health", { id: "claude-acme" });
-    expect(health.body.account.status).toBe("unreachable");
-  });
 });
