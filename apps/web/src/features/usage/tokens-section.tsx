@@ -199,7 +199,11 @@ function Filters({
 
 function TotalTile({ label, totals }: { label: string; totals: UsageTotals }) {
   return (
-    <div className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-raised px-3.5 py-2.5">
+    <div
+      role="group"
+      aria-label={label}
+      className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-raised px-3.5 py-2.5"
+    >
       <SectionLabel>{label}</SectionLabel>
       <CostText totals={totals} proportional className="text-lg leading-[1.25] font-semibold" />
       <span className="text-sm text-fg-muted tabular-nums">
