@@ -1,0 +1,1409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Work Hub</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#121316}
+a{color:#8AB8F5}a:hover{color:#B5D2FA}
+button,input,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; background: #121316; color: #ECEDEF; font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; overflow: hidden; position: relative">
+
+  <aside style="width: 240px; flex-shrink: 0; height: 900px; box-sizing: border-box; background: #17181C; border-right: 1px solid #2C2F36; padding: 20px 14px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+      <span style="width: 28px; height: 28px; border-radius: 7px; background: #F0B455; color: #1A1204; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; font-family: 'IBM Plex Mono', monospace">wh</span>
+      <span style="font-weight: 600; font-size: 16px">Work Hub</span>
+      <span style="margin-left: auto; font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: {{ net.color }}">{{ net.label }}</span>
+    </div>
+
+    <nav aria-label="Main" style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="7">
+        <button onClick="{{ n.go }}" style="height: 36px; border: 0; border-radius: 8px; padding: 0 12px; text-align: left; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; background: {{ n.bg }}; color: {{ n.fg }}">
+          <span>{{ n.label }}</span>
+          <span style="margin-left: auto; font-size: 11px; color: {{ n.badgeColor }}">{{ n.badge }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h2 style="margin: 0 0 4px 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99; font-weight: 500">Orgs</h2>
+      <sc-for list="{{ orgFilters }}" as="f" hint-placeholder-count="4">
+        <button onClick="{{ f.pick }}" style="height: 34px; border: 0; border-radius: 8px; padding: 0 12px; display: flex; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; background: {{ f.bg }}; color: {{ f.fg }}">
+          <span style="width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ f.color }}">{{ f.badge }}</span>
+          <span>{{ f.name }}</span>
+          <span style="margin-left: auto; font-size: 12px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ f.count }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="margin-top: auto; border-radius: 10px; background: #1E2025; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">Agents right now</span>
+      <sc-for list="{{ pulse }}" as="pu" hint-placeholder-count="4">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+          <span style="width: 8px; height: 8px; border-radius: 4px; background: {{ pu.color }}"></span>
+          <span style="color: #C9CCD2">{{ pu.label }}</span>
+          <span style="margin-left: auto; font-family: 'IBM Plex Mono', monospace">{{ pu.count }}</span>
+        </div>
+      </sc-for>
+      <span style="font-size: 11px; color: #8A8F99">Health checked {{ lastCheck }}</span>
+    </div>
+  </aside>
+
+  <main style="flex-grow: 1; min-width: 0; height: 900px; display: flex; flex-direction: column">
+
+    <sc-if value="{{ strip.show }}" hint-placeholder-val="{{ false }}">
+      <div style="height: 44px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 32px; background: {{ strip.bg }}; border-bottom: 1px solid {{ strip.border }}">
+        <span style="width: 8px; height: 8px; border-radius: 4px; background: {{ strip.fg }}"></span>
+        <span style="font-size: 13px; color: {{ strip.fg }}">{{ strip.text }}</span>
+        <button onClick="{{ strip.act }}" style="margin-left: auto; height: 30px; border-radius: 6px; border: 1px solid {{ strip.border }}; background: transparent; color: {{ strip.fg }}; padding: 0 12px; font-size: 12px; cursor: pointer">{{ strip.btn }}</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; gap: 16px; padding: 22px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Board</h1>
+            <span style="font-size: 13px; color: #A3A7B0">{{ boardSub }}</span>
+          </div>
+          <div style="margin-left: auto; display: flex; gap: 12px; align-items: center">
+            <label for="task-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search tasks</label>
+            <input id="task-search" type="search" placeholder="Search tasks" style="width: 200px; height: 40px; box-sizing: border-box; border-radius: 8px; border: 1px solid #2C2F36; background: #1E2025; color: #ECEDEF; padding: 0 12px; font-size: 13px">
+            <div role="group" aria-label="Task source" style="display: flex; gap: 4px; padding: 3px; border-radius: 9px; background: #17181C; border: 1px solid #2C2F36">
+              <sc-for list="{{ srcTabs }}" as="sf" hint-placeholder-count="3">
+                <button onClick="{{ sf.pick }}" aria-pressed="{{ sf.pressed }}" style="height: 32px; border-radius: 6px; border: 0; padding: 0 10px; font-size: 12px; cursor: pointer; background: {{ sf.tabBg }}; color: {{ sf.fg }}">{{ sf.label }} <span style="color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ sf.count }}</span></button>
+              </sc-for>
+            </div>
+            <button onClick="{{ sync }}" style="height: 40px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 0 12px; font-size: 13px; font-weight: 500; cursor: pointer">Sync trackers</button>
+            <button onClick="{{ newTask }}" style="height: 40px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+              New task
+            </button>
+          </div>
+        </header>
+        <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; padding: 22px 32px; overflow: auto">
+          <sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
+            <section style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 0 4px 4px">
+                <span style="width: 8px; height: 8px; border-radius: 4px; background: {{ col.color }}"></span>
+                <h2 style="margin: 0; font-size: 13px; font-weight: 600">{{ col.label }}</h2>
+                <span style="font-size: 12px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ col.count }}</span>
+              </div>
+              <sc-for list="{{ col.cards }}" as="card" hint-placeholder-count="2">
+                <button onClick="{{ card.open }}" style="width: 100%; text-align: left; border-radius: 10px; background: #1E2025; color: #ECEDEF; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 10px; font-size: 13px; border: 1px solid {{ card.border }}">
+                  <span style="display: flex; align-items: center; gap: 8px">
+                    <span style="width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ card.orgColor }}">{{ card.orgBadge }}</span>
+                    <span style="font-size: 11px; color: #A3A7B0; font-family: 'IBM Plex Mono', monospace">{{ card.srcKey }}</span>
+                  </span>
+                  <span style="display: block; font-size: 14px; line-height: 1.35; font-weight: 500">{{ card.title }}</span>
+                  <span style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+                    <span style="font-size: 11px; padding: 3px 7px; border-radius: 5px; background: #272A31; color: #C9CCD2; font-family: 'IBM Plex Mono', monospace">{{ card.project }}</span>
+                    <span style="display: flex; gap: 2px">
+                      <sc-for list="{{ card.team }}" as="tm" hint-placeholder-count="3">
+                        <span title="{{ tm.title }}" style="width: 20px; height: 20px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #121316; background: {{ tm.color }}">{{ tm.initial }}</span>
+                      </sc-for>
+                    </span>
+                  </span>
+                  <sc-if value="{{ card.hasNote }}" hint-placeholder-val="{{ false }}">
+                    <span style="display: block; font-size: 12px; color: {{ card.noteColor }}">{{ card.note }}</span>
+                  </sc-if>
+                </button>
+              </sc-for>
+              <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                <div style="border: 1px dashed #2C2F36; border-radius: 10px; padding: 18px; font-size: 12px; color: #8A8F99; text-align: center">Nothing here</div>
+              </sc-if>
+              <sc-if value="{{ col.isInbox }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ col.add }}" style="height: 40px; border-radius: 10px; border: 1px dashed #4A4E57; background: transparent; color: #C9CCD2; font-size: 13px; cursor: pointer">+ Add a local task</button>
+              </sc-if>
+            </section>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTask }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; flex-direction: column; gap: 8px; padding: 14px 32px 16px; border-bottom: 1px solid #2C2F36">
+          <button onClick="{{ back }}" style="align-self: flex-start; height: 28px; border: 0; background: transparent; color: #A3A7B0; font-size: 13px; cursor: pointer; padding: 0">Back to board</button>
+          <div style="display: flex; align-items: center; gap: 12px">
+            <span style="width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ sel.orgColor }}">{{ sel.orgBadge }}</span>
+            <span style="font-size: 12px; color: #A3A7B0; font-family: 'IBM Plex Mono', monospace">{{ sel.srcKey }}</span>
+            <span style="font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #1E2025; border: 1px solid #3A3E47; color: {{ sel.statusColor }}">{{ sel.statusLabel }}</span>
+            <span style="font-size: 12px; color: #8A8F99">{{ sel.project }}</span>
+          </div>
+          <h1 style="margin: 0; font-size: 22px; font-weight: 600; line-height: 1.25">{{ sel.title }}</h1>
+        </header>
+
+        <div style="flex-grow: 1; min-height: 0; display: flex; gap: 22px; padding: 18px 32px 22px">
+          <section aria-label="Task room" style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+            <div style="border: 1px solid #2C2F36; border-radius: 10px; background: #17181C; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+              <span style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">Task · {{ sel.srcNote }}</span>
+              <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #D5D7DC">{{ sel.desc }}</p>
+              <sc-if value="{{ sel.blocked }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px">
+                  <span style="font-size: 13px; color: #F59C7F">Waiting on {{ sel.blockedBy }} in a linked project. The team starts when its MR merges.</span>
+                  <button onClick="{{ sel.openBlocker }}" style="margin-left: auto; flex-shrink: 0; height: 32px; border-radius: 8px; border: 1px solid #5C3A2E; background: transparent; color: #F5C2B0; padding: 0 12px; font-size: 12px; cursor: pointer">Open {{ sel.blockedBy }}</button>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="flex-grow: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column-reverse; gap: 14px; padding: 4px 2px">
+              <sc-for list="{{ room.msgs }}" as="m" hint-placeholder-count="5">
+                <sc-if value="{{ m.isEvent }}" hint-placeholder-val="{{ false }}">
+                  <div style="align-self: center; font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 10px; border-radius: 999px; color: {{ m.evColor }}; border: 1px solid {{ m.evBorder }}">{{ m.text }}</div>
+                </sc-if>
+                <sc-if value="{{ m.isMsg }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; gap: 10px; max-width: 700px; align-self: {{ m.align }}">
+                    <span style="width: 28px; height: 28px; flex-shrink: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #121316; background: {{ m.color }}">{{ m.initial }}</span>
+                    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+                      <div style="display: flex; gap: 8px; align-items: baseline">
+                        <span style="font-size: 13px; font-weight: 600; font-family: 'IBM Plex Mono', monospace">{{ m.name }}</span>
+                        <span style="font-size: 11px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ m.meta }}</span>
+                      </div>
+                      <div style="padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; color: #E2E4E8; background: {{ m.bubble }}">{{ m.text }}</div>
+                    </div>
+                  </div>
+                </sc-if>
+              </sc-for>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div style="display: flex; gap: 10px">
+                <label for="room-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message the task room</label>
+                <input id="room-input" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="Talk to the room. @mention any agent to pull it in." style="flex-grow: 1; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 0 14px; font-size: 14px">
+                <button onClick="{{ send }}" style="height: 44px; border-radius: 10px; border: 0; background: #F0B455; color: #1A1204; padding: 0 18px; font-size: 14px; font-weight: 600; cursor: pointer">Send</button>
+              </div>
+              <span style="font-size: 11px; color: #8A8F99">Try: @housekeeper note this decision · @{{ room.builderHandle }} install this skill https://github.com/you/skills/tailwind-v4</span>
+            </div>
+          </section>
+
+          <aside style="width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; overflow: auto">
+            <div style="border: 1px solid #2C2F36; border-radius: 12px; background: #17181C; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+              <div style="display: flex; align-items: baseline; gap: 8px">
+                <h2 style="margin: 0; font-size: 14px; font-weight: 600">In this room</h2>
+                <span style="font-size: 12px; color: #8A8F99">{{ sel.orgName }} agents + root agents</span>
+              </div>
+              <sc-for list="{{ room.team }}" as="tm" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid #2C2F36">
+                  <span style="position: relative; width: 28px; height: 28px; flex-shrink: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #121316; background: {{ tm.color }}">{{ tm.initial }}<span style="position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 5px; border: 2px solid #17181C; background: {{ tm.dot }}"></span></span>
+                  <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px">
+                    <span style="display: flex; gap: 8px; align-items: baseline">
+                      <span style="font-size: 13px; font-weight: 500; font-family: 'IBM Plex Mono', monospace">@{{ tm.id }}</span>
+                      <span style="font-size: 11px; color: {{ tm.stateColor }}">{{ tm.state }}</span>
+                    </span>
+                    <span style="display: flex; gap: 6px; flex-wrap: wrap">
+                      <span style="height: 26px; box-sizing: border-box; display: flex; align-items: center; border-radius: 6px; border: 1px solid #3A3E47; padding: 0 8px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: #C9CCD2">{{ tm.account }}</span>
+                      <button onClick="{{ tm.nextModel }}" aria-label="Change model for {{ tm.id }}, currently {{ tm.model }}" style="height: 26px; border-radius: 6px; border: 1px solid #3A3E47; background: #23324A; color: #CFE0F8; padding: 0 8px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; cursor: pointer">{{ tm.model }}</button>
+                    </span>
+                  </div>
+                  <button onClick="{{ tm.swap }}" aria-label="Swap @{{ tm.id }} for another agent" style="height: 32px; border-radius: 8px; border: 1px solid #3A3E47; background: transparent; color: #C9CCD2; padding: 0 10px; font-size: 12px; cursor: pointer">Swap</button>
+                  <sc-if value="{{ tm.removable }}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{ tm.remove }}" aria-label="Remove @{{ tm.id }} from room" style="width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; color: #8A8F99; cursor: pointer; display: flex; align-items: center; justify-content: center">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                    </button>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid #2C2F36">
+                <sc-for list="{{ room.addable }}" as="ar" hint-placeholder-count="3">
+                  <button onClick="{{ ar.add }}" style="height: 28px; border-radius: 6px; border: 1px dashed #4A4E57; background: transparent; color: #C9CCD2; padding: 0 8px; font-size: 11px; font-family: 'IBM Plex Mono', monospace; cursor: pointer">+ @{{ ar.id }}</button>
+                </sc-for>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid #2C2F36">
+                <span style="font-size: 12px; color: #8A8F99">How they coordinate</span>
+                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+                  <sc-for list="{{ room.modes }}" as="md" hint-placeholder-count="3">
+                    <button onClick="{{ md.pick }}" aria-pressed="{{ md.pressed }}" style="min-height: 38px; border-radius: 8px; padding: 4px 6px; font-size: 12px; line-height: 1.25; cursor: pointer; background: {{ md.bg }}; color: {{ md.fg }}; border: 1px solid {{ md.border }}">{{ md.label }}</button>
+                  </sc-for>
+                </div>
+                <span style="font-size: 12px; color: #A3A7B0; line-height: 1.45">{{ room.modeDesc }}</span>
+              </div>
+            </div>
+
+            <div style="border: 1px solid {{ sel.actBorder }}; border-radius: 12px; background: #17181C; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+              <sc-if value="{{ sel.isInbox }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #A3A7B0">Routed here by @dispatcher. Queue it when it is clear enough for the team.</span>
+                <button onClick="{{ act.queue }}" style="height: 44px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; font-size: 14px; font-weight: 600; cursor: pointer">Queue for team</button>
+              </sc-if>
+              <sc-if value="{{ sel.isReady }}" hint-placeholder-val="{{ false }}">
+                <sc-if value="{{ sel.canRun }}" hint-placeholder-val="{{ true }}">
+                  <span style="font-size: 13px; color: #A3A7B0">Creates a worktree on its own branch and starts the team.</span>
+                  <button onClick="{{ act.run }}" style="height: 44px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; font-size: 14px; font-weight: 600; cursor: pointer">Start team</button>
+                </sc-if>
+                <sc-if value="{{ sel.blocked }}" hint-placeholder-val="{{ false }}">
+                  <button disabled="{{ true }}" style="height: 44px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: #8A8F99; font-size: 14px; font-weight: 600">Blocked until {{ sel.blockedBy }} merges</button>
+                </sc-if>
+              </sc-if>
+              <sc-if value="{{ sel.isRunning }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #F0B455">Team is working. Every step is checkpointed, and nothing is pushed until you approve.</span>
+                <button onClick="{{ act.stop }}" style="height: 44px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; font-size: 14px; font-weight: 500; cursor: pointer">Pause team</button>
+              </sc-if>
+              <sc-if value="{{ sel.isPaused }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #F59C7F; line-height: 1.45">{{ sel.pauseText }}</span>
+                <sc-if value="{{ sel.canHandoff }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ act.handoff }}" style="height: 44px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; font-size: 14px; font-weight: 600; cursor: pointer">Hand off to @{{ sel.fallback }} and resume</button>
+                </sc-if>
+                <sc-if value="{{ sel.isLimit }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ act.toggleAuto }}" aria-pressed="{{ sel.autoPressed }}" style="height: 44px; border-radius: 8px; font-size: 13px; cursor: pointer; background: {{ sel.autoBg }}; color: #ECEDEF; border: 1px solid {{ sel.autoBorder }}">{{ sel.autoLabel }}</button>
+                </sc-if>
+                <sc-if value="{{ sel.isOfflinePause }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ act.resume }}" disabled="{{ offline }}" style="height: 44px; border-radius: 8px; border: 0; font-size: 14px; font-weight: 600; cursor: pointer; background: {{ sel.resumeBg }}; color: {{ sel.resumeFg }}">{{ sel.resumeLabel }}</button>
+                </sc-if>
+              </sc-if>
+              <sc-if value="{{ sel.isReview }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #A3A7B0">{{ sel.diff }}. Approving pushes via {{ sel.alias }} and opens the MR.</span>
+                <button onClick="{{ act.approve }}" style="height: 44px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; font-size: 14px; font-weight: 600; cursor: pointer">Approve and open MR</button>
+                <button onClick="{{ act.sendBack }}" style="height: 44px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; font-size: 14px; font-weight: 500; cursor: pointer">Send back to team</button>
+              </sc-if>
+              <sc-if value="{{ sel.isMr }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #7FD1B9; font-family: 'IBM Plex Mono', monospace">{{ sel.mr }}</span>
+                <button onClick="{{ act.merge }}" style="height: 44px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; font-size: 14px; font-weight: 500; cursor: pointer">{{ sel.mergeLabel }}</button>
+              </sc-if>
+              <sc-if value="{{ sel.isDone }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 13px; color: #7FD1B9">Merged. Tracker updated, @housekeeper removed the worktree and updated AGENTS.md.</span>
+              </sc-if>
+            </div>
+
+            <div style="border: 1px solid #2C2F36; border-radius: 12px; background: #17181C; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+              <sc-for list="{{ sel.props }}" as="p" hint-placeholder-count="4">
+                <div style="display: flex; flex-direction: column; gap: 3px">
+                  <span style="font-size: 12px; color: #8A8F99">{{ p.label }}</span>
+                  <span style="font-size: 12px; word-break: break-word; line-height: 1.45; font-family: {{ p.font }}">{{ p.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: flex-end; gap: 24px; padding: 20px 32px 0; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px; padding-bottom: 14px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Agents</h1>
+            <span style="font-size: 13px; color: #A3A7B0">Setup drafts them, you have the final say on every field.</span>
+          </div>
+          <div role="tablist" aria-label="Agent scope" style="display: flex; gap: 4px; margin-left: auto">
+            <sc-for list="{{ scopeTabs }}" as="sc" hint-placeholder-count="4">
+              <button role="tab" aria-selected="{{ sc.pressed }}" onClick="{{ sc.pick }}" style="height: 44px; border: 0; border-bottom: 2px solid {{ sc.line }}; background: transparent; color: {{ sc.fg }}; padding: 0 14px; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px">
+                <span style="width: 18px; height: 18px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ sc.color }}">{{ sc.badge }}</span>
+                {{ sc.label }}
+                <span style="font-size: 11px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ sc.count }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </header>
+        <div style="flex-grow: 1; min-height: 0; display: flex">
+          <nav aria-label="Agents in scope" style="width: 250px; flex-shrink: 0; border-right: 1px solid #2C2F36; padding: 16px 14px; display: flex; flex-direction: column; gap: 4px; overflow: auto">
+            <sc-for list="{{ agentItems }}" as="d" hint-placeholder-count="4">
+              <button onClick="{{ d.pick }}" style="min-height: 48px; border: 0; border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; text-align: left; background: {{ d.bg }}; color: #ECEDEF">
+                <span style="position: relative; width: 26px; height: 26px; flex-shrink: 0; border-radius: 13px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #121316; background: {{ d.color }}">{{ d.initial }}<span style="position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 5px; border: 2px solid #121316; background: {{ d.dot }}"></span></span>
+                <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+                  <span style="font-size: 12px; font-weight: 500; font-family: 'IBM Plex Mono', monospace">@{{ d.id }}</span>
+                  <span style="font-size: 11px; color: #8A8F99">{{ d.sub }}</span>
+                </span>
+              </button>
+            </sc-for>
+            <button onClick="{{ newAgent }}" style="height: 36px; margin-top: 6px; border: 1px dashed #4A4E57; border-radius: 8px; background: transparent; color: #C9CCD2; font-size: 12px; cursor: pointer">+ New agent in {{ scopeName }}</button>
+          </nav>
+
+          <div style="flex-grow: 1; min-width: 0; overflow: auto; padding: 18px 28px 26px; display: flex; flex-direction: column; gap: 16px">
+            <div style="display: flex; align-items: center; gap: 12px">
+              <span style="width: 36px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #121316; background: {{ ed.color }}">{{ ed.initial }}</span>
+              <div style="display: flex; flex-direction: column; gap: 2px">
+                <span style="font-size: 17px; font-weight: 600; font-family: 'IBM Plex Mono', monospace">@{{ ed.id }}</span>
+                <span style="font-size: 11px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ ed.file }}</span>
+              </div>
+              <span style="margin-left: 8px; font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid {{ ed.originBorder }}; color: {{ ed.originColor }}">{{ ed.origin }}</span>
+              <div style="margin-left: auto; display: flex; gap: 6px">
+                <sc-for list="{{ ed.roles }}" as="r" hint-placeholder-count="4">
+                  <button onClick="{{ r.pick }}" aria-pressed="{{ r.pressed }}" style="height: 34px; border-radius: 8px; padding: 0 10px; font-size: 12px; cursor: pointer; background: {{ r.bg }}; color: {{ r.fg }}; border: 1px solid {{ r.border }}">{{ r.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px 14px; border-radius: 10px; background: #17181C; border: 1px solid #2C2F36">
+              <sc-for list="{{ ed.health }}" as="hh" hint-placeholder-count="4">
+                <div style="display: flex; flex-direction: column; gap: 6px">
+                  <span style="font-size: 11px; color: #8A8F99">{{ hh.label }}</span>
+                  <span style="font-size: 13px; color: {{ hh.color }}">{{ hh.value }}</span>
+                  <sc-if value="{{ hh.bar }}" hint-placeholder-val="{{ false }}">
+                    <span style="display: block; height: 4px; border-radius: 2px; background: #2C2F36"><span style="display: block; height: 4px; border-radius: 2px; width: {{ hh.pct }}%; background: {{ hh.color }}"></span></span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px">
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <span style="font-size: 12px; color: #8A8F99">Account</span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <sc-for list="{{ ed.accounts }}" as="ac" hint-placeholder-count="3">
+                    <button onClick="{{ ac.pick }}" aria-pressed="{{ ac.pressed }}" style="min-height: 44px; border-radius: 8px; padding: 4px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; background: {{ ac.bg }}; color: {{ ac.fg }}; border: 1px solid {{ ac.border }}">
+                      <span style="font-size: 12px; font-family: 'IBM Plex Mono', monospace">{{ ac.id }}</span>
+                      <span style="font-size: 10px; color: #8A8F99">{{ ac.sub }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <span style="font-size: 12px; color: #8A8F99">Model</span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <sc-for list="{{ ed.models }}" as="md" hint-placeholder-count="3">
+                    <button onClick="{{ md.pick }}" aria-pressed="{{ md.pressed }}" style="height: 44px; border-radius: 8px; padding: 0 12px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; cursor: pointer; background: {{ md.bg }}; color: {{ md.fg }}; border: 1px solid {{ md.border }}">{{ md.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <span style="font-size: 12px; color: #8A8F99">Where it can work</span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <sc-for list="{{ ed.where }}" as="w" hint-placeholder-count="4">
+                    <button onClick="{{ w.toggle }}" aria-pressed="{{ w.pressed }}" style="height: 34px; border-radius: 8px; padding: 0 12px; font-size: 12px; cursor: pointer; background: {{ w.bg }}; color: {{ w.fg }}; border: 1px solid {{ w.border }}">{{ w.label }}</button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ ed.hasWhereNote }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size: 12px; color: #F0B455; line-height: 1.4">{{ ed.whereNote }}</span>
+                </sc-if>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <span style="font-size: 12px; color: #8A8F99">When usage runs out or the run breaks</span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <button onClick="{{ ed.nextFallback }}" style="height: 34px; border-radius: 8px; padding: 0 12px; font-size: 12px; cursor: pointer; background: #17181C; color: #ECEDEF; border: 1px solid #3A3E47; font-family: 'IBM Plex Mono', monospace">{{ ed.fallbackLabel }}</button>
+                  <button onClick="{{ ed.toggleAuto }}" aria-pressed="{{ ed.autoPressed }}" style="height: 34px; border-radius: 8px; padding: 0 12px; font-size: 12px; cursor: pointer; background: {{ ed.autoBg }}; color: #ECEDEF; border: 1px solid {{ ed.autoBorder }}">{{ ed.autoLabel }}</button>
+                </div>
+                <span style="font-size: 12px; color: #A3A7B0">Runs checkpoint after every step, so they resume where they stopped.</span>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <label for="agent-instr" style="font-size: 12px; color: #8A8F99">Instructions</label>
+              <textarea id="agent-instr" value="{{ ed.instructions }}" onChange="{{ ed.onInstr }}" rows="4" style="box-sizing: border-box; width: 100%; border-radius: 10px; border: 1px solid #2C2F36; background: #0C0D0F; color: #E2E4E8; padding: 12px 14px; font-size: 13px; line-height: 1.55; font-family: 'IBM Plex Mono', monospace; resize: vertical"></textarea>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <span style="font-size: 12px; color: #8A8F99">Skills</span>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                <sc-for list="{{ ed.skills }}" as="sk" hint-placeholder-count="6">
+                  <button onClick="{{ sk.toggle }}" aria-pressed="{{ sk.pressed }}" style="height: 32px; border-radius: 8px; padding: 0 10px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; cursor: pointer; background: {{ sk.bg }}; color: {{ sk.fg }}; border: 1px solid {{ sk.border }}">{{ sk.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <span style="font-size: 12px; color: #8A8F99">Permissions</span>
+              <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px">
+                <sc-for list="{{ ed.perms }}" as="pm" hint-placeholder-count="6">
+                  <button onClick="{{ pm.toggle }}" aria-pressed="{{ pm.pressed }}" style="height: 50px; border-radius: 8px; padding: 0 10px; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; color: #ECEDEF; background: {{ pm.bg }}; border: 1px solid {{ pm.border }}">
+                    <span style="font-size: 12px">{{ pm.label }}</span>
+                    <span style="font-size: 11px; color: {{ pm.stateColor }}">{{ pm.state }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isHealth }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; gap: 12px; padding: 20px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Health and usage</h1>
+            <span style="font-size: 13px; color: #A3A7B0">Usage limits belong to accounts, so several agents on one account share one meter. Checked {{ lastCheck }}.</span>
+          </div>
+          <button onClick="{{ toggleOffline }}" style="margin-left: auto; height: 40px; border-radius: 8px; border: 1px solid #5C3A2E; background: transparent; color: #F5C2B0; padding: 0 14px; font-size: 13px; cursor: pointer">{{ offlineLabel }}</button>
+          <button onClick="{{ healthCheck }}" style="height: 40px; border-radius: 8px; border: 0; background: #F0B455; color: #1A1204; padding: 0 14px; font-size: 13px; font-weight: 600; cursor: pointer">Run health check</button>
+        </header>
+        <div style="flex-grow: 1; min-height: 0; overflow: auto; padding: 20px 32px 28px; display: flex; flex-direction: column; gap: 22px">
+          <section style="display: flex; flex-direction: column; gap: 8px">
+            <h2 style="margin: 0; font-size: 14px; font-weight: 600">Accounts</h2>
+            <div style="display: grid; grid-template-columns: 170px 110px 110px minmax(0, 1fr) minmax(0, 1fr) 190px; gap: 16px; padding: 0 14px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">
+              <span>Account</span><span>Org</span><span>Auth</span><span>Current window</span><span>Weekly</span><span>Status</span>
+            </div>
+            <sc-for list="{{ accRows }}" as="a" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: 170px 110px 110px minmax(0, 1fr) minmax(0, 1fr) 190px; gap: 16px; align-items: center; padding: 10px 14px; border-radius: 10px; border: 1px solid #2C2F36; background: #1E2025; font-size: 12px">
+                <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'IBM Plex Mono', monospace">{{ a.id }}</span><span style="font-size: 11px; color: #8A8F99">{{ a.runtime }} · {{ a.agents }}</span></span>
+                <span style="color: #C9CCD2">{{ a.org }}</span>
+                <span style="color: {{ a.authColor }}">{{ a.auth }}</span>
+                <span style="display: flex; flex-direction: column; gap: 4px"><span style="color: #C9CCD2">{{ a.u5 }}% · resets {{ a.reset }}</span><span style="display: block; height: 5px; border-radius: 3px; background: #2C2F36"><span style="display: block; height: 5px; border-radius: 3px; width: {{ a.u5 }}%; background: {{ a.u5Color }}"></span></span></span>
+                <span style="display: flex; flex-direction: column; gap: 4px"><span style="color: #C9CCD2">{{ a.wk }}%</span><span style="display: block; height: 5px; border-radius: 3px; background: #2C2F36"><span style="display: block; height: 5px; border-radius: 3px; width: {{ a.wk }}%; background: {{ a.wkColor }}"></span></span></span>
+                <span style="display: flex; align-items: center; gap: 8px; color: {{ a.statusColor }}"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{ a.statusColor }}"></span>{{ a.status }}</span>
+              </div>
+            </sc-for>
+          </section>
+          <section style="display: flex; flex-direction: column; gap: 8px">
+            <h2 style="margin: 0; font-size: 14px; font-weight: 600">Agents</h2>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+              <sc-for list="{{ agentRows }}" as="g" hint-placeholder-count="9">
+                <button onClick="{{ g.open }}" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid #2C2F36; background: #1E2025; color: #ECEDEF; cursor: pointer; text-align: left">
+                  <span style="width: 10px; height: 10px; border-radius: 5px; flex-shrink: 0; background: {{ g.dot }}"></span>
+                  <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+                    <span style="font-size: 12px; font-family: 'IBM Plex Mono', monospace">@{{ g.id }}</span>
+                    <span style="font-size: 11px; color: #8A8F99">{{ g.sub }}</span>
+                  </span>
+                  <span style="margin-left: auto; font-size: 11px; text-align: right; color: {{ g.stateColor }}">{{ g.state }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </section>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSkills }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; padding: 20px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Skills</h1>
+            <span style="font-size: 13px; color: #A3A7B0">Folders with a SKILL.md in ~/.work/skills. Every runtime can use them. Install here, or just send a link to any agent in a room.</span>
+          </div>
+        </header>
+        <div style="flex-grow: 1; min-height: 0; overflow: auto; padding: 20px 32px 28px; display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; gap: 10px">
+            <label for="skill-src" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Skill link or folder path</label>
+            <input id="skill-src" value="{{ skillInput }}" onChange="{{ onSkillInput }}" placeholder="GitHub link, zip, or a local folder like ~/Downloads/my-skill" style="flex-grow: 1; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 0 14px; font-size: 14px">
+            <button onClick="{{ installSkill }}" style="height: 44px; border-radius: 10px; border: 0; background: #F0B455; color: #1A1204; padding: 0 18px; font-size: 14px; font-weight: 600; cursor: pointer">Install</button>
+          </div>
+          <sc-for list="{{ skillRows }}" as="k" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 240px 220px minmax(0, 1fr); gap: 16px; align-items: center; padding: 12px 14px; border-radius: 10px; border: 1px solid #2C2F36; background: #1E2025; font-size: 12px">
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px">{{ k.name }}</span>
+              <span style="color: {{ k.srcColor }}">{{ k.source }}</span>
+              <span style="color: #A3A7B0; font-family: 'IBM Plex Mono', monospace">{{ k.usedBy }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSetup }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; padding: 20px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Hub setup</h1>
+            <span style="font-size: 13px; color: #A3A7B0">@setup scans your machine and drafts orgs, accounts and agents. Everything it drafts stays editable in Agents and Orgs.</span>
+          </div>
+        </header>
+        <div style="flex-grow: 1; min-height: 0; display: flex; gap: 24px; padding: 20px 32px 24px">
+          <section aria-label="Setup conversation" style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+            <div style="flex-grow: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column-reverse; gap: 14px; padding: 4px 2px">
+              <sc-for list="{{ setup.msgs }}" as="m" hint-placeholder-count="4">
+                <sc-if value="{{ m.isEvent }}" hint-placeholder-val="{{ false }}">
+                  <div style="align-self: center; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #A3A7B0; padding: 4px 10px; border: 1px solid #2C2F36; border-radius: 999px">{{ m.text }}</div>
+                </sc-if>
+                <sc-if value="{{ m.isMsg }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; gap: 10px; max-width: 580px; align-self: {{ m.align }}">
+                    <span style="width: 28px; height: 28px; flex-shrink: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #121316; background: {{ m.color }}">{{ m.initial }}</span>
+                    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+                      <span style="font-size: 13px; font-weight: 600; font-family: 'IBM Plex Mono', monospace">{{ m.name }}</span>
+                      <div style="padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.5; color: #E2E4E8; background: {{ m.bubble }}">{{ m.text }}</div>
+                    </div>
+                  </div>
+                </sc-if>
+              </sc-for>
+            </div>
+            <div style="display: flex; gap: 10px">
+              <label for="setup-input" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message the Setup agent</label>
+              <input id="setup-input" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="Answer @setup, or tell it what to change" style="flex-grow: 1; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 0 14px; font-size: 14px">
+              <button onClick="{{ send }}" style="height: 44px; border-radius: 10px; border: 0; background: #F0B455; color: #1A1204; padding: 0 18px; font-size: 14px; font-weight: 600; cursor: pointer">Send</button>
+            </div>
+          </section>
+          <aside style="width: 420px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; overflow: auto">
+            <div style="display: flex; align-items: baseline; gap: 8px">
+              <h2 style="margin: 0; font-size: 14px; font-weight: 600">Proposed setup</h2>
+              <span style="font-size: 12px; color: #8A8F99">{{ setup.progress }}</span>
+            </div>
+            <sc-for list="{{ setup.items }}" as="it" hint-placeholder-count="7">
+              <div style="border: 1px solid #2C2F36; border-radius: 10px; background: #1E2025; padding: 12px; display: flex; gap: 12px; align-items: center">
+                <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <span style="font-size: 13px; font-weight: 600">{{ it.title }}</span>
+                    <span style="font-size: 11px; color: {{ it.pillColor }}">{{ it.pill }}</span>
+                  </div>
+                  <span style="font-size: 12px; color: #A3A7B0; line-height: 1.4; font-family: 'IBM Plex Mono', monospace">{{ it.detail }}</span>
+                </div>
+                <sc-if value="{{ it.open }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ it.confirm }}" style="flex-shrink: 0; height: 34px; border-radius: 8px; border: 1px solid #3A3E47; background: #17181C; color: #ECEDEF; padding: 0 10px; font-size: 12px; cursor: pointer">{{ it.action }}</button>
+                </sc-if>
+              </div>
+            </sc-for>
+            <span style="font-size: 12px; color: #8A8F99; line-height: 1.45">@setup reads config files and public keys only. Tokens you add go straight to macOS Keychain.</span>
+            <button onClick="{{ setup.write }}" disabled="{{ setup.cannotWrite }}" style="height: 44px; border-radius: 8px; border: 0; font-size: 14px; font-weight: 600; cursor: pointer; background: {{ setup.writeBg }}; color: {{ setup.writeFg }}">{{ setup.writeLabel }}</button>
+          </aside>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; padding: 20px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Projects and links</h1>
+            <span style="font-size: 13px; color: #A3A7B0">Links decide what context a room gets. Org agents only see links inside their org, root agents see all of them.</span>
+          </div>
+        </header>
+        <div style="padding: 22px 32px; display: flex; flex-direction: column; gap: 12px; overflow: auto">
+          <div style="display: grid; grid-template-columns: 170px 110px 180px 220px 220px minmax(0, 1fr); gap: 16px; padding: 0 16px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">
+            <span>Project</span><span>Org</span><span>Remotes</span><span>Local path</span><span>Default room</span><span>Links</span>
+          </div>
+          <sc-for list="{{ projRows }}" as="r" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: 170px 110px 180px 220px 220px minmax(0, 1fr); gap: 16px; align-items: center; padding: 14px 16px; border-radius: 10px; border: 1px solid #2C2F36; background: #1E2025; font-size: 13px">
+              <span style="font-family: 'IBM Plex Mono', monospace; font-weight: 500">{{ r.id }}</span>
+              <span style="display: flex; align-items: center; gap: 8px">
+                <span style="width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ r.orgColor }}">{{ r.orgBadge }}</span>
+                <span>{{ r.orgName }}</span>
+              </span>
+              <span style="display: flex; flex-wrap: wrap; gap: 6px">
+                <sc-for list="{{ r.remotes }}" as="rm" hint-placeholder-count="1">
+                  <span style="font-size: 11px; padding: 3px 7px; border-radius: 5px; background: #272A31; color: #C9CCD2">{{ rm.host }} <span style="color: #8A8F99">{{ rm.tag }}</span></span>
+                </sc-for>
+              </span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #C9CCD2">{{ r.path }}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #C9CCD2; line-height: 1.5">{{ r.team }}</span>
+              <span style="display: flex; flex-wrap: wrap; gap: 6px">
+                <sc-for list="{{ r.links }}" as="lk" hint-placeholder-count="1">
+                  <span style="font-size: 12px; padding: 4px 8px; border-radius: 6px; border: {{ lk.border }}; display: flex; flex-direction: column; gap: 2px">
+                    <span><span style="color: #A3A7B0">{{ lk.type }}</span> <span style="font-family: 'IBM Plex Mono', monospace">{{ lk.to }}</span></span>
+                    <span style="font-size: 11px; color: {{ lk.noteColor }}">{{ lk.note }}</span>
+                  </span>
+                </sc-for>
+                <sc-if value="{{ r.noLinks }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size: 12px; color: #8A8F99">None</span>
+                </sc-if>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isOrgs }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; height: {{ viewH }}px">
+        <header style="display: flex; align-items: center; padding: 20px 32px; border-bottom: 1px solid #2C2F36">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <h1 style="margin: 0; font-size: 22px; font-weight: 600">Orgs and accounts</h1>
+            <span style="font-size: 13px; color: #A3A7B0">An org can hold several accounts on the same tool. Agents pick one account each.</span>
+          </div>
+        </header>
+        <div style="padding: 22px 32px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; overflow: auto">
+          <sc-for list="{{ orgCards }}" as="o" hint-placeholder-count="3">
+            <section style="border: 1px solid #2C2F36; border-radius: 12px; background: #1E2025; padding: 18px; display: flex; flex-direction: column; gap: 16px">
+              <div style="display: flex; align-items: center; gap: 12px">
+                <span style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ o.color }}">{{ o.badge }}</span>
+                <h2 style="margin: 0; font-size: 18px; font-weight: 600">{{ o.name }}</h2>
+                <span style="margin-left: auto; font-size: 12px; color: #A3A7B0">{{ o.taskCount }}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <span style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">Accounts</span>
+                <sc-for list="{{ o.accounts }}" as="ac" hint-placeholder-count="2">
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+                    <span style="width: 8px; height: 8px; border-radius: 4px; background: {{ ac.color }}"></span>
+                    <span style="font-family: 'IBM Plex Mono', monospace">{{ ac.id }}</span>
+                    <span style="margin-left: auto; color: #8A8F99">{{ ac.sub }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <button onClick="{{ o.manage }}" style="height: 40px; border-radius: 8px; border: 1px solid #3A3E47; background: #17181C; color: #ECEDEF; font-size: 13px; cursor: pointer">Manage {{ o.name }} agents ({{ o.agentCount }})</button>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <span style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">Tracker and git</span>
+                <span style="font-size: 13px">{{ o.tracker }} <span style="color: #A3A7B0">{{ o.trackerWhere }}</span></span>
+                <sc-for list="{{ o.hosts }}" as="h" hint-placeholder-count="1">
+                  <span style="font-size: 12px; color: #C9CCD2">{{ h.host }} <span style="font-family: 'IBM Plex Mono', monospace; color: #8A8F99">ssh: {{ h.alias }}</span></span>
+                </sc-for>
+                <span style="font-size: 12px; color: #A3A7B0">Commits as {{ o.identity }}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <span style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A8F99">Merge policy</span>
+                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+                  <sc-for list="{{ o.policies }}" as="pl" hint-placeholder-count="3">
+                    <button onClick="{{ pl.pick }}" aria-pressed="{{ pl.pressed }}" style="min-height: 42px; border-radius: 8px; padding: 6px; font-size: 12px; cursor: pointer; line-height: 1.3; background: {{ pl.bg }}; color: {{ pl.fg }}; border: 1px solid {{ pl.border }}">{{ pl.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </section>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+  </main>
+
+  <sc-if value="{{ comp.open }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 0; top: 0; width: 1440px; height: 900px; background: rgba(8, 9, 11, 0.72); display: flex; align-items: center; justify-content: center">
+      <div role="dialog" aria-modal="true" aria-labelledby="nt-heading" style="width: 700px; max-height: 840px; overflow: auto; box-sizing: border-box; border-radius: 14px; border: 1px solid #3A3E47; background: #17181C; padding: 22px 24px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <h2 id="nt-heading" style="margin: 0; font-size: 18px; font-weight: 600">New task</h2>
+          <span style="font-size: 12px; color: #8A8F99; font-family: 'IBM Plex Mono', monospace">{{ comp.key }}</span>
+          <button onClick="{{ comp.close }}" aria-label="Close" style="margin-left: auto; width: 36px; height: 36px; border-radius: 8px; border: 0; background: transparent; color: #A3A7B0; cursor: pointer; display: flex; align-items: center; justify-content: center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="nt-name" style="font-size: 12px; color: #8A8F99">Title</label>
+          <input id="nt-name" value="{{ comp.title }}" onChange="{{ comp.onTitle }}" placeholder="What should the team do?" style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 0 14px; font-size: 15px">
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="nt-desc" style="font-size: 12px; color: #8A8F99">Details for the team</label>
+          <textarea id="nt-desc" rows="4" value="{{ comp.desc }}" onChange="{{ comp.onDesc }}" placeholder="Context, what done looks like, files to look at. The lead reads this first." style="box-sizing: border-box; width: 100%; border-radius: 10px; border: 1px solid #3A3E47; background: #1E2025; color: #ECEDEF; padding: 12px 14px; font-size: 14px; line-height: 1.5; resize: vertical"></textarea>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; color: #8A8F99">Project</span>
+          <sc-for list="{{ comp.orgGroups }}" as="g" hint-placeholder-count="3">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+              <span style="width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: #121316; font-family: 'IBM Plex Mono', monospace; background: {{ g.color }}">{{ g.badge }}</span>
+              <sc-for list="{{ g.projects }}" as="pj" hint-placeholder-count="2">
+                <button onClick="{{ pj.pick }}" aria-pressed="{{ pj.pressed }}" style="height: 34px; border-radius: 8px; padding: 0 12px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; cursor: pointer; background: {{ pj.bg }}; color: {{ pj.fg }}; border: 1px solid {{ pj.border }}">{{ pj.label }}</button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; color: #8A8F99">Depends on (optional)</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap">
+            <sc-for list="{{ comp.deps }}" as="dp" hint-placeholder-count="3">
+              <button onClick="{{ dp.pick }}" aria-pressed="{{ dp.pressed }}" style="height: 32px; border-radius: 8px; padding: 0 10px; font-size: 12px; cursor: pointer; background: {{ dp.bg }}; color: {{ dp.fg }}; border: 1px solid {{ dp.border }}">{{ dp.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="font-size: 12px; color: #8A8F99">Team</span>
+            <span style="font-size: 12px; font-family: 'IBM Plex Mono', monospace; line-height: 1.5">{{ comp.team }}</span>
+            <span style="font-size: 12px; color: #A3A7B0">{{ comp.orgName }} default. Swap or add agents in the room anytime.</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="font-size: 12px; color: #8A8F99">Tracking</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+              <sc-for list="{{ comp.trackOpts }}" as="tr" hint-placeholder-count="2">
+                <button onClick="{{ tr.pick }}" aria-pressed="{{ tr.pressed }}" style="height: 36px; border-radius: 8px; padding: 0 12px; font-size: 12px; cursor: pointer; background: {{ tr.bg }}; color: {{ tr.fg }}; border: 1px solid {{ tr.border }}">{{ tr.label }}</button>
+              </sc-for>
+            </div>
+            <span style="font-size: 12px; color: #A3A7B0">{{ comp.trackNote }}</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; padding-top: 6px; border-top: 1px solid #2C2F36">
+          <button onClick="{{ comp.close }}" style="height: 44px; border-radius: 8px; border: 0; background: transparent; color: #A3A7B0; padding: 0 16px; font-size: 14px; cursor: pointer">Cancel</button>
+          <button onClick="{{ comp.add }}" disabled="{{ comp.cannotAdd }}" style="height: 44px; border-radius: 8px; border: 1px solid #3A3E47; background: #1E2025; color: {{ comp.addFg2 }}; padding: 0 16px; font-size: 14px; font-weight: 500; cursor: pointer">Add to inbox</button>
+          <button onClick="{{ comp.addStart }}" disabled="{{ comp.cannotAdd }}" style="height: 44px; border-radius: 8px; border: 0; padding: 0 16px; font-size: 14px; font-weight: 600; cursor: pointer; background: {{ comp.addBg }}; color: {{ comp.addFg }}">{{ comp.startLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      view: 'board', org: 'all', taskId: 'GLX-412', lastSync: '4 min ago', lastCheck: '2 min ago', draft: '', offline: false,
+      policy: { globex: 'approve', acme: 'never', northwind: 'green' },
+      status: { 'GLX-412': 'review', 'GLX-415': 'ready', 'GLX-418': 'inbox', 'CU-88': 'running', 'CU-91': 'mr', 'GH-231': 'paused', 'GH-236': 'inbox', 'LOCAL-7': 'inbox' },
+      pause: { 'GH-231': { reason: 'limit', agent: 'nw-builder', step: '3 of 5' } },
+      autoResume: { 'GH-231': true },
+      teams: {}, modelOver: {}, mode: {}, threads: {},
+      setupMsgs: [], confirmed: { folders: true, remotes: true, ssh: true }, written: false,
+      scope: 'globex', selAgent: 'globex-builder', agents: this.seedAgents(), newCount: 0,
+      skills: [
+        { name: 'repo-conventions', source: 'written by you' }, { name: 'write-tests', source: 'written by you' },
+        { name: 'nextjs-app-router', source: 'installed from GitHub' }, { name: 'security-review', source: 'installed from GitHub' },
+        { name: 'tracker-writeback', source: 'ships with Work Hub' }, { name: 'agents-md-memory', source: 'ships with Work Hub' },
+        { name: 'ssh-git-setup', source: 'ships with Work Hub' }, { name: 'keychain-secrets', source: 'ships with Work Hub' }
+      ],
+      skillInput: '',
+      localTasks: [], localCount: 7, srcFilter: 'all',
+      comp: { open: false, title: '', desc: '', project: 'globex-web', dep: '', tracker: false }
+    };
+  }
+
+  createTask(start) {
+    const s = this.state;
+    const c = s.comp;
+    const title = (c.title || '').trim();
+    if (!title) return;
+    const n = s.localCount + 1;
+    const p = this.projects().find((x) => x.id === c.project);
+    const o = this.orgs()[p.org];
+    const src = c.tracker ? (o.tracker === 'GitHub Issues' ? 'GitHub' : o.tracker) : 'Local';
+    const keys = { Local: 'LOCAL-' + n, Jira: 'GLX-' + (420 + n), ClickUp: 'CU-' + (90 + n), GitHub: '#' + (240 + n) };
+    const key = keys[src];
+    const id = key.replace('#', 'GH-');
+    const host = p.remotes.find((r) => r.primary).host;
+    const mr = host === 'GitLab' ? 'MR !' + (150 + n) : 'PR #' + (host === 'Bitbucket' ? 60 + n : 330 + n);
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').split('-').filter(Boolean).slice(0, 4).join('-');
+    const blocked = !!c.dep && s.status[c.dep] !== 'done';
+    const task = { id, key, src, title, project: p.id, slug, diff: '+62 -14 in 3 files', mr, desc: (c.desc || '').trim() || 'No details yet. Tell the team more in the room.', blockedBy: c.dep || undefined, created: true };
+    let status = 'inbox';
+    if (start) status = blocked ? 'ready' : 'running';
+    this.setState({
+      localTasks: s.localTasks.concat([task]), localCount: n,
+      status: Object.assign({}, s.status, { [id]: status }),
+      comp: Object.assign({}, c, { open: false, title: '', desc: '', dep: '', tracker: false }),
+      view: 'task', taskId: id, draft: ''
+    });
+    if (status === 'running') setTimeout(() => { if (this.state.status[id] === 'running') this.setStatus(id, 'review'); }, 3500);
+  }
+
+  openComposer() {
+    const s = this.state;
+    const first = s.org !== 'all' ? this.projects().find((x) => x.org === s.org) : null;
+    this.setState({ comp: Object.assign({}, s.comp, { open: true, project: first ? first.id : s.comp.project }) });
+  }
+
+  seedAgents() {
+    const P = (o) => Object.assign({ read: true, edit: false, shell: false, push: false, mr: false, merge: false }, o || {});
+    const I = {
+      Lead: 'Read the task and AGENTS.md first. Post a short numbered plan, assign steps by @mentioning agents, and hand to the human only when tests pass and the reviewer approves.',
+      Builder: "Work only inside the task worktree. Small commits with the task key in the message. Run the project's tests, then @mention the reviewer.",
+      Reviewer: 'Review the full diff against the task. Flag bugs, races and security issues with file and line, @mention the builder for fixes. Approve only when all points are resolved.',
+      Tester: 'Add tests that fail without the change and pass with it. Report coverage for touched files.'
+    };
+    const a = (id, scope, role, account, model, x) => Object.assign({ id, scope, role, account, model, instructions: I[role] || '', skills: [], perms: P(), fallback: '', autoResume: true, where: scope === 'root' ? ['anywhere'] : [scope], origin: 'setup' }, x || {});
+    const list = [
+      a('setup', 'root', 'Root', 'claude-personal', 'opus-5.5', { origin: 'you', instructions: 'Scan ~/Work, ~/.ssh/config, git remotes and ~/.work/profiles. Read config and public keys only. Draft orgs, accounts and agents, ask one question at a time, and never write config without my confirmation.', skills: ['ssh-git-setup', 'keychain-secrets'], perms: P({ edit: true, shell: true }) }),
+      a('dispatcher', 'root', 'Root', 'claude-personal', 'sonnet-5.5', { origin: 'you', instructions: 'Turn new tracker items into task rooms. Match each to a project by repo and labels and propose a team from that org. Join any room when @mentioned.', skills: ['tracker-writeback'] }),
+      a('housekeeper', 'root', 'Root', 'claude-personal', 'haiku-4.5', { origin: 'you', instructions: "After a task merges, remove its worktree and write decisions from the room into the project's AGENTS.md. Join any room when @mentioned.", skills: ['agents-md-memory'], perms: P({ edit: true, shell: true }) }),
+      a('globex-lead', 'globex', 'Lead', 'claude-globex', 'opus-5.5', { skills: ['repo-conventions', 'agents-md-memory'], perms: P({ shell: true, mr: true }), fallback: 'globex-builder-2' }),
+      a('globex-builder', 'globex', 'Builder', 'claude-globex', 'sonnet-5.5', { skills: ['repo-conventions', 'write-tests', 'nextjs-app-router'], perms: P({ edit: true, shell: true, push: true }), fallback: 'globex-builder-2' }),
+      a('globex-builder-2', 'globex', 'Builder', 'claude-globex-2', 'sonnet-5.5', { skills: ['repo-conventions', 'write-tests'], perms: P({ edit: true, shell: true, push: true }), fallback: 'globex-builder' }),
+      a('globex-reviewer', 'globex', 'Reviewer', 'kimi-globex', 'kimi-k2.6', { skills: ['security-review'], perms: P({ shell: true }) }),
+      a('acme-lead', 'acme', 'Lead', 'codex-acme', 'gpt-5.5 · high', { skills: ['repo-conventions'], perms: P({ shell: true, mr: true }), fallback: 'acme-reviewer' }),
+      a('acme-builder', 'acme', 'Builder', 'codex-acme', 'gpt-5.5 · medium', { skills: ['write-tests'], perms: P({ edit: true, shell: true, push: true }), fallback: 'acme-claude' }),
+      a('acme-claude', 'acme', 'Builder', 'claude-acme', 'sonnet-5.5', { skills: ['write-tests'], perms: P({ edit: true, shell: true, push: true }), fallback: 'acme-builder' }),
+      a('acme-reviewer', 'acme', 'Reviewer', 'claude-acme', 'sonnet-5.5', { skills: ['security-review'], perms: P({ shell: true }) }),
+      a('nw-lead', 'northwind', 'Lead', 'codex-northwind', 'gpt-5.5 · high', { skills: ['repo-conventions'], perms: P({ shell: true, mr: true, merge: true }) }),
+      a('nw-builder', 'northwind', 'Builder', 'claude-northwind', 'sonnet-5.5', { skills: ['write-tests'], perms: P({ edit: true, shell: true, push: true }), fallback: 'nw-codex' }),
+      a('nw-codex', 'northwind', 'Builder', 'codex-northwind', 'gpt-5.5 · medium', { skills: ['write-tests'], perms: P({ edit: true, shell: true, push: true }), fallback: 'nw-builder' })
+    ];
+    const out = {};
+    list.forEach((x) => { out[x.id] = x; });
+    return out;
+  }
+
+  accounts() {
+    return {
+      'claude-personal': { runtime: 'claude', org: null, seat: 'Personal', u5: 22, wk: 31, reset: '2:10 PM', auth: 'ok' },
+      'claude-globex': { runtime: 'claude', org: 'globex', seat: 'Globex seat 1', u5: 64, wk: 48, reset: '1:30 PM', auth: 'ok' },
+      'claude-globex-2': { runtime: 'claude', org: 'globex', seat: 'Globex seat 2', u5: 12, wk: 20, reset: '4:05 PM', auth: 'ok' },
+      'kimi-globex': { runtime: 'kimi', org: 'globex', seat: 'Globex', u5: 35, wk: 22, reset: '2:45 PM', auth: 'warn' },
+      'codex-acme': { runtime: 'codex', org: 'acme', seat: 'Acme', u5: 71, wk: 55, reset: '1:50 PM', auth: 'ok' },
+      'claude-acme': { runtime: 'claude', org: 'acme', seat: 'Acme', u5: 5, wk: 9, reset: '5:20 PM', auth: 'ok' },
+      'claude-northwind': { runtime: 'claude', org: 'northwind', seat: 'Northwind', u5: 100, wk: 83, reset: '3:40 PM', auth: 'ok' },
+      'codex-northwind': { runtime: 'codex', org: 'northwind', seat: 'Northwind', u5: 18, wk: 26, reset: '4:30 PM', auth: 'ok' }
+    };
+  }
+
+  orgs() {
+    return {
+      globex: { id: 'globex', name: 'Globex', badge: 'ID', color: '#8AB8F5', tracker: 'Jira', trackerWhere: '[your-site].atlassian.net', hosts: [{ host: 'GitHub', alias: 'github-globex' }], identity: '[Globex work email]', base: 'main', team: ['globex-lead', 'globex-builder', 'globex-reviewer'] },
+      acme: { id: 'acme', name: 'Acme', badge: 'AC', color: '#F0B455', tracker: 'ClickUp', trackerWhere: '[workspace]', hosts: [{ host: 'GitLab', alias: 'gitlab-acme' }, { host: 'Bitbucket', alias: 'bitbucket-acme' }], identity: '[Acme work email]', base: 'develop', team: ['acme-lead', 'acme-builder', 'acme-reviewer'] },
+      northwind: { id: 'northwind', name: 'Northwind', badge: 'NW', color: '#C3A6F5', tracker: 'GitHub Issues', trackerWhere: '[org name]', hosts: [{ host: 'GitHub', alias: 'github-northwind' }], identity: '[Northwind work email]', base: 'main', team: ['nw-lead', 'nw-builder'] }
+    };
+  }
+
+  projects() {
+    return [
+      { id: 'globex-web', org: 'globex', path: '~/Work/Globex/web', remotes: [{ host: 'GitHub', primary: true }], links: [{ to: 'globex-api', type: 'depends on' }] },
+      { id: 'globex-api', org: 'globex', path: '~/Work/Globex/api', remotes: [{ host: 'GitHub', primary: true }], links: [] },
+      { id: 'acme-portal', org: 'acme', path: '~/Work/Acme/portal', remotes: [{ host: 'GitLab', primary: true }, { host: 'Bitbucket', primary: false }], links: [{ to: 'acme-auth', type: 'depends on' }, { to: 'nw-dashboard', type: 'shares UI kit' }] },
+      { id: 'acme-auth', org: 'acme', path: '~/Work/Acme/auth', remotes: [{ host: 'Bitbucket', primary: true }], links: [] },
+      { id: 'nw-dashboard', org: 'northwind', path: '~/Work/Northwind/dashboard', remotes: [{ host: 'GitHub', primary: true }], links: [{ to: 'acme-portal', type: 'shares UI kit' }] }
+    ];
+  }
+
+  tasks() {
+    return [
+      { id: 'GLX-412', key: 'GLX-412', src: 'Jira', title: 'Rotate refresh tokens on every auth call', project: 'globex-api', slug: 'refresh-rotation', diff: '+184 -37 in 6 files', mr: 'PR #318', desc: 'Issue a new refresh token on each refresh request and invalidate the previous one. Reuse of an old token should revoke the whole session family.', seedUntil: 'review' },
+      { id: 'GLX-415', key: 'GLX-415', src: 'Jira', title: 'Session expiry banner in the web app', project: 'globex-web', blockedBy: 'GLX-412', slug: 'expiry-banner', diff: '+96 -12 in 4 files', mr: 'PR #319', desc: 'Show a banner two minutes before the session expires, with a button to extend it. Needs the new refresh behaviour from the API.' },
+      { id: 'GLX-418', key: 'GLX-418', src: 'Jira', title: 'Schematic export times out on large boards', project: 'globex-api', slug: 'export-timeout', diff: '+41 -9 in 2 files', mr: 'PR #320', desc: 'Large exports hit the gateway timeout. Move export to a background job and return a download link.' },
+      { id: 'CU-88', key: 'CU-88', src: 'ClickUp', title: 'Move portal forms to the new validation lib', project: 'acme-portal', slug: 'validation-lib', diff: '+612 -540 in 14 files', mr: 'MR !142', desc: 'Replace the old schema definitions in every portal form with the new validation library. Keep error messages identical.', seedUntil: 'running' },
+      { id: 'CU-91', key: 'CU-91', src: 'ClickUp', title: 'SSO callback returns 500 on expired state', project: 'acme-auth', slug: 'sso-expired-state', diff: '+28 -6 in 2 files', mr: 'PR #57', desc: 'When the SSO state parameter has expired the callback throws. It should redirect to login with a clear message instead.', seedUntil: 'mr' },
+      { id: 'GH-231', key: '#231', src: 'GitHub', title: 'Dark mode for dashboard charts', project: 'nw-dashboard', slug: 'chart-dark-mode', diff: '+133 -48 in 5 files', mr: 'PR #240', desc: 'Charts ignore the dark theme and render on white. Read colors from the theme tokens instead of hardcoded values.', seedUntil: 'running' },
+      { id: 'GH-236', key: '#236', src: 'GitHub', title: 'Paginate the audit log endpoint', project: 'nw-dashboard', slug: 'audit-pagination', diff: '+77 -20 in 3 files', mr: 'PR #241', desc: 'The audit log endpoint returns every row. Add cursor pagination and update the table to load more on scroll.' },
+      { id: 'LOCAL-7', key: 'LOCAL-7', src: 'Local', title: 'Upgrade Next.js to the latest minor', project: 'globex-web', slug: 'next-upgrade', diff: '+18 -18 in 3 files', mr: 'PR #321', desc: 'Created here, not in a tracker. Bump Next.js, fix any deprecation warnings, and confirm the build passes.' }
+    ].concat(this.state && this.state.localTasks ? this.state.localTasks : []);
+  }
+
+  teamOf(t) {
+    if (this.state.teams[t.id]) return this.state.teams[t.id];
+    const p = this.projects().find((x) => x.id === t.project);
+    return this.orgs()[p.org].team.slice();
+  }
+
+  seedThread(t, team) {
+    const ev = (text) => ({ kind: 'event', text });
+    const ag = (role, text) => ({ kind: 'agent', role, text });
+    const seeds = {
+      'GLX-412': [ag('dispatcher', 'Routed from Jira GLX-412 to globex-api. Team: @globex-lead, @globex-builder, @globex-reviewer.'), ag('globex-lead', 'Plan: 1) rotate the token in the refresh handler 2) revoke the family on reuse 3) tests. @globex-builder take 1 and 2. @globex-reviewer watch storage and race conditions.'), ev('worktree ready at ~/Work/.worktrees/GLX-412'), ag('globex-builder', 'Done in src/auth/refresh.ts and tokens.ts, 4 new tests. @globex-reviewer it is yours.'), ev('npm test · all suites passed'), ag('globex-reviewer', 'Two tabs refreshing at the same moment will revoke a valid session. @globex-builder add a short grace window for the previous token.'), ag('globex-builder', 'Added a 10 second grace window and a test for parallel refresh.'), ag('globex-reviewer', 'Resolved. Approving.'), ag('housekeeper', 'Noted the grace window decision. I will add it to globex-api AGENTS.md when this merges.'), ag('globex-lead', 'Ready for your review. +184 -37 in 6 files.')],
+      'CU-88': [ag('dispatcher', 'Routed from ClickUp CU-88 to acme-portal. Team: @acme-lead, @acme-builder, @acme-reviewer.'), ag('acme-lead', '14 forms use the old schemas. @acme-builder converts them, I keep a 1:1 map of error messages.'), ev('worktree ready at ~/Work/.worktrees/CU-88'), ag('acme-builder', 'Converted 9 of 14. Running lint and type check now.')],
+      'CU-91': [ag('dispatcher', 'Routed from ClickUp CU-91 to acme-auth.'), ag('acme-lead', 'Small fix. @acme-builder redirect on expired state, @acme-reviewer check we do not leak the state value in logs.'), ag('acme-builder', 'Redirects to /login?reason=expired now, regression test added.'), ag('acme-reviewer', 'No leak. Approving.'), ev('approved by you · pushed via bitbucket-acme · PR #57 opened into develop')],
+      'GH-231': [ag('dispatcher', 'Routed from GitHub #231 to nw-dashboard. Team: @nw-lead, @nw-builder.'), ag('nw-lead', 'Charts read hardcoded colors. @nw-builder move all 5 chart files to theme tokens.'), ev('worktree ready at ~/Work/.worktrees/GH-231'), ag('nw-builder', 'Line and bar charts done, 3 of 5 files.'), ev('claude-northwind hit its usage limit · checkpoint saved at step 3 of 5'), ag('nw-lead', '@nw-builder is paused until 3:40 PM. @nw-codex is on a different account and idle, it can pick up from the checkpoint if you hand off.')]
+    };
+    if (t.created) return [ev('created by you · ' + (t.src === 'Local' ? 'local only, no tracker' : 'also created in ' + t.src + ' as ' + t.key)), ag(team[0], 'I read the task and ' + t.project + ' AGENTS.md. ' + (t.blockedBy ? 'This waits on ' + t.blockedBy + ', I will start once it merges.' : 'Team is ' + team.map((x) => '@' + x).join(', ') + '.'))];
+    return (seeds[t.id] || [ag('dispatcher', 'Routed from ' + (t.src === 'Local' ? 'a local task' : t.src + ' ' + t.key) + ' to ' + t.project + '. Team: ' + team.map((x) => '@' + x).join(', ') + '.')]).slice();
+  }
+
+  addMsgs(threads, id, msgs) {
+    return Object.assign({}, threads, { [id]: (threads[id] || []).concat(msgs) });
+  }
+
+  setStatus(id, value) {
+    this.setState({ status: Object.assign({}, this.state.status, { [id]: value }) });
+  }
+
+  runTask(id) {
+    if (this.state.offline) {
+      this.setState({ status: Object.assign({}, this.state.status, { [id]: 'paused' }), pause: Object.assign({}, this.state.pause, { [id]: { reason: 'offline', step: 'last saved step' } }) });
+      return;
+    }
+    this.setStatus(id, 'running');
+    setTimeout(() => { if (this.state.status[id] === 'running') this.setStatus(id, 'review'); }, 3000);
+  }
+
+  replyFor(agentId, t, team) {
+    const a = this.state.agents[agentId];
+    const byRole = (r) => team.find((x) => this.state.agents[x] && this.state.agents[x].role === r);
+    const lead = byRole('Lead') || team[0];
+    const builder = byRole('Builder') || lead;
+    const reviewer = byRole('Reviewer');
+    if (agentId === 'housekeeper') return 'Joined. I will write that into ' + t.project + ' AGENTS.md when this merges.';
+    if (agentId === 'dispatcher') return 'Joined. I will route similar tasks the same way from now on.';
+    if (agentId === 'setup') return 'Joined. Tell me what to change in the config and I will confirm before writing.';
+    if (a.role === 'Lead') return 'Got it, I folded that into the plan. @' + builder + ' this changes your next step.';
+    if (a.role === 'Builder') return 'On it. I will update the branch and rerun the tests' + (reviewer ? ', then ping @' + reviewer + '.' : '.');
+    if (a.role === 'Reviewer') return 'I will check that before @' + lead + ' hands it back to you.';
+    return 'On it.';
+  }
+
+  send() {
+    const s = this.state;
+    const text = (s.draft || '').trim();
+    if (!text) return;
+    if (s.view === 'setup') {
+      this.setState({ draft: '', setupMsgs: s.setupMsgs.concat([{ kind: 'you', text }]) });
+      setTimeout(() => this.setState({ setupMsgs: this.state.setupMsgs.concat([{ kind: 'agent', text: 'Updated the draft on the right. Anything I set, you can still change in Agents or Orgs afterwards.' }]) }), 1100);
+      return;
+    }
+    const t = this.tasks().find((x) => x.id === s.taskId);
+    const team = this.teamOf(t);
+    const mentioned = (text.match(/@[a-z0-9-]+/gi) || []).map((h) => h.slice(1).toLowerCase()).filter((h) => s.agents[h]);
+    const joined = mentioned.filter((h) => team.indexOf(h) < 0);
+    const newTeam = team.concat(joined);
+    let threads = this.addMsgs(s.threads, t.id, [{ kind: 'you', text }].concat(joined.map((h) => ({ kind: 'event', text: '@' + h + ' joined the room' }))));
+    this.setState({ draft: '', threads, teams: Object.assign({}, s.teams, { [t.id]: newTeam }) });
+    const responder = mentioned[0] || newTeam.find((x) => s.agents[x].role === 'Lead') || newTeam[0];
+    const wantsSkill = /install/i.test(text) && /skill/i.test(text);
+    setTimeout(() => {
+      const st = this.state;
+      if (wantsSkill) {
+        const m = text.match(/https?:\/\/\S+|\S+\.zip|~\/\S+/);
+        const name = m ? m[0].replace(/\/$/, '').split('/').pop().replace(/\.(zip|git)$/, '') : 'new-skill';
+        const exists = st.skills.find((k) => k.name === name);
+        const ag = st.agents[responder];
+        this.setState({
+          skills: exists ? st.skills : st.skills.concat([{ name, source: 'sent in ' + t.key + ' room' }]),
+          agents: Object.assign({}, st.agents, { [responder]: Object.assign({}, ag, { skills: ag.skills.indexOf(name) >= 0 ? ag.skills : ag.skills.concat([name]) }) }),
+          threads: this.addMsgs(st.threads, t.id, [{ kind: 'event', text: 'skill ' + name + ' installed to ~/.work/skills' }, { kind: 'agent', role: responder, text: 'Installed ' + name + ' and enabled it for me. Want it on the rest of the room too? You can also toggle it per agent in Agents.' }])
+        });
+      } else {
+        this.setState({ threads: this.addMsgs(st.threads, t.id, [{ kind: 'agent', role: responder, text: this.replyFor(responder, t, newTeam) }]) });
+      }
+    }, 1100);
+  }
+
+  handoff(t) {
+    const s = this.state;
+    const pz = s.pause[t.id];
+    const from = pz.agent;
+    const to = s.agents[from].fallback;
+    const team = this.teamOf(t).map((x) => (x === from ? to : x));
+    const pause = Object.assign({}, s.pause);
+    delete pause[t.id];
+    this.setState({
+      teams: Object.assign({}, s.teams, { [t.id]: team }), pause,
+      threads: this.addMsgs(s.threads, t.id, [{ kind: 'event', text: 'handed off from @' + from + ' to @' + to + ' · resuming from checkpoint' }, { kind: 'agent', role: to, text: 'Picked up from the checkpoint at step ' + pz.step + '. Finishing the rest now.' }])
+    });
+    this.runTask(t.id);
+  }
+
+  resume(id) {
+    const s = this.state;
+    const pause = Object.assign({}, s.pause);
+    delete pause[id];
+    this.setState({ pause, threads: this.addMsgs(s.threads, id, [{ kind: 'event', text: 'connection back · resumed from checkpoint' }]) });
+    this.runTask(id);
+  }
+
+  toggleOffline() {
+    const s = this.state;
+    if (!s.offline) {
+      const status = Object.assign({}, s.status);
+      const pause = Object.assign({}, s.pause);
+      let threads = s.threads;
+      Object.keys(status).forEach((id) => {
+        if (status[id] === 'running') {
+          status[id] = 'paused';
+          pause[id] = { reason: 'offline', step: 'last saved step' };
+          threads = this.addMsgs(threads, id, [{ kind: 'event', text: 'connection lost · checkpoint saved, team paused' }]);
+        }
+      });
+      this.setState({ offline: true, status, pause, threads });
+    } else {
+      this.setState({ offline: false });
+    }
+  }
+
+  resumeAll() {
+    Object.keys(this.state.pause).forEach((id) => { if (this.state.pause[id].reason === 'offline') this.resume(id); });
+  }
+
+  newAgent() {
+    const s = this.state;
+    const n = s.newCount + 1;
+    const prefix = { root: 'root', globex: 'globex', acme: 'acme', northwind: 'nw' }[s.scope];
+    const id = prefix + '-agent-' + n;
+    const accs = this.accounts();
+    const acc = s.scope === 'root' ? 'claude-personal' : Object.keys(accs).find((k) => accs[k].org === s.scope);
+    const M = this.models();
+    const def = { id, scope: s.scope, role: s.scope === 'root' ? 'Root' : 'Builder', account: acc, model: M[accs[acc].runtime][0], instructions: '', skills: [], perms: { read: true, edit: false, shell: false, push: false, mr: false, merge: false }, fallback: '', autoResume: true, where: s.scope === 'root' ? ['anywhere'] : [s.scope], origin: 'you' };
+    this.setState({ newCount: n, agents: Object.assign({}, s.agents, { [id]: def }), selAgent: id });
+  }
+
+  updAgent(id, patch) {
+    this.setState({ agents: Object.assign({}, this.state.agents, { [id]: Object.assign({}, this.state.agents[id], patch, { origin: 'you' }) }) });
+  }
+
+  models() {
+    return { claude: ['opus-5.5', 'sonnet-5.5', 'haiku-4.5'], codex: ['gpt-5.5 · high', 'gpt-5.5 · medium'], kimi: ['kimi-k2.6', 'kimi-k2.6 · thinking'] };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const orgs = this.orgs();
+    const accs = this.accounts();
+    const projects = this.projects();
+    const tasks = this.tasks();
+    const agents = s.agents;
+    const M = this.models();
+    const RT = { claude: 'Claude Code', codex: 'Codex', kimi: 'Kimi Code' };
+    const roleColors = { Lead: '#C3A6F5', Builder: '#F0B455', Reviewer: '#8AB8F5', Tester: '#E7A0C8', Root: '#7FD1B9' };
+    const colorOf = (id) => (agents[id] ? roleColors[agents[id].role] || '#C9CCD2' : '#C9CCD2');
+    const proj = (id) => projects.find((p) => p.id === id);
+    const orgOfProject = (id) => proj(id).org;
+    const st = (id) => s.status[id];
+    const isBlocked = (t) => !!t.blockedBy && st(t.blockedBy) !== 'done';
+    const keyOf = (id) => { const x = tasks.find((y) => y.id === id); return x ? x.key : id; };
+    const primary = (p) => p.remotes.find((r) => r.primary);
+    const statusColors = { inbox: '#A3A7B0', ready: '#8AB8F5', running: '#F0B455', paused: '#F59C7F', review: '#C3A6F5', mr: '#7FD1B9', done: '#7FD1B9' };
+    const statusLabels = { inbox: 'Inbox', ready: 'Ready for team', running: 'Team working', paused: 'Paused', review: 'Waiting for your review', mr: 'MR open', done: 'Merged' };
+    const order = ['inbox', 'ready', 'running', 'review', 'mr', 'done'];
+    const onOff = (on) => ({ bg: on ? '#23324A' : '#17181C', fg: on ? '#ECEDEF' : '#A3A7B0', border: on ? '#8AB8F5' : '#2C2F36', pressed: on ? 'true' : 'false' });
+    const limited = (accId) => accs[accId] && accs[accId].u5 >= 100;
+    const modelFor = (t, id) => s.modelOver[t.id + '|' + id] || agents[id].model;
+
+    const agentState = (id) => {
+      const a = agents[id];
+      const running = tasks.find((t) => st(t.id) === 'running' && this.teamOf(t).indexOf(id) >= 0);
+      const pausedOn = tasks.find((t) => st(t.id) === 'paused' && this.teamOf(t).indexOf(id) >= 0);
+      if (s.offline && pausedOn) return { label: 'Offline, paused on ' + pausedOn.key, color: '#F07B6B' };
+      if (running) return { label: 'Working on ' + running.key, color: '#F0B455' };
+      if (pausedOn && s.pause[pausedOn.id] && s.pause[pausedOn.id].agent === id) return { label: 'Paused on ' + pausedOn.key, color: '#F59C7F' };
+      if (limited(a.account)) return { label: 'Limit reached, resets ' + accs[a.account].reset, color: '#F07B6B' };
+      if (pausedOn) return { label: 'Waiting on ' + pausedOn.key, color: '#A3A7B0' };
+      return { label: 'Idle', color: '#6B707A' };
+    };
+
+    const counts = { working: 0, paused: 0, limit: 0, idle: 0 };
+    Object.keys(agents).forEach((id) => {
+      const lb = agentState(id).label;
+      if (lb.indexOf('Working') === 0) counts.working++;
+      else if (lb.indexOf('Paused') === 0 || lb.indexOf('Offline') === 0) counts.paused++;
+      else if (lb.indexOf('Limit') === 0) counts.limit++;
+      else counts.idle++;
+    });
+    const pulse = [
+      { label: 'Working', count: counts.working, color: '#F0B455' },
+      { label: 'Paused', count: counts.paused, color: '#F59C7F' },
+      { label: 'Limit reached', count: counts.limit, color: '#F07B6B' },
+      { label: 'Idle', count: counts.idle, color: '#6B707A' }
+    ];
+
+    const pausedTasks = tasks.filter((t) => st(t.id) === 'paused');
+    const offlinePaused = pausedTasks.filter((t) => s.pause[t.id] && s.pause[t.id].reason === 'offline');
+    const limitPaused = pausedTasks.filter((t) => s.pause[t.id] && s.pause[t.id].reason === 'limit');
+    let strip = { show: false };
+    if (s.offline) strip = { show: true, bg: '#2A1A18', border: '#5C3A2E', fg: '#F5B8A6', text: 'Offline. ' + pausedTasks.length + ' run(s) paused with checkpoints. Nothing is lost.', btn: 'Health and usage', act: () => this.setState({ view: 'health' }) };
+    else if (offlinePaused.length) strip = { show: true, bg: '#1B2B27', border: '#3E6B5E', fg: '#9FE0CC', text: 'Back online. ' + offlinePaused.length + ' run(s) waiting to resume from their checkpoints.', btn: 'Resume all', act: () => this.resumeAll() };
+    else if (limitPaused.length) {
+      const lt = limitPaused[0];
+      const acc = agents[s.pause[lt.id].agent].account;
+      strip = { show: true, bg: '#2A2218', border: '#5C4A2E', fg: '#F0C98A', text: lt.key + ' is paused: ' + acc + ' hit its usage limit, resets ' + accs[acc].reset + '.', btn: 'Open ' + lt.key, act: () => this.setState({ view: 'task', taskId: lt.id, draft: '' }) };
+    }
+    const viewH = strip.show ? 856 : 900;
+    const net = s.offline ? { label: 'offline', color: '#F07B6B' } : { label: 'online', color: '#7FD1B9' };
+
+    const navItems = [['board', 'Board', ''], ['agents', 'Agents', String(Object.keys(agents).length)], ['health', 'Health and usage', counts.limit + counts.paused ? String(counts.limit + counts.paused) + ' need you' : ''], ['skills', 'Skills', String(s.skills.length)], ['setup', 'Hub setup', ''], ['projects', 'Projects and links', ''], ['orgs', 'Orgs and accounts', '']];
+    const nav = navItems.map(([id, label, badge]) => {
+      const active = s.view === id || (id === 'board' && s.view === 'task');
+      return { label, badge, badgeColor: id === 'health' ? '#F59C7F' : '#8A8F99', bg: active ? '#272A31' : 'transparent', fg: active ? '#ECEDEF' : '#A3A7B0', go: () => this.setState({ view: id }) };
+    });
+
+    const openTasks = tasks.filter((t) => st(t.id) !== 'done');
+    const orgFilters = [{ id: 'all', name: 'All orgs', badge: '*', color: '#A3A7B0' }].concat(Object.values(orgs)).map((o) => {
+      const count = openTasks.filter((t) => o.id === 'all' || orgOfProject(t.project) === o.id).length;
+      const active = s.org === o.id;
+      return { name: o.name, badge: o.badge, color: o.color, count, bg: active ? '#272A31' : 'transparent', fg: active ? '#ECEDEF' : '#C9CCD2', pick: () => this.setState({ org: o.id, view: 'board' }) };
+    });
+
+    const srcOk = (t, f) => f === 'all' || (f === 'local' ? t.src === 'Local' : t.src !== 'Local');
+    const inOrg = (t) => s.org === 'all' || orgOfProject(t.project) === s.org;
+    const visible = tasks.filter((t) => inOrg(t) && srcOk(t, s.srcFilter));
+    const srcTabs = [['all', 'All'], ['local', 'Local'], ['tracker', 'From trackers']].map(([id, label]) => {
+      const on = s.srcFilter === id;
+      return { label, count: openTasks.filter((t) => inOrg(t) && srcOk(t, id)).length, pressed: on ? 'true' : 'false', tabBg: on ? '#2C2F36' : 'transparent', fg: on ? '#ECEDEF' : '#A3A7B0', pick: () => this.setState({ srcFilter: id }) };
+    });
+    const keyLabel = (t) => (t.src === 'Local' ? 'LOCAL · ' + t.key.replace('LOCAL-', '#') : t.src.toUpperCase() + ' · ' + t.key);
+    const card = (t) => {
+      const o = orgs[orgOfProject(t.project)];
+      const status = st(t.id);
+      let note = '', noteColor = '#A3A7B0';
+      if (isBlocked(t)) { note = 'Blocked by ' + keyOf(t.blockedBy); noteColor = '#F59C7F'; }
+      else if (status === 'running') { note = 'Team working · checkpointed'; noteColor = '#F0B455'; }
+      else if (status === 'paused') { const pz = s.pause[t.id]; note = pz && pz.reason === 'limit' ? 'Paused · usage limit' : 'Paused · connection lost'; noteColor = '#F59C7F'; }
+      else if (status === 'mr') { note = t.mr + ' on ' + primary(proj(t.project)).host; noteColor = '#7FD1B9'; }
+      return {
+        srcKey: keyLabel(t), title: t.title, project: t.project,
+        team: this.teamOf(t).map((id) => ({ initial: id.split('-').pop().charAt(0).toUpperCase(), color: colorOf(id), title: '@' + id + ' · ' + agents[id].account + ' · ' + modelFor(t, id) })),
+        orgBadge: o.badge, orgColor: o.color, border: status === 'paused' ? '#5C3A2E' : '#2C2F36',
+        hasNote: !!note, note, noteColor,
+        open: () => this.setState({ view: 'task', taskId: t.id, draft: '' })
+      };
+    };
+    const columns = [['inbox', 'Inbox', ['inbox']], ['ready', 'Ready', ['ready']], ['running', 'Working', ['running', 'paused']], ['review', 'Your review', ['review']], ['mr', 'MR open', ['mr']]].map(([id, label, sts]) => {
+      const cards = visible.filter((t) => sts.indexOf(st(t.id)) >= 0).map(card);
+      return { label, color: statusColors[id], count: cards.length, cards, empty: cards.length === 0, isInbox: id === 'inbox', add: () => this.openComposer() };
+    });
+    const merged = tasks.length - openTasks.length;
+    const boardSub = openTasks.length + ' open' + (merged ? ' · ' + merged + ' merged this session' : '') + ' · trackers synced ' + s.lastSync + ' · @dispatcher routes new items';
+
+    const t = tasks.find((x) => x.id === s.taskId);
+    const p = proj(t.project);
+    const o = orgs[p.org];
+    const status = st(t.id);
+    const policy = s.policy[p.org];
+    const prim = primary(p);
+    const hostAlias = (o.hosts.find((h) => h.host === prim.host) || o.hosts[0]).alias;
+    const team = this.teamOf(t);
+    const byRole = (r) => team.find((x) => agents[x].role === r);
+    const leadH = byRole('Lead') || team[0];
+    const builderH = byRole('Builder') || leadH;
+    const reviewerH = byRole('Reviewer');
+    const sameOrgLinks = p.links.filter((l) => orgOfProject(l.to) === p.org);
+    const crossLinks = p.links.filter((l) => orgOfProject(l.to) !== p.org);
+
+    let raw = this.seedThread(t, team);
+    const statusIdx = order.indexOf(status === 'paused' ? 'running' : status);
+    const ev = (text) => ({ kind: 'event', text });
+    for (let i = order.indexOf(t.seedUntil || 'inbox') + 1; i <= statusIdx; i++) {
+      const step = order[i];
+      if (step === 'ready') raw.push({ kind: 'agent', role: leadH, text: isBlocked(t) ? 'Plan is ready, but this depends on ' + keyOf(t.blockedBy) + '. I will wait until it merges.' : 'Plan is ready. Start the team when you want.' });
+      if (step === 'running') raw = raw.concat([ev('worktree ready at ~/Work/.worktrees/' + t.id), { kind: 'agent', role: leadH, text: 'Starting. @' + builderH + ' owns the implementation' + (reviewerH ? ', @' + reviewerH + ' reviews after.' : '.') }]);
+      if (step === 'review') raw = raw.concat([{ kind: 'agent', role: builderH, text: 'Done, tests pass. ' + t.diff + '.' + (reviewerH ? ' @' + reviewerH + ' over to you.' : '') }, { kind: 'agent', role: reviewerH || leadH, text: 'Checked the diff. No blocking issues.' }, { kind: 'agent', role: leadH, text: 'Ready for your review.' }]);
+      if (step === 'mr' && t.seedUntil !== 'mr') raw.push(ev('approved by you · pushed via ' + hostAlias + ' · ' + t.mr + ' opened into ' + o.base));
+      if (step === 'done') raw = raw.concat([ev('merged · ' + (t.src === 'Local' ? 'task closed' : t.src + ' ' + t.key + ' updated')), { kind: 'agent', role: 'housekeeper', text: 'Worktree removed. Added the decisions from this room to ' + t.project + ' AGENTS.md.' }]);
+    }
+    raw = raw.concat(s.threads[t.id] || []);
+    const toMsg = (m) => {
+      if (m.kind === 'event') {
+        const bad = /lost|limit|paused/.test(m.text);
+        return { isEvent: true, isMsg: false, text: m.text, evColor: bad ? '#F59C7F' : '#A3A7B0', evBorder: bad ? '#5C3A2E' : '#2C2F36' };
+      }
+      if (m.kind === 'you') return { isEvent: false, isMsg: true, name: 'you', meta: '', initial: 'Y', color: '#ECEDEF', bubble: '#23324A', align: 'flex-end', text: m.text };
+      const a = agents[m.role];
+      return { isEvent: false, isMsg: true, name: '@' + m.role, meta: a ? a.account + ' · ' + modelFor(t, m.role) : '', initial: m.role.split('-').pop().charAt(0).toUpperCase(), color: colorOf(m.role), bubble: '#1E2025', align: 'flex-start', text: m.text };
+    };
+
+    const eligible = Object.keys(agents).filter((id) => {
+      const a = agents[id];
+      return a.where.indexOf('anywhere') >= 0 || a.where.indexOf(p.org) >= 0;
+    });
+    const modes = [['lead', 'Lead delegates', 'The lead plans and assigns steps by @mentioning agents. Agents @mention each other to hand work back and forth, and the lead hands it to you.'], ['pipeline', 'Pipeline', 'Each agent runs once in order: lead plans, builder builds, then reviewer and tester check.'], ['loop', 'Build and review loop', 'Builder and reviewer go back and forth until the reviewer approves, up to 5 rounds.']];
+    const curMode = s.mode[t.id] || 'lead';
+    const room = {
+      msgs: raw.map(toMsg).reverse(),
+      builderHandle: builderH,
+      team: team.map((id) => {
+        const a = agents[id];
+        const stt = agentState(id);
+        const model = modelFor(t, id);
+        const rt = accs[a.account].runtime;
+        return {
+          id, initial: id.split('-').pop().charAt(0).toUpperCase(), color: colorOf(id), account: a.account, model, state: stt.label, stateColor: stt.color, dot: stt.color,
+          removable: team.length > 1,
+          nextModel: () => { const list = M[rt]; this.setState({ modelOver: Object.assign({}, s.modelOver, { [t.id + '|' + id]: list[(list.indexOf(model) + 1) % list.length] }) }); },
+          swap: () => {
+            const cands = eligible.filter((x) => team.indexOf(x) < 0 && agents[x].role === a.role);
+            const pool = cands.length ? cands : eligible.filter((x) => team.indexOf(x) < 0);
+            if (!pool.length) return;
+            const next = pool[0];
+            this.setState({ teams: Object.assign({}, s.teams, { [t.id]: team.map((x) => (x === id ? next : x)) }), threads: this.addMsgs(s.threads, t.id, [{ kind: 'event', text: '@' + id + ' swapped for @' + next }]) });
+          },
+          remove: () => this.setState({ teams: Object.assign({}, s.teams, { [t.id]: team.filter((x) => x !== id) }) })
+        };
+      }),
+      addable: eligible.filter((id) => team.indexOf(id) < 0).map((id) => ({ id, add: () => this.setState({ teams: Object.assign({}, s.teams, { [t.id]: team.concat([id]) }), threads: this.addMsgs(s.threads, t.id, [{ kind: 'event', text: '@' + id + ' joined the room' }]) }) })),
+      modes: modes.map(([id, label]) => Object.assign({ label, pick: () => this.setState({ mode: Object.assign({}, s.mode, { [t.id]: id }) }) }, onOff(curMode === id))),
+      modeDesc: modes.find((m) => m[0] === curMode)[2]
+    };
+
+    const pz = s.pause[t.id];
+    const isLimit = status === 'paused' && pz && pz.reason === 'limit';
+    const fb = isLimit ? agents[pz.agent].fallback : '';
+    const auto = !!s.autoResume[t.id];
+    const policyLabels = { approve: 'Merge after my approval', never: 'Never, I merge on the host', green: 'Auto-merge when CI is green' };
+    const mono = "'IBM Plex Mono', monospace";
+    const sel = {
+      srcKey: keyLabel(t), title: t.title, desc: t.desc, project: p.id,
+      srcNote: t.src === 'Local' ? 'local only' : 'synced with ' + t.src,
+      orgName: o.name, orgBadge: o.badge, orgColor: o.color,
+      statusLabel: statusLabels[status], statusColor: statusColors[status],
+      actBorder: status === 'paused' ? '#5C3A2E' : '#2C2F36',
+      props: [
+        { label: 'Branch and worktree', value: 'task/' + t.id + '-' + t.slug + '  ·  ~/Work/.worktrees/' + t.id, font: mono },
+        { label: 'Org agents can read', value: [p.id + ' (read and write)'].concat(sameOrgLinks.map((l) => l.to + ' (read only)')).concat(['AGENTS.md']).join(', '), font: mono },
+        { label: 'Root agents can also read', value: crossLinks.length ? crossLinks.map((l) => l.to).join(', ') + ' (cross-org link)' : 'Same as above', font: 'inherit' },
+        { label: 'MR target and policy', value: prim.host + ' via ' + hostAlias + ' into ' + o.base + ' · ' + policyLabels[policy], font: 'inherit' }
+      ],
+      blocked: isBlocked(t), blockedBy: t.blockedBy ? keyOf(t.blockedBy) : '',
+      openBlocker: () => this.setState({ taskId: t.blockedBy, draft: '' }),
+      canRun: !isBlocked(t), diff: t.diff,
+      mr: t.mr + ' on ' + prim.host + ' into ' + o.base, alias: hostAlias,
+      mergeLabel: policy === 'approve' ? 'Merge' : (policy === 'green' ? 'Simulate CI pass (auto-merge)' : 'I merged it on ' + prim.host),
+      isInbox: status === 'inbox', isReady: status === 'ready', isRunning: status === 'running', isPaused: status === 'paused',
+      isReview: status === 'review', isMr: status === 'mr', isDone: status === 'done',
+      isLimit, isOfflinePause: status === 'paused' && !isLimit,
+      pauseText: isLimit ? '@' + pz.agent + ' stopped: ' + agents[pz.agent].account + ' hit its usage limit, resets ' + accs[agents[pz.agent].account].reset + '. Checkpoint saved at step ' + pz.step + '.' : 'Connection lost mid-run. The team stopped at its last checkpoint and will continue from there.',
+      canHandoff: isLimit && !!fb && !limited(agents[fb].account), fallback: fb,
+      autoPressed: auto ? 'true' : 'false', autoBg: auto ? '#1B2B27' : '#17181C', autoBorder: auto ? '#3E6B5E' : '#3A3E47',
+      autoLabel: isLimit ? (auto ? 'Auto-resume at ' + accs[agents[pz.agent].account].reset + ': on' : 'Auto-resume at reset: off') : '',
+      resumeLabel: s.offline ? 'Waiting for connection' : 'Resume from checkpoint',
+      resumeBg: s.offline ? '#1E2025' : '#F0B455', resumeFg: s.offline ? '#8A8F99' : '#1A1204'
+    };
+    const act = {
+      queue: () => this.setStatus(t.id, 'ready'),
+      run: () => this.runTask(t.id),
+      stop: () => this.setStatus(t.id, 'ready'),
+      approve: () => this.setStatus(t.id, 'mr'),
+      sendBack: () => this.runTask(t.id),
+      merge: () => this.setStatus(t.id, 'done'),
+      handoff: () => this.handoff(t),
+      resume: () => this.resume(t.id),
+      toggleAuto: () => this.setState({ autoResume: Object.assign({}, s.autoResume, { [t.id]: !auto }) })
+    };
+
+    const scopes = [{ id: 'root', label: 'Root', badge: 'RT', color: '#7FD1B9' }].concat(Object.values(orgs).map((og) => ({ id: og.id, label: og.name, badge: og.badge, color: og.color })));
+    const scopeTabs = scopes.map((sc) => ({ label: sc.label, badge: sc.badge, color: sc.color, count: Object.keys(agents).filter((k) => agents[k].scope === sc.id).length, pressed: s.scope === sc.id ? 'true' : 'false', line: s.scope === sc.id ? '#F0B455' : 'transparent', fg: s.scope === sc.id ? '#ECEDEF' : '#A3A7B0', pick: () => { const first = Object.keys(agents).find((k) => agents[k].scope === sc.id); this.setState({ scope: sc.id, selAgent: first }); } }));
+    const scopeName = scopes.find((x) => x.id === s.scope).label;
+    const agentItems = Object.keys(agents).filter((k) => agents[k].scope === s.scope).map((k) => {
+      const a = agents[k];
+      const stt = agentState(k);
+      return { id: k, initial: k.split('-').pop().charAt(0).toUpperCase(), color: colorOf(k), dot: stt.color, sub: a.role + ' · ' + a.account + ' · ' + a.model, bg: s.selAgent === k ? '#272A31' : 'transparent', pick: () => this.setState({ selAgent: k }) };
+    });
+    const dk = agents[s.selAgent] ? s.selAgent : Object.keys(agents)[0];
+    const d = agents[dk];
+    const dAcc = accs[d.account];
+    const dState = agentState(dk);
+    const accChoices = Object.keys(accs).filter((k) => d.scope === 'root' || accs[k].org === d.scope || k === 'claude-personal');
+    const fbPool = [''].concat(Object.keys(agents).filter((k) => k !== dk && (d.scope === 'root' || agents[k].scope === d.scope || agents[k].scope === 'root')));
+    const whereOpts = [['anywhere', 'Anywhere']].concat(Object.values(orgs).map((og) => [og.id, og.name]));
+    const foreign = d.scope !== 'root' && (d.where.indexOf('anywhere') >= 0 || d.where.some((w) => w !== d.scope));
+    const permLabels = [['read', 'Read code'], ['edit', 'Edit files'], ['shell', 'Run shell'], ['push', 'Push branches'], ['mr', 'Open MRs'], ['merge', 'Merge']];
+    const pctColor = (v) => (v >= 100 ? '#F07B6B' : v >= 75 ? '#F0B455' : '#7FD1B9');
+    const ed = {
+      id: dk, initial: dk.split('-').pop().charAt(0).toUpperCase(), color: colorOf(dk), file: '~/.work/agents/' + dk + '.md',
+      origin: d.origin === 'setup' ? 'Drafted by @setup' : 'Configured by you',
+      originColor: d.origin === 'setup' ? '#8AB8F5' : '#7FD1B9', originBorder: d.origin === 'setup' ? '#34507A' : '#3E6B5E',
+      roles: (d.scope === 'root' ? ['Root', 'Lead', 'Builder', 'Reviewer'] : ['Lead', 'Builder', 'Reviewer', 'Tester']).map((r) => Object.assign({ label: r, pick: () => this.updAgent(dk, { role: r }) }, onOff(d.role === r))),
+      health: [
+        { label: 'Status', value: dState.label, color: dState.color, bar: false, pct: 0 },
+        { label: 'Auth', value: dAcc.auth === 'ok' ? 'Signed in' : 'Expires in 2 days', color: dAcc.auth === 'ok' ? '#7FD1B9' : '#F0B455', bar: false, pct: 0 },
+        { label: d.account + ' · current window', value: dAcc.u5 + '% · resets ' + dAcc.reset, color: pctColor(dAcc.u5), bar: true, pct: dAcc.u5 },
+        { label: 'Weekly', value: dAcc.wk + '%', color: pctColor(dAcc.wk), bar: true, pct: dAcc.wk }
+      ],
+      accounts: accChoices.map((k) => Object.assign({ id: k, sub: RT[accs[k].runtime] + ' · ' + accs[k].seat, pick: () => this.updAgent(dk, { account: k, model: accs[k].runtime === dAcc.runtime ? d.model : M[accs[k].runtime][0] }) }, onOff(d.account === k))),
+      models: M[dAcc.runtime].map((m) => Object.assign({ label: m, pick: () => this.updAgent(dk, { model: m }) }, onOff(d.model === m))),
+      where: whereOpts.map(([id, label]) => Object.assign({ label, toggle: () => { const has = d.where.indexOf(id) >= 0; let w = has ? d.where.filter((x) => x !== id) : d.where.concat([id]); if (!w.length) w = [d.scope === 'root' ? 'anywhere' : d.scope]; this.updAgent(dk, { where: w }); } }, onOff(d.where.indexOf(id) >= 0))),
+      hasWhereNote: foreign,
+      whereNote: 'This agent will use ' + d.account + ' on other orgs\u2019 code. Allowed because you said so.',
+      fallbackLabel: d.fallback ? 'Hand off to @' + d.fallback : 'No fallback, wait',
+      nextFallback: () => { const i = fbPool.indexOf(d.fallback || ''); this.updAgent(dk, { fallback: fbPool[(i + 1) % fbPool.length] }); },
+      autoPressed: d.autoResume ? 'true' : 'false', autoBg: d.autoResume ? '#1B2B27' : '#17181C', autoBorder: d.autoResume ? '#3E6B5E' : '#3A3E47',
+      autoLabel: d.autoResume ? 'Auto-resume after reset: on' : 'Auto-resume after reset: off',
+      toggleAuto: () => this.updAgent(dk, { autoResume: !d.autoResume }),
+      instructions: d.instructions,
+      onInstr: (e) => this.updAgent(dk, { instructions: e.target.value }),
+      skills: s.skills.map((k) => Object.assign({ label: k.name, toggle: () => this.updAgent(dk, { skills: d.skills.indexOf(k.name) >= 0 ? d.skills.filter((x) => x !== k.name) : d.skills.concat([k.name]) }) }, onOff(d.skills.indexOf(k.name) >= 0))),
+      perms: permLabels.map(([k, label]) => {
+        const on = !!d.perms[k];
+        return { label, state: on ? 'Allowed' : 'Off', stateColor: on ? '#7FD1B9' : '#8A8F99', bg: on ? '#1B2B27' : '#17181C', border: on ? '#3E6B5E' : '#2C2F36', pressed: on ? 'true' : 'false', toggle: () => this.updAgent(dk, { perms: Object.assign({}, d.perms, { [k]: !on }) }) };
+      })
+    };
+
+    const accRows = Object.keys(accs).map((k) => {
+      const a = accs[k];
+      const users = Object.keys(agents).filter((x) => agents[x].account === k);
+      let status = 'Healthy', statusColor = '#7FD1B9';
+      if (s.offline) { status = 'Unreachable (offline)'; statusColor = '#F07B6B'; }
+      else if (a.u5 >= 100) { status = 'Limit reached · ' + a.reset; statusColor = '#F07B6B'; }
+      else if (a.auth !== 'ok') { status = 'Re-login soon'; statusColor = '#F0B455'; }
+      else if (a.u5 >= 70) { status = 'Running high'; statusColor = '#F0B455'; }
+      return { id: k, runtime: RT[a.runtime], agents: users.length + ' agent' + (users.length === 1 ? '' : 's'), org: a.org ? orgs[a.org].name : 'Personal', auth: a.auth === 'ok' ? 'Signed in' : 'Expires in 2 days', authColor: a.auth === 'ok' ? '#7FD1B9' : '#F0B455', u5: a.u5, wk: a.wk, reset: a.reset, u5Color: pctColor(a.u5), wkColor: pctColor(a.wk), status, statusColor };
+    });
+    const agentRows = Object.keys(agents).map((k) => {
+      const a = agents[k];
+      const stt = agentState(k);
+      return { id: k, sub: (a.scope === 'root' ? 'Root' : orgs[a.scope].name) + ' · ' + a.account + ' · ' + a.model, state: stt.label, stateColor: stt.color, dot: stt.color, open: () => this.setState({ view: 'agents', scope: a.scope, selAgent: k }) };
+    });
+
+    const skillRows = s.skills.map((k) => {
+      const users = Object.keys(agents).filter((x) => agents[x].skills.indexOf(k.name) >= 0);
+      return { name: k.name, source: k.source, srcColor: k.source.indexOf('sent in') === 0 ? '#F0B455' : '#A3A7B0', usedBy: users.length ? users.map((u) => '@' + u).join(' ') : 'Not enabled on any agent yet' };
+    });
+
+    const setupSeed = [
+      { kind: 'event', text: '@setup · claude-personal · ' + agents.setup.model },
+      { kind: 'agent', text: 'I scanned ~/Work, ~/.ssh/config, git remotes and ~/.work/profiles. I only read config files and public keys.' },
+      { kind: 'agent', text: 'Globex has two Claude accounts (seat 1 and seat 2) plus Kimi. I drafted two builders on separate seats so one can take over when the other hits a limit. Keep that?' },
+      { kind: 'you', text: 'Yes. And give Acme a Claude reviewer on claude-acme.' },
+      { kind: 'agent', text: 'Done, @acme-reviewer now runs on claude-acme. All 11 org agents are drafts, edit anything in Agents. Still open: tracker tokens and commit emails.' }
+    ];
+    const setupAll = setupSeed.concat(s.setupMsgs).concat(s.written ? [{ kind: 'event', text: 'wrote ~/.work/hub.yaml · 3 orgs · 8 accounts · 14 agents' }] : []);
+    const setupMsg = (m) => {
+      if (m.kind === 'event') return { isEvent: true, isMsg: false, text: m.text };
+      if (m.kind === 'you') return { isEvent: false, isMsg: true, name: 'you', initial: 'Y', color: '#ECEDEF', bubble: '#23324A', align: 'flex-end', text: m.text };
+      return { isEvent: false, isMsg: true, name: '@setup', initial: 'S', color: '#7FD1B9', bubble: '#1E2025', align: 'flex-start', text: m.text };
+    };
+    const items = [
+      { id: 'folders', title: 'Org folders', detail: '~/Work/Globex, ~/Work/Acme, ~/Work/Northwind', needs: false, action: 'Confirm' },
+      { id: 'remotes', title: 'Repos and remotes', detail: '5 repos on GitHub, GitLab, Bitbucket', needs: false, action: 'Confirm' },
+      { id: 'ssh', title: 'SSH keys per host', detail: 'github-globex, gitlab-acme, bitbucket-acme, github-northwind', needs: false, action: 'Confirm' },
+      { id: 'accounts', title: 'Accounts', detail: '8 accounts · Globex has 2 Claude seats', needs: false, action: 'Confirm' },
+      { id: 'agents', title: 'Org agents (drafts)', detail: '11 agents across 3 orgs, editable in Agents', needs: false, action: 'Confirm' },
+      { id: 'tokens', title: 'Tracker tokens', detail: 'Jira (Globex) and ClickUp (Acme) missing', needs: true, action: 'Add to Keychain' },
+      { id: 'identity', title: 'Commit identity', detail: 'Work email for each org', needs: true, action: 'Mark answered' }
+    ];
+    const doneCount = items.filter((i) => s.confirmed[i.id]).length;
+    const allDone = doneCount === items.length;
+    const setup = {
+      msgs: setupAll.map(setupMsg).reverse(),
+      items: items.map((i) => {
+        const ok = !!s.confirmed[i.id];
+        return { title: i.title, detail: i.detail, action: i.action, open: !ok, pill: ok ? 'Confirmed' : (i.needs ? 'Needs you' : 'Found'), pillColor: ok ? '#7FD1B9' : (i.needs ? '#F59C7F' : '#8AB8F5'), confirm: () => this.setState({ confirmed: Object.assign({}, s.confirmed, { [i.id]: true }) }) };
+      }),
+      progress: doneCount + ' of ' + items.length + ' confirmed',
+      cannotWrite: !allDone || s.written,
+      writeLabel: s.written ? 'hub.yaml written' : (allDone ? 'Write ~/.work/hub.yaml' : 'Confirm everything to write config'),
+      writeBg: allDone && !s.written ? '#F0B455' : '#1E2025', writeFg: allDone && !s.written ? '#1A1204' : '#8A8F99',
+      write: () => this.setState({ written: true })
+    };
+
+    const projRows = projects.map((pr) => {
+      const po = orgs[pr.org];
+      return {
+        id: pr.id, orgName: po.name, orgBadge: po.badge, orgColor: po.color, path: pr.path, team: po.team.map((x) => '@' + x).join(' '),
+        remotes: pr.remotes.map((r) => ({ host: r.host, tag: r.primary ? 'MRs' : 'mirror' })),
+        links: pr.links.map((l) => {
+          const cross = orgOfProject(l.to) !== pr.org;
+          return { to: l.to, type: l.type, border: cross ? '1px dashed #8C5A48' : '1px solid #3A3E47', note: cross ? 'cross-org · root agents only' : 'room gets it read-only', noteColor: cross ? '#F59C7F' : '#A3A7B0' };
+        }),
+        noLinks: pr.links.length === 0
+      };
+    });
+
+    const orgCards = Object.values(orgs).map((og) => {
+      const n = openTasks.filter((x) => orgOfProject(x.project) === og.id).length;
+      return {
+        name: og.name, badge: og.badge, color: og.color, tracker: og.tracker, trackerWhere: og.trackerWhere,
+        hosts: og.hosts, identity: og.identity, taskCount: n + ' open tasks',
+        accounts: Object.keys(accs).filter((k) => accs[k].org === og.id).map((k) => ({ id: k, sub: RT[accs[k].runtime] + ' · ' + accs[k].seat, color: s.offline || accs[k].u5 >= 100 ? '#F07B6B' : accs[k].auth !== 'ok' ? '#F0B455' : '#7FD1B9' })),
+        agentCount: Object.keys(agents).filter((k) => agents[k].scope === og.id).length,
+        manage: () => { const first = Object.keys(agents).find((k) => agents[k].scope === og.id); this.setState({ view: 'agents', scope: og.id, selAgent: first }); },
+        policies: [['never', 'Never merge'], ['approve', 'After my approval'], ['green', 'Auto if CI green']].map(([id, label]) => Object.assign({ label, pick: () => this.setState({ policy: Object.assign({}, s.policy, { [og.id]: id }) }) }, onOff(s.policy[og.id] === id)))
+      };
+    });
+
+    return {
+      nav, orgFilters, pulse, lastCheck: s.lastCheck, net, strip, viewH, offline: s.offline,
+      srcTabs, comp: (() => {
+        const c = s.comp;
+        const cp = proj(c.project) || projects[0];
+        const co = orgs[cp.org];
+        const setC = (patch) => this.setState({ comp: Object.assign({}, s.comp, patch) });
+        const ok = !!(c.title || '').trim();
+        const depTask = c.dep ? tasks.find((x) => x.id === c.dep) : null;
+        const willBlock = !!depTask && st(depTask.id) !== 'done';
+        const short = (x) => (x.length > 30 ? x.slice(0, 29) + '...' : x);
+        return {
+          open: c.open, key: c.tracker ? 'gets a ' + co.tracker + ' key' : 'LOCAL-' + (s.localCount + 1),
+          title: c.title, desc: c.desc,
+          onTitle: (e) => setC({ title: e.target.value }),
+          onDesc: (e) => setC({ desc: e.target.value }),
+          close: () => setC({ open: false }),
+          orgGroups: Object.values(orgs).map((og) => ({ badge: og.badge, color: og.color, projects: projects.filter((pp) => pp.org === og.id).map((pp) => Object.assign({ label: pp.id, pick: () => setC({ project: pp.id, dep: '' }) }, onOff(c.project === pp.id))) })),
+          deps: [{ id: '', label: 'None' }].concat(tasks.filter((x) => st(x.id) !== 'done' && orgOfProject(x.project) === cp.org).map((x) => ({ id: x.id, label: x.key + ' · ' + short(x.title) }))).map((dd) => Object.assign({ label: dd.label, pick: () => setC({ dep: dd.id }) }, onOff((c.dep || '') === dd.id))),
+          team: co.team.map((x) => '@' + x).join('  '), orgName: co.name,
+          trackOpts: [[false, 'Local only'], [true, 'Also create in ' + co.tracker]].map(([v, label]) => Object.assign({ label, pick: () => setC({ tracker: v }) }, onOff(!!c.tracker === v))),
+          trackNote: c.tracker ? 'Status and the MR link sync back to ' + co.tracker + '.' : 'Lives only in Work Hub. You can push it to ' + co.tracker + ' later.',
+          cannotAdd: !ok,
+          addFg2: ok ? '#ECEDEF' : '#6B707A',
+          addBg: ok ? '#F0B455' : '#1E2025', addFg: ok ? '#1A1204' : '#6B707A',
+          startLabel: willBlock ? 'Add, start when ' + depTask.key + ' merges' : 'Add and start team',
+          add: () => this.createTask(false), addStart: () => this.createTask(true)
+        };
+      })(),
+      newTask: () => this.openComposer(),
+      columns, boardSub, sel, act, room,
+      scopeTabs, scopeName, agentItems, ed, accRows, agentRows, skillRows, setup, projRows, orgCards,
+      skillInput: s.skillInput,
+      onSkillInput: (e) => this.setState({ skillInput: e.target.value }),
+      installSkill: () => {
+        const v = (s.skillInput || '').trim();
+        if (!v) return;
+        const name = v.replace(/\/$/, '').split('/').pop().replace(/\.(zip|git)$/, '');
+        if (s.skills.find((k) => k.name === name)) { this.setState({ skillInput: '' }); return; }
+        this.setState({ skillInput: '', skills: s.skills.concat([{ name, source: 'installed by you' }]) });
+      },
+      draft: s.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      onKey: (e) => { if (e.key === 'Enter') this.send(); },
+      send: () => this.send(),
+      newAgent: () => this.newAgent(),
+      toggleOffline: () => this.toggleOffline(),
+      offlineLabel: s.offline ? 'Restore connection' : 'Simulate connection loss',
+      healthCheck: () => this.setState({ lastCheck: 'just now' }),
+      back: () => this.setState({ view: 'board' }),
+      sync: () => this.setState({ lastSync: 'just now' }),
+      isBoard: s.view === 'board', isTask: s.view === 'task', isAgents: s.view === 'agents', isHealth: s.view === 'health', isSkills: s.view === 'skills', isSetup: s.view === 'setup', isProjects: s.view === 'projects', isOrgs: s.view === 'orgs'
+    };
+  }
+}
+</script>
+</body>
+</html>
