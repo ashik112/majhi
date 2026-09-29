@@ -18,6 +18,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.tasks];
     case "secrets":
       return [queryKeys.secrets];
+    case "usage":
+      return [queryKeys.usage];
   }
 }
 
@@ -30,6 +32,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "projects",
   "tasks",
   "secrets",
+  "usage",
 ];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */

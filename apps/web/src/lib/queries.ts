@@ -38,6 +38,8 @@ export const queryKeys = {
   settings: ["config", "settings"],
   history: ["config", "history"],
   secrets: ["secrets"],
+  /** Every `usage.*` read: totals, breakdowns, turns and the price table. */
+  usage: ["usage"],
 } as const;
 
 export function useConfig() {

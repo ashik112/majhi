@@ -45,3 +45,30 @@ export function formatBytes(bytes: number): string {
   const mb = kb / 1000;
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }
+
+const USD = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** "$0.00", "<$0.01", "$4.20", "$1,284.50". */
+export function formatMoney(usd: number): string {
+  if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
+  if (usd < 0.01) return "<$0.01";
+  return USD.format(usd);
+}
+
+/** "950", "1.2k", "34k", "1.2M", "34M". One decimal below 10, whole numbers above. */
+export function formatTokens(count: number): string {
+  const n = Math.max(0, Math.round(count));
+  if (n < 1000) return String(n);
+  const scaled = (value: number, unit: string) => {
+    const text = value < 9.95 ? value.toFixed(1).replace(/\.0$/, "") : String(Math.round(value));
+    return `${text}${unit}`;
+  };
+  if (n < 999_500) return scaled(n / 1000, "k");
+  if (n < 999_500_000) return scaled(n / 1_000_000, "M");
+  return scaled(n / 1_000_000_000, "B");
+}
