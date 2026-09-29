@@ -616,6 +616,12 @@ Delivered in two parts, each usable and reviewed on its own.
 - No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
 - **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact.
 
+#### Phase 2c: Tokens and cost
+- Record every turn: input, output, reasoning, cache read and cache write tokens (from ACP's cumulative session usage, stored as per-turn deltas), cost, model, and the task, agent, account, org, project and time. API-key accounts show real cost; subscription accounts show the equivalent API cost, labelled estimated; tools that report no cost get an estimate from an owner-editable price table per model.
+- A "Tokens and cost" section on the Health and usage page: totals for today, this week and this month, filters by org, project, agent, account and model, a daily chart and the top tasks. Each task shows its total in the task view; org cards show theirs.
+- Commands `usage.summary` and `usage.breakdown`, so the boss can answer questions like "what did Acme cost this week?"
+- **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data.
+
 ### Phase 3: Teams, rooms and decisions
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.
 - Team editing in the room: add, remove, swap agent, change model.
