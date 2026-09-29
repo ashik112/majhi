@@ -2,6 +2,8 @@ import type { ToolContent } from "@majhi/shared";
 import type { SessionOptions } from "./acp-session.ts";
 import type { GitIdentity } from "./env.ts";
 import type { AccountRuntime, RuntimeOptions } from "./index.ts";
+import type { DebugLog } from "./normalize.ts";
+import { openSession } from "./session-impl.ts";
 
 /**
  * One live ACP session with an agent process (SPEC 5.1, 5.15). The server's
@@ -20,6 +22,8 @@ export interface SessionStart {
   resume?: string;
   model?: string;
   effort?: string;
+  /** How long `cancel()` waits for the turn to end. Default 10 s. */
+  cancelTimeoutMs?: number;
 }
 
 export type McpServerSpec = { type: "http"; name: string; url: string; headers: Record<string, string> };
@@ -40,6 +44,8 @@ export type SessionEvent =
   | { type: "usage"; used: number; size: number }
   | { type: "commands"; commands: { name: string; description?: string }[] }
   | { type: "notice"; level: "info" | "warn" | "error"; text: string }
+  /** Current model and effort ids changed (the agent reported new config options, or `setOption` ran). */
+  | { type: "config"; model?: string; effort?: string }
   | { type: "exit"; code: number | null; error?: string }; // process died
 
 export interface PermissionAsk {
@@ -56,6 +62,8 @@ export interface PermissionAsk {
 
 export interface AgentSession {
   readonly sessionId: string;
+  /** Process id of the adapter (its process group id too). For diagnostics and tests. */
+  readonly pid: number | undefined;
   readonly models: SessionOptions; // current model/effort options
   onEvent(listener: (e: SessionEvent) => void): () => void;
   /** Called for every permission request; resolve with an option id, or undefined to cancel. */
@@ -76,6 +84,6 @@ export type PromptBlock =
   | { type: "image"; mime: string; data: string } // base64
   | { type: "resource_link"; uri: string; name: string; mime?: string };
 
-export function startSession(_start: SessionStart): Promise<AgentSession> {
-  throw new Error("not implemented");
+export function startSession(start: SessionStart, log?: DebugLog): Promise<AgentSession> {
+  return openSession(start, log);
 }

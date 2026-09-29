@@ -106,7 +106,7 @@ export async function readSessionOptions(
   }
 }
 
-function isAuthRequired(err: unknown): boolean {
+export function isAuthRequired(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === AUTH_REQUIRED;
 }
 
@@ -130,7 +130,7 @@ function currentValue(option: SessionConfigOption | undefined): string | undefin
   return option?.type === "select" ? option.currentValue : undefined;
 }
 
-function extractOptions(options: SessionConfigOption[]): SessionOptions {
+export function extractOptions(options: SessionConfigOption[]): SessionOptions {
   const model = options.find((o) => o.category === "model");
   const effort = options.find((o) => o.category === "thought_level");
   const result: SessionOptions = {

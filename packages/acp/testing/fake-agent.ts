@@ -8,16 +8,8 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { Readable, Writable } from "node:stream";
-import {
-  type Agent,
-  AgentSideConnection,
-  ndJsonStream,
-  PROTOCOL_VERSION,
-  RequestError,
-  type SessionConfigOption,
-} from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import { serveAcp } from "./fake-turn.ts";
 
 const Flags = z.object({
   tool: z.enum(["claude", "codex"]),
@@ -25,6 +17,12 @@ const Flags = z.object({
   broken: z.boolean(),
   models: z.array(z.string().min(1)),
   efforts: z.array(z.string().min(1)),
+  /** Delay in ms between the steps of a scripted turn. */
+  slowMs: z.number().int().nonnegative(),
+  /** Advertise `loadSession`. */
+  loadSession: z.boolean(),
+  /** Advertise image prompts. */
+  images: z.boolean(),
   /** Canned usage for the Claude `usage` argv and the Codex app-server. */
   usage: z.object({
     fiveHourPct: z.number(),
@@ -44,6 +42,9 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     broken: boolean;
     models: string[];
     efforts: string[];
+    slowMs: number;
+    loadSession: boolean;
+    images: boolean;
     usage: {
       fiveHourPct: number;
       weekPct: number;
@@ -57,6 +58,9 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     broken: false,
     models: ["fake-model-a", "fake-model-b"],
     efforts: ["low", "medium", "high"],
+    slowMs: 0,
+    loadSession: true,
+    images: true,
     usage: { fiveHourPct: 42, weekPct: 18, plan: "max" },
   };
   let i = 0;
@@ -67,6 +71,9 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--broken") raw.broken = true;
     else if (a === "--models") raw.models = (argv[++i] ?? "").split(",").filter(Boolean);
     else if (a === "--efforts") raw.efforts = (argv[++i] ?? "").split(",").filter(Boolean);
+    else if (a === "--slow") raw.slowMs = Number(argv[++i]);
+    else if (a === "--no-load-session") raw.loadSession = false;
+    else if (a === "--no-images") raw.images = false;
     else if (a === "--five-hour-pct") raw.usage.fiveHourPct = Number(argv[++i]);
     else if (a === "--week-pct") raw.usage.weekPct = Number(argv[++i]);
     else if (a === "--opus-pct") raw.usage.opusPct = Number(argv[++i]);
@@ -260,69 +267,16 @@ async function runCli(flags: Flags, argv: string[]): Promise<number> {
   return 2;
 }
 
-function configOptions(flags: Flags, model: string, effort: string): SessionConfigOption[] {
-  const toValues = (ids: string[]) => ids.map((id) => ({ value: id, name: id }));
-  return [
-    {
-      id: "model",
-      name: "Model",
-      category: "model",
-      type: "select",
-      currentValue: model,
-      options: toValues(flags.models),
-    },
-    {
-      id: flags.tool === "claude" ? "effort" : "reasoning_effort",
-      name: "Effort",
-      category: "thought_level",
-      type: "select",
-      currentValue: effort,
-      options: toValues(flags.efforts),
-    },
-  ];
-}
-
-function serveAcp(flags: Flags): void {
-  const sessions = new Map<string, { model: string; effort: string }>();
-  const stream = ndJsonStream(
-    Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
-    Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
-  );
-  new AgentSideConnection((conn): Agent => {
-    return {
-      initialize: async () => ({
-        protocolVersion: PROTOCOL_VERSION,
-        agentCapabilities: { loadSession: false },
-        authMethods: [],
-      }),
-      authenticate: async () => ({}),
-      newSession: async () => {
-        if (!isSignedIn(flags)) throw RequestError.authRequired(undefined, "Sign in first");
-        const sessionId = `fake-${sessions.size + 1}`;
-        const state = { model: flags.models[0] ?? "", effort: flags.efforts[0] ?? "" };
-        sessions.set(sessionId, state);
-        return { sessionId, configOptions: configOptions(flags, state.model, state.effort) };
-      },
-      setSessionConfigOption: async (params) => {
-        const state = sessions.get(params.sessionId);
-        if (!state) throw RequestError.invalidParams(undefined, "Unknown session");
-        if (typeof params.value !== "string")
-          throw RequestError.invalidParams(undefined, "Not a boolean option");
-        if (params.configId === "model") state.model = params.value;
-        else state.effort = params.value;
-        return { configOptions: configOptions(flags, state.model, state.effort) };
-      },
-      prompt: async (params) => {
-        const text = params.prompt.map((b) => (b.type === "text" ? b.text : `[${b.type}]`)).join("\n");
-        await conn.sessionUpdate({
-          sessionId: params.sessionId,
-          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `echo: ${text}` } },
-        });
-        return { stopReason: "end_turn" };
-      },
-      cancel: async () => {},
-    };
-  }, stream);
+function serve(flags: Flags): void {
+  serveAcp({
+    tool: flags.tool,
+    models: flags.models,
+    efforts: flags.efforts,
+    slowMs: flags.slowMs,
+    loadSession: flags.loadSession,
+    images: flags.images,
+    signedIn: () => isSignedIn(flags),
+  });
 }
 
 async function main(): Promise<void> {
@@ -334,7 +288,7 @@ async function main(): Promise<void> {
   if (rest.length > 0) {
     process.exit(await runCli(flags, rest));
   }
-  serveAcp(flags);
+  serve(flags);
 }
 
 await main();
