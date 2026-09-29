@@ -61,7 +61,12 @@ describe("room socket", () => {
 
     await w.h.cmd("tasks.start", { id: "ACM-1" });
     await w.h.majhi.services.runs.idle();
-    await until(() => c.messages.some((m) => m.type === "agent" && m.agent.status === "idle"));
+    // The idle state is also sent before the turn, so wait for the last item of the turn itself.
+    await until(() =>
+      c.messages.some(
+        (m) => m.type === "item" && "text" in m.item && m.item.text.startsWith("Ready for your review"),
+      ),
+    );
     const types = c.messages.map((m) => m.type);
     expect(types).toContain("task");
     expect(types).toContain("item");
