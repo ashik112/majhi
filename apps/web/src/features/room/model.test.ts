@@ -234,21 +234,26 @@ describe("permissionSummary", () => {
     expect(permissionSummary(item("pending"))).toEqual({ pending: true });
   });
   it("collapses answered and auto prompts to a verdict and a short request", () => {
-    expect(permissionSummary(item("auto", "yes"))).toEqual({ pending: false, verdict: "Allowed by rule", short: "npm test" });
-    expect(permissionSummary(item("answered", "no"))).toEqual({ pending: false, verdict: "Denied", short: "npm test" });
+    expect(permissionSummary(item("auto", "yes"))).toEqual({
+      pending: false,
+      verdict: "Allowed by rule",
+      short: "npm test",
+    });
+    expect(permissionSummary(item("answered", "no"))).toEqual({
+      pending: false,
+      verdict: "Denied",
+      short: "npm test",
+    });
     expect(permissionSummary(item("answered", "always"))).toEqual({
       pending: false,
       verdict: "Allowed for this task",
       short: "npm test",
     });
-    expect(permissionSummary(item("cancelled"))).toEqual({ pending: false, verdict: "Cancelled", short: "npm test" });
-  });
-    expect(permissionSummary(item("answered", "no"))).toEqual({ pending: false, text: "Denied: npm test" });
-    expect(permissionSummary(item("answered", "always"))).toEqual({
+    expect(permissionSummary(item("cancelled"))).toEqual({
       pending: false,
-      text: "Allowed for this task: npm test",
+      verdict: "Cancelled",
+      short: "npm test",
     });
-    expect(permissionSummary(item("cancelled"))).toEqual({ pending: false, text: "Cancelled: npm test" });
   });
 });
 
