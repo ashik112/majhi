@@ -50,7 +50,8 @@ async function teamWorld(
   h.runtime.onSession = (session, start) => {
     const agent = agentOf[basename(start.account.home)] ?? "unknown";
     session.script = async (turn) => {
-      const list = (prompts[agent] ??= []);
+      const list = prompts[agent] ?? [];
+      prompts[agent] = list;
       list.push(turn.text);
       const step = scripts[agent]?.[list.length - 1];
       const text = step === undefined ? "ok" : await step(turn);
