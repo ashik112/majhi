@@ -14,7 +14,7 @@ import type { CommandHandler, CommandHandlers, ParsedInput } from "./handlers.ts
 /** The `error` of a 503 answer: the command needs the host helper and none is connected. */
 const HOST_OFFLINE_ERROR = "host-offline";
 
-type Failure = { ok: false; status: 400 | 404 | 409 | 500 | 503; error: ApiError };
+type Failure = { ok: false; status: 400 | 404 | 409 | 500 | 501 | 503; error: ApiError };
 export type DispatchResult = { ok: true; output: unknown } | Failure;
 
 export type Dispatch = (

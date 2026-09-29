@@ -148,6 +148,9 @@ export class TaskRepo {
         team: TeamSchema.parse(JSON.parse(row.team)),
         updatedAt: row.updatedAt,
         repos: byTask.get(row.id) ?? [],
+        // Filled from task_links by the task links work in Phase 2b.
+        links: [],
+        waitingOn: [],
       };
       if (row.org !== null) summary.org = row.org;
       if (row.pausedReason !== null)

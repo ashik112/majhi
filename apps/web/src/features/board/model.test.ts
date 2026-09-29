@@ -10,6 +10,8 @@ const task = (over: Partial<TaskSummary> & { id: string }): TaskSummary => ({
   updatedAt: "2026-09-29T10:00:00Z",
   repos: [],
   working: [],
+  links: [],
+  waitingOn: [],
   ...over,
 });
 

@@ -181,7 +181,31 @@ export function createHandlers({
     }),
     "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
+    // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
+    "tasks.link": notBuilt,
+    "tasks.unlink": notBuilt,
+    "room.fresh": notBuilt,
+    "room.approve": notBuilt,
+    "room.secret": notBuilt,
+    "secrets.list": notBuilt,
+    "secrets.save": notBuilt,
+    "secrets.remove": notBuilt,
+    "history.list": notBuilt,
+    "history.undo": notBuilt,
+    "settings.get": notBuilt,
+    "settings.set": notBuilt,
+    "policy.set": notBuilt,
+    "boss.chat": notBuilt,
+    "health.run": notBuilt,
+    "health.fix": notBuilt,
+    "system.version": notBuilt,
+    "system.update": notBuilt,
   };
+}
+
+/** Placeholder for a Phase 2b command that is not built yet. */
+async function notBuilt(): Promise<never> {
+  throw new UserError("This command is not built yet.", 501);
 }
 
 /** Roots the server cannot see, because they are not mounted yet. */

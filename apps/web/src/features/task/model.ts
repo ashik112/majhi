@@ -15,6 +15,10 @@ export function agentState(live: AgentLive | undefined): AgentState {
       return { label: "Working", tone: "amber" };
     case "starting":
       return { label: "Starting", tone: "amber" };
+    case "queued":
+      return { label: live.slot ? `Queued, #${live.slot} in line` : "Queued", tone: "faint" };
+    case "paused":
+      return { label: "Paused", tone: "muted" };
     case "waiting":
       return { label: "Waiting for you", tone: "violet" };
     case "error":

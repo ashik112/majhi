@@ -51,7 +51,7 @@ export function exitCode(err: unknown): number | undefined {
 export class UserError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 404 | 409 = 400,
+    readonly status: 400 | 404 | 409 | 501 = 400,
     readonly details: string[] = [],
   ) {
     super(message);
