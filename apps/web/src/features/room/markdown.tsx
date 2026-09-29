@@ -2,10 +2,13 @@ import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { TaskRef } from "@/features/task-drawer/task-ref";
 import { cn } from "@/lib/cn";
+import { useTaskIds } from "@/lib/task-queries";
 import { useHighlight } from "./highlight";
 import { classifyTarget, presentFileLink, safeHref } from "./links";
 import { TaskFileLink, type TaskFiles, TaskFileView } from "./media";
+import { remarkTaskRefs, TASK_REF_PROP } from "./task-refs";
 
 export type MarkdownSize = "chat" | "document";
 
@@ -166,6 +169,11 @@ function buildComponents({ task, baseDir }: Scope): Components {
       }
       return <>{name}</>;
     },
+    span({ node, children, ...rest }) {
+      const id = node?.properties?.[TASK_REF_PROP];
+      if (typeof id === "string") return <TaskRef id={id}>{children}</TaskRef>;
+      return <span {...rest}>{children}</span>;
+    },
     pre({ node, children }) {
       return <CodeBlock node={node}>{children}</CodeBlock>;
     },
@@ -182,11 +190,10 @@ function buildComponents({ task, baseDir }: Scope): Components {
 /** react-markdown's own url filter is replaced by the room's: web, mail and task paths only. */
 const urlTransform = (url: string) => safeHref(url) ?? "";
 
-const remarkPlugins: Options["remarkPlugins"] = [remarkGfm];
-
 /**
  * Agent text as React elements. No raw HTML, never innerHTML. Only http(s) and mail links and paths
- * in the task folder become links; a link to a task file opens in the in-app viewer.
+ * in the task folder become links; a link to a task file opens in the in-app viewer. Ids of known
+ * tasks open the task drawer.
  */
 export function Markdown({
   text,
@@ -202,6 +209,11 @@ export function Markdown({
 }) {
   const highlight = useHighlight();
   const components = useMemo(() => buildComponents({ task, baseDir }), [task, baseDir]);
+  const known = useTaskIds();
+  const remarkPlugins = useMemo<Options["remarkPlugins"]>(
+    () => [remarkGfm, [remarkTaskRefs, { known }]],
+    [known],
+  );
   return (
     <div className={cn("md", size === "document" && "md-doc")}>
       <ReactMarkdown

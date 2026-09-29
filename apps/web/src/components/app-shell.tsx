@@ -1,4 +1,4 @@
-import { Outlet, useRouterState } from "@tanstack/react-router";
+import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
 import * as m from "motion/react-m";
 import { useMemo } from "react";
 import { InShellContext } from "@/components/centered-page";
@@ -11,6 +11,7 @@ import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
+import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
@@ -52,6 +53,7 @@ function Frame() {
   const accounts = useAccounts().data;
   const agents = useAgentIndex();
   const permission = usePendingPermission();
+  const { task: drawerTask } = useSearch({ from: "__root__" });
   const now = useNow(60_000);
   const banner = useMemo(
     () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
@@ -82,6 +84,7 @@ function Frame() {
         </m.div>
       </main>
       <BossDrawer />
+      {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );

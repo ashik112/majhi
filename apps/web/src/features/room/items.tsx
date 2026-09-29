@@ -3,6 +3,7 @@ import { Brain, ChevronRight, ListChecks, Paperclip, ShieldQuestion } from "luci
 import { memo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
+import { TaskRefText } from "@/features/task-drawer/task-ref";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
@@ -99,7 +100,7 @@ function OwnerMessage({ item }: { item: Of<"owner"> }) {
               item.queued && "opacity-70",
             )}
           >
-            {item.text}
+            <TaskRefText text={item.text} />
           </div>
           {item.attachments.length > 0 && (
             <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
@@ -174,7 +175,7 @@ function Thought({ item }: { item: Of<"thought"> }) {
       </button>
       {open && (
         <p className="mt-1 border-l-2 border-line-strong pl-3 text-base whitespace-pre-wrap break-words text-fg-muted">
-          {item.text}
+          <TaskRefText text={item.text} />
         </p>
       )}
     </div>
@@ -319,7 +320,7 @@ function SystemLine({ item }: { item: Of<"system"> }) {
           SYSTEM_TONE[item.level],
         )}
       >
-        {item.text}
+        <TaskRefText text={item.text} />
       </span>
     </div>
   );
