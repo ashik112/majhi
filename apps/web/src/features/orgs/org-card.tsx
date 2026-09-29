@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { PageLink } from "@/components/ui/page-link";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Select } from "@/components/ui/select";
 import { Dot, toneText } from "@/components/ui/status-dot";
 import { ORG_COLORS, statusInfo } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
@@ -313,6 +314,22 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
           )}
         </Field>
       </fieldset>
+      <Field
+        label="Resume interrupted work"
+        hint="After a restart, lost internet or sleep, without you clicking."
+      >
+        {(p) => (
+          <Select
+            {...p}
+            value={draft.resume}
+            onChange={(e) => set({ resume: e.target.value as OrgDraft["resume"] })}
+          >
+            <option value="default">majhi's setting</option>
+            <option value="on">On its own</option>
+            <option value="off">Wait for me</option>
+          </Select>
+        )}
+      </Field>
       {failure && (
         <p role="alert" className="text-sm text-red text-pretty">
           {failure}

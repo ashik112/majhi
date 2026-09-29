@@ -699,10 +699,18 @@ describe("room history and files", () => {
     const hit = await w.h.cmd("room.files", { task: "ACM-1", query: "health" });
     expect(hit.body).toEqual([{ path: "acme-api/src/routes/health.ts", repo: "acme-api" }]);
     const all = await w.h.cmd("room.files", { task: "ACM-1", query: "" });
-    expect(all.body.map((f: { path: string }) => f.path)).toEqual([
-      "acme-api/README.md",
-      "acme-api/src/index.ts",
-      "acme-api/src/routes/health.ts",
-    ]);
+    // Worktree files, then the task folder's own files, and registered projects by path.
+    expect(all.body).toEqual(
+      expect.arrayContaining([
+        { path: "acme-api/README.md", repo: "acme-api" },
+        { path: "acme-api/src/index.ts", repo: "acme-api" },
+        { path: "acme-api/src/routes/health.ts", repo: "acme-api" },
+        { path: "TASK.md", repo: "task" },
+        { path: w.repo("api"), repo: "project" },
+      ]),
+    );
+    expect(
+      all.body.some((f: { path: string }) => f.path.includes(".handoffs") || f.path.includes(".git/")),
+    ).toBe(false);
   });
 });

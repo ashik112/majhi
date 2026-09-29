@@ -8,6 +8,8 @@ export interface OrgDraft {
   base: string;
   identityName: string;
   identityEmail: string;
+  /** Resume interrupted work on its own: majhi's setting, or this org's own. */
+  resume: "default" | "on" | "off";
 }
 
 export type OrgErrors = Partial<Record<keyof OrgDraft, string>>;
@@ -20,6 +22,7 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     base: org.base ?? "",
     identityName: org.identity?.name ?? "",
     identityEmail: org.identity?.email ?? "",
+    resume: org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off",
   };
 }
 
@@ -70,6 +73,10 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
       else errors.identityEmail = "Use an email address like you@company.com";
     }
   }
+
+  const resume = org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off";
+  if (draft.resume !== resume)
+    input.resume = draft.resume === "default" ? null : { auto: draft.resume === "on" };
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, input: Object.keys(input).length > 1 ? input : undefined };
