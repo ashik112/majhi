@@ -27,16 +27,12 @@ async function addTask(
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("textbox", { name: "Title" }).fill(title);
   for (const id of opts.dependsOn ?? []) {
-    await dialog(page)
-      .getByRole("group", { name: "Depends on" })
-      .getByRole("button", { name: new RegExp(`^${id}`) })
-      .click();
+    await dialog(page).getByRole("button", { name: "Choose depends on" }).click();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${id}`) }).click();
   }
   if (opts.partOf) {
-    await dialog(page)
-      .getByRole("group", { name: "Part of" })
-      .getByRole("button", { name: new RegExp(`^${opts.partOf}`) })
-      .click();
+    await dialog(page).getByRole("button", { name: "Choose part of" }).click();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${opts.partOf}`) }).click();
   }
   await dialog(page)
     .getByRole("button", { name: opts.start ? "Add and start" : "Add to inbox" })
@@ -86,21 +82,20 @@ test("a parent shows its progress and closes when its children are done", async 
   await page.goto(`/t/${parent}`);
   const links = page.getByTestId("task-links");
   await expect(links.getByText("0 of 2 done")).toBeVisible();
-  await expect(links.getByRole("link", { name: one })).toBeVisible();
+  await links.getByRole("button", { name: /Subtasks/ }).click();
+  await expect(page.getByRole("menuitemradio", { name: new RegExp(one) })).toBeVisible();
+  await page.keyboard.press("Escape");
 
   // Add a link from the task view: make the second child wait for the first.
   await page.goto(`/t/${two}`);
   await page.getByRole("button", { name: "Link a task" }).click();
   await page.getByRole("menuitem", { name: "Waits for..." }).click();
   const picker = page.getByRole("dialog", { name: "Waits for" });
-  await picker.getByRole("button", { name: new RegExp(`^${one}`) }).click();
+  await picker.getByRole("button", { name: "Choose waits for" }).click();
+  await picker.getByRole("menuitemradio", { name: new RegExp(`^${one}`) }).click();
   await picker.getByRole("button", { name: "Add link" }).click();
   await expect(page.getByTestId("task-links").getByText("Waits for")).toBeVisible();
-  await page
-    .getByRole("button", { name: `Options for ${one}` })
-    .last()
-    .click();
-  await page.getByRole("menuitem", { name: "Remove link" }).click();
+  await page.getByRole("button", { name: `Remove link to ${one}` }).click();
   await page
     .getByRole("dialog", { name: "Remove link" })
     .getByRole("button", { name: "Remove link" })

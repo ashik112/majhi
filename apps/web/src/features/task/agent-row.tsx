@@ -1,4 +1,4 @@
-import type { AccountView, AgentLive } from "@majhi/shared";
+import type { AccountUsage, AccountView, AgentLive } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, RefreshCcw } from "lucide-react";
 import { useId, useState } from "react";
@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { toneText } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
-import { statusText } from "@/features/accounts/model";
-import { WindowLine } from "@/features/accounts/usage-view";
+import { UsageBar } from "@/components/ui/usage-bar";
+import { barTone, formatPct, resetFull, statusText } from "@/features/accounts/model";
 import { PERMS } from "@/features/agents/model";
 import type { AgentInfo } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
@@ -36,7 +36,6 @@ export function AgentRow({
   state,
   account,
   now,
-  defaultOpen,
 }: {
   task: string;
   id: string;
@@ -45,15 +44,14 @@ export function AgentRow({
   state: AgentState;
   account: AccountView | undefined;
   now: number;
-  defaultOpen: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(false);
   const detailsId = useId();
   const line = nowDoingLine(live);
   const idle = line === "Idle";
   return (
-    <div className="flex flex-col border-t border-line-strong pt-2.5">
-      <div className="flex h-11 items-center gap-1">
+    <div className="flex flex-col border-t border-line-strong pt-1">
+      <div className="flex h-10 items-center gap-1">
         <button
           type="button"
           aria-expanded={open}
@@ -62,35 +60,26 @@ export function AgentRow({
           className="-ml-1 flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1 text-left hover:bg-raised"
           onClick={() => setOpen((o) => !o)}
         >
-          <AgentAvatar id={id} size={28} dot={agentDot(live)} />
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <AgentAvatar id={id} size={24} dot={agentDot(live)} />
+          <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className="truncate font-mono text-base font-medium">@{id}</span>
-              {info && (
-                <span className="shrink-0 rounded-sm bg-selected px-1.5 py-0.5 text-xs text-fg-soft">
-                  {info.role}
-                </span>
-              )}
-              {/* The second line already says Idle. */}
-              {state.label !== "Idle" && (
-                <span className={cn("shrink-0 whitespace-nowrap text-xs", STATE_TEXT[state.tone])}>
-                  {state.label}
+              <span className="truncate font-mono text-sm font-medium">@{id}</span>
+            </span>
+            {/* State first, then what it is doing: the row keeps one height while the agent works. */}
+            <span aria-live="polite" className="flex min-w-0 items-baseline gap-1.5 text-xs">
+              {info && <span className="shrink-0 text-fg-faint">{info.role} ·</span>}
+              <span className={cn("shrink-0 whitespace-nowrap", STATE_TEXT[state.tone])}>{state.label}</span>
+              {!idle && (
+                <span title={line} className="min-w-0 truncate text-fg-faint">
+                  · {line}
                 </span>
               )}
               {live && live.queued > 0 && (
-                <span className="tnum shrink-0 whitespace-nowrap text-xs text-fg-faint">
-                  · {live.queued} queued
-                </span>
+                <span className="tnum shrink-0 whitespace-nowrap text-fg-faint">· {live.queued} queued</span>
               )}
             </span>
-            <span
-              aria-live="polite"
-              title={idle ? undefined : line}
-              className={cn("truncate text-xs", idle ? "text-fg-dim" : "text-fg-faint")}
-            >
-              {line}
-            </span>
           </span>
+          {account?.usage && <LimitsSummary usage={account.usage} />}
           <ChevronDown
             aria-hidden="true"
             className={cn("size-3.5 shrink-0 text-fg-faint transition-transform", open && "rotate-180")}
@@ -122,9 +111,9 @@ function AgentDetails({
   const meter = contextMeter(live?.usage);
   const perms = PERMS.filter((p) => info?.perms.includes(p.id)).map((p) => p.label);
   return (
-    <div id={id} className="flex flex-col gap-3 pt-2.5 pb-1">
+    <div id={id} className="flex flex-col gap-2.5 pt-1.5 pb-2">
       {info && <AccountLimits accountId={info.account} account={account} now={now} />}
-      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+      <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
         <dt className="text-fg-faint">Context</dt>
         <dd>
           {meter ? (
@@ -142,7 +131,7 @@ function AgentDetails({
         <dt className="text-fg-faint">Fallback</dt>
         <dd className="truncate font-mono">{info?.fallback ? `@${info.fallback}` : "None"}</dd>
       </dl>
-      <div className="flex gap-4 text-sm">
+      <div className="flex gap-4 text-xs">
         <PageLink page="agents" search={{ agent }} className="text-blue hover:underline">
           Edit agent
         </PageLink>
@@ -171,8 +160,8 @@ function AccountLimits({
   const hasWindows =
     usage?.window !== undefined || usage?.weekly !== undefined || (usage?.models.length ?? 0) > 0;
   return (
-    <section aria-label={`Limits of ${accountId}`} className="flex flex-col gap-2">
-      <span className="flex min-w-0 items-baseline gap-2 text-sm">
+    <section aria-label={`Limits of ${accountId}`} className="flex flex-col gap-1.5">
+      <span className="flex min-w-0 items-baseline gap-2 text-xs">
         <span className="truncate font-mono text-fg-soft">{accountId}</span>
         {usage?.plan && <span className="shrink-0 text-fg-faint">{usage.plan}</span>}
         {status && (
@@ -180,15 +169,15 @@ function AccountLimits({
         )}
       </span>
       {!account ? (
-        <span className="text-sm text-red">This account is not set up.</span>
+        <span className="text-xs text-red">This account is not set up.</span>
       ) : account.auth === "api-key" ? (
-        <span className="text-sm text-fg-faint">API key: no 5-hour or weekly limits.</span>
+        <span className="text-xs text-fg-faint">API key: no 5-hour or weekly limits.</span>
       ) : hasWindows && usage ? (
         <>
-          {usage.window && <WindowLine label="5-hour" window={usage.window} />}
-          {usage.weekly && <WindowLine label="Weekly" window={usage.weekly} />}
+          {usage.window && <LimitLine label="5-hour" window={usage.window} />}
+          {usage.weekly && <LimitLine label="Weekly" window={usage.weekly} />}
           {usage.models.map((m) => (
-            <WindowLine key={m.label} label={`Weekly, ${m.label}`} window={m} />
+            <LimitLine key={m.label} label={`Weekly, ${m.label}`} window={m} />
           ))}
           <span className="text-xs text-fg-faint">
             Read {formatAgo(usage.updatedAt, now)}
@@ -196,11 +185,51 @@ function AccountLimits({
           </span>
         </>
       ) : (
-        <span className="text-sm text-fg-faint">
+        <span className="text-xs text-fg-faint">
           {usage?.error ? "Usage unavailable" : "No usage read yet"}
         </span>
       )}
     </section>
+  );
+}
+
+/** "5h 48% · wk 74%" in the row, so the limits read without opening it. */
+function LimitsSummary({ usage }: { usage: AccountUsage }) {
+  const parts = [
+    usage.window && { key: "5h", pct: usage.window.usedPct },
+    usage.weekly && { key: "wk", pct: usage.weekly.usedPct },
+  ].filter((p) => p !== undefined);
+  if (parts.length === 0) return null;
+  return (
+    <span className="tnum flex shrink-0 gap-1.5 text-xs" title="Account limits used">
+      {parts.map((p) => (
+        <span key={p.key}>
+          <span className="text-fg-faint">{p.key}</span>{" "}
+          <span className={toneText(barTone(p.pct))}>{formatPct(p.pct)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** One window on one line: label, bar, share used; the reset time is in the tooltip and on the right. */
+function LimitLine({
+  label,
+  window,
+}: {
+  label: string;
+  window: { usedPct: number; resetsAt?: string | undefined };
+}) {
+  const tone = barTone(window.usedPct);
+  return (
+    <span
+      className="grid grid-cols-[92px_minmax(0,1fr)_36px] items-center gap-2 text-xs"
+      title={window.resetsAt ? `Resets ${resetFull(window.resetsAt)}` : undefined}
+    >
+      <span className="truncate text-fg-soft">{label}</span>
+      <UsageBar pct={window.usedPct} tone={tone} height={3} />
+      <span className={cn("tnum text-right", toneText(tone))}>{formatPct(window.usedPct)}</span>
+    </span>
   );
 }
 

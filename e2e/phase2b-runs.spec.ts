@@ -61,6 +61,9 @@ test("a compaction shows in the room as one quiet line, and Fresh session carrie
   await expect(messages(page).getByText("@acme-lead compacted: 42k to 4k tokens (native)")).toBeVisible({
     timeout: 20_000,
   });
+  await panel(page)
+    .getByRole("button", { name: /@acme-lead/, expanded: false })
+    .click();
   const meter = panel(page).getByRole("meter", { name: "Context of @acme-lead" });
   await expect(meter).toHaveAttribute("aria-valuetext", "4k of 200k tokens");
   await shot(page, "runs-compacted");
@@ -109,7 +112,7 @@ test("offline pauses the running task, and it resumes on its own when the connec
   writeFileSync(OFFLINE_FILE, "");
   await expect(panel(page).getByText("Paused, offline")).toBeVisible({ timeout: 10_000 });
   await expect(
-    panel(page).getByText("majhi is offline. The task continues on its own when the connection is back."),
+    page.getByText("majhi is offline. The task continues on its own when the connection is back."),
   ).toBeVisible();
   expect(await status(request, id)).toMatchObject({ status: "paused", pausedReason: "offline" });
   // The cut turn's prompt was withdrawn.

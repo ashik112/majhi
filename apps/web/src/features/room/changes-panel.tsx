@@ -13,12 +13,12 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
   const total = groups.reduce((sum, group) => sum + group.files.length, 0);
 
   return (
-    <Card aria-labelledby="changes-heading">
+    <Card aria-labelledby="changes-heading" className="gap-2 px-3 py-2.5">
       <div className="flex items-baseline gap-2">
-        <h2 id="changes-heading" className="text-body font-semibold">
+        <h2 id="changes-heading" className="text-sm font-semibold">
           Changes
         </h2>
-        <span className="tnum text-sm text-fg-faint">{total === 0 ? "none yet" : plural(total, "file")}</span>
+        <span className="tnum text-xs text-fg-faint">{total === 0 ? "none yet" : plural(total, "file")}</span>
       </div>
       {groups.map((group) => (
         <section

@@ -98,7 +98,7 @@ function TaskView({ taskId }: { taskId: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <TaskHeader task={data} yourTurn={yourTurn} />
-      <div className="flex min-h-0 flex-1 gap-[22px] px-8 pt-[18px] pb-[22px]">
+      <div className="flex min-h-0 flex-1 gap-4 px-5 pt-3 pb-3">
         <RoomPane
           task={data}
           state={room.state}
@@ -106,7 +106,7 @@ function TaskView({ taskId }: { taskId: string }) {
           loadOlder={room.loadOlder}
           top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
         />
-        <RoomPanel task={data} agents={room.state.agents} items={room.state.items} yourTurn={yourTurn} />
+        <RoomPanel task={data} agents={room.state.agents} items={room.state.items} />
       </div>
       {file !== undefined && (
         <Suspense fallback={null}>
@@ -139,7 +139,7 @@ function Brief({ label, text, task }: { label: string; text: string; task: Task 
   return (
     <section
       aria-label="Task brief"
-      className="flex shrink-0 flex-col gap-1.5 rounded-[10px] border border-line-strong bg-card px-3.5 py-3"
+      className="flex shrink-0 flex-col gap-1 rounded-lg border border-line-strong bg-card px-3 py-2"
     >
       <div className="flex items-center">
         <SectionLabel>{label}</SectionLabel>
@@ -150,9 +150,9 @@ function Brief({ label, text, task }: { label: string; text: string; task: Task 
               setValue(text);
               setEditing(true);
             }}
-            className="ml-auto cursor-pointer rounded-xs text-sm text-fg-muted hover:text-fg"
+            className="ml-auto cursor-pointer rounded-xs text-xs text-fg-muted hover:text-fg"
           >
-            Edit description
+            Edit
           </button>
         )}
       </div>
@@ -191,7 +191,7 @@ function Brief({ label, text, task }: { label: string; text: string; task: Task 
         <div
           className={
             long && !open
-              ? "max-h-[9.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"
+              ? "max-h-[5.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"
               : "max-h-[40vh] overflow-y-auto"
           }
         >
@@ -203,7 +203,7 @@ function Brief({ label, text, task }: { label: string; text: string; task: Task 
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="w-fit cursor-pointer rounded-xs text-sm text-fg-muted hover:text-fg"
+          className="w-fit cursor-pointer rounded-xs text-xs text-fg-muted hover:text-fg"
         >
           {open ? "Show less" : "Show all"}
         </button>
