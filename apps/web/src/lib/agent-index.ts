@@ -10,6 +10,7 @@ export interface AgentInfo {
   perms: readonly Perm[];
   fallback: string | undefined;
   scope: string;
+  where: readonly string[];
   isBoss: boolean;
 }
 
@@ -32,6 +33,7 @@ export function indexAgents(entries: AgentEntry[]): ReadonlyMap<string, AgentInf
       perms: fm.perms,
       fallback: fm.fallback,
       scope: fm.scope,
+      where: fm.where,
       isBoss: entry.isBoss,
     });
   }

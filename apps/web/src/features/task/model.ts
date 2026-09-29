@@ -47,6 +47,14 @@ export function agentDot(live: AgentLive | undefined): DotTone {
   }
 }
 
+/** Whether an agent of the task is busy the way the server counts it (queued, starting, working, waiting). */
+export function agentsBusy(agents: readonly AgentLive[]): boolean {
+  return agents.some(
+    (a) =>
+      a.status === "queued" || a.status === "starting" || a.status === "working" || a.status === "waiting",
+  );
+}
+
 /** The row's second line: what a busy agent is doing now, else "Idle". Always present, so the row keeps its height. */
 export function nowDoingLine(live: AgentLive | undefined): string {
   const busy = live?.status === "working" || live?.status === "starting";
