@@ -45,6 +45,12 @@ export const OrgConfigSchema = z.looseObject({
     .optional(),
   /** Default base branch for the org's repos. */
   base: z.string().trim().min(1).optional(),
+  /** Task key prefix, like `GLX` for `GLX-420`. Default: derived from the name. */
+  key: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9]{0,9}$/, "Use 1 to 10 capital letters or digits, starting with a letter")
+    .refine((k) => k !== "LOCAL", "LOCAL is reserved for tasks without an org")
+    .optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -257,7 +263,7 @@ export type OrgView = z.infer<typeof OrgViewSchema>;
  * changes, from a command or from a hand edit picked up by a file watcher. The
  * client refetches the queries for those topics.
  */
-export const EventTopicSchema = z.enum(["config", "orgs", "accounts", "agents"]);
+export const EventTopicSchema = z.enum(["config", "orgs", "accounts", "agents", "projects", "tasks"]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),

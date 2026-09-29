@@ -1,0 +1,309 @@
+import { z } from "zod";
+import { IdSchema } from "./accounts.ts";
+
+/**
+ * Projects, tasks, rooms and runs (SPEC 2, 3.1, 5.1, 5.4, 5.4a, 5.15).
+ *
+ * Files on disk:
+ *   ~/.majhi/majhi.yaml           `projects:` section
+ *   ~/.majhi/majhi.db             tasks, task repos, task links, room items, runs (SQLite, WAL)
+ *   <tasks_dir>/<task-id>/        TASK.md, AGENTS.md, CLAUDE.md, attachments/, one worktree per repo
+ */
+
+// ---------------------------------------------------------------------------
+// Projects (majhi.yaml)
+
+export const ProjectConfigSchema = z.looseObject({
+  /** An org id from `orgs`. */
+  org: IdSchema,
+  /** Absolute path, or one starting with `~/`, under a workspace root. */
+  path: z.string().trim().min(1),
+  /** Words that name this project in the task box: "api", "backend". Lowercase, unique across projects. */
+  aliases: z.array(z.string().trim().toLowerCase().min(1)).default([]),
+  /** Base branch for tasks. Default: the org's `base`, then the repo's default branch. */
+  base: z.string().trim().min(1).optional(),
+});
+export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+
+export const ProjectViewSchema = z.object({
+  id: IdSchema,
+  org: IdSchema,
+  /** Absolute path. */
+  path: z.string(),
+  aliases: z.array(z.string()),
+  /** Resolved base branch (project, then org, then the repo's default branch). */
+  base: z.string().optional(),
+  /** False when the path is not a git repo the server can see. */
+  exists: z.boolean(),
+});
+export type ProjectView = z.infer<typeof ProjectViewSchema>;
+
+// ---------------------------------------------------------------------------
+// Tasks
+
+/** `GLX-420`, `LOCAL-9`. The org's key prefix plus a number. Also the task folder name. */
+export const TaskIdSchema = z
+  .string()
+  .regex(/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/, "Task ids look like GLX-420");
+export type TaskId = z.infer<typeof TaskIdSchema>;
+
+/** Prefix for tasks without an org. */
+export const LOCAL_TASK_PREFIX = "LOCAL";
+
+export const TaskKindSchema = z.enum(["code", "ops", "chat"]);
+export type TaskKind = z.infer<typeof TaskKindSchema>;
+
+export const TaskStatusSchema = z.enum(["inbox", "ready", "running", "paused", "review", "mr", "done"]);
+export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+
+export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner"]);
+export type PausedReason = z.infer<typeof PausedReasonSchema>;
+
+export const TaskRepoSchema = z.object({
+  project: IdSchema,
+  /** The project's own checkout, where the worktree is added from. */
+  source: z.string(),
+  base: z.string(),
+  branch: z.string(),
+  /** `<tasks_dir>/<task-id>/<project>`. Absent until the worktree exists. */
+  worktree: z.string().optional(),
+  /** True when majhi created the branch; false when the owner named an existing one. */
+  createdBranch: z.boolean(),
+});
+export type TaskRepo = z.infer<typeof TaskRepoSchema>;
+
+export const TaskLinkTypeSchema = z.enum(["parent", "depends-on", "follow-up"]);
+export const TaskLinkSchema = z.object({
+  type: TaskLinkTypeSchema,
+  /** The other task. For `parent`, the parent. */
+  task: TaskIdSchema,
+  /** For `depends-on`: when the dependency counts as met (5.4a). */
+  when: z.enum(["merged", "ready"]).optional(),
+});
+export type TaskLink = z.infer<typeof TaskLinkSchema>;
+
+export const AttachmentSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["image", "file", "link"]),
+  /** File name, or the link's title. */
+  name: z.string(),
+  mime: z.string().optional(),
+  size: z.number().int().nonnegative().optional(),
+  /** For links. */
+  url: z.string().optional(),
+  /** Path under the task's `attachments/`. */
+  path: z.string().optional(),
+  /** Set when fetching or converting failed. */
+  error: z.string().optional(),
+});
+export type Attachment = z.infer<typeof AttachmentSchema>;
+
+export const TaskSchema = z.object({
+  id: TaskIdSchema,
+  /** One line, from the first line of the brief. */
+  title: z.string(),
+  /** What the owner typed, verbatim. */
+  brief: z.string(),
+  kind: TaskKindSchema,
+  /** An org id, or absent for LOCAL tasks. */
+  org: IdSchema.optional(),
+  status: TaskStatusSchema,
+  pausedReason: PausedReasonSchema.optional(),
+  /** Absolute path of the task folder. */
+  folder: z.string(),
+  repos: z.array(TaskRepoSchema),
+  /** Agent ids. Phase 2a runs one agent per task. */
+  team: z.array(IdSchema),
+  links: z.array(TaskLinkSchema),
+  attachments: z.array(AttachmentSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type Task = z.infer<typeof TaskSchema>;
+
+/** One row of the task list. */
+export const TaskSummarySchema = TaskSchema.pick({
+  id: true,
+  title: true,
+  kind: true,
+  org: true,
+  status: true,
+  pausedReason: true,
+  team: true,
+  updatedAt: true,
+}).extend({
+  repos: z.array(z.object({ project: IdSchema, branch: z.string() })),
+  /** Agents working right now. */
+  working: z.array(IdSchema),
+});
+export type TaskSummary = z.infer<typeof TaskSummarySchema>;
+
+/** The task list groups (SPEC 2). */
+export function taskGroup(status: TaskStatus): "needs-you" | "working" | "up-next" | "done" {
+  switch (status) {
+    case "review":
+    case "paused":
+    case "mr":
+      return "needs-you";
+    case "running":
+      return "working";
+    case "inbox":
+    case "ready":
+      return "up-next";
+    case "done":
+      return "done";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Task box parsing (SPEC 3.1). Shared by the web (live chips) and the server
+// (authoritative on create). Implemented in `task-parse.ts`.
+
+export interface ParseContext {
+  projects: readonly { id: string; org: string; aliases: readonly string[] }[];
+  agents: readonly { id: string }[];
+}
+
+export const ParsedTaskSchema = z.object({
+  title: z.string(),
+  /** Projects matched by id or alias, in order of first mention. `match` is the text that matched. */
+  repos: z.array(z.object({ project: IdSchema, match: z.string() })),
+  /** `from develop`, `base: main`, `off release/2.1`. */
+  base: z.string().optional(),
+  /** `on feature/x`, `branch fix/y`. Must contain a slash. */
+  branch: z.string().optional(),
+  /** `@agent-id` mentions of known agents. */
+  mentions: z.array(IdSchema),
+  links: z.array(z.string()),
+  /** The org of the matched repos, when they agree. */
+  org: IdSchema.optional(),
+  kind: TaskKindSchema,
+  warnings: z.array(z.string()),
+});
+export type ParsedTask = z.infer<typeof ParsedTaskSchema>;
+
+// ---------------------------------------------------------------------------
+// Room
+
+const RoomItemBase = z.object({
+  /** Stable id: upserts replace the item with the same id. */
+  id: z.string(),
+  task: TaskIdSchema,
+  /** Increases with every insert or update in the task; clients keep the highest. */
+  seq: z.number().int().nonnegative(),
+  at: z.string(),
+});
+
+export const ToolContentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.literal("diff"),
+    path: z.string(),
+    oldText: z.string().optional(),
+    newText: z.string(),
+  }),
+  /** Terminal output, trimmed in the middle past 16 KB. */
+  z.object({ type: z.literal("terminal"), output: z.string(), exitCode: z.number().int().optional() }),
+]);
+export type ToolContent = z.infer<typeof ToolContentSchema>;
+
+export const PermissionOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(["allow_once", "allow_always", "reject_once", "reject_always"]),
+});
+
+export const RoomItemSchema = z.discriminatedUnion("type", [
+  RoomItemBase.extend({
+    type: z.literal("owner"),
+    text: z.string(),
+    attachments: z.array(AttachmentSchema),
+    /** Sent while the agent was busy: waits for its next turn. */
+    queued: z.boolean(),
+    /** The agent it went to. */
+    to: IdSchema.optional(),
+  }),
+  RoomItemBase.extend({ type: z.literal("agent"), agent: IdSchema, text: z.string() }),
+  RoomItemBase.extend({ type: z.literal("thought"), agent: IdSchema, text: z.string() }),
+  RoomItemBase.extend({
+    type: z.literal("tool"),
+    agent: IdSchema,
+    toolCallId: z.string(),
+    title: z.string(),
+    /** ACP tool kind: read, edit, delete, move, search, execute, think, fetch, other. */
+    kind: z.string(),
+    status: z.enum(["pending", "in_progress", "completed", "failed"]),
+    locations: z.array(z.string()),
+    content: z.array(ToolContentSchema),
+  }),
+  RoomItemBase.extend({
+    type: z.literal("plan"),
+    agent: IdSchema,
+    entries: z.array(
+      z.object({
+        content: z.string(),
+        status: z.enum(["pending", "in_progress", "completed"]),
+      }),
+    ),
+  }),
+  RoomItemBase.extend({
+    type: z.literal("permission"),
+    agent: IdSchema,
+    title: z.string(),
+    toolCallId: z.string().optional(),
+    options: z.array(PermissionOptionSchema),
+    state: z.enum(["pending", "answered", "auto", "cancelled"]),
+    /** The option picked, by the owner (`answered`) or by the agent's permissions (`auto`). */
+    chosen: z.string().optional(),
+  }),
+  RoomItemBase.extend({
+    type: z.literal("system"),
+    level: z.enum(["info", "warn", "error"]),
+    text: z.string(),
+    agent: IdSchema.optional(),
+  }),
+]);
+export type RoomItem = z.infer<typeof RoomItemSchema>;
+
+/** Live state of one agent in a task. Not stored as a room item; sent on change. */
+export const AgentLiveSchema = z.object({
+  agent: IdSchema,
+  status: z.enum(["idle", "starting", "working", "waiting", "stopped", "error"]),
+  /** One line: what it is doing now. */
+  nowDoing: z.string().optional(),
+  /** Messages waiting for its next turn. */
+  queued: z.number().int().nonnegative(),
+  usage: z.object({ used: z.number().nonnegative(), size: z.number().positive() }).optional(),
+  model: z.string().optional(),
+  effort: z.string().optional(),
+  /** Slash commands the agent advertises over ACP. */
+  commands: z.array(z.object({ name: z.string(), description: z.string().optional() })),
+});
+export type AgentLive = z.infer<typeof AgentLiveSchema>;
+
+/**
+ * `GET /api/tasks/<task-id>/room` (WebSocket). The server sends a snapshot of
+ * the last 200 items and every agent's live state, then every upsert. Clients
+ * send nothing; actions go through commands. Older items: `room.items`.
+ */
+export const RoomServerMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("snapshot"),
+    items: z.array(RoomItemSchema),
+    agents: z.array(AgentLiveSchema),
+    /** True when older items exist. */
+    more: z.boolean(),
+  }),
+  z.object({ type: z.literal("item"), item: RoomItemSchema }),
+  z.object({ type: z.literal("agent"), agent: AgentLiveSchema }),
+  z.object({ type: z.literal("task"), task: TaskSchema }),
+]);
+export type RoomServerMessage = z.infer<typeof RoomServerMessageSchema>;
+
+/**
+ * `POST /api/uploads` (multipart, field `file`) stores a file for a task that
+ * is being written and answers with an `Attachment` of kind image or file.
+ * Its id is passed to `tasks.create` or `room.send`. Max 20 MB. Unused uploads
+ * are deleted after a day.
+ */
+export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;

@@ -21,6 +21,15 @@ import {
   WorkspacesUpdateSchema,
 } from "./api.ts";
 import { DirListingSchema, HostResultSchemas, HostStatusSchema } from "./host.ts";
+import {
+  ProjectConfigSchema,
+  ProjectViewSchema,
+  RoomItemSchema,
+  TaskIdSchema,
+  TaskKindSchema,
+  TaskSchema,
+  TaskSummarySchema,
+} from "./tasks.ts";
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
@@ -114,7 +123,7 @@ export const commands = {
     summary: "Create an org",
     input: z
       .object({ id: IdSchema.refine((id) => id !== "personal" && id !== "root", "This id is reserved") })
-      .extend(OrgConfigSchema.pick({ name: true, color: true, base: true }).shape),
+      .extend(OrgConfigSchema.pick({ name: true, color: true, base: true, key: true }).shape),
     output: OrgViewSchema,
   },
 
@@ -226,6 +235,134 @@ export const commands = {
     summary: "Make a root agent the boss",
     input: ById,
     output: z.object({ boss: IdSchema }),
+  },
+
+  // Projects ----------------------------------------------------------------
+  "projects.list": {
+    risk: "read",
+    summary: "List registered projects",
+    input: Empty,
+    output: z.array(ProjectViewSchema),
+  },
+  "projects.register": {
+    risk: "change",
+    summary: "Register a repo as a project of an org, with aliases for the task box",
+    input: z
+      .object({ id: IdSchema })
+      .extend(ProjectConfigSchema.pick({ org: true, path: true, aliases: true, base: true }).shape),
+    output: ProjectViewSchema,
+  },
+  "projects.update": {
+    risk: "change",
+    summary: "Change a project's org, aliases or base branch",
+    input: z
+      .object({ id: IdSchema })
+      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape),
+    output: ProjectViewSchema,
+  },
+  "projects.remove": {
+    risk: "change",
+    summary: "Unregister a project. The repo on disk is not touched",
+    input: ById,
+    output: z.object({ removed: IdSchema }),
+  },
+
+  // Tasks -------------------------------------------------------------------
+  "tasks.list": {
+    risk: "read",
+    summary: "List tasks, newest first",
+    input: z.object({ includeDone: z.boolean().optional() }),
+    output: z.array(TaskSummarySchema),
+  },
+  "tasks.get": {
+    risk: "read",
+    summary: "Show one task",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
+  "tasks.create": {
+    risk: "change",
+    summary: "Create a task from the task box text. With start, create worktrees and start the agent",
+    input: z.object({
+      text: z.string().trim().min(1).max(20_000),
+      /** Overrides what the parser inferred. */
+      kind: TaskKindSchema.optional(),
+      /** Overrides the default agent. */
+      agent: IdSchema.optional(),
+      /** Upload ids from POST /api/uploads. */
+      attachments: z.array(z.string()).max(20).default([]),
+      start: z.boolean(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.start": {
+    risk: "change",
+    summary: "Create the worktrees if needed and start the task's agent",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
+  "tasks.stop": {
+    risk: "change",
+    summary: "Stop every agent in the task and pause it with reason owner",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
+  "tasks.close": {
+    risk: "change",
+    summary: "Mark a task done. Worktrees stay until removed",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
+  "tasks.remove": {
+    risk: "destructive",
+    summary:
+      "Delete a task, its folder and its worktrees. Refused when a worktree has uncommitted changes, unless force",
+    input: z.object({ id: TaskIdSchema, force: z.boolean().optional() }),
+    output: z.object({ removed: TaskIdSchema }),
+  },
+
+  // Room --------------------------------------------------------------------
+  "room.send": {
+    risk: "change",
+    summary: "Send a message to the task's agent. Queued while it works, unless interrupt",
+    input: z.object({
+      task: TaskIdSchema,
+      text: z.string().max(100_000),
+      attachments: z.array(z.string()).max(20).default([]),
+      /** `interrupt` stops the current turn and sends at once. */
+      mode: z.enum(["queue", "interrupt"]).default("queue"),
+      /** Default: the agent @mentioned in the text, else the task's first agent. */
+      agent: IdSchema.optional(),
+    }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.cancel": {
+    risk: "change",
+    summary: "Stop an agent's current turn (Esc). Queued messages stay queued",
+    input: z.object({ task: TaskIdSchema, agent: IdSchema.optional() }),
+    output: z.object({ cancelled: z.array(IdSchema) }),
+  },
+  "room.permission": {
+    risk: "change",
+    summary: "Answer a permission prompt",
+    input: z.object({ task: TaskIdSchema, item: z.string(), option: z.string() }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.items": {
+    risk: "read",
+    summary: "Older room items, newest first",
+    input: z.object({
+      task: TaskIdSchema,
+      beforeSeq: z.number().int().optional(),
+      limit: z.number().int().min(1).max(500).default(100),
+    }),
+    output: z.object({ items: z.array(RoomItemSchema), more: z.boolean() }),
+  },
+  "room.files": {
+    risk: "read",
+    summary: "Files in the task's worktrees matching a query, for @file mentions",
+    input: z.object({ task: TaskIdSchema, query: z.string().max(200) }),
+    output: z.array(z.object({ path: z.string(), repo: IdSchema })),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

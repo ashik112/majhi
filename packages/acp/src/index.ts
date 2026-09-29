@@ -76,10 +76,19 @@ export interface AccountProbe {
   models?: Omit<AccountModels, "account">;
 }
 
-export { buildEnv } from "./env.ts";
+export { buildEnv, type GitIdentity } from "./env.ts";
 export { prepareHome } from "./home.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";
+export {
+  type AgentSession,
+  type McpServerSpec,
+  type PermissionAsk,
+  type PromptBlock,
+  type SessionEvent,
+  type SessionStart,
+  startSession,
+} from "./session.ts";
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
