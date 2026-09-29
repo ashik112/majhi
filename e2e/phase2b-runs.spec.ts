@@ -22,6 +22,27 @@ const messages = (page: Page) => page.getByRole("log", { name: "Room messages" }
 const panel = (page: Page) => page.getByRole("complementary", { name: "Task details" });
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 
+/** Sets which things an existing agent may do without asking, keeping everything else. */
+async function setPerms(request: APIRequestContext, id: string, perms: string[]) {
+  const entries = await cmd<
+    { status: string; agent: { frontmatter: { id: string }; instructions: string } }[]
+  >(request, "agents.list", {});
+  const entry = entries.find((e) => e.status === "ok" && e.agent.frontmatter.id === id);
+  expect(entry, `agent ${id} exists`).toBeTruthy();
+  const { id: _id, ...frontmatter } = entry?.agent.frontmatter as { id: string };
+  await cmd(request, "agents.update", {
+    id,
+    frontmatter: { ...frontmatter, perms },
+    instructions: entry?.agent.instructions,
+  });
+}
+
+test.beforeAll(async ({ request }) => {
+  await setPerms(request, "acme-lead", ["edit", "shell"]);
+  // Without shell the reviewer's `npm test` asks, so its turn stays open.
+  await setPerms(request, "acme-reviewer", ["edit"]);
+});
+
 test.afterAll(async ({ request }) => {
   rmSync(OFFLINE_FILE, { force: true });
   await request.post("/api/cmd/settings.set", {

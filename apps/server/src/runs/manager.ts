@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { PermissionAsk, PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
-import type { AgentFrontmatter, AgentLive, Attachment, RoomItem, Task } from "@majhi/shared";
+import type { AgentLive, Attachment, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
@@ -15,14 +13,6 @@ import type { RoomService } from "../room/service.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
-import {
-  type CheckpointRepo,
-  commitCheckpoint,
-  DEFAULT_IDENTITY,
-  diffStat,
-  diffText,
-  type Identity,
-} from "./checkpoint.ts";
 import {
   budgetFor,
   COMPACT_NOTE,
@@ -37,22 +27,16 @@ import {
   reachedTarget,
   rotationDue,
 } from "./context.ts";
-import {
-  BUDGET,
-  durableNote,
-  freshPrompt,
-  HANDOFF_REQUEST,
-  looksLikeNote,
-  roomLines,
-  saveNote,
-} from "./handoff.ts";
+import { buildCarry, checkpointTurn } from "./durable.ts";
+import { freshPrompt, HANDOFF_REQUEST, looksLikeNote } from "./handoff.ts";
 import { ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { Slots } from "./limits.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError } from "./network.ts";
 import { decidePermission } from "./permissions.ts";
+import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
-import { AgentRun, type Carry, type PauseReason, type QueueEntry } from "./run.ts";
+import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import { wakePlan } from "./wake.ts";
 
 export const BRIEF_ITEM_ID = "brief";
@@ -61,8 +45,6 @@ export const BRIEF_ITEM_ID = "brief";
 const USAGE_WAIT_MS = 5_000;
 /** How long before a failed resume is tried the second time. */
 const RESUME_RETRY_MS = 1_000;
-/** Model picks for `auto` agents: Laya spreads probability across similar models, so 0.6 rejects most. */
-const MODEL_PICK_FLOOR = 0.4;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 
 export interface RunDeps {
@@ -94,7 +76,8 @@ export interface RunDeps {
 /** A change to an agent's live state. `undefined` clears a field. */
 type LivePatch = { [K in keyof Omit<AgentLive, "agent">]?: AgentLive[K] | undefined };
 
-const WORKING: ReadonlySet<AgentLive["status"]> = new Set(["starting", "working", "waiting"]);
+/** Busy with the task, including waiting in line for a slot: never "your turn". */
+const WORKING: ReadonlySet<AgentLive["status"]> = new Set(["queued", "starting", "working", "waiting"]);
 
 /**
  * One ACP session per (task, agent), started when there is something to send. Runs the queue
@@ -133,12 +116,12 @@ export class RunManager {
     }
   }
 
-  /** True when the agent is starting, working or waiting in any task. */
+  /** True when the agent is queued, starting, working or waiting in any task. */
   isWorking(agent: string): boolean {
     return [...this.runs.values()].some((r) => r.agent === agent && WORKING.has(r.live.status));
   }
 
-  /** Agents of the task that are starting, working or waiting. */
+  /** Agents of the task that are queued, starting, working or waiting. */
   working(task: string): string[] {
     return [...this.runs.values()]
       .filter((r) => r.task === task && WORKING.has(r.live.status))
@@ -805,7 +788,13 @@ export class RunManager {
 
       // A new session for a pair that worked before: carry the work over with a note built from saved state.
       if (!resumed && hadRuns && run.carry === undefined) {
-        const built = await this.buildCarry(run, task, undefined, "the previous session could not be loaded");
+        const built = await buildCarry(
+          this.deps,
+          task,
+          run.agent,
+          undefined,
+          "the previous session could not be loaded",
+        );
         run.carry = built.carry;
         this.postContext(run, {
           method: "recovery",
@@ -816,10 +805,22 @@ export class RunManager {
       run.needsBrief = !resumed && run.carry === undefined;
       run.preambleDue = admin !== undefined && !resumed;
 
-      const pick =
-        fm.model === "auto" || fm.effort === "auto"
-          ? await this.pickModel(run, fm, stored.agent.instructions, task)
-          : undefined;
+      let pickLine: string | undefined;
+      if (fm.model === "auto" || fm.effort === "auto") {
+        const result = await pickForSession({
+          decisions: deps.decisions,
+          session,
+          fm,
+          instructions: stored.agent.instructions,
+          task,
+        });
+        for (const line of result.warnings) this.system(run, "warn", line);
+        if (result.pick !== undefined && run.runId !== undefined) {
+          const { model: picked, effort: level, decisionId } = result.pick;
+          deps.store.runs.setPick(run.runId, { model: picked, effort: level, decisionId });
+        }
+        pickLine = result.line;
+      }
       // What the agent runs after the session applied the options: a refused model keeps the default.
       const shownModel = session.models.defaultModel ?? model;
       const shownEffort = session.models.defaultEffort ?? effort;
@@ -828,7 +829,7 @@ export class RunManager {
         "info",
         `@${run.agent} ${resumed ? "resumed" : "started"} on ${fm.account}, model ${shownModel ?? "default"}, effort ${shownEffort ?? "default"}`,
       );
-      if (pick !== undefined) this.system(run, "info", pick);
+      if (pickLine !== undefined) this.system(run, "info", pickLine);
       this.setLive(run, {
         status: "idle",
         slot: undefined,
@@ -846,60 +847,6 @@ export class RunManager {
       this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined });
       return false;
     }
-  }
-
-  /**
-   * Model and effort for an `auto` agent (5.1, 5.12): the decision provider picks from what the
-   * session offers, narrowed to the agent's `models` list; the pick is applied and recorded on
-   * the run. Returns the line for the room.
-   */
-  private async pickModel(
-    run: AgentRun,
-    fm: AgentFrontmatter,
-    instructions: string,
-    task: Task,
-  ): Promise<string> {
-    const session = run.session;
-    const decisions = this.deps.decisions;
-    const kept = `No confident pick for @${run.agent}, so it keeps the agent's default model and effort.`;
-    if (session === undefined || decisions === undefined) return kept;
-    const offered = session.models;
-    const allowed = fm.models ?? [];
-    const models =
-      allowed.length === 0 ? offered.models : offered.models.filter((m) => allowed.includes(m.id));
-    const pick = await decisions
-      .pickModel({
-        task: run.task,
-        agent: run.agent,
-        role: fm.role,
-        context: `${task.brief}\n\n${instructions}`.trim(),
-        models,
-        efforts: offered.efforts,
-        pickModel: fm.model === "auto",
-        pickEffort: fm.effort === "auto",
-        minConfidence: MODEL_PICK_FLOOR,
-      })
-      .catch(() => undefined);
-    if (pick === undefined) return kept;
-    for (const [category, value] of [
-      ["model", pick.model],
-      ["thought_level", pick.effort],
-    ] as const) {
-      if (value === undefined) continue;
-      try {
-        await session.setOption(category, value);
-      } catch (err) {
-        this.system(run, "warn", `Could not apply the pick (${value}): ${errorMessage(err)}`);
-      }
-    }
-    if (run.runId !== undefined) {
-      this.deps.store.runs.setPick(run.runId, {
-        model: pick.model,
-        effort: pick.effort,
-        decisionId: pick.decisionId,
-      });
-    }
-    return pick.reason;
   }
 
   private onEvent(run: AgentRun, event: SessionEvent): void {
@@ -1180,9 +1127,10 @@ export class RunManager {
       const res = await this.internalPrompt(run, HANDOFF_REQUEST);
       if (res.ok && looksLikeNote(res.text)) note = res.text.trim();
     }
-    const built = await this.buildCarry(
-      run,
+    const built = await buildCarry(
+      this.deps,
       task,
+      run.agent,
       note,
       why === "recovery" ? "the session hit its limit" : "the agent did not write a note",
     );
@@ -1228,7 +1176,13 @@ export class RunManager {
           "info",
           `@${run.agent} has no session yet. Its first message starts one.`,
         );
-      const built = await this.buildCarry(run, task, undefined, "the owner asked for a fresh session");
+      const built = await buildCarry(
+        this.deps,
+        task,
+        run.agent,
+        undefined,
+        "the owner asked for a fresh session",
+      );
       run.carry = built.carry;
       run.freshNext = true;
       this.postContext(run, {
@@ -1263,42 +1217,6 @@ export class RunManager {
     }
   }
 
-  /** The note (the agent's, or one from durable state), saved under `.handoffs/`, and what the fresh session gets. */
-  private async buildCarry(
-    run: AgentRun,
-    task: Task,
-    agentNote: string | undefined,
-    why: string,
-  ): Promise<{ carry: Carry; path: string }> {
-    const { store, room } = this.deps;
-    room.flush(task.id);
-    const taskMd = await readFile(join(task.folder, "TASK.md"), "utf8").catch(() => "");
-    const repos = checkpointRepos(task);
-    const last = store.runs.lastCheckpoint(task.id);
-    const recent = store.room.page(task.id, 300).items.filter((i) => i.type !== "context");
-    const note =
-      agentNote ??
-      durableNote({
-        task: task.id,
-        agent: run.agent,
-        taskMd,
-        checkpoint: last.checkpoint,
-        room: recent.filter((i) => i.seq > last.roomSeq),
-        diff: await diffText(repos, BUDGET.diff),
-        why,
-      });
-    const path = await saveNote(task.folder, run.agent, note);
-    return {
-      carry: {
-        taskMd,
-        note,
-        room: roomLines(recent.slice(0, 40), BUDGET.roomSummary, 300),
-        diffStat: await diffStat(repos),
-      },
-      path,
-    };
-  }
-
   private postContext(
     run: AgentRun,
     event: {
@@ -1321,41 +1239,15 @@ export class RunManager {
   // ---------------------------------------------------------------------------
   // Checkpoints (5.7)
 
-  /** Commits the task's changed worktrees as the next checkpoint and records it on the run. */
+  /** Commits the task's changed worktrees as the next checkpoint. A failure is a warning, never the end of the run. */
   private async checkpoint(run: AgentRun): Promise<void> {
-    const { store, room } = this.deps;
-    const task = store.tasks.get(run.task);
+    const task = this.deps.store.tasks.get(run.task);
     if (task === undefined) return;
-    const repos = checkpointRepos(task);
-    if (repos.length === 0) return;
     try {
-      const identity = await this.identityFor(task);
-      const n = store.runs.lastCheckpoint(task.id).checkpoint + 1;
-      const result = await commitCheckpoint(repos, task.id, n, identity.identity);
-      for (const line of result.skipped) this.system(run, "warn", `Checkpoint: ${line}`);
-      if (result.committed.length === 0) return;
-      room.flush(task.id);
-      const seq = store.room.page(task.id, 1).items[0]?.seq ?? 0;
-      if (run.runId !== undefined) store.runs.setCheckpoint(run.runId, n, seq);
-      if (identity.fallback && room.get(task.id, IDENTITY_HINT_ID) === undefined) {
-        room.post(task.id, IDENTITY_HINT_ID, {
-          type: "system",
-          level: "info",
-          text: `Checkpoints are committed as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Orgs.`,
-        });
-      }
+      for (const line of await checkpointTurn(this.deps, task, run.runId)) this.system(run, "warn", line);
     } catch (err) {
       this.system(run, "warn", `Checkpoint failed: ${errorMessage(err)}`);
     }
-  }
-
-  private async identityFor(task: Task): Promise<{ identity: Identity; fallback: boolean; orgName: string }> {
-    const orgs = (await this.deps.config.sections()).orgs;
-    const org = orgs[task.org ?? "private"];
-    const orgName = org?.name ?? "the org";
-    return org?.identity === undefined
-      ? { identity: DEFAULT_IDENTITY, fallback: true, orgName }
-      : { identity: org.identity, fallback: false, orgName };
   }
 
   // ---------------------------------------------------------------------------
@@ -1407,15 +1299,4 @@ export class RunManager {
       `Could not resume @${run.agent} after two tries: ${message}. Resume the task to try again.`,
     );
   }
-}
-
-const IDENTITY_HINT_ID = "hint:identity";
-
-/** The task's worktrees, as checkpoints and diffs see them. */
-function checkpointRepos(task: Task): CheckpointRepo[] {
-  return task.repos.flatMap((r) =>
-    r.worktree === undefined
-      ? []
-      : [{ project: r.project, worktree: r.worktree, branch: r.branch, base: r.base }],
-  );
 }

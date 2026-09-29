@@ -127,7 +127,9 @@ export function actionCopy(
 export function yourTurnFromLive(status: TaskStatus, agents: readonly AgentLive[]): boolean {
   return isYourTurn({
     status,
-    working: agents.filter((a) => a.status === "working" || a.status === "starting").map((a) => a.agent),
+    working: agents
+      .filter((a) => a.status === "working" || a.status === "starting" || a.status === "queued")
+      .map((a) => a.agent),
   });
 }
 
