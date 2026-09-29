@@ -812,7 +812,7 @@ class Component extends DCLogic {
 
   orgs() {
     return {
-      globex: { id: 'globex', name: 'Globex', badge: 'ID', color: '#8AB8F5', tracker: 'Jira', trackerWhere: '[your-site].atlassian.net', hosts: [{ host: 'GitHub', alias: 'github-globex' }], identity: '[Globex work email]', base: 'main', team: ['globex-lead', 'globex-builder', 'globex-reviewer'] },
+      globex: { id: 'globex', name: 'Globex', badge: 'GX', color: '#8AB8F5', tracker: 'Jira', trackerWhere: '[your-site].atlassian.net', hosts: [{ host: 'GitHub', alias: 'github-globex' }], identity: '[Globex work email]', base: 'main', team: ['globex-lead', 'globex-builder', 'globex-reviewer'] },
       acme: { id: 'acme', name: 'Acme', badge: 'AC', color: '#F0B455', tracker: 'ClickUp', trackerWhere: '[workspace]', hosts: [{ host: 'GitLab', alias: 'gitlab-acme' }, { host: 'Bitbucket', alias: 'bitbucket-acme' }], identity: '[Acme work email]', base: 'develop', team: ['acme-lead', 'acme-builder', 'acme-reviewer'] },
       northwind: { id: 'northwind', name: 'Northwind', badge: 'NW', color: '#C3A6F5', tracker: 'GitHub Issues', trackerWhere: '[org name]', hosts: [{ host: 'GitHub', alias: 'github-northwind' }], identity: '[Northwind work email]', base: 'main', team: ['nw-lead', 'nw-builder'] }
     };
