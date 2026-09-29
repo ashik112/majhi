@@ -1,27 +1,19 @@
 import { type AgentLive, collapseHome, type RoomItem, type Task } from "@majhi/shared";
-import { useMutation } from "@tanstack/react-query";
-import { Check, Copy, OctagonX, Play, RefreshCcw, RotateCw } from "lucide-react";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { Check, Copy, OctagonX, Play, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
-import { type ApiRequestError, cmd } from "@/lib/api";
+import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useConfig } from "@/lib/queries";
-import { useOrgs } from "@/lib/studio-queries";
+import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
 import { useCopy } from "@/lib/use-copy";
+import { useNow } from "@/lib/use-now";
 import { ChangesPanel } from "../room/changes-panel";
-import { type ActionCopy, actionCopy, agentDot, agentState, contextMeter, modelLabel } from "./model";
-
-const STATE_TEXT = {
-  amber: "text-amber",
-  violet: "text-violet",
-  red: "text-red",
-  muted: "text-fg-muted",
-  faint: "text-fg-dim",
-} as const;
+import { AgentRow } from "./agent-row";
+import { type ActionCopy, actionCopy, agentState } from "./model";
 
 const ACTION_TEXT = {
   amber: "text-amber",
@@ -58,6 +50,8 @@ export function RoomPanel({
 function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[] }) {
   const index = useAgentIndex();
   const orgs = useOrgs().data;
+  const accounts = useAccounts().data;
+  const now = useNow(30_000);
   const orgName = orgs?.find((o) => o.id === task.org)?.name;
   return (
     <Card aria-labelledby="in-room-heading">
@@ -72,95 +66,22 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
       {task.team.map((id) => {
         const live = agents.find((a) => a.agent === id);
         const info = index.get(id);
-        const state = agentState(live, task.pausedReason);
-        const model = modelLabel(live, info?.model);
-        const meter = contextMeter(live?.usage);
         return (
-          <div key={id} className="flex items-start gap-2.5 border-t border-line-strong pt-2.5">
-            <AgentAvatar id={id} size={28} dot={agentDot(live)} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-              <span className="flex items-baseline gap-2">
-                <span className="truncate font-mono text-base font-medium">@{id}</span>
-                {info && (
-                  <span className="rounded-sm bg-selected px-1.5 py-0.5 text-xs text-fg-soft">
-                    {info.role}
-                  </span>
-                )}
-                <span className={cn("text-xs", STATE_TEXT[state.tone])}>{state.label}</span>
-              </span>
-              <span className="flex flex-wrap gap-1.5">
-                {info && (
-                  <span className="flex h-[26px] items-center rounded-sm border border-line-control px-2 font-mono text-xs text-fg-soft">
-                    {info.account}
-                  </span>
-                )}
-                <span className="flex h-[26px] items-center rounded-sm border border-line-control bg-blue-wash px-2 font-mono text-xs text-blue-soft">
-                  {model ?? "account default"}
-                </span>
-              </span>
-              {live?.nowDoing && state.tone === "amber" && (
-                <span aria-live="polite" title={live.nowDoing} className="truncate text-xs text-fg-faint">
-                  {live.nowDoing}
-                </span>
-              )}
-              {live && live.queued > 0 && (
-                <span className="tnum text-xs text-fg-faint">{live.queued} queued</span>
-              )}
-              {meter && <ContextMeter share={meter.share} label={meter.label} agent={id} />}
-            </div>
-            {live && <FreshButton task={task.id} agent={id} />}
-          </div>
+          <AgentRow
+            key={id}
+            task={task.id}
+            id={id}
+            live={live}
+            info={info}
+            state={agentState(live, task.pausedReason)}
+            account={accounts?.find((a) => a.id === info?.account)}
+            now={now}
+            defaultOpen={task.team.length === 1}
+          />
         );
       })}
       {task.team.length === 0 && <p className="text-sm text-fg-faint">No agent yet.</p>}
     </Card>
-  );
-}
-
-/** A thin bar: how much of the agent's context window is in use. */
-function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
-  const percent = Math.round(share * 100);
-  return (
-    <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>
-      <meter
-        className="sr-only"
-        aria-label={`Context of @${agent}`}
-        aria-valuetext={`${label} tokens`}
-        min={0}
-        max={100}
-        value={percent}
-      />
-      {/* The native meter is for assistive tech; this bar is what the eye reads. */}
-      <span aria-hidden="true" className="h-1 w-24 overflow-hidden rounded-full bg-selected">
-        <span
-          className={cn("block h-full rounded-full", share >= 0.8 ? "bg-amber" : "bg-fg-dim")}
-          style={{ width: `${percent}%` }}
-        />
-      </span>
-      <span className="tnum text-xs text-fg-faint">{label}</span>
-    </span>
-  );
-}
-
-/** Replaces the agent's session with a fresh one that carries a handoff note (5.13). */
-function FreshButton({ task, agent }: { task: string; agent: string }) {
-  const toast = useToast();
-  const fresh = useMutation<unknown, ApiRequestError>({
-    mutationFn: () => cmd("room.fresh", { task, agent }, { reason: "Owner pressed Fresh session" }),
-    onError: (error) => toast("Could not start a fresh session", { detail: error.message, tone: "error" }),
-  });
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className="size-7 shrink-0"
-      aria-label={`Fresh session for @${agent}`}
-      title="Fresh session: start over with a handoff note"
-      disabled={fresh.isPending}
-      onClick={() => fresh.mutate()}
-    >
-      <RefreshCcw aria-hidden="true" />
-    </Button>
   );
 }
 

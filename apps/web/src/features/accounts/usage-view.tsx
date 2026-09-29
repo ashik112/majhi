@@ -8,7 +8,8 @@ import { formatAgo } from "@/lib/format";
 import { useRefreshUsage } from "@/lib/studio-queries";
 import { barTone, formatPct, resetFull } from "./model";
 
-function WindowLine({
+/** One usage window: label, share used, full reset time and a bar. */
+export function WindowLine({
   label,
   window,
 }: {

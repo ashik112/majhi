@@ -7,7 +7,7 @@ import {
   briefBody,
   firstPendingPermission,
   linkTargets,
-  modelLabel,
+  nowDoingLine,
   relations,
 } from "./model";
 
@@ -32,10 +32,11 @@ describe("agent state", () => {
     expect(agentState(undefined).label).toBe("Not started");
     expect(agentDot(undefined)).toBe("neutral");
   });
-  it("shows the live model with its effort, else the configured one", () => {
-    expect(modelLabel(live({ model: "opus-5.5", effort: "high" }), "sonnet-5.5")).toBe("opus-5.5 · high");
-    expect(modelLabel(undefined, "sonnet-5.5")).toBe("sonnet-5.5");
-    expect(modelLabel(undefined, undefined)).toBeUndefined();
+  it("says what a busy agent is doing, and Idle otherwise", () => {
+    expect(nowDoingLine(live({ status: "working", nowDoing: "Editing a.ts" }))).toBe("Editing a.ts");
+    expect(nowDoingLine(live({ status: "working" }))).toBe("Idle");
+    expect(nowDoingLine(live({ status: "waiting", nowDoing: "Editing a.ts" }))).toBe("Idle");
+    expect(nowDoingLine(undefined)).toBe("Idle");
   });
 });
 

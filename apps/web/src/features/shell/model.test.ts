@@ -39,6 +39,9 @@ const agent = (id: string, account: string): AgentInfo => ({
   role: "Lead",
   account,
   model: undefined,
+  effort: undefined,
+  perms: [],
+  fallback: undefined,
   scope: "acme",
   isBoss: false,
 });
