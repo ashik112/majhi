@@ -48,6 +48,18 @@ export class SecretStore {
     return (await this.get(name)) !== undefined;
   }
 
+  /** Names of every secret, sorted. Empty when secrets are not set up. Values are not returned. */
+  async names(): Promise<string[]> {
+    if (!(await this.available())) return [];
+    return Object.keys(await this.read()).sort();
+  }
+
+  /** The name of a secret that holds exactly this value, so a pasted value is not saved twice. */
+  async findName(value: string): Promise<string | undefined> {
+    if (!(await this.available())) return undefined;
+    return Object.entries(await this.read()).find(([, v]) => v === value)?.[0];
+  }
+
   set(name: string, value: string): Promise<void> {
     return this.serialize(async () => {
       const secrets = await this.read();

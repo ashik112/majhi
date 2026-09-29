@@ -1,11 +1,11 @@
 import { collapseHome } from "@majhi/shared";
-import { MessagesSquare } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
 import { toneText } from "@/components/ui/status-dot";
 import { HealthDialog } from "@/features/accounts/health-dialog";
+import { BossConversation } from "@/features/boss/boss-conversation";
 import { SshNotice } from "@/features/repos/ssh-notice";
 import { EditRootsDialog } from "@/features/roots/edit-roots-dialog";
 import { useMountNow } from "@/features/roots/use-mount-now";
@@ -13,11 +13,13 @@ import { cn } from "@/lib/cn";
 import { useConfig, useHostStatus, useRepos } from "@/lib/queries";
 import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
+import { HistoryPanel } from "./history-panel";
 import { accountsCard, agentsCard, bossCard, type CardState, readyCount, rootsCard, sshCard } from "./model";
+import { SettingsPanel } from "./settings-panel";
 
 /**
- * Hub setup. The boss will run setup as a conversation here in Phase 2b; until then the page shows
- * what majhi can set up today, one card each.
+ * Hub setup. On the left, the conversation with the boss, who sets things up as the owner asks.
+ * On the right, the setup cards, the last changes with Undo, and the settings.
  */
 export function SetupView() {
   const config = useConfig();
@@ -49,59 +51,20 @@ export function SetupView() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Hub setup"
-        subtitle="What majhi needs to run agents on your machine. Everything here stays editable in Agents and Orgs."
+        subtitle="Talk to the boss to set up orgs, accounts and agents. Every change is a commit you can undo."
       />
       <div className="flex min-h-0 flex-1 gap-6 px-8 pt-5 pb-6">
-        <div className="flex min-w-0 flex-1 items-start">
-          <section
-            aria-label="Setup conversation"
-            className="flex w-full max-w-[640px] flex-col gap-5 rounded-xl border border-line-strong bg-raised p-6"
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-green-wash text-green">
-                <MessagesSquare aria-hidden="true" className="size-[18px]" />
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <h2 className="text-md font-semibold">Soon the boss will run setup with you</h2>
-                <p className="text-sm text-fg-muted">A conversation in this space, arriving in Phase 2b.</p>
-              </div>
-            </div>
-            <ol className="flex flex-col gap-3">
-              {[
-                [
-                  "It looks around",
-                  "Reads your workspace folders, git remotes and ~/.ssh/config. Config files and public keys only.",
-                ],
-                [
-                  "It drafts, you decide",
-                  "Orgs, accounts and agents come as drafts, one question at a time. Everything stays editable.",
-                ],
-                [
-                  "It writes after you confirm",
-                  "Nothing lands in your config until you say so, and every change is a commit you can undo.",
-                ],
-              ].map(([title, body], i) => (
-                <li key={title} className="flex gap-3">
-                  <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full border border-line-bright font-mono text-xs text-fg-muted">
-                    {i + 1}
-                  </span>
-                  <span className="flex flex-col gap-0.5">
-                    <span className="text-base font-medium">{title}</span>
-                    <span className="text-sm text-fg-muted text-pretty">{body}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <p className="border-t border-line-strong pt-4 text-sm text-fg-muted">
-              Until then, the cards on the right set up what majhi needs today.
-            </p>
-            <div>
-              <Button onClick={() => reopenOnboarding("roots")}>Run first-time setup again</Button>
-            </div>
-          </section>
-        </div>
+        <section
+          aria-label="Setup conversation"
+          className="flex min-h-0 min-w-0 max-w-[720px] flex-1 flex-col gap-3"
+        >
+          <BossConversation />
+        </section>
 
-        <aside aria-label="Setup today" className="flex w-[420px] shrink-0 flex-col gap-2.5 overflow-auto">
+        <aside
+          aria-label="Setup today"
+          className="flex w-[420px] shrink-0 flex-col gap-2.5 overflow-auto pr-1"
+        >
           <div className="flex items-baseline gap-2">
             <h2 className="text-md font-semibold">Setup today</h2>
             <span className="text-sm text-fg-faint">{ready} of 5 ready</span>
@@ -164,6 +127,15 @@ export function SetupView() {
             majhi reads config files and public keys only. Passphrases and API keys go to the macOS Keychain
             and never to a file.
           </p>
+          <div>
+            <Button size="sm" onClick={() => reopenOnboarding("roots")}>
+              Run first-time setup again
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-col gap-5">
+            <HistoryPanel />
+            <SettingsPanel />
+          </div>
         </aside>
       </div>
 

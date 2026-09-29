@@ -78,11 +78,109 @@ export interface ServeOptions {
   signedIn: () => boolean;
 }
 
+interface McpEntry {
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+}
+
 interface Session {
   cwd: string;
   model: string;
   effort: string;
   cancel: AbortController;
+  /** HTTP MCP servers the client gave in newSession or loadSession. */
+  mcp: McpEntry[];
+}
+
+const McpResponse = z.object({
+  result: z
+    .object({
+      content: z.array(z.object({ type: z.string(), text: z.string().optional() })).default([]),
+      isError: z.boolean().optional(),
+    })
+    .optional(),
+  error: z.object({ message: z.string() }).optional(),
+});
+
+/**
+ * Calls one tool of an MCP server over streamable HTTP, with plain fetch: the JSON-RPC handshake,
+ * then tools/call. Answers the text the tool returned and whether it was an error.
+ */
+async function callMcpTool(
+  server: McpEntry,
+  name: string,
+  args: unknown,
+): Promise<{ text: string; isError: boolean }> {
+  const post = async (body: object): Promise<unknown> => {
+    const res = await fetch(server.url, {
+      method: "POST",
+      headers: {
+        ...server.headers,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", ...body }),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${server.name} answered ${res.status}: ${text.slice(0, 200)}`);
+    if (text === "") return {};
+    // A JSON answer, or one SSE event holding it.
+    const json =
+      text.startsWith("event:") || text.startsWith("data:")
+        ? (text
+            .split("\n")
+            .find((l) => l.startsWith("data:"))
+            ?.slice(5) ?? "{}")
+        : text;
+    return JSON.parse(json) as unknown;
+  };
+  await post({
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "fake-agent", version: "1" },
+    },
+  });
+  await post({ method: "notifications/initialized" });
+  const parsed = McpResponse.parse(
+    await post({ id: 2, method: "tools/call", params: { name, arguments: args } }),
+  );
+  if (parsed.error) return { text: parsed.error.message, isError: true };
+  const text = (parsed.result?.content ?? []).map((c) => c.text ?? "").join("\n");
+  return { text, isError: parsed.result?.isError === true };
+}
+
+/**
+ * True in the boss's chat: the session has the majhi-admin server and the task folder's TASK.md
+ * has the boss chat brief. The boss talking in its chat echoes, so tests never run the coding script.
+ */
+async function isBossChat(s: Session): Promise<boolean> {
+  if (!s.mcp.some((m) => m.name === "majhi-admin")) return false;
+  try {
+    return (await readFile(join(s.cwd, "TASK.md"), "utf8")).includes("## Brief\n\nBoss chat\n");
+  } catch {
+    return false;
+  }
+}
+
+/** `call: <tool> {json}` lines of a prompt, in order. */
+function callLines(text: string): { tool: string; args: unknown }[] {
+  const calls: { tool: string; args: unknown }[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^call:\s+(\S+)\s*(.*)$/.exec(line.trim());
+    if (m?.[1] === undefined) continue;
+    let args: unknown = {};
+    try {
+      if (m[2]) args = JSON.parse(m[2]) as unknown;
+    } catch {
+      args = { invalidJson: m[2] };
+    }
+    calls.push({ tool: m[1], args });
+  }
+  return calls;
 }
 
 const StoredSession = z.object({
@@ -146,12 +244,25 @@ export function serveAcp(o: ServeOptions): void {
     const update = (sessionId: string, u: Parameters<typeof conn.sessionUpdate>[0]["update"]) =>
       conn.sessionUpdate({ sessionId, update: u });
 
-    const register = (cwd: string, sessionId: string): Session => {
+    const register = (cwd: string, sessionId: string, mcpServers: readonly unknown[] = []): Session => {
+      const mcp = mcpServers.flatMap((raw): McpEntry[] => {
+        const parsed = z
+          .object({
+            name: z.string(),
+            url: z.string(),
+            headers: z.array(z.object({ name: z.string(), value: z.string() })).default([]),
+          })
+          .safeParse(raw);
+        if (!parsed.success) return [];
+        const headers = Object.fromEntries(parsed.data.headers.map((h) => [h.name, h.value]));
+        return [{ name: parsed.data.name, url: parsed.data.url, headers }];
+      });
       const state: Session = {
         cwd,
         model: o.models[0] ?? "",
         effort: o.efforts[0] ?? "",
         cancel: new AbortController(),
+        mcp,
       };
       sessions.set(sessionId, state);
       return state;
@@ -321,14 +432,18 @@ export function serveAcp(o: ServeOptions): void {
     return {
       initialize: async () => ({
         protocolVersion: PROTOCOL_VERSION,
-        agentCapabilities: { loadSession: o.loadSession, promptCapabilities: { image: o.images } },
+        agentCapabilities: {
+          loadSession: o.loadSession,
+          promptCapabilities: { image: o.images },
+          mcpCapabilities: { http: true },
+        },
         authMethods: [],
       }),
       authenticate: async () => ({}),
       newSession: async (params) => {
         if (!o.signedIn()) throw RequestError.authRequired(undefined, "Sign in first");
         const sessionId = `fake-${crypto.randomUUID().slice(0, 8)}`;
-        const s = register(params.cwd, sessionId);
+        const s = register(params.cwd, sessionId, params.mcpServers);
         await writeStored(params.cwd, sessionId, { messages: [] });
         await update(sessionId, { sessionUpdate: "available_commands_update", availableCommands: COMMANDS });
         return { sessionId, configOptions: configOptions(o, s.model, s.effort) };
@@ -337,7 +452,7 @@ export function serveAcp(o: ServeOptions): void {
         if (!o.signedIn()) throw RequestError.authRequired(undefined, "Sign in first");
         const stored = await readStored(params.cwd, params.sessionId);
         if (!stored) throw RequestError.resourceNotFound(params.sessionId);
-        const s = register(params.cwd, params.sessionId);
+        const s = register(params.cwd, params.sessionId, params.mcpServers);
         for (const m of stored.messages.slice(-REPLAY_LAST)) {
           await update(params.sessionId, {
             sessionUpdate: m.role === "user" ? "user_message_chunk" : "agent_message_chunk",
@@ -396,8 +511,52 @@ export function serveAcp(o: ServeOptions): void {
           await say({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
           await say({ type: "resource_link", uri: "https://example.com/spec", name: "Spec sheet" });
           stopReason = "end_turn";
-        } else if (text.startsWith("echo:")) {
-          agentText = `echo: ${text}`;
+        } else if (callLines(text).length > 0) {
+          const lines: string[] = [];
+          let n = 0;
+          for (const { tool, args } of callLines(text)) {
+            const toolCallId = `mcp-${++n}`;
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              title: tool,
+              kind: "other",
+              status: "in_progress",
+              rawInput: args as never,
+            });
+            let outcome: { text: string; isError: boolean };
+            const server = s.mcp.find((m) => m.name === "majhi-admin") ?? s.mcp[0];
+            try {
+              if (server === undefined) throw new Error("No MCP server was given to this session");
+              outcome = await callMcpTool(server, tool, args);
+            } catch (err) {
+              outcome = { text: err instanceof Error ? err.message : String(err), isError: true };
+            }
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: outcome.isError ? "failed" : "completed",
+              content: [{ type: "content", content: { type: "text", text: outcome.text } }],
+            });
+            lines.push(`${tool}: ${outcome.text.split("\n", 1)[0] ?? ""}`);
+          }
+          agentText = lines.join("\n");
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (text.startsWith("echo:") || (await isBossChat(s))) {
+          // A session with the admin server is the boss: it echoes, so tests never run the coding script.
+          const admin = s.mcp.some((m) => m.name === "majhi-admin");
+          agentText = `echo: ${
+            admin
+              ? (text
+                  .split("\n")
+                  .filter((l) => l.trim() !== "")
+                  .at(-1) ?? "")
+              : text
+          }`;
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: agentText },

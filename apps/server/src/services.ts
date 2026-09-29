@@ -3,6 +3,9 @@ import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
+import { AdminAccess } from "./admin/access.ts";
+import { AdminService } from "./admin/service.ts";
+import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { ConfigService } from "./config/service.ts";
@@ -14,6 +17,7 @@ import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
+import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { Store } from "./store/index.ts";
 import type { LinkOptions } from "./tasks/links.ts";
@@ -36,6 +40,11 @@ export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
   secrets: SecretStore;
+  secretService: SecretService;
+  /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
+  adminTokens: AdminTokens;
+  /** The boss's tool calls, approvals and secret requests. */
+  admin: AdminService;
   agents: AgentService;
   agentStore: AgentStore;
   orgs: OrgService;
@@ -93,6 +102,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const store = Store.open(env.majhiHome);
   const room = new RoomService(store);
   const agents = new AgentService(config, agentStore, cache, accounts);
+  const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
   const runs = new RunManager({
     store,
     room,
@@ -102,6 +112,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     secrets,
     majhiHome: env.majhiHome,
+    admin: new AdminAccess(adminTokens),
     onTasksChanged: () => events.emit(["tasks"]),
   });
   runs.recover();
@@ -120,10 +131,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  const admin = new AdminService({ config, room, store, secrets, tasks });
   return {
     config,
     runtime,
     secrets,
+    secretService: new SecretService(secrets, config),
+    adminTokens,
+    admin,
     agents,
     agentStore,
     store,

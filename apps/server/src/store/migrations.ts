@@ -114,6 +114,15 @@ CREATE TABLE task_allowances (
 );
 `,
   },
+  {
+    // Ids leave a gap on purpose: other Phase 2b work adds migrations at the same time.
+    id: 10,
+    name: "tasks start when their dependencies are met",
+    sql: `
+ALTER TABLE tasks ADD COLUMN start_when_ready INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX task_links_other ON task_links (other);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

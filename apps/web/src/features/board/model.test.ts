@@ -1,6 +1,16 @@
 import type { TaskSummary } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { boardCounts, buildColumns, cardNote, columnOf, directionOf, moveFocus } from "./model";
+import {
+  boardCounts,
+  buildColumns,
+  cardNote,
+  cardProgress,
+  columnOf,
+  directionOf,
+  moveFocus,
+  partOf,
+  waitingText,
+} from "./model";
 
 const task = (over: Partial<TaskSummary> & { id: string }): TaskSummary => ({
   title: "A task",
@@ -140,5 +150,35 @@ describe("keyboard", () => {
   it("stays on the last card when there is no column further on", () => {
     expect(moveFocus(columns, "d1", "right")).toBe("d1");
     expect(moveFocus(columns, "a1", "left")).toBe("a1");
+  });
+});
+
+describe("task links on cards", () => {
+  it("notes what a ready or inbox task waits on, in coral", () => {
+    expect(cardNote(task({ id: "A-2", status: "ready", waitingOn: ["A-1"] }))).toEqual({
+      text: "Waiting on A-1",
+      tone: "coral",
+    });
+    expect(
+      cardNote(task({ id: "A-2", status: "inbox", waitingOn: ["A-1", "A-3", "A-4", "A-5"] }))?.text,
+    ).toBe("Waiting on A-1, A-3 +2");
+    expect(waitingText(["A-1", "A-3"])).toBe("Waiting on A-1, A-3");
+  });
+
+  it("does not call a running task blocked, and keeps the pause note first", () => {
+    expect(cardNote(task({ id: "A-2", status: "running", waitingOn: ["A-1"] }))?.text).toBe("Your turn");
+    expect(
+      cardNote(task({ id: "A-2", status: "paused", pausedReason: "owner", waitingOn: ["A-1"] }))?.text,
+    ).toBe("Paused · stopped by you");
+  });
+
+  it("shows progress for parents and the parent id for children", () => {
+    expect(cardProgress(task({ id: "A-1", children: { total: 5, done: 3 } }))).toEqual({
+      text: "3 of 5 done",
+      pct: 60,
+    });
+    expect(cardProgress(task({ id: "A-1" }))).toBeNull();
+    expect(partOf(task({ id: "A-2", links: [{ type: "parent", task: "A-1" }] }))).toBe("A-1");
+    expect(partOf(task({ id: "A-2", links: [{ type: "depends-on", task: "A-1" }] }))).toBeUndefined();
   });
 });

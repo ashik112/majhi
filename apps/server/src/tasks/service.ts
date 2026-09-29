@@ -9,7 +9,9 @@ import {
   parseTaskText,
   type RoomItem,
   type Task,
+  type TaskId,
   type TaskKind,
+  type TaskLink,
   type TaskRepo,
   type TaskSummary,
 } from "@majhi/shared";
@@ -30,6 +32,7 @@ import type { UploadStore } from "../uploads/store.ts";
 import { canWorkIn, pickDefaultAgent } from "./agents.ts";
 import { branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
+import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
 
 export interface TaskDeps {
   store: Store;
@@ -54,6 +57,10 @@ export interface CreateInput {
   agent?: string | undefined;
   attachments: string[];
   start: boolean;
+  /** Makes the new task a child of this one. */
+  parent?: string | undefined;
+  /** The new task waits for these. */
+  dependsOn?: string[] | undefined;
 }
 
 /** Creating, starting, stopping and removing tasks, and the owner's messages to a task's agent. */
@@ -111,7 +118,13 @@ export class TaskService {
     if (kind === "code" && parsed.repos.length === 0) {
       throw new UserError("A code task needs a project. Name one in the text, or change the kind.");
     }
-    const org = parsed.org;
+    const dependsOn = [...new Set(input.dependsOn ?? [])];
+    for (const other of [...dependsOn, ...(input.parent === undefined ? [] : [input.parent])]) {
+      if (store.tasks.get(other) === undefined) throw new UserError(`Task ${other} does not exist.`, 404);
+    }
+    const parentTask = input.parent === undefined ? undefined : store.tasks.get(input.parent);
+    // A child with no repos of its own belongs to its parent's org.
+    const org = parsed.org ?? (parsed.repos.length === 0 ? parentTask?.org : undefined);
     if (org !== undefined && sections.orgs[org] === undefined) {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
@@ -156,22 +169,31 @@ export class TaskService {
         folder,
         repos,
         team: agent === undefined ? [] : [agent],
-        links: [],
+        links: [
+          ...(input.parent === undefined ? [] : [{ type: "parent" as const, task: input.parent }]),
+          ...dependsOn.map((t) => ({ type: "depends-on" as const, task: t, when: "merged" as const })),
+        ],
         attachments: [...files, ...links],
         createdAt: at,
         updatedAt: at,
       };
-      await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name);
+      await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
       store.tasks.insert(task);
+      if (input.start) store.tasks.setStartWhenReady(id, true);
     } catch (err) {
       await rm(folder, { recursive: true, force: true });
       throw err;
     }
 
     for (const w of parsed.warnings) this.warn(id, w);
+    if (input.parent !== undefined) await this.linksChanged([input.parent]);
     let task = this.get(id);
     this.deps.room.publishTask(task);
-    if (input.start) {
+    // A task that waits stays ready and starts by itself when its dependencies are met.
+    const waiting = store.tasks.unmetDependencies(id);
+    if (input.start && waiting.length > 0) {
+      this.note(id, `Waiting on ${waiting.join(", ")}. It starts when they are done.`);
+    } else if (input.start) {
       try {
         task = await this.start(id);
       } catch (err) {
@@ -240,12 +262,14 @@ export class TaskService {
     task: Task,
     agents: readonly AgentFrontmatter[],
     orgName: string | undefined,
+    related: Related = NO_RELATED,
   ): Promise<void> {
     const fm = agents.find((a) => a.id === task.team[0]);
     const md = renderTaskMd(
       task,
       fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
       orgName,
+      related,
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -263,6 +287,16 @@ export class TaskService {
     const { store } = this.deps;
     const task = this.get(id);
     if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
+    const waiting = store.tasks.unmetDependencies(id);
+    if (waiting.length > 0) {
+      // The owner wants it started: it starts by itself when the last dependency is met.
+      store.tasks.setStartWhenReady(id, true);
+      if (task.status === "inbox") {
+        store.tasks.setStatus(id, "ready", undefined, this.now().toISOString());
+        this.deps.room.publishTask(this.get(id));
+      }
+      throw new UserError(`Waiting on ${waiting.join(", ")}. It starts when they are done.`, 409);
+    }
     const agent = task.team[0];
     if (agent === undefined)
       throw new UserError(
@@ -289,6 +323,7 @@ export class TaskService {
       }
     }
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
+    store.tasks.setStartWhenReady(id, true);
     const started = this.get(id);
     this.deps.room.publishTask(started);
     this.deps.runs.startTask(started, agent);
@@ -314,6 +349,7 @@ export class TaskService {
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
+    await this.statusChanged(id);
     return closed;
   }
 
@@ -336,8 +372,195 @@ export class TaskService {
     if (basename(task.folder) === id && task.folder.includes(sep) && task.folder !== sep) {
       await rm(task.folder, { recursive: true, force: true });
     }
-    this.deps.store.tasks.remove(id);
+    const { store } = this.deps;
+    const held = store.tasks.linksTo(id);
+    store.tasks.remove(id);
+    store.tasks.dropLinksTo(id);
     this.deps.runs.forget(id);
+    await this.afterRemoval(task, held);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Links (5.4a)
+
+  /** Makes `task` a child of `target`, or makes it wait for `target`. Refuses loops and a second parent. */
+  async link(input: {
+    task: string;
+    type: "parent" | "depends-on";
+    target: string;
+    when?: "merged" | "ready" | undefined;
+  }): Promise<Task> {
+    const { store } = this.deps;
+    const task = this.get(input.task);
+    const target = this.get(input.target);
+    if (task.id === target.id) throw new UserError(`${task.id} cannot be linked to itself.`, 409);
+    const rows = store.tasks.allLinks();
+    if (input.type === "parent") {
+      const existing = rows.find((r) => r.task === task.id && r.type === "parent");
+      if (existing !== undefined && existing.other !== target.id) {
+        throw new UserError(`${task.id} is already part of ${existing.other}. Remove that link first.`, 409);
+      }
+    }
+    const cycle = findCycle(rows, input.type, task.id, target.id);
+    if (cycle !== undefined) throw new UserError(describeCycle(input.type, cycle), 409);
+    store.tasks.putLink({
+      task: task.id,
+      type: input.type,
+      other: target.id,
+      ...(input.type === "depends-on" ? { when: input.when ?? "merged" } : {}),
+    });
+    await this.linksChanged([task.id, target.id]);
+    return this.get(task.id);
+  }
+
+  async unlink(input: { task: string; type: TaskLink["type"]; target: string }): Promise<Task> {
+    const { store } = this.deps;
+    this.get(input.task);
+    if (!store.tasks.removeLink(input.task, input.type, input.target)) {
+      throw new UserError(`${input.task} has no ${input.type} link to ${input.target}.`, 404);
+    }
+    // Removing the last thing a task waited for, or the last unfinished child, can release it.
+    await this.linksChanged([input.task, input.target]);
+    if (input.type === "depends-on") {
+      await this.startIfReady(input.task, `nothing is left to wait for`);
+    } else if (input.type === "parent") {
+      await this.finishParentIfDone(input.target);
+    }
+    return this.get(input.task);
+  }
+
+  /**
+   * Call after a task's status changed by any path. Starts the tasks that were waiting on it
+   * and are now free, closes a parent whose children are all done, and refreshes TASK.md of
+   * the tasks that mention it. The run manager calls this when a task reaches review.
+   */
+  async statusChanged(id: string): Promise<void> {
+    const { store } = this.deps;
+    const task = store.tasks.get(id);
+    if (task === undefined) return;
+    const held = store.tasks.linksTo(id);
+    const parent = task.links.find((l) => l.type === "parent")?.task;
+    const what = task.status === "done" ? "done" : "ready for review";
+    for (const l of held) {
+      if (l.type === "depends-on") await this.startIfReady(l.task, `${id} is ${what}`);
+    }
+    if (parent !== undefined) await this.finishParentIfDone(parent);
+    await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
+    this.deps.events.emit(["tasks"]);
+  }
+
+  private async startIfReady(id: string, why: string): Promise<void> {
+    const { store } = this.deps;
+    const task = store.tasks.get(id);
+    if (task === undefined || !store.tasks.startWhenReady(id)) return;
+    if (task.status !== "inbox" && task.status !== "ready") return;
+    if (store.tasks.unmetDependencies(id).length > 0) return;
+    this.note(id, `Started: ${why}.`);
+    try {
+      await this.start(id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.room.post(id, `error:${randomUUID()}`, {
+        type: "system",
+        level: "error",
+        text: `Could not start: ${message}`,
+      });
+    }
+  }
+
+  private async finishParentIfDone(parent: string): Promise<void> {
+    const { store } = this.deps;
+    const task = store.tasks.get(parent);
+    if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
+    this.note(parent, "Every subtask is done. Task closed.");
+    await this.close(parent);
+  }
+
+  /** A task other tasks pointed at is gone: children become top-level, waiting tasks ask the owner. */
+  private async afterRemoval(
+    removed: Task,
+    held: readonly { task: string; type: TaskLink["type"] }[],
+  ): Promise<void> {
+    const { store } = this.deps;
+    const touched: string[] = [];
+    for (const l of held) {
+      touched.push(l.task);
+      if (l.type !== "depends-on") continue;
+      const waiting = store.tasks.get(l.task);
+      if (waiting === undefined) continue;
+      if (waiting.status !== "inbox" && waiting.status !== "ready" && waiting.status !== "paused") continue;
+      store.tasks.setStartWhenReady(waiting.id, false);
+      store.tasks.setStatus(waiting.id, "paused", "owner", this.now().toISOString());
+      this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
+        type: "system",
+        level: "error",
+        text: `${removed.id} was removed, and this task was waiting for it. Start it anyway, or link it to another task?`,
+      });
+      this.deps.room.publishTask(this.get(waiting.id));
+    }
+    const parent = removed.links.find((l) => l.type === "parent")?.task;
+    if (parent !== undefined) {
+      touched.push(parent);
+      await this.finishParentIfDone(parent);
+    }
+    await this.refreshBriefs(touched);
+    this.deps.events.emit(["tasks"]);
+  }
+
+  private async linksChanged(ids: readonly string[]): Promise<void> {
+    for (const id of ids) {
+      const task = this.deps.store.tasks.get(id);
+      if (task !== undefined) this.deps.room.publishTask(task);
+    }
+    await this.refreshBriefs(ids);
+    this.deps.events.emit(["tasks"]);
+  }
+
+  /** Rewrites TASK.md of each task so its Related tasks section is current. */
+  private async refreshBriefs(ids: readonly string[]): Promise<void> {
+    const sections = await this.deps.config.sections();
+    const stored = await this.deps.agents.list();
+    const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
+    for (const id of new Set(ids)) {
+      const task = this.deps.store.tasks.get(id);
+      if (task === undefined) continue;
+      const fm = agents.find((a) => a.id === task.team[0]);
+      const md = renderTaskMd(
+        task,
+        fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
+        sections.orgs[task.org ?? ""]?.name,
+        this.relatedOf(task),
+      );
+      // The folder can be gone by hand; the links still stand.
+      await writeFile(join(task.folder, "TASK.md"), md).catch(() => undefined);
+    }
+  }
+
+  private relatedOf(task: Task): Related {
+    const { store } = this.deps;
+    const rel = (id: string): RelatedTask | undefined => {
+      const t = store.tasks.get(id);
+      return t === undefined
+        ? undefined
+        : { id, title: t.title, status: t.status, branches: t.repos.map((r) => r.branch) };
+    };
+    const related: Related = { depends: [], children: [] };
+    for (const l of task.links) {
+      const other = rel(l.task);
+      if (other === undefined) continue;
+      if (l.type === "parent") related.parent = other;
+      else if (l.type === "depends-on") related.depends.push({ ...other, when: l.when ?? "merged" });
+    }
+    for (const l of store.tasks.linksTo(task.id)) {
+      if (l.type !== "parent") continue;
+      const child = rel(l.task);
+      if (child !== undefined) related.children.push(child);
+    }
+    return related;
+  }
+
+  private note(task: TaskId, text: string): void {
+    this.deps.room.post(task, `info:${randomUUID()}`, { type: "system", level: "info", text });
   }
 
   // ---------------------------------------------------------------------------

@@ -1,10 +1,16 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { Kbd } from "@/components/ui/kbd";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
+import { useBoss } from "@/features/boss/boss-context";
+import { checksNeedingYou } from "@/features/health/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText, orgRows } from "@/features/shell/model";
+import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
+import { MOD_KEY } from "@/lib/format";
+import { useHealthChecks } from "@/lib/ops-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
@@ -32,7 +38,9 @@ export function Sidebar() {
       className="flex h-full w-60 shrink-0 flex-col gap-5 border-r border-line-strong bg-rail px-3.5 py-5"
     >
       <Brand />
+      <UpdateNotice />
       <MainNav />
+      <BossButton />
       <OrgList />
       <AgentsNow />
     </aside>
@@ -91,7 +99,8 @@ function MainNav() {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const needYou = accountsNeedingYou(accounts ?? []).length;
+  const checks = useHealthChecks().data?.checks;
+  const needYou = accountsNeedingYou(accounts ?? []).length + checksNeedingYou(checks);
   const badge: Partial<Record<PageName, { text: string; alert?: boolean }>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
@@ -129,6 +138,26 @@ function MainNav() {
         );
       })}
     </nav>
+  );
+}
+
+/** Opens the boss chat drawer, like Cmd+J. */
+function BossButton() {
+  const { open, toggle } = useBoss();
+  return (
+    <button
+      type="button"
+      aria-pressed={open}
+      onClick={toggle}
+      className={cn(
+        ITEM,
+        "h-9 gap-2 border border-line-strong px-3 text-body font-medium",
+        open ? "bg-selected text-fg" : "text-fg-soft",
+      )}
+    >
+      <span>Boss</span>
+      <Kbd className="ml-auto">{MOD_KEY} J</Kbd>
+    </button>
   );
 }
 

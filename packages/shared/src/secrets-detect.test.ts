@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import { deriveSecretName, detectSecrets, kindOfSecret, replaceSecrets, slugName } from "./secrets-detect.ts";
+
+const ANTHROPIC = `sk-ant-api03-${"aB3xY9".repeat(8)}`;
+const OPENAI = `sk-proj-${"Qw7Er1".repeat(8)}`;
+const GITHUB = `ghp_${"a1B2c3D4e5".repeat(4)}`;
+const GITLAB = `glpat-${"Ab12Cd34Ef".repeat(2)}`;
+const SLACK = `xoxb-${"1234".repeat(3)}-${"abcDEF".repeat(2)}`;
+const AWS = "AKIAIOSFODNN7EXAMPLE";
+
+describe("detectSecrets", () => {
+  it.each([
+    ["anthropic", ANTHROPIC],
+    ["openai", OPENAI],
+    ["github", GITHUB],
+    ["github", `github_pat_${"A1b2C3d4E5".repeat(5)}`],
+    ["gitlab", GITLAB],
+    ["slack", SLACK],
+    ["aws", AWS],
+    ["jwt", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"],
+  ] as const)("finds a %s key", (kind, value) => {
+    const found = detectSecrets(`please use ${value} for the call`);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ kind, value });
+  });
+
+  it("finds a private key block whole", () => {
+    const key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\ndef\n-----END OPENSSH PRIVATE KEY-----";
+    expect(detectSecrets(`here:\n${key}\nthanks`)[0]).toMatchObject({ kind: "private-key", value: key });
+  });
+
+  it("finds a long random token and a value after a keyword", () => {
+    expect(detectSecrets("key is Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dF")[0]?.kind).toBe("token");
+    const assigned = detectSecrets('export API_KEY="hunter2hunter2X9"');
+    expect(assigned[0]).toMatchObject({ kind: "assigned", value: "hunter2hunter2X9" });
+  });
+
+  it("leaves hashes, uuids, paths, words and references alone", () => {
+    const calm = [
+      "commit 9fceb02d0ae598e95dc970b74767f19372d61af8 is fine",
+      "sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "id 3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+      "/Users/owner/Work/majhi/apps/server/src/commands/handlers.ts and src/some/really/deep/folder/name.ts",
+      "https://example.com/blog/how-to-write-a-really-long-slug-about-many-things-today",
+      "the word internationalizationLocalizationConfiguration is long",
+      "use secret:anthropic-personal for it",
+      "password: changeme",
+      "npm install @modelcontextprotocol/sdk@1.31.0",
+    ];
+    for (const text of calm) expect(detectSecrets(text), text).toEqual([]);
+  });
+
+  it("returns matches in order without overlaps", () => {
+    const found = detectSecrets(`${GITHUB} and ${AWS}`);
+    expect(found.map((m) => m.kind)).toEqual(["github", "aws"]);
+  });
+});
+
+describe("replaceSecrets", () => {
+  it("swaps each match for its reference", () => {
+    const text = `a ${AWS} b ${GITLAB} c`;
+    const out = replaceSecrets(text, detectSecrets(text), (m) => `secret:${m.kind}`);
+    expect(out).toBe("a secret:aws b secret:gitlab c");
+  });
+});
+
+describe("deriveSecretName", () => {
+  const none = new Set<string>();
+  it("uses the label", () =>
+    expect(deriveSecretName({ label: "New Relic (Acme)", taken: none })).toBe("new-relic-acme"));
+  it("uses the kind without a label", () => {
+    expect(deriveSecretName({ kind: "anthropic", taken: none })).toBe("anthropic");
+    expect(deriveSecretName({ kind: "github", taken: new Set(["github"]) })).toBe("github-2");
+  });
+  it("counts secret-N when nothing is known", () => {
+    expect(deriveSecretName({ taken: new Set(["secret-1"]) })).toBe("secret-2");
+    expect(deriveSecretName({ label: "!!!", taken: none })).toBe("secret-1");
+  });
+  it("slugs labels", () => expect(slugName("  Hello, World  ")).toBe("hello-world"));
+  it("guesses the kind of a pasted value", () => {
+    expect(kindOfSecret(ANTHROPIC)).toBe("anthropic");
+    expect(kindOfSecret("hello")).toBeUndefined();
+  });
+});

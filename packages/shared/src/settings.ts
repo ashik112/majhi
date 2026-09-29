@@ -7,15 +7,25 @@ import { z } from "zod";
  */
 
 /** Context budget (5.13). Orgs and agents can override `compact_at`. */
-export const ContextSettingsSchema = z.strictObject({
+const contextFields = {
   /** Compact when used / size reaches this. */
-  compact_at: z.number().gt(0).lt(1).default(0.8),
+  compact_at: z.number().gt(0).lt(1),
   /** Native compaction must bring usage under this, else majhi hands off to a fresh session. */
-  compact_target: z.number().gt(0).lt(1).default(0.4),
+  compact_target: z.number().gt(0).lt(1),
   /** Replace the session with a fresh one after this many turns. 0 turns it off. */
-  max_turns: z.number().int().min(0).default(40),
+  max_turns: z.number().int().min(0),
+};
+export const ContextSettingsSchema = z.strictObject({
+  compact_at: contextFields.compact_at.default(0.8),
+  compact_target: contextFields.compact_target.default(0.4),
+  max_turns: contextFields.max_turns.default(40),
 });
 export type ContextSettings = z.infer<typeof ContextSettingsSchema>;
+/**
+ * Only the fields that are set. Zod 4 fills defaults inside `.partial()`, so a patch or a
+ * majhi.yaml section is its own schema without defaults: an absent field stays absent.
+ */
+export const ContextPatchSchema = z.strictObject(contextFields).partial();
 
 /** A duration like `10m`, `90s`, `2h`. */
 export const DurationSchema = z
@@ -29,17 +39,24 @@ export function durationMs(value: string): number {
 }
 
 /** Concurrency and idle limits (5.17). */
-export const LimitsSettingsSchema = z.strictObject({
+const limitsFields = {
   /** Agent processes running at once, across majhi. */
-  agents_max: z.number().int().min(1).max(64).default(6),
+  agents_max: z.number().int().min(1).max(64),
   /** Agent processes running at once on one account. */
-  per_account: z.number().int().min(1).max(16).default(2),
+  per_account: z.number().int().min(1).max(16),
   /** Agent processes running at once in one task. */
-  per_task: z.number().int().min(1).max(16).default(3),
+  per_task: z.number().int().min(1).max(16),
   /** Stop an idle agent process after this long; it resumes on the next message. */
-  idle_timeout: DurationSchema.default("10m"),
+  idle_timeout: DurationSchema,
+};
+export const LimitsSettingsSchema = z.strictObject({
+  agents_max: limitsFields.agents_max.default(6),
+  per_account: limitsFields.per_account.default(2),
+  per_task: limitsFields.per_task.default(3),
+  idle_timeout: limitsFields.idle_timeout.default("10m"),
 });
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
+export const LimitsPatchSchema = z.strictObject(limitsFields).partial();
 
 /** Resume after sleep, restarts, lost internet and crashes (5.7). */
 export const ResumeSettingsSchema = z.strictObject({
@@ -47,6 +64,7 @@ export const ResumeSettingsSchema = z.strictObject({
   auto: z.boolean().default(true),
 });
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
+export const ResumePatchSchema = z.strictObject({ auto: z.boolean() }).partial();
 
 /** How the boss's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
@@ -68,6 +86,17 @@ export const PolicySettingsSchema = z.strictObject({
   commands: z.record(z.string(), ApprovalModeSchema).default({}),
 });
 export type PolicySettings = z.infer<typeof PolicySettingsSchema>;
+/** `commands`, when given, replaces the whole map of per-command overrides. */
+export const PolicyPatchSchema = z
+  .strictObject({
+    read: ApprovalModeSchema,
+    change: ApprovalModeSchema,
+    destructive: ApprovalModeSchema,
+    outbound: ApprovalModeSchema,
+    commands: z.record(z.string(), ApprovalModeSchema),
+  })
+  .partial();
+export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
 
 /** Everything in one object, as `settings.get` returns it (defaults applied). */
 export const SettingsSchema = z.object({

@@ -43,7 +43,11 @@ export function RoomPane({
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return;
     if (event.target instanceof Element && event.target.closest('dialog, [role="menu"]')) return;
-    if (busy && !cancel.isPending) cancel.mutate();
+    if (busy && !cancel.isPending) {
+      // Stopping the agent is what Esc did; a drawer around the room must not also close.
+      event.preventDefault();
+      cancel.mutate();
+    }
   }
 
   return (
@@ -51,7 +55,7 @@ export function RoomPane({
       aria-label="Task room"
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="flex min-w-0 flex-1 flex-col gap-3 outline-none"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 outline-none"
     >
       {top}
       {state.connection === "reconnecting" && (

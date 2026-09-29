@@ -22,6 +22,12 @@ describe("parseEnv", () => {
     });
   });
 
+  it("reads the baked-in commit, and says dev when the image was built without one", () => {
+    expect(parseEnv({ ...base, MAJHI_COMMIT: "abc1234" }).commit).toBe("abc1234");
+    expect(parseEnv({ ...base, MAJHI_COMMIT: "" }).commit).toBe("dev");
+    expect(parseEnv(base).commit).toBe("dev");
+  });
+
   it("reads adapter commands as JSON arrays", () => {
     const env = parseEnv({
       ...base,

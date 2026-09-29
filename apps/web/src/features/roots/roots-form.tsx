@@ -8,7 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { useHostStatus, useSetWorkspaces } from "@/lib/queries";
-import { checkRoots, defaultTasksDir, type RootRow, type RootsDraft } from "./model";
+import { checkRoots, defaultTasksDir, protectedRoots, type RootRow, type RootsDraft } from "./model";
+import { ProtectedWarning } from "./protected-warning";
 import { RootPicker } from "./root-picker";
 import { TypedRoots } from "./typed-roots";
 
@@ -55,6 +56,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
   const inputs = useRef(new Map<number, HTMLInputElement>());
 
   const check = useMemo(() => checkRoots({ rows, tasksDir }, home), [rows, tasksDir, home]);
+  const protectedFound = useMemo(() => protectedRoots(rows, tasksDir, home), [rows, tasksDir, home]);
   const firstRoot = rows.find((r) => r.value.trim() !== "")?.value ?? "";
   const tasksHint = defaultTasksDir(firstRoot || "~/Work");
   const copy = COPY[mode];
@@ -196,6 +198,8 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
             </div>
           )}
         </div>
+
+        <ProtectedWarning found={protectedFound} runtime={host.data?.info?.dockerRuntime} />
 
         {save.error && (
           <div role="alert" className="mx-4 mb-4 rounded-md border border-red-line bg-red-wash px-3 py-2.5">

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { Attachment, Task } from "@majhi/shared";
+import { hasRelated, type Related } from "./relations.ts";
 
 export interface BriefAgent {
   id: string;
@@ -9,7 +10,12 @@ export interface BriefAgent {
 }
 
 /** `TASK.md`: short on purpose. The agent reads it first. */
-export function renderTaskMd(task: Task, agent: BriefAgent | undefined, orgName: string | undefined): string {
+export function renderTaskMd(
+  task: Task,
+  agent: BriefAgent | undefined,
+  orgName: string | undefined,
+  related?: Related,
+): string {
   const lines: string[] = [`# ${task.id}: ${task.title}`, ""];
   lines.push(`Kind: ${task.kind}${orgName === undefined ? "" : `. Org: ${orgName}`}.`, "");
   lines.push("## Brief", "", task.brief.trim(), "");
@@ -24,6 +30,7 @@ export function renderTaskMd(task: Task, agent: BriefAgent | undefined, orgName:
       );
     }
   }
+  if (related !== undefined && hasRelated(related)) lines.push("", ...relatedLines(related));
   lines.push("", "## Agent", "", agent === undefined ? "None yet." : `@${agent.id} (${agent.role})`, "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
@@ -38,6 +45,24 @@ export function renderTaskMd(task: Task, agent: BriefAgent | undefined, orgName:
     "",
   );
   return lines.join("\n");
+}
+
+function relatedLines(r: Related): string[] {
+  const out = ["## Related tasks", ""];
+  if (r.parent !== undefined) out.push(`- Part of ${r.parent.id}: ${r.parent.title}`);
+  for (const d of r.depends) {
+    const branch =
+      d.branches.length === 0 ? "" : ` Its branch: ${d.branches.map((b) => `\`${b}\``).join(", ")}.`;
+    if (d.when === "ready") {
+      out.push(
+        `- Builds on ${d.id}: ${d.title}. Waits until it is ready for review (now ${d.status}).${branch}`,
+      );
+    } else {
+      out.push(`- Waits for ${d.id}: ${d.title}. Waits until it is merged (now ${d.status}).`);
+    }
+  }
+  for (const c of r.children) out.push(`- Child ${c.id}: ${c.title} (${c.status})`);
+  return out;
 }
 
 function attachmentLine(a: Attachment): string {

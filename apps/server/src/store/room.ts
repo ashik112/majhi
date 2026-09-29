@@ -104,6 +104,18 @@ export class RoomRepo {
       .map(toItem);
   }
 
+  /** Approval cards that ran a config change and can be undone through this commit. */
+  approvalsByCommit(commit: string): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(eq(roomItems.type, "approval"), sql`json_extract(${roomItems.payload}, '$.commit') = ${commit}`),
+      )
+      .all()
+      .map(toItem);
+  }
+
   private nextAt(task: string): string {
     let last = this.lastAt.get(task);
     if (last === undefined) {

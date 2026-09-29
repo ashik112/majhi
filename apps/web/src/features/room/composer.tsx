@@ -1,12 +1,13 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Paperclip, Square } from "lucide-react";
+import { KeyRound, Paperclip, Square } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -14,6 +15,7 @@ import { AttachmentChips } from "@/components/ui/attachment-chips";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeSecret, SECRET_WARNING } from "@/features/boss/model";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
@@ -61,6 +63,7 @@ export function Composer({
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [active, setActive] = useState(0);
 
+  const secretInText = useMemo(() => looksLikeSecret(text), [text]);
   const busy = isBusy(agents);
   const working = agents.some((a) => isWorking(a));
   const commands = agents[0]?.commands ?? [];
@@ -174,6 +177,15 @@ export function Composer({
   return (
     <div className="flex flex-col gap-1.5">
       <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
+      {secretInText && (
+        <p
+          role="status"
+          className="flex items-center gap-1.5 rounded-md border border-amber-line bg-amber-wash px-2.5 py-1 text-sm text-amber"
+        >
+          <KeyRound aria-hidden="true" className="size-3.5 shrink-0" />
+          {SECRET_WARNING}
+        </p>
+      )}
       <div className="relative">
         {popupOpen && popupTrigger && (
           <div

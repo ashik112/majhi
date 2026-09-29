@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type ApiError, COMMAND_META_HEADER, type Health } from "@majhi/shared";
 import { Hono } from "hono";
+import { mcpRoutes } from "../admin/mcp.ts";
+import type { AdminService } from "../admin/service.ts";
+import type { AdminTokens } from "../admin/tokens.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import { errorMessage } from "../errors.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
@@ -13,6 +16,8 @@ import { type TaskFilesDeps, taskFileRoutes } from "./taskFiles.ts";
 
 export interface AppDeps {
   version: string;
+  /** Git commit the image was built from. `/health` reports it so a browser can tell a new server from the old one. */
+  commit?: string;
   /** Built web app. When it has no index.html, `/` explains that instead. */
   webDist: string;
   dispatch: Dispatch;
@@ -22,6 +27,8 @@ export interface AppDeps {
   uploads: UploadStore;
   /** Serves `GET /api/tasks/<id>/files/<path>`. */
   taskFiles: TaskFilesDeps;
+  /** The majhi-admin MCP server at `/mcp`. */
+  mcp?: { tokens: AdminTokens; admin: AdminService };
 }
 
 const NOT_BUILT =
@@ -31,7 +38,9 @@ const NOT_BUILT =
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
 
-  app.get("/health", (c) => c.json({ status: "ok", version: deps.version } satisfies Health));
+  app.get("/health", (c) =>
+    c.json({ status: "ok", version: deps.version, commit: deps.commit ?? "dev" } satisfies Health),
+  );
 
   app.post("/api/cmd/:name", async (c) => {
     // Browsers send Origin on cross-site POSTs. Only pages served from this
@@ -53,6 +62,7 @@ export function createApp(deps: AppDeps): Hono {
     return result.ok ? c.json(result.output) : c.json(result.error, result.status);
   });
 
+  if (deps.mcp !== undefined) app.route("/", mcpRoutes(deps.mcp));
   app.route("/api/host", hostRoutes(deps.host));
   app.route("/api/uploads", uploadRoutes(deps.uploads));
   app.route("/api/tasks", taskFileRoutes(deps.taskFiles));

@@ -30,6 +30,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { keys: "j k h l", what: "Move between cards on the board (arrows too)" },
   { keys: "Enter", what: "Open the card you are on" },
   { keys: "Esc", what: "Stop the agent in an open task" },
+  { keys: "Cmd J", what: "Open or close the boss chat (Ctrl J elsewhere)" },
   { keys: "?", what: "Show this list" },
 ];
 

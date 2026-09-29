@@ -37,6 +37,8 @@ const EnvSchema = z.object({
   MAJHI_HOME: z.string().trim().min(1).optional(),
   MAJHI_WEB_DIST: AbsolutePath.optional(),
   MAJHI_VERSION: z.string().trim().min(1).optional(),
+  /** Git commit the image was built from, baked in by the Dockerfile. */
+  MAJHI_COMMIT: z.string().trim().min(1).optional(),
   MAJHI_SECRETS_KEY_FILE: AbsolutePath.default("/run/secrets/majhi_key"),
   MAJHI_ADAPTER_CLAUDE: JsonCommand.optional(),
   MAJHI_ADAPTER_CODEX: JsonCommand.optional(),
@@ -53,6 +55,8 @@ export interface ServerEnv {
   majhiHome: string;
   webDist: string;
   version: string;
+  /** Git commit the running image was built from, or `dev` when unknown. */
+  commit: string;
   /** File holding the age identity that protects `secrets.age`. It may not exist. */
   secretsKeyFile: string;
   /** How agent CLIs are started: the only host values they see, and adapter overrides for tests. */
@@ -83,6 +87,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     majhiHome: resolve(majhiHome),
     webDist: env.MAJHI_WEB_DIST ?? DEFAULT_WEB_DIST,
     version: env.MAJHI_VERSION ?? pkg.version,
+    commit: env.MAJHI_COMMIT ?? "dev",
     secretsKeyFile: env.MAJHI_SECRETS_KEY_FILE,
     runtime: { base: baseEnv(source), adapters, usage },
   };

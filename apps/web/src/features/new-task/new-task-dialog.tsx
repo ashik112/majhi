@@ -21,7 +21,7 @@ import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
-import { useCreateTask, useProjects } from "@/lib/task-queries";
+import { useCreateTask, useProjects, useTasks } from "@/lib/task-queries";
 import { attachmentIds, filesFromClipboard, useAttachments } from "@/lib/use-attachments";
 import { defaultAgentId, eligibleAgents } from "../tasks/model";
 import {
@@ -30,10 +30,13 @@ import {
   composeTaskText,
   groupProjects,
   initialProjects,
+  linkChoices,
+  linkFields,
   namedProjects,
   togglePicked,
   typedText,
 } from "./model";
+import { TaskChips } from "./task-chips";
 
 /** The parser runs on every keystroke and must never break the dialog. */
 function tryParse(text: string, ctx: Parameters<typeof parseTaskText>[1]): ParsedTask | null {
@@ -54,6 +57,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const projects = useProjects();
   const agents = useAgents().data;
   const create = useCreateTask();
+  const openTasks = useTasks().data;
   const navigate = useNavigate();
   const toast = useToast();
   const attachments = useAttachments();
@@ -63,6 +67,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [details, setDetails] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
+  const [dependsOn, setDependsOn] = useState<string[]>([]);
+  const [parent, setParent] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | undefined>();
   const seeded = useRef(false);
 
@@ -98,6 +104,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);
   const orgName = orgs.find((o) => o.id === chosenOrg)?.name;
+  const choices = linkChoices(openTasks ?? [], filterOrg);
   const ready = canAdd(draft, attachments.uploading, create.isPending);
 
   function submit(start: boolean) {
@@ -108,11 +115,19 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
         text: composeTaskText(draft, chosen, named),
         attachments: attachmentIds(attachments.items),
         start,
+        ...linkFields(parent[0], dependsOn),
         ...(agentOverride ? { agent: agentOverride } : {}),
       },
       {
         onSuccess: (task) => {
-          toast(start ? "Task started" : "Added to the inbox", { detail: task.id });
+          toast(
+            start
+              ? dependsOn.length > 0
+                ? "Added, starts when ready"
+                : "Task started"
+              : "Added to the inbox",
+            { detail: task.id },
+          );
           onClose();
           void navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
         },
@@ -237,6 +252,19 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             </p>
           )}
         </fieldset>
+
+        {choices.length > 0 && (
+          <>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm text-fg-faint">Depends on (optional)</span>
+              <TaskChips label="Depends on" tasks={choices} selected={dependsOn} onChange={setDependsOn} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm text-fg-faint">Part of (optional)</span>
+              <TaskChips label="Part of" tasks={choices} selected={parent} onChange={setParent} single />
+            </div>
+          </>
+        )}
 
         <div className="flex flex-col gap-2">
           <span className="text-sm text-fg-faint">Team</span>

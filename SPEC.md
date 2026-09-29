@@ -195,6 +195,27 @@ host helper   `apps/host`, a small Node process on the owner's machine (not in
               private key from `~/.ssh/config` `IdentityFile` entries and the
               default names that has no passphrase and is not loaded yet, and
               reports the count and the keys that still need a passphrase.
+              Ops jobs (Phase 2b): it reports the checkout's HEAD, whether it
+              has uncommitted changes and which Docker runtime is in use
+              (OrbStack or Docker Desktop) in its poll header;
+              `version.changes` answers with the commit subjects between the
+              running image's commit and HEAD (`git log --format=%s
+              running..HEAD -n 20`); `update` rebuilds and restarts majhi
+              (below); `restart` exits so launchd starts it again. At start
+              (login) it makes sure Docker is up (`open -a OrbStack` or Docker,
+              waiting up to 2 minutes, polling every 5 s) and that majhi is
+              running (`docker compose up -d --wait` in the checkout when its
+              container is not), logs each step, retries a failed start twice
+              a minute apart, and only then posts a macOS notification with the
+              one step the owner must take. `update`: `docker compose build`
+              with the same environment as `make up` (HOST_UID, HOST_GID, HOME,
+              MAJHI_COMMIT from `git rev-parse HEAD`), create the secrets key
+              if missing, regenerate the override, `up -d --wait`, copy the
+              helper bundle out of the new image over `~/.majhi/bin`, then exit
+              so launchd restarts the new helper. Progress goes to
+              `~/.majhi/update.json` (the server that would relay it is
+              replaced part-way); the UI reads it through `system.version`
+              and reloads when `/health` reports the new commit.
               On Apple silicon it also runs Laya natively with `laya-mlx`
               (MLX on the GPU). Later it is also where MAJHI_RUNNER=native
               spawns agents.
@@ -289,6 +310,8 @@ projects:
 
 ### 4.5 Docker details
 
+- The image bakes the git commit it was built from (`ARG MAJHI_COMMIT`, exposed as the env var `MAJHI_COMMIT`, `dev` when unknown). `make up` and the host helper pass `git rev-parse HEAD`. `/health` reports it, so a browser can tell the new server from the old one after an update. Building never needs the owner: `docker compose build` reads the same variables the Makefile exports. Docker access: macOS asks once whether OrbStack or Docker Desktop may read `~/Documents`, `~/Desktop`, `~/Downloads` and iCloud Drive; without a yes the container sees an empty folder, so the roots screen warns before saving a root there and names the runtime the helper found.
+- `health.run` runs the same checks as `make doctor` (config, config folder, git, each root mounted, tasks folder, host helper, SSH agent, each git host, secrets key, each CLI version, each account from its cached health, disk space). Each failed check that majhi can fix carries a `fix` label and `health.fix` runs it: mount a root (helper remount), create a missing folder, reload SSH keys, check an account again, open an account's sign-in (the UI opens the terminal), restart the helper. A failed check with no fix says the exact step in plain words.
 - Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so majhi generates `docker-compose.override.yml` with one mount per root from `majhi.yaml`. The host helper regenerates it and recreates the server container whenever roots change; `make up` does the same on first start. Only roots are mounted, never the whole home folder, so agents cannot reach other credentials in it.
 - Mount `~/.ssh/config` and `known_hosts` read-only. Forward the host SSH agent (Docker Desktop: `/run/host-services/ssh-auth.sock`; OrbStack exposes its own socket) to majhi's own git only (fetching the base when a task starts, pushing after approval). It is never forwarded to agent runs: agents have no SSH access, which also closes the push-by-script gap in the push check. Private keys never enter the container. Only the **public** keys (`<IdentityFile>.pub` for every `IdentityFile` in `~/.ssh/config` and the default names, when the file exists) are bind-mounted read-only at their host paths, in the generated override next to the roots: with `IdentitiesOnly yes` OpenSSH reads the `.pub` file to choose the matching agent key when the private file is missing. A mount source without the `.pub` suffix is refused. The image adds a passwd entry for the owner's uid at start (home = the host home), because ssh will not run without one. `doctor` runs `ssh -T -o BatchMode=yes -o ConnectTimeout=5` against each ssh alias or `user@host` used by a registered project's remotes and reports reachable, auth failed or unreachable; `host.status` carries the same result (`sshHosts`) and Repos names a host that took no key. The host helper keeps the Mac's agent loaded (4.2); a key with a passphrase is unlocked once from the Repos screen and kept by the macOS Keychain.
 - Mount `~/.majhi` read-write.

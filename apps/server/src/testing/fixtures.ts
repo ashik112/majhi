@@ -44,6 +44,7 @@ export function testEnv(dir: string, overrides: Partial<ServerEnv> = {}): Server
     majhiHome: join(dir, ".majhi"),
     webDist: join(dir, "web-dist"),
     version: "1.2.3-test",
+    commit: "dev",
     secretsKeyFile: join(dir, "config", "secrets.key"),
     runtime: { base: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, adapters: {} },
     ...overrides,

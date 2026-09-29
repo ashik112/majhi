@@ -103,7 +103,7 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   // Step 2: sign in through the terminal
   const progress = page.getByRole("navigation", { name: "Setup progress" });
   await expect(page.getByRole("heading", { name: "Add your first account" })).toBeVisible();
-  await expect(progress).toContainText("Step 2 of 3");
+  await expect(progress).toContainText("Step 2 of 4");
   await page.getByRole("textbox", { name: "Account id" }).fill("claude-personal");
   await page.getByRole("button", { name: "Add account and sign in" }).click();
   await expect(page.getByRole("region", { name: "Sign-in terminal" })).toContainText("Paste code here");
@@ -117,7 +117,7 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
 
   // Step 3: the boss, with the suggested defaults
   await expect(page.getByRole("heading", { name: "Choose the boss" })).toBeVisible();
-  await expect(progress).toContainText("Step 3 of 3");
+  await expect(progress).toContainText("Step 3 of 4");
   const form = page.getByRole("form", { name: "Boss agent" });
   await expect(form.getByRole("button", { name: /^claude-personal/, pressed: true })).toBeVisible();
   // The account's default model is picked, not "Account default".
@@ -127,7 +127,15 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await form.getByRole("button", { name: "Create boss" }).click();
   await expect(form.getByText("Health check passed")).toBeVisible();
   await shot(page, "onboarding-boss");
-  await form.getByRole("button", { name: "Open majhi" }).click();
+  await form.getByRole("button", { name: "Continue" }).click();
+
+  // Step 4: the boss answers a first message.
+  await expect(page.getByRole("heading", { name: "Finish with the boss" })).toBeVisible();
+  await expect(progress).toContainText("Step 4 of 4");
+  await expect(
+    page.getByRole("log", { name: "Room messages" }).getByText(/^echo: Hi\. I just finished/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Open majhi" }).click();
   await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
 
   await page.reload();

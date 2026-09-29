@@ -1,6 +1,7 @@
 import type { Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { branchName, renderPointer, renderTaskMd, slugify } from "./brief.ts";
+import type { Related } from "./relations.ts";
 
 const task: Task = {
   id: "ACM-7",
@@ -106,5 +107,51 @@ describe("branch names", () => {
 
   it("has no slug for a title of only symbols", () => {
     expect(branchName("LOCAL-2", "!!!")).toBe("task/local-2");
+  });
+});
+
+describe("Related tasks section", () => {
+  const related = (over: Partial<Related> = {}): Related => ({ depends: [], children: [], ...over });
+
+  it("is absent without links", () => {
+    expect(renderTaskMd(task, undefined, undefined, related())).not.toContain("Related tasks");
+    expect(renderTaskMd(task, undefined, undefined)).not.toContain("Related tasks");
+  });
+
+  it("names the parent, what it waits on with the branch for ready, and the children", () => {
+    const md = renderTaskMd(
+      task,
+      undefined,
+      undefined,
+      related({
+        parent: { id: "GLX-410", title: "Billing rework", status: "running", branches: [] },
+        depends: [
+          {
+            id: "GLX-411",
+            title: "Schema",
+            status: "review",
+            branches: ["task/glx-411-schema"],
+            when: "ready",
+          },
+          {
+            id: "GLX-412",
+            title: "Auth",
+            status: "running",
+            branches: ["task/glx-412-auth"],
+            when: "merged",
+          },
+        ],
+        children: [{ id: "GLX-420", title: "Sub", status: "done", branches: [] }],
+      }),
+    );
+    expect(md).toContain("## Related tasks\n");
+    expect(md).toContain("- Part of GLX-410: Billing rework");
+    expect(md).toContain(
+      "- Builds on GLX-411: Schema. Waits until it is ready for review (now review). Its branch: `task/glx-411-schema`.",
+    );
+    expect(md).toContain("- Waits for GLX-412: Auth. Waits until it is merged (now running).");
+    expect(md).not.toContain("task/glx-412-auth");
+    expect(md).toContain("- Child GLX-420: Sub (done)");
+    expect(md.indexOf("## Related tasks")).toBeLessThan(md.indexOf("## Agent"));
   });
 });

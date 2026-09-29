@@ -16,6 +16,8 @@ export const tasks = sqliteTable("tasks", {
   folder: text("folder").notNull(),
   /** JSON array of agent ids. */
   team: text("team").notNull(),
+  /** Start the task by itself once its dependencies are met (5.4a). */
+  startWhenReady: integer("start_when_ready", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

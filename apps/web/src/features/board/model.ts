@@ -62,8 +62,18 @@ const PAUSE_TEXT: Record<string, string> = {
   owner: "Paused · stopped by you",
 };
 
-/** The line under a card: why it is paused, that it is your turn, or who is working. */
+/** "Waiting on GLX-412", or "Waiting on GLX-412, GLX-413 +1" when there are more than two. */
+export function waitingText(waitingOn: readonly string[]): string {
+  const shown = waitingOn.slice(0, 2).join(", ");
+  const more = waitingOn.length - 2;
+  return `Waiting on ${shown}${more > 0 ? ` +${more}` : ""}`;
+}
+
+/** The line under a card: why it is paused, that it is your turn, who is working, or what it waits on. */
 export function cardNote(task: TaskSummary): CardNote | null {
+  if ((task.status === "inbox" || task.status === "ready") && task.waitingOn.length > 0) {
+    return { text: waitingText(task.waitingOn), tone: "coral" };
+  }
   if (task.status === "paused") {
     return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", tone: "coral" };
   }
@@ -72,6 +82,18 @@ export function cardNote(task: TaskSummary): CardNote | null {
     return who ? { text: `@${who} working`, tone: "amber" } : { text: "Your turn", tone: "violet" };
   }
   return null;
+}
+
+/** Progress of a parent task: "3 of 5 done" and the filled share of the bar. Null without children. */
+export function cardProgress(task: Pick<TaskSummary, "children">): { text: string; pct: number } | null {
+  const kids = task.children;
+  if (kids === undefined || kids.total === 0) return null;
+  return { text: `${kids.done} of ${kids.total} done`, pct: Math.round((kids.done / kids.total) * 100) };
+}
+
+/** The parent a task is part of, as its id. */
+export function partOf(task: Pick<TaskSummary, "links">): string | undefined {
+  return task.links.find((l) => l.type === "parent")?.task;
 }
 
 /** Sort key of a task id: prefix, then its number, so LOCAL-10 follows LOCAL-9. */

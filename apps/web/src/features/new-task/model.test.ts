@@ -1,4 +1,4 @@
-import { type OrgView, type ProjectView, parseTaskText } from "@majhi/shared";
+import { type OrgView, type ProjectView, parseTaskText, type TaskSummary } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
   canAdd,
@@ -6,7 +6,10 @@ import {
   composeTaskText,
   groupProjects,
   initialProjects,
+  linkChoices,
+  linkFields,
   namedProjects,
+  toggleId,
   togglePicked,
   typedText,
 } from "./model";
@@ -107,5 +110,40 @@ describe("canAdd", () => {
     expect(canAdd({ title: "x", details: "" }, true, false)).toBe(false);
     expect(canAdd({ title: "x", details: "" }, false, true)).toBe(false);
     expect(canAdd({ title: "x", details: "" }, false, false)).toBe(true);
+  });
+});
+
+describe("link choices", () => {
+  const t = (id: string, org: string, status: TaskSummary["status"], updatedAt: string): TaskSummary => ({
+    id,
+    title: id,
+    kind: "code",
+    org,
+    status,
+    team: [],
+    updatedAt,
+    repos: [],
+    working: [],
+    links: [],
+    waitingOn: [],
+  });
+  const all = [
+    t("A-1", "a", "running", "2026-09-29T10:00:00Z"),
+    t("A-2", "a", "done", "2026-09-29T11:00:00Z"),
+    t("B-1", "b", "ready", "2026-09-29T12:00:00Z"),
+    t("A-3", "a", "review", "2026-09-29T13:00:00Z"),
+  ];
+
+  it("lists open tasks of the filtered org, newest first", () => {
+    expect(linkChoices(all, "a").map((x) => x.id)).toEqual(["A-3", "A-1"]);
+    expect(linkChoices(all, undefined).map((x) => x.id)).toEqual(["A-3", "B-1", "A-1"]);
+    expect(linkChoices(all, undefined, ["B-1"]).map((x) => x.id)).toEqual(["A-3", "A-1"]);
+  });
+
+  it("toggles ids and builds the create fields", () => {
+    expect(toggleId(["A-1"], "A-3")).toEqual(["A-1", "A-3"]);
+    expect(toggleId(["A-1", "A-3"], "A-1")).toEqual(["A-3"]);
+    expect(linkFields(undefined, [])).toEqual({});
+    expect(linkFields("A-1", ["A-3"])).toEqual({ parent: "A-1", dependsOn: ["A-3"] });
   });
 });

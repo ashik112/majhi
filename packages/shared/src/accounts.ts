@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ContextSettingsSchema, ResumeSettingsSchema } from "./settings.ts";
+import { ContextPatchSchema, ResumePatchSchema } from "./settings.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -60,9 +60,9 @@ export const OrgConfigSchema = z.looseObject({
     })
     .optional(),
   /** Overrides the majhi-wide context budget for this org's agents (5.13). */
-  context: ContextSettingsSchema.pick({ compact_at: true }).partial().optional(),
+  context: ContextPatchSchema.pick({ compact_at: true }).optional(),
   /** Overrides whether this org's runs resume on their own (5.7). */
-  resume: ResumeSettingsSchema.partial().optional(),
+  resume: ResumePatchSchema.optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -278,7 +278,15 @@ export type OrgView = z.infer<typeof OrgViewSchema>;
  * changes, from a command or from a hand edit picked up by a file watcher. The
  * client refetches the queries for those topics.
  */
-export const EventTopicSchema = z.enum(["config", "orgs", "accounts", "agents", "projects", "tasks"]);
+export const EventTopicSchema = z.enum([
+  "config",
+  "orgs",
+  "accounts",
+  "agents",
+  "projects",
+  "tasks",
+  "secrets",
+]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),

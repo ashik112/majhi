@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
+import { ApiRequestError } from "@/lib/api";
 import { useCloseTask, useRemoveTask } from "@/lib/task-queries";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
@@ -56,15 +57,18 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   const navigate = useNavigate();
   const [refused, setRefused] = useState(false);
 
-  function run(force: boolean) {
-    remove.mutate(force ? { id: task.id, force: true } : { id: task.id }, {
-      onSuccess: () => {
-        toast("Task removed", { detail: task.id });
-        onDone();
-        void navigate({ to: "/" });
-      },
-      onError: (error) => setRefused(!error.unreachable),
-    });
+  // Awaited instead of per-call callbacks: removing the task can unmount this view (the task
+  // disappears from the list) before a per-call onSuccess would run, and then it never runs.
+  async function run(force: boolean) {
+    try {
+      await remove.mutateAsync(force ? { id: task.id, force: true } : { id: task.id });
+    } catch (error) {
+      setRefused(error instanceof ApiRequestError && !error.unreachable);
+      return;
+    }
+    toast("Task removed", { detail: task.id });
+    onDone();
+    void navigate({ to: "/" });
   }
 
   return (
@@ -75,7 +79,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
       busy={remove.isPending}
       error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}
       onCancel={onDone}
-      onConfirm={() => run(refused)}
+      onConfirm={() => void run(refused)}
     />
   );
 }

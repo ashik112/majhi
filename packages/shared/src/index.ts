@@ -5,6 +5,7 @@ export * from "./config.ts";
 export * from "./host.ts";
 export * from "./media.ts";
 export * from "./paths.ts";
+export * from "./secrets-detect.ts";
 export * from "./settings.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";

@@ -80,6 +80,22 @@ export const useStartTask = () => useTaskAction("tasks.start");
 export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
 
+export function useLinkTask() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, CommandInput<"tasks.link">>({
+    mutationFn: (input) => cmd("tasks.link", input),
+    onSuccess: () => refreshTasks(client),
+  });
+}
+
+export function useUnlinkTask() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, CommandInput<"tasks.unlink">>({
+    mutationFn: (input) => cmd("tasks.unlink", input),
+    onSuccess: () => refreshTasks(client),
+  });
+}
+
 export function useRemoveTask() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"tasks.remove">, ApiRequestError, { id: string; force?: boolean }>({

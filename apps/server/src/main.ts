@@ -19,6 +19,8 @@ const hostLink = new HostLink();
 const majhi = createMajhi(env, { hostLink });
 const server = serve({ fetch: majhi.app.fetch, hostname: env.host, port: env.port, createServer }, (info) => {
   const host = info.family === "IPv6" ? `[${info.address}]` : info.address;
+  // Agents run in this container and reach the MCP server on loopback, whatever address we bind.
+  majhi.services.adminTokens.mcpUrl = `http://127.0.0.1:${info.port}/mcp`;
   console.log(`majhi ${env.version} listening on http://${host}:${info.port}`);
 });
 majhi.attach(server);

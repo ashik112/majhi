@@ -84,6 +84,26 @@ export function removeProjectEntry(file: string, id: string): Promise<void> {
   });
 }
 
+/**
+ * Sets the given fields of `context`, `limits`, `resume` and `policy`, and nothing else. A policy
+ * `commands` map replaces the old one; an empty map removes the key.
+ */
+export function writeSettings(
+  file: string,
+  patch: Partial<Record<"context" | "limits" | "resume" | "policy", object | undefined>>,
+): Promise<void> {
+  return editConfig(file, (doc) => {
+    for (const [section, fields] of Object.entries(patch)) {
+      for (const [key, value] of Object.entries((fields ?? {}) as Record<string, unknown>)) {
+        if (value === undefined) continue;
+        const empty = typeof value === "object" && value !== null && Object.keys(value).length === 0;
+        if (empty) doc.deleteIn([section, key]);
+        else doc.setIn([section, key], doc.createNode(value));
+      }
+    }
+  });
+}
+
 /** Sets `boss`. */
 export function writeBoss(file: string, id: string): Promise<void> {
   return editConfig(file, (doc) => doc.set("boss", id));

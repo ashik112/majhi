@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { AgentSession, PermissionAsk, PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
 import type { AgentLive, Attachment, Perm, RoomItem, Task } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
+import type { AdminAccess } from "../admin/access.ts";
+import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -25,6 +27,8 @@ export interface RunDeps {
   config: ConfigService;
   secrets: SecretStore;
   majhiHome: string;
+  /** Gives sessions of the boss (and other admin agents) the majhi-admin MCP server. */
+  admin?: AdminAccess;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   now?: () => Date;
@@ -52,6 +56,10 @@ class AgentRun {
   turning = false;
   cancelBeforePrompt = false;
   needsBrief = false;
+  /** The majhi-admin token of this session, revoked when it ends. */
+  adminToken: string | undefined;
+  /** The admin preamble goes in front of the session's first prompt. */
+  preambleDue = false;
   drive: Promise<void> | undefined;
   readonly pending = new Map<string, Pending>();
   perms: Perm[] = [];
@@ -109,7 +117,8 @@ export class RunManager {
   startTask(task: Task, agent: string): void {
     const run = this.runFor(task.id, agent);
     const { room } = this.deps;
-    if (room.get(task.id, BRIEF_ITEM_ID) === undefined) {
+    // The boss chat has no brief to send: the owner's first message starts it.
+    if (room.get(task.id, BRIEF_ITEM_ID) === undefined && !isBossChat(task)) {
       room.post(task.id, BRIEF_ITEM_ID, {
         type: "owner",
         text: task.brief,
@@ -363,7 +372,10 @@ export class RunManager {
     if (task === undefined) return undefined;
     if (entry.kind === "brief") {
       run.needsBrief = false;
-      return briefBlocks({ folder: task.folder, attachments: task.attachments });
+      return this.withPreamble(
+        run,
+        await briefBlocks({ folder: task.folder, attachments: task.attachments }),
+      );
     }
     const item = this.deps.room.get(run.task, entry.itemId);
     if (item === undefined || item.type !== "owner") return undefined;
@@ -375,7 +387,15 @@ export class RunManager {
       needsBrief: run.needsBrief,
     });
     if (built.briefSent) run.needsBrief = false;
-    return built.blocks;
+    return this.withPreamble(run, built.blocks);
+  }
+
+  /** Puts the admin preamble before a session's first prompt. Slash commands stay whole and keep it waiting. */
+  private withPreamble(run: AgentRun, blocks: PromptBlock[]): PromptBlock[] {
+    const first = blocks[0];
+    if (!run.preambleDue || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
+    run.preambleDue = false;
+    return [{ type: "text", text: ADMIN_PREAMBLE }, ...blocks];
   }
 
   private finishTurn(run: AgentRun, stopReason: string): void {
@@ -401,7 +421,7 @@ export class RunManager {
       if (stored === undefined) throw new UserError(`Agent "${run.agent}" does not exist.`);
       if (!stored.ok) throw new UserError(`Agent "${run.agent}" is invalid: ${stored.errors.join("; ")}`);
       const fm = stored.agent.frontmatter;
-      const { accounts } = await deps.config.sections();
+      const { accounts, boss } = await deps.config.sections();
       const account = accounts[fm.account];
       if (account === undefined) throw new UserError(`Account "${fm.account}" is not in majhi.yaml.`);
       if (fm.scope !== "root" && account.org !== fm.scope && account.org !== "personal") {
@@ -423,14 +443,21 @@ export class RunManager {
       const model = fm.model === "auto" ? undefined : fm.model;
       const effort = fm.effort === "auto" ? undefined : fm.effort;
       const resume = deps.store.runs.lastSessionId(run.task, run.agent);
-      const session = await deps.runtime.startSession({
-        account: runtimeAccount,
-        options: deps.options,
-        cwd: task.folder,
-        ...(resume === undefined ? {} : { resume }),
-        ...(model === undefined ? {} : { model }),
-        ...(effort === undefined ? {} : { effort }),
-      });
+      const admin = deps.admin?.attach({ task: run.task, agent: run.agent }, fm, boss);
+      const session = await deps.runtime
+        .startSession({
+          account: runtimeAccount,
+          options: deps.options,
+          cwd: task.folder,
+          ...(resume === undefined ? {} : { resume }),
+          ...(model === undefined ? {} : { model }),
+          ...(effort === undefined ? {} : { effort }),
+          ...(admin === undefined ? {} : { mcpServers: [admin.server] }),
+        })
+        .catch((err: unknown) => {
+          if (admin !== undefined) deps.admin?.revoke(admin.token);
+          throw err;
+        });
 
       // What the agent runs after the session applied the options: a refused model keeps the default.
       const shownModel = session.models.defaultModel ?? model;
@@ -439,6 +466,8 @@ export class RunManager {
       run.exited = false;
       run.perms = fm.perms;
       run.needsBrief = resume === undefined || session.sessionId !== resume;
+      run.adminToken = admin?.token;
+      run.preambleDue = admin !== undefined && run.needsBrief;
       run.runId = deps.store.runs.start({
         task: run.task,
         agent: run.agent,
@@ -613,6 +642,8 @@ export class RunManager {
   private endSession(run: AgentRun, reason: string): void {
     run.unsubscribe?.();
     run.unsubscribe = undefined;
+    if (run.adminToken !== undefined) this.deps.admin?.revoke(run.adminToken);
+    run.adminToken = undefined;
     this.cancelPending(run);
     if (run.runId !== undefined) this.deps.store.runs.end(run.runId, reason, this.now().toISOString());
     run.session = undefined;

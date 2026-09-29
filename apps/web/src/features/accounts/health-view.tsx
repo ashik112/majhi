@@ -1,4 +1,5 @@
 import type { AccountView, ToolInfo } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -10,9 +11,11 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot, toneText } from "@/components/ui/status-dot";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { agentState, entryId, groupAgents, type OkAgent } from "@/features/agents/model";
+import { ChecksSection } from "@/features/health/checks-section";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo, plural } from "@/lib/format";
+import { opsKeys } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccountHealth, useAccounts, useAgents, useOrgs, useTools } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
@@ -83,12 +86,7 @@ export function HealthView() {
         >
           Add account
         </Button>
-        <Button
-          size="lg"
-          variant="primary"
-          disabled={check.running || all.length === 0}
-          onClick={() => void check.run()}
-        >
+        <Button size="lg" variant="primary" disabled={check.running} onClick={() => void check.run()}>
           <RefreshCw aria-hidden="true" className={cn(check.running && "animate-spin")} />
           {check.running ? `Checking ${check.done} of ${check.total}` : "Run health check"}
         </Button>
@@ -104,6 +102,13 @@ export function HealthView() {
               {check.error}
             </p>
           )}
+          <ChecksSection
+            onSignIn={(id) => {
+              const account = all.find((a) => a.id === id);
+              if (account) setDialog({ kind: "signin", account });
+            }}
+          />
+
           <section aria-labelledby="health-accounts" className="flex flex-col gap-2">
             <h2 id="health-accounts" className="text-md font-semibold">
               Accounts
@@ -414,6 +419,7 @@ function MissingAccounts({ missing }: { missing: readonly MissingAccount[] }) {
 /** Checks every account, three at a time, and reports how far it got. Each check also refreshes the list. */
 function useCheckAll(accounts: readonly AccountView[]) {
   const health = useAccountHealth();
+  const client = useQueryClient();
   const [state, setState] = useState({ running: false, done: 0, total: 0, finished: false });
   const [error, setError] = useState<string>();
   const mutate = useRef(health.mutateAsync);
@@ -447,6 +453,8 @@ function useCheckAll(accounts: readonly AccountView[]) {
       }
     };
     await Promise.all([worker(), worker(), worker()]);
+    // The checks list reads each account's fresh result, so it runs after them.
+    await client.invalidateQueries({ queryKey: opsKeys.checks }).catch(() => undefined);
     if (!live.current) return;
     setState({ running: false, done, total: ids.length, finished: true });
     if (failed > 0) setError(`${plural(failed, "account")} could not be checked. Open them for details.`);

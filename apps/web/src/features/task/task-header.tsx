@@ -8,6 +8,7 @@ import { badgeLetters } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { statusInfo } from "../tasks/model";
+import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
 
 /** Back link, key and status, repos, and the title. */
@@ -48,6 +49,7 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
         </div>
       </div>
       <h1 className="text-xl leading-[1.25] font-semibold text-balance">{task.title}</h1>
+      <TaskLinks task={task} />
     </header>
   );
 }

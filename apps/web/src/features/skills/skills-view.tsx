@@ -2,7 +2,7 @@ import { Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 
 /**
- * Skills arrive in Phase 7. Until then this is the page as it will look, with the install field off
+ * Skills arrive in Phase 6. Until then this is the page as it will look, with the install field off
  * and no rows, so nothing on it pretends to work.
  */
 export function SkillsView() {
@@ -34,7 +34,7 @@ export function SkillsView() {
         <div className="flex max-w-[640px] items-start gap-3 rounded-xl border border-dashed border-line-hover px-4 py-3.5">
           <Sparkles aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-faint" />
           <p className="text-base text-fg-muted text-pretty">
-            Skills arrive in Phase 7. Then you can install one here from a GitHub link, a zip or a folder, and
+            Skills arrive in Phase 6. Then you can install one here from a GitHub link, a zip or a folder, and
             choose which agents use it.
           </p>
         </div>

@@ -1,8 +1,10 @@
-import type { CommandMeta, WorkspacesUpdate } from "@majhi/shared";
-import { ConfigHistory } from "./history.ts";
+import type { CommandMeta, Settings, WorkspacesUpdate } from "@majhi/shared";
+import { UserError } from "../errors.ts";
+import { ConfigHistory, type HistoryEntry } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
 import { type ConfigSections, readSections } from "./sections.ts";
-import { writeWorkspaces } from "./write.ts";
+import { readSettings, type SettingsPatch } from "./settings.ts";
+import { writeSettings, writeWorkspaces } from "./write.ts";
 
 /** Folder of agent files, kept in the same history as majhi.yaml. */
 export const AGENTS_DIR_NAME = "agents";
@@ -58,8 +60,67 @@ export class ConfigService {
         files: TRACKED,
         message: `${change.command}: ${reason ? reason : change.summary}`,
         actor: change.meta.actor,
+        trailers: {
+          Command: change.command,
+          Actor: change.meta.actor.kind === "owner" ? "owner" : change.meta.actor.id,
+          Summary: change.summary,
+          ...(reason ? { Reason: reason } : {}),
+        },
       });
       return this.load();
+    });
+  }
+
+  /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */
+  settings(): Promise<Settings> {
+    return readSettings(this.file);
+  }
+
+  /** Writes only the fields in the patch. */
+  setSettings(patch: SettingsPatch, change: ChangeRecord): Promise<LoadedConfig> {
+    return this.change(change, () => writeSettings(this.file, patch));
+  }
+
+  /** Config commits, newest first. */
+  historyEntries(limit: number): Promise<HistoryEntry[]> {
+    return this.serialize(() => this.history.entries(limit));
+  }
+
+  /**
+   * Undoes one commit of the history with a new commit. Refuses when the change is already undone,
+   * is the start of the history, or a later change touched the same lines.
+   */
+  undo(commit: string, change: ChangeRecord): Promise<{ commit: string; summary: string; undone: string }> {
+    return this.serialize(async () => {
+      await this.commitPending();
+      const full = await this.history.resolve(commit);
+      if (full === undefined) throw new UserError(`There is no change ${commit} in the history.`, 404);
+      const entries = await this.history.entries(500);
+      const entry = entries.find((e) => e.commit === full);
+      if (entry === undefined || (await this.history.parents(full)) === 0) {
+        throw new UserError("That change is the start of the history and cannot be undone.");
+      }
+      if (entry.undone) throw new UserError("That change is already undone.", 409);
+      const reason = change.meta.reason?.trim();
+      const done = await this.history.revert(full, {
+        message: `undo: ${entry.summary}`,
+        actor: change.meta.actor,
+        trailers: {
+          Command: change.command,
+          Actor: change.meta.actor.kind === "owner" ? "owner" : change.meta.actor.id,
+          Summary: `undid ${entry.summary}`,
+          ...(reason ? { Reason: reason } : {}),
+        },
+      });
+      if ("failed" in done) {
+        throw new UserError(
+          done.failed === "conflict"
+            ? "A later change touched the same lines, so this cannot be undone on its own. Undo the later change first."
+            : "Undoing this would change nothing.",
+          409,
+        );
+      }
+      return { commit: done.commit, summary: entry.summary, undone: full };
     });
   }
 

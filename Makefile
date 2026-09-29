@@ -1,6 +1,8 @@
 SHELL := /bin/sh
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
+# The commit baked into the image, so majhi can tell when newer code is on disk.
+export MAJHI_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo dev)
 COMPOSE := docker compose
 SECRETS_KEY := $(or $(MAJHI_SECRETS_KEY),$(HOME)/.config/majhi/secrets.key)
 export MAJHI_SECRETS_KEY := $(SECRETS_KEY)

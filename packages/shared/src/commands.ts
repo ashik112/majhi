@@ -26,12 +26,13 @@ import {
   HostStatusSchema,
   SSH_PASSPHRASE_MAX,
   SshStatusSchema,
+  UpdateStatusSchema,
 } from "./host.ts";
 import {
-  ContextSettingsSchema,
-  LimitsSettingsSchema,
-  PolicySettingsSchema,
-  ResumeSettingsSchema,
+  ContextPatchSchema,
+  LimitsPatchSchema,
+  PolicyPatchSchema,
+  ResumePatchSchema,
   SettingsSchema,
 } from "./settings.ts";
 import {
@@ -525,16 +526,16 @@ export const commands = {
     risk: "change",
     summary: "Change context budget, limits or resume settings. Policy changes use policy.set",
     input: z.object({
-      context: ContextSettingsSchema.partial().optional(),
-      limits: LimitsSettingsSchema.partial().optional(),
-      resume: ResumeSettingsSchema.partial().optional(),
+      context: ContextPatchSchema.optional(),
+      limits: LimitsPatchSchema.optional(),
+      resume: ResumePatchSchema.optional(),
     }),
     output: SettingsSchema,
   },
   "policy.set": {
     risk: "destructive",
     summary: "Change the approval policy for the boss's commands",
-    input: PolicySettingsSchema.partial(),
+    input: PolicyPatchSchema,
     output: SettingsSchema,
   },
 
@@ -558,7 +559,9 @@ export const commands = {
           id: z.string(),
           group: z.enum(["majhi", "host", "ssh", "accounts", "disk"]),
           label: z.string(),
+          /** False only for a failure. A warning is ok, with `level` "warn". */
           ok: z.boolean(),
+          level: z.enum(["pass", "warn", "fail"]).optional(),
           detail: z.string(),
           /** A fix majhi can do itself, run with health.fix. */
           fix: z.object({ label: z.string() }).optional(),
@@ -570,7 +573,12 @@ export const commands = {
     risk: "change",
     summary: "Run the fix majhi offers for a failed check",
     input: z.object({ id: z.string() }),
-    output: z.object({ ok: z.boolean(), detail: z.string() }),
+    output: z.object({
+      ok: z.boolean(),
+      detail: z.string(),
+      /** Something the UI does next, like opening the sign-in terminal, which only the browser can show. */
+      open: z.object({ kind: z.literal("sign-in"), account: z.string() }).optional(),
+    }),
   },
   "system.version": {
     risk: "read",
@@ -584,13 +592,23 @@ export const commands = {
       updateReady: z.boolean(),
       /** Commit subjects between running and onDisk, newest first, at most 20. */
       changes: z.array(z.string()),
+      /** True when the checkout has uncommitted changes. The update builds them too. */
+      dirty: z.boolean().optional(),
+      /** True when a host helper is connected, so the update can run from the UI. */
+      canUpdate: z.boolean().optional(),
+      /** The last update the helper ran, while it runs and after. */
+      update: UpdateStatusSchema.optional(),
     }),
   },
   "system.update": {
     risk: "change",
     summary: "Rebuild majhi from the code on disk and restart it, through the host helper",
     input: Empty,
-    output: z.object({ state: z.enum(["restarting", "manual"]) }),
+    output: z.object({
+      state: z.enum(["restarting", "manual"]),
+      /** Why the owner has to run `make up` when the state is manual. */
+      reason: z.string().optional(),
+    }),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

@@ -34,6 +34,10 @@ export const queryKeys = {
   agents: ["agents"],
   projects: ["projects"],
   tasks: ["tasks"],
+  /** Under `config`, so a config change refetches them too. */
+  settings: ["config", "settings"],
+  history: ["config", "history"],
+  secrets: ["secrets"],
 } as const;
 
 export function useConfig() {

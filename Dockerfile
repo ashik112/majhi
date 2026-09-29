@@ -55,7 +55,11 @@ COPY --from=build /sqlite/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=build /src/apps/web/dist ./web
 # The host helper runs on the owner's machine, not here. `make up` copies it out of the image.
 COPY --from=build /src/apps/host/dist/majhi-host.mjs ./host/majhi-host.mjs
-ENV NODE_ENV=production \
+# The git commit this image was built from, so majhi can tell when newer code is on disk. It comes last
+# so a new commit does not invalidate the layers above. `dev` means the build did not say.
+ARG MAJHI_COMMIT=dev
+ENV MAJHI_COMMIT=$MAJHI_COMMIT \
+    NODE_ENV=production \
     MAJHI_HOST=0.0.0.0 \
     MAJHI_PORT=7070 \
     MAJHI_WEB_DIST=/app/web \

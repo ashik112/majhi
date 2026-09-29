@@ -65,6 +65,8 @@ describe("tasks.create", () => {
         updatedAt: task.updatedAt,
         repos: [{ project: "acme-api", branch: "task/acm-1-add-a-health-endpoint-to-api" }],
         working: [],
+        links: [],
+        waitingOn: [],
       },
     ]);
   });

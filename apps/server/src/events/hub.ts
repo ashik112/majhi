@@ -38,6 +38,13 @@ export function topicsFor(command: string): EventTopic[] {
       return ["projects", "config"];
     case "tasks":
       return ["tasks"];
+    case "settings":
+    case "policy":
+      return ["config"];
+    case "history":
+      return ["config", "orgs", "accounts", "agents", "projects"];
+    case "secrets":
+      return ["secrets"];
     default:
       return [];
   }

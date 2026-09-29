@@ -1,6 +1,15 @@
-import type { AgentLive, RoomItem } from "@majhi/shared";
+import type { AgentLive, RoomItem, TaskSummary } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { actionCopy, agentDot, agentState, briefBody, firstPendingPermission, modelLabel } from "./model";
+import {
+  actionCopy,
+  agentDot,
+  agentState,
+  briefBody,
+  firstPendingPermission,
+  linkTargets,
+  modelLabel,
+  relations,
+} from "./model";
 
 const live = (over: Partial<AgentLive> = {}): AgentLive => ({
   agent: "a",
@@ -81,5 +90,57 @@ describe("firstPendingPermission", () => {
       firstPendingPermission([prompt("p1", "answered"), prompt("p2", "pending"), prompt("p3", "pending")]),
     ).toEqual({ itemId: "p2", agent: "lead" });
     expect(firstPendingPermission([])).toBeUndefined();
+  });
+});
+
+describe("relations", () => {
+  const sum = (id: string, over: Partial<TaskSummary> = {}): TaskSummary => ({
+    id,
+    title: `Title ${id}`,
+    kind: "code",
+    status: "ready",
+    team: [],
+    updatedAt: "2026-09-29T10:00:00Z",
+    repos: [],
+    working: [],
+    links: [],
+    waitingOn: [],
+    ...over,
+  });
+  const list = [
+    sum("A-1", { children: { total: 2, done: 1 } }),
+    sum("A-2", {
+      links: [
+        { type: "parent", task: "A-1" },
+        { type: "depends-on", task: "A-3", when: "merged" },
+        { type: "depends-on", task: "A-4", when: "ready" },
+      ],
+      waitingOn: ["A-3"],
+    }),
+    sum("A-3"),
+    sum("A-4", { status: "done" }),
+    sum("A-10", { status: "done", links: [{ type: "parent", task: "A-1" }] }),
+  ];
+
+  it("joins parent, waiting dependencies and children with the list", () => {
+    const child = list[1] as TaskSummary;
+    expect(relations(child, list)).toEqual({
+      parent: { id: "A-1", title: "Title A-1" },
+      depends: [
+        { id: "A-3", title: "Title A-3", waiting: true, when: "merged" },
+        { id: "A-4", title: "Title A-4", waiting: false, when: "ready" },
+      ],
+      children: [],
+      progress: undefined,
+    });
+    const parent = relations(list[0] as TaskSummary, list);
+    expect(parent.children.map((c) => c.id)).toEqual(["A-2", "A-10"]);
+    expect(parent.progress).toEqual({ total: 2, done: 1 });
+  });
+
+  it("offers open tasks not yet linked that way", () => {
+    const child = list[1] as TaskSummary;
+    expect(linkTargets(child, list, "depends-on").map((t) => t.id)).toEqual(["A-1"]);
+    expect(linkTargets(child, list, "parent").map((t) => t.id)).toEqual(["A-3"]);
   });
 });

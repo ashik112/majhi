@@ -5,10 +5,13 @@ import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
+import { BossProvider } from "@/features/boss/boss-context";
+import { BossDrawer } from "@/features/boss/boss-drawer";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
+import { UpdateOverlay } from "@/features/update/update-overlay";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { useOrgFilter } from "@/lib/org-filter";
@@ -29,9 +32,12 @@ export function AppShell() {
       </a>
       <AppGate>
         <NewTaskProvider>
-          <Frame />
+          <BossProvider>
+            <Frame />
+          </BossProvider>
         </NewTaskProvider>
       </AppGate>
+      <UpdateOverlay />
     </div>
   );
 }
@@ -72,6 +78,7 @@ function Frame() {
           </InShellContext.Provider>
         </m.div>
       </main>
+      <BossDrawer />
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );

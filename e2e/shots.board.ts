@@ -27,6 +27,8 @@ const summary = (
   updatedAt: iso(10),
   repos: repos.map((project) => ({ project, branch: `task/${id}` })),
   working: [],
+  links: [],
+  waitingOn: [],
   ...extra,
 });
 

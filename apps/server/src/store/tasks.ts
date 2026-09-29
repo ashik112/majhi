@@ -11,6 +11,7 @@ import {
 } from "@majhi/shared";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
 import type { Db } from "./db.ts";
 import { attachments, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
 
@@ -139,7 +140,24 @@ export class TaskRepo {
       list.push({ project: r.project, branch: r.branch });
       byTask.set(r.task, list);
     }
+    const linkRows = this.allLinks();
+    const statuses = this.statuses();
+    const linksBy = new Map<string, LinkRow[]>();
+    const childStatuses = new Map<string, TaskStatus[]>();
+    for (const l of linkRows) {
+      const own = linksBy.get(l.task) ?? [];
+      own.push(l);
+      linksBy.set(l.task, own);
+      if (l.type === "parent") {
+        const kids = childStatuses.get(l.other) ?? [];
+        const status = statuses.get(l.task);
+        if (status !== undefined) kids.push(status);
+        childStatuses.set(l.other, kids);
+      }
+    }
     return rows.map((row) => {
+      const own = linksBy.get(row.id) ?? [];
+      const kids = childStatuses.get(row.id);
       const summary: Omit<TaskSummary, "working"> = {
         id: TaskIdSchema.parse(row.id),
         title: row.title,
@@ -148,15 +166,97 @@ export class TaskRepo {
         team: TeamSchema.parse(JSON.parse(row.team)),
         updatedAt: row.updatedAt,
         repos: byTask.get(row.id) ?? [],
-        // Filled from task_links by the task links work in Phase 2b.
-        links: [],
-        waitingOn: [],
+        links: own.map(toLink),
+        waitingOn: unmetDependencies(own, (id) => statuses.get(id)),
       };
+      if (kids !== undefined)
+        summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
       if (row.org !== null) summary.org = row.org;
       if (row.pausedReason !== null)
         summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
       return summary;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Links (5.4a)
+
+  /** Every link, one query. */
+  allLinks(): LinkRow[] {
+    return this.db
+      .select()
+      .from(taskLinks)
+      .all()
+      .map((l) => ({
+        task: l.task,
+        type: TaskLinkTypeSchema.parse(l.type),
+        other: l.other,
+        when: l.when === null ? undefined : (l.when as "merged" | "ready"),
+      }));
+  }
+
+  /** Status of every task, one query. */
+  statuses(): Map<string, TaskStatus> {
+    return new Map(
+      this.db
+        .select({ id: tasks.id, status: tasks.status })
+        .from(tasks)
+        .all()
+        .map((r) => [r.id, TaskSchema.shape.status.parse(r.status)]),
+    );
+  }
+
+  /** Adds a link, or changes `when` on an existing one. */
+  putLink(link: LinkRow): void {
+    this.db
+      .insert(taskLinks)
+      .values({ task: link.task, type: link.type, other: link.other, when: link.when ?? null })
+      .onConflictDoUpdate({
+        target: [taskLinks.task, taskLinks.type, taskLinks.other],
+        set: { when: link.when ?? null },
+      })
+      .run();
+  }
+
+  /** True when the link existed. */
+  removeLink(task: string, type: string, other: string): boolean {
+    return (
+      this.db
+        .delete(taskLinks)
+        .where(and(eq(taskLinks.task, task), eq(taskLinks.type, type), eq(taskLinks.other, other)))
+        .run().changes > 0
+    );
+  }
+
+  /** Links other tasks hold to this one: its children and the tasks that wait for it. */
+  linksTo(target: string): LinkRow[] {
+    return this.allLinks().filter((l) => l.other === target);
+  }
+
+  /** Deletes the links other tasks hold to a task that is gone. */
+  dropLinksTo(target: string): void {
+    this.db.delete(taskLinks).where(eq(taskLinks.other, target)).run();
+  }
+
+  unmetDependencies(id: string): TaskId[] {
+    const own = this.allLinks().filter((l) => l.task === id);
+    const statuses = this.statuses();
+    return unmetDependencies(own, (other) => statuses.get(other));
+  }
+
+  /** Whether every child of the parent is done. False for a parent without children. */
+  childrenDone(parent: string): boolean {
+    const statuses = this.statuses();
+    const kids = this.allLinks().filter((l) => l.type === "parent" && l.other === parent);
+    return parentIsComplete(kids.flatMap((k) => statuses.get(k.task) ?? []));
+  }
+
+  startWhenReady(id: string): boolean {
+    return this.db.select({ v: tasks.startWhenReady }).from(tasks).where(eq(tasks.id, id)).get()?.v === true;
+  }
+
+  setStartWhenReady(id: string, value: boolean): void {
+    this.db.update(tasks).set({ startWhenReady: value }).where(eq(tasks.id, id)).run();
   }
 
   setStatus(id: string, status: TaskStatus, pausedReason: PausedReason | undefined, at: string): void {
@@ -208,6 +308,14 @@ export class TaskRepo {
       .all()
       .map((r) => r.id);
   }
+}
+
+function toLink(l: LinkRow) {
+  return {
+    type: l.type,
+    task: TaskIdSchema.parse(l.other),
+    ...(l.when === undefined ? {} : { when: l.when }),
+  };
 }
 
 function attachmentRow(task: string, a: Attachment, pos: number) {

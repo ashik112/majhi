@@ -1,4 +1,4 @@
-import type { AgentLive, RoomItem, Task, TaskStatus } from "@majhi/shared";
+import type { AgentLive, RoomItem, Task, TaskStatus, TaskSummary } from "@majhi/shared";
 import type { DotTone } from "../../components/ui/status-dot";
 import { isYourTurn, type StatusTone } from "../tasks/model";
 
@@ -152,4 +152,49 @@ export function briefBody(brief: string, title: string): string {
   const lines = brief.trim().split(/\r?\n/);
   const first = lines[0]?.trim() ?? "";
   return first.slice(0, title.length) === title ? lines.slice(1).join("\n").trim() : brief.trim();
+}
+
+export interface Relations {
+  parent: { id: string; title: string | undefined } | undefined;
+  /** Tasks this one depends on; `waiting` is true while the dependency is not met. */
+  depends: { id: string; title: string | undefined; waiting: boolean; when: "merged" | "ready" }[];
+  children: { id: string; title: string; status: TaskStatus }[];
+  progress: { done: number; total: number } | undefined;
+}
+
+/** The task's links joined with the task list, for the header. */
+export function relations(task: Pick<Task, "id" | "links">, list: readonly TaskSummary[]): Relations {
+  const byId = new Map(list.map((t) => [t.id, t]));
+  const me = byId.get(task.id);
+  const waiting = new Set(me?.waitingOn ?? []);
+  const parent = task.links.find((l) => l.type === "parent");
+  const children = list
+    .filter((t) => t.links.some((l) => l.type === "parent" && l.task === task.id))
+    .map((t) => ({ id: t.id, title: t.title, status: t.status }))
+    .toSorted((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+  return {
+    parent: parent && { id: parent.task, title: byId.get(parent.task)?.title },
+    depends: task.links
+      .filter((l) => l.type === "depends-on")
+      .map((l) => ({
+        id: l.task,
+        title: byId.get(l.task)?.title,
+        waiting: waiting.has(l.task),
+        when: l.when ?? "merged",
+      })),
+    children,
+    progress: me?.children,
+  };
+}
+
+/** Tasks a link can point at: open ones, not the task itself and not ones it is already linked to that way. */
+export function linkTargets(
+  task: Pick<Task, "id" | "links">,
+  list: readonly TaskSummary[],
+  type: "parent" | "depends-on",
+): TaskSummary[] {
+  const taken = new Set(task.links.filter((l) => l.type === type).map((l) => l.task));
+  return list
+    .filter((t) => t.id !== task.id && t.status !== "done" && !taken.has(t.id))
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }

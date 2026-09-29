@@ -9,6 +9,8 @@ services:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_HOME: ${HOME}
+        # `make up` and the host helper pass `git rev-parse HEAD`. It is baked into the image.
+        MAJHI_COMMIT: ${MAJHI_COMMIT:-dev}
     image: majhi-server:dev
     init: true
     restart: unless-stopped

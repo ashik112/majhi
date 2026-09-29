@@ -1,0 +1,308 @@
+import { randomUUID } from "node:crypto";
+import {
+  type CommandMeta,
+  type CommandName,
+  commands,
+  IdSchema,
+  type RoomItem,
+  type TaskId,
+} from "@majhi/shared";
+import type { Dispatch } from "../commands/dispatch.ts";
+import type { ConfigService } from "../config/service.ts";
+import { errorMessage, UserError } from "../errors.ts";
+import type { RoomService } from "../room/service.ts";
+import type { SecretStore } from "../secrets/store.ts";
+import type { Store } from "../store/index.ts";
+import type { TaskService } from "../tasks/service.ts";
+import { decide as decideMode, modeFor, redact, redactText } from "./policy.ts";
+import { summarize } from "./summary.ts";
+import type { AdminCaller } from "./tokens.ts";
+import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
+
+export interface ToolResult {
+  text: string;
+  isError: boolean;
+}
+
+export const WAITING_TEXT =
+  "Waiting for the owner to approve in the room. You will get a message with the decision.";
+
+/** How much of a command's output an agent gets back. */
+const RESULT_MAX = 20_000;
+/** How much of it a card shows. */
+const LINE_MAX = 240;
+
+type ApprovalItem = Extract<RoomItem, { type: "approval" }>;
+type SecretRequestItem = Extract<RoomItem, { type: "secret-request" }>;
+
+export interface AdminDeps {
+  config: ConfigService;
+  room: RoomService;
+  store: Store;
+  secrets: SecretStore;
+  tasks: TaskService;
+}
+
+/**
+ * What the boss (or any agent with majhi tools) can do: runs its tool calls through the command
+ * dispatcher under the approval policy, posts an approval card for every change, and carries out
+ * the owner's decision later (SPEC 5.16).
+ */
+export class AdminService {
+  private dispatch: Dispatch | undefined;
+  /** Inputs of pending calls, unredacted. A restart drops them; the card then cannot run secrets it hid. */
+  private readonly pending = new Map<string, unknown>();
+  private readonly deciding = new Set<string>();
+  private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
+
+  constructor(private readonly deps: AdminDeps) {}
+
+  /** The dispatcher is built after the handlers, which need this service. */
+  bind(dispatch: Dispatch): void {
+    this.dispatch = dispatch;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent calls
+
+  /** One MCP tool call. Never throws: problems come back as an error result the agent can read. */
+  async call(caller: AdminCaller, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+    try {
+      if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
+      const spec = this.tools.get(tool);
+      if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
+      const { ownerAsked, reason, ...input } = args;
+      return await this.callCommand(caller, spec.command, input, {
+        ownerAsked: ownerAsked === true,
+        reason: typeof reason === "string" ? reason.trim().slice(0, 500) : "",
+      });
+    } catch (err) {
+      return error(errorMessage(err));
+    }
+  }
+
+  private async callCommand(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    ask: { ownerAsked: boolean; reason: string },
+  ): Promise<ToolResult> {
+    const def = commands[command];
+    const checked = def.input.safeParse(input);
+    if (!checked.success) {
+      const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input for ${command}.\n${details.join("\n")}`);
+    }
+    const { policy } = await this.deps.config.settings();
+    const mode = modeFor(policy, command, def.risk);
+    const meta = metaFor(caller.agent, ask.reason);
+    if (decideMode(mode, ask.ownerAsked) === "run") {
+      const done = await this.execute(command, input, meta);
+      if (def.risk !== "read") {
+        this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
+          ...cardOf(caller.agent, command, input, ask.reason),
+          state: done.ok ? "applied" : "failed",
+          ...(done.commit === undefined ? {} : { commit: done.commit }),
+          result: done.ok ? lineOf(done.output) : done.error,
+        });
+      }
+      return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+    }
+    const id = `approval:${randomUUID()}`;
+    this.pending.set(id, input);
+    this.deps.room.post(caller.task as TaskId, id, {
+      ...cardOf(caller.agent, command, input, ask.reason),
+      state: "pending",
+    });
+    return { text: WAITING_TEXT, isError: false };
+  }
+
+  private requestSecret(caller: AdminCaller, args: Record<string, unknown>): ToolResult {
+    const name = IdSchema.safeParse(args.name);
+    const label = typeof args.label === "string" ? args.label.trim().slice(0, 200) : "";
+    if (!name.success) return error("name must be a lowercase id like newrelic-acme.");
+    if (label === "") return error("label is required: say what the owner should paste.");
+    this.deps.room.post(caller.task as TaskId, `secret:${randomUUID()}`, {
+      type: "secret-request",
+      agent: caller.agent,
+      name: name.data,
+      label: redactText(label),
+      state: "pending",
+    });
+    return {
+      text: `Asked the owner for ${label}. You will get a message when it is saved as secret:${name.data}.`,
+      isError: false,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // The owner's answers
+
+  /** Approve or reject a pending approval card. Rejecting a secret request cancels it. */
+  async decide(taskId: TaskId, itemId: string, decision: "approve" | "reject"): Promise<RoomItem> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type === "secret-request") return this.cancelSecret(item, decision);
+    if (item?.type !== "approval") throw new UserError("That is not something to approve.", 409);
+    if (item.state !== "pending" || this.deciding.has(item.id)) {
+      throw new UserError("That request was already decided.", 409);
+    }
+    this.deciding.add(item.id);
+    try {
+      if (decision === "reject") {
+        const rejected = this.update(item, { state: "rejected" });
+        await this.notify(item.task, item.agent, `The owner rejected: ${item.summary}.`);
+        this.pending.delete(item.id);
+        return rejected;
+      }
+      const input = this.inputOf(item);
+      const done = await this.execute(
+        item.command as CommandName,
+        input,
+        metaFor(item.agent, item.reason ?? ""),
+      );
+      this.pending.delete(item.id);
+      const applied = this.update(item, {
+        state: done.ok ? "applied" : "failed",
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result: done.ok ? lineOf(done.output) : done.error,
+      });
+      await this.notify(
+        item.task,
+        item.agent,
+        done.ok
+          ? `The owner approved: ${item.summary}. Result: ${lineOf(done.output)}`
+          : `The owner approved: ${item.summary}, but it failed: ${done.error}`,
+      );
+      return applied;
+    } finally {
+      this.deciding.delete(item.id);
+    }
+  }
+
+  /** Stores the pasted value under the requested name, marks the card saved and tells the agent. */
+  async answerSecret(taskId: TaskId, itemId: string, value: string): Promise<RoomItem> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "secret-request" || item.state !== "pending") {
+      throw new UserError("That request is not waiting for a secret.", 409);
+    }
+    await this.deps.secrets.set(item.name, value);
+    this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
+    await this.notify(item.task, item.agent, `Saved as secret:${item.name}`);
+    return this.mustGet(item.task, item.id);
+  }
+
+  private async cancelSecret(item: SecretRequestItem, decision: "approve" | "reject"): Promise<RoomItem> {
+    if (decision === "approve") throw new UserError("Paste the secret into the field and press Save.", 409);
+    if (item.state !== "pending") throw new UserError("That request was already answered.", 409);
+    this.deps.room.post(item.task, item.id, secretPayload(item, "cancelled"));
+    await this.notify(item.task, item.agent, `The owner did not provide ${item.name}.`);
+    return this.mustGet(item.task, item.id);
+  }
+
+  /** Marks the approval cards that ran this commit as undone. */
+  markUndone(commit: string): void {
+    for (const item of this.deps.store.room.approvalsByCommit(commit)) {
+      if (item.type === "approval" && item.state === "applied") this.update(item, { state: "undone" });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private inputOf(item: ApprovalItem): unknown {
+    if (this.pending.has(item.id)) return this.pending.get(item.id);
+    if (item.input.includes("[redacted]")) {
+      throw new UserError(
+        "This request held a secret that majhi no longer has, because it restarted. Ask the agent to try again.",
+        409,
+      );
+    }
+    return JSON.parse(item.input) as unknown;
+  }
+
+  private async execute(
+    command: CommandName,
+    input: unknown,
+    meta: CommandMeta,
+  ): Promise<{ ok: true; output: unknown; commit?: string } | { ok: false; error: string; commit?: never }> {
+    const dispatch = this.dispatch;
+    if (dispatch === undefined) throw new Error("The admin service is not connected to the commands");
+    const history = this.deps.config.history;
+    const before = await history.head();
+    const result = await dispatch(command, input, JSON.stringify(meta));
+    if (!result.ok) {
+      const parts = [result.error.error, ...(result.error.details ?? [])];
+      return { ok: false, error: redactText(parts.join(". ")) };
+    }
+    if (commands[command].risk === "read") return { ok: true, output: result.output };
+    const made = (await history.since(before)).filter(
+      (c) => c.subject.startsWith(`${command}:`) || c.subject.startsWith("undo:"),
+    );
+    const commit = made.at(-1)?.commit;
+    return { ok: true, output: result.output, ...(commit === undefined ? {} : { commit }) };
+  }
+
+  private update(item: ApprovalItem, patch: Partial<ApprovalItem>): ApprovalItem {
+    const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = item;
+    this.deps.room.post(item.task, item.id, { ...payload, ...patch } as ApprovalPayload);
+    const next = this.mustGet(item.task, item.id);
+    if (next.type !== "approval") throw new Error("The card changed type");
+    return next;
+  }
+
+  private mustGet(task: string, id: string): RoomItem {
+    const item = this.deps.room.get(task, id);
+    if (item === undefined) throw new Error("The item was not stored");
+    return item;
+  }
+
+  /** A message to the agent in its session: queued when it is busy, and it wakes an idle agent. */
+  private async notify(task: string, agent: string, text: string): Promise<void> {
+    try {
+      await this.deps.tasks.send({ task, text, attachments: [], mode: "queue", agent });
+    } catch (err) {
+      this.deps.room.post(task as TaskId, `warn:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `Could not tell @${agent}: ${errorMessage(err)}`,
+      });
+    }
+  }
+}
+
+type ApprovalPayload = Parameters<RoomService["post"]>[2];
+
+function metaFor(agent: string, reason: string): CommandMeta {
+  return { actor: { kind: "agent", id: agent }, ...(reason === "" ? {} : { reason }) };
+}
+
+function cardOf(agent: string, command: CommandName, input: unknown, reason: string) {
+  return {
+    type: "approval" as const,
+    agent,
+    command,
+    risk: commands[command].risk,
+    summary: summarize(command, input),
+    input: JSON.stringify(redact(input), null, 2),
+    ...(reason === "" ? {} : { reason: redactText(reason) }),
+  };
+}
+
+function secretPayload(item: SecretRequestItem, state: SecretRequestItem["state"]): ApprovalPayload {
+  return { type: "secret-request", agent: item.agent, name: item.name, label: item.label, state };
+}
+
+function error(text: string): ToolResult {
+  return { text, isError: true };
+}
+
+/** The whole output for the agent, without secrets, cut at a limit. */
+function textOf(output: unknown): string {
+  const text = JSON.stringify(redact(output), null, 2) ?? "ok";
+  return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
+}
+
+/** One short line for the card. */
+function lineOf(output: unknown): string {
+  const text = JSON.stringify(redact(output)) ?? "ok";
+  return text.length > LINE_MAX ? `${text.slice(0, LINE_MAX - 3)}...` : text;
+}

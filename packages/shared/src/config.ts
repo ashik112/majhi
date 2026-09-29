@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
-import {
-  ContextSettingsSchema,
-  LimitsSettingsSchema,
-  PolicySettingsSchema,
-  ResumeSettingsSchema,
-} from "./settings.ts";
+import { ContextPatchSchema, LimitsPatchSchema, PolicyPatchSchema, ResumePatchSchema } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 
 /** A path in majhi.yaml: absolute, or relative to the owner's home with `~/`. */
@@ -29,11 +24,11 @@ export const MajhiConfigSchema = z.strictObject({
   tasks_dir: ConfigPath.optional(),
   decisions: LaterSection.optional(),
   /** Defaults for every org (5.13). Written only when the owner changes a value. */
-  context: ContextSettingsSchema.partial().optional(),
-  limits: LimitsSettingsSchema.partial().optional(),
-  resume: ResumeSettingsSchema.partial().optional(),
+  context: ContextPatchSchema.optional(),
+  limits: LimitsPatchSchema.optional(),
+  resume: ResumePatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
-  policy: PolicySettingsSchema.partial().optional(),
+  policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   orgs: z.record(IdSchema, OrgConfigSchema).optional(),

@@ -62,6 +62,36 @@ export function sshUnlockCommand(key: string): string {
   return `ssh-add --apple-use-keychain ${key}`;
 }
 
+/** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
+export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
+export type DockerRuntime = z.infer<typeof DockerRuntimeSchema>;
+
+export function dockerRuntimeName(runtime: DockerRuntime | undefined): string {
+  if (runtime === "orbstack") return "OrbStack";
+  if (runtime === "docker-desktop") return "Docker Desktop";
+  return "Docker";
+}
+
+/** A git commit as `git rev-parse` prints it, or a prefix of one. */
+export const CommitSchema = z.string().regex(/^[0-9a-f]{7,64}$/);
+
+/**
+ * How an update is going. The helper writes it to `<MAJHI_HOME>/update.json` because the server
+ * that would relay it is replaced part-way through. The server reads the file back.
+ */
+export const UpdateStatusSchema = z.object({
+  state: z.enum(["running", "done", "failed"]),
+  /** The commit being built. */
+  commit: z.string(),
+  startedAt: z.string(),
+  /** Plain progress lines, oldest first, at most 40. */
+  lines: z.array(z.string()),
+  /** Why it failed, in plain words. */
+  error: z.string().optional(),
+});
+export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
+export const UPDATE_STATUS_FILE = "update.json";
+
 export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({
     id: z.string(),
@@ -73,6 +103,16 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
   /** Load the Mac's SSH keys into its agent again and report the result. */
   z.object({ id: z.string(), method: z.literal("ssh.reload"), params: z.object({}) }),
+  /** The checkout's HEAD, and the subjects of the commits after `from`, newest first. */
+  z.object({
+    id: z.string(),
+    method: z.literal("version.changes"),
+    params: z.object({ from: CommitSchema }),
+  }),
+  /** Rebuild majhi from the checkout, restart it, then replace the helper. Answered before it starts. */
+  z.object({ id: z.string(), method: z.literal("update"), params: z.object({}) }),
+  /** Exit so launchd starts the helper again with a fresh look at Docker. Answered first. */
+  z.object({ id: z.string(), method: z.literal("restart"), params: z.object({}) }),
   /**
    * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
    * must never be logged, stored or echoed in an error, on either side.
@@ -93,6 +133,13 @@ export const HostResultSchemas = {
   remount: z.object({ accepted: z.literal(true) }),
   "ssh.reload": SshStatusSchema,
   "ssh.unlock": SshStatusSchema,
+  "version.changes": z.object({
+    head: z.string(),
+    dirty: z.boolean(),
+    changes: z.array(z.string()).max(20),
+  }),
+  update: z.object({ accepted: z.literal(true) }),
+  restart: z.object({ accepted: z.literal(true) }),
 } as const satisfies Record<HostMethod, z.ZodType>;
 
 export const HostReplySchema = z.discriminatedUnion("ok", [
@@ -109,6 +156,11 @@ export const HostInfoSchema = z.object({
   canRemount: z.boolean(),
   /** Absent until the helper's first key check ends, and from older helpers. */
   ssh: SshStatusSchema.optional(),
+  /** HEAD of the majhi checkout the helper runs `docker compose` in. Absent without a checkout. */
+  commit: z.string().optional(),
+  /** True when that checkout has uncommitted changes. */
+  dirty: z.boolean().optional(),
+  dockerRuntime: DockerRuntimeSchema.optional(),
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";

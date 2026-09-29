@@ -58,7 +58,7 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await page.getByRole("button", { name: /Save roots/ }).click();
 
   // Step 2 (first account) follows; Phase 0 only cares about the repos, so skip the rest of setup.
-  await expect(progress).toContainText("Step 2 of 3");
+  await expect(progress).toContainText("Step 2 of 4");
   await page.getByRole("button", { name: "Skip for now" }).click();
 
   // Home is the board now; the projects list is its own page.

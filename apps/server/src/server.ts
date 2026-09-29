@@ -1,14 +1,16 @@
 import type { Hono } from "hono";
 import { createDispatcher } from "./commands/dispatch.ts";
-import { createHandlers } from "./commands/handlers.ts";
+import { createHandlers, requestRemount } from "./commands/handlers.ts";
 import type { ServerEnv } from "./env.ts";
 import { topicsFor } from "./events/hub.ts";
+import { HealthService } from "./health/service.ts";
 import { HostLink } from "./host/link.ts";
 import { createApp } from "./http/app.ts";
 import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
 import { attachSockets, type UpgradeSource } from "./sockets.ts";
 import { SshHostProbe, sshTargets } from "./ssh/hosts.ts";
+import { SystemService } from "./system/service.ts";
 
 /** Unused uploads are looked for this often. */
 const UPLOAD_SWEEP_MS = 60 * 60 * 1000;
@@ -43,17 +45,29 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   });
   const config = services.config;
   const sshHosts = new SshHostProbe(async () => sshTargets((await config.load()).projectPaths));
+  const health = new HealthService({
+    env,
+    services,
+    config,
+    hostLink,
+    sshHosts,
+    remount: (unmounted) => requestRemount(hostLink, unmounted),
+  });
+  const system = new SystemService({ hostLink, commit: env.commit, majhiHome: env.majhiHome });
   const dispatch = createDispatcher(
-    createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts }),
+    createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts, health, system }),
     (name) => services.events.emit(topicsFor(name)),
   );
+  services.admin.bind(dispatch);
   const app = createApp({
     version: env.version,
+    commit: env.commit,
     webDist: env.webDist,
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
     taskFiles: { folderOf: (id) => services.store.tasks.get(id)?.folder },
+    mcp: { tokens: services.adminTokens, admin: services.admin },
   });
   let sockets: { close: () => void } | undefined;
   let sweeper: NodeJS.Timeout | undefined;

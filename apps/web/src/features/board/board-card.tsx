@@ -4,11 +4,12 @@ import { Link } from "@tanstack/react-router";
 import { memo } from "react";
 import { AvatarStack } from "@/components/ui/avatar-stack";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { orgSearch } from "@/lib/org-filter";
 import { prefetchTask } from "@/lib/task-queries";
-import { type CardNote, cardNote, type NoteTone } from "./model";
+import { type CardNote, cardNote, cardProgress, type NoteTone, partOf } from "./model";
 
 export function cardDomId(id: string): string {
   return `card-${id}`;
@@ -41,6 +42,8 @@ export const BoardCard = memo(function BoardCard({
   const client = useQueryClient();
   const tile = orgTile(task, orgs);
   const note: CardNote | null = cardNote(task);
+  const progress = cardProgress(task);
+  const parent = partOf(task);
   return (
     <Link
       to="/t/$taskId"
@@ -66,6 +69,7 @@ export const BoardCard = memo(function BoardCard({
           {task.kind === "chat" && <span className="text-fg-faint"> · chat</span>}
         </span>
       </span>
+      {parent && <span className="-mt-1 truncate font-mono text-xs text-fg-faint">Part of {parent}</span>}
       <span className="text-body leading-[1.35] font-medium">{task.title}</span>
       {(task.repos.length > 0 || task.team.length > 0) && (
         <span className="flex flex-wrap items-center gap-1.5">
@@ -78,6 +82,12 @@ export const BoardCard = memo(function BoardCard({
             </span>
           ))}
           <AvatarStack ids={task.team} working={task.working} />
+        </span>
+      )}
+      {progress && (
+        <span className="flex flex-col gap-1.5">
+          <span className="text-sm text-fg-muted">{progress.text}</span>
+          <UsageBar pct={progress.pct} tone="green" height={3} />
         </span>
       )}
       {note && <span className={cn("text-sm", NOTE_TONE[note.tone])}>{note.text}</span>}

@@ -4,6 +4,8 @@ import { ConfigPath } from "./config.ts";
 export const HealthSchema = z.object({
   status: z.literal("ok"),
   version: z.string(),
+  /** Git commit the running image was built from. Absent in older servers. */
+  commit: z.string().optional(),
 });
 export type Health = z.infer<typeof HealthSchema>;
 

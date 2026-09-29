@@ -3,6 +3,8 @@ import {
   collapseHome,
   DEFAULT_TASKS_DIR_NAME,
   expandHome,
+  type ProtectedFolder,
+  protectedFolder,
   type ResolvedConfig,
   type WorkspacesUpdate,
 } from "@majhi/shared";
@@ -138,4 +140,31 @@ export function parentPath(path: string): string | null {
   if (trimmed === "") return null;
   const cut = trimmed.lastIndexOf("/");
   return cut <= 0 ? "/" : trimmed.slice(0, cut);
+}
+
+export interface ProtectedRoot {
+  /** As the owner sees it, like `~/Documents/code`. */
+  path: string;
+  folder: ProtectedFolder;
+}
+
+/** The chosen roots, and the tasks folder, that sit in a folder macOS protects. Each shows once. */
+export function protectedRoots(rows: readonly RootRow[], tasksDir: string, home: string): ProtectedRoot[] {
+  const seen = new Set<string>();
+  const found: ProtectedRoot[] = [];
+  for (const value of [...rows.map((r) => r.value), tasksDir]) {
+    const trimmed = value.trim();
+    if (trimmed === "" || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    const folder = protectedFolder(trimmed, home);
+    if (folder !== undefined) found.push({ path: collapseHome(expandHome(trimmed, home), home), folder });
+  }
+  return found;
+}
+
+/** The warning under the picker. `runtime` is what the host helper found, like "OrbStack". */
+export function protectedWarning(found: readonly ProtectedRoot[], runtime: string): string {
+  const folders = [...new Set(found.map((f) => f.folder))];
+  const what = folders.length === 1 ? `your ${folders[0]} folder` : `these folders (${folders.join(", ")})`;
+  return `macOS will ask whether ${runtime} may access ${what}. Click Allow when it asks, or majhi cannot see it.`;
 }

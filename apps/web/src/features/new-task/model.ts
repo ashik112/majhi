@@ -1,5 +1,6 @@
-import type { OrgView, ParsedTask, ProjectView } from "@majhi/shared";
+import type { OrgView, ParsedTask, ProjectView, TaskSummary } from "@majhi/shared";
 import { badgeLetters } from "../../lib/format";
+import { inOrg, isOpen } from "../shell/model";
 
 export interface ProjectGroup {
   org: string;
@@ -85,4 +86,31 @@ export function togglePicked(picked: readonly string[], named: readonly string[]
 /** Whether the dialog can save: a title and no upload still running. */
 export function canAdd(draft: Draft, uploading: boolean, saving: boolean): boolean {
   return draft.title.trim() !== "" && !uploading && !saving;
+}
+
+/** Open tasks a new task can depend on or belong to, filtered by the org filter, newest first. */
+export function linkChoices(
+  tasks: readonly TaskSummary[],
+  org: string | undefined,
+  exclude: readonly string[] = [],
+): TaskSummary[] {
+  return tasks
+    .filter((t) => isOpen(t) && inOrg(t, org) && !exclude.includes(t.id))
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
+/** Adds the id to a multi-select, or removes it when it is there. */
+export function toggleId(list: readonly string[], id: string): string[] {
+  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+}
+
+/** What `tasks.create` gets for the links: nothing when none are chosen. */
+export function linkFields(
+  parent: string | undefined,
+  dependsOn: readonly string[],
+): { parent?: string; dependsOn?: string[] } {
+  return {
+    ...(parent === undefined ? {} : { parent }),
+    ...(dependsOn.length === 0 ? {} : { dependsOn: [...dependsOn] }),
+  };
 }

@@ -5,6 +5,7 @@ coverage/
 docker-compose.override.yml
 docker-compose.override.yml.*
 test-results/
+test-results-ops/
 playwright-report/
 blob-report/
 *.tsbuildinfo

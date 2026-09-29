@@ -31,7 +31,7 @@ describe("HTTP API", () => {
   it("answers /health with the version", async () => {
     const res = await app.request("/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", version: "1.2.3-test" });
+    expect(await res.json()).toEqual({ status: "ok", version: "1.2.3-test", commit: "dev" });
   });
 
   it("goes from first run to scanned repos through the commands", async () => {

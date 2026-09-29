@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostReply } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CANNOT_REMOUNT, type JobHandlers, runJob } from "./jobs.ts";
+import { CANNOT_REMOUNT, CANNOT_UPDATE, type JobHandlers, runJob } from "./jobs.ts";
 import { composeEnv, createRemounter, type ExecFn, type ExecOptions, OVERRIDE_FILE } from "./remount.ts";
 
 const SSH_OK = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:00:00.000Z" };
@@ -45,6 +45,9 @@ describe("host jobs", () => {
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
+    versionChanges: async () => ({ head: "abc1234", dirty: false, changes: [] }),
+    update: undefined,
+    restart: () => undefined,
     sshUnlock: async () => {
       throw new Error("That passphrase did not unlock ~/.ssh/id_work.");
     },
@@ -182,5 +185,37 @@ describe("host jobs", () => {
       { id: "j6", ok: true, result: SSH_OK },
       { id: "j7", ok: false, error: "That passphrase did not unlock ~/.ssh/id_work." },
     ]);
+  });
+
+  it("answers version.changes with the helper's answer", async () => {
+    const h = {
+      ...handlers(fakeExec()),
+      versionChanges: async () => ({ head: "abc1234", dirty: true, changes: ["feat: a"] }),
+    };
+    await runJob({ id: "v1", method: "version.changes", params: { from: "abcdef1" } }, h, reply);
+    expect(replies.at(-1)).toEqual({
+      id: "v1",
+      ok: true,
+      result: { head: "abc1234", dirty: true, changes: ["feat: a"] },
+    });
+  });
+
+  it("starts an update once, and refuses without Docker or while one runs", async () => {
+    let started = 0;
+    const h = { ...handlers(fakeExec()), update: () => ++started === 1 };
+    await runJob({ id: "u1", method: "update", params: {} }, h, reply);
+    await runJob({ id: "u2", method: "update", params: {} }, h, reply);
+    await runJob({ id: "u3", method: "update", params: {} }, { ...h, update: undefined }, reply);
+    expect(replies.slice(-3)).toEqual([
+      { id: "u1", ok: true, result: { accepted: true } },
+      { id: "u2", ok: false, error: "An update is already running." },
+      { id: "u3", ok: false, error: CANNOT_UPDATE },
+    ]);
+  });
+
+  it("answers restart before it restarts", async () => {
+    const h = { ...handlers(fakeExec()), restart: () => events.push("restart") };
+    await runJob({ id: "r1", method: "restart", params: {} }, h, reply);
+    expect(events).toEqual(["reply ok", "restart"]);
   });
 });

@@ -5,6 +5,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
+import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { Markdown } from "./markdown";
 import { MediaView, type TaskFiles } from "./media";
 import { permissionOptionLabel, permissionSummary } from "./model";
@@ -52,6 +53,10 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <PlanSummary item={item} />;
     case "permission":
       return <Permission item={item} onAnswer={ctx.onPermission} busy={ctx.answering === item.id} />;
+    case "approval":
+      return <ApprovalCard item={item} />;
+    case "secret-request":
+      return <SecretRequestCard item={item} />;
     case "system":
       return <SystemLine item={item} />;
   }

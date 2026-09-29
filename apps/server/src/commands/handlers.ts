@@ -1,13 +1,17 @@
-import type { CommandMeta, CommandName, CommandOutput, commands, Remount } from "@majhi/shared";
+import { randomUUID } from "node:crypto";
+import type { CommandMeta, CommandName, CommandOutput, commands, Remount, TaskId } from "@majhi/shared";
 import { RESTART_COMMAND } from "@majhi/shared";
 import type { z } from "zod";
+import { openBossChat } from "../admin/boss.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
+import type { SystemService } from "../system/service.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -35,6 +39,10 @@ export interface HandlerDeps {
   services: Services;
   /** Probes the git hosts registered projects use. Tests may leave it out. */
   sshHosts?: SshHostProbe;
+  /** `health.run` and `health.fix`. Without it they answer 501. */
+  health?: HealthService;
+  /** `system.version` and `system.update`. Without it they answer 501. */
+  system?: SystemService;
 }
 
 export function createHandlers({
@@ -43,6 +51,8 @@ export function createHandlers({
   hostLink,
   services,
   sshHosts,
+  health,
+  system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
   return {
@@ -165,7 +175,13 @@ export function createHandlers({
 
     "tasks.list": async (input) => services.tasks.list(input.includeDone === true),
     "tasks.get": async (input) => services.tasks.get(input.id),
-    "tasks.create": (input) => services.tasks.create(input),
+    "tasks.create": async (input) => {
+      // A secret in the task text must not reach TASK.md or the agent.
+      const captured = await services.secretService.capture(input.text);
+      const task = await services.tasks.create({ ...input, text: captured.text });
+      noteSecrets(services, task.id, captured.saved);
+      return task;
+    },
     "tasks.start": (input) => services.tasks.start(input.id),
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.close": (input) => services.tasks.close(input.id),
@@ -174,7 +190,14 @@ export function createHandlers({
       return { removed: input.id };
     },
 
-    "room.send": async (input) => ({ item: await services.tasks.send(input) }),
+    "room.send": async (input) => {
+      services.tasks.get(input.task);
+      // Secrets are saved and swapped for references before the text reaches an agent or the room.
+      const captured = await services.secretService.capture(input.text);
+      const item = await services.tasks.send({ ...input, text: captured.text });
+      noteSecrets(services, input.task, captured.saved);
+      return { item };
+    },
     "room.cancel": async (input) => ({ cancelled: await services.tasks.cancel(input.task, input.agent) }),
     "room.permission": async (input) => ({
       item: services.tasks.answerPermission(input.task, input.item, input.option),
@@ -182,25 +205,97 @@ export function createHandlers({
     "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
-    "tasks.link": notBuilt,
-    "tasks.unlink": notBuilt,
+    "tasks.link": (input) => services.tasks.link(input),
+    "tasks.unlink": (input) => services.tasks.unlink(input),
     "room.fresh": notBuilt,
-    "room.approve": notBuilt,
-    "room.secret": notBuilt,
-    "secrets.list": notBuilt,
-    "secrets.save": notBuilt,
-    "secrets.remove": notBuilt,
-    "history.list": notBuilt,
-    "history.undo": notBuilt,
-    "settings.get": notBuilt,
-    "settings.set": notBuilt,
-    "policy.set": notBuilt,
-    "boss.chat": notBuilt,
-    "health.run": notBuilt,
-    "health.fix": notBuilt,
-    "system.version": notBuilt,
-    "system.update": notBuilt,
+    "room.approve": async (input) => ({
+      item: await services.admin.decide(input.task, input.item, input.decision),
+    }),
+    "room.secret": async (input) => ({
+      item: await services.admin.answerSecret(input.task, input.item, input.value),
+    }),
+    "secrets.list": () => services.secretService.list(),
+    "secrets.save": (input) => services.secretService.save(input),
+    "secrets.remove": async (input) => {
+      await services.secretService.remove(input.name);
+      return { removed: input.name };
+    },
+    "history.list": (input) => config.historyEntries(input.limit),
+    "history.undo": async (input, ctx) => {
+      const done = await config.undo(input.commit, {
+        command: ctx.command,
+        meta: ctx.meta,
+        summary: `undid change ${input.commit.slice(0, 7)}`,
+      });
+      services.admin.markUndone(done.undone);
+      return { commit: done.commit, summary: done.summary };
+    },
+    "settings.get": () => config.settings(),
+    "settings.set": async (input, ctx) => {
+      await requireConfigFile(config);
+      const current = await config.settings();
+      const compactAt = input.context?.compact_at ?? current.context.compact_at;
+      const compactTarget = input.context?.compact_target ?? current.context.compact_target;
+      if (compactTarget >= compactAt) {
+        throw new UserError("compact_target must be lower than compact_at.", 400);
+      }
+      const patch = {
+        ...(input.context === undefined ? {} : { context: input.context }),
+        ...(input.limits === undefined ? {} : { limits: input.limits }),
+        ...(input.resume === undefined ? {} : { resume: input.resume }),
+      };
+      await config.setSettings(patch, {
+        command: ctx.command,
+        meta: ctx.meta,
+        summary: `changed ${describePatch(patch)}`,
+      });
+      return config.settings();
+    },
+    "policy.set": async (input, ctx) => {
+      await requireConfigFile(config);
+      await config.setSettings(
+        { policy: input },
+        {
+          command: ctx.command,
+          meta: ctx.meta,
+          summary: `changed the approval policy: ${describePatch({ policy: input })}`,
+        },
+      );
+      return config.settings();
+    },
+    "boss.chat": () => openBossChat({ config, store: services.store, tasks: services.tasks }),
+    "health.run": () => (health ? health.run() : notBuilt()),
+    "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
+    "system.version": () => (system ? system.version() : notBuilt()),
+    "system.update": () => (system ? system.update() : notBuilt()),
   };
+}
+
+/** Tells the room which secrets were saved from the owner's text. */
+function noteSecrets(services: Services, task: string, saved: readonly string[]): void {
+  for (const ref of saved) {
+    services.room.post(task as TaskId, `secret-note:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: `Saved a secret as ${ref}; the agent sees only the reference`,
+    });
+  }
+}
+
+/** Settings are written into majhi.yaml, which starts with the workspace roots. */
+async function requireConfigFile(config: ConfigService): Promise<void> {
+  if (!(await config.sections()).exists) throw new UserError("Pick workspace roots first.", 409);
+}
+
+/** `limits.agents_max to 3, context.compact_at to 0.7`. */
+function describePatch(patch: Record<string, object | undefined>): string {
+  const parts: string[] = [];
+  for (const [section, fields] of Object.entries(patch)) {
+    for (const [key, value] of Object.entries(fields ?? {})) {
+      parts.push(`${section}.${key} to ${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
+    }
+  }
+  return parts.join(", ") || "nothing";
 }
 
 /** Placeholder for a Phase 2b command that is not built yet. */
@@ -219,7 +314,7 @@ async function findUnmounted(roots: readonly string[]): Promise<string[]> {
  * `manual` (the owner runs `make up`) when no helper is connected, when it
  * cannot run Docker, or when it does not take the job.
  */
-async function requestRemount(hostLink: HostLink, unmounted: readonly string[]): Promise<Remount> {
+export async function requestRemount(hostLink: HostLink, unmounted: readonly string[]): Promise<Remount> {
   if (unmounted.length === 0) return "not-needed";
   const status = hostLink.status();
   if (!status.connected || status.info?.canRemount !== true) return "manual";

@@ -64,17 +64,18 @@ export function createRemounter(options: RemountOptions): () => Promise<boolean>
   };
 }
 
-async function remount({ repo, docker, env, exec, log, sshPublicKeys }: RemountOptions): Promise<boolean> {
-  const started = Date.now();
-  const target = join(repo, OVERRIDE_FILE);
-  const temp = `${target}.${process.pid}.tmp`;
-  const step = async (
+/** Runs one `docker` step and throws a plain error, with the tail of stderr, when it fails. */
+export function dockerStep(
+  { repo, docker, env, exec, log }: Pick<RemountOptions, "repo" | "docker" | "env" | "exec" | "log">,
+  prefix: string,
+) {
+  return async (
     label: string,
     args: string[],
     timeout: number,
     stepEnv: NodeJS.ProcessEnv = env,
   ): Promise<string> => {
-    log(`remount: ${label}: docker ${args.join(" ")}`);
+    log(`${prefix}: ${label}: docker ${args.join(" ")}`);
     try {
       return (await exec(docker, args, { cwd: repo, env: stepEnv, timeout })).stdout;
     } catch (err) {
@@ -88,37 +89,60 @@ async function remount({ repo, docker, env, exec, log, sshPublicKeys }: RemountO
       throw new Error(`${label} failed: ${reason}${tail === "" ? "" : `\n${tail}`}`);
     }
   };
+}
 
+async function remount(options: RemountOptions): Promise<boolean> {
+  const started = Date.now();
+  const target = join(options.repo, OVERRIDE_FILE);
   try {
-    const keys = sshPublicKeys === undefined ? [] : await sshPublicKeys().catch(() => []);
-    const override = await step(
-      "generate mounts",
-      [
-        "compose",
-        "run",
-        "--rm",
-        "--no-deps",
-        "-T",
-        "-e",
-        "MAJHI_SSH_PUBKEYS",
-        "server",
-        "node",
-        "dist/cli.js",
-        "gen-override",
-      ],
-      GEN_TIMEOUT_MS,
-      { ...env, MAJHI_SSH_PUBKEYS: keys.join("\n") },
-    );
-    if (override.trim() === "") throw new Error("generate mounts printed nothing, so the override was kept");
-    await writeFile(temp, override);
-    await rename(temp, target);
-    log(`remount: wrote ${target}`);
-    await step("restart majhi", ["compose", "up", "-d", "--wait"], UP_TIMEOUT_MS);
-    log(`remount: done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    await regenerateAndUp(options, "remount");
+    options.log(`remount: done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     return true;
   } catch (err) {
-    await rm(temp, { force: true });
-    log(`remount: ${errorMessage(err)}`);
+    await rm(`${target}.${process.pid}.tmp`, { force: true });
+    options.log(`remount: ${errorMessage(err)}`);
     return false;
   }
+}
+
+/**
+ * Regenerates `docker-compose.override.yml` from majhi.yaml with the image on disk, then starts
+ * (or recreates) majhi and waits until it is healthy. Throws with the failed step's reason.
+ * `onStep` hears the plain-words name of each step as it starts.
+ */
+export async function regenerateAndUp(
+  options: RemountOptions,
+  prefix: string,
+  onStep: (text: string) => void = () => undefined,
+): Promise<void> {
+  const { repo, env, sshPublicKeys, log } = options;
+  const target = join(repo, OVERRIDE_FILE);
+  const temp = `${target}.${process.pid}.tmp`;
+  const step = dockerStep(options, prefix);
+  const keys = sshPublicKeys === undefined ? [] : await sshPublicKeys().catch(() => []);
+  onStep("Generating the folder mounts");
+  const override = await step(
+    "generate mounts",
+    [
+      "compose",
+      "run",
+      "--rm",
+      "--no-deps",
+      "-T",
+      "-e",
+      "MAJHI_SSH_PUBKEYS",
+      "server",
+      "node",
+      "dist/cli.js",
+      "gen-override",
+    ],
+    GEN_TIMEOUT_MS,
+    { ...env, MAJHI_SSH_PUBKEYS: keys.join("\n") },
+  );
+  if (override.trim() === "") throw new Error("generate mounts printed nothing, so the override was kept");
+  await writeFile(temp, override);
+  await rename(temp, target);
+  log(`${prefix}: wrote ${target}`);
+  onStep("Starting the new majhi and waiting until it is healthy");
+  await step("restart majhi", ["compose", "up", "-d", "--wait"], UP_TIMEOUT_MS);
 }
