@@ -23,6 +23,10 @@ const Flags = z.object({
   loadSession: z.boolean(),
   /** Advertise image prompts. */
   images: z.boolean(),
+  /** Tokens each turn adds to the reported usage (0: fixed readings). */
+  risingUsage: z.number().int().nonnegative(),
+  /** `/compact` does not lower usage. */
+  compactNoop: z.boolean(),
   /** Canned usage for the Claude `usage` argv and the Codex app-server. */
   usage: z.object({
     fiveHourPct: z.number(),
@@ -45,6 +49,8 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     slowMs: number;
     loadSession: boolean;
     images: boolean;
+    risingUsage: number;
+    compactNoop: boolean;
     usage: {
       fiveHourPct: number;
       weekPct: number;
@@ -61,6 +67,8 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     slowMs: 0,
     loadSession: true,
     images: true,
+    risingUsage: 0,
+    compactNoop: false,
     usage: { fiveHourPct: 42, weekPct: 18, plan: "max" },
   };
   let i = 0;
@@ -74,6 +82,8 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--slow") raw.slowMs = Number(argv[++i]);
     else if (a === "--no-load-session") raw.loadSession = false;
     else if (a === "--no-images") raw.images = false;
+    else if (a === "--rising-usage") raw.risingUsage = Number(argv[++i]);
+    else if (a === "--compact-noop") raw.compactNoop = true;
     else if (a === "--five-hour-pct") raw.usage.fiveHourPct = Number(argv[++i]);
     else if (a === "--week-pct") raw.usage.weekPct = Number(argv[++i]);
     else if (a === "--opus-pct") raw.usage.opusPct = Number(argv[++i]);
@@ -275,6 +285,8 @@ function serve(flags: Flags): void {
     slowMs: flags.slowMs,
     loadSession: flags.loadSession,
     images: flags.images,
+    risingUsage: flags.risingUsage,
+    compactNoop: flags.compactNoop,
     signedIn: () => isSignedIn(flags),
   });
 }

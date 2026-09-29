@@ -291,6 +291,10 @@ export const OrgViewSchema = z.object({
   /** The task key prefix: the configured `key`, else the one derived from the name. */
   key: z.string(),
   identity: OrgConfigSchema.shape.identity,
+  /** This org's own `compact_at`, when it overrides majhi's. */
+  context: OrgConfigSchema.shape.context,
+  /** This org's own `resume.auto`, when it overrides majhi's. */
+  resume: OrgConfigSchema.shape.resume,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });

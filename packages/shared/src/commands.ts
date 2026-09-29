@@ -180,7 +180,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch or commit identity. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, context threshold or automatic resume. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -188,6 +188,10 @@ export const commands = {
       base: OrgConfigSchema.shape.base.nullable().optional(),
       key: OrgConfigSchema.shape.key.nullable().optional(),
       identity: OrgConfigSchema.shape.identity.nullable().optional(),
+      /** Overrides majhi's `context.compact_at` for this org's agents. */
+      context: OrgConfigSchema.shape.context.nullable().optional(),
+      /** Overrides majhi's `resume.auto` for this org's runs. */
+      resume: OrgConfigSchema.shape.resume.nullable().optional(),
     }),
     output: OrgViewSchema,
   },

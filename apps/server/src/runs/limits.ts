@@ -112,6 +112,8 @@ interface Waiter {
 export interface SlotDeps {
   /** The limits now. Read each time, so changes apply live. */
   limits: () => Promise<Limits>;
+  /** False when the holder cannot be stopped right now (it is between turns but still busy). */
+  canEvict: (key: string) => boolean;
   /** Stops an idle holder's process. Its slot is already free when this is called. */
   evict: (key: string) => void;
   /** The line changed: each waiting key and its 1-based place. */
@@ -178,11 +180,25 @@ export class Slots {
   private async pumpOnce(): Promise<void> {
     if (this.waiting.length === 0) return;
     const limits = await this.deps.limits();
-    const plan = planGrants(
+    let plan = planGrants(
       this.waiting.map((w) => w.req),
       [...this.holders.values()],
       limits,
     );
+    // A holder that cannot be stopped after all counts as busy, and the line is planned again.
+    for (let round = 0; round < 8; round++) {
+      const refused = plan.evict.filter((key) => !this.deps.canEvict(key));
+      if (refused.length === 0) break;
+      for (const key of refused) {
+        const holder = this.holders.get(key);
+        if (holder !== undefined) holder.busy = true;
+      }
+      plan = planGrants(
+        this.waiting.map((w) => w.req),
+        [...this.holders.values()],
+        limits,
+      );
+    }
     for (const key of plan.evict) {
       this.holders.delete(key);
       this.deps.evict(key);

@@ -17,6 +17,10 @@ export interface FakeAgentOptions {
   noLoadSession?: boolean;
   /** Do not advertise image prompts. */
   noImages?: boolean;
+  /** Each turn adds this many tokens to the usage the fake reports, so a session fills up. */
+  risingUsage?: number;
+  /** `/compact` answers but leaves usage where it was, so majhi must hand off. */
+  compactNoop?: boolean;
   /** Numbers the fake reports for usage. Defaults: 5h 42 %, week 18 %, plan "max", resets in 3 hours and 3 days. */
   usage?: {
     fiveHourPct?: number;
@@ -45,6 +49,8 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
   if (options.slowMs) args.push("--slow", String(options.slowMs));
   if (options.noLoadSession) args.push("--no-load-session");
   if (options.noImages) args.push("--no-images");
+  if (options.risingUsage) args.push("--rising-usage", String(options.risingUsage));
+  if (options.compactNoop) args.push("--compact-noop");
   const u = options.usage;
   if (u?.fiveHourPct !== undefined) args.push("--five-hour-pct", String(u.fiveHourPct));
   if (u?.weekPct !== undefined) args.push("--week-pct", String(u.weekPct));

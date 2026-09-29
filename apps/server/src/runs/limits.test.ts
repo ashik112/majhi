@@ -56,6 +56,7 @@ describe("Slots", () => {
     const box = { limits: current };
     const s = new Slots({
       limits: async () => box.limits,
+      canEvict: () => true,
       evict: (key) => evicted.push(key),
       onQueue: (p) => {
         line = p;

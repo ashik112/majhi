@@ -106,6 +106,10 @@ export interface ServeOptions {
   loadSession: boolean;
   images: boolean;
   signedIn: () => boolean;
+  /** Tokens each turn adds to the session's reported usage. 0: the fixed readings 1k, 20k, 42k. */
+  risingUsage: number;
+  /** `/compact` answers but does not lower usage. */
+  compactNoop: boolean;
 }
 
 interface McpEntry {
@@ -121,6 +125,8 @@ interface Session {
   cancel: AbortController;
   /** HTTP MCP servers the client gave in newSession or loadSession. */
   mcp: McpEntry[];
+  /** The last usage reported, in tokens. */
+  used: number;
 }
 
 const McpResponse = z.object({
@@ -259,6 +265,36 @@ async function writeStored(cwd: string, id: string, data: StoredSession): Promis
   await writeFile(storeFile(cwd, id), JSON.stringify(data));
 }
 
+/** The context window the fake reports. */
+const USAGE_SIZE = 200_000;
+
+/** What the fake writes when majhi asks for a handoff note: the fixed template, filled in. */
+const FAKE_NOTE = [
+  "## Original task",
+  "",
+  "The task in TASK.md.",
+  "",
+  "## Done",
+  "",
+  "Created HEALTH.md.",
+  "",
+  "## Key decisions",
+  "",
+  "Keep it small.",
+  "",
+  "## Remaining work",
+  "",
+  "Tests.",
+  "",
+  "## Files touched",
+  "",
+  "HEALTH.md",
+  "",
+  "## Next step",
+  "",
+  "Run the tests.",
+].join("\n");
+
 const COMMANDS = [
   { name: "compact", description: "Compact the conversation" },
   { name: "review", description: "Review the current changes" },
@@ -293,6 +329,7 @@ export function serveAcp(o: ServeOptions): void {
         effort: o.efforts[0] ?? "",
         cancel: new AbortController(),
         mcp,
+        used: 0,
       };
       sessions.set(sessionId, state);
       return state;
@@ -318,8 +355,12 @@ export function serveAcp(o: ServeOptions): void {
       };
       const say = (chunk: string) =>
         update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: chunk } });
-      const usage = (used: number) =>
-        update(sessionId, { sessionUpdate: "usage_update", used, size: 200_000 });
+      // Fixed readings, or with rising usage a share of this turn's growth on top of the session so far.
+      const start = s.used;
+      const usage = (fixed: number) => {
+        s.used = o.risingUsage > 0 ? start + Math.round((o.risingUsage * fixed) / 42_000) : fixed;
+        return update(sessionId, { sessionUpdate: "usage_update", used: s.used, size: USAGE_SIZE });
+      };
       const plan = (a: "pending" | "in_progress" | "completed", b: "pending" | "in_progress" | "completed") =>
         update(sessionId, {
           sessionUpdate: "plan",
@@ -526,7 +567,38 @@ export function serveAcp(o: ServeOptions): void {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
         }
-        if (text.startsWith("show:")) {
+        if (text.startsWith("/compact")) {
+          // Native compaction: usage drops to a tenth, unless this fake is told it does nothing.
+          if (!o.compactNoop) s.used = Math.max(1_000, Math.round(s.used / 10));
+          await update(params.sessionId, {
+            sessionUpdate: "usage_update",
+            used: s.used,
+            size: USAGE_SIZE,
+          });
+          agentText = "Compacted the conversation.";
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (text.includes("Reply with a handoff note")) {
+          agentText = FAKE_NOTE;
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (text.includes("stop:max_tokens")) {
+          // Out of room: the session is full and the turn ends early.
+          s.used = USAGE_SIZE;
+          await update(params.sessionId, { sessionUpdate: "usage_update", used: s.used, size: USAGE_SIZE });
+          agentText = "I ran out of room.";
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "max_tokens";
+        } else if (text.startsWith("show:")) {
           const say = (content: object) =>
             update(params.sessionId, { sessionUpdate: "agent_message_chunk", content: content as never });
           await mkdir(join(s.cwd, "media"), { recursive: true });

@@ -54,7 +54,7 @@ export class OrgService {
     const next: OrgConfig = { ...current };
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.color !== undefined) next.color = patch.color;
-    for (const field of ["base", "key", "identity"] as const) {
+    for (const field of ["base", "key", "identity", "context", "resume"] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
       else if (value !== undefined) Object.assign(next, { [field]: value });
@@ -126,5 +126,7 @@ function view(
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
   if (org.identity !== undefined) out.identity = org.identity;
+  if (org.context?.compact_at !== undefined) out.context = { compact_at: org.context.compact_at };
+  if (org.resume?.auto !== undefined) out.resume = { auto: org.resume.auto };
   return out;
 }

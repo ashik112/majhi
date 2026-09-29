@@ -113,6 +113,10 @@ export class RunManager {
     this.now = deps.now ?? (() => new Date());
     this.slots = new Slots({
       limits: async () => (await deps.config.settings()).limits,
+      canEvict: (key) => {
+        const run = this.runs.get(key);
+        return run !== undefined && run.session !== undefined && !run.turning;
+      },
       evict: (key) => this.evict(key),
       onQueue: (positions) => this.showLine(positions),
       now: () => this.now().getTime(),
@@ -171,7 +175,8 @@ export class RunManager {
     }
     run.held = false;
     this.refreshQueued(run);
-    void this.drive(run);
+    // Nothing queued: an empty loop would hand the task back for review before the owner's message lands.
+    if (run.queue.length > 0) void this.drive(run);
   }
 
   /** Stores the owner's message and sends it: now when the agent is idle, else queued, or after a cancel when `interrupt`. */
@@ -493,6 +498,10 @@ export class RunManager {
     } finally {
       run.turning = false;
       run.drive = undefined;
+      // Idle between turns: a waiting start may stop this process now.
+      if (run.session !== undefined && run.live.status === "idle") {
+        this.slots.mark(this.key(run.task, run.agent), false);
+      }
       if (run.redrive) {
         run.redrive = false;
         if (!run.closing) void this.drive(run);
@@ -694,7 +703,8 @@ export class RunManager {
   private markTurn(run: AgentRun, busy: boolean, clear = true): void {
     const key = this.key(run.task, run.agent);
     run.lastEventAt = this.now().getTime();
-    this.slots.mark(key, busy);
+    // The slot turns idle only when the loop does (the end of runQueue), never between turns.
+    if (busy) this.slots.mark(key, true);
     if (busy) {
       if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
       run.idleTimer = undefined;

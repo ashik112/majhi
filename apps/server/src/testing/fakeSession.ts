@@ -90,7 +90,12 @@ export class FakeSession implements AgentSession {
     await new Promise((r) => setTimeout(r, 0));
   }
 
-  async setOption(): Promise<void> {}
+  /** Every `setOption` call, in order. */
+  readonly options: [category: string, value: string][] = [];
+
+  async setOption(category: "model" | "thought_level", value: string): Promise<void> {
+    this.options.push([category, value]);
+  }
 
   async close(): Promise<void> {
     this.closed = true;

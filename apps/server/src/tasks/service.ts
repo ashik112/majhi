@@ -607,7 +607,7 @@ export class TaskService {
   /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */
   async pausedByRuns(id: string, reason: "offline" | "error"): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined || task.status !== "running") return;
+    if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     this.deps.room.publishTask(this.get(id));
     await this.statusChanged(id);
