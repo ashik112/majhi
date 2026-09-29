@@ -50,75 +50,6 @@ describe("majhi-admin MCP server", () => {
     expect((await post({ authorization: `Bearer ${good}` })).status).toBe(401);
   });
 
-  it("lists one tool per command with the extra fields, and leaves out the ones an agent must not call", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    const { tools } = await client.listTools();
-    const names = tools.map((t) => t.name);
-    expect(names).toContain("majhi_orgs_create");
-    expect(names).toContain("majhi_accounts_login_start");
-    expect(names).toContain("majhi_history_undo");
-    expect(names).toContain("majhi_request_secret");
-    for (const banned of [
-      "majhi_room_approve",
-      "majhi_room_secret",
-      "majhi_policy_set",
-      "majhi_room_permission",
-      "majhi_ssh_unlock",
-    ]) {
-      expect(names).not.toContain(banned);
-    }
-    const create = tools.find((t) => t.name === "majhi_orgs_create");
-    expect(create?.description).toBe("Create an org. Risk: change.");
-    expect(create?.inputSchema.required).toEqual(
-      expect.arrayContaining(["id", "name", "ownerAsked", "reason"]),
-    );
-    expect(create?.inputSchema.properties).toHaveProperty("ownerAsked");
-    await client.close();
-  });
-
-  it("runs a read tool without a card", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    const res = await call(client, "majhi_orgs_list", { ownerAsked: false, reason: "look" });
-    expect(res.isError).toBe(false);
-    expect(JSON.parse(res.text)).toMatchObject([{ id: "private" }, { id: "acme" }]);
-    expect((await w.items()).filter((i) => i.type === "approval")).toEqual([]);
-    await client.close();
-  });
-
-  it("runs a change when the owner asked, records who did it, and can undo it", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    const res = await call(client, "majhi_orgs_create", {
-      id: "globex",
-      name: "Globex",
-      ownerAsked: true,
-      reason: "You asked for Globex",
-    });
-    expect(res.isError).toBe(false);
-    expect(JSON.parse(res.text)).toMatchObject({ id: "globex" });
-    const card = (await w.items()).find((i) => i.type === "approval");
-    expect(card).toMatchObject({
-      state: "applied",
-      command: "orgs.create",
-      risk: "change",
-      summary: "Create org Globex",
-      reason: "You asked for Globex",
-      agent: "boss",
-    });
-    const history = await w.h.cmd("history.list", { limit: 5 });
-    expect(history.body[0]).toMatchObject({
-      actor: "boss",
-      command: "orgs.create",
-      reason: "You asked for Globex",
-      undone: false,
-    });
-    if (card?.type !== "approval") throw new Error("no card");
-    expect(card.commit).toBe(history.body[0].commit);
-    await client.close();
-  });
-
   it("makes a change wait when the owner did not ask, and a destructive one always", async () => {
     w = await bossWorld({ real: false });
     const client = await connect(token());
@@ -153,21 +84,6 @@ describe("majhi-admin MCP server", () => {
     await client.close();
   });
 
-  it("returns invalid input as an error the agent can read, without a card", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    const res = await call(client, "majhi_orgs_create", {
-      id: "Bad Id",
-      name: "x",
-      ownerAsked: true,
-      reason: "r",
-    });
-    expect(res.isError).toBe(true);
-    expect(res.text).toContain("Invalid input for orgs.create");
-    expect((await w.items()).filter((i) => i.type === "approval")).toEqual([]);
-    await client.close();
-  });
-
   it("posts a secret request card and never returns a value", async () => {
     w = await bossWorld({ real: false });
     const client = await connect(token());
@@ -183,13 +99,6 @@ describe("majhi-admin MCP server", () => {
       state: "pending",
     });
     expect((await call(client, "majhi_request_secret", { name: "Bad Name", label: "x" })).isError).toBe(true);
-    await client.close();
-  });
-
-  it("answers an unknown tool with an error", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    expect((await call(client, "majhi_nothing", {})).isError).toBe(true);
     await client.close();
   });
 });

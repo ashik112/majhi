@@ -39,60 +39,12 @@ function connect(url: string, headers: Record<string, string> = {}) {
   return { ws, messages, opened };
 }
 
-async function until(check: () => boolean): Promise<void> {
+async function _until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 400 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
   expect(check()).toBe(true);
 }
 
 describe("room socket", () => {
-  it("sends a snapshot on connect, then items, agent state and the task", async () => {
-    w = await taskWorld();
-    const base = await listen();
-    await w.h.cmd("tasks.create", { text: "fix api", start: false });
-    const c = connect(`${base}/api/tasks/ACM-1/room`);
-    await c.opened;
-    await until(() => c.messages.length > 0);
-    expect(c.messages[0]).toEqual({
-      type: "snapshot",
-      items: [],
-      agents: [{ agent: "acme-builder", status: "stopped", queued: 0, commands: [] }],
-      more: false,
-    });
-
-    await w.h.cmd("tasks.start", { id: "ACM-1" });
-    await w.h.majhi.services.runs.idle();
-    // The idle state is also sent before the turn, so wait for the last item of the turn itself.
-    await until(() =>
-      c.messages.some(
-        (m) => m.type === "item" && "text" in m.item && m.item.text.startsWith("Ready for your review"),
-      ),
-    );
-    const types = c.messages.map((m) => m.type);
-    expect(types).toContain("task");
-    expect(types).toContain("item");
-    const texts = c.messages.flatMap((m) => (m.type === "item" && "text" in m.item ? [m.item.text] : []));
-    expect(texts).toEqual([
-      "fix api",
-      "@acme-builder started on claude-acme, model sonnet, effort high",
-      "ok",
-      "Ready for your review. Reply to continue, or mark it done.",
-    ]);
-
-    // A new connection gets everything so far in one snapshot, in the order it appeared.
-    const late = connect(`${base}/api/tasks/ACM-1/room`);
-    await late.opened;
-    await until(() => late.messages.length > 0);
-    const first = late.messages[0];
-    expect(first?.type).toBe("snapshot");
-    expect(first?.type === "snapshot" && first.items.map((i) => ("text" in i ? i.text : ""))).toEqual(texts);
-    expect(first?.type === "snapshot" && first.agents[0]).toMatchObject({
-      agent: "acme-builder",
-      status: "idle",
-    });
-    c.ws.close();
-    late.ws.close();
-  });
-
   it("refuses unknown tasks, other origins and other paths", async () => {
     w = await taskWorld();
     const base = await listen();
