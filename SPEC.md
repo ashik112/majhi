@@ -542,6 +542,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
   - Model and effort can be changed mid-session (5.1).
   - Permission prompts show inline with Allow once, Allow for this task, and Deny.
 - **Media and pages from agents.** Agents show the owner things by saving them in the task folder and linking them in a message with markdown (`![chart](media/chart.png)`, `[report](media/report.html)`), or by sending ACP image content. The room renders images, video and audio inline, and shows pages, PDFs and other files as cards that open in a new browser tab. Web links are clickable. Task files are served only from inside the task folder, and HTML runs sandboxed in its own origin, so an agent's page cannot call majhi's API. The generated `AGENTS.md` tells agents how to do this.
+- **Background processes.** majhi offers ACP's client terminals, so every command an agent runs is a process majhi owns. Long-running ones (dev servers, watchers, test runs in the background) show in a Processes card in the task view: command, running time, port, live output tail, and a Stop button. Agents list, stop and restart their task's processes through majhi tools, and are told what is already running so they do not start a second copy. Stopping or closing the task stops its processes; a per-task limit caps how many run at once.
 - **CLI parity.** Slash commands the agent advertises over ACP work from the composer. `@file` mentions autocomplete from the task's worktrees. Pasted images and files attach. Any past session can be resumed. An embedded terminal opens in the task folder, and any file path opens in the owner's editor.
 
 ### 5.16 The boss and the control plane
@@ -653,6 +654,9 @@ Delivered in two parts, each usable and reviewed on its own.
 - Team editing in the room: add, remove, swap agent, change model.
 - `majhi-tasks` MCP tool: a lead splits a task into children and adds dependencies. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
 - Decisions in teams: choosing the default team for a new task, and whether an agent message needs the owner, with the decision provider from Phase 2b. Laya in Docker (`laya`, PyTorch CPU) for Linux and Windows.
+- Lead orchestration: a lead (or the boss) given a parent task drives it to the end without the owner: it splits the work into child tasks, is told when a child finishes, reviews what was delivered, starts the next child, and reports when the parent is done. Approvals for destructive and outbound actions still wait for the owner.
+- Background processes from 5.15: the Processes card, Stop by the owner or the agent, cleanup with the task.
+- Task ids mentioned in any message (`PRV-15`) are links that open the task's details in a drawer.
 - **Done when:** lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round; a new task gets its default team picked by the decision provider, with the decision recorded.
 
 ### Phase 4: Multi-repo and MRs
