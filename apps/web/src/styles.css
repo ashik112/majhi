@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/*
+ * majhi design tokens. Dark only for now. Mirrors design/ui-demo.dc.html.
+ * Default Tailwind colors, sizes and radii are cleared so every class maps to a token.
+ */
+@theme {
+  --color-*: initial;
+
+  /* Surfaces, darkest to lightest */
+  --color-sunken: #0e0f11;
+  --color-canvas: #111214;
+  --color-rail: #131418;
+  --color-panel: #15161a;
+  --color-card: #17181c;
+  --color-field: #1b1c21;
+  --color-raised: #1e2025;
+  --color-selected: #23252b;
+
+  /* Lines */
+  --color-line: #25272d;
+  --color-line-strong: #2c2f36;
+  --color-line-control: #34373f;
+  --color-line-bright: #3a3e47;
+  --color-line-hover: #4a4e57;
+
+  /* Text */
+  --color-fg: #ecedef;
+  --color-fg-soft: #c9ccd2;
+  --color-fg-muted: #a3a7b0;
+  --color-fg-faint: #8a8f99;
+
+  /* Accent: primary actions and current selection */
+  --color-amber: #f0b455;
+  --color-amber-hover: #f4c273;
+  --color-amber-press: #e0a444;
+  --color-amber-ink: #1a1204;
+  --color-amber-wash: #251f15;
+  --color-amber-line: #5c4a2e;
+
+  /* Status and identity */
+  --color-blue: #8ab8f5;
+  --color-blue-wash: #1c2536;
+  --color-blue-line: #34507a;
+  --color-green: #7fd1b9;
+  --color-green-wash: #172420;
+  --color-green-line: #2c4a40;
+  --color-red: #f07b6b;
+  --color-red-wash: #2a1a18;
+  --color-red-line: #5c3a2e;
+  --color-coral: #f59c7f;
+  --color-violet: #c3a6f5;
+
+  --font-sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale: 11 / 12 / 13 / 15 / 19 px */
+  --text-*: initial;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.25rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.375rem;
+  --text-lg: 1.1875rem;
+  --text-lg--line-height: 1.625rem;
+
+  --radius-*: initial;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --shadow-*: initial;
+  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-scan: scan 1.1s var(--ease-out) infinite;
+  --animate-spin: spin 0.9s linear infinite;
+
+  @keyframes shimmer {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @keyframes scan {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(260%);
+    }
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    color-scheme: dark;
+    background: var(--color-canvas);
+    -webkit-text-size-adjust: 100%;
+    scrollbar-color: var(--color-line-bright) transparent;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern";
+  }
+
+  ::selection {
+    background: rgb(240 180 85 / 0.32);
+    color: var(--color-fg);
+  }
+
+  input,
+  textarea {
+    caret-color: var(--color-amber);
+  }
+
+  ::placeholder {
+    color: var(--color-fg-faint);
+    opacity: 1;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3px solid var(--color-canvas);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-line-hover);
+  }
+
+  mark {
+    background: rgb(240 180 85 / 0.2);
+    color: var(--color-amber-hover);
+    border-radius: 2px;
+  }
+
+  /* Kill non-essential motion everywhere; !important so no component-level duration wins. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      /* biome-ignore lint/complexity/noImportantStyles: must beat every per-element duration */
+      animation-duration: 0.01ms !important;
+      /* biome-ignore lint/complexity/noImportantStyles: must beat every per-element count */
+      animation-iteration-count: 1 !important;
+      /* biome-ignore lint/complexity/noImportantStyles: must beat every per-element duration */
+      transition-duration: 0.01ms !important;
+      /* biome-ignore lint/complexity/noImportantStyles: must beat smooth scrolling set anywhere */
+      scroll-behavior: auto !important;
+    }
+  }
+}
