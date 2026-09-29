@@ -37,6 +37,7 @@ The owner works for several companies (orgs). Each org gives official Claude and
 - **Nothing leaves the machine without approval.** No push, MR or merge unless the owner approves or the org's policy allows it.
 - **Measure tokens.** Every run records token use. Optimizations are kept only if the numbers show they help.
 - **One control plane, and the boss runs it.** Every change in majhi is a typed command. The UI, the palette and the boss agent all use the same commands, so the owner can set up and run everything just by talking to the boss (5.16). Everything is configurable at runtime, and every change can be undone.
+- **No manual work outside majhi.** Anything the owner would otherwise do in a terminal, a config file or another app (loading SSH keys, restarting, mounting, signing in, fixing setup) is done by majhi itself, through the UI, the boss or the host helper. When something truly needs the owner outside majhi (answering a macOS prompt, finishing a browser sign-in, the very first `make up`), majhi says so explicitly, in the place the owner is looking, with the exact step. A terminal command is only ever a fallback, never the main path.
 - **Light on resources.** Agent processes and models start when needed and stop when idle. Limits keep memory, CPU and tokens bounded (5.17).
 
 ---

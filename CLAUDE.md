@@ -37,3 +37,4 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 
 - Plain, direct writing in UI copy and docs. No em dashes. No filler.
 - Speed and clarity over feature count. If a screen feels busy, simplify it.
+- The owner never does manual work outside majhi unless majhi explicitly asks for it, in the UI, with the exact step. If a feature needs a terminal command, a hand edit or another app, build it into majhi instead (UI, boss or host helper). Terminal commands are fallbacks only.
