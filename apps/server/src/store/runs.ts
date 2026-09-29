@@ -70,6 +70,18 @@ export class RunRepo {
     return row.sessionId ?? undefined;
   }
 
+  /** True when the agent had a session in this task before. */
+  ranBefore(task: string, agent: string): boolean {
+    return (
+      this.db
+        .select({ id: runs.id })
+        .from(runs)
+        .where(and(eq(runs.task, task), eq(runs.agent, agent)))
+        .limit(1)
+        .get() !== undefined
+    );
+  }
+
   /** A turn started (true), or ended on its own or by the owner (false). Crashes and pauses leave it set. */
   setInFlight(task: string, agent: string, runId: number, value: boolean): void {
     if (value) {

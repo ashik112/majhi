@@ -1,0 +1,118 @@
+import type { AgentSession, RuntimeOptions } from "@majhi/acp";
+import type { AccountConfig, AgentFrontmatter, Task } from "@majhi/shared";
+import { accountRuntime, secretName } from "../accounts/homes.ts";
+import type { AdminAccess } from "../admin/access.ts";
+import type { AgentStore } from "../agents/store.ts";
+import type { ConfigService } from "../config/service.ts";
+import type { Decisions } from "../decisions/api.ts";
+import { UserError } from "../errors.ts";
+import type { AcpRuntime } from "../runtime.ts";
+import type { SecretStore } from "../secrets/store.ts";
+import type { Store } from "../store/index.ts";
+
+/** An agent file and the account it runs on, checked. */
+export interface ResolvedAgent {
+  fm: AgentFrontmatter;
+  instructions: string;
+  account: AccountConfig;
+  boss: string | undefined;
+}
+
+/** Reads the agent and its account. Throws a UserError the room can show as is. */
+export async function resolveAgent(
+  deps: { agents: AgentStore; config: ConfigService },
+  agent: string,
+): Promise<ResolvedAgent> {
+  const stored = await deps.agents.get(agent);
+  if (stored === undefined) throw new UserError(`Agent "${agent}" does not exist.`);
+  if (!stored.ok) throw new UserError(`Agent "${agent}" is invalid: ${stored.errors.join("; ")}`);
+  const fm = stored.agent.frontmatter;
+  const { accounts, boss } = await deps.config.sections();
+  const account = accounts[fm.account];
+  if (account === undefined) throw new UserError(`Account "${fm.account}" is not in majhi.yaml.`);
+  if (fm.scope !== "root" && account.org !== fm.scope && account.org !== "private") {
+    throw new UserError(`@${fm.id} works in "${fm.scope}" and cannot use the account of "${account.org}".`);
+  }
+  return { fm, instructions: stored.agent.instructions, account, boss };
+}
+
+export interface LaunchDeps {
+  store: Store;
+  runtime: AcpRuntime;
+  options: RuntimeOptions;
+  secrets: SecretStore;
+  majhiHome: string;
+  admin?: AdminAccess | undefined;
+  decisions?: Decisions | undefined;
+}
+
+export interface Launched {
+  session: AgentSession;
+  task: Task;
+  /** The previous session was loaded. */
+  resumed: boolean;
+  /** The agent worked in this task before, so a new session needs its work carried over. */
+  ranBefore: boolean;
+  adminToken?: string | undefined;
+  decideToken?: string | undefined;
+  /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
+  model?: string | undefined;
+  effort?: string | undefined;
+}
+
+/**
+ * Opens the agent's ACP session in the task folder (SPEC 5.1): its account's home and key, the
+ * fixed model and effort, majhi-admin for admin agents and majhi-decide for everyone, and the
+ * previous session loaded unless it was handed off. Tokens are revoked when the start fails.
+ */
+export async function launch(
+  deps: LaunchDeps,
+  run: { task: string; agent: string; freshNext: boolean },
+  agent: ResolvedAgent,
+): Promise<Launched> {
+  const { fm, account, boss } = agent;
+  let apiKey: string | undefined;
+  if (account.auth === "api-key" && account.key !== undefined) {
+    apiKey = await deps.secrets.get(secretName(account.key));
+    if (apiKey === undefined)
+      throw new UserError(`The API key of ${fm.account} is missing. Add the account again.`);
+  }
+  const runtimeAccount = accountRuntime(deps.majhiHome, fm.account, account, apiKey);
+  await deps.runtime.prepareHome(runtimeAccount);
+  const task = deps.store.tasks.get(run.task);
+  if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
+
+  const model = fm.model === "auto" ? undefined : fm.model;
+  const effort = fm.effort === "auto" ? undefined : fm.effort;
+  const resume = run.freshNext ? undefined : deps.store.runs.lastSessionId(run.task, run.agent);
+  const ranBefore = resume !== undefined || deps.store.runs.ranBefore(run.task, run.agent);
+  const admin = deps.admin?.attach({ task: run.task, agent: run.agent }, fm, boss);
+  const decide = deps.decisions?.attachTool(run.task, run.agent);
+  const mcpServers = [admin?.server, decide?.server].flatMap((s) => (s === undefined ? [] : [s]));
+  let session: AgentSession;
+  try {
+    session = await deps.runtime.startSession({
+      account: runtimeAccount,
+      options: deps.options,
+      cwd: task.folder,
+      ...(resume === undefined ? {} : { resume }),
+      ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+      ...(mcpServers.length === 0 ? {} : { mcpServers }),
+    });
+  } catch (err) {
+    if (admin !== undefined) deps.admin?.revoke(admin.token);
+    if (decide !== undefined) deps.decisions?.revoke(decide.token);
+    throw err;
+  }
+  return {
+    session,
+    task,
+    resumed: resume !== undefined && session.sessionId === resume,
+    ranBefore,
+    adminToken: admin?.token,
+    decideToken: decide?.token,
+    model,
+    effort,
+  };
+}
