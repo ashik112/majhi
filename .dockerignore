@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+.git
+design
+docs
+e2e
+test-results
+playwright-report
+.env
+docker-compose.override.yml
