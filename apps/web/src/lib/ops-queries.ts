@@ -45,8 +45,16 @@ export function useSystemVersion(refetchMs: number | false = 60_000) {
   });
 }
 
+/** `now` rebuilds at once; `idle` waits until no agent is in a turn. */
 export function useStartUpdate() {
-  return useMutation<CommandOutput<"system.update">, ApiRequestError>({
-    mutationFn: () => cmd("system.update", {}, { reason: "Owner pressed Update" }),
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"system.update">, ApiRequestError, "now" | "idle">({
+    mutationFn: (when) =>
+      cmd(
+        "system.update",
+        { when },
+        { reason: when === "idle" ? "Owner chose Update when they finish" : "Owner pressed Update" },
+      ),
+    onSettled: () => client.invalidateQueries({ queryKey: opsKeys.version }),
   });
 }

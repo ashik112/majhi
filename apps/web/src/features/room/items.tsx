@@ -7,8 +7,8 @@ import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { Markdown } from "./markdown";
-import { MediaView, type TaskFiles } from "./media";
-import { permissionOptionLabel, permissionSummary, toolLabel } from "./model";
+import { MediaView, TaskFileLink, type TaskFiles } from "./media";
+import { contextLine, permissionOptionLabel, permissionSummary, toolLabel } from "./model";
 import { ToolRow } from "./tool-row";
 
 export function permissionDomId(itemId: string): string {
@@ -59,7 +59,21 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <SecretRequestCard item={item} />;
     case "system":
       return <SystemLine item={item} />;
+    case "context":
+      return <ContextLine item={item} />;
   }
+}
+
+/** A compaction, as one quiet line, with the handoff note when there is one. */
+function ContextLine({ item }: { item: Of<"context"> }) {
+  return (
+    <div className="flex justify-center">
+      <span className="flex max-w-[640px] items-baseline gap-2 font-mono text-xs text-fg-faint">
+        <span className="break-words">{contextLine(item)}</span>
+        {item.note && <TaskFileLink path={item.note} kind="markdown" label="note" />}
+      </span>
+    </div>
+  );
 }
 
 function OwnerMessage({ item }: { item: Of<"owner"> }) {

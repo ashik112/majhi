@@ -11,6 +11,10 @@ export type UpdateNotice =
       dirty: boolean;
       /** False without a connected helper: the owner then gets the `make up` command instead of a button. */
       canUpdate: boolean;
+      /** Agents in a turn right now. An update cuts their turns; they resume after the restart. */
+      working: number;
+      /** The update waits for those agents to finish. */
+      waiting: boolean;
     };
 
 /** What the sidebar shows under the logo. */
@@ -21,7 +25,14 @@ export function updateNotice(version: VersionInfo | undefined): UpdateNotice {
     changes: version.changes,
     dirty: version.dirty === true,
     canUpdate: version.canUpdate === true,
+    working: version.working ?? 0,
+    waiting: version.waiting === true,
   };
+}
+
+/** "2 agents are working." for the Update card. */
+export function workingText(working: number): string {
+  return working === 1 ? "1 agent is working." : `${working} agents are working.`;
 }
 
 /** "3 changes" or "New code on disk", for the card's second line. */

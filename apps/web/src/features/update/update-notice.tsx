@@ -1,28 +1,42 @@
 import { ArrowUpCircle, ChevronDown, LoaderCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useStartUpdate, useSystemVersion } from "@/lib/ops-queries";
-import { changeSummary, updateNotice } from "./model";
+import { changeSummary, updateNotice, workingText } from "./model";
 import { beginUpdateSession, useUpdateSession } from "./session";
 
 /** "Update ready", under the logo. Click it for the list of changes; the button rebuilds majhi. */
 export function UpdateNotice() {
-  const version = useSystemVersion();
+  // While an update waits for the agents, look often so the "Updating majhi" screen opens in time.
+  const [scheduledAt, setScheduledAt] = useState<string>();
+  const version = useSystemVersion(scheduledAt === undefined ? 60_000 : 3_000);
   const start = useStartUpdate();
   const session = useUpdateSession();
   const [open, setOpen] = useState(false);
   const [manual, setManual] = useState<string>();
   const notice = updateNotice(version.data);
+  const began = version.data?.update;
+
+  // The server started the update it was waiting with: show its progress.
+  useEffect(() => {
+    if (scheduledAt === undefined || began === undefined) return;
+    if (Date.parse(began.startedAt) >= Date.parse(scheduledAt) - 2_000) {
+      setScheduledAt(undefined);
+      beginUpdateSession(scheduledAt);
+    }
+  }, [began, scheduledAt]);
+
   if (notice.kind === "none" || session !== undefined) return null;
 
-  async function update() {
+  async function update(when: "now" | "idle") {
     const startedAt = new Date().toISOString();
     try {
-      const out = await start.mutateAsync();
+      const out = await start.mutateAsync(when);
       if (out.state === "restarting") beginUpdateSession(startedAt);
+      else if (out.state === "waiting") setScheduledAt(startedAt);
       else setManual(out.reason ?? "majhi cannot update itself from here.");
     } catch {
       // The error shows under the button.
@@ -77,10 +91,12 @@ export function UpdateNotice() {
           <CommandLine command="make up" />
         </>
       ) : (
-        <Button variant="primary" size="sm" disabled={start.isPending} onClick={() => void update()}>
-          {start.isPending && <LoaderCircle aria-hidden="true" className="animate-spin" />}
-          {start.isPending ? "Starting" : "Update"}
-        </Button>
+        <UpdateButtons
+          working={notice.working}
+          waiting={notice.waiting || scheduledAt !== undefined}
+          pending={start.isPending}
+          onUpdate={(when) => void update(when)}
+        />
       )}
       {start.error && (
         <p role="alert" className="text-xs text-red">
@@ -88,5 +104,49 @@ export function UpdateNotice() {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * With no agent working, one Update button. Otherwise the card says how many are working and
+ * offers to wait for them; their turns resume on their own after the restart either way.
+ */
+function UpdateButtons({
+  working,
+  waiting,
+  pending,
+  onUpdate,
+}: {
+  working: number;
+  waiting: boolean;
+  pending: boolean;
+  onUpdate: (when: "now" | "idle") => void;
+}) {
+  if (working === 0 && !waiting) {
+    return (
+      <Button variant="primary" size="sm" disabled={pending} onClick={() => onUpdate("now")}>
+        {pending && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+        {pending ? "Starting" : "Update"}
+      </Button>
+    );
+  }
+  return (
+    <>
+      <p className="text-xs text-fg-muted text-pretty">
+        {waiting
+          ? "majhi updates as soon as the agents finish their turns."
+          : `${workingText(working)} Their turns continue on their own after the update.`}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {!waiting && (
+          <Button variant="primary" size="sm" disabled={pending} onClick={() => onUpdate("idle")}>
+            Update when they finish
+          </Button>
+        )}
+        <Button size="sm" disabled={pending} onClick={() => onUpdate("now")}>
+          Update now
+        </Button>
+      </div>
+    </>
   );
 }

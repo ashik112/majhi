@@ -548,3 +548,20 @@ function firstSentence(text: string): string {
   const cut = text.indexOf(". ");
   return cut === -1 ? text.replace(/\.$/, "") : text.slice(0, cut);
 }
+
+type ContextItem = Extract<RoomItem, { type: "context" }>;
+
+/** `164k`, `18k`, `950`. */
+export function shortTokens(n: number): string {
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n));
+}
+
+/** One quiet line for a compaction: "@builder compacted: 164k to 18k tokens (native)". */
+export function contextLine(item: ContextItem): string {
+  const { before, after } = item;
+  if (before !== undefined && after !== undefined) {
+    return `@${item.agent} compacted: ${shortTokens(before)} to ${shortTokens(after)} tokens (${item.method})`;
+  }
+  const size = after === undefined ? "" : `: ${shortTokens(after)} tokens`;
+  return `@${item.agent} moved to a fresh session${size} (${item.method})`;
+}

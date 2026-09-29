@@ -8,8 +8,10 @@ export interface AgentState {
 }
 
 /** How an agent shows in the room panel. Without live data the task has not started it. */
-export function agentState(live: AgentLive | undefined): AgentState {
+export function agentState(live: AgentLive | undefined, pausedReason?: string | undefined): AgentState {
   if (!live) return { label: "Not started", tone: "faint" };
+  if (live.status === "paused" && pausedReason === "offline")
+    return { label: "Paused, offline", tone: "muted" };
   switch (live.status) {
     case "working":
       return { label: "Working", tone: "amber" };
@@ -64,7 +66,7 @@ export interface ActionCopy {
 
 const PAUSE_TEXT: Record<string, string> = {
   limit: "Paused: the account hit its usage limit. Resume once it resets.",
-  offline: "Paused: the connection was lost. Resume when you are back online.",
+  offline: "majhi is offline. The task continues on its own when the connection is back.",
   error: "Paused after an error. Read the room, then resume.",
   owner: "You stopped the task. Resume when you are ready.",
 };
@@ -197,4 +199,11 @@ export function linkTargets(
   return list
     .filter((t) => t.id !== task.id && t.status !== "done" && !taken.has(t.id))
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+}
+
+/** The context meter: share of the window in use, 0 to 1, and "42k of 200k". */
+export function contextMeter(usage: AgentLive["usage"]): { share: number; label: string } | undefined {
+  if (usage === undefined || usage.size <= 0) return undefined;
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)));
+  return { share: Math.min(1, usage.used / usage.size), label: `${k(usage.used)} of ${k(usage.size)}` };
 }

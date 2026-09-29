@@ -23,6 +23,12 @@ describe("updateNotice", () => {
       changes: ["feat: a", "fix: b"],
       dirty: false,
       canUpdate: true,
+      working: 0,
+      waiting: false,
+    });
+    expect(updateNotice(version({ updateReady: true, working: 2, waiting: true }))).toMatchObject({
+      working: 2,
+      waiting: true,
     });
     expect(updateNotice(version({ updateReady: true, dirty: true }))).toMatchObject({
       dirty: true,
