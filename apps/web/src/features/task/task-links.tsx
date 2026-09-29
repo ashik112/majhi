@@ -1,13 +1,12 @@
 import type { Task } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
-import { Check, MoreHorizontal, Plus } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
@@ -19,137 +18,107 @@ type Picking = "parent" | "depends-on" | null;
 
 type Unlinking = { task: string; type: "parent" | "depends-on"; target: string; label: string };
 
-/** Subtasks shown before "Show all": the header is pinned, so it stays short. */
-const SHOWN_CHILDREN = 2;
+const chip =
+  "flex h-6 min-w-0 items-center gap-1 rounded-md border border-line-control px-1.5 text-xs hover:border-line-hover";
 
-/** Parent, what the task waits on and its subtasks, one labeled line each, and a quiet way to link more. */
+/** One line of small chips: what the task is part of, what it waits for, its subtasks, and "Link". */
 export function TaskLinks({ task }: { task: Task }) {
   const list = useTasks().data ?? [];
   const { org } = useOrgFilter();
+  const navigate = useNavigate();
   const unlink = useUnlinkTask();
   const [picking, setPicking] = useState<Picking>(null);
   const [asking, setAsking] = useState<Unlinking | null>(null);
-  const [all, setAll] = useState(false);
   const rel = relations(task, list);
   const search = orgSearch(org);
   const byId = new Map(list.map((t) => [t.id, t]));
-  const kids = all ? rel.children : rel.children.slice(0, SHOWN_CHILDREN);
-  const openLink = "flex min-w-0 items-baseline gap-1.5 hover:text-fg";
   const linkTo = (id: string) => ({ to: "/t/$taskId" as const, params: { taskId: id }, search });
 
   return (
-    <div className="flex flex-col gap-2 text-sm" data-testid="task-links">
-      {(rel.parent || rel.depends.length > 0 || rel.children.length > 0) && (
-        <dl className="m-0 grid max-w-[760px] grid-cols-[76px_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2">
-          {rel.parent && (
-            <>
-              <dt className="text-fg-faint">Part of</dt>
-              <dd className="m-0 flex items-center gap-2">
-                <Link {...linkTo(rel.parent.id)} className={cn(openLink, "text-fg-soft")}>
-                  <span className="shrink-0 font-mono text-xs text-fg-muted">{rel.parent.id}</span>
-                  <span className="truncate">{rel.parent.title}</span>
-                </Link>
-                <RowMenu
-                  label={`Options for ${rel.parent.id}`}
-                  onUnlink={() =>
-                    setAsking({
-                      task: task.id,
-                      type: "parent",
-                      target: rel.parent?.id ?? "",
-                      label: `Stop ${task.id} being part of ${rel.parent?.id}?`,
-                    })
-                  }
-                />
-              </dd>
-            </>
-          )}
-          {rel.depends.length > 0 && (
-            <>
-              <dt className="text-fg-faint">Waits for</dt>
-              <dd className="m-0 flex min-w-0 flex-col gap-1">
-                {rel.depends.map((d) => (
-                  <span key={d.id} className="flex items-center gap-2">
-                    <Link
-                      {...linkTo(d.id)}
-                      className={cn(openLink, d.waiting ? "text-coral" : "text-fg-faint")}
-                    >
-                      {!d.waiting && <Check aria-hidden="true" className="size-3 shrink-0 self-center" />}
-                      <span className="shrink-0 font-mono text-xs">{d.id}</span>
-                      <span className="truncate">{d.title}</span>
-                      <span className="shrink-0 text-fg-faint">
-                        · until {d.when === "ready" ? "ready for review" : "done"}
-                      </span>
-                    </Link>
-                    <RowMenu
-                      label={`Options for ${d.id}`}
-                      onUnlink={() =>
-                        setAsking({
-                          task: task.id,
-                          type: "depends-on",
-                          target: d.id,
-                          label: `Stop ${task.id} waiting for ${d.id}?`,
-                        })
-                      }
-                    />
-                  </span>
-                ))}
-              </dd>
-            </>
-          )}
-          {rel.children.length > 0 && (
-            <>
-              <dt className="text-fg-faint">Subtasks</dt>
-              <dd className="m-0 flex min-w-0 flex-col gap-1">
-                <span className="flex items-center gap-3 text-fg-muted">
-                  {rel.progress
-                    ? `${rel.progress.done} of ${rel.progress.total} done`
-                    : `${rel.children.length}`}
-                  {rel.progress && rel.progress.total > 0 && (
-                    <span className="w-28">
-                      <UsageBar
-                        pct={(rel.progress.done / rel.progress.total) * 100}
-                        tone="green"
-                        height={3}
-                      />
-                    </span>
-                  )}
-                </span>
-                {/* Expanded, the list scrolls inside the header instead of pushing the room down. */}
-                <span className={cn("flex flex-col gap-1.5", all && "max-h-40 overflow-y-auto pr-1")}>
-                  {kids.map((c) => (
-                    <span key={c.id} className="flex items-center gap-2">
-                      <Link {...linkTo(c.id)} className={cn(openLink, "flex-1 text-fg-soft")}>
-                        <span className="shrink-0 font-mono text-xs text-fg-muted">{c.id}</span>
-                        <span className="truncate">{byId.get(c.id)?.title ?? c.title}</span>
-                      </Link>
-                      <StatusBadge status={c.status} />
-                      <RowMenu
-                        label={`Options for ${c.id}`}
-                        onUnlink={() =>
-                          setAsking({
-                            task: c.id,
-                            type: "parent",
-                            target: task.id,
-                            label: `Remove ${c.id} from ${task.id}?`,
-                          })
-                        }
-                      />
-                    </span>
-                  ))}
-                </span>
-                {rel.children.length > SHOWN_CHILDREN && (
-                  <button
-                    type="button"
-                    onClick={() => setAll((v) => !v)}
-                    className="w-fit cursor-pointer rounded-xs text-fg-muted hover:text-fg"
-                  >
-                    {all ? "Show fewer" : `Show all ${rel.children.length}`}
-                  </button>
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid="task-links">
+      {rel.parent && (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="text-fg-faint">Part of</span>
+          <span className={chip}>
+            <Link
+              {...linkTo(rel.parent.id)}
+              title={rel.parent.title}
+              className="flex min-w-0 items-center gap-1.5 text-fg-soft hover:text-fg"
+            >
+              <span className="font-mono">{rel.parent.id}</span>
+              <span className="max-w-[220px] truncate text-fg-muted">{rel.parent.title}</span>
+            </Link>
+            <RemoveLink
+              label={`Remove link to ${rel.parent.id}`}
+              onClick={() =>
+                setAsking({
+                  task: task.id,
+                  type: "parent",
+                  target: rel.parent?.id ?? "",
+                  label: `Stop ${task.id} being part of ${rel.parent?.id}?`,
+                })
+              }
+            />
+          </span>
+        </span>
+      )}
+      {rel.depends.length > 0 && (
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="text-fg-faint">Waits for</span>
+          {rel.depends.map((d) => (
+            <span key={d.id} className={chip}>
+              <Link
+                {...linkTo(d.id)}
+                title={`${d.title ?? d.id} (until ${d.when === "ready" ? "ready for review" : "done"})`}
+                className={cn(
+                  "flex items-center gap-1 font-mono hover:text-fg",
+                  d.waiting ? "text-coral" : "text-fg-muted",
                 )}
-              </dd>
-            </>
+              >
+                {!d.waiting && <Check aria-hidden="true" className="size-3 text-green" />}
+                {d.id}
+              </Link>
+              <RemoveLink
+                label={`Remove link to ${d.id}`}
+                onClick={() =>
+                  setAsking({
+                    task: task.id,
+                    type: "depends-on",
+                    target: d.id,
+                    label: `Stop ${task.id} waiting for ${d.id}?`,
+                  })
+                }
+              />
+            </span>
+          ))}
+        </span>
+      )}
+      {rel.children.length > 0 && (
+        <Menu
+          label="Subtasks"
+          align="left"
+          items={rel.children.map((c) => ({
+            label: `${c.id} · ${short(byId.get(c.id)?.title ?? c.title)}`,
+            checked: c.status === "done",
+            onSelect: () => void navigate(linkTo(c.id)),
+          }))}
+          trigger={({ ref, ...props }) => (
+            <button ref={ref} type="button" {...props} className={cn(chip, "cursor-pointer text-fg-muted")}>
+              <span className="text-fg-faint">Subtasks</span>
+              <span className="tnum">
+                {rel.progress
+                  ? `${rel.progress.done} of ${rel.progress.total} done`
+                  : `${rel.children.length}`}
+              </span>
+              {rel.progress && rel.progress.total > 0 && (
+                <span className="w-10">
+                  <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
+                </span>
+              )}
+              <ChevronDown aria-hidden="true" className="size-3" />
+            </button>
           )}
-        </dl>
+        />
       )}
       <Menu
         label="Link a task"
@@ -167,15 +136,16 @@ export function TaskLinks({ task }: { task: Task }) {
             ref={ref}
             {...props}
             type="button"
-            className="flex h-6 w-fit cursor-pointer items-center gap-1.5 rounded-sm text-fg-faint hover:text-fg"
+            aria-label="Link a task"
+            className="flex h-6 cursor-pointer items-center gap-1 rounded-sm text-fg-faint hover:text-fg"
           >
-            <Plus aria-hidden="true" className="size-3.5" />
-            Link a task
+            <Plus aria-hidden="true" className="size-3" />
+            Link
           </button>
         )}
       />
       {unlink.error && (
-        <p role="alert" className="text-sm text-red">
+        <p role="alert" className="text-red">
           {unlink.error.message}
         </p>
       )}
@@ -200,13 +170,20 @@ export function TaskLinks({ task }: { task: Task }) {
   );
 }
 
-function RowMenu({ label, onUnlink }: { label: string; onUnlink: () => void }) {
+const short = (title: string | undefined) =>
+  title === undefined ? "" : title.length > 60 ? `${title.slice(0, 59)}…` : title;
+
+function RemoveLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Menu
-      label={label}
-      icon={<MoreHorizontal aria-hidden="true" className="size-3.5" />}
-      items={[{ label: "Remove link", tone: "danger", onSelect: onUnlink }]}
-    />
+    <button
+      type="button"
+      aria-label={label}
+      title="Remove link"
+      onClick={onClick}
+      className="grid size-4 shrink-0 cursor-pointer place-items-center rounded-xs text-fg-dim hover:text-fg"
+    >
+      <X aria-hidden="true" className="size-3" />
+    </button>
   );
 }
 

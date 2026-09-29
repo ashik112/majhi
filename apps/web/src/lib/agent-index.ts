@@ -1,4 +1,4 @@
-import type { AgentEntry, Role } from "@majhi/shared";
+import type { AgentEntry, Perm, Role } from "@majhi/shared";
 import { useAgents } from "./studio-queries";
 
 export interface AgentInfo {
@@ -6,7 +6,11 @@ export interface AgentInfo {
   role: Role;
   account: string;
   model: string | undefined;
+  effort: string | undefined;
+  perms: readonly Perm[];
+  fallback: string | undefined;
   scope: string;
+  where: readonly string[];
   isBoss: boolean;
 }
 
@@ -25,7 +29,11 @@ export function indexAgents(entries: AgentEntry[]): ReadonlyMap<string, AgentInf
       role: fm.role,
       account: fm.account,
       model: fm.model,
+      effort: fm.effort,
+      perms: fm.perms,
+      fallback: fm.fallback,
       scope: fm.scope,
+      where: fm.where,
       isBoss: entry.isBoss,
     });
   }

@@ -1,6 +1,6 @@
-import type { AccountStatus, AgentFrontmatter } from "@majhi/shared";
+import { type AccountStatus, type AgentFrontmatter, canWorkIn } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { canWorkIn, pickDefaultAgent } from "./agents.ts";
+import { pickDefaultAgent } from "./agents.ts";
 
 function agent(
   id: string,

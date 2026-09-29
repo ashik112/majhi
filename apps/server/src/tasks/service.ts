@@ -4,6 +4,7 @@ import { basename, join, sep } from "node:path";
 import {
   type AgentFrontmatter,
   type Attachment,
+  canWorkIn,
   LOCAL_TASK_PREFIX,
   type ParsedTask,
   parseTaskText,
@@ -30,7 +31,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { UploadStore } from "../uploads/store.ts";
-import { canWorkIn, pickDefaultAgent } from "./agents.ts";
+import { pickDefaultAgent } from "./agents.ts";
 import { branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
@@ -272,7 +273,9 @@ export class TaskService {
     const fm = agents.find((a) => a.id === task.team[0]);
     const md = renderTaskMd(
       task,
-      fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
+      fm === undefined
+        ? undefined
+        : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort, perms: fm.perms },
       orgName,
       related,
     );
@@ -572,7 +575,9 @@ export class TaskService {
       const fm = agents.find((a) => a.id === task.team[0]);
       const md = renderTaskMd(
         task,
-        fm === undefined ? undefined : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort },
+        fm === undefined
+          ? undefined
+          : { id: fm.id, role: fm.role, model: fm.model, effort: fm.effort, perms: fm.perms },
         sections.orgs[task.org ?? ""]?.name,
         this.relatedOf(task),
       );

@@ -1,54 +1,33 @@
 import { type AgentLive, collapseHome, type RoomItem, type Task } from "@majhi/shared";
-import { useMutation } from "@tanstack/react-query";
-import { Check, Copy, OctagonX, Play, RefreshCcw, RotateCw } from "lucide-react";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
-import { type ApiRequestError, cmd } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { useConfig } from "@/lib/queries";
-import { useOrgs } from "@/lib/studio-queries";
-import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
+import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useCopy } from "@/lib/use-copy";
+import { useNow } from "@/lib/use-now";
 import { ChangesPanel } from "../room/changes-panel";
-import { type ActionCopy, actionCopy, agentDot, agentState, contextMeter, modelLabel } from "./model";
+import { AgentRow } from "./agent-row";
+import { ChangeAgent } from "./change-agent";
+import { agentState, agentsBusy } from "./model";
 
-const STATE_TEXT = {
-  amber: "text-amber",
-  violet: "text-violet",
-  red: "text-red",
-  muted: "text-fg-muted",
-  faint: "text-fg-dim",
-} as const;
-
-const ACTION_TEXT = {
-  amber: "text-amber",
-  blue: "text-blue",
-  green: "text-green",
-  violet: "text-violet",
-  coral: "text-coral",
-  neutral: "text-fg-muted",
-  faint: "text-fg-muted",
-} as const;
-
-/** The right column of the task view: who is in the room, the main action, the branch, the changes. */
+/** The right column of the task view: who is in the room, the branch, the changes. */
 export function RoomPanel({
   task,
   agents,
   items,
-  yourTurn,
 }: {
   task: Task;
   agents: readonly AgentLive[];
   items: readonly RoomItem[];
-  yourTurn: boolean;
 }) {
   return (
-    <aside aria-label="Task details" className="flex w-[380px] shrink-0 flex-col gap-3 overflow-y-auto pb-1">
+    <aside
+      aria-label="Task details"
+      className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-1"
+    >
       <InRoomCard task={task} agents={agents} />
-      <ActionCard task={task} yourTurn={yourTurn} />
       <BranchCard task={task} />
       <ChangesPanel task={task} items={items} />
     </aside>
@@ -58,168 +37,42 @@ export function RoomPanel({
 function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[] }) {
   const index = useAgentIndex();
   const orgs = useOrgs().data;
+  const accounts = useAccounts().data;
+  const now = useNow(30_000);
   const orgName = orgs?.find((o) => o.id === task.org)?.name;
+  const busy = agentsBusy(agents);
   return (
-    <Card aria-labelledby="in-room-heading">
-      <div className="flex items-baseline gap-2">
-        <h2 id="in-room-heading" className="text-body font-semibold">
+    <Card aria-labelledby="in-room-heading" className="gap-0 px-3 py-2.5">
+      <div className="flex items-baseline gap-2 pb-1.5">
+        <h2 id="in-room-heading" className="text-sm font-semibold">
           In this room
         </h2>
-        <span className="min-w-0 truncate text-sm text-fg-faint">
+        <span className="min-w-0 truncate text-xs text-fg-faint">
           {orgName ? `${orgName} agents + root agents` : "Root agents"}
         </span>
       </div>
       {task.team.map((id) => {
         const live = agents.find((a) => a.agent === id);
         const info = index.get(id);
-        const state = agentState(live, task.pausedReason);
-        const model = modelLabel(live, info?.model);
-        const meter = contextMeter(live?.usage);
         return (
-          <div key={id} className="flex items-start gap-2.5 border-t border-line-strong pt-2.5">
-            <AgentAvatar id={id} size={28} dot={agentDot(live)} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-              <span className="flex items-baseline gap-2">
-                <span className="truncate font-mono text-base font-medium">@{id}</span>
-                {info && (
-                  <span className="rounded-sm bg-selected px-1.5 py-0.5 text-xs text-fg-soft">
-                    {info.role}
-                  </span>
-                )}
-                <span className={cn("text-xs", STATE_TEXT[state.tone])}>{state.label}</span>
-              </span>
-              <span className="flex flex-wrap gap-1.5">
-                {info && (
-                  <span className="flex h-[26px] items-center rounded-sm border border-line-control px-2 font-mono text-xs text-fg-soft">
-                    {info.account}
-                  </span>
-                )}
-                <span className="flex h-[26px] items-center rounded-sm border border-line-control bg-blue-wash px-2 font-mono text-xs text-blue-soft">
-                  {model ?? "account default"}
-                </span>
-              </span>
-              {live?.nowDoing && state.tone === "amber" && (
-                <span aria-live="polite" title={live.nowDoing} className="truncate text-xs text-fg-faint">
-                  {live.nowDoing}
-                </span>
-              )}
-              {live && live.queued > 0 && (
-                <span className="tnum text-xs text-fg-faint">{live.queued} queued</span>
-              )}
-              {meter && <ContextMeter share={meter.share} label={meter.label} agent={id} />}
-            </div>
-            {live && <FreshButton task={task.id} agent={id} />}
-          </div>
+          <AgentRow
+            key={id}
+            task={task.id}
+            id={id}
+            live={live}
+            info={info}
+            state={agentState(live, task.pausedReason)}
+            account={accounts?.find((a) => a.id === info?.account)}
+            now={now}
+            change={id === task.team[0] ? <ChangeAgent task={task} busy={busy} /> : undefined}
+          />
         );
       })}
-      {task.team.length === 0 && <p className="text-sm text-fg-faint">No agent yet.</p>}
-    </Card>
-  );
-}
-
-/** A thin bar: how much of the agent's context window is in use. */
-function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
-  const percent = Math.round(share * 100);
-  return (
-    <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>
-      <meter
-        className="sr-only"
-        aria-label={`Context of @${agent}`}
-        aria-valuetext={`${label} tokens`}
-        min={0}
-        max={100}
-        value={percent}
-      />
-      {/* The native meter is for assistive tech; this bar is what the eye reads. */}
-      <span aria-hidden="true" className="h-1 w-24 overflow-hidden rounded-full bg-selected">
-        <span
-          className={cn("block h-full rounded-full", share >= 0.8 ? "bg-amber" : "bg-fg-dim")}
-          style={{ width: `${percent}%` }}
-        />
-      </span>
-      <span className="tnum text-xs text-fg-faint">{label}</span>
-    </span>
-  );
-}
-
-/** Replaces the agent's session with a fresh one that carries a handoff note (5.13). */
-function FreshButton({ task, agent }: { task: string; agent: string }) {
-  const toast = useToast();
-  const fresh = useMutation<unknown, ApiRequestError>({
-    mutationFn: () => cmd("room.fresh", { task, agent }, { reason: "Owner pressed Fresh session" }),
-    onError: (error) => toast("Could not start a fresh session", { detail: error.message, tone: "error" }),
-  });
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className="size-7 shrink-0"
-      aria-label={`Fresh session for @${agent}`}
-      title="Fresh session: start over with a handoff note"
-      disabled={fresh.isPending}
-      onClick={() => fresh.mutate()}
-    >
-      <RefreshCcw aria-hidden="true" />
-    </Button>
-  );
-}
-
-function ActionCard({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
-  const start = useStartTask();
-  const stop = useStopTask();
-  const close = useCloseTask();
-  const toast = useToast();
-  const copy: ActionCopy = actionCopy(task, yourTurn);
-  const fail = (title: string) => (error: ApiRequestError) =>
-    toast(title, { detail: error.message, tone: "error" });
-
-  return (
-    <Card aria-label="Task action" className={cn(copy.warm && "border-red-line")}>
-      <p className={cn("text-base text-pretty", ACTION_TEXT[copy.tone])}>{copy.text}</p>
-      {copy.kind === "start" && (
-        <Button
-          variant="primary"
-          size="xl"
-          disabled={start.isPending}
-          onClick={() => start.mutate(task.id, { onError: fail("Could not start") })}
-        >
-          <Play aria-hidden="true" />
-          Start
-        </Button>
-      )}
-      {copy.kind === "resume" && (
-        <Button
-          variant="primary"
-          size="xl"
-          disabled={start.isPending}
-          onClick={() => start.mutate(task.id, { onError: fail("Could not resume") })}
-        >
-          <RotateCw aria-hidden="true" />
-          Resume
-        </Button>
-      )}
-      {copy.kind === "done" && (
-        <Button
-          variant="primary"
-          size="xl"
-          disabled={close.isPending}
-          onClick={() => close.mutate(task.id, { onError: fail("Could not mark it done") })}
-        >
-          <Check aria-hidden="true" />
-          Mark done
-        </Button>
-      )}
-      {copy.kind === "stop" && (
-        <Button
-          size="xl"
-          className="bg-field font-medium"
-          disabled={stop.isPending}
-          title="Stop every agent in this task"
-          onClick={() => stop.mutate(task.id, { onError: fail("Could not stop") })}
-        >
-          <OctagonX aria-hidden="true" />
-          Stop all
-        </Button>
+      {task.team.length === 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-fg-faint">No agent yet.</p>
+          <ChangeAgent task={task} busy={busy} />
+        </div>
       )}
     </Card>
   );
@@ -232,10 +85,10 @@ function BranchCard({ task }: { task: Task }) {
   const shown = (path: string) => (home ? collapseHome(path, home) : path);
 
   return (
-    <Card aria-label="Branch and worktree" className="gap-3">
+    <Card aria-label="Branch and worktree" className="gap-2 px-3 py-2.5">
       {task.repos.map((repo) => (
-        <div key={repo.project} className="flex flex-col gap-1.5">
-          <span className="text-sm text-fg-faint">
+        <div key={repo.project} className="flex flex-col gap-1">
+          <span className="text-xs text-fg-faint">
             Branch and worktree{task.repos.length > 1 && <span className="font-mono"> · {repo.project}</span>}
           </span>
           <CopyValue
@@ -255,15 +108,13 @@ function BranchCard({ task }: { task: Task }) {
               {shown(repo.worktree)}
             </CopyValue>
           ) : (
-            <span className="text-xs text-fg-faint">
-              Worktree not created yet. It is made when the task starts.
-            </span>
+            <span className="text-xs text-fg-faint">No worktree yet. Start makes one.</span>
           )}
         </div>
       ))}
       {task.repos.length === 0 && task.kind === "chat" && (
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm text-fg-faint">Task folder</span>
+          <span className="text-xs text-fg-faint">Task folder</span>
           <CopyValue
             value={task.folder}
             label="Copy task folder path"
@@ -295,7 +146,7 @@ function CopyValue({
 }) {
   return (
     <div className="group flex items-start gap-1">
-      <span className="min-w-0 flex-1 font-mono [overflow-wrap:anywhere] text-sm leading-[1.45]">
+      <span className="min-w-0 flex-1 font-mono [overflow-wrap:anywhere] text-xs leading-[1.45]">
         {children}
       </span>
       <Button

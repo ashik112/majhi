@@ -54,7 +54,17 @@ Done when: after a few runs on two orgs, Health and usage shows correct totals p
 
 ## Phase 2b: The boss and staying cheap (in progress)
 
-Branch `phase-2b` (worktree `~/Work/majhi-2b`, so the owner's checkout keeps running the stable `phase-2a-ui`), from `phase-2a-ui`.
+Wave 1 and the decision provider are merged into `main`. Wave 2 (the run manager) is task PRV-15, from `phase-2b`, following `docs/briefs/2b-wave2.md`. PRV-14 is the parent: it tracks the phase and runs the integration step once PRV-15 is done.
+
+### Done when, status
+
+- [ ] A fake agent pushed past 80% context gets compacted, with the event shown in the room. PRV-15.
+- [x] The boss creates an org and an agent after the owner approves (`e2e/phase2b-boss.spec.ts`).
+- [ ] A running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact. PRV-15.
+- [ ] An `auto` agent gets a model and effort picked by Laya, with the decision recorded on the run. The pick itself is built (`decisions.pickModel`); calling it at session start is PRV-15.
+- [x] With Laya stopped, the chain falls back to the ACP simulation, then rules (`decisions/integration.test.ts`).
+- [x] Task links, and no manual work outside majhi.
+- [ ] Agents on demand, concurrency limits, and the two-agents-on-one-account check. PRV-15.
 
 ### Goal
 
@@ -63,12 +73,13 @@ Done when: a fake agent pushed past 80% context gets compacted with the event sh
 ### What I will build, in order
 
 1. **Contract** (done): settings (context, limits, resume, approval policy), org overrides, task links on summaries, agent live states `queued`/`paused`, room items `approval`, `secret-request`, `context`, and commands: `tasks.link|unlink`, `room.fresh|approve|secret`, `secrets.list|save|remove`, `history.list|undo`, `settings.get|set`, `policy.set`, `boss.chat`, `health.run|fix`, `system.version|update`.
-2. **Wave 1, in parallel:**
+2. **Wave 1, in parallel** (done):
    - **Boss:** `majhi-admin` MCP server exposing every command as a tool, attached to the boss's sessions; approval policy with confirm cards; undo from config history; secret capture and secret requests; Cmd J boss chat; onboarding step 4; Hub setup becomes the boss conversation, with history and settings.
    - **Task links:** parent and child tasks, `depends-on` with the Waiting on chip, progress on parents, links in TASK.md, in the New task dialog and the task view.
    - **No manual work:** Health view with every doctor check and Fix buttons; Update ready and one-click update through the host helper; warning before mounting a macOS-protected folder; majhi and Docker start at login.
-3. **Wave 2:** one agent owns the run manager: context budget (meter, native compaction, handoff, rotation, Fresh session), checkpoints after every turn, automatic resume after sleep, restart, crash and lost internet, agents on demand with idle stop, concurrency limits with a queue.
-4. **Integration:** e2e for the done-when with the fake adapter, `make ci`, then the owner uses it.
+   - **Decision provider** (done, moved in from Phase 3): Laya on the Mac, the provider chain, `majhi-decide`, the Decisions section in Hub setup.
+3. **Wave 2** (PRV-15, not started): one agent owns the run manager: context budget (meter, native compaction, handoff, rotation, Fresh session), checkpoints after every turn, automatic resume after sleep, restart, crash and lost internet, agents on demand with idle stop, concurrency limits with a queue, and the decision hooks (`attachTool`, `auto` model picks).
+4. **Integration** (PRV-14, after PRV-15): e2e for the done-when with the fake adapter, `make ci`, then the owner uses it.
 
 ### How I will test it
 
@@ -87,6 +98,21 @@ Done when: a fake agent pushed past 80% context gets compacted with the event sh
 - **Try it**: with a signed-in boss, press Cmd J and ask for an org. Changes wait for Approve unless you asked for them in the chat. Hub setup shows History and Settings.
 - **Tests**: unit (decision table, redaction, detector, name derivation, history parsing, settings merge, web models); integration (MCP with the SDK client, 401, revoked token, approve and reject through the fake adapter, undo and conflict, secret capture and `room.secret`); E2E `e2e/phase2b-boss.spec.ts` (needs the boss from `phase1.spec.ts`, so run the whole suite: `PATH=$PWD/apps/server/node_modules/.bin:$PATH MAJHI_E2E_PORT=7081 npx playwright test`).
 - **Known gaps**: A pending card whose input held a secret cannot run after a restart. The boss's tool calls are not rate limited.
+
+### Task links (built)
+
+- **Parent and child tasks.** A task has at most one parent. Parents show their children nested with progress and close when every child is done. When a parent is removed, its children become top-level.
+- **Depends on.** Manual `depends-on` links with cycle checks and a "Waiting on" chip on the board and in the task view. A task created with unmet dependencies stays `ready` and starts on its own when they are met. `tasks.start` answers 409 "Waiting on X, Y". Removing a dependency pauses its waiting tasks and asks what to do. `merged` counts as met when the target is `done`, until MRs exist (Phase 4).
+- **TASK.md** lists related tasks.
+- **Tests.** E2E `e2e/phase2b-links.spec.ts`: a dependent task waits, shows it on the board and starts when its dependency is done; a parent shows progress and closes.
+
+### Decision provider (built)
+
+- **Chain.** Laya, then the ACP stand-in agent, then rules, with every decision logged. Jev exists behind an unverified client and stays off. The order changes through the config history.
+- **Laya on the Mac.** The host helper installs `laya-mlx` in `~/.majhi/laya/venv` and runs a local service that loads the model on the first question and unloads it after 10 idle minutes.
+- **`majhi-decide`** at `/mcp/decide`, with its own tokens and a per-run call limit. `pickModel` for `auto` agents, with a confidence floor, is built behind the run manager interface; wave 2 calls it.
+- **Hub setup** has a Decisions section: install, provider order, an "Ask the decision model" box and recent decisions.
+- **Tests.** `apps/server/src/decisions/*.test.ts` (Laya through a fake helper, the fallback chain, order changes, model picks, the decide tool limit) and `e2e/phase2b-decisions.spec.ts`.
 
 ### No manual work outside majhi (built)
 

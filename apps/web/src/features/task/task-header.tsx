@@ -13,10 +13,11 @@ import { useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
 import { statusInfo } from "../tasks/model";
 import { CostText } from "../usage/cost";
+import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
 
-/** Back link, key, status, project and org; the title; then how the task relates to others. */
+/** One line with the back link, key, status, project, org and the main action; the title; the links. */
 export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
@@ -26,21 +27,21 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const repos = task.repos.map((r) => r.project);
 
   return (
-    <header className="flex shrink-0 flex-col gap-2 border-b border-line px-8 pt-3.5 pb-4">
-      <div className="flex items-center gap-3">
+    <header className="flex shrink-0 flex-col gap-1 border-b border-line px-5 pt-2 pb-2.5">
+      <div className="flex min-h-8 items-center gap-2.5 text-sm">
         <Link
           to="/"
           search={orgSearch(filter)}
-          className="-ml-1 flex h-7 shrink-0 items-center gap-1.5 rounded-sm px-1 text-base text-fg-muted transition-colors duration-150 hover:text-fg"
+          aria-label="Back to board"
+          title="Back to board"
+          className="-ml-1 grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-raised hover:text-fg"
         >
           <ArrowLeft aria-hidden="true" className="size-3.5" />
-          Board
         </Link>
-        <span aria-hidden="true" className="h-4 w-px bg-line-strong" />
-        <span className="font-mono text-sm text-fg-muted">{task.id}</span>
+        <span className="font-mono text-fg-muted">{task.id}</span>
         <span
           className={cn(
-            "rounded-full border border-line-control bg-raised px-2.5 py-1 text-sm leading-[1.25] whitespace-nowrap",
+            "rounded-full border border-line-control px-2 py-px text-xs whitespace-nowrap",
             TONE_CLASS[info.tone],
           )}
         >
@@ -49,20 +50,21 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
         {repos.length > 0 ? (
           <span
             title={`Project: ${repos.join(", ")}`}
-            className="flex min-w-0 items-center gap-1.5 rounded-[5px] bg-selected px-2 py-1 font-mono text-xs text-fg-soft"
+            className="flex min-w-0 items-center gap-1 font-mono text-xs text-fg-soft"
           >
-            <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
+            <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
             <span className="truncate">{repos.join(" + ")}</span>
           </span>
         ) : (
-          <span className="text-sm text-fg-faint">{task.kind === "chat" ? "chat" : "no project"}</span>
+          <span className="text-xs text-fg-faint">{task.kind === "chat" ? "chat" : "no project"}</span>
         )}
-        <span className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
           <span className="truncate">{org?.name ?? "No org"}</span>
         </span>
-        <div className="-my-1 ml-auto flex items-center gap-3">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
+          <TaskAction task={task} yourTurn={yourTurn} />
           <TaskMenu task={task} />
         </div>
       </div>
@@ -78,7 +80,7 @@ function TaskCost({ taskId }: { taskId: string }) {
   const all = summary.data?.all;
   if (!all || all.turns === 0 || summary.isPlaceholderData) return null;
   return (
-    <span className="flex items-baseline gap-1 text-sm text-fg-muted whitespace-nowrap">
+    <span className="mr-2 flex items-baseline gap-1 text-sm text-fg-muted whitespace-nowrap">
       <span className="sr-only">Cost so far: </span>
       <CostText totals={all} className="text-fg-soft" />
       <span className="tabular-nums">· {formatTokens(all.totalTokens)} tokens</span>
@@ -104,12 +106,12 @@ function EditableTitle({ task }: { task: Task }) {
 
   if (draft === undefined) {
     return (
-      <h1 className="text-xl leading-[1.25] font-semibold text-balance">
+      <h1 className="text-lg leading-snug font-semibold">
         <button
           type="button"
           title={`${task.title} (click to edit)`}
           onClick={() => setDraft(task.title)}
-          className="line-clamp-2 cursor-text rounded-xs text-left hover:bg-raised"
+          className="line-clamp-1 cursor-text rounded-xs text-left hover:bg-raised"
         >
           {task.title}
         </button>
@@ -129,7 +131,7 @@ function EditableTitle({ task }: { task: Task }) {
         if (e.key === "Enter") save();
         if (e.key === "Escape") setDraft(undefined);
       }}
-      className="h-9 w-full rounded-md border border-line-control bg-field px-2 text-xl font-semibold text-fg focus-visible:border-blue focus-visible:outline-none"
+      className="h-8 w-full rounded-md border border-line-control bg-field px-2 text-lg font-semibold text-fg focus-visible:border-blue focus-visible:outline-none"
     />
   );
 }

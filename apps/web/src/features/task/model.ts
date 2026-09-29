@@ -47,11 +47,18 @@ export function agentDot(live: AgentLive | undefined): DotTone {
   }
 }
 
-/** "opus-5.5" or "opus-5.5 · high": what the model chip says. */
-export function modelLabel(live: AgentLive | undefined, configured: string | undefined): string | undefined {
-  const model = live?.model ?? configured;
-  if (!model) return undefined;
-  return live?.effort ? `${model} · ${live.effort}` : model;
+/** Whether an agent of the task is busy the way the server counts it (queued, starting, working, waiting). */
+export function agentsBusy(agents: readonly AgentLive[]): boolean {
+  return agents.some(
+    (a) =>
+      a.status === "queued" || a.status === "starting" || a.status === "working" || a.status === "waiting",
+  );
+}
+
+/** The row's second line: what a busy agent is doing now, else "Idle". Always present, so the row keeps its height. */
+export function nowDoingLine(live: AgentLive | undefined): string {
+  const busy = live?.status === "working" || live?.status === "starting";
+  return busy && live.nowDoing ? live.nowDoing : "Idle";
 }
 
 export type ActionKind = "start" | "stop" | "resume" | "done" | "none";

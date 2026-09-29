@@ -9,5 +9,6 @@ pnpm exec tsc -p e2e
 pnpm exec vitest run
 pnpm --filter @majhi/web build
 pnpm --filter @majhi/server build
-pnpm exec playwright install chromium
+# The image already has Chromium; download it only when it is missing.
+[ -d "${PLAYWRIGHT_BROWSERS_PATH:-/nonexistent}" ] || pnpm exec playwright install chromium
 pnpm exec playwright test

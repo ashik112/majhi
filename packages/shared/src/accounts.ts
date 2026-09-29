@@ -150,6 +150,22 @@ export type AgentFrontmatter = z.infer<typeof AgentFrontmatterSchema>;
 /** What callers send: defaults not yet applied. */
 export type AgentFrontmatterInput = z.input<typeof AgentFrontmatterSchema>;
 
+/**
+ * May this agent work in the org? Root agents go where their `where` says. An org agent
+ * works in its own org, and in another only when `where` names it. A task without an org
+ * (`org` undefined) is for root agents.
+ */
+export function canWorkIn(
+  agent: { scope: string; where: readonly string[] },
+  org: string | undefined,
+): boolean {
+  const anywhere = agent.where.includes("anywhere");
+  if (org === undefined) return agent.scope === "root" && anywhere;
+  if (agent.scope === "root") return anywhere || agent.where.includes(org);
+  if (agent.scope === org) return anywhere || agent.where.includes(org);
+  return agent.where.includes(org);
+}
+
 export const AgentSchema = z.object({
   frontmatter: AgentFrontmatterSchema,
   /** Markdown body after the frontmatter. */
