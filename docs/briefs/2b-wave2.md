@@ -1,6 +1,6 @@
 # Brief: Phase 2b, wave 2 (the run manager)
 
-You are building the rest of Phase 2b of majhi, inside majhi itself. You own `apps/server/src/runs/` (the run manager) for this work. Another agent builds the decision provider (Laya, `majhi-decide`) at the same time on another branch; you only call it through the interface in `apps/server/src/decisions/api.ts`.
+You are building the rest of Phase 2b of majhi, inside majhi itself. You own `apps/server/src/runs/` (the run manager) for this work. The decision provider (Laya, `majhi-decide`) is already built: `services.decisions` implements the `Decisions` interface in `apps/server/src/decisions/api.ts`; you wire it into the run manager.
 
 ## Read first
 
@@ -32,9 +32,9 @@ You are building the rest of Phase 2b of majhi, inside majhi itself. You own `ap
 4. **Agents on demand and limits (5.17).**
    - Stop an idle agent process after `limits.idle_timeout`. Its next message resumes it (session load, else a fresh session with a handoff note).
    - Enforce `agents_max`, `per_account` and `per_task` when starting a process. Extra starts wait in a queue in request order; `AgentLive` shows `queued` with its `slot`, and the room shows "Queued, #2 in line". Settings changes apply live.
-5. **Decision hooks** (the interface is in `apps/server/src/decisions/api.ts`; the implementation arrives separately, so use `noDecisions` in tests and keep it optional in the run deps):
+5. **Decision hooks** (interface in `apps/server/src/decisions/api.ts`; pass `services.decisions` to the run manager, keep it optional in the run deps and use `noDecisions` in tests):
    - For every agent session, call `decisions.attachTool(task, agent)`. If it returns a server, add it to `mcpServers` next to majhi-admin. Revoke the token when the session ends.
-   - At session start, for an agent whose `model` or `effort` is `auto`, call `decisions.pickModel(...)` with the offered options (narrowed to the agent's `models` list). Apply the pick with `setOption`. Post a system item with the reason, for example "Laya picked sonnet, effort medium (0.82)". Record the choice and the decision id on the run. Without a pick, keep the ACP default and say so.
+   - At session start, for an agent whose `model` or `effort` is `auto`, call `decisions.pickModel(...)` with the offered options (narrowed to the agent's `models` list). Pass each option's description, not only its id (Laya chooses much better with them), and use a confidence floor of 0.4 for model picks (Laya spreads probability across similar options; 0.6 rejects most picks). Apply the pick with `setOption`. Post a system item with the reason, for example "Laya picked sonnet, effort medium (0.82)". Record the choice and the decision id on the run. Without a pick, keep the ACP default and say so.
 6. **Two agents on one account (5.2).** Using the fake adapter, run two sessions on the same account at once through the run manager and prove neither breaks the other. Write in `docs/DECISIONS.md` how the owner can confirm it with a real account, and what the result means for the "one config home per account" decision.
 
 ## Things other agents left for you
@@ -49,6 +49,9 @@ You are building the rest of Phase 2b of majhi, inside majhi itself. You own `ap
   - Pass `mcpServers` on `session/load` too.
 
 ## Test
+
+Follow the testing rules in `CLAUDE.md`: tests only for crucial logic, typecheck and touched tests while working, the full suite once at the end.
+
 
 - Unit tests for the logic: thresholds and merge order, compaction decisions, the handoff note template and the durable-state note, the limit queue order, offline and wake decisions, checkpoint commit rules.
 - Integration tests with the fake adapter in `packages/acp/testing`. Extend the fake with a flag that reports rising usage per turn, and a `/compact` that lowers it (or a flag that makes `/compact` do nothing), so all three compaction paths run.
