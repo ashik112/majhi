@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../apps/server/src/secrets/store.ts";
 import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
-import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, SECRETS_KEY_FILE } from "./fixture.ts";
+import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FILE } from "./fixture.ts";
 
 // Keep the owner's own git config (signing, hooks, templates) out of the fixture and the server.
 const gitEnv = {
@@ -106,6 +106,9 @@ Object.assign(process.env, gitEnv, {
   MAJHI_ADAPTER_CLAUDE: command("claude"),
   MAJHI_ADAPTER_CODEX: command("codex"),
   MAJHI_USAGE_CLAUDE: JSON.stringify([fakeUsage(fakes).command, ...fakeUsage(fakes).args]),
+  // Tests cannot cut the network: majhi counts as offline while this file exists, checked twice a second.
+  MAJHI_NET_PROBE: `file:${OFFLINE_FILE}`,
+  MAJHI_NET_PROBE_MS: "500",
 });
 
 // Dynamic on purpose: main.ts reads process.env as it loads, and a static import would run

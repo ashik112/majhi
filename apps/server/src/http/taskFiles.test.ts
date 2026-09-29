@@ -35,6 +35,29 @@ describe("task files", () => {
   });
   afterEach(() => cleanup());
 
+  it("serves handoff notes, and nothing else hidden, not even through a note's name", async () => {
+    const folder = join(dir, "ACM-1");
+    await mkdir(join(folder, ".handoffs", "deeper"), { recursive: true });
+    await writeFile(join(folder, ".handoffs", "acme-builder-2.md"), "## Next step\n");
+    await writeFile(join(folder, ".handoffs", "notes.txt"), "x");
+    await writeFile(join(folder, ".handoffs", "deeper", "a-1.md"), "x");
+    await symlink(join(folder, ".env"), join(folder, ".handoffs", "sneaky-1.md"));
+    await symlink(join(dir, "outside.txt"), join(folder, ".handoffs", "outside-1.md"));
+    const ok = await get(".handoffs/acme-builder-2.md");
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("## Next step\n");
+    for (const path of [
+      ".handoffs/notes.txt",
+      ".handoffs/deeper/a-1.md",
+      ".handoffs/sneaky-1.md",
+      ".handoffs/outside-1.md",
+      ".handoffs/..%2F.env",
+      ".git/config",
+    ]) {
+      expect((await get(path)).status, path).not.toBe(200);
+    }
+  });
+
   it("answers size and modified time for ?meta=1, under the same rules", async () => {
     const res = await get("media/chart.png?meta=1");
     expect(res.status).toBe(200);

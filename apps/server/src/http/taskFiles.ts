@@ -99,7 +99,10 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
     // Empty segments (a trailing slash) are dropped; `..` and dot names are refused outright.
     segments = segments.filter((s) => s !== "");
     if (segments.length === 0) return refuse(c, 404, "Not found.");
-    if (segments.some((s) => s.startsWith("."))) return refuse(c, 403, "Hidden files are not served.");
+    const notes = prefix === PREFIX;
+    if (!(notes && isHandoffNote(segments)) && segments.some((s) => s.startsWith("."))) {
+      return refuse(c, 403, "Hidden files are not served.");
+    }
 
     let root: string;
     let target: string;
@@ -110,7 +113,12 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
       return refuse(c, 404, "Not found.");
     }
     const rel = relative(root, target);
-    if (rel === "" || rel.startsWith("..") || rel.split(sep).some((s) => s.startsWith("."))) {
+    const parts = rel.split(sep);
+    if (
+      rel === "" ||
+      rel.startsWith("..") ||
+      (!(notes && isHandoffNote(parts)) && parts.some((s) => s.startsWith(".")))
+    ) {
       return refuse(c, 403, `That file is outside the ${what}.`);
     }
     const info = await stat(target).catch(() => undefined);
@@ -170,4 +178,16 @@ export function parseRange(
   }
   if (start >= size || start > end) return "unsatisfiable";
   return [start, end];
+}
+
+/**
+ * The one hidden place the task folder serves: handoff notes, `.handoffs/<agent>-<n>.md` (5.13),
+ * so the room can open them. Nothing else under a dot name, and nothing deeper.
+ */
+export function isHandoffNote(segments: readonly string[]): boolean {
+  return (
+    segments.length === 2 &&
+    segments[0] === ".handoffs" &&
+    /^[a-z0-9][a-z0-9-]*-\d+\.md$/.test(segments[1] ?? "")
+  );
 }

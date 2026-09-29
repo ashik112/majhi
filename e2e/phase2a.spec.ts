@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 import { HOST_HOME, MAJHI_HOME } from "./fixture.ts";
@@ -214,7 +214,11 @@ test("asking for a file in the repo writes it to the worktree and lists it under
 
   const file = join(apiTask.folder, "api", "HEALTH.md");
   expect(readFileSync(file, "utf8")).toBe("# Health\n\nok\n");
-  expect(git(join(apiTask.folder, "api"), "status", "--porcelain")).toContain("HEALTH.md");
+  // The turn ended with a checkpoint: the file is committed on the task branch, nothing is left over.
+  const worktree = join(apiTask.folder, "api");
+  expect(git(worktree, "log", "-1", "--format=%s")).toMatch(/^wip\([A-Z]+-\d+\): checkpoint \d+$/);
+  expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toContain("HEALTH.md");
+  expect(git(worktree, "status", "--porcelain")).toBe("");
 
   const changes = panel(page);
   await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
@@ -487,6 +491,8 @@ test("removing a task with uncommitted changes is refused, and Remove anyway rem
   const worktree = join(apiTask.folder, "api");
   expect(existsSync(worktree)).toBe(true);
   expect(git(API_SOURCE, "worktree", "list")).toContain(worktree);
+  // Turns end with a checkpoint, so only a change made outside a turn is left uncommitted.
+  writeFileSync(join(worktree, "HEALTH.md"), "# Health\n\nedited by hand\n");
 
   await page.getByRole("button", { name: "Task menu" }).click();
   await page.getByRole("menuitem", { name: "Remove task" }).click();

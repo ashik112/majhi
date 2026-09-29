@@ -19,3 +19,6 @@ export const MAJHI_HOME = join(HOST_HOME, ".majhi");
 
 /** The age identity for `secrets.age`, outside `MAJHI_HOME` like the container's secret. */
 export const SECRETS_KEY_FILE = join(E2E_ROOT, "secrets", "key");
+
+/** While this file exists, majhi's network probe says offline (`MAJHI_NET_PROBE=file:...`). */
+export const OFFLINE_FILE = join(E2E_ROOT, "offline");
