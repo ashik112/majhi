@@ -150,7 +150,7 @@ Each step is one entry in a step list, so later phases add steps without redesig
 | Claude | `@agentclientprotocol/claude-agent-acp` (the old `@zed-industries/claude-agent-acp` is deprecated) |
 | Codex | `@agentclientprotocol/codex-acp` (replaces `@zed-industries/codex-acp`) |
 | More agents later | The **ACP Registry** (agentclientprotocol.com/get-started/registry) lists ACP agents such as Cursor, OpenCode and Cline with install info. New tools are added from it. |
-| Decision models | **Laya** (open weights, Apache 2.0, `pip install laya`), run locally. **TypeSafe Jev** (hosted API, needs a key), optional. An ACP agent can stand in for either. See 5.12. |
+| Decision models | **Laya** (open weights, Apache 2.0), run locally: `laya-mlx` natively on Apple silicon Macs, `laya` (PyTorch) in Docker everywhere else. **TypeSafe Jev** (hosted API, needs a key), optional. An ACP agent can stand in for either. See 5.12. |
 | Skills | Agent Skills format (SKILL.md). Install with the open `skills` CLI (`npx skills add ...`). |
 | Semantic code tools | **Serena** MCP server (LSP-based symbol lookup and editing) |
 | GitHub | `gh` CLI |
@@ -174,15 +174,18 @@ docker compose
 ├── runner     image with agent CLIs + ACP adapters + gh + glab + git + Serena
 │              + language servers + kubectl and other connection CLIs;
 │              the server spawns agent processes here
-└── laya       local Laya decision model (Python), behind a compose profile
-               that is on by default; see 5.12
+└── laya       local Laya decision model (Python, PyTorch on CPU), behind a
+               compose profile; used on Linux, Windows and Intel Macs, and as
+               the fallback on Apple silicon; see 5.12
 
 host helper   `apps/host`, a small Node process on the owner's machine (not in
               Docker), installed by `make up` as a login item (macOS LaunchAgent).
               It opens no port: it long-polls the server over the published
               127.0.0.1 port with a token from `~/.majhi/host.token`, and does
               only fixed jobs: list host folders, suggest roots, remount roots.
-              Later it is also where MAJHI_RUNNER=native spawns agents.
+              On Apple silicon it also runs Laya natively with `laya-mlx`
+              (MLX on the GPU). Later it is also where MAJHI_RUNNER=native
+              spawns agents.
 
 v1 can merge `server` and `runner` into one container if that is simpler. Keep the process-spawning code behind an interface so agents can later run in their own container per run.
 
@@ -402,7 +405,7 @@ Root agents can also:
 Decision models answer typed questions against a state in one pass, with probabilities and a confidence score. They do not write text and do not speak ACP, so they are not agents. majhi uses them for small, frequent decisions.
 
 - One interface, `DecisionProvider`, with four implementations:
-  - **laya:** the default. Laya open-weights model in the `laya` service. Local, free, nothing leaves the machine. Weak without fine-tuning, reads about 512 tokens per state (English checkpoint), and gets worse past about 20 options, so questions must stay small. Its speed on CPU inside Docker on macOS must be measured in the phase that builds it. If it is too slow, run it natively on the host (Laya-MLX), the same way as `MAJHI_RUNNER=native`.
+  - **laya:** the default. Laya open-weights model (`convaiinnovations/laya`, 421M parameters, about 850 MB). Local, free, nothing leaves the machine. On Apple silicon Macs it runs natively through the host helper with `laya-mlx`, on the GPU. On Linux, Windows and Intel Macs, or when the native one is not available, it runs in the `laya` Docker service with `laya` on PyTorch CPU. Both load on first use and unload when idle. Weak without fine-tuning, reads about 512 tokens per state (English checkpoint), and gets worse past about 20 options, so questions must stay small.
   - **jev:** TypeSafe Jev hosted API. Needs an API key in `secrets.age`. Sends the state off the machine, so it is off by default and the owner enables it explicitly.
   - **acp:** simulates Jev or Laya with an ACP agent, for when neither is available. majhi sends the same state and typed questions as a prompt to a chosen agent (default: the Dispatcher, on its cheapest model and lowest effort) and asks for JSON only. The answer is checked with the same zod schema as the other providers, and retried once if it does not match. Its probabilities are self-reported, not calibrated, so the UI labels them as estimated.
   - **rules:** plain code, no model (the task box parser, fixed defaults). Always available as the last fallback.
