@@ -72,6 +72,7 @@ export interface AccountProbe {
 }
 
 export { buildEnv } from "./env.ts";
+export { prepareHome } from "./home.ts";
 export { loginCommand } from "./login.ts";
-export { probeAccount } from "./probe.ts";
+export { cliVersion, probeAccount } from "./probe.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
