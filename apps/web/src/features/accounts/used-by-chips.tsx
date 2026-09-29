@@ -42,9 +42,11 @@ export function AgentChip({ agent, className }: { agent: OkAgent; className?: st
         className,
       )}
       aria-label={agent.isBoss ? `${id}, boss` : id}
+      title={agent.isBoss ? "The boss" : undefined}
     >
       <span className="truncate">@{id}</span>
-      {agent.isBoss && <span aria-hidden="true">boss</span>}
+      {/* The amber chip already marks the boss; the word only helps when the id does not say it. */}
+      {agent.isBoss && !id.includes("boss") && <span aria-hidden="true">boss</span>}
     </Link>
   );
 }

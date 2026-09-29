@@ -6,6 +6,13 @@ import { HOST_HOME, MAJHI_HOME } from "./fixture.ts";
 // One server, one majhi.yaml: each test builds on the state the previous one left.
 test.describe.configure({ mode: "serial" });
 
+// Setup now goes on to accounts and the boss. Phase 0 is about roots and repos, so every test after
+// the first run behaves like an owner who skipped that part.
+test.beforeEach(async ({ context }, info) => {
+  if (info.title.startsWith("first run")) return;
+  await context.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));
+});
+
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 const rows = (page: Page) => page.locator("[data-repo-row]");
 const row = (page: Page, name: string) => rows(page).filter({ hasText: name });
@@ -49,6 +56,10 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await expect(work).toHaveAttribute("aria-pressed", "true");
   await expect(chosenRoots(page).getByRole("listitem")).toHaveText([/^~\/Work/]);
   await page.getByRole("button", { name: /Save roots/ }).click();
+
+  // Step 2 (first account) follows; Phase 0 only cares about the repos, so skip the rest of setup.
+  await expect(progress).toContainText("Step 2 of 3");
+  await page.getByRole("button", { name: "Skip for now" }).click();
 
   await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(3);
@@ -256,7 +267,11 @@ test("a broken majhi.yaml shows the file and each error, and Retry recovers", as
     writeFileSync(file, good);
   }
 
-  await page.getByRole("button", { name: "Retry" }).click();
+  // The live feed may recover the screen by itself before Retry is clicked; either way it recovers.
+  await page
+    .getByRole("button", { name: "Retry" })
+    .click({ timeout: 2_000 })
+    .catch(() => {});
   await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(4);
 });

@@ -65,7 +65,7 @@ export function StudioOverlay({ tab, children }: { tab: StudioTab; children: Rea
         id="studio-panel"
         role="tabpanel"
         aria-labelledby={`studio-tab-${tab}`}
-        className="flex min-h-0 flex-1"
+        className="flex min-h-0 min-w-0 flex-1"
       >
         {children}
       </div>

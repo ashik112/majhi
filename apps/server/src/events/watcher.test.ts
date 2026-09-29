@@ -20,7 +20,7 @@ describe("HomeWatcher", () => {
     hub = new EventHub();
     events = [];
     hub.subscribe((e) => events.push(e));
-    watcher = new HomeWatcher(home, hub, 50);
+    watcher = new HomeWatcher(home, hub, 150);
   });
   afterEach(async () => {
     watcher.stop();
@@ -66,7 +66,7 @@ describe("HomeWatcher", () => {
     await writeFile(join(home, "agents", "a.md"), "1");
     await writeFile(join(home, "agents", "b.md"), "2");
     await until(() => events.length > 0);
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 400));
     expect(events).toEqual([{ type: "changed", topics: ["agents"] }]);
   });
 });

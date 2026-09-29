@@ -8,6 +8,9 @@
  *   <tmp>/majhi-e2e/home/Empty                  no repos, so it is never suggested
  *   <tmp>/majhi-e2e/home/.ssh/config            defines that alias
  *   <tmp>/majhi-e2e/home/.majhi                 empty, so majhi starts in first-run
+ *   <tmp>/majhi-e2e/secrets/key                 throwaway age identity for secrets.age
+ *
+ * Agent CLIs are fake adapters that start signed out (see @majhi/acp/testing).
  *
  * The helper runs with that home as HOME and without MAJHI_REPO, so it browses
  * and suggests folders but never remounts (`canRemount` is false) and never
@@ -17,9 +20,11 @@
  */
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME } from "./fixture.ts";
+import { generateKey } from "../apps/server/src/secrets/store.ts";
+import { fakeAdapter } from "../packages/acp/testing/index.ts";
+import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, SECRETS_KEY_FILE } from "./fixture.ts";
 
 // Keep the owner's own git config (signing, hooks, templates) out of the fixture and the server.
 const gitEnv = {
@@ -58,12 +63,30 @@ writeFileSync(
 );
 mkdirSync(MAJHI_HOME, { recursive: true });
 
+// The age identity lives outside MAJHI_HOME, as it does in the container.
+mkdirSync(dirname(SECRETS_KEY_FILE), { recursive: true });
+writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
+
+// Fake adapters start signed out, so the login flow is real. Three models and three efforts
+// make the editor's lists worth choosing from.
+const fakes = {
+  models: ["fake-model-a", "fake-model-b", "fake-model-c"],
+  efforts: ["low", "medium", "high"],
+};
+const command = (tool: "claude" | "codex") => {
+  const { command, args } = fakeAdapter(tool, fakes);
+  return JSON.stringify([command, ...args]);
+};
+
 Object.assign(process.env, gitEnv, {
   MAJHI_HOST: "127.0.0.1",
   MAJHI_PORT: String(E2E_PORT),
   HOST_HOME,
   MAJHI_HOME,
   MAJHI_VERSION: "e2e",
+  MAJHI_SECRETS_KEY_FILE: SECRETS_KEY_FILE,
+  MAJHI_ADAPTER_CLAUDE: command("claude"),
+  MAJHI_ADAPTER_CODEX: command("codex"),
 });
 
 // Dynamic on purpose: main.ts reads process.env as it loads, and a static import would run

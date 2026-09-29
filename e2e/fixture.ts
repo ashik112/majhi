@@ -13,3 +13,6 @@ export const HOST_HOME = join(E2E_ROOT, "home");
 
 /** majhi's config folder (`MAJHI_HOME`). */
 export const MAJHI_HOME = join(HOST_HOME, ".majhi");
+
+/** The age identity for `secrets.age`, outside `MAJHI_HOME` like the container's secret. */
+export const SECRETS_KEY_FILE = join(E2E_ROOT, "secrets", "key");

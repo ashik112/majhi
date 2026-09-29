@@ -1,5 +1,5 @@
 import { IdSchema } from "@majhi/shared";
-import { type FormEvent, useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,11 @@ import { describeError } from "@/lib/errors";
 import { useCreateOrg } from "@/lib/studio-queries";
 import { ORG_COLORS, orgIdFromName, suggestOrgColor } from "./model";
 
-/** Inline "New org" form: a name, an id derived from it (editable) and a color. */
+/**
+ * Inline "New org" form: a name, an id derived from it (editable) and a color. It sits inside the
+ * add-account form, and forms cannot nest (the browser would submit the inner one natively), so it
+ * is a plain group that submits on Enter and on its button.
+ */
 export function NewOrgForm({
   orgCount,
   onCreated,
@@ -27,8 +31,7 @@ export function NewOrgForm({
 
   const shownId = idEdited ? id : orgIdFromName(name);
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit() {
     if (name.trim() === "") return setProblem("Give the org a name");
     const parsed = IdSchema.safeParse(shownId);
     if (!parsed.success) return setProblem(parsed.error.issues[0]?.message ?? "Invalid id");
@@ -39,9 +42,19 @@ export function NewOrgForm({
     );
   }
 
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+    if (event.target.type === "radio") return;
+    // Enter here must not reach the account form around this group.
+    event.preventDefault();
+    submit();
+  }
+
   return (
-    <form
-      onSubmit={submit}
+    // biome-ignore lint/a11y/useSemanticElements: a real <form> cannot nest in the add-account form
+    <div
+      role="form"
+      onKeyDown={onKeyDown}
       aria-label="New org"
       className="flex flex-col gap-3 rounded-md border border-line-strong bg-sunken p-3"
     >
@@ -97,10 +110,10 @@ export function NewOrgForm({
         <Button size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" variant="primary" type="submit" disabled={create.isPending}>
+        <Button size="sm" variant="primary" onClick={submit} disabled={create.isPending}>
           Create org
         </Button>
       </div>
-    </form>
+    </div>
   );
 }

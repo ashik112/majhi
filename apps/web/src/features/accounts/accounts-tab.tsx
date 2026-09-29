@@ -51,9 +51,11 @@ export function AccountsTab() {
     rows.map((a) => a.id),
   );
   const selected = rows.find((a) => a.id === selectedId);
+  // A side panel takes room; usage is in the details panel, so the table drops that column.
+  const panelOpen = adding || selected !== undefined;
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-5">
         <div className="flex items-center gap-3">
           <h2 className="text-md font-semibold">Accounts</h2>
@@ -83,7 +85,7 @@ export function AccountsTab() {
         )}
         {rows.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-line-strong">
-            <table className="w-full min-w-[980px] border-collapse text-left text-base">
+            <table className="w-full min-w-[900px] border-collapse text-left text-base">
               <caption className="sr-only">Accounts</caption>
               <thead>
                 <tr className="border-b border-line-strong text-sm text-fg-faint">
@@ -92,7 +94,7 @@ export function AccountsTab() {
                   <Th>Org</Th>
                   <Th>Agents</Th>
                   <Th>Status</Th>
-                  <Th>Usage</Th>
+                  {!panelOpen && <Th>Usage</Th>}
                   <Th>Used by</Th>
                   <Th>
                     <span className="sr-only">Actions</span>
@@ -107,6 +109,7 @@ export function AccountsTab() {
                     toolName={toolName(tools.data, account.tool)}
                     org={orgLabel(account.org, orgs.data ?? [])}
                     now={now}
+                    showUsage={!panelOpen}
                     usedBy={usedBy.get(account.id) ?? []}
                     selected={selected?.id === account.id}
                     onSelect={() => {
@@ -206,6 +209,7 @@ function AccountRow({
   toolName,
   org,
   now,
+  showUsage,
   usedBy,
   selected,
   onSelect,
@@ -215,6 +219,7 @@ function AccountRow({
   toolName: string;
   org: { name: string; color?: string };
   now: number;
+  showUsage: boolean;
   usedBy: readonly OkAgent[];
   selected: boolean;
   onSelect: () => void;
@@ -226,7 +231,7 @@ function AccountRow({
     <tr
       className={cn("border-b border-line last:border-b-0 hover:bg-raised/40", selected && "bg-selected/60")}
     >
-      <th scope="row" className="px-3 py-2.5 font-mono text-base font-normal">
+      <th scope="row" className="px-3 py-2.5 font-mono text-base font-normal whitespace-nowrap">
         <button
           type="button"
           aria-pressed={selected}
@@ -239,7 +244,7 @@ function AccountRow({
           {account.auth === "login" ? "Signed in" : "API key"}
         </span>
       </th>
-      <td className="px-3 py-2.5 text-fg-soft">{toolName}</td>
+      <td className="px-3 py-2.5 whitespace-nowrap text-fg-soft">{toolName}</td>
       <td className="px-3 py-2.5 text-fg-soft">
         <span className="inline-flex items-center gap-2">
           {org.color && (
@@ -248,7 +253,9 @@ function AccountRow({
           {org.name}
         </span>
       </td>
-      <td className="px-3 py-2.5 text-fg-soft tabular-nums">{plural(account.agentCount, "agent")}</td>
+      <td className="px-3 py-2.5 whitespace-nowrap text-fg-soft tabular-nums">
+        {plural(account.agentCount, "agent")}
+      </td>
       <td className="px-3 py-2.5">
         <span className={cn("inline-flex items-center gap-2", TONE_TEXT[status.tone])}>
           <StatusDot tone={status.tone} />
@@ -258,17 +265,19 @@ function AccountRow({
           <span className="block font-mono text-sm text-fg-faint">{account.signedInAs}</span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-fg-soft">
-        {usage.length === 0 ? (
-          <span className="text-fg-faint">No usage yet</span>
-        ) : (
-          usage.map((line) => (
-            <span key={line} className="block text-sm">
-              {line}
-            </span>
-          ))
-        )}
-      </td>
+      {showUsage && (
+        <td className="px-3 py-2.5 whitespace-nowrap text-fg-soft">
+          {usage.length === 0 ? (
+            <span className="text-fg-faint">No usage yet</span>
+          ) : (
+            usage.map((line) => (
+              <span key={line} className="block text-sm">
+                {line}
+              </span>
+            ))
+          )}
+        </td>
+      )}
       <td className="px-3 py-2.5">
         <UsedByChips agents={usedBy} />
       </td>
@@ -280,7 +289,7 @@ function AccountRow({
             aria-label={`Health check ${account.id}`}
             onClick={() => onAction("health")}
           >
-            Health check
+            Check
           </Button>
           {account.auth === "login" && (
             <Button
@@ -289,7 +298,7 @@ function AccountRow({
               aria-label={`Sign in again ${account.id}`}
               onClick={() => onAction("signin")}
             >
-              Sign in again
+              Sign in
             </Button>
           )}
           <Button
