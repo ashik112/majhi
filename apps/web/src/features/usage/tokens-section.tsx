@@ -199,8 +199,7 @@ function Filters({
 
 function TotalTile({ label, totals }: { label: string; totals: UsageTotals }) {
   return (
-    <div
-      role="group"
+    <section
       aria-label={label}
       className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-raised px-3.5 py-2.5"
     >
@@ -209,7 +208,7 @@ function TotalTile({ label, totals }: { label: string; totals: UsageTotals }) {
       <span className="text-sm text-fg-muted tabular-nums">
         {formatTokens(totals.totalTokens)} tokens · {plural(totals.turns, "turn")}
       </span>
-    </div>
+    </section>
   );
 }
 

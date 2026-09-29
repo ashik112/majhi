@@ -130,7 +130,7 @@ test("after runs on two orgs, the totals per org, project, agent and model are t
   ] as const) {
     await section.getByRole("combobox", { name: "Org filter" }).selectOption({ label: org });
     const month = sum(list);
-    const tile = section.getByRole("group", { name: "This month" });
+    const tile = section.getByRole("region", { name: "This month" });
     await expect(tile).toContainText(money(month.costUsd));
     await expect(tile).toContainText(`${month.turns} turn`);
   }
