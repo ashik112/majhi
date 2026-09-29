@@ -599,6 +599,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents).
 - Task links UI from 5.4a: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
 - Agents on demand and concurrency limits (5.17). The two-agents-on-one-account token refresh check from 5.2.
+- No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
 - **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room, and the boss creates an org and an agent after the owner approves.
 
 ### Phase 3: Teams and rooms
