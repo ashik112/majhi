@@ -256,7 +256,8 @@ function Diffs({ diffs, deleted }: { diffs: readonly DiffContentLike[]; deleted:
     );
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
+    // A block, not a flex column: flex items with overflow hidden shrink to fit and clip, so nothing scrolled.
+    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
       {diffs.map((d, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: edits to one file keep their order
         <DiffView key={i} diff={d} compact fill />
