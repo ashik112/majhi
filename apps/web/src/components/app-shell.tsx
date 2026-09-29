@@ -1,9 +1,16 @@
 import { collapseHome } from "@majhi/shared";
 import { Link, Outlet } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { useStudioShortcut } from "@/features/studio/use-studio-shortcut";
 import { cn } from "@/lib/cn";
+import { MOD_KEY } from "@/lib/format";
 import { useConfig, useHealth, useHostStatus } from "@/lib/queries";
+import { useServerEvents } from "@/lib/use-server-events";
 
 export function AppShell() {
+  useServerEvents();
+  useStudioShortcut();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <a
@@ -52,6 +59,12 @@ function TopBar() {
         </Link>
       )}
       <div className="ml-auto flex items-center gap-2">
+        <Button asChild variant="secondary" size="sm">
+          <Link to="/studio/$tab" params={{ tab: "agents" }} search={{}} title={`Open Studio (${MOD_KEY} .)`}>
+            Studio
+            <Kbd aria-hidden="true">{MOD_KEY} .</Kbd>
+          </Link>
+        </Button>
         <OnlinePill />
       </div>
     </header>

@@ -1,11 +1,20 @@
 import { useState } from "react";
 import { CenteredPage } from "@/components/centered-page";
 import { cn } from "@/lib/cn";
-import { onboardingSteps } from "./steps";
+import { onboardingSteps, skippableSteps } from "./steps";
 
 /** Renders the current onboarding step under a small progress header. */
-export function OnboardingFlow({ onFinish }: { onFinish: () => void }) {
-  const [index, setIndex] = useState(0);
+export function OnboardingFlow({
+  startIndex,
+  onFinish,
+  onSkip,
+}: {
+  /** Where to begin: the first step the server state says is not done. */
+  startIndex: number;
+  onFinish: () => void;
+  onSkip: () => void;
+}) {
+  const [index, setIndex] = useState(startIndex);
   const step = onboardingSteps[index];
   if (!step) return null;
 
@@ -33,6 +42,7 @@ export function OnboardingFlow({ onFinish }: { onFinish: () => void }) {
       <Component
         key={step.id}
         isLast={isLast}
+        {...(skippableSteps.includes(step.id) ? { onSkip } : {})}
         onComplete={() => (isLast ? onFinish() : setIndex(index + 1))}
       />
     </CenteredPage>

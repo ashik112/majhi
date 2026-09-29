@@ -26,6 +26,11 @@ export const queryKeys = {
   hostStatus: ["host-status"],
   suggestRoots: ["fs", "suggest-roots"],
   listDirs: ["fs", "list-dirs"],
+  tools: ["tools"],
+  orgs: ["orgs"],
+  accounts: ["accounts"],
+  accountModels: ["account-models"],
+  agents: ["agents"],
 } as const;
 
 export function useConfig() {

@@ -13,7 +13,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/api": server,
+      // ws: the event feed and the login terminals are WebSockets under /api.
+      "/api": { target: server, ws: true },
       "/health": server,
     },
   },

@@ -1,4 +1,6 @@
 import type { ComponentType } from "react";
+import { AccountStep } from "./account-step";
+import { BossStep } from "./boss-step";
 import { RootsStep } from "./roots-step";
 
 export interface OnboardingStepProps {
@@ -6,6 +8,8 @@ export interface OnboardingStepProps {
   isLast: boolean;
   /** Moves to the next step, or ends onboarding after the last one. */
   onComplete: () => void;
+  /** Leaves setup for now. Present on the steps that can wait: the account and the boss. */
+  onSkip?: () => void;
 }
 
 export interface OnboardingStep {
@@ -21,4 +25,9 @@ export interface OnboardingStep {
  */
 export const onboardingSteps: readonly OnboardingStep[] = [
   { id: "roots", title: "Workspace roots", Component: RootsStep },
+  { id: "account", title: "First account", Component: AccountStep },
+  { id: "boss", title: "Choose the boss", Component: BossStep },
 ];
+
+/** Steps the owner may skip; the roots step cannot be skipped. */
+export const skippableSteps: readonly string[] = ["account", "boss"];
