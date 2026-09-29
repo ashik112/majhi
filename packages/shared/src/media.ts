@@ -27,3 +27,70 @@ export function taskFileUrl(taskId: string, relPath: string): string {
   const segments = relPath.split("/").filter((s) => s !== "" && s !== "." && s !== "..");
   return `/api/tasks/${taskId}/files/${segments.map(encodeURIComponent).join("/")}`;
 }
+
+/** How the in-app file viewer shows a file. */
+export type ViewerKind = "markdown" | "image" | "pdf" | "page" | "video" | "audio" | "text";
+
+const MARKDOWN = new Set(["md", "markdown", "mdown"]);
+/** Pages and svg run scripts, so they are never shown inside majhi: the viewer offers the source. */
+const SANDBOXED_PAGE = new Set(["html", "htm", "svg"]);
+
+export function viewerKindOfPath(path: string): ViewerKind {
+  const ext = extensionOf(path);
+  if (MARKDOWN.has(ext)) return "markdown";
+  if (SANDBOXED_PAGE.has(ext)) return "page";
+  if (ext === "pdf") return "pdf";
+  const media = mediaKindOfPath(path);
+  if (media === "image" || media === "video" || media === "audio") return media;
+  return "text";
+}
+
+/** highlight.js language names by extension or file name. Unknown files stay plain. */
+const LANGUAGES: Record<string, string> = {
+  ts: "typescript",
+  tsx: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  json: "json",
+  jsonc: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "ini",
+  ini: "ini",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  py: "python",
+  go: "go",
+  rs: "rust",
+  sql: "sql",
+  css: "css",
+  scss: "scss",
+  html: "xml",
+  htm: "xml",
+  xml: "xml",
+  svg: "xml",
+  md: "markdown",
+  markdown: "markdown",
+  diff: "diff",
+  patch: "diff",
+  java: "java",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  rb: "ruby",
+  php: "php",
+  kt: "kotlin",
+  swift: "swift",
+};
+
+export function codeLanguageOf(path: string): string | undefined {
+  const name = path.split("/").pop()?.toLowerCase() ?? "";
+  if (name === "dockerfile") return "dockerfile";
+  if (name === "makefile") return "makefile";
+  return LANGUAGES[extensionOf(path)];
+}

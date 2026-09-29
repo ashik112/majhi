@@ -225,6 +225,13 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   await row.click();
   await expect(section.getByText("# Health")).toBeVisible();
   await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
+
+  // View opens the file in the viewer, rendered.
+  await section.getByRole("link", { name: "View HEALTH.md" }).click();
+  const viewer = page.getByRole("dialog", { name: "File api/HEALTH.md" });
+  await expect(viewer.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(viewer).toBeHidden();
 });
 
 test("Esc stops a slow turn, and a queued message waits until the next send", async ({ page, request }) => {
@@ -358,7 +365,30 @@ test("the agent shows an image and a page; the page runs sandboxed and cannot re
   await expect(spec).toHaveAttribute("href", "https://example.com/spec");
   await expect(spec).toHaveAttribute("rel", "noopener noreferrer");
   await expectIdle(page);
-  await shot(page, "room-media");
+
+  // A table in the reply is a real table with the right cells.
+  const table = log.getByRole("table");
+  await expect(table).toBeVisible();
+  await expect(table.getByRole("columnheader")).toHaveText(["Keep", "Delete", "Safe?"]);
+  await expect(table.getByRole("row")).toHaveCount(3);
+  await expect(table.getByRole("cell")).toHaveText([
+    "chart.png",
+    "tmp.png",
+    "yes",
+    "report.html",
+    "old.html",
+    "yes",
+  ]);
+  await expect(log.getByText("| Keep |")).toHaveCount(0);
+
+  // A file link inside a sentence stays on the line: no taller than the text around it.
+  const notes = log.getByRole("link", { name: "media/notes.md" });
+  await expect(notes).toBeVisible();
+  expect((await notes.boundingBox())?.height).toBeLessThan(24);
+  // Inline code does not stretch its line either.
+  const code = log.locator("code", { hasText: "latency/p99-ms" });
+  expect((await code.boundingBox())?.height).toBeLessThan(24);
+  await shot(page, "room-markdown");
 
   // Click for full size; Esc closes it and does not stop anything.
   await log.getByRole("button", { name: "View Latency chart full size" }).click();
@@ -368,17 +398,62 @@ test("the agent shows an image and a page; the page runs sandboxed and cannot re
   await expect(lightbox).toBeHidden();
   await expect(log.getByText(/Stopped @/)).toHaveCount(0);
 
-  // The page is a card; it opens in a new tab under a sandbox and cannot call majhi.
+  // The .md link opens the in-app viewer, not a tab: rendered headings and a table.
+  let popups = 0;
+  page.on("popup", () => {
+    popups += 1;
+  });
+  await notes.click();
+  const viewer = page.getByRole("dialog", { name: "File media/notes.md" });
+  await expect(viewer).toBeVisible();
+  await expect(page).toHaveURL(/file=media%2Fnotes\.md/);
+  await expect(viewer.getByRole("heading", { name: "Latency notes", level: 1 })).toBeVisible();
+  await expect(viewer.getByRole("heading", { name: "What changed", level: 2 })).toBeVisible();
+  await expect(viewer.getByRole("columnheader")).toHaveText(["Metric", "Before", "After"]);
+  await expect(viewer.getByRole("cell", { name: "410 ms" })).toBeVisible();
+  await expect(viewer.getByText("media/notes.md · ", { exact: false })).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Copy ts" })).toBeVisible();
+  await shot(page, "file-viewer");
+  expect(popups).toBe(0);
+
+  // Reload keeps the viewer open on the same file.
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "File media/notes.md" })).toBeVisible();
+
+  // Raw shows the source with line numbers.
+  await viewer.getByRole("button", { name: "Raw", exact: true }).click();
+  await expect(viewer.getByText("# Latency notes")).toBeVisible();
+  await expect(viewer.getByRole("heading", { name: "Latency notes" })).toHaveCount(0);
+  await expect(viewer.locator(".code-gutter")).toContainText("12");
+  await viewer.getByRole("button", { name: "Rendered" }).click();
+  await expect(viewer.getByRole("heading", { name: "Latency notes", level: 1 })).toBeVisible();
+
+  // Esc closes it, and Back opens it again.
+  await page.keyboard.press("Escape");
+  await expect(viewer).toBeHidden();
+  await expect(page).not.toHaveURL(/file=/);
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: "File media/notes.md" })).toBeVisible();
+  await page.getByRole("button", { name: "Close viewer" }).click();
+  await expect(page.getByRole("dialog", { name: "File media/notes.md" })).toBeHidden();
+
+  // The page is a card; it opens in the viewer, which never shows it: "Open page" opens it sandboxed in a tab.
   const card = log.getByRole("link", { name: "Open Latency report" });
   const href = `/api/tasks/${chatTaskId}/files/media/report.html`;
-  await expect(card).toHaveAttribute("href", href);
-  await expect(card).toHaveAttribute("rel", "noopener noreferrer");
+  await card.click();
+  const pageViewer = page.getByRole("dialog", { name: "File media/report.html" });
+  await expect(pageViewer).toBeVisible();
+  await expect(pageViewer.locator("iframe")).toHaveCount(0);
+  await expect(pageViewer.getByText("<title>Latency report</title>")).toBeVisible();
+  const open = pageViewer.getByRole("link", { name: "Open page" });
+  await expect(open).toHaveAttribute("href", href);
+  await expect(open).toHaveAttribute("rel", "noopener noreferrer");
   const served = await request.get(href);
   expect(served.headers()["content-security-policy"]).toBe(
     "sandbox allow-scripts allow-forms allow-popups allow-downloads",
   );
   expect(served.headers()["x-content-type-options"]).toBe("nosniff");
-  const [popup] = await Promise.all([page.waitForEvent("popup"), card.click()]);
+  const [popup] = await Promise.all([page.waitForEvent("popup"), open.click()]);
   const commands: number[] = [];
   popup.on("response", (res) => {
     if (res.url().includes("/api/cmd/")) commands.push(res.status());
@@ -388,10 +463,13 @@ test("the agent shows an image and a page; the page runs sandboxed and cannot re
   await expect(popup.locator("#out")).toHaveText("blocked from majhi");
   expect(commands.filter((status) => status < 400)).toEqual([]);
   await popup.close();
+  await page.keyboard.press("Escape");
 
   // The files endpoint serves the task folder and nothing else.
   const folder = (await getTask(request, chatTaskId)).folder;
   expect((await request.get(`/api/tasks/${chatTaskId}/files/TASK.md`)).status()).toBe(200);
+  const meta = await request.get(`/api/tasks/${chatTaskId}/files/TASK.md?meta=1`);
+  expect(await meta.json()).toMatchObject({ size: expect.any(Number), modified: expect.any(String) });
   expect((await request.get(`/api/tasks/${chatTaskId}/files/.fake-sessions`)).status()).toBe(403);
   expect(
     (await request.get(`/api/tasks/${chatTaskId}/files/..%2F..%2Fmajhi.yaml`)).status(),

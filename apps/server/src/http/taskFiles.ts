@@ -57,7 +57,7 @@ const PREFIX = /^\/api\/tasks\/[^/]+\/files\//;
 
 /**
  * `GET /api/tasks/<id>/files/<path>`: a file from the task folder, so the room can show what the
- * agent made. Nothing outside the folder (also through symlinks) and nothing behind a dot name
+ * agent made. With `?meta=1` it answers `{ size, modified }` instead of the content. Nothing outside the folder (also through symlinks) and nothing behind a dot name
  * (`.git`, `.env`) is ever served.
  */
 export function taskFileRoutes(deps: TaskFilesDeps): Hono {
@@ -96,6 +96,13 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
     }
     const info = await stat(target).catch(() => undefined);
     if (info === undefined || !info.isFile()) return refuse(c, 404, "Not found.");
+
+    // `?meta=1`: what the in-app viewer shows in its header. Same checks as above, no content.
+    if (c.req.query("meta") === "1") {
+      return c.json({ size: info.size, modified: info.mtime.toISOString() }, 200, {
+        "Cache-Control": "no-store",
+      });
+    }
 
     const ext = extensionOf(target);
     const headers = new Headers({

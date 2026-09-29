@@ -36,3 +36,12 @@ export function badgeLetters(key: string): string {
       .toUpperCase() || "?"
   );
 }
+
+/** "0 B", "812 B", "3.2 kB", "1.4 MB". */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  const kb = bytes / 1000;
+  if (kb < 1000) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} kB`;
+  const mb = kb / 1000;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}

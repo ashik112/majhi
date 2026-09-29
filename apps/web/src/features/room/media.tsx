@@ -1,6 +1,7 @@
-import { type MediaRef, mediaKindOfPath, taskFileUrl } from "@majhi/shared";
-import { ExternalLink, FileCode2, FileText, Film, Globe, Music } from "lucide-react";
-import { useState } from "react";
+import { type MediaRef, mediaKindOfPath, taskFileUrl, type ViewerKind } from "@majhi/shared";
+import { Link } from "@tanstack/react-router";
+import { ExternalLink, FileCode2, FileText, Film, Globe, ImageIcon, Music } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "@/components/ui/modal";
 
@@ -106,6 +107,47 @@ export function FileCard({ href, name, kind }: { href: string; name: string; kin
         <ExternalLink aria-hidden="true" className="size-3" />
       </span>
     </a>
+  );
+}
+
+const FILE_ICON = {
+  markdown: FileText,
+  pdf: FileText,
+  text: FileCode2,
+  page: FileCode2,
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+} as const;
+
+/**
+ * A link to a file of the task folder that opens in the in-app viewer (`?file=`). Inline, it is
+ * text with a small icon and never changes the line height. As a card it stands on its own line.
+ */
+export function TaskFileLink({
+  path,
+  kind,
+  label,
+  card = false,
+}: {
+  path: string;
+  kind: ViewerKind;
+  label: ReactNode;
+  card?: boolean;
+}) {
+  const Icon = FILE_ICON[kind];
+  return (
+    <Link
+      to="."
+      search={(prev: object) => ({ ...prev, file: path })}
+      title={path}
+      aria-label={card && typeof label === "string" ? `Open ${label}` : undefined}
+      className={card ? "md-file-card" : "md-link md-file-link"}
+    >
+      <Icon aria-hidden="true" className={card ? "size-4 shrink-0 text-fg-muted" : "md-file-icon"} />
+      {card ? <span className="min-w-0 truncate">{label}</span> : label}
+      {card && <span className="ml-1 shrink-0 text-sm text-fg-faint">View</span>}
+    </Link>
   );
 }
 

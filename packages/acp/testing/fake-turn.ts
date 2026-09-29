@@ -68,6 +68,36 @@ fetch("/api/cmd/tasks.list", { method: "POST", headers: { "content-type": "appli
 </body>
 `;
 
+/** A markdown document with a heading, a list and a table, for the file viewer. */
+export const NOTES_MD = `# Latency notes
+
+The p99 dropped after the cache change.
+
+## What changed
+
+- Added a read-through cache in \`src/cache.ts\`
+- Moved the slow query behind an index
+  - \`orders(created_at)\`
+- [ ] Load test on staging
+
+## Results
+
+| Metric | Before | After |
+|---|---|---|
+| p50 | 120 ms | 90 ms |
+| p99 | 800 ms | 410 ms |
+
+\`\`\`ts
+export const ttl = 60;
+\`\`\`
+`;
+
+/** A table in the reply itself. */
+export const SUMMARY_TABLE = `| Keep | Delete | Safe? |
+|---|---|---|
+| chart.png | tmp.png | yes |
+| report.html | old.html | yes |`;
+
 export interface ServeOptions {
   tool: "claude" | "codex";
   models: string[];
@@ -503,10 +533,11 @@ export function serveAcp(o: ServeOptions): void {
           const png = chartPng();
           await writeFile(join(s.cwd, "media", "chart.png"), png);
           await writeFile(join(s.cwd, "media", "report.html"), REPORT_HTML);
+          await writeFile(join(s.cwd, "media", "notes.md"), NOTES_MD);
           agentText = "Here is the chart and the report.";
           await say({
             type: "text",
-            text: `${agentText}\n\n![Latency chart](media/chart.png)\n\n[Latency report](media/report.html)\n\nMore at [the docs](https://example.com/docs).`,
+            text: `${agentText}\n\nThe plan is in [media/notes.md](media/notes.md) and the numbers use the \`latency/p99-ms\` field.\n\n${SUMMARY_TABLE}\n\n![Latency chart](media/chart.png)\n\n[Latency report](media/report.html)\n\nMore at [the docs](https://example.com/docs).`,
           });
           await say({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
           await say({ type: "resource_link", uri: "https://example.com/spec", name: "Spec sheet" });

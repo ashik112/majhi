@@ -20,6 +20,8 @@ export interface AppSearch {
   org?: string;
   agent?: string;
   account?: string;
+  /** A file of the open task, shown in the viewer drawer. */
+  file?: string;
 }
 
 function text(value: unknown): string | undefined {
@@ -30,7 +32,13 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const org = text(search.org);
   const agent = text(search.agent);
   const account = text(search.account);
-  return { ...(org ? { org } : {}), ...(agent ? { agent } : {}), ...(account ? { account } : {}) };
+  const file = text(search.file);
+  return {
+    ...(org ? { org } : {}),
+    ...(agent ? { agent } : {}),
+    ...(account ? { account } : {}),
+    ...(file ? { file } : {}),
+  };
 }
 
 const rootRoute = createRootRoute({
