@@ -1,6 +1,6 @@
 # Instructions for coding agents building majhi
 
-You are building majhi, a local, dockerized workspace for running AI coding agents across several companies. Read these first, in this order:
+You are building majhi, a local, dockerized workspace for running AI coding agents, with work kept apart per org (your own projects, clients, teams). Read these first, in this order:
 
 1. `SPEC.md` for what to build and why. It is the source of truth.
 2. `design/Work Hub · clickable demo-html/Main.dc.html` for the intended UI, with rendered screens in its `reference/` folder (1440x900). It is a prototype in a canvas component format: read the markup for layout and exact values (colors, sizes, spacing, radii) and the script for behavior and sample data. Rebuild it properly in React, matching it closely; do not copy its format. It uses old names: "Work Hub" is majhi, `~/.work` is `~/.majhi`, Kimi is Codex. `design/ui-demo.dc.html` and `design/Work Hub · daily workspace-html/` are an earlier three-column design, kept only for reference.

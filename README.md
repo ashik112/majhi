@@ -1,6 +1,12 @@
 # majhi
 
-A local, dockerized workspace for running AI coding agents across several companies. See `SPEC.md` for what it is and `docs/PROGRESS.md` for where the build stands.
+One place to run your AI coding agents, and stay in control.
+
+majhi is a local workspace for running AI coding agents. You give it a task; it sets up the repo, branch and worktree, runs Claude Code or Codex on it, and streams everything the agent does, so you can watch, steer and stop it. Accounts, usage limits, secrets and approvals are handled for you, and nothing is pushed without your say.
+
+Work is grouped into **orgs**: your own projects, clients and teams each get their own accounts, agents, repos and credentials, kept apart. A boss agent sets things up and runs majhi by conversation, and every change can be undone.
+
+See `SPEC.md` for the full design and `docs/PROGRESS.md` for where the build stands.
 
 ## Run it
 

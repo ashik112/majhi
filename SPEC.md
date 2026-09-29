@@ -8,9 +8,9 @@ This spec is the source of truth. If something here is unclear or wrong, stop an
 
 ## 1. What this is
 
-majhi is a local, dockerized workspace where one developer runs AI coding agents across many companies at once. It replaces opening separate CLIs (Claude Code, Codex) by hand. It is the owner's main daily tool, so speed, clarity and reliability matter more than feature count. The UI must be polished and fast enough to be a developer's daily driver: keyboard-first, dense where it helps, calm everywhere else.
+majhi is a local, dockerized workspace where one developer runs AI coding agents for all of their work at once: their own projects, clients and teams, each kept apart as an org. It replaces opening separate CLIs (Claude Code, Codex) by hand. It is the owner's main daily tool, so speed, clarity and reliability matter more than feature count. The UI must be polished and fast enough to be a developer's daily driver: keyboard-first, dense where it helps, calm everywhere else.
 
-The owner works for several companies (orgs). Each org gives official Claude and Codex accounts, usually CLI subscriptions, sometimes API keys. An org can have several accounts of the same tool. More tools (OpenCode, Cursor, others) may be added later. Projects live under one or more workspace roots that the owner picks (for example `~/Work` and `~/private`). Repos are on GitHub, GitLab and Bitbucket, and the owner has SSH access to all of them. Trackers vary (Jira, ClickUp, GitHub Issues), but most tasks are local and never touch a tracker.
+The owner works on several orgs: their own projects, clients and teams. An org can come with its own Claude and Codex accounts, usually CLI subscriptions, sometimes API keys. An org can have several accounts of the same tool. More tools (OpenCode, Cursor, others) may be added later. Projects live under one or more workspace roots that the owner picks (for example `~/Work` and `~/private`). Repos are on GitHub, GitLab and Bitbucket, and the owner has SSH access to all of them. Trackers vary (Jira, ClickUp, GitHub Issues), but most tasks are local and never touch a tracker.
 
 ### Goals
 
@@ -46,7 +46,7 @@ The owner works for several companies (orgs). Each org gives official Claude and
 
 | Concept | Meaning |
 |---|---|
-| **Org** | A company. Has accounts, agents, projects, a default team, a default base branch, a merge policy, a tracker (optional), and a git commit identity. One org is built in: **Private** (id `private`, task key `PRV`), for the owner's own accounts and repos. It always exists, is the default when nothing else fits, and cannot be removed. Its entry in `majhi.yaml` appears only when the owner changes its settings. |
+| **Org** | A body of work kept apart from the rest: the owner's own projects, a client or a team. Has accounts, agents, projects, a default team, a default base branch, a merge policy, a tracker (optional), and a git commit identity. One org is built in: **Private** (id `private`, task key `PRV`), for the owner's own accounts and repos. It always exists, is the default when nothing else fits, and cannot be removed. Its entry in `majhi.yaml` appears only when the owner changes its settings. |
 | **Account** | One login for one tool (Claude Code or Codex in v1), owned by an org, or by Private for the owner's own. Signs in either with the tool's own login (subscription) or with an API key. API-key accounts can carry extra fields the provider needs (a base URL for OpenRouter or a gateway, an org id, an Azure endpoint and deployment), with the same field kinds as connections (5.14). Has its own isolated config home. Usage limits belong to accounts. |
 | **Agent** | A configured worker: role, account, model, instructions, skills, MCP tools, permissions, where it can work, and a fallback agent. Several agents can share one account. |
 | **Root agent** | An agent with scope "anywhere", usually on a private account. Examples: Dispatcher (routes new tasks), Housekeeper (curates memory, cleans worktrees), Setup (scans the machine, drafts config, organizes projects). Root agents can create tasks and edit config, always with owner approval. |

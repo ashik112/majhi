@@ -28,7 +28,7 @@ export function OrgsView() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Orgs"
-        subtitle="An org groups the accounts, agents and projects of one company. Private is yours and always there."
+        subtitle="An org keeps one body of work apart: its accounts, agents and projects. Private is yours and always there."
       />
       <div className="min-h-0 flex-1 overflow-auto px-8 py-[22px]">
         {orgs.isError ? (

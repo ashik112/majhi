@@ -10,11 +10,11 @@ web
 
 ## Users
 
-One developer, the owner. They work for several companies at once and run AI coding agents (Claude Code, Codex) across many repos on GitHub, GitLab and Bitbucket. majhi is their main daily tool, open all day on a desktop screen.
+One developer, the owner. They work on several orgs at once (their own projects, clients and teams) and run AI coding agents (Claude Code, Codex) across many repos on GitHub, GitLab and Bitbucket. majhi is their main daily tool, open all day on a desktop screen.
 
 ## Product Purpose
 
-majhi is a local, dockerized workspace where the owner runs AI coding agents across many companies from one place, instead of opening separate CLIs by hand. Success: the owner creates a task in one sentence and a team of agents does it in isolated git worktrees, and the owner can run a full day of work without touching a terminal.
+majhi is a local, dockerized workspace where the owner runs AI coding agents for all of their orgs from one place, instead of opening separate CLIs by hand. Success: the owner creates a task in one sentence and a team of agents does it in isolated git worktrees, and the owner can run a full day of work without touching a terminal.
 
 ## Positioning
 
