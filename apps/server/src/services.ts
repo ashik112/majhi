@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
@@ -118,7 +119,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (id) => terminals.killKey(`login:${id}`),
   });
   const store = Store.open(env.majhiHome);
-  const room = new RoomService(store);
+  const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
   const agents = new AgentService(config, agentStore, cache, accounts);
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
   const decideTokens = new DecideTokens();

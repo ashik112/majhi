@@ -274,6 +274,7 @@ export class RunManager {
     if (run === undefined) {
       const queued = this.deps.store.room.queuedFor(task, agent);
       run = new AgentRun(task, agent, queued.length);
+      run.live.commands = this.deps.room.knownCommands(agent);
       run.queue = queued.map((item) => ({ kind: "owner", itemId: item.id }));
       run.held = run.queue.length > 0;
       this.runs.set(key, run);
@@ -534,6 +535,7 @@ export class RunManager {
         if (event.size > 0) this.setLive(run, { usage: { used: event.used, size: event.size } });
         break;
       case "commands":
+        this.deps.room.rememberCommands(run.agent, event.commands);
         this.setLive(run, { commands: event.commands });
         break;
       case "config":

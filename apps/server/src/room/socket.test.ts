@@ -70,6 +70,7 @@ describe("room socket", () => {
       "fix api",
       "@acme-builder started on claude-acme, model sonnet, effort high",
       "ok",
+      "Ready for your review. Reply to continue, or mark it done.",
     ]);
 
     // A new connection gets everything so far in one snapshot, in the order it appeared.

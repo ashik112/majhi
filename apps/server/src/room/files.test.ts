@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { FILE_CACHE_MS, FileIndex, MAX_FILE_RESULTS, scoreMatch } from "./files.ts";
 
 const repos = (...projects: string[]) => ({
+  // A folder that does not exist: only worktree files are listed.
+  folder: "/no-such-task-folder",
   repos: projects.map((p) => ({
     project: p,
     source: "/s",
@@ -67,7 +69,10 @@ describe("FileIndex", () => {
     expect(await index.search(repos("api"), "x")).toEqual([]);
     expect(
       await index.search(
-        { repos: [{ project: "api", source: "/s", base: "m", branch: "b", createdBranch: true }] },
+        {
+          folder: "/no-such-task-folder",
+          repos: [{ project: "api", source: "/s", base: "m", branch: "b", createdBranch: true }],
+        },
         "x",
       ),
     ).toEqual([]);

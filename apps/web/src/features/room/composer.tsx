@@ -80,9 +80,20 @@ export function Composer({
           note: c.description,
         }))
       : popupTrigger?.kind === "mention"
-        ? files.map((f) => ({ key: `${f.repo}:${f.path}`, insert: f.path, label: f.path, note: f.repo }))
+        ? files.map((f) => ({
+            key: `${f.repo}:${f.path}`,
+            insert: f.path,
+            label: f.path,
+            note: f.repo === "task" ? "task folder" : f.repo === "project" ? "project" : f.repo,
+          }))
         : [];
-  const popupOpen = popupTrigger !== null && options.length > 0;
+  const popupOpen = popupTrigger !== null;
+  const emptyNote =
+    popupTrigger?.kind === "slash"
+      ? commands.length === 0
+        ? "No commands yet. They show once the agent has started."
+        : "No command matches."
+      : "No files match.";
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
 
   const send = useMutation<{ item: RoomItem }, ApiRequestError, "queue" | "interrupt">({
@@ -123,7 +134,7 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (popupOpen && popupTrigger) {
+    if (popupOpen && popupTrigger && options.length > 0) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         const step = event.key === "ArrowDown" ? 1 : -1;
@@ -143,7 +154,8 @@ export function Composer({
       }
     }
     const action = composerKey(event.nativeEvent, {
-      popupOpen: popupTrigger !== null && popupOpen,
+      // An empty popup is only a hint: Enter still sends and Esc still stops the agent.
+      popupOpen: popupTrigger !== null && popupOpen && options.length > 0,
       busy,
       hasContent,
     });
@@ -194,6 +206,7 @@ export function Composer({
             aria-label={popupTrigger.kind === "slash" ? "Slash commands" : "Files"}
             className="absolute right-0 bottom-full left-0 z-20 mb-1.5 max-h-56 overflow-auto rounded-lg border border-line-bright bg-card p-1 shadow-pop"
           >
+            {options.length === 0 && <p className="px-2.5 py-1.5 text-sm text-fg-faint">{emptyNote}</p>}
             {options.map((option, i) => (
               <div
                 key={option.key}

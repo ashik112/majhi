@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { AgentLive, RoomItem, RoomServerMessage, Task, TaskId } from "@majhi/shared";
+import { z } from "zod";
 import type { RoomPayload, Store } from "../store/index.ts";
 
 /** How many items a new socket gets. */
@@ -13,13 +17,47 @@ export type RoomListener = (message: RoomServerMessage) => void;
  * each agent's live state. Streaming items (agent text, thoughts) are held for a moment and
  * written together, so a fast stream costs a few writes a second, not one per chunk.
  */
+
+const CommandsFileSchema = z.record(
+  z.string(),
+  z.array(z.object({ name: z.string(), description: z.string().optional() })),
+);
+
 export class RoomService {
   private readonly listeners = new Map<string, Set<RoomListener>>();
   private readonly live = new Map<string, Map<string, AgentLive>>();
   private readonly deferred = new Map<string, Map<string, RoomPayload>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
 
-  constructor(private readonly store: Store) {}
+  /** The last slash commands each agent advertised, so `/` works before a session starts. */
+  private readonly commands = new Map<string, AgentLive["commands"]>();
+
+  constructor(
+    private readonly store: Store,
+    /** Where the command lists survive restarts. Absent in tests. */
+    private readonly commandsFile?: string,
+  ) {
+    if (commandsFile === undefined) return;
+    try {
+      const saved = CommandsFileSchema.parse(JSON.parse(readFileSync(commandsFile, "utf8")));
+      for (const [agent, list] of Object.entries(saved)) this.commands.set(agent, list);
+    } catch {
+      // No file yet, or an unreadable one: start empty.
+    }
+  }
+
+  knownCommands(agent: string): AgentLive["commands"] {
+    return this.commands.get(agent) ?? [];
+  }
+
+  rememberCommands(agent: string, list: AgentLive["commands"]): void {
+    this.commands.set(agent, list);
+    if (this.commandsFile === undefined) return;
+    const file = this.commandsFile;
+    void mkdir(dirname(file), { recursive: true })
+      .then(() => writeFile(file, JSON.stringify(Object.fromEntries(this.commands))))
+      .catch(() => undefined);
+  }
 
   /**
    * Stores an item and sends it to the task's sockets. With `defer`, waits up to 50 ms and
@@ -97,7 +135,7 @@ export class RoomService {
           agent: id,
           status: "stopped",
           queued: this.store.room.queuedFor(task.id, id).length,
-          commands: [],
+          commands: this.knownCommands(id),
         },
     );
     return { type: "snapshot", items, agents, more: page.more };

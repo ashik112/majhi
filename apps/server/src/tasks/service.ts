@@ -69,7 +69,11 @@ export class TaskService {
   private readonly now: () => Date;
 
   constructor(private readonly deps: TaskDeps) {
-    this.files = deps.files ?? new FileIndex();
+    this.files =
+      deps.files ??
+      new FileIndex(undefined, undefined, async () =>
+        (await deps.projects.list()).map((p) => ({ id: p.id, path: p.path })),
+      );
     this.now = deps.now ?? (() => new Date());
   }
 
