@@ -1,3 +1,4 @@
+import { EMPTY_TOTALS } from "@majhi/shared";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -8,6 +9,7 @@ import { describeError } from "@/lib/errors";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
+import { useUsageBreakdown } from "@/lib/usage-queries";
 import { CARD, OrgCard } from "./org-card";
 
 /** Orgs and accounts: one card per org, Private first, and a way to add an org. */
@@ -16,6 +18,7 @@ export function OrgsView() {
   const accounts = useAccounts();
   const tools = useTools();
   const tasks = useTasks();
+  const month = useUsageBreakdown({ by: "org", range: "month", limit: 500 });
   const { org: filter } = useOrgFilter();
   const [adding, setAdding] = useState(false);
   const [addAccountTo, setAddAccountTo] = useState<string>();
@@ -50,6 +53,11 @@ export function OrgsView() {
                 accounts={accountList.filter((a) => a.org === org.id)}
                 tools={tools.data}
                 openTasks={open(org.id)}
+                month={
+                  month.data
+                    ? (month.data.rows.find((r) => r.key === org.id)?.totals ?? EMPTY_TOTALS)
+                    : undefined
+                }
                 highlighted={org.id === filter}
                 onAddAccount={() => setAddAccountTo(org.id)}
               />

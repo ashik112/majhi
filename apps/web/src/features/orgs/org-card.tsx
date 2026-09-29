@@ -1,4 +1,11 @@
-import { type AccountView, IdSchema, type OrgView, PRIVATE, type ToolInfo } from "@majhi/shared";
+import {
+  type AccountView,
+  IdSchema,
+  type OrgView,
+  PRIVATE,
+  type ToolInfo,
+  type UsageTotals,
+} from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -9,6 +16,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Dot, toneText } from "@/components/ui/status-dot";
 import { ORG_COLORS, statusInfo } from "@/features/accounts/model";
+import { CostText } from "@/features/usage/cost";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters, plural } from "@/lib/format";
@@ -23,6 +31,7 @@ export function OrgCard({
   accounts,
   tools,
   openTasks,
+  month,
   onAddAccount,
   highlighted = false,
 }: {
@@ -30,6 +39,8 @@ export function OrgCard({
   accounts: readonly AccountView[];
   tools: readonly ToolInfo[] | undefined;
   openTasks: number;
+  /** Tokens and cost this month; undefined while it loads. */
+  month: UsageTotals | undefined;
   onAddAccount: () => void;
   /** This is the org the sidebar filter is set to. */
   highlighted?: boolean;
@@ -44,8 +55,14 @@ export function OrgCard({
       <div className="flex items-center gap-3">
         <OrgBadge label={badgeLetters(org.key)} color={org.color} className="size-8 rounded-lg text-xs" />
         <h2 className="min-w-0 truncate text-lg font-semibold">{org.name}</h2>
-        <span className="ml-auto shrink-0 text-sm text-fg-muted tabular-nums">
-          {plural(openTasks, "open task")}
+        <span className="ml-auto flex shrink-0 flex-col items-end text-sm text-fg-muted tabular-nums">
+          <span>{plural(openTasks, "open task")}</span>
+          {month && (
+            <span className="flex items-baseline gap-1 text-xs text-fg-faint">
+              <CostText totals={month} className="text-fg-soft" />
+              this month
+            </span>
+          )}
         </span>
       </div>
       <AccountList accounts={accounts} tools={tools} orgName={org.name} onAdd={onAddAccount} />

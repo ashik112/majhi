@@ -1,4 +1,4 @@
-import type { AccountView, ToolInfo } from "@majhi/shared";
+import type { AccountView, ToolInfo, UsageBreakdown, UsageTotals } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
@@ -11,14 +11,17 @@ import { Dot, toneText } from "@/components/ui/status-dot";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { agentState, entryId, groupAgents, type OkAgent } from "@/features/agents/model";
 import { ChecksSection } from "@/features/health/checks-section";
+import { CostText } from "@/features/usage/cost";
+import { TokensSection } from "@/features/usage/tokens-section";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { formatAgo, plural } from "@/lib/format";
+import { formatAgo, formatTokens, plural } from "@/lib/format";
 import { opsKeys } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH } from "@/lib/pages";
 import { useAccountHealth, useAccounts, useAgents, useOrgs, useTools } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
+import { useUsageBreakdown } from "@/lib/usage-queries";
 import { useNow } from "@/lib/use-now";
 import { authInfo, barTone, formatPct, orgLabel, resetLabel, statusText } from "./model";
 
@@ -35,6 +38,9 @@ export function HealthView() {
   const { org: orgFilter } = useOrgFilter();
   const navigate = useNavigate();
   const check = useCheckAll(accounts.data ?? []);
+  const apiKeys = (accounts.data ?? []).some((a) => a.auth === "api-key");
+  const today = useUsageBreakdown({ by: "account", range: "today", limit: 500 }, apiKeys);
+  const week = useUsageBreakdown({ by: "account", range: "week", limit: 500 }, apiKeys);
 
   const all = accounts.data ?? [];
   const entries = agents.data ?? [];
@@ -123,6 +129,8 @@ export function HealthView() {
                         tool={tools.data}
                         org={orgLabel(account.org, orgs.data ?? []).name}
                         now={now}
+                        today={totalsFor(today.data, account.id)}
+                        week={totalsFor(week.data, account.id)}
                       />
                     ))}
                   </ul>
@@ -130,6 +138,8 @@ export function HealthView() {
               </div>
             )}
           </section>
+
+          <TokensSection />
 
           <section aria-labelledby="health-agents" className="flex flex-col gap-2">
             <h2 id="health-agents" className="text-md font-semibold">
@@ -180,16 +190,27 @@ export function HealthView() {
   );
 }
 
+/** One account's row in a breakdown by account; undefined while it loads. */
+function totalsFor(breakdown: UsageBreakdown | undefined, account: string): UsageTotals | null | undefined {
+  if (!breakdown) return undefined;
+  return breakdown.rows.find((r) => r.key === account)?.totals ?? null;
+}
+
 function AccountRow({
   account,
   tool,
   org,
   now,
+  today,
+  week,
 }: {
   account: AccountView;
   tool: ToolInfo[] | undefined;
   org: string;
   now: number;
+  /** API-key accounts only: tokens and cost today and this week. Null when nothing ran. */
+  today: UsageTotals | null | undefined;
+  week: UsageTotals | null | undefined;
 }) {
   const auth = authInfo(account);
   const status = statusText(account, now);
@@ -226,7 +247,7 @@ function AccountRow({
       <span className="flex min-w-0 flex-col gap-1">
         <Label>Current window: </Label>
         {account.auth === "api-key" ? (
-          <span className="text-xs text-fg-muted">Tokens and cost show after the first run</span>
+          <ApiKeySpend totals={today} lead="Today" />
         ) : usage?.window ? (
           <>
             <span className="tabular-nums text-fg-soft">
@@ -241,13 +262,15 @@ function AccountRow({
       </span>
       <span className="flex min-w-0 flex-col gap-1">
         <Label>Weekly: </Label>
-        {account.auth !== "api-key" && usage?.weekly ? (
+        {account.auth === "api-key" ? (
+          <ApiKeySpend totals={week} trail="this week" />
+        ) : usage?.weekly ? (
           <>
             <span className="tabular-nums text-fg-soft">{formatPct(usage.weekly.usedPct)}</span>
             <UsageBar pct={usage.weekly.usedPct} tone={barTone(usage.weekly.usedPct)} />
           </>
         ) : (
-          <span className="text-fg-faint">{account.auth === "api-key" ? "" : "No usage yet"}</span>
+          <span className="text-fg-faint">No usage yet</span>
         )}
       </span>
       <span className={cn("flex items-center gap-2", toneText(status.tone))}>
@@ -258,6 +281,32 @@ function AccountRow({
         </span>
       </span>
     </li>
+  );
+}
+
+/** "Today $1.20" or "$8.40 this week", with tokens under it. API-key accounts have no usage windows. */
+function ApiKeySpend({
+  totals,
+  lead,
+  trail,
+}: {
+  totals: UsageTotals | null | undefined;
+  lead?: string;
+  trail?: string;
+}) {
+  if (totals === undefined) return <span className="text-fg-faint">Loading</span>;
+  if (totals === null || totals.turns === 0) {
+    return <span className="text-fg-faint">{lead ? `${lead} $0.00` : `$0.00 ${trail ?? ""}`}</span>;
+  }
+  return (
+    <>
+      <span className="flex items-baseline gap-1 text-fg-soft">
+        {lead && <span>{lead}</span>}
+        <CostText totals={totals} />
+        {trail && <span>{trail}</span>}
+      </span>
+      <span className="text-xs text-fg-faint tabular-nums">{formatTokens(totals.totalTokens)} tokens</span>
+    </>
   );
 }
 

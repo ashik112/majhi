@@ -6,11 +6,13 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { TONE_CLASS } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
-import { badgeLetters } from "@/lib/format";
+import { badgeLetters, formatTokens } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useUpdateTask } from "@/lib/task-queries";
+import { useUsageSummary } from "@/lib/usage-queries";
 import { statusInfo } from "../tasks/model";
+import { CostText } from "../usage/cost";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
 
@@ -59,13 +61,28 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
           <span className="truncate">{org?.name ?? "No org"}</span>
         </span>
-        <div className="ml-auto -my-1">
+        <div className="-my-1 ml-auto flex items-center gap-3">
+          <TaskCost taskId={task.id} />
           <TaskMenu task={task} />
         </div>
       </div>
       <EditableTitle task={task} />
       <TaskLinks task={task} />
     </header>
+  );
+}
+
+/** What the task has cost so far, all turns of every agent. Hidden until the first turn. */
+function TaskCost({ taskId }: { taskId: string }) {
+  const summary = useUsageSummary({ task: taskId });
+  const all = summary.data?.all;
+  if (!all || all.turns === 0 || summary.isPlaceholderData) return null;
+  return (
+    <span className="flex items-baseline gap-1 text-sm text-fg-muted whitespace-nowrap">
+      <span className="sr-only">Cost so far: </span>
+      <CostText totals={all} className="text-fg-soft" />
+      <span className="tabular-nums">· {formatTokens(all.totalTokens)} tokens</span>
+    </span>
   );
 }
 
