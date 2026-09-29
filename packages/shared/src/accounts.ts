@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ContextSettingsSchema, ResumeSettingsSchema } from "./settings.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -58,6 +59,10 @@ export const OrgConfigSchema = z.looseObject({
       email: z.email("Use an email address like you@company.com"),
     })
     .optional(),
+  /** Overrides the majhi-wide context budget for this org's agents (5.13). */
+  context: ContextSettingsSchema.pick({ compact_at: true }).partial().optional(),
+  /** Overrides whether this org's runs resume on their own (5.7). */
+  resume: ResumeSettingsSchema.partial().optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 

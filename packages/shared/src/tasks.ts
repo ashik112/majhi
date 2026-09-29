@@ -135,6 +135,13 @@ export const TaskSummarySchema = TaskSchema.pick({
   repos: z.array(z.object({ project: IdSchema, branch: z.string() })),
   /** Agents working right now. */
   working: z.array(IdSchema),
+  links: z.array(TaskLinkSchema),
+  /** For parent tasks: how many children, and how many are done. */
+  children: z
+    .object({ total: z.number().int().nonnegative(), done: z.number().int().nonnegative() })
+    .optional(),
+  /** Unmet `depends-on` links: the tasks this one waits for (5.4a). */
+  waitingOn: z.array(TaskIdSchema),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 
@@ -272,6 +279,49 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The option picked, by the owner (`answered`) or by the agent's permissions (`auto`). */
     chosen: z.string().optional(),
   }),
+  /**
+   * A command the boss (or another agent with majhi tools) wants to run (5.16).
+   * `pending` waits for the owner; `applied` ran (with `commit` for undo when it
+   * changed config); `rejected`, `failed` and `undone` are final.
+   */
+  RoomItemBase.extend({
+    type: z.literal("approval"),
+    agent: IdSchema,
+    command: z.string(),
+    risk: z.enum(["read", "change", "destructive", "outbound"]),
+    /** One line in plain words: "Create org Acme (key ACM)". */
+    summary: z.string(),
+    /** The command input as JSON, with secrets redacted. */
+    input: z.string(),
+    /** Why the agent wants it, in its words. */
+    reason: z.string().optional(),
+    state: z.enum(["pending", "applied", "rejected", "failed", "undone"]),
+    /** Config history commit made by the command, for Undo. */
+    commit: z.string().optional(),
+    /** Result or error, one line. */
+    result: z.string().optional(),
+  }),
+  /** An agent asks the owner for a secret; the UI renders a secure input, never chat text (5.16). */
+  RoomItemBase.extend({
+    type: z.literal("secret-request"),
+    agent: IdSchema,
+    /** The secret's name, like `newrelic-acme`; saved as `secret:<name>`. */
+    name: IdSchema,
+    /** What to paste, in plain words. */
+    label: z.string(),
+    state: z.enum(["pending", "saved", "cancelled"]),
+  }),
+  /** A context budget event (5.13): compaction, handoff to a fresh session, or rotation. */
+  RoomItemBase.extend({
+    type: z.literal("context"),
+    agent: IdSchema,
+    method: z.enum(["native", "handoff", "rotation", "fresh", "recovery"]),
+    /** Tokens before and after, when known. */
+    before: z.number().nonnegative().optional(),
+    after: z.number().nonnegative().optional(),
+    /** Path of the handoff note under the task folder, for `handoff`/`rotation`/`fresh`/`recovery`. */
+    note: z.string().optional(),
+  }),
   RoomItemBase.extend({
     type: z.literal("system"),
     level: z.enum(["info", "warn", "error"]),
@@ -284,7 +334,15 @@ export type RoomItem = z.infer<typeof RoomItemSchema>;
 /** Live state of one agent in a task. Not stored as a room item; sent on change. */
 export const AgentLiveSchema = z.object({
   agent: IdSchema,
-  status: z.enum(["idle", "starting", "working", "waiting", "stopped", "error"]),
+  /**
+   * `queued`: waiting for a free slot under the concurrency limits (5.17), see `slot`.
+   * `paused`: the task is paused (offline, limit, owner); it resumes from its checkpoint.
+   */
+  status: z.enum(["idle", "starting", "queued", "working", "waiting", "paused", "stopped", "error"]),
+  /** Place in line while `queued`, 1-based. */
+  slot: z.number().int().positive().optional(),
+  /** Turns in the current session, for `max_turns` rotation. */
+  turns: z.number().int().nonnegative().optional(),
   /** One line: what it is doing now. */
   nowDoing: z.string().optional(),
   /** Messages waiting for its next turn. */

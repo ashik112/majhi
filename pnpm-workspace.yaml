@@ -5,3 +5,5 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   node-pty: true
+minimumReleaseAgeExclude:
+  - '@modelcontextprotocol/sdk@1.31.0'

@@ -28,6 +28,13 @@ import {
   SshStatusSchema,
 } from "./host.ts";
 import {
+  ContextSettingsSchema,
+  LimitsSettingsSchema,
+  PolicySettingsSchema,
+  ResumeSettingsSchema,
+  SettingsSchema,
+} from "./settings.ts";
+import {
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
@@ -333,6 +340,10 @@ export const commands = {
       /** Upload ids from POST /api/uploads. */
       attachments: z.array(z.string()).max(20).default([]),
       start: z.boolean(),
+      /** Makes the new task a child of this one (5.4a). */
+      parent: TaskIdSchema.optional(),
+      /** The new task waits for these (5.4a); it does not start until they are met. */
+      dependsOn: z.array(TaskIdSchema).max(20).default([]),
     }),
     output: TaskSchema,
   },
@@ -404,6 +415,182 @@ export const commands = {
     summary: "Files in the task's worktrees matching a query, for @file mentions",
     input: z.object({ task: TaskIdSchema, query: z.string().max(200) }),
     output: z.array(z.object({ path: z.string(), repo: IdSchema })),
+  },
+
+  // Task links (5.4a) ---------------------------------------------------------
+  "tasks.link": {
+    risk: "change",
+    summary: "Link a task to another: make it a child, or make it wait for another task",
+    input: z.object({
+      task: TaskIdSchema,
+      type: z.enum(["parent", "depends-on"]),
+      /** The other task. For `parent`, the parent. */
+      target: TaskIdSchema,
+      /** For `depends-on`: met when merged (default) or when ready for review. */
+      when: z.enum(["merged", "ready"]).optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.unlink": {
+    risk: "change",
+    summary: "Remove a link between two tasks",
+    input: z.object({
+      task: TaskIdSchema,
+      type: z.enum(["parent", "depends-on", "follow-up"]),
+      target: TaskIdSchema,
+    }),
+    output: TaskSchema,
+  },
+
+  // Room control (5.13, 5.16) ------------------------------------------------
+  "room.fresh": {
+    risk: "change",
+    summary: "Replace an agent's session with a fresh one, carrying a handoff note",
+    input: z.object({ task: TaskIdSchema, agent: IdSchema.optional() }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.approve": {
+    risk: "change",
+    summary: "Approve or reject a command an agent proposed",
+    input: z.object({ task: TaskIdSchema, item: z.string(), decision: z.enum(["approve", "reject"]) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.secret": {
+    risk: "change",
+    summary:
+      "Answer an agent's secret request. The value is stored in secrets.age; the agent gets only the reference",
+    input: z.object({ task: TaskIdSchema, item: z.string(), value: z.string().min(1).max(8192) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+
+  // Secrets (5.16) ------------------------------------------------------------
+  "secrets.list": {
+    risk: "read",
+    summary: "List secret names. Values are never returned",
+    input: Empty,
+    output: z.array(z.object({ name: IdSchema, ref: z.string() })),
+  },
+  "secrets.save": {
+    risk: "change",
+    summary: "Save a secret in secrets.age and return its reference",
+    input: z.object({
+      /** Default: derived from the label or the kind of secret. */
+      name: IdSchema.optional(),
+      value: z.string().min(1).max(8192),
+      label: z.string().max(200).optional(),
+    }),
+    output: z.object({ name: IdSchema, ref: z.string() }),
+  },
+  "secrets.remove": {
+    risk: "destructive",
+    summary: "Delete a secret. Refused while config refers to it",
+    input: z.object({ name: IdSchema }),
+    output: z.object({ removed: IdSchema }),
+  },
+
+  // Config history and undo (5.16) --------------------------------------------
+  "history.list": {
+    risk: "read",
+    summary: "Config changes, newest first",
+    input: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(
+      z.object({
+        commit: z.string(),
+        at: z.string(),
+        /** `owner`, `manual` (hand edit) or an agent id. */
+        actor: z.string(),
+        command: z.string().optional(),
+        summary: z.string(),
+        reason: z.string().optional(),
+        /** True when an Undo commit already reverted it. */
+        undone: z.boolean(),
+      }),
+    ),
+  },
+  "history.undo": {
+    risk: "change",
+    summary: "Undo one config change by reverting its commit",
+    input: z.object({ commit: z.string().regex(/^[0-9a-f]{7,40}$/) }),
+    output: z.object({ commit: z.string(), summary: z.string() }),
+  },
+
+  // Settings (5.7, 5.13, 5.16, 5.17) ------------------------------------------
+  "settings.get": {
+    risk: "read",
+    summary: "Context budget, limits, resume and approval policy, with defaults applied",
+    input: Empty,
+    output: SettingsSchema,
+  },
+  "settings.set": {
+    risk: "change",
+    summary: "Change context budget, limits or resume settings. Policy changes use policy.set",
+    input: z.object({
+      context: ContextSettingsSchema.partial().optional(),
+      limits: LimitsSettingsSchema.partial().optional(),
+      resume: ResumeSettingsSchema.partial().optional(),
+    }),
+    output: SettingsSchema,
+  },
+  "policy.set": {
+    risk: "destructive",
+    summary: "Change the approval policy for the boss's commands",
+    input: PolicySettingsSchema.partial(),
+    output: SettingsSchema,
+  },
+
+  // The boss (5.16) ---------------------------------------------------------
+  "boss.chat": {
+    risk: "change",
+    summary: "Open the boss chat: a chat task with the boss, created on first use",
+    input: Empty,
+    output: TaskSchema,
+  },
+
+  // Health and updates (no manual work outside majhi) ------------------------
+  "health.run": {
+    risk: "read",
+    summary: "Run every doctor check: config, mounts, SSH, CLIs, accounts, disk, host helper",
+    input: Empty,
+    output: z.object({
+      checkedAt: z.string(),
+      checks: z.array(
+        z.object({
+          id: z.string(),
+          group: z.enum(["majhi", "host", "ssh", "accounts", "disk"]),
+          label: z.string(),
+          ok: z.boolean(),
+          detail: z.string(),
+          /** A fix majhi can do itself, run with health.fix. */
+          fix: z.object({ label: z.string() }).optional(),
+        }),
+      ),
+    }),
+  },
+  "health.fix": {
+    risk: "change",
+    summary: "Run the fix majhi offers for a failed check",
+    input: z.object({ id: z.string() }),
+    output: z.object({ ok: z.boolean(), detail: z.string() }),
+  },
+  "system.version": {
+    risk: "read",
+    summary: "The running version and whether newer code is on disk",
+    input: Empty,
+    output: z.object({
+      /** Git commit the running image was built from. */
+      running: z.string(),
+      /** Git commit of the checkout on disk, from the host helper. Absent without a helper. */
+      onDisk: z.string().optional(),
+      updateReady: z.boolean(),
+      /** Commit subjects between running and onDisk, newest first, at most 20. */
+      changes: z.array(z.string()),
+    }),
+  },
+  "system.update": {
+    risk: "change",
+    summary: "Rebuild majhi from the code on disk and restart it, through the host helper",
+    input: Empty,
+    output: z.object({ state: z.enum(["restarting", "manual"]) }),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 
