@@ -189,7 +189,8 @@ host helper   `apps/host`, a small Node process on the owner's machine (not in
               passphrase to the macOS Keychain once (`ssh.unlock`; the
               passphrase travels browser, server, helper over localhost, is
               never logged or stored by majhi, and the Keychain holds it).
-              SSH keys: at start, every 30 minutes and on `ssh.reload` it runs
+              SSH keys: at start (login), after a wake from sleep, when a
+              fetch fails for lack of SSH access, and on `ssh.reload` it runs
               `/usr/bin/ssh-add --apple-load-keychain`, then loads every
               private key from `~/.ssh/config` `IdentityFile` entries and the
               default names that has no passphrase and is not loaded yet, and

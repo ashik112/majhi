@@ -27,10 +27,20 @@ export interface Majhi {
   close(): Promise<void>;
 }
 
+/** Loading keys runs ssh-add a few times on the host; allow for a slow Keychain. */
+const SSH_RELOAD_TIMEOUT_MS = 40_000;
+
 /** Wires the config, accounts, agents, live channels, the host helper link and the commands together. */
 export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majhi {
   const hostLink = options.hostLink ?? new HostLink();
-  const services = createServices(env, options);
+  const services = createServices(env, {
+    ...options,
+    reloadKeys: async () => {
+      if (!hostLink.status().connected) return false;
+      hostLink.noteSsh(await hostLink.call("ssh.reload", {}, SSH_RELOAD_TIMEOUT_MS));
+      return true;
+    },
+  });
   const config = services.config;
   const sshHosts = new SshHostProbe(async () => sshTargets((await config.load()).projectPaths));
   const dispatch = createDispatcher(

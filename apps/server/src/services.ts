@@ -27,6 +27,8 @@ export interface ServiceOptions {
   terminalTimers?: TerminalTimers;
   /** Replaces `fetch` and the limits for task links, so tests never reach the network. */
   links?: LinkOptions;
+  /** Asks the host helper to load the owner's SSH keys again, for a fetch that lacked them. */
+  reloadKeys?: () => Promise<boolean>;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -116,6 +118,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     events,
     ...(options.links === undefined ? {} : { links: options.links }),
+    ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
   return {
     config,

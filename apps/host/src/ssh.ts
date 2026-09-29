@@ -19,7 +19,15 @@ export const SSH_ADD = "/usr/bin/ssh-add";
 export const SSH_KEYGEN = "/usr/bin/ssh-keygen";
 export const LAUNCHCTL = "/bin/launchctl";
 /** Keys drop after sleep or an agent restart, so the helper checks again this often. */
-export const SSH_RELOAD_INTERVAL_MS = 30 * 60_000;
+/** How often the helper looks at the clock to notice a wake from sleep. Cheap: no ssh runs. */
+export const WAKE_TICK_MS = 60_000;
+/** A tick that arrives this much later than planned means the Mac slept in between. */
+export const WAKE_GAP_MS = 2 * 60_000;
+
+/** True when the time since the last tick shows the machine was asleep. */
+export function isWake(lastTickAt: number, now: number, tickMs = WAKE_TICK_MS): boolean {
+  return now - lastTickAt > tickMs + WAKE_GAP_MS;
+}
 const COMMAND_TIMEOUT_MS = 10_000;
 const DEFAULT_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 
@@ -152,8 +160,11 @@ export interface Ssh {
   inspect(): Promise<SshReport>;
   /** Gives a key its passphrase once. Throws `SshUnlockError` with a plain message on refusal. */
   unlock(key: string, passphrase: string): Promise<SshStatus>;
-  /** Checks now and every 30 minutes. The returned function stops it. */
-  start(intervalMs?: number): () => void;
+  /**
+   * Checks now (the helper starts at login) and again after every wake from sleep. Keys stay
+   * loaded while the owner is logged in, so there is no periodic reload. The returned function stops it.
+   */
+  start(options?: { tickMs?: number; now?: () => number }): () => void;
 }
 
 export function createSsh(deps: SshDeps): Ssh {
@@ -378,9 +389,17 @@ export function createSsh(deps: SshDeps): Ssh {
     reload: () => enqueue(runCheck).then((r) => r.status),
     inspect: () => enqueue(runCheck),
     unlock: (key, passphrase) => enqueue(() => unlockNow(key, passphrase)),
-    start(intervalMs = SSH_RELOAD_INTERVAL_MS) {
+    start({ tickMs = WAKE_TICK_MS, now = Date.now } = {}) {
       void enqueue(runCheck);
-      const timer = setInterval(() => void enqueue(runCheck), intervalMs);
+      let lastTick = now();
+      const timer = setInterval(() => {
+        const at = now();
+        if (isWake(lastTick, at, tickMs)) {
+          log("woke from sleep; checking SSH keys");
+          void enqueue(runCheck);
+        }
+        lastTick = at;
+      }, tickMs);
       timer.unref();
       return () => clearInterval(timer);
     },

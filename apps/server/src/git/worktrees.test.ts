@@ -1,9 +1,15 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tempDir, git as testGit } from "../testing/fixtures.ts";
 import { defaultBranch, listFiles, uncommitted } from "./git.ts";
-import { createWorktree, dirtyWorktrees, removeWorktree, WorktreeProblem } from "./worktrees.ts";
+import {
+  createWorktree,
+  dirtyWorktrees,
+  isSshAuthFailure,
+  removeWorktree,
+  WorktreeProblem,
+} from "./worktrees.ts";
 
 let dir: string;
 let cleanup: () => Promise<void>;
@@ -194,5 +200,71 @@ describe("helpers", () => {
     await writeFile(join(source, "new.txt"), "x");
     expect((await listFiles(source)).sort()).toEqual([".gitignore", "a.txt", "new.txt"]);
     expect(await uncommitted(source)).toContain("?? new.txt");
+  });
+});
+
+describe("fetch without SSH keys", () => {
+  /**
+   * Points origin at an ssh URL served by a fake ssh: it refuses with ssh's own "Permission
+   * denied (publickey)" until the marker file exists (keys reloaded), then serves the bare
+   * remote through git-upload-pack, like a real host would.
+   */
+  async function sshRemote(): Promise<{ marker: string }> {
+    const marker = join(dir, "keys-loaded");
+    const fakeSsh = join(dir, "fake-ssh.sh");
+    await writeFile(
+      fakeSsh,
+      `#!/bin/sh\nif [ -f "${marker}" ]; then exec git-upload-pack "${remote}"; fi\n` +
+        `echo "git@example.invalid: Permission denied (publickey)." >&2\nexit 255\n`,
+    );
+    await chmod(fakeSsh, 0o755);
+    vi.stubEnv("GIT_SSH_COMMAND", fakeSsh);
+    await testGit(source, "remote", "set-url", "origin", "ssh://git@example.invalid/api.git");
+    return { marker };
+  }
+
+  it("reloads the owner's keys once and fetches again", async () => {
+    const { marker } = await sshRemote();
+    const reloadKeys = vi.fn(async () => {
+      await writeFile(marker, "");
+      return true;
+    });
+    const result = await createWorktree({
+      source,
+      base: "develop",
+      branch: "task/t-1-x",
+      path: wt("api"),
+      reloadKeys,
+    });
+    expect(result.warnings).toEqual([]);
+    expect(reloadKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns and uses the local copy when the keys cannot be reloaded", async () => {
+    await sshRemote();
+    const reloadKeys = vi.fn(async () => false);
+    const result = await createWorktree({
+      source,
+      base: "develop",
+      branch: "task/t-1-x",
+      path: wt("api"),
+      reloadKeys,
+    });
+    expect(reloadKeys).toHaveBeenCalledTimes(1);
+    expect(result.warnings[0]).toMatch(/^Could not fetch develop from origin/);
+    expect(await readFile(join(wt("api"), "b.txt"), "utf8")).toBe("b\n");
+  });
+
+  it("does not reload keys for failures that are not about SSH access", async () => {
+    await testGit(source, "remote", "set-url", "origin", join(dir, "missing.git"));
+    const reloadKeys = vi.fn(async () => true);
+    await createWorktree({ source, base: "develop", branch: "task/t-1-x", path: wt("api"), reloadKeys });
+    expect(reloadKeys).not.toHaveBeenCalled();
+  });
+
+  it("recognizes ssh access failures", () => {
+    expect(isSshAuthFailure("git@github.com: Permission denied (publickey).")).toBe(true);
+    expect(isSshAuthFailure("Host key verification failed.")).toBe(true);
+    expect(isSshAuthFailure("Could not resolve host: github.com")).toBe(false);
   });
 });

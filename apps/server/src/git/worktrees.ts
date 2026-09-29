@@ -19,6 +19,11 @@ export interface WorktreeRequest {
   branch: string;
   /** Where the worktree goes. Must not exist, or be empty. */
   path: string;
+  /**
+   * Called once when a fetch fails for lack of SSH access. Asks the host helper to load the
+   * owner's keys again; resolves true when that was possible, and the fetch is then retried.
+   */
+  reloadKeys?: () => Promise<boolean>;
 }
 
 export interface WorktreeResult {
@@ -68,7 +73,7 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   const warnings: string[] = [];
   const remote = await remoteOf(source);
   if (remote !== undefined) {
-    const failed = await tryFetch(source, remote, base);
+    const failed = await fetchWithKeys(source, remote, base, req.reloadKeys);
     if (failed !== undefined) {
       warnings.push(
         `Could not fetch ${base} from ${remote} (${failed}). Using the last copy on this machine.`,
@@ -89,6 +94,27 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   const baseRef = await resolveBase(source, remote, base);
   await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
   return { createdBranch: true, warnings };
+}
+
+/** ssh's way of saying no key it had was accepted, or the host could not be verified. */
+const SSH_AUTH_FAILURE =
+  /Permission denied \(publickey|Host key verification failed|no such identity|Too many authentication failures/i;
+
+export function isSshAuthFailure(message: string): boolean {
+  return SSH_AUTH_FAILURE.test(message);
+}
+
+/** Fetches; after an SSH access failure, reloads the owner's keys once and tries again. */
+async function fetchWithKeys(
+  source: string,
+  remote: string,
+  ref: string,
+  reloadKeys: (() => Promise<boolean>) | undefined,
+): Promise<string | undefined> {
+  const failed = await tryFetch(source, remote, ref);
+  if (failed === undefined || reloadKeys === undefined || !isSshAuthFailure(failed)) return failed;
+  if (!(await reloadKeys().catch(() => false))) return failed;
+  return tryFetch(source, remote, ref);
 }
 
 async function tryFetch(source: string, remote: string, ref: string): Promise<string | undefined> {

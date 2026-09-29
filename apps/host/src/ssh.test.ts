@@ -6,6 +6,7 @@ import {
   createSsh,
   discoverKeys,
   discoverPublicKeys,
+  isWake,
   LAUNCHCTL,
   parseFingerprints,
   parseIdentityFiles,
@@ -310,17 +311,30 @@ describe("the key loader", () => {
     });
   });
 
-  it("checks at start and again on each interval, and stops", async () => {
+  it("checks at start and after a wake, not on a plain tick, and stops", async () => {
     const w = fakeWorld({ [KEY_A]: "none" });
     const ssh = setup(w);
     const loads = () => w.calls.filter((c) => c.includes("--apple-load-keychain")).length;
-    const stop = ssh.start(20);
-    for (let i = 0; i < 200 && loads() < 3; i++) await new Promise((r) => setTimeout(r, 10));
+    let clock = 1_000_000;
+    const settle = () => new Promise((r) => setTimeout(r, 60));
+    const stop = ssh.start({ tickMs: 20, now: () => clock });
+    await settle();
+    expect(loads()).toBe(1);
+    clock += 20; // an ordinary tick: awake the whole time
+    await settle();
+    expect(loads()).toBe(1);
+    clock += 10 * 60_000; // ten minutes passed between ticks: the Mac slept
+    await settle();
+    expect(loads()).toBe(2);
     stop();
-    expect(loads()).toBeGreaterThanOrEqual(3);
-    await new Promise((r) => setTimeout(r, 80));
-    const settled = loads();
-    await new Promise((r) => setTimeout(r, 80));
-    expect(loads()).toBe(settled);
+    clock += 10 * 60_000;
+    await settle();
+    expect(loads()).toBe(2);
+  });
+
+  it("tells a wake from a normal tick", () => {
+    expect(isWake(0, 60_000)).toBe(false);
+    expect(isWake(0, 60_000 + 2 * 60_000)).toBe(false);
+    expect(isWake(0, 60_000 + 2 * 60_000 + 1)).toBe(true);
   });
 });

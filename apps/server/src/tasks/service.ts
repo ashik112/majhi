@@ -44,6 +44,8 @@ export interface TaskDeps {
   links?: LinkOptions;
   files?: FileIndex;
   now?: () => Date;
+  /** Asks the host helper to load the owner's SSH keys again. Absent without a helper. */
+  reloadKeys?: () => Promise<boolean>;
 }
 
 export interface CreateInput {
@@ -277,6 +279,7 @@ export class TaskService {
           base: repo.base,
           branch: repo.branch,
           path,
+          ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
         store.tasks.setWorktree(id, repo.project, path, result.createdBranch);
         for (const w of result.warnings) this.warn(id, `${repo.project}: ${w}`);
