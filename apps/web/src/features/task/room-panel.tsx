@@ -1,5 +1,5 @@
 import { type AgentLive, collapseHome, type RoomItem, type Task } from "@majhi/shared";
-import { Copy, OctagonX, Play, RotateCw } from "lucide-react";
+import { Check, Copy, OctagonX, Play, RotateCw } from "lucide-react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useConfig } from "@/lib/queries";
 import { useOrgs } from "@/lib/studio-queries";
-import { useStartTask, useStopTask } from "@/lib/task-queries";
+import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
 import { useCopy } from "@/lib/use-copy";
 import { ChangesPanel } from "../room/changes-panel";
 import { type ActionCopy, actionCopy, agentDot, agentState, modelLabel } from "./model";
@@ -113,6 +113,7 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
 function ActionCard({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
   const start = useStartTask();
   const stop = useStopTask();
+  const close = useCloseTask();
   const toast = useToast();
   const copy: ActionCopy = actionCopy(task, yourTurn);
   const fail = (title: string) => (error: ApiRequestError) =>
@@ -141,6 +142,17 @@ function ActionCard({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
         >
           <RotateCw aria-hidden="true" />
           Resume
+        </Button>
+      )}
+      {copy.kind === "done" && (
+        <Button
+          variant="primary"
+          size="xl"
+          disabled={close.isPending}
+          onClick={() => close.mutate(task.id, { onError: fail("Could not mark it done") })}
+        >
+          <Check aria-hidden="true" />
+          Mark done
         </Button>
       )}
       {copy.kind === "stop" && (

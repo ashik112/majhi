@@ -489,7 +489,7 @@ describe("failures and restarts", () => {
     const again = await send("carry on");
     expect(again.status).toBe(200);
     await runs().idle();
-    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("running");
+    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
     expect(w.h.runtime.sessions).toHaveLength(2);
     expect(w.h.runtime.sessions[1]?.prompts.map((p) => (p[0]?.type === "text" ? p[0].text : ""))).toEqual([
       "waiting",

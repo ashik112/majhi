@@ -6,11 +6,11 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useOrgs } from "@/lib/studio-queries";
+import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
 import { useNewTask } from "../new-task/new-task-context";
 import { BoardCard, cardDomId } from "./board-card";
-import { boardCounts, buildColumns, COLUMN_DOT, directionOf, moveFocus } from "./model";
+import { boardCounts, buildColumns, COLUMN_DOT, directionOf, isBossChat, moveFocus } from "./model";
 
 /** Keys the board answers while focus is on a card or on the page itself, not in a field or dialog. */
 function boardKeyTarget(target: EventTarget | null): boolean {
@@ -28,7 +28,10 @@ export function BoardScreen() {
   const [query, setQuery] = useState("");
   const [showDone, setShowDone] = useState(false);
 
-  const all = tasks.data ?? [];
+  const bossId = useAgents().data?.flatMap((a) =>
+    a.status === "ok" && a.isBoss ? [a.agent.frontmatter.id] : [],
+  )[0];
+  const all = useMemo(() => (tasks.data ?? []).filter((t) => !isBossChat(t, bossId)), [tasks.data, bossId]);
   const columns = useMemo(() => buildColumns(all, { org, query, showDone }), [all, org, query, showDone]);
   const counts = boardCounts(all, org);
   const onlyIds = useMemo(() => columns.map((c) => c.tasks.map((t) => t.id)), [columns]);

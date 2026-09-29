@@ -288,6 +288,7 @@ describe("tasks.start", () => {
       ["owner", "add a health endpoint to api from develop"],
       ["system", "@acme-builder started on claude-acme, model sonnet, effort high"],
       ["agent", "ok"],
+      ["system", "Ready for your review. Reply to continue, or mark it done."],
     ]);
     // The task list says who is working, and the room's agent is idle.
     expect(w.h.majhi.services.room.getLive("ACM-1", "acme-builder")).toMatchObject({

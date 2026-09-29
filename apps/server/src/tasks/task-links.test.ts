@@ -131,7 +131,7 @@ describe("waiting tasks", () => {
     await w.h.cmd("tasks.close", { id: "ACM-2" });
     await w.h.majhi.services.runs.idle();
     const started = (await w.h.cmd("tasks.get", { id: "ACM-3" })).body;
-    expect(started.status).toBe("running");
+    expect(started.status).toBe("review");
     expect(started.repos[0].worktree).toBeDefined();
     expect(await texts("ACM-3")).toContain("Started: ACM-2 is done.");
     expect((await summary("ACM-3")).waitingOn).toEqual([]);
@@ -148,13 +148,13 @@ describe("waiting tasks", () => {
   it("starts on review for a ready dependency, when the run manager reports the change", async () => {
     w = await taskWorld();
     await create("fix api one");
-    await create("fix api two", { start: true });
+    await create("fix api two");
     await w.h.cmd("tasks.link", { task: "ACM-1", type: "depends-on", target: "ACM-2", when: "ready" });
     await w.h.cmd("tasks.start", { id: "ACM-1" }).then((r) => expect(r.status).toBe(409));
     w.h.majhi.services.store.tasks.setStatus("ACM-2", "review", undefined, new Date().toISOString());
     await w.h.majhi.services.tasks.statusChanged("ACM-2");
     await w.h.majhi.services.runs.idle();
-    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("running");
+    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
     expect(await texts("ACM-1")).toContain("Started: ACM-2 is ready for review.");
   });
 
@@ -164,7 +164,7 @@ describe("waiting tasks", () => {
     await create("fix api two", { start: true, dependsOn: ["ACM-1"] });
     await w.h.cmd("tasks.unlink", { task: "ACM-2", type: "depends-on", target: "ACM-1" });
     await w.h.majhi.services.runs.idle();
-    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).toBe("running");
+    expect((await w.h.cmd("tasks.get", { id: "ACM-2" })).body.status).toBe("review");
   });
 
   it("pauses a waiting task with an error item when its dependency is removed", async () => {

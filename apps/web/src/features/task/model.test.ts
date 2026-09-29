@@ -53,8 +53,9 @@ describe("actionCopy", () => {
     expect(copy).toMatchObject({ kind: "resume", tone: "coral", warm: true });
     expect(copy.text).toMatch(/usage limit/);
   });
-  it("has no button once the work is with the owner or finished", () => {
-    for (const status of ["review", "mr", "done"] as const) {
+  it("offers Mark done in review, and no button once it has an MR or is done", () => {
+    expect(actionCopy({ ...code, status: "review" }, false).kind).toBe("done");
+    for (const status of ["mr", "done"] as const) {
       expect(actionCopy({ ...code, status }, false).kind).toBe("none");
     }
   });

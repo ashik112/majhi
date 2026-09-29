@@ -121,7 +121,12 @@ describe("cardNote", () => {
   });
   it("has no note for the quiet columns", () => {
     expect(cardNote(task({ id: "A-1", status: "inbox" }))).toBeNull();
-    expect(cardNote(task({ id: "A-1", status: "review" }))).toBeNull();
+  });
+  it("asks the owner to reply or mark done once the agent finished", () => {
+    expect(cardNote(task({ id: "A-1", status: "review" }))).toEqual({
+      text: "Finished · reply or mark done",
+      tone: "violet",
+    });
   });
 });
 

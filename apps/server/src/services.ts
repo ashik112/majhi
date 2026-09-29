@@ -152,6 +152,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     admin: new AdminAccess(adminTokens),
     onTasksChanged: () => events.emit(["tasks"]),
+    // Bound below: the task service is built after the run manager.
+    onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),
   });
   runs.recover();
   const uploads = new UploadStore(env.majhiHome);

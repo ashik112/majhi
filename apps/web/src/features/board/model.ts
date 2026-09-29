@@ -70,6 +70,16 @@ export function waitingText(waitingOn: readonly string[]): string {
 }
 
 /** The line under a card: why it is paused, that it is your turn, who is working, or what it waits on. */
+/** The boss's chat lives behind Cmd J and on Hub setup, not on the board. */
+export function isBossChat(
+  task: Pick<TaskSummary, "kind" | "title" | "team">,
+  bossId: string | undefined,
+): boolean {
+  return (
+    bossId !== undefined && task.kind === "chat" && task.title === "Boss chat" && task.team[0] === bossId
+  );
+}
+
 export function cardNote(task: TaskSummary): CardNote | null {
   if ((task.status === "inbox" || task.status === "ready") && task.waitingOn.length > 0) {
     return { text: waitingText(task.waitingOn), tone: "coral" };
@@ -77,6 +87,7 @@ export function cardNote(task: TaskSummary): CardNote | null {
   if (task.status === "paused") {
     return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", tone: "coral" };
   }
+  if (task.status === "review") return { text: "Finished · reply or mark done", tone: "violet" };
   if (task.status === "running") {
     const who = task.working[0];
     return who ? { text: `@${who} working`, tone: "amber" } : { text: "Your turn", tone: "violet" };

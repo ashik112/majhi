@@ -31,6 +31,8 @@ export interface RunDeps {
   admin?: AdminAccess;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
+  /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
+  onIdle?: (task: string) => void;
   now?: () => Date;
 }
 
@@ -56,6 +58,8 @@ class AgentRun {
   turning = false;
   cancelBeforePrompt = false;
   needsBrief = false;
+  /** Stop reason of the last finished turn. */
+  lastStop: string | undefined;
   /** The majhi-admin token of this session, revoked when it ends. */
   adminToken: string | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
@@ -360,10 +364,13 @@ export class RunManager {
         this.setLive(run, { status: "error", nowDoing: undefined });
         return;
       }
+      run.lastStop = stopReason;
       this.finishTurn(run, stopReason);
     }
     if (run.session !== undefined && !run.exited && !run.closing) {
       this.setLive(run, { status: "idle", nowDoing: undefined });
+      // Only a turn the agent ended itself hands the task back; Esc and stops keep it with the owner.
+      if (run.queue.length === 0 && !run.held && run.lastStop === "end_turn") this.deps.onIdle?.(run.task);
     }
   }
 

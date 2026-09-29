@@ -330,11 +330,11 @@ export class TaskService {
     return started;
   }
 
-  /** Cancels every turn, closes the sessions, and pauses a running task with reason owner. */
+  /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
   async stop(id: string): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
-    if (task.status === "running" || task.status === "paused") {
+    if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
     const stopped = this.get(id);
@@ -565,6 +565,21 @@ export class TaskService {
 
   // ---------------------------------------------------------------------------
   // Room
+
+  /**
+   * An agent finished its turn with nothing queued. When no agent in the task is still working,
+   * the task moves to review: the owner replies (back to running) or marks it done.
+   */
+  async agentsIdle(id: string): Promise<void> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "running") return;
+    if (this.deps.runs.working(id).length > 0) return;
+    this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
+    this.note(task.id, "Ready for your review. Reply to continue, or mark it done.");
+    this.deps.room.publishTask(this.get(id));
+    this.deps.events.emit(["tasks"]);
+    await this.statusChanged(id);
+  }
 
   async send(input: {
     task: string;

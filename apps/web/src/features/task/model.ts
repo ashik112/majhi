@@ -52,7 +52,7 @@ export function modelLabel(live: AgentLive | undefined, configured: string | und
   return live?.effort ? `${model} · ${live.effort}` : model;
 }
 
-export type ActionKind = "start" | "stop" | "resume" | "none";
+export type ActionKind = "start" | "stop" | "resume" | "done" | "none";
 
 export interface ActionCopy {
   kind: ActionKind;
@@ -104,9 +104,9 @@ export function actionCopy(
       };
     case "review":
       return {
-        kind: "none",
-        text: "Waiting for your review. Approving and opening an MR come with merge requests.",
-        tone: "faint",
+        kind: "done",
+        text: "The agent finished. Reply in the room to continue, or mark it done.",
+        tone: "violet",
         warm: false,
       };
     case "mr":
