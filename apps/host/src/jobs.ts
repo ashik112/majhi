@@ -1,0 +1,44 @@
+import type { DirListing, HostJob, HostReply, RootSuggestion } from "@majhi/shared";
+import { errorMessage } from "./errors.ts";
+
+export interface JobHandlers {
+  listDirs(params: { path: string; showHidden: boolean }): Promise<DirListing>;
+  suggestRoots(): Promise<RootSuggestion[]>;
+  /** Undefined when this helper cannot run `docker compose`. */
+  remount: (() => Promise<unknown>) | undefined;
+}
+
+export type SendReply = (reply: HostReply) => Promise<void>;
+
+export const CANNOT_REMOUNT =
+  "The host helper cannot run docker compose here. Run `make up` in the majhi folder to mount the new roots.";
+
+/**
+ * Runs one job and sends its reply. A failing job is answered with its
+ * message; nothing here throws. `remount` is answered first, because it
+ * restarts the server the reply goes to.
+ */
+export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendReply): Promise<void> {
+  try {
+    switch (job.method) {
+      case "listDirs":
+        await reply({ id: job.id, ok: true, result: await handlers.listDirs(job.params) });
+        return;
+      case "suggestRoots":
+        await reply({ id: job.id, ok: true, result: { suggestions: await handlers.suggestRoots() } });
+        return;
+      case "remount": {
+        const remount = handlers.remount;
+        if (remount === undefined) {
+          await reply({ id: job.id, ok: false, error: CANNOT_REMOUNT });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: { accepted: true } });
+        await remount();
+        return;
+      }
+    }
+  } catch (err) {
+    await reply({ id: job.id, ok: false, error: errorMessage(err) }).catch(() => undefined);
+  }
+}
