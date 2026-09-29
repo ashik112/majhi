@@ -38,4 +38,9 @@ export interface ToolDef extends ToolSpec {
   readUsage(ctx: UsageContext): Promise<AccountUsage>;
   /** Extra env for API-key accounts, on top of the key itself. */
   apiKeyEnv?: Record<string, string>;
+  /**
+   * Set on every run of this tool. Used to keep account-synced extras (claude.ai connectors,
+   * plugins' MCP servers) out of agent sessions: an agent gets only the tools majhi attaches.
+   */
+  runEnv?: Record<string, string>;
 }

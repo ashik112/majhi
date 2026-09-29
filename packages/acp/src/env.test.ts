@@ -20,6 +20,8 @@ describe("buildEnv", () => {
       LANG: "C.UTF-8",
       HOME: "/h/a",
       CLAUDE_CONFIG_DIR: "/h/a",
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+      CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: "1",
     });
   });
 
@@ -86,5 +88,10 @@ describe("loginCommand", () => {
     expect(() => loginCommand({ tool: "claude", home: "/h", apiKey: "sk-secret" }, { base })).toThrow();
     const spec = loginCommand({ tool: "claude", home: "/h" }, { base });
     expect(spec.display).not.toContain("KEY");
+  });
+  it("keeps the owner's claude.ai connectors and plugin MCP servers out of Claude runs", () => {
+    const env = buildEnv({ tool: "claude", home: "/h" }, { PATH: "/bin" });
+    expect(env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
+    expect(env.CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS).toBe("1");
   });
 });

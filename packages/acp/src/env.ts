@@ -20,6 +20,7 @@ export function buildEnv(account: AccountRuntime, base: BaseEnv, git?: GitIdenti
   if (base.LANG) env.LANG = base.LANG;
   if (base.PLAYWRIGHT_BROWSERS_PATH) env.PLAYWRIGHT_BROWSERS_PATH = base.PLAYWRIGHT_BROWSERS_PATH;
 
+  Object.assign(env, tool.runEnv);
   env.HOME = account.home;
   env[tool.configHomeVar] = account.home;
 

@@ -113,6 +113,9 @@ export const claude: ToolDef = {
   configHomeVar: "CLAUDE_CONFIG_DIR",
   apiKeyVar: "ANTHROPIC_API_KEY",
   adapter: { command: "claude-agent-acp", args: [] },
+  // The owner's claude.ai connectors (Drive, Docs...) and synced plugins' MCP servers would
+  // otherwise reach every agent, in every org. majhi attaches the tools an agent may use.
+  runEnv: { ENABLE_CLAUDEAI_MCP_SERVERS: "false", CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS: "1" },
   versionArgs: ["--cli", "--version"],
   authStatusArgs: ["--cli", "auth", "status", "--json"],
   loginArgs: ["--cli", "auth", "login", "--claudeai"],
