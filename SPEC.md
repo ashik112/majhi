@@ -503,6 +503,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
   - Typing while an agent works queues the message for its next turn. Cmd+Enter stops the current turn and sends the message at once.
   - Model and effort can be changed mid-session (5.1).
   - Permission prompts show inline with Allow once, Allow for this task, and Deny.
+- **Media and pages from agents.** Agents show the owner things by saving them in the task folder and linking them in a message with markdown (`![chart](media/chart.png)`, `[report](media/report.html)`), or by sending ACP image content. The room renders images, video and audio inline, and shows pages, PDFs and other files as cards that open in a new browser tab. Web links are clickable. Task files are served only from inside the task folder, and HTML runs sandboxed in its own origin, so an agent's page cannot call majhi's API. The generated `AGENTS.md` tells agents how to do this.
 - **CLI parity.** Slash commands the agent advertises over ACP work from the composer. `@file` mentions autocomplete from the task's worktrees. Pasted images and files attach. Any past session can be resumed. An embedded terminal opens in the task folder, and any file path opens in the owner's editor.
 
 ### 5.16 The boss and the control plane
