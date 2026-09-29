@@ -11,6 +11,7 @@ import {
   LEGACY_PERSONAL,
   OrgConfigSchema,
   OrgViewSchema,
+  PermSchema,
   PRIVATE,
   ToolIdSchema,
   ToolInfoSchema,
@@ -288,6 +289,33 @@ export const commands = {
     risk: "change",
     summary: "Replace an agent's settings and instructions",
     input: AgentDraftSchema.extend({ id: IdSchema }),
+    output: AgentEntrySchema,
+  },
+  "agents.edit": {
+    risk: "change",
+    summary: "Change some of an agent's settings or its instructions, keeping everything else as it is",
+    input: z.object({
+      id: IdSchema,
+      /** Only the fields to change. `null` removes an optional field (model, effort, fallback). */
+      set: z
+        .object({
+          role: AgentFrontmatterSchema.shape.role,
+          account: IdSchema,
+          model: z.string().trim().min(1).nullable(),
+          effort: z.string().trim().min(1).nullable(),
+          where: z.array(IdSchema).min(1),
+          // Not the frontmatter's own field: that one defaults to [] and would wipe perms in a patch.
+          perms: z.array(PermSchema),
+          fallback: IdSchema.nullable(),
+        })
+        .partial()
+        .default({}),
+      /** Replaces the instructions when given. */
+      instructions: z
+        .string()
+        .max(64 * 1024)
+        .optional(),
+    }),
     output: AgentEntrySchema,
   },
   "agents.duplicate": {

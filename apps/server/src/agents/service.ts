@@ -2,6 +2,7 @@ import {
   type AccountModels,
   type Agent,
   type AgentEntry,
+  AgentFrontmatterSchema,
   AUTO,
   type CommandMeta,
   type HealthCheck,
@@ -12,7 +13,7 @@ import type { AccountService } from "../accounts/service.ts";
 import { withBuiltInOrgs } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { renameAgentInConfig, writeBoss } from "../config/write.ts";
-import { UserError } from "../errors.ts";
+import { formatIssues, UserError } from "../errors.ts";
 import type { AgentStore, StoredAgent } from "./store.ts";
 import { agentWarnings } from "./warnings.ts";
 
@@ -55,6 +56,38 @@ export class AgentService {
   async update(id: string, draft: Draft, command: string, meta: CommandMeta): Promise<AgentEntry> {
     await this.require(id);
     await this.write(id, draft, command, meta, `updated agent ${id}`);
+    return this.entry(id);
+  }
+
+  /** Changes only the named fields and, when given, the instructions. Everything else stays. */
+  async edit(
+    id: string,
+    change: { set: Record<string, unknown>; instructions?: string | undefined },
+    command: string,
+    meta: CommandMeta,
+  ): Promise<AgentEntry> {
+    const current = await this.require(id);
+    if (!current.ok) {
+      throw new UserError(`Agent "${id}" has errors in its file. Fix them first.`, 409, current.errors);
+    }
+    const { id: _id, ...frontmatter } = current.agent.frontmatter;
+    const next: Record<string, unknown> = { ...frontmatter };
+    for (const [key, value] of Object.entries(change.set)) {
+      if (value === null) delete next[key];
+      else next[key] = value;
+    }
+    // The patch is merged here, so the command's input schema has not seen the result: check it.
+    const parsed = AgentFrontmatterSchema.safeParse({ ...next, id });
+    if (!parsed.success) {
+      throw new UserError(`That change would make @${id} invalid.`, 400, formatIssues(parsed.error));
+    }
+    const { id: _parsedId, ...checked } = parsed.data;
+    const draft = { frontmatter: checked, instructions: change.instructions ?? current.agent.instructions };
+    const fields = [
+      ...Object.keys(change.set),
+      ...(change.instructions === undefined ? [] : ["instructions"]),
+    ];
+    await this.write(id, draft, command, meta, `edited agent ${id}: ${fields.join(", ") || "nothing"}`);
     return this.entry(id);
   }
 

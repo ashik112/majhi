@@ -156,6 +156,8 @@ export function createHandlers({
     "agents.list": () => agents.list(),
     "agents.create": (input, ctx) => agents.create(input.id, input, ctx.command, ctx.meta),
     "agents.update": (input, ctx) => agents.update(input.id, input, ctx.command, ctx.meta),
+    "agents.edit": (input, ctx) =>
+      agents.edit(input.id, { set: input.set, instructions: input.instructions }, ctx.command, ctx.meta),
     "agents.duplicate": (input, ctx) => agents.duplicate(input.id, input.newId, ctx.command, ctx.meta),
     "agents.remove": async (input, ctx) => {
       await agents.remove(input.id, ctx.command, ctx.meta);
