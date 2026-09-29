@@ -431,11 +431,13 @@ export const commands = {
   "tasks.update": {
     risk: "change",
     summary:
-      "Change a task's title or description (brief: the text after the title line). Its key, folder and branch stay. TASK.md is rewritten",
+      "Change a task's title, description (the text after the title line) or its agent. Its key, folder and branch stay. TASK.md is rewritten",
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
       brief: z.string().max(100_000).optional(),
+      /** Gives the task to another agent. Refused while an agent of the task is working. */
+      agent: IdSchema.optional(),
     }),
     output: TaskSchema,
   },

@@ -272,6 +272,15 @@ export class TaskRepo {
     this.db.update(tasks).set({ title, brief, updatedAt: at }).where(eq(tasks.id, id)).run();
   }
 
+  /** Replaces a task's team. */
+  setTeam(id: string, team: readonly string[], at: string): void {
+    this.db
+      .update(tasks)
+      .set({ team: JSON.stringify(team), updatedAt: at })
+      .where(eq(tasks.id, id))
+      .run();
+  }
+
   /** Renames an agent in every task team. Returns the ids of the tasks that changed. */
   renameAgent(id: string, newId: string): string[] {
     const changed: string[] = [];

@@ -348,8 +348,14 @@ export class TaskService {
   }
 
   /** Changes the title and the description. Key, folder and branch stay; TASK.md is written again. */
-  async update(input: { id: string; title?: string | undefined; brief?: string | undefined }): Promise<Task> {
+  async update(input: {
+    id: string;
+    title?: string | undefined;
+    brief?: string | undefined;
+    agent?: string | undefined;
+  }): Promise<Task> {
     const task = this.get(input.id);
+    if (input.agent !== undefined && input.agent !== task.team[0]) await this.changeAgent(task, input.agent);
     const title = (input.title ?? task.title).trim();
     if (title === "") throw new UserError("The title cannot be empty.");
     const current = task.brief.trim().split(/\r?\n/);
@@ -361,6 +367,24 @@ export class TaskService {
     this.deps.room.publishTask(this.get(task.id));
     this.deps.events.emit(["tasks"]);
     return this.get(task.id);
+  }
+
+  /** Gives the task to another agent that can work in its org. Its old sessions close; the room says so. */
+  private async changeAgent(task: Task, agent: string): Promise<void> {
+    if (this.deps.runs.working(task.id).length > 0) {
+      throw new UserError(`An agent is working on ${task.id}. Stop it first.`, 409);
+    }
+    const stored = await this.deps.agents.list();
+    const found = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : [])).find((a) => a.id === agent);
+    if (found === undefined) throw new UserError(`Agent "${agent}" does not exist or is invalid.`);
+    if (!canWorkIn(found, task.org)) {
+      throw new UserError(
+        `@${agent} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}.`,
+      );
+    }
+    await this.deps.runs.stop(task.id);
+    this.deps.store.tasks.setTeam(task.id, [agent], this.now().toISOString());
+    this.note(task.id, `The task moved from @${task.team[0] ?? "nobody"} to @${agent}.`);
   }
 
   async close(id: string): Promise<Task> {

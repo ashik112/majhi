@@ -90,7 +90,7 @@ export function Menu({
           role="menu"
           aria-label={label}
           className={cn(
-            "absolute top-full z-30 mt-1 flex min-w-40 flex-col rounded-md border border-line-bright bg-card p-1 shadow-pop",
+            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 flex-col overflow-y-auto rounded-md border border-line-bright bg-card p-1 shadow-pop",
             align === "right" ? "right-0" : "left-0",
           )}
         >

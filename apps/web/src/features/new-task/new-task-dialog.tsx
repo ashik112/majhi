@@ -214,6 +214,41 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
           <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
         </div>
 
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-fg-faint">Team</span>
+          {team ? (
+            <Menu
+              label="Choose the agent"
+              align="left"
+              items={agentChoices.map((id) => ({
+                label: `@${id} · ${roleOf(id)}`,
+                checked: id === team,
+                onSelect: () => setAgentOverride(id),
+              }))}
+              trigger={({ ref, ...props }) => (
+                <button
+                  ref={ref}
+                  type="button"
+                  {...props}
+                  aria-label={`Agent: @${team}. Click to change`}
+                  className="flex h-8 w-fit cursor-pointer items-center gap-2 rounded-md border border-line-control bg-field px-2.5 text-sm text-fg hover:border-line-hover"
+                >
+                  <span className="font-mono">@{team}</span>
+                  <span className="text-fg-muted">{roleOf(team)}</span>
+                  <ChevronDown aria-hidden="true" className="size-3.5 text-fg-faint" />
+                  <span className="text-fg-muted">Change agent</span>
+                </button>
+              )}
+            />
+          ) : (
+            <span className="text-sm text-amber">No agent can work here yet. Add one in Agents.</span>
+          )}
+          <span className="text-sm text-fg-muted">
+            {agentOverride ? "Your pick." : `${orgName ?? "Default"} agent, picked for you.`} This agent does
+            the task.
+          </span>
+        </div>
+
         <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm text-fg-faint">Project</legend>
           {projects.isPending && (
@@ -268,41 +303,6 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
-
-        <div className="flex flex-col gap-2">
-          <span className="text-sm text-fg-faint">Team</span>
-          {team ? (
-            <Menu
-              label="Choose the agent"
-              align="left"
-              items={agentChoices.map((id) => ({
-                label: `@${id} · ${roleOf(id)}`,
-                checked: id === team,
-                onSelect: () => setAgentOverride(id),
-              }))}
-              trigger={({ ref, ...props }) => (
-                <button
-                  ref={ref}
-                  type="button"
-                  {...props}
-                  aria-label={`Agent: @${team}. Click to change`}
-                  className="flex h-8 w-fit cursor-pointer items-center gap-2 rounded-md border border-line-control bg-field px-2.5 text-sm text-fg hover:border-line-hover"
-                >
-                  <span className="font-mono">@{team}</span>
-                  <span className="text-fg-muted">{roleOf(team)}</span>
-                  <ChevronDown aria-hidden="true" className="size-3.5 text-fg-faint" />
-                  <span className="text-fg-muted">Change agent</span>
-                </button>
-              )}
-            />
-          ) : (
-            <span className="text-sm text-amber">No agent can work here yet. Add one in Agents.</span>
-          )}
-          <span className="text-sm text-fg-muted">
-            {agentOverride ? "Your pick." : `${orgName ?? "Default"} agent, picked for you.`} This agent does
-            the task.
-          </span>
-        </div>
 
         {warnings.length > 0 && (
           <ul aria-label="Warnings" className="m-0 flex list-none flex-col gap-1 p-0">
