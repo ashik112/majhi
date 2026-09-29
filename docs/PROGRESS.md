@@ -19,6 +19,7 @@ A fresh clone runs with one command, lets the owner pick workspace roots, and sh
 2. **`packages/shared`**
    - zod schema for `hub.yaml`: `workspaces`, `tasks_dir`, `orgs`, `projects`, `accounts`, `decisions`. Only `workspaces` and `tasks_dir` are used in Phase 0. The rest are validated so a hand-written file fails early with a clear message.
    - zod schemas for the HTTP API: config state, repo list, workspace update.
+   - The command contract (SPEC 5.16): `config.get`, `repos.scan`, `workspaces.set`, each with a risk class, served at `POST /api/cmd/<name>`. The web app calls only commands.
 3. **`apps/hub`** (Node 22, Hono, bound to 127.0.0.1)
    - Config loader: reads `~/.majhi/hub.yaml`, expands `~` with the host's home (passed in as `HOST_HOME`), validates it, and reports errors. A missing file means first run.
    - Repo scanner, for each root:
@@ -33,6 +34,7 @@ A fresh clone runs with one command, lets the owner pick workspace roots, and sh
      - `PUT /api/workspaces`: writes roots and `tasks_dir` to `hub.yaml` and reports whether a restart is needed
    - Serves the built web app.
    - `gen-override` command: reads `hub.yaml` and prints `docker-compose.override.yml`, with one bind mount per root at the same absolute path.
+   - Config history: `~/.majhi` becomes a git repo on first write, with a `.gitignore` for credentials, databases and caches. Every `change` command commits with the actor, command name and reason.
 4. **`apps/web`** (React 19, Vite, TanStack Router and Query, Tailwind, shadcn/ui, IBM Plex, dark)
    - Top bar from the design (app name, Studio button disabled until Phase 1).
    - First-run screen: enter one or more absolute paths, save, then see the restart command.

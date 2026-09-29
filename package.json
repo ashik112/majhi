@@ -1,0 +1,26 @@
+{
+  "name": "majhi",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @majhi/hub --filter @majhi/web dev",
+    "build": "pnpm --filter @majhi/web build && pnpm --filter @majhi/hub build",
+    "check": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "ci": "sh scripts/ci.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.19.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}
