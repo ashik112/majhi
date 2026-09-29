@@ -282,6 +282,21 @@ export function createHandlers({
     "decisions.status": () => services.decisions.status(),
     "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
     "decisions.install": () => services.decisions.install(),
+    "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),
+    "usage.breakdown": async (input) => services.usage.breakdown(input),
+    "usage.turns": async (input) => services.usage.turns(input.filters, input.limit),
+    "usage.prices": () => services.usage.prices(),
+    "usage.setPrice": async (input, ctx) => {
+      await requireConfigFile(config);
+      return services.usage.setPrice(input.model, input.price, {
+        command: ctx.command,
+        meta: ctx.meta,
+        summary:
+          input.price === null
+            ? `removed the price of ${input.model}`
+            : `set the price of ${input.model} to $${input.price.input} in, $${input.price.output} out per million tokens`,
+      });
+    },
   };
 }
 

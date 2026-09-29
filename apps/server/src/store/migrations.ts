@@ -154,6 +154,38 @@ ALTER TABLE runs ADD COLUMN room_seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE runs ADD COLUMN decision_id TEXT;
 `,
   },
+  {
+    // Tokens and cost (Phase 2c): one row per agent turn. Names are copied in, not referenced, so a
+    // removed task, agent or account keeps its history.
+    id: 40,
+    name: "tokens and cost per turn",
+    sql: `
+CREATE TABLE turns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  task TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  account TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  org TEXT,
+  project TEXT,
+  run_id INTEGER,
+  model TEXT,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  reasoning_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL,
+  cache_write_tokens INTEGER NOT NULL,
+  cost_usd REAL,
+  cost_source TEXT NOT NULL,
+  estimated INTEGER NOT NULL
+);
+CREATE INDEX turns_at ON turns (at);
+CREATE INDEX turns_task ON turns (task);
+CREATE INDEX turns_org_at ON turns (org, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

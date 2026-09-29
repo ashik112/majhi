@@ -1,5 +1,5 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
-import type { AgentLive, Perm, Task } from "@majhi/shared";
+import type { AgentLive, AuthMode, Perm, Task, ToolId } from "@majhi/shared";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
 
@@ -64,6 +64,8 @@ export class AgentRun {
 
   /** The agent's account, for the per-account limit. Known once a session was started. */
   account: string | undefined;
+  /** The account's tool and auth, for the turn rows (Phase 2c). Known once a session was started. */
+  accountKind: { tool: ToolId; auth: AuthMode } | undefined;
   /** The agent's own `context.compact_at`, read at session start. */
   compactAt: number | undefined;
   /** Turns in the current session. */

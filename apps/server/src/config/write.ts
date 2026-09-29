@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AccountConfig, OrgConfig, ProjectConfig, WorkspacesUpdate } from "@majhi/shared";
+import type { AccountConfig, OrgConfig, Price, ProjectConfig, WorkspacesUpdate } from "@majhi/shared";
 import { type Document, isCollection, isMap, isNode, isScalar, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 
@@ -101,6 +101,16 @@ export function writeSettings(
         else doc.setIn([section, key], doc.createNode(value));
       }
     }
+  });
+}
+
+/** Sets `prices.<model>`, or removes it with null, and the `prices` key when it is left empty. */
+export function writePrice(file: string, model: string, price: Price | null): Promise<void> {
+  return editConfig(file, (doc) => {
+    if (price === null) doc.deleteIn(["prices", model]);
+    else doc.setIn(["prices", model], doc.createNode(price));
+    const prices: unknown = doc.get("prices", true);
+    if (isMap(prices) && prices.items.length === 0) doc.delete("prices");
   });
 }
 

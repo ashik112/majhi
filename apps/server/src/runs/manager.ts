@@ -12,6 +12,7 @@ import type { RoomService } from "../room/service.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import type { UsageRecorder } from "../usage/recorder.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
@@ -54,6 +55,8 @@ export interface RunDeps {
   admin?: AdminAccess;
   /** The decision provider: majhi-decide for every session, and model picks for `auto` agents. */
   decisions?: Decisions;
+  /** Records the tokens and cost of every turn, majhi's own prompts included. */
+  usage?: UsageRecorder;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
@@ -674,6 +677,7 @@ export class RunManager {
       const agent = await resolveAgent(deps, run.agent);
       const { fm } = agent;
       run.account = fm.account;
+      run.accountKind = { tool: agent.account.tool, auth: agent.account.auth };
       run.compactAt = fm.context?.compact_at;
       // A free slot under the concurrency limits first. Stopped while waiting: leave quietly.
       if (!(await this.takeSlot(run))) return false;
@@ -777,6 +781,14 @@ export class RunManager {
         if (event.size > 0) {
           run.noteUsage({ used: event.used, size: event.size });
           this.setLive(run, { usage: { used: event.used, size: event.size } });
+        }
+        break;
+      case "turn":
+        if (run.account !== undefined && run.accountKind !== undefined) {
+          void this.deps.usage?.record(
+            { task: run.task, agent: run.agent, account: run.account, ...run.accountKind, runId: run.runId },
+            event.usage,
+          );
         }
         break;
       case "commands":

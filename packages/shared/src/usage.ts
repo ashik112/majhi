@@ -5,6 +5,9 @@ import { z } from "zod";
  * Health and usage, in the task view and from `usage.*` is a sum of those rows.
  */
 
+/** The `task` of turns spent by the ACP stand-in answering decisions (5.12). Task ids never look like this. */
+export const DECISIONS_TASK = "decisions";
+
 /** Dollars per million tokens. Cache fields are required: providers differ too much to guess them. */
 export const PriceSchema = z.strictObject({
   input: z.number().min(0).max(10_000),

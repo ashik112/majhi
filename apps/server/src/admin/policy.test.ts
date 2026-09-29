@@ -50,6 +50,15 @@ describe("redact", () => {
     });
   });
 
+  it("keeps counts and flags under secret-looking names, but never text", () => {
+    expect(redact({ inputTokens: 1200, cacheReadTokens: 0, tokenSet: true, tokens: "abc" })).toEqual({
+      inputTokens: 1200,
+      cacheReadTokens: 0,
+      tokenSet: true,
+      tokens: "[redacted]",
+    });
+  });
+
   it("redacts text", () => {
     expect(redactText(`AKIAIOSFODNN7EXAMPLE`)).toBe("[redacted]");
     expect(redactText("nothing here")).toBe("nothing here");

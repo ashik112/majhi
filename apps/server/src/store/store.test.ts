@@ -77,6 +77,7 @@ describe("store", () => {
       "task_links",
       "task_repos",
       "tasks",
+      "turns",
     ]);
   });
 

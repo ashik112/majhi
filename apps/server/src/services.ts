@@ -35,6 +35,10 @@ import type { LinkOptions } from "./tasks/links.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { UploadStore } from "./uploads/store.ts";
+import { readPrices } from "./usage/prices.ts";
+import { UsageRecorder } from "./usage/recorder.ts";
+import { UsageRepo } from "./usage/repo.ts";
+import { UsageService } from "./usage/service.ts";
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
@@ -80,6 +84,10 @@ export interface Services {
   tasks: TaskService;
   /** Resume after restarts, lost internet and sleep, and the network watch. */
   resilience: Resilience;
+  /** Tokens and cost: the queries behind `usage.*`. */
+  usage: UsageService;
+  /** Writes one row per agent turn. */
+  usageRecorder: UsageRecorder;
   /** Stops every agent process and closes the database. */
   close: () => Promise<void>;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
@@ -137,6 +145,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
   });
+  const usageRepo = new UsageRepo(store.raw);
+  const usageRecorder = new UsageRecorder({
+    repo: usageRepo,
+    store,
+    prices: () => readPrices(config.file),
+    onRecorded: () => events.emit(["usage"]),
+  });
+  const usageService = new UsageService({ repo: usageRepo, config });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
   const decideTokens = new DecideTokens();
   const decisions = new DecisionService({
@@ -152,6 +168,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       options: env.runtime,
       majhiHome: env.majhiHome,
       standIn: async () => (await decisions.settings()).acp_agent,
+      usage: usageRecorder,
     }),
     rules: rulesProvider,
     secrets,
@@ -160,6 +177,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const runs = new RunManager({
     store,
+    usage: usageRecorder,
     room,
     runtime,
     options: env.runtime,
@@ -224,9 +242,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runs,
     tasks,
     resilience,
+    usage: usageService,
+    usageRecorder,
     close: async () => {
       resilience.stop();
       await runs.closeAll();
+      await usageRecorder.flush();
       store.close();
     },
     orgs: new OrgService(config, agentStore, (id, newId) => {

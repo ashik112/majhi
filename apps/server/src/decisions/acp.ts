@@ -1,12 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentSession, RuntimeOptions } from "@majhi/acp";
-import type { DecideRequest } from "@majhi/shared";
+import { DECISIONS_TASK, type DecideRequest } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
+import type { UsageRecorder } from "../usage/recorder.ts";
 import { buildPrompt, parseReply } from "./acpParse.ts";
 import type { DecisionProvider, ProviderOutcome } from "./providers.ts";
 import { trimState } from "./trim.ts";
@@ -24,6 +25,8 @@ export interface AcpProviderDeps {
   majhiHome: string;
   /** The agent named in `decisions.acp_agent`, if any. */
   standIn: () => Promise<string | undefined>;
+  /** Records the stand-in's tokens and cost, under the `decisions` task. */
+  usage?: UsageRecorder;
 }
 
 /** An agent (the boss by default) answering in place of Laya: one throwaway session, JSON only. */
@@ -74,6 +77,13 @@ export class AcpProvider implements DecisionProvider {
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
     });
+    const stopUsage = session.onEvent((event) => {
+      if (event.type !== "turn") return;
+      void deps.usage?.record(
+        { task: DECISIONS_TASK, agent: fm.id, account: fm.account, tool: account.tool, auth: account.auth },
+        event.usage,
+      );
+    });
     try {
       // The stand-in only answers. Every tool request is refused.
       session.setPermissionHandler(async () => undefined);
@@ -89,6 +99,7 @@ export class AcpProvider implements DecisionProvider {
       if (!parsed.ok) throw new Error(`@${fm.id} did not give a valid answer: ${parsed.problem}`);
       return { answers: parsed.answers, estimated: true, trimmed };
     } finally {
+      stopUsage();
       await session.close().catch(() => undefined);
     }
   }

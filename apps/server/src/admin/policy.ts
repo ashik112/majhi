@@ -35,8 +35,12 @@ export function redact(input: unknown): unknown {
     for (const [key, value] of Object.entries(input)) {
       // A secret reference like `secret:name` is not a secret, so a `key` field holding one stays.
       const isRef = typeof value === "string" && /^secret:[a-z0-9-]+$/.test(value);
+      // Commands type every secret as text, so a count like `inputTokens: 1200` is not one.
+      const plain = typeof value === "number" || typeof value === "boolean";
       out[key] =
-        SENSITIVE_KEY.test(key) && !isRef && value !== null && value !== "" ? REDACTED : redact(value);
+        SENSITIVE_KEY.test(key) && !isRef && !plain && value !== null && value !== ""
+          ? REDACTED
+          : redact(value);
     }
     return out;
   }
