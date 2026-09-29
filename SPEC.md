@@ -647,6 +647,8 @@ Delivered in two parts, each usable and reviewed on its own.
 - A "Tokens and cost" section on the Health and usage page: totals for today, this week and this month, filters by org, project, agent, account and model, a daily chart and the top tasks. Each task shows its total in the task view; org cards show theirs.
 - Commands `usage.summary` and `usage.breakdown`, so the boss can answer questions like "what did Acme cost this week?"
 - Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
+- Desktop notifications when a task needs the owner (review, permission prompt, limit, failed run), with per-event settings.
+- Backups: the secrets key kept in the macOS Keychain with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
 - **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions
@@ -663,6 +665,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - Multiple task repos, merge order from links, pushing via SSH aliases, MRs on GitHub, GitLab and Bitbucket with sibling links, merge policies.
 - Changes tab with per-repo diffs.
 - `merged` dependencies (5.4a): a waiting task starts when its dependency's MRs are merged.
+- Full-text search across rooms; review comments on lines in the Changes view sent to the agent as one review; open files and worktrees in the owner's editor; an embedded terminal in the task folder.
 - **Done when:** one task changes two repos on two different hosts and ends with two linked MRs merged in order.
 
 
@@ -684,11 +687,13 @@ Delivered in two parts, each usable and reviewed on its own.
 
 ### Phase 8: Root agents
 - Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves. The Dispatcher routes new tasks to an org, repos and team with the decision provider.
+- Cleanup of done tasks: worktrees, merged task branches and old room logs after N days, previewed and approved.
 - **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, and the Dispatcher routes a new task with its decision recorded.
 
 ### Phase 9: Token receipts and polish
 - Token receipts per task and agent, Serena wiring, tool gating per role, cache-friendly prompts.
 - Command palette complete, keyboard shortcuts, performance pass against the targets in 5.17.
+- Budgets per org and account with alerts at 80% and 100%; an audit log page; optional phone access on the local network (off by default, with a login).
 - **Done when:** receipts show where tokens go, and the owner can run a full day of work without touching a terminal.
 
 
