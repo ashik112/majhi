@@ -1,9 +1,13 @@
 import type { ToolId, ToolInfo } from "@majhi/shared";
-import type { ToolSpec } from "../index.ts";
+import { claude } from "./claude.ts";
+import { codex } from "./codex.ts";
+import type { ToolDef } from "./types.ts";
 
-export const tools: Record<ToolId, ToolSpec> = {} as Record<ToolId, ToolSpec>;
+export type { AuthStatus, ToolDef } from "./types.ts";
 
-export function getTool(id: ToolId): ToolSpec {
+export const tools: Record<ToolId, ToolDef> = { claude, codex };
+
+export function getTool(id: ToolId): ToolDef {
   return tools[id];
 }
 

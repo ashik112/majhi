@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { ToolId } from "@majhi/shared";
 import type { Command } from "../src/index.ts";
 
@@ -12,7 +13,17 @@ export interface FakeAgentOptions {
   broken?: boolean;
 }
 
-/** Command that runs the fake ACP adapter for `tool`, for `RuntimeOptions.adapters`. */
-export function fakeAdapter(_tool: ToolId, _options?: FakeAgentOptions): Command {
-  throw new Error("not implemented");
+const FAKE_AGENT = fileURLToPath(new URL("./fake-agent.ts", import.meta.url));
+
+/**
+ * Command that runs the fake ACP adapter for `tool`, for `RuntimeOptions.adapters`.
+ * Options travel as flags because agent environments are built from scratch.
+ */
+export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Command {
+  const args = [FAKE_AGENT, "--tool", tool];
+  if (options.signedIn) args.push("--signed-in");
+  if (options.broken) args.push("--broken");
+  if (options.models) args.push("--models", options.models.join(","));
+  if (options.efforts) args.push("--efforts", options.efforts.join(","));
+  return { command: process.execPath, args };
 }
