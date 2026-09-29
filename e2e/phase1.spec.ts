@@ -61,9 +61,9 @@ async function addClaudeLogin(page: Page, id: string, org?: string) {
   await expect(page.getByRole("status").filter({ hasText: `${id} is signed in and healthy` })).toBeVisible();
 }
 
-async function openHealthPage(page: Page) {
-  await page.goto("/usage");
-  await expect(page.getByRole("heading", { name: "Health and usage" })).toBeVisible();
+async function openAccountsPage(page: Page) {
+  await page.goto("/accounts");
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
 }
 
 const accountRow = (page: Page, id: string) =>
@@ -147,14 +147,16 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   expect(readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8")).toMatch(/^boss: /m);
 });
 
-test("Health and Agents: an org, two Claude accounts, three agents, each health check passes", async ({
+test("Accounts and Agents: an org, two Claude accounts, three agents, each health check passes", async ({
   page,
 }) => {
-  await openHealthPage(page);
+  await openAccountsPage(page);
   await expect(accountRow(page, "claude-personal")).toBeVisible();
 
   await page.getByRole("button", { name: "Add account", exact: true }).click();
   const form = page.getByRole("form", { name: "Add an account" });
+  // With no other org, the account starts in Private.
+  await expect(form.getByRole("combobox", { name: "Belongs to" })).toHaveValue("private");
   await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: "New org..." });
   const orgForm = page.getByRole("form", { name: "New org" });
   await orgForm.getByRole("textbox", { name: "Org name" }).fill("Acme");
@@ -208,7 +210,7 @@ test("an API-key account passes its health check and the key is never stored in 
   page,
 }) => {
   const traffic = recordTraffic(page);
-  await openHealthPage(page);
+  await openAccountsPage(page);
   await page.getByRole("button", { name: "Add account", exact: true }).click();
   const form = page.getByRole("form", { name: "Add an account" });
   await form.getByRole("radio", { name: "Codex" }).click();
@@ -253,7 +255,7 @@ test("an API-key account passes its health check and the key is never stored in 
 test("Accounts show who uses them, and a file with a missing account appears without a reload", async ({
   page,
 }) => {
-  await openHealthPage(page);
+  await openAccountsPage(page);
 
   await expect(accountRow(page, "claude-acme-1")).toContainText("2 agents");
   await expect(accountRow(page, "claude-acme-2")).toContainText("1 agent");
@@ -288,10 +290,17 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   await shot(page, "health-accounts");
   await page.getByRole("button", { name: "Close account details" }).click();
 
+  // Health and usage keeps the checks and the usage overview, and points to Accounts to manage them.
+  await page.goto("/usage");
+  await expect(page.getByRole("heading", { name: "Health and usage" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add account" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Manage accounts" })).toHaveAttribute("href", /\/accounts/);
   // "Run health check" checks every account and the page says so.
   await page.getByRole("button", { name: "Run health check" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Health check finished" })).toHaveCount(1);
   await expect(page.getByText(/Checked just now/)).toBeVisible();
+  await page.getByRole("link", { name: "Manage accounts" }).click();
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
 
   // A hand-written agent file naming an account that does not exist.
   await expect(page.getByRole("region", { name: "Missing accounts" })).toHaveCount(0);
@@ -361,7 +370,7 @@ test("removing an account that agents use is refused, and so is removing the bos
   page,
   request,
 }) => {
-  await openHealthPage(page);
+  await openAccountsPage(page);
   await accountRow(page, "claude-acme-1").getByRole("button", { name: "claude-acme-1", exact: true }).click();
   await page.getByRole("button", { name: "Remove claude-acme-1" }).click();
   const dialog = page.getByRole("dialog", { name: "Remove claude-acme-1?" });

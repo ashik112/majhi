@@ -10,6 +10,7 @@ import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { ConfigService } from "./config/service.ts";
 import type { ServerEnv } from "./env.ts";
+import { errorMessage } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -67,6 +68,10 @@ export interface Services {
 export function createServices(env: ServerEnv, options: ServiceOptions = {}): Services {
   const runtime = options.runtime ?? realRuntime;
   const config = new ConfigService({ majhiHome: env.majhiHome, hostHome: env.hostHome });
+  // The built-in org used to be `personal`. Old files read as `private` meanwhile, so this can run late.
+  void config
+    .migrateLegacyOrg()
+    .catch((err: unknown) => console.error(`Could not rename the Personal org: ${errorMessage(err)}`));
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
   const agentStore = new AgentStore(env.majhiHome);

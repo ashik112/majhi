@@ -2,6 +2,7 @@ import type { CommandMeta, Settings, WorkspacesUpdate } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import { ConfigHistory, type HistoryEntry } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
+import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
 import { type ConfigSections, readSections } from "./sections.ts";
 import { readSettings, type SettingsPatch } from "./settings.ts";
 import { writeSettings, writeWorkspaces } from "./write.ts";
@@ -69,6 +70,29 @@ export class ConfigService {
       });
       return this.load();
     });
+  }
+
+  /**
+   * Startup migration: the built-in org used to be called `personal`. Rewrites every reference to
+   * `private` in one config commit by actor majhi, so History shows it with Undo. Returns whether
+   * it changed anything. A second run finds nothing and makes no commit.
+   */
+  async migrateLegacyOrg(): Promise<boolean> {
+    if ((await planPrivateRename(this.paths.majhiHome)).length === 0) return false;
+    let changed = false;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: RENAME_PRIVATE_SUMMARY,
+      },
+      async () => {
+        const writes = await planPrivateRename(this.paths.majhiHome);
+        changed = writes.length > 0;
+        await applyWrites(writes);
+      },
+    );
+    return changed;
   }
 
   /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */

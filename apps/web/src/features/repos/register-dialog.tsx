@@ -5,10 +5,11 @@ import { ChipsInput } from "@/components/ui/chips-input";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { PageLink } from "@/components/ui/page-link";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { defaultOrgId } from "@/features/accounts/model";
 import type { ApiRequestError } from "@/lib/api";
+import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useProjects, useRegisterProject, useUpdateProject } from "@/lib/task-queries";
 import { aliasClashes, projectIdError, suggestProjectId } from "./project-model";
@@ -24,6 +25,7 @@ export function RegisterDialog({
   onClose: () => void;
 }) {
   const orgs = useOrgs();
+  const { org: orgFilter } = useOrgFilter();
   const projects = useProjects();
   const register = useRegisterProject();
   const update = useUpdateProject();
@@ -40,7 +42,7 @@ export function RegisterDialog({
   const [failure, setFailure] = useState<string | undefined>();
 
   const orgList = orgs.data ?? [];
-  const chosenOrg = org || (orgList.length === 1 ? (orgList[0]?.id ?? "") : "");
+  const chosenOrg = org || (orgList.length === 0 ? "" : defaultOrgId(orgList, orgFilter));
   const idProblem = editing ? undefined : projectIdError(id, taken);
   const clashes = aliasClashes(aliases, others, id);
   const orgProblem = chosenOrg === "" ? "Pick the org this repo belongs to" : undefined;
@@ -107,16 +109,6 @@ export function RegisterDialog({
             </Select>
           )}
         </Field>
-        {orgs.isSuccess && orgList.length === 0 && (
-          <p className="-mt-2 text-sm text-amber">
-            No orgs yet.{" "}
-            <PageLink page="orgs" className="underline underline-offset-2 hover:text-amber-hover">
-              Add one in Orgs and accounts
-            </PageLink>
-            .
-          </p>
-        )}
-
         <Field
           label="Project id"
           hint="Names the repo in the task box and in branch names."

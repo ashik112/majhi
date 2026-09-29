@@ -9,6 +9,7 @@ import {
 } from "@majhi/shared";
 import type { AccountCache } from "../accounts/cache.ts";
 import type { AccountService } from "../accounts/service.ts";
+import { withBuiltInOrgs } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { writeBoss } from "../config/write.ts";
 import { UserError } from "../errors.ts";
@@ -150,7 +151,7 @@ export class AgentService {
     sections: Awaited<ReturnType<ConfigService["sections"]>> | undefined,
     agentIds: ReadonlySet<string> = new Set(stored.map((a) => a.id)),
   ): Promise<AgentEntry[]> {
-    const empty = { exists: false, orgs: {}, accounts: {}, projects: {}, boss: undefined };
+    const empty = { exists: false, orgs: withBuiltInOrgs({}), accounts: {}, projects: {}, boss: undefined };
     const config = sections ?? empty;
     const models = new Map<string, AccountModels>();
     for (const a of stored) {

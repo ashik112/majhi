@@ -8,8 +8,10 @@ import {
   AuthModeSchema,
   HealthCheckSchema,
   IdSchema,
+  LEGACY_PERSONAL,
   OrgConfigSchema,
   OrgViewSchema,
+  PRIVATE,
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
@@ -20,6 +22,15 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import {
+  DecideRequestSchema,
+  DecisionPatchSchema,
+  DecisionRecordSchema,
+  DecisionResultSchema,
+  DecisionSettingsSchema,
+  LayaStatusSchema,
+  ProviderIdSchema,
+} from "./decisions.ts";
 import {
   DirListingSchema,
   HostResultSchemas,
@@ -157,7 +168,12 @@ export const commands = {
     risk: "change",
     summary: "Create an org",
     input: z
-      .object({ id: IdSchema.refine((id) => id !== "personal" && id !== "root", "This id is reserved") })
+      .object({
+        id: IdSchema.refine(
+          (id) => id !== PRIVATE && id !== LEGACY_PERSONAL && id !== "root",
+          "This id is reserved",
+        ),
+      })
       .extend(OrgConfigSchema.pick({ name: true, color: true, base: true, key: true }).shape),
     output: OrgViewSchema,
   },
@@ -609,6 +625,43 @@ export const commands = {
       /** Why the owner has to run `make up` when the state is manual. */
       reason: z.string().optional(),
     }),
+  },
+
+  // Decisions (5.12) ----------------------------------------------------------
+  "decisions.ask": {
+    risk: "read",
+    summary: "Ask the decision model typed questions about some text. Jev is used only when enabled",
+    input: DecideRequestSchema,
+    output: DecisionResultSchema,
+  },
+  "decisions.recent": {
+    risk: "read",
+    summary: "Recent decisions, newest first",
+    input: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(DecisionRecordSchema),
+  },
+  "decisions.status": {
+    risk: "read",
+    summary: "The provider order and whether each provider can answer now, with Laya's install state",
+    input: Empty,
+    output: z.object({
+      settings: DecisionSettingsSchema,
+      laya: LayaStatusSchema,
+      providers: z.array(z.object({ id: ProviderIdSchema, available: z.boolean(), detail: z.string() })),
+    }),
+  },
+  "decisions.set": {
+    risk: "change",
+    summary:
+      "Change the provider order, the stand-in agent, Jev's key, the confidence floor or the per-run limit",
+    input: DecisionPatchSchema,
+    output: DecisionSettingsSchema,
+  },
+  "decisions.install": {
+    risk: "change",
+    summary: "Install Laya on this Mac through the host helper and download its model (about 850 MB, once)",
+    input: Empty,
+    output: LayaStatusSchema,
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

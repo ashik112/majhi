@@ -6,8 +6,9 @@ import {
   type AccountUsage,
   type AccountView,
   type CommandMeta,
+  currentOrgId,
   type HealthCheck,
-  PERSONAL,
+  PRIVATE,
   type ToolId,
 } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
@@ -44,7 +45,7 @@ export interface AccountDeps {
   onRemoving?: (id: string) => void;
 }
 
-/** First free id of `<tool>-<org>`, `<tool>-<org>-2`, `-3`... Personal accounts use `<tool>-personal`. */
+/** First free id of `<tool>-<org>`, `<tool>-<org>-2`, `-3`... Private accounts use `<tool>-private`. */
 export function suggestAccountId(tool: ToolId, org: string, taken: ReadonlySet<string>): string {
   const base = `${tool}-${org}`;
   if (!taken.has(base)) return base;
@@ -67,13 +68,14 @@ export class AccountService {
     return suggestAccountId(tool, org, new Set(Object.keys(accounts)));
   }
 
-  async create(input: AccountCreate, command: string, meta: CommandMeta): Promise<AccountView> {
+  async create(raw: AccountCreate, command: string, meta: CommandMeta): Promise<AccountView> {
     const { config, secrets, runtime, majhiHome } = this.deps;
+    const input = { ...raw, org: currentOrgId(raw.org) };
     const sections = await config.sections();
     if (!sections.exists)
       throw new UserError("Pick workspace roots first: majhi.yaml does not exist yet.", 409);
-    if (input.org !== PERSONAL && sections.orgs[input.org] === undefined) {
-      throw new UserError(`Org "${input.org}" does not exist. Create the org first, or use "${PERSONAL}".`);
+    if (sections.orgs[input.org] === undefined) {
+      throw new UserError(`Org "${input.org}" does not exist. Create the org first, or use "${PRIVATE}".`);
     }
     if (sections.accounts[input.id] !== undefined) {
       throw new UserError(

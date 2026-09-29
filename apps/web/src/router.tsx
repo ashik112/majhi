@@ -68,6 +68,11 @@ const agentsRoute = createRoute({
   path: PAGE_PATH.agents,
   component: lazyRouteComponent(() => import("@/pages/agents-page"), "AgentsPage"),
 });
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.accounts,
+  component: lazyRouteComponent(() => import("@/pages/accounts-page"), "AccountsPage"),
+});
 const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.usage,
@@ -120,7 +125,7 @@ const studioTabRoute = createRoute({
   path: "/studio/$tab",
   beforeLoad: ({ params, search }) => {
     if (params.tab === "accounts") {
-      throw redirect({ to: PAGE_PATH.orgs, search: search.account ? { account: search.account } : {} });
+      throw redirect({ to: PAGE_PATH.accounts, search: search.account ? { account: search.account } : {} });
     }
     throw redirect({ to: PAGE_PATH.agents, search: search.agent ? { agent: search.agent } : {} });
   },
@@ -131,6 +136,7 @@ export const router = createRouter({
     boardRoute,
     taskRoute,
     agentsRoute,
+    accountsRoute,
     healthRoute,
     skillsRoute,
     setupRoute,

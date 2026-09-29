@@ -18,7 +18,7 @@ test("health", async ({ page }) => {
 
 test("orgs", async ({ page }) => {
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs and accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
   await page.waitForTimeout(700);
   await shot(page, "orgs");
 });
@@ -55,9 +55,9 @@ test("agents: errors, new agent", async ({ page }) => {
   await shot(page, "agents-new");
 });
 
-test("health: account drawer and add account", async ({ page }) => {
+test("accounts: account drawer and add account", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: /^Health and usage/ }).click();
+  await page.getByRole("link", { name: /^Accounts/ }).click();
   await page.getByRole("button", { name: "claude-northwind" }).click();
   await expect(page.getByRole("complementary", { name: "Account details" })).toBeVisible();
   await page.waitForTimeout(500);

@@ -7,8 +7,8 @@ import {
   type HealthCheck,
   type OptionValue,
   type OrgView,
-  PERSONAL,
   type Perm,
+  PRIVATE,
   type Role,
   type TaskSummary,
 } from "@majhi/shared";
@@ -74,17 +74,17 @@ export function groupAgents(entries: readonly AgentEntry[], orgs: readonly OrgVi
 
 /**
  * Accounts an agent in `scope` may use. Root agents work anywhere, so any account fits. An org's
- * agent uses that org's accounts or the owner's personal ones, never another org's credentials
+ * agent uses that org's accounts or the owner's private ones, never another org's credentials
  * (SPEC 6).
  */
 export function accountsForScope(accounts: readonly AccountView[], scope: string): AccountView[] {
   if (scope === ROOT_SCOPE) return [...accounts];
-  return accounts.filter((a) => a.org === scope || a.org === PERSONAL);
+  return accounts.filter((a) => a.org === scope || a.org === PRIVATE);
 }
 
-/** The scope a new agent on an account belongs to: personal accounts get root agents. */
+/** The scope a new agent on an account belongs to: private accounts get root agents. */
 export function scopeForAccount(account: Pick<AccountView, "org">): string {
-  return account.org === PERSONAL ? ROOT_SCOPE : account.org;
+  return account.org === PRIVATE ? ROOT_SCOPE : account.org;
 }
 
 export interface Dot {

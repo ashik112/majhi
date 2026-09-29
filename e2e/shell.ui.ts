@@ -19,11 +19,12 @@ test("the sidebar links to every page, and the old addresses land on the new one
 
   for (const [name, path] of [
     ["Agents", "/agents"],
+    ["Accounts", "/accounts"],
     ["Health and usage", "/usage"],
     ["Skills", "/skills"],
     ["Hub setup", "/setup"],
     ["Projects and links", "/projects"],
-    ["Orgs and accounts", "/orgs"],
+    ["Orgs", "/orgs"],
   ] as const) {
     await nav(page)
       .getByRole("link", { name: new RegExp(`^${name}`) })
@@ -40,16 +41,17 @@ test("the sidebar links to every page, and the old addresses land on the new one
   await page.goto("/studio/agents");
   await expect(page).toHaveURL(/\/agents$/);
   await page.goto("/studio/accounts");
-  await expect(page).toHaveURL(/\/orgs$/);
+  await expect(page).toHaveURL(/\/accounts$/);
 });
 
 test("the banner shows what needs the owner, and the sidebar counts it", async ({ page }) => {
   await page.goto("/");
   const banner = page.getByRole("status").filter({ hasText: "needs you to sign in" });
   await expect(banner).toContainText("claude-legacy needs you to sign in.");
-  await banner.getByRole("button", { name: "Health and usage" }).click();
-  await expect(page).toHaveURL(/\/usage$/);
-  await expect(nav(page).getByRole("link", { name: /^Health and usage/ })).toContainText(/\d+ need you/);
+  await banner.getByRole("button", { name: "Accounts" }).click();
+  await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
+  await expect(page.getByRole("complementary", { name: "Account details" })).toContainText("claude-legacy");
+  await expect(nav(page).getByRole("link", { name: /^Accounts/ })).toContainText("An account needs you");
 
   const pulse = page.getByRole("region", { name: "Agents right now" });
   await expect(pulse).toContainText("Working");
@@ -62,6 +64,7 @@ test("keys: g then a letter goes to a page, ? lists the keys", async ({ page }) 
   await expect(board(page)).toBeVisible();
   for (const [keys, path] of [
     ["a", "/agents"],
+    ["c", "/accounts"],
     ["h", "/usage"],
     ["s", "/setup"],
     ["p", "/projects"],

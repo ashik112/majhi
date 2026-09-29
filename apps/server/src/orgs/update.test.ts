@@ -39,7 +39,8 @@ describe("orgs.update", () => {
     expect((await h.log())[0]).toContain("orgs.update");
     const yaml = await readFile(join(h.env.majhiHome, "majhi.yaml"), "utf8");
     expect(yaml).toContain("ashik@acme.example");
-    expect((await h.cmd("orgs.list")).body[0].identity.email).toBe("ashik@acme.example");
+    const listed = (await h.cmd("orgs.list")).body.find((o: { id: string }) => o.id === "acme");
+    expect(listed.identity.email).toBe("ashik@acme.example");
   });
 
   it("leaves fields it was not given alone, and null clears an optional one", async () => {
@@ -66,6 +67,7 @@ describe("orgs.update", () => {
     expect(taken.status).toBe(409);
     expect(taken.body.error).toContain("Globex");
     expect((await h.cmd("orgs.update", { id: "nope", name: "X" })).status).toBe(404);
-    expect((await h.cmd("orgs.list")).body[0]).not.toHaveProperty("identity");
+    const listed = (await h.cmd("orgs.list")).body.find((o: { id: string }) => o.id === "acme");
+    expect(listed).not.toHaveProperty("identity");
   });
 });

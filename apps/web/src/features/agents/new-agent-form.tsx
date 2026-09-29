@@ -41,7 +41,7 @@ export function NewAgentForm({
   const [idEdit, setIdEdit] = useState<string>();
   const [problem, setProblem] = useState<string>();
 
-  // The scope's own accounts first, then the owner's personal ones; ones that work before ones that do not.
+  // The scope's own accounts first, then the owner's private ones; ones that work before ones that do not.
   const usable = accountsForScope(accounts, scope).toSorted(
     (a, b) =>
       Number(b.org === scope) - Number(a.org === scope) ||
@@ -101,8 +101,8 @@ export function NewAgentForm({
         {usable.length === 0 ? (
           <p role="alert" className="text-base text-red">
             No account fits this scope.{" "}
-            <PageLink page="usage" className="underline underline-offset-2 hover:text-fg">
-              Add one in Health and usage
+            <PageLink page="accounts" className="underline underline-offset-2 hover:text-fg">
+              Add one in Accounts
             </PageLink>
             .
           </p>

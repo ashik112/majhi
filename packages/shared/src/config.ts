@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
+import { DecisionPatchSchema } from "./decisions.ts";
 import { ContextPatchSchema, LimitsPatchSchema, PolicyPatchSchema, ResumePatchSchema } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 
@@ -12,17 +13,11 @@ export const ConfigPath = z
     message: "Use an absolute path, or one starting with ~/",
   });
 
-/**
- * Sections later phases own. Phase 0 only checks that they are maps, so a
- * hand-written file with them still loads. Each phase replaces its entry with
- * a real schema.
- */
-const LaterSection = z.record(z.string(), z.unknown());
-
 export const MajhiConfigSchema = z.strictObject({
   workspaces: z.array(ConfigPath).min(1, "Add at least one workspace root"),
   tasks_dir: ConfigPath.optional(),
-  decisions: LaterSection.optional(),
+  /** Decision provider (5.12). Written only when the owner changes a value. */
+  decisions: DecisionPatchSchema.optional(),
   /** Defaults for every org (5.13). Written only when the owner changes a value. */
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),

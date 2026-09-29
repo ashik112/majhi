@@ -11,7 +11,8 @@ const say = (text: string) => w.h.cmd("room.send", { task: w.chat.id, text });
 const idle = () => w.h.majhi.services.runs.idle(w.chat.id);
 const cards = async () =>
   (await w.items()).filter((i): i is Extract<RoomItem, { type: "approval" }> => i.type === "approval");
-const orgIds = async () => (await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id);
+const orgIds = async () =>
+  (await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id).filter((id: string) => id !== "private");
 const ORG_CALL =
   'call: majhi_orgs_create {"id":"acme2","name":"Acme Two","ownerAsked":false,"reason":"the owner wants a second company"}';
 const AGENT_CALL =

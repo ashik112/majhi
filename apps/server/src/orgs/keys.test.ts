@@ -4,7 +4,7 @@ import { deriveKey, orgKeys } from "./keys.ts";
 describe("deriveKey", () => {
   it.each([
     ["Acme Corp", "AC"],
-    ["Globex", "IDE"],
+    ["Globex", "GLO"],
     ["acme", "ACM"],
     ["Big Old Company Ltd", "BOCL"],
     ["A", "A"],

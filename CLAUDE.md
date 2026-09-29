@@ -21,6 +21,8 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 - zod schemas at every boundary (HTTP, WebSocket, files on disk, ACP messages, MCP tools). Shared schemas live in `packages/shared`.
 - Small modules with clear names. No framework magic that hides control flow.
 - Every feature ships with tests: unit tests for logic (parsers, routing, merge order, limit detection), integration tests for ACP and git flows using fake agents, and at least one Playwright test per user-facing flow.
+- Match tests to the size of the change. Copy, text and styling changes get no new tests; run typecheck and only the tests of the files you touched. Run the full suite (`sh scripts/ci.sh`) once, when a feature is finished, not after every edit.
+- Examples, test data, fixtures and docs use only generic sample names (Acme, Globex, Northwind, `/Users/owner`). Never write the owner's real companies, clients, projects, repos or paths into the repo.
 - Build a fake ACP agent in `packages/acp/testing` early. Use it for tests so they never spend real tokens.
 - Git: small commits, messages like `feat(rooms): route @mentions to agents`. One branch per phase.
 - No secrets in the repo, logs or test fixtures.

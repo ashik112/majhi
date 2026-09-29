@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdSchema } from "./accounts.ts";
+import { IdSchema, OrgIdSchema } from "./accounts.ts";
 
 /**
  * Projects, tasks, rooms and runs (SPEC 2, 3.1, 5.1, 5.4, 5.4a, 5.15).
@@ -14,8 +14,8 @@ import { IdSchema } from "./accounts.ts";
 // Projects (majhi.yaml)
 
 export const ProjectConfigSchema = z.looseObject({
-  /** An org id from `orgs`. */
-  org: IdSchema,
+  /** An org id from `orgs`, or `private`. */
+  org: OrgIdSchema,
   /** Absolute path, or one starting with `~/`, under a workspace root. */
   path: z.string().trim().min(1),
   /** Words that name this project in the task box: "api", "backend". Lowercase, unique across projects. */

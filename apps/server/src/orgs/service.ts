@@ -1,5 +1,5 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
-import { type OrgConfig, type OrgView, PERSONAL } from "@majhi/shared";
+import { LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { writeOrg } from "../config/write.ts";
@@ -30,7 +30,7 @@ export class OrgService {
     const sections = await this.config.sections();
     if (!sections.exists)
       throw new UserError("Pick workspace roots first: majhi.yaml does not exist yet.", 409);
-    if (id === PERSONAL || id === "root") throw new UserError(`"${id}" is reserved`);
+    if (id === PRIVATE || id === LEGACY_PERSONAL || id === "root") throw new UserError(`"${id}" is reserved`);
     if (sections.orgs[id] !== undefined) throw new UserError(`Org "${id}" already exists.`, 409);
     const config: OrgConfig = { name: org.name };
     if (org.color !== undefined) config.color = org.color;

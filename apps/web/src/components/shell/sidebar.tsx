@@ -21,11 +21,12 @@ import { useNow } from "@/lib/use-now";
 const NAV: readonly { page: PageName; label: string }[] = [
   { page: "board", label: "Board" },
   { page: "agents", label: "Agents" },
+  { page: "accounts", label: "Accounts" },
   { page: "usage", label: "Health and usage" },
   { page: "skills", label: "Skills" },
   { page: "setup", label: "Hub setup" },
   { page: "projects", label: "Projects and links" },
-  { page: "orgs", label: "Orgs and accounts" },
+  { page: "orgs", label: "Orgs" },
 ];
 
 const ITEM =
@@ -100,9 +101,12 @@ function MainNav() {
   const accounts = useAccounts().data;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const checks = useHealthChecks().data?.checks;
-  const needYou = accountsNeedingYou(accounts ?? []).length + checksNeedingYou(checks);
-  const badge: Partial<Record<PageName, { text: string; alert?: boolean }>> = {};
+  const signIn = accountsNeedingYou(accounts ?? []).length;
+  const needYou = checksNeedingYou(checks);
+  const badge: Partial<Record<PageName, { text: string; alert?: boolean; dot?: boolean }>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
+  if ((accounts?.length ?? 0) > 0 || signIn > 0)
+    badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
   if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
 
   return (
@@ -127,10 +131,16 @@ function MainNav() {
             {shown && (
               <span
                 className={cn(
-                  "tnum ml-auto text-xs font-normal",
+                  "tnum ml-auto flex items-center gap-1.5 text-xs font-normal",
                   shown.alert ? "text-coral" : "text-fg-faint",
                 )}
               >
+                {shown.dot && (
+                  <>
+                    <span aria-hidden="true" className="size-1.5 rounded-full bg-coral" />
+                    <span className="sr-only">An account needs you. </span>
+                  </>
+                )}
                 {shown.text}
               </span>
             )}

@@ -1,5 +1,5 @@
 import type { HealthCheck } from "@majhi/shared";
-import { type AuthMode, IdSchema, PERSONAL, type ToolId, type ToolInfo } from "@majhi/shared";
+import { type AuthMode, IdSchema, PRIVATE, type ToolId, type ToolInfo } from "@majhi/shared";
 import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   useTools,
 } from "@/lib/studio-queries";
 import { HealthSteps } from "./health-steps";
+import { defaultOrgId } from "./model";
 import { NewOrgForm } from "./new-org-form";
 import { type LoginState, nextLoginState, type TerminalEvent } from "./terminal-model";
 
@@ -43,15 +44,17 @@ export type Stage =
 export interface AddAccountFlowProps {
   /** Called once when the new account passes its health check. */
   onHealthy?: (accountId: string) => void;
+  /** The org to preselect, like the org filter's. Default: Private, or the only other org. */
+  defaultOrg?: string | undefined;
   /** What to offer after a healthy account: "Create an agent", "Continue". */
   renderDone: (accountId: string, addAnother: () => void) => ReactNode;
 }
 
 /**
- * SPEC 3.3 add-account flow: tool, org or personal, id, then sign in through a terminal or paste
+ * SPEC 3.3 add-account flow: tool, org (Private by default), id, then sign in through a terminal or paste
  * an API key. The account is created first; every later step can be retried without re-adding it.
  */
-export function AddAccountFlow({ onHealthy, renderDone }: AddAccountFlowProps) {
+export function AddAccountFlow({ onHealthy, renderDone, defaultOrg }: AddAccountFlowProps) {
   const tools = useTools();
   const [stage, setStage] = useState<Stage>({ kind: "form" });
   const announced = useRef<string | undefined>(undefined);
@@ -76,7 +79,7 @@ export function AddAccountFlow({ onHealthy, renderDone }: AddAccountFlowProps) {
   if (!tools.data) return <p className="text-base text-fg-faint">Loading tools</p>;
 
   if (stage.kind === "form") {
-    return <AccountForm tools={tools.data} onCreated={(next) => setStage(next)} />;
+    return <AccountForm tools={tools.data} defaultOrg={defaultOrg} onCreated={(next) => setStage(next)} />;
   }
 
   if (doneId) {
@@ -97,10 +100,19 @@ export function AddAccountFlow({ onHealthy, renderDone }: AddAccountFlowProps) {
   return <AccountProgress stage={stage} setStage={setStage} />;
 }
 
-function AccountForm({ tools, onCreated }: { tools: ToolInfo[]; onCreated: (stage: Stage) => void }) {
+function AccountForm({
+  tools,
+  defaultOrg,
+  onCreated,
+}: {
+  tools: ToolInfo[];
+  defaultOrg: string | undefined;
+  onCreated: (stage: Stage) => void;
+}) {
   const orgs = useOrgs();
   const [toolId, setToolId] = useState<ToolId | undefined>(tools[0]?.id);
-  const [org, setOrg] = useState<string>(PERSONAL);
+  const [pickedOrg, setOrg] = useState<string>();
+  const org = pickedOrg ?? defaultOrgId(orgs.data ?? [], defaultOrg);
   const [id, setId] = useState("");
   const [idEdited, setIdEdited] = useState(false);
   const [auth, setAuth] = useState<AuthMode>("login");
@@ -182,7 +194,6 @@ function AccountForm({ tools, onCreated }: { tools: ToolInfo[]; onCreated: (stag
       <Field label="Belongs to">
         {(p) => (
           <Select {...p} value={org} onChange={(e) => setOrg(e.target.value)}>
-            <option value={PERSONAL}>Personal</option>
             {(orgs.data ?? []).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}
@@ -196,7 +207,7 @@ function AccountForm({ tools, onCreated }: { tools: ToolInfo[]; onCreated: (stag
         <NewOrgForm
           orgCount={orgs.data?.length ?? 0}
           onCreated={(orgId) => setOrg(orgId)}
-          onCancel={() => setOrg(PERSONAL)}
+          onCancel={() => setOrg(PRIVATE)}
         />
       )}
       <Field label="Account id" hint="Suggested from the tool and org. You can change it.">

@@ -1,4 +1,4 @@
-import { LOCAL_TASK_PREFIX, type OrgConfig } from "@majhi/shared";
+import { LOCAL_TASK_PREFIX, type OrgConfig, PRIVATE, PRIVATE_KEY } from "@majhi/shared";
 
 const MAX_KEY = 10;
 
@@ -13,9 +13,10 @@ export function orgKeys(orgs: Readonly<Record<string, OrgConfig>>): Map<string, 
   const keys = new Map<string, string>();
   const taken = new Set<string>([LOCAL_TASK_PREFIX]);
   for (const [id, org] of Object.entries(orgs)) {
-    if (org.key !== undefined) {
-      keys.set(id, org.key);
-      taken.add(org.key);
+    const key = org.key ?? (id === PRIVATE ? PRIVATE_KEY : undefined);
+    if (key !== undefined) {
+      keys.set(id, key);
+      taken.add(key);
     }
   }
   for (const [id, org] of Object.entries(orgs)) {

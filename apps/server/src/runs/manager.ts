@@ -424,7 +424,7 @@ export class RunManager {
       const { accounts, boss } = await deps.config.sections();
       const account = accounts[fm.account];
       if (account === undefined) throw new UserError(`Account "${fm.account}" is not in majhi.yaml.`);
-      if (fm.scope !== "root" && account.org !== fm.scope && account.org !== "personal") {
+      if (fm.scope !== "root" && account.org !== fm.scope && account.org !== "private") {
         throw new UserError(
           `@${fm.id} works in "${fm.scope}" and cannot use the account of "${account.org}".`,
         );

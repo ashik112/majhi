@@ -1,8 +1,7 @@
 import type { AccountView, ToolInfo } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, X } from "lucide-react";
-import { AnimatePresence } from "motion/react";
-import * as m from "motion/react-m";
+import { useNavigate } from "@tanstack/react-router";
+import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -17,21 +16,13 @@ import { describeError } from "@/lib/errors";
 import { formatAgo, plural } from "@/lib/format";
 import { opsKeys } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
+import { PAGE_PATH } from "@/lib/pages";
 import { useAccountHealth, useAccounts, useAgents, useOrgs, useTools } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
-import { AccountDetails } from "./account-details";
-import { HealthAccountDialog, RemoveAccountDialog, SignInAgainDialog } from "./account-dialogs";
-import { AddAccountFlow } from "./add-account-flow";
 import { authInfo, barTone, formatPct, orgLabel, resetLabel, statusText } from "./model";
-import { type MissingAccount, missingAccounts } from "./used-by-model";
 
 const COLUMNS = "grid-cols-[170px_110px_110px_minmax(0,1fr)_minmax(0,1fr)_190px]";
-
-type Dialog =
-  | { kind: "health"; account: AccountView }
-  | { kind: "signin"; account: AccountView }
-  | { kind: "remove"; account: AccountView };
 
 /** Health and usage: every account with its meters, every agent with what it is doing. */
 export function HealthView() {
@@ -42,19 +33,12 @@ export function HealthView() {
   const tasks = useTasks();
   const now = useNow(30_000);
   const { org: orgFilter } = useOrgFilter();
-  const [selectedId, setSelectedId] = useState<string>();
-  const [adding, setAdding] = useState(false);
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const navigate = useNavigate();
   const check = useCheckAll(accounts.data ?? []);
 
   const all = accounts.data ?? [];
   const entries = agents.data ?? [];
   const rows = orgFilter === undefined ? all : all.filter((a) => a.org === orgFilter);
-  const missing = missingAccounts(
-    entries,
-    all.map((a) => a.id),
-  );
-  const selected = all.find((a) => a.id === selectedId);
   const okAgents = entries.filter((e): e is OkAgent => e.status === "ok");
   const agentRows =
     orgFilter === undefined ? okAgents : okAgents.filter((e) => e.agent.frontmatter.scope === orgFilter);
@@ -76,15 +60,8 @@ export function HealthView() {
           </>
         }
       >
-        <Button
-          size="lg"
-          onClick={() => {
-            setSelectedId(undefined);
-            setAdding(true);
-          }}
-          aria-expanded={adding}
-        >
-          Add account
+        <Button asChild size="lg">
+          <PageLink page="accounts">Manage accounts</PageLink>
         </Button>
         <Button size="lg" variant="primary" disabled={check.running} onClick={() => void check.run()}>
           <RefreshCw aria-hidden="true" className={cn(check.running && "animate-spin")} />
@@ -103,10 +80,7 @@ export function HealthView() {
             </p>
           )}
           <ChecksSection
-            onSignIn={(id) => {
-              const account = all.find((a) => a.id === id);
-              if (account) setDialog({ kind: "signin", account });
-            }}
+            onSignIn={(id) => void navigate({ to: PAGE_PATH.accounts, search: { account: id } })}
           />
 
           <section aria-labelledby="health-accounts" className="flex flex-col gap-2">
@@ -120,7 +94,13 @@ export function HealthView() {
             ) : accounts.isPending ? (
               <RowsSkeleton rows={5} />
             ) : rows.length === 0 ? (
-              <EmptyAccounts filtered={orgFilter !== undefined} onAdd={() => setAdding(true)} />
+              <p className="text-base text-fg-muted">
+                {orgFilter !== undefined ? "This org has no accounts yet. " : "No accounts yet. "}
+                <PageLink page="accounts" className="underline underline-offset-2 hover:text-fg">
+                  Add one in Accounts
+                </PageLink>
+                .
+              </p>
             ) : (
               <div>
                 <div className="flex flex-col gap-2">
@@ -143,11 +123,6 @@ export function HealthView() {
                         tool={tools.data}
                         org={orgLabel(account.org, orgs.data ?? []).name}
                         now={now}
-                        selected={selectedId === account.id}
-                        onSelect={() => {
-                          setAdding(false);
-                          setSelectedId(account.id);
-                        }}
                       />
                     ))}
                   </ul>
@@ -155,8 +130,6 @@ export function HealthView() {
               </div>
             )}
           </section>
-
-          <MissingAccounts missing={missing} />
 
           <section aria-labelledby="health-agents" className="flex flex-col gap-2">
             <h2 id="health-agents" className="text-md font-semibold">
@@ -202,54 +175,7 @@ export function HealthView() {
             )}
           </section>
         </div>
-
-        <AnimatePresence>
-          {(adding || selected) && (
-            <m.div
-              key={adding ? "add" : "details"}
-              initial={{ x: 24, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 24, opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute inset-y-0 right-0 z-10 w-[400px] max-w-full border-l border-line-strong bg-rail shadow-pop"
-            >
-              {adding ? (
-                <AddAccountPanel onClose={() => setAdding(false)} onDone={() => setAdding(false)} />
-              ) : selected ? (
-                <AccountDetails
-                  account={selected}
-                  tool={tools.data?.find((t) => t.id === selected.tool)}
-                  orgs={orgs.data ?? []}
-                  agents={entries}
-                  now={now}
-                  onClose={() => setSelectedId(undefined)}
-                  onAction={(kind) => setDialog({ kind, account: selected })}
-                />
-              ) : null}
-            </m.div>
-          )}
-        </AnimatePresence>
       </div>
-
-      {dialog?.kind === "health" && (
-        <HealthAccountDialog account={dialog.account} onClose={() => setDialog(null)} />
-      )}
-      {dialog?.kind === "signin" && (
-        <SignInAgainDialog
-          account={dialog.account}
-          tool={tools.data?.find((t) => t.id === dialog.account.tool)}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "remove" && (
-        <RemoveAccountDialog
-          account={dialog.account}
-          onClose={() => {
-            setDialog(null);
-            setSelectedId(undefined);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -259,15 +185,11 @@ function AccountRow({
   tool,
   org,
   now,
-  selected,
-  onSelect,
 }: {
   account: AccountView;
   tool: ToolInfo[] | undefined;
   org: string;
   now: number;
-  selected: boolean;
-  onSelect: () => void;
 }) {
   const auth = authInfo(account);
   const status = statusText(account, now);
@@ -278,18 +200,17 @@ function AccountRow({
       className={cn(
         "relative grid items-center gap-4 rounded-[10px] border bg-raised px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
         COLUMNS,
-        selected ? "border-line-hover bg-selected" : "border-line-strong hover:border-line-hover",
+        "border-line-strong hover:border-line-hover",
       )}
     >
       <span className="flex min-w-0 flex-col gap-0.5">
-        <button
-          type="button"
-          aria-pressed={selected}
-          onClick={onSelect}
-          className="cursor-pointer truncate text-left font-mono leading-4 after:absolute after:inset-0 after:rounded-[10px] focus-visible:after:outline-2 focus-visible:after:outline-blue"
+        <PageLink
+          page="accounts"
+          search={{ account: account.id }}
+          className="truncate text-left font-mono leading-4 after:absolute after:inset-0 after:rounded-[10px] focus-visible:after:outline-2 focus-visible:after:outline-blue"
         >
           {account.id}
-        </button>
+        </PageLink>
         <span className="truncate text-xs leading-4 text-fg-faint">
           {toolName} · {plural(account.agentCount, "agent")}
         </span>
@@ -343,77 +264,6 @@ function AccountRow({
 /** The column name the header shows, read out before a cell for screen readers. */
 function Label({ children }: { children: string }) {
   return <span className="sr-only">{children}</span>;
-}
-
-function EmptyAccounts({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
-  return (
-    <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-line-hover px-5 py-6">
-      <p className="text-base text-fg-muted">
-        {filtered
-          ? "This org has no accounts yet."
-          : "No accounts yet. Add one to sign in to Claude Code or Codex, or paste an API key."}
-      </p>
-      <Button variant="primary" onClick={onAdd}>
-        Add account
-      </Button>
-    </div>
-  );
-}
-
-function AddAccountPanel({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  return (
-    <aside aria-label="Add an account" className="flex h-full flex-col gap-4 overflow-auto p-5">
-      <div className="flex items-center">
-        <h2 className="text-md font-semibold">Add an account</h2>
-        <Button
-          className="ml-auto"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close add account"
-          onClick={onClose}
-        >
-          <X aria-hidden="true" />
-        </Button>
-      </div>
-      <AddAccountFlow
-        renderDone={(accountId, addAnother) => (
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="primary">
-              <PageLink page="agents" search={{ account: accountId }} onClick={onDone}>
-                Create an agent on this account
-              </PageLink>
-            </Button>
-            <Button onClick={addAnother}>Add another account</Button>
-          </div>
-        )}
-      />
-    </aside>
-  );
-}
-
-/** Agent files that name an account that does not exist, so broken references are visible. */
-function MissingAccounts({ missing }: { missing: readonly MissingAccount[] }) {
-  if (missing.length === 0) return null;
-  return (
-    <section
-      aria-label="Missing accounts"
-      className="flex flex-col gap-1.5 rounded-xl border border-red-line bg-red-wash px-4 py-3"
-    >
-      <h3 className="text-base font-medium text-red">Missing accounts</h3>
-      <p className="text-sm text-fg-muted">
-        These agents name an account that does not exist. Pick another account for them in Agents.
-      </p>
-      <ul className="flex flex-col gap-1">
-        {missing.map((entry) => (
-          <li key={entry.account} className="text-sm text-fg-soft">
-            <span className="font-mono">{entry.account}</span>
-            <span className="text-fg-faint">, used by </span>
-            <span className="font-mono">{entry.agents.map((a) => `@${a}`).join(", ")}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 /** Checks every account, three at a time, and reports how far it got. Each check also refreshes the list. */

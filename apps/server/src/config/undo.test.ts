@@ -41,7 +41,7 @@ describe("history and undo", () => {
     expect(undo.status).toBe(200);
     expect(undo.body.summary).toBe("added org globex");
     const orgs = await h.cmd("orgs.list");
-    expect(orgs.body.map((o: { id: string }) => o.id)).toEqual(["acme"]);
+    expect(orgs.body.map((o: { id: string }) => o.id)).toEqual(["private", "acme"]);
     const list = (await h.cmd("history.list", { limit: 5 })).body;
     expect(list[0]).toMatchObject({ command: "history.undo", undone: false });
     expect(list[1]).toMatchObject({ command: "orgs.create", undone: true });
@@ -54,7 +54,7 @@ describe("history and undo", () => {
     const [create] = (await h.cmd("history.list", { limit: 1 })).body;
     const undo = await h.cmd("history.undo", { commit: create.commit });
     await h.cmd("history.undo", { commit: undo.body.commit });
-    expect((await h.cmd("orgs.list")).body).toHaveLength(1);
+    expect((await h.cmd("orgs.list")).body).toHaveLength(2);
     const list = (await h.cmd("history.list", { limit: 5 })).body;
     expect(list.find((e: { commit: string }) => e.commit === create.commit).undone).toBe(false);
   });

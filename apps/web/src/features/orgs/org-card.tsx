@@ -22,11 +22,13 @@ export function OrgCard({
   accounts,
   tools,
   openTasks,
+  onAddAccount,
 }: {
   org: OrgView;
   accounts: readonly AccountView[];
   tools: readonly ToolInfo[] | undefined;
   openTasks: number;
+  onAddAccount: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   return (
@@ -38,7 +40,7 @@ export function OrgCard({
           {plural(openTasks, "open task")}
         </span>
       </div>
-      <AccountList accounts={accounts} tools={tools} orgName={org.name} />
+      <AccountList accounts={accounts} tools={tools} orgName={org.name} onAdd={onAddAccount} />
       <Button asChild size="lg" className="border border-line-bright bg-card hover:bg-selected">
         <PageLink page="agents" search={{ org: org.id }}>
           Manage {org.name} agents ({org.agentCount})
@@ -53,50 +55,30 @@ export function OrgCard({
   );
 }
 
-/** Accounts that belong to no org: the owner's own. Root agents use them. */
-export function PersonalCard({
-  accounts,
-  tools,
-  rootAgents,
-}: {
-  accounts: readonly AccountView[];
-  tools: readonly ToolInfo[] | undefined;
-  rootAgents: number;
-}) {
-  return (
-    <section aria-label="Personal" className={CARD}>
-      <div className="flex items-center gap-3">
-        <OrgBadge label="*" color={undefined} className="size-8 rounded-lg text-xs" />
-        <h2 className="min-w-0 truncate text-lg font-semibold">Personal</h2>
-      </div>
-      <p className="-mt-2 text-sm text-fg-muted">Your own accounts. Root agents can use them anywhere.</p>
-      <AccountList accounts={accounts} tools={tools} orgName="Personal" />
-      <Button asChild size="lg" className="border border-line-bright bg-card hover:bg-selected">
-        <PageLink page="agents">Manage root agents ({rootAgents})</PageLink>
-      </Button>
-    </section>
-  );
-}
-
 function AccountList({
   accounts,
   tools,
   orgName,
+  onAdd,
 }: {
   accounts: readonly AccountView[];
   tools: readonly ToolInfo[] | undefined;
   orgName: string;
+  onAdd: () => void;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center">
         <SectionLabel>Accounts</SectionLabel>
-        <PageLink
-          page="usage"
-          className="ml-auto rounded-xs text-xs text-fg-faint transition-colors hover:text-fg"
+        <Button
+          className="ml-auto -my-1 h-6 px-2 text-xs"
+          variant="ghost"
+          size="sm"
+          onClick={onAdd}
+          aria-label={`Add account to ${orgName}`}
         >
-          Health and usage
-        </PageLink>
+          Add account
+        </Button>
       </div>
       {accounts.length === 0 ? (
         <p className="text-sm text-fg-faint">No accounts yet.</p>
@@ -108,7 +90,13 @@ function AccountList({
               <li key={account.id} className="flex items-center gap-2 text-sm">
                 <Dot tone={status.tone} />
                 <span className="sr-only">{status.label}: </span>
-                <span className="font-mono">{account.id}</span>
+                <PageLink
+                  page="accounts"
+                  search={{ account: account.id }}
+                  className="rounded-xs font-mono hover:underline"
+                >
+                  {account.id}
+                </PageLink>
                 <span
                   className={cn(
                     "ml-auto truncate text-fg-faint",

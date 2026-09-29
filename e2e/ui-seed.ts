@@ -29,7 +29,7 @@ interface Seed {
 }
 
 const ACCOUNTS: Record<string, Seed> = {
-  "claude-personal": { tool: "claude", org: "personal", window: [22, 14.17], week: 31, health: "ok" },
+  "claude-personal": { tool: "claude", org: "private", window: [22, 14.17], week: 31, health: "ok" },
   "claude-globex": { tool: "claude", org: "globex", window: [64, 13.5], week: 48, opus: 61, health: "ok" },
   "claude-globex-2": { tool: "claude", org: "globex", window: [12, 16.08], week: 20, health: "ok" },
   "codex-acme": { tool: "codex", org: "acme", window: [71, 13.83], week: 55, health: "ok" },

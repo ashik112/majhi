@@ -89,15 +89,15 @@ describe("groupAgents", () => {
 });
 
 describe("accountsForScope", () => {
-  const accounts = [account("p", "personal"), account("a", "acme"), account("z", "zed")];
+  const accounts = [account("p", "private"), account("a", "acme"), account("z", "zed")];
   it("gives root agents every account", () => {
     expect(accountsForScope(accounts, "root").map((a) => a.id)).toEqual(["p", "a", "z"]);
   });
-  it("gives an org's agents that org's accounts and personal ones, never another org's", () => {
+  it("gives an org's agents that org's accounts and private ones, never another org's", () => {
     expect(accountsForScope(accounts, "acme").map((a) => a.id)).toEqual(["p", "a"]);
   });
-  it("maps personal accounts to the root scope", () => {
-    expect(scopeForAccount({ org: "personal" })).toBe("root");
+  it("maps private accounts to the root scope", () => {
+    expect(scopeForAccount({ org: "private" })).toBe("root");
     expect(scopeForAccount({ org: "acme" })).toBe("acme");
   });
 });

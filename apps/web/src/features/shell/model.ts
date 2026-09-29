@@ -107,7 +107,7 @@ export type BannerTone = "amber" | "red";
 
 export type BannerAction =
   | { kind: "task"; id: string }
-  | { kind: "page"; to: PagePath }
+  | { kind: "page"; to: PagePath; search?: { account: string } }
   | { kind: "element"; id: string };
 
 export interface Banner {
@@ -186,8 +186,8 @@ export function deriveBanner(input: BannerInput): Banner | null {
         account.status === "needs-login"
           ? `${account.id} needs you to sign in.`
           : `${account.id} is not answering.`,
-      actionLabel: "Health and usage",
-      action: { kind: "page", to: PAGE_PATH.usage },
+      actionLabel: "Accounts",
+      action: { kind: "page", to: PAGE_PATH.accounts, search: { account: account.id } },
     });
   }
 

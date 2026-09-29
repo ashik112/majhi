@@ -97,8 +97,14 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
   await page.keyboard.press("Meta+j");
   await expect(drawer(page)).toHaveCount(0);
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs and accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
   await expect(page.getByText("Globex").first()).toBeVisible();
+  // Private is a normal org card, first, and cannot be removed.
+  const priv = page.getByRole("region", { name: "Private" });
+  await expect(priv).toBeVisible();
+  await expect(priv.getByRole("button", { name: "Add account to Private" })).toBeVisible();
+  await expect(priv.getByRole("button", { name: /remove/i })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Personal" })).toHaveCount(0);
 
   // History on Hub setup lists it, made by the boss.
   await page.goto("/setup");
@@ -114,7 +120,7 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
   await page.keyboard.press("Control+j");
   await expect(drawer(page)).toHaveCount(0);
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs and accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
   await expect(page.getByText("Globex")).toHaveCount(0);
 });
 

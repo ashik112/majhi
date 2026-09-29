@@ -92,7 +92,7 @@ describe("agent commands", () => {
     });
     await h.cmd("agents.create", { id: "orphan", ...draft({ account: "claude-gone" }) });
     await h.cmd("agents.create", { id: "auto-one", ...draft({ model: "auto", effort: "auto" }) });
-    await h.cmd("accounts.create", { id: "claude-personal", tool: "claude", org: "personal", auth: "login" });
+    await h.cmd("accounts.create", { id: "claude-personal", tool: "claude", org: "private", auth: "login" });
     await h.cmd("agents.create", { id: "shared", ...draft({ scope: "globex", account: "claude-personal" }) });
     await h.cmd("agents.create", { id: "rooter", ...draft({ scope: "root", role: "Root" }) });
 

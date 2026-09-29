@@ -93,8 +93,8 @@ export function SetupView() {
             state={acc}
             actions={
               <Button asChild size="sm">
-                <PageLink page="usage">
-                  {accounts.data?.length ? "Health and accounts" : "Add account"}
+                <PageLink page="accounts">
+                  {accounts.data?.length ? "Manage accounts" : "Add account"}
                 </PageLink>
               </Button>
             }

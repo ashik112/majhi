@@ -1,4 +1,4 @@
-import { type AccountModels, type AgentFrontmatter, AUTO, PERSONAL } from "@majhi/shared";
+import { type AccountModels, type AgentFrontmatter, AUTO, PRIVATE } from "@majhi/shared";
 import type { ConfigSections } from "../config/sections.ts";
 
 export interface WarningContext {
@@ -14,7 +14,7 @@ export function agentWarnings(f: AgentFrontmatter, ctx: WarningContext): string[
   const account = ctx.sections.accounts[f.account];
   if (account === undefined) {
     out.push(`Account "${f.account}" is not in majhi.yaml`);
-  } else if (f.scope !== "root" && account.org !== f.scope && account.org !== PERSONAL) {
+  } else if (f.scope !== "root" && account.org !== f.scope && account.org !== PRIVATE) {
     out.push(`Account "${f.account}" belongs to org "${account.org}", but this agent works in "${f.scope}"`);
   }
 

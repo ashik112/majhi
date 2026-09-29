@@ -1,40 +1,35 @@
-import { PERSONAL } from "@majhi/shared";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowsSkeleton } from "@/components/ui/skeleton";
+import { AddAccountDialog } from "@/features/accounts/add-account-dialog";
 import { NewOrgForm } from "@/features/accounts/new-org-form";
-import { ROOT_SCOPE } from "@/features/agents/model";
 import { describeError } from "@/lib/errors";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useAccounts, useAgents, useOrgs, useTools } from "@/lib/studio-queries";
+import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
-import { CARD, OrgCard, PersonalCard } from "./org-card";
+import { CARD, OrgCard } from "./org-card";
 
-/** Orgs and accounts: one card per org, the owner's personal accounts, and a way to add an org. */
+/** Orgs and accounts: one card per org, Private first, and a way to add an org. */
 export function OrgsView() {
   const orgs = useOrgs();
   const accounts = useAccounts();
-  const agents = useAgents();
   const tools = useTools();
   const tasks = useTasks();
   const { org: filter } = useOrgFilter();
   const [adding, setAdding] = useState(false);
+  const [addAccountTo, setAddAccountTo] = useState<string>();
 
   const orgList = orgs.data ?? [];
   const accountList = accounts.data ?? [];
   const shown = filter === undefined ? orgList : orgList.filter((o) => o.id === filter);
-  const personal = accountList.filter((a) => a.org === PERSONAL);
-  const rootAgents = (agents.data ?? []).filter(
-    (e) => e.status === "ok" && e.agent.frontmatter.scope === ROOT_SCOPE,
-  ).length;
   const open = (id: string) => (tasks.data ?? []).filter((t) => t.org === id && t.status !== "done").length;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Orgs and accounts"
-        subtitle="An org can hold several accounts on the same tool. Agents pick one account each."
+        title="Orgs"
+        subtitle="An org groups the accounts, agents and projects of one company. Private is yours and always there."
       />
       <div className="min-h-0 flex-1 overflow-auto px-8 py-[22px]">
         {orgs.isError ? (
@@ -56,11 +51,9 @@ export function OrgsView() {
                 accounts={accountList.filter((a) => a.org === org.id)}
                 tools={tools.data}
                 openTasks={open(org.id)}
+                onAddAccount={() => setAddAccountTo(org.id)}
               />
             ))}
-            {filter === undefined && personal.length > 0 && (
-              <PersonalCard accounts={personal} tools={tools.data} rootAgents={rootAgents} />
-            )}
             {filter === undefined &&
               (adding ? (
                 <section aria-label="New org" className={CARD}>
@@ -83,12 +76,10 @@ export function OrgsView() {
               ))}
           </div>
         )}
-        {orgs.isSuccess && orgList.length === 0 && (
-          <p className="mt-4 text-base text-fg-muted">
-            No orgs yet. An org groups the accounts, agents and projects of one company.
-          </p>
-        )}
       </div>
+      {addAccountTo !== undefined && (
+        <AddAccountDialog org={addAccountTo} onClose={() => setAddAccountTo(undefined)} />
+      )}
     </div>
   );
 }

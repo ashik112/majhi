@@ -2,14 +2,28 @@ import {
   type AccountStatus,
   type AccountUsage,
   type AccountView,
+  currentOrgId,
   type HealthCheck,
   type HealthStep,
+  LEGACY_PERSONAL,
   type OrgView,
-  PERSONAL,
+  PRIVATE,
+  PRIVATE_NAME,
 } from "@majhi/shared";
 
 /** Ids an org may not use: they mean something else in agent files and accounts. */
-const RESERVED_ORG_IDS: readonly string[] = [PERSONAL, "root"];
+const RESERVED_ORG_IDS: readonly string[] = [PRIVATE, LEGACY_PERSONAL, "root"];
+
+/**
+ * The org a form starts on: the org filter when it names one, else the only org besides Private,
+ * else Private.
+ */
+export function defaultOrgId(orgs: readonly Pick<OrgView, "id">[], filter?: string): string {
+  if (filter !== undefined && orgs.some((o) => o.id === filter)) return filter;
+  const others = orgs.filter((o) => o.id !== PRIVATE);
+  const [only] = others;
+  return others.length === 1 && only ? only.id : PRIVATE;
+}
 
 /** Turns an org name into an id: "Acme Corp." becomes "acme-corp". Empty when the name has no letters or digits. */
 export function orgIdFromName(name: string): string {
@@ -64,9 +78,8 @@ export interface OrgLabel {
 
 /** Display name and color for an account's org id. Unknown ids show as they are. */
 export function orgLabel(orgId: string, orgs: readonly OrgView[]): OrgLabel {
-  if (orgId === PERSONAL) return { name: "Personal" };
-  const org = orgs.find((o) => o.id === orgId);
-  if (!org) return { name: orgId };
+  const org = orgs.find((o) => o.id === currentOrgId(orgId));
+  if (!org) return { name: currentOrgId(orgId) === PRIVATE ? PRIVATE_NAME : orgId };
   return org.color ? { name: org.name, color: org.color } : { name: org.name };
 }
 

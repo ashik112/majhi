@@ -5,7 +5,7 @@ import { bossId, firstHealthyAccount, firstIncompleteStep, isExistingRootAgent }
 const account = (id: string, status: AccountView["status"]): AccountView => ({
   id,
   tool: "claude",
-  org: "personal",
+  org: "private",
   auth: "login",
   home: "/h",
   agentCount: 0,

@@ -20,8 +20,34 @@ export const IdSchema = z
     "Use lowercase letters, digits and dashes, starting with a letter or digit",
   );
 
-/** Accounts not owned by an org. Never a valid org id. */
-export const PERSONAL = "personal";
+/**
+ * The built-in org for the owner's own accounts and projects. It always exists, even
+ * without an entry in `orgs`, and cannot be removed or reused as a new org id.
+ */
+export const PRIVATE = "private";
+/** Display name of the built-in org. */
+export const PRIVATE_NAME = "Private";
+/** Default task key prefix of the built-in org. */
+export const PRIVATE_KEY = "PRV";
+/** Neutral dot color of the built-in org. */
+export const PRIVATE_COLOR = "#8a8f98";
+/** The old id of the built-in org. Still read as `private`, and rewritten by the startup migration. */
+export const LEGACY_PERSONAL = "personal";
+
+/** Reads the old `personal` org id as `private`. Every other id is unchanged. */
+export function currentOrgId(id: string): string {
+  return id === LEGACY_PERSONAL ? PRIVATE : id;
+}
+
+/** An org id as written in a file. An old `personal` reads as `private`. */
+export const OrgIdSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z0-9][a-z0-9-]{0,62}$/,
+    "Use lowercase letters, digits and dashes, starting with a letter or digit",
+  )
+  .transform(currentOrgId);
 
 /** Reference to an entry in `secrets.age`, like `secret:anthropic-personal`. */
 export const SecretRefSchema = z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/, "Use secret:<name>");
@@ -69,8 +95,8 @@ export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 export const AccountConfigSchema = z
   .strictObject({
     tool: ToolIdSchema,
-    /** An org id from `orgs`, or `personal`. */
-    org: IdSchema,
+    /** An org id from `orgs`, or `private`. */
+    org: OrgIdSchema,
     auth: AuthModeSchema,
     /** Required for `api-key` accounts, absent for `login`. */
     key: SecretRefSchema.optional(),
@@ -97,7 +123,7 @@ export const AUTO = "auto";
 export const AgentFrontmatterSchema = z.strictObject({
   id: IdSchema,
   /** An org id, or `root`. */
-  scope: IdSchema,
+  scope: OrgIdSchema,
   role: RoleSchema,
   account: IdSchema,
   /** A model id from the account's ACP model list, or `auto`. Absent means the agent's ACP default. */
@@ -107,7 +133,7 @@ export const AgentFrontmatterSchema = z.strictObject({
   /** Allowed model ids when `model` is `auto`. Empty means every model the account offers. */
   models: z.array(z.string().trim().min(1)).optional(),
   /** Org ids the agent may work in, or `[anywhere]`. */
-  where: z.array(IdSchema).min(1).default(["anywhere"]),
+  where: z.array(OrgIdSchema).min(1).default(["anywhere"]),
   perms: z.array(PermSchema).default([]),
   tools: z.array(IdSchema).default([]),
   connections: z.array(IdSchema).default([]),

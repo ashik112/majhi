@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   authInfo,
   barTone,
+  defaultOrgId,
   failingStep,
   formatIn,
   formatPct,
@@ -30,6 +31,7 @@ describe("orgIdFromName", () => {
   });
   it("avoids reserved ids", () => {
     expect(orgIdFromName("Personal")).toBe("personal-org");
+    expect(orgIdFromName("Private")).toBe("private-org");
     expect(orgIdFromName("Root")).toBe("root-org");
   });
   it("caps the length at 63 without a trailing dash", () => {
@@ -62,8 +64,9 @@ describe("orgLabel", () => {
   const orgs: OrgView[] = [
     { id: "acme", name: "Acme", key: "ACM", color: "#8ab8f5", accountCount: 1, agentCount: 0 },
   ];
-  it("resolves personal, known and unknown orgs", () => {
-    expect(orgLabel("personal", orgs)).toEqual({ name: "Personal" });
+  it("resolves private, known and unknown orgs", () => {
+    expect(orgLabel("private", orgs)).toEqual({ name: "Private" });
+    expect(orgLabel("personal", orgs)).toEqual({ name: "Private" });
     expect(orgLabel("acme", orgs)).toEqual({ name: "Acme", color: "#8ab8f5" });
     expect(orgLabel("gone", orgs)).toEqual({ name: "gone" });
   });
@@ -173,5 +176,20 @@ describe("health table text", () => {
     expect(authInfo({ auth: "login", status: "needs-login" })).toEqual({ label: "Needs login", tone: "red" });
     expect(authInfo({ auth: "login", status: "relogin-soon" }).tone).toBe("amber");
     expect(authInfo({ auth: "api-key", status: "needs-login" })).toEqual({ label: "API key", tone: "green" });
+  });
+});
+
+describe("defaultOrgId", () => {
+  const ids = (...list: string[]) => list.map((id) => ({ id }));
+  it("prefers the org filter", () => {
+    expect(defaultOrgId(ids("private", "acme", "zed"), "zed")).toBe("zed");
+  });
+  it("takes the only other org", () => {
+    expect(defaultOrgId(ids("private", "acme"))).toBe("acme");
+  });
+  it("falls back to private", () => {
+    expect(defaultOrgId(ids("private"))).toBe("private");
+    expect(defaultOrgId(ids("private", "acme", "zed"))).toBe("private");
+    expect(defaultOrgId(ids("private", "acme"), "gone")).toBe("acme");
   });
 });

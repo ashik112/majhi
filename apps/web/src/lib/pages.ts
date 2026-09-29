@@ -2,6 +2,7 @@
 export const PAGE_PATH = {
   board: "/",
   agents: "/agents",
+  accounts: "/accounts",
   // Not `/health`: the server answers that address itself, so a reload there would show its JSON.
   usage: "/usage",
   skills: "/skills",

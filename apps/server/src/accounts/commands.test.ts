@@ -27,7 +27,7 @@ describe("suggestAccountId", () => {
     expect(
       suggestAccountId("claude", "acme", new Set(["claude-acme", "claude-acme-2", "claude-acme-4"])),
     ).toBe("claude-acme-3");
-    expect(suggestAccountId("codex", "personal", new Set(["claude-personal"]))).toBe("codex-personal");
+    expect(suggestAccountId("codex", "private", new Set(["claude-private"]))).toBe("codex-private");
   });
 
   it("works through the command", async () => {
@@ -63,7 +63,7 @@ describe("accounts.create", () => {
     expect((await h.cmd("accounts.list")).body).toHaveLength(1);
   });
 
-  it("fails clearly when the org does not exist, and allows personal", async () => {
+  it("fails clearly when the org does not exist, and allows private", async () => {
     h = await harness();
     const missing = await h.cmd("accounts.create", {
       id: "claude-nope",
@@ -74,13 +74,25 @@ describe("accounts.create", () => {
     expect(missing.status).toBe(400);
     expect(missing.body.error).toContain('Org "nope" does not exist');
 
-    const personal = await h.cmd("accounts.create", {
-      id: "claude-personal",
+    const own = await h.cmd("accounts.create", {
+      id: "claude-private",
       tool: "claude",
+      org: "private",
+      auth: "login",
+    });
+    expect(own.status).toBe(200);
+    // An old script that still says personal lands on Private.
+    const old = await h.cmd("accounts.create", {
+      id: "codex-private",
+      tool: "codex",
       org: "personal",
       auth: "login",
     });
-    expect(personal.status).toBe(200);
+    expect(old.status).toBe(200);
+    expect((await h.cmd("accounts.list")).body.map((a: { org: string }) => a.org)).toEqual([
+      "private",
+      "private",
+    ]);
   });
 
   it("refuses a taken id and suggests a free one", async () => {
@@ -345,9 +357,11 @@ describe("tools and orgs", () => {
     await withOrg();
     await h.cmd("accounts.create", { id: "claude-acme", tool: "claude", org: "acme", auth: "login" });
     expect((await h.cmd("orgs.list")).body).toEqual([
+      { id: "private", name: "Private", color: "#8a8f98", key: "PRV", accountCount: 0, agentCount: 0 },
       { id: "acme", name: "Acme", key: "ACM", accountCount: 1, agentCount: 0 },
     ]);
     expect((await h.cmd("orgs.create", { id: "acme", name: "Again" })).status).toBe(409);
     expect((await h.cmd("orgs.create", { id: "personal", name: "Me" })).status).toBe(400);
+    expect((await h.cmd("orgs.create", { id: "private", name: "Me" })).status).toBe(400);
   });
 });

@@ -82,7 +82,7 @@ describe("majhi-admin MCP server", () => {
     const client = await connect(token());
     const res = await call(client, "majhi_orgs_list", { ownerAsked: false, reason: "look" });
     expect(res.isError).toBe(false);
-    expect(JSON.parse(res.text)).toMatchObject([{ id: "acme" }]);
+    expect(JSON.parse(res.text)).toMatchObject([{ id: "private" }, { id: "acme" }]);
     expect((await w.items()).filter((i) => i.type === "approval")).toEqual([]);
     await client.close();
   });
@@ -132,7 +132,7 @@ describe("majhi-admin MCP server", () => {
       "Waiting for the owner to approve in the room. You will get a message with the decision.",
     );
     expect(waiting.isError).toBe(false);
-    expect((await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id)).toEqual(["acme"]);
+    expect((await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id)).toEqual(["private", "acme"]);
 
     const destructive = await call(client, "majhi_agents_remove", {
       id: "acme-builder",

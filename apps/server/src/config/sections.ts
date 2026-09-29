@@ -5,6 +5,9 @@ import {
   IdSchema,
   type OrgConfig,
   OrgConfigSchema,
+  PRIVATE,
+  PRIVATE_COLOR,
+  PRIVATE_NAME,
   type ProjectConfig,
   ProjectConfigSchema,
 } from "@majhi/shared";
@@ -42,7 +45,7 @@ export async function readSections(file: string): Promise<ConfigSections> {
     text = await readFile(file, "utf8");
   } catch (err) {
     if (errorCode(err) === "ENOENT")
-      return { exists: false, orgs: {}, accounts: {}, projects: {}, boss: undefined };
+      return { exists: false, orgs: withBuiltInOrgs({}), accounts: {}, projects: {}, boss: undefined };
     throw err;
   }
   const doc = parseDocument(text);
@@ -59,11 +62,23 @@ export async function readSections(file: string): Promise<ConfigSections> {
   }
   return {
     exists: true,
-    orgs: parsed.data.orgs ?? {},
+    orgs: withBuiltInOrgs(parsed.data.orgs ?? {}),
     accounts: parsed.data.accounts ?? {},
     projects: validProjects(parsed.data.projects ?? {}),
     boss: parsed.data.boss,
   };
+}
+
+/** The built-in Private org, as it reads when majhi.yaml has no entry for it. */
+export const PRIVATE_DEFAULTS: OrgConfig = { name: PRIVATE_NAME, color: PRIVATE_COLOR };
+
+/**
+ * Orgs as the rest of the server sees them: `private` is always there and always first, whether
+ * or not majhi.yaml has an entry. An entry only exists once the owner changes its settings.
+ */
+export function withBuiltInOrgs(orgs: Record<string, OrgConfig>): Record<string, OrgConfig> {
+  const { [PRIVATE]: own, ...rest } = orgs;
+  return { [PRIVATE]: own ?? PRIVATE_DEFAULTS, ...rest };
 }
 
 function validProjects(raw: Record<string, unknown>): Record<string, ProjectConfig> {

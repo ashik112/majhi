@@ -10,7 +10,7 @@ This spec is the source of truth. If something here is unclear or wrong, stop an
 
 majhi is a local, dockerized workspace where one developer runs AI coding agents across many companies at once. It replaces opening separate CLIs (Claude Code, Codex) by hand. It is the owner's main daily tool, so speed, clarity and reliability matter more than feature count. The UI must be polished and fast enough to be a developer's daily driver: keyboard-first, dense where it helps, calm everywhere else.
 
-The owner works for several companies (orgs). Each org gives official Claude and Codex accounts, usually CLI subscriptions, sometimes API keys. An org can have several accounts of the same tool. More tools (OpenCode, Cursor, others) may be added later. Projects live under one or more workspace roots that the owner picks (for example `~/Work` and `~/personal`). Repos are on GitHub, GitLab and Bitbucket, and the owner has SSH access to all of them. Trackers vary (Jira, ClickUp, GitHub Issues), but most tasks are local and never touch a tracker.
+The owner works for several companies (orgs). Each org gives official Claude and Codex accounts, usually CLI subscriptions, sometimes API keys. An org can have several accounts of the same tool. More tools (OpenCode, Cursor, others) may be added later. Projects live under one or more workspace roots that the owner picks (for example `~/Work` and `~/private`). Repos are on GitHub, GitLab and Bitbucket, and the owner has SSH access to all of them. Trackers vary (Jira, ClickUp, GitHub Issues), but most tasks are local and never touch a tracker.
 
 ### Goals
 
@@ -46,10 +46,10 @@ The owner works for several companies (orgs). Each org gives official Claude and
 
 | Concept | Meaning |
 |---|---|
-| **Org** | A company. Has accounts, agents, projects, a default team, a default base branch, a merge policy, a tracker (optional), and a git commit identity. |
-| **Account** | One login for one tool (Claude Code or Codex in v1), owned by an org or marked personal. Signs in either with the tool's own login (subscription) or with an API key. API-key accounts can carry extra fields the provider needs (a base URL for OpenRouter or a gateway, an org id, an Azure endpoint and deployment), with the same field kinds as connections (5.14). Has its own isolated config home. Usage limits belong to accounts. |
+| **Org** | A company. Has accounts, agents, projects, a default team, a default base branch, a merge policy, a tracker (optional), and a git commit identity. One org is built in: **Private** (id `private`, task key `PRV`), for the owner's own accounts and repos. It always exists, is the default when nothing else fits, and cannot be removed. Its entry in `majhi.yaml` appears only when the owner changes its settings. |
+| **Account** | One login for one tool (Claude Code or Codex in v1), owned by an org, or by Private for the owner's own. Signs in either with the tool's own login (subscription) or with an API key. API-key accounts can carry extra fields the provider needs (a base URL for OpenRouter or a gateway, an org id, an Azure endpoint and deployment), with the same field kinds as connections (5.14). Has its own isolated config home. Usage limits belong to accounts. |
 | **Agent** | A configured worker: role, account, model, instructions, skills, MCP tools, permissions, where it can work, and a fallback agent. Several agents can share one account. |
-| **Root agent** | An agent with scope "anywhere", usually on a personal account. Examples: Dispatcher (routes new tasks), Housekeeper (curates memory, cleans worktrees), Setup (scans the machine, drafts config, organizes projects). Root agents can create tasks and edit config, always with owner approval. |
+| **Root agent** | An agent with scope "anywhere", usually on a private account. Examples: Dispatcher (routes new tasks), Housekeeper (curates memory, cleans worktrees), Setup (scans the machine, drafts config, organizes projects). Root agents can create tasks and edit config, always with owner approval. |
 | **Workspace root** | A folder the owner picks that holds projects, like `~/Work`. There can be several. majhi scans them for repos and mounts each one into the containers. |
 | **Project** | A git repo under one of the workspace roots, belonging to one org. Has aliases used for parsing ("api", "web"), remotes, the remote used for MRs, and links to other projects. |
 | **Task** | A unit of work. Local by default, optionally mirrored to a tracker. Has a kind (`code`, `ops` or `chat`, see 5.15), a brief, attachments, zero or more task repos, a team, a coordination mode and a status. Can have a parent task and depend on other tasks (5.4a). |
@@ -115,7 +115,7 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 
 ### 3.3 Studio (one overlay, five tabs)
 - **Agents:** list grouped by scope (Root, then each org), each with a status dot. Editor: role, where it can work, account (shows usage), model and effort (both read live from the account's agent over ACP, plus `auto`, which lets the decision provider pick), instructions, skills, permissions (edit files, run shell, push, open MRs, merge), MCP tools, fallback agent. Actions: New (per scope), Duplicate, Health check. Changes save to the agent's file immediately.
-- **Accounts:** the one place to see every AI account and where it is used. Table with tool, org, "Used by" (the agents on the account, boss marked; from Phase 2 also the tasks running on it), current-window usage with reset time, weekly usage, status (healthy, running high, at limit, re-login soon, unreachable). API-key accounts show tokens and cost instead of windows. Add account flow: pick tool, pick org or personal, name is suggested (`claude-acme-2`), then either sign in through a device-code flow in an embedded terminal or paste an API key, then one click to create an agent on it. Selecting an account opens its details: status, last health check, usage, and "Used by" grouped by scope with each agent's role, model and effort. Agents that point at a missing account are listed so the broken reference is visible.
+- **Accounts:** its own sidebar page (`/accounts`, `g c`), the one place to add, see, check, sign in again and remove every AI account, and see where it is used. Health and usage keeps the checks and the usage overview and links here. Org cards have an Add account button that opens the same flow with that org selected. Table with tool, org, "Used by" (the agents on the account, boss marked; from Phase 2 also the tasks running on it), current-window usage with reset time, weekly usage, status (healthy, running high, at limit, re-login soon, unreachable). API-key accounts show tokens and cost instead of windows. Add account flow: pick tool, pick org (Private is preselected unless the org filter or the only other org says otherwise), name is suggested (`claude-acme-2`), then either sign in through a device-code flow in an embedded terminal or paste an API key, then one click to create an agent on it. Selecting an account opens its details: status, last health check, usage, and "Used by" grouped by scope with each agent's role, model and effort. Agents that point at a missing account are listed so the broken reference is visible.
 - **Memory:** search, scope filters (All, Global, each org, Needs review), rows with text, scope, source (task and agent), use count, and actions (Pin, To AGENTS.md, Forget).
 - **Skills:** install from a GitHub link, skills registry name, zip, or local folder. Rows show source, which agents use it, and Enable for all / Remove from all.
 - **Connections:** grouped by org. Each row: name, type, access (read or write), which agents use it, last test result. Add flow: pick org, pick type, fill the fields, paste secrets (stored encrypted, never shown again), then Test. For write access, Studio asks whether the credential itself is limited and says plainly what agents will be able to change.
@@ -277,7 +277,7 @@ Frontend builder. Match attached designs exactly and reuse existing components.
 `majhi.yaml` example:
 
 ```yaml
-workspaces: [~/Work, ~/personal]   # one or more roots, owner picks them
+workspaces: [~/Work, ~/private]   # one or more roots, owner picks them
 tasks_dir: ~/Work/.majhi             # default: <first root>/.majhi
 decisions: { provider: laya, fallback: acp, acp_agent: dispatcher }   # laya | jev | acp | rules
 context: { compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
@@ -285,8 +285,9 @@ boss: majhi-boss                  # which root agent is the boss (5.16)
 limits: { agents_max: 6, idle_timeout: 10m, per_account: 2 }   # see 5.17
 accounts:
   claude-globex-2: { tool: claude, org: globex, auth: login }
-  claude-api:      { tool: claude, org: personal, auth: api-key, key: secret:anthropic-personal }
+  claude-api:      { tool: claude, org: private, auth: api-key, key: secret:anthropic-private }
 orgs:
+  # private is built in (name Private, key PRV). An entry appears only after the owner edits it.
   globex:
     name: Globex
     color: "#8AB8F5"
@@ -548,7 +549,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
 The owner can run majhi by talking to one agent. The boss sets things up, changes them, runs tasks and debugs, the way the owner would use a CLI agent today, but with access to all of majhi.
 
 - **One control plane.** Every change is a typed command with zod input and output, defined in `packages/shared/commands` and handled in majhi. Examples: create an org, clone a repo into a root and register it, add an account, start a login, create or remove an agent, set a limit, create a task, stop an agent. The UI, the palette, the boss and the tests all call the same commands. A feature is not done until its commands exist. There are no UI-only or file-only features.
-- **Who the boss is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's personal account. The owner can make any root agent the boss, in Studio or by asking the current boss. The boss is always one keystroke away (Cmd J opens its chat from any screen). Its chat is a `chat` task, so it streams, stops and resumes like any other room.
+- **Who the boss is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's private account. The owner can make any root agent the boss, in Studio or by asking the current boss. The boss is always one keystroke away (Cmd J opens its chat from any screen). Its chat is a `chat` task, so it streams, stops and resumes like any other room.
 - **What it gets.** The `majhi-admin` MCP tool, which exposes every command, plus every other majhi tool and every connection of every org.
 - **What it can do**, for example:
   - Clone a repo into a workspace root, create an org for it, register the project with aliases and links.
@@ -640,11 +641,12 @@ Delivered in two parts, each usable and reviewed on its own.
 - No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
 - **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact; an `auto` agent gets a model and effort picked by Laya with the decision recorded on the run, and with Laya stopped the chain falls back to the ACP simulation, then rules.
 
-#### Phase 2c: Tokens and cost
+#### Phase 2c: Tokens, cost and runner isolation
 - Record every turn: input, output, reasoning, cache read and cache write tokens (from ACP's cumulative session usage, stored as per-turn deltas), cost, model, and the task, agent, account, org, project and time. API-key accounts show real cost; subscription accounts show the equivalent API cost, labelled estimated; tools that report no cost get an estimate from an owner-editable price table per model.
 - A "Tokens and cost" section on the Health and usage page: totals for today, this week and this month, filters by org, project, agent, account and model, a daily chart and the top tasks. Each task shows its total in the task view; org cards show theirs.
 - Commands `usage.summary` and `usage.breakdown`, so the boss can answer questions like "what did Acme cost this week?"
-- **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data.
+- Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
+- **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.

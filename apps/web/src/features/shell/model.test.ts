@@ -186,12 +186,12 @@ describe("deriveBanner", () => {
     });
     expect(banner).toMatchObject({ actionLabel: "Show", action: { kind: "element", id: "perm-1" } });
   });
-  it("sends a sign-in to Health and usage", () => {
+  it("sends a sign-in to Accounts", () => {
     const banner = deriveBanner({ ...base, accounts: [account("x", { status: "needs-login" })] });
     expect(banner).toMatchObject({
       tone: "red",
       text: "x needs you to sign in.",
-      action: { kind: "page", to: "/usage" },
+      action: { kind: "page", to: "/accounts", search: { account: "x" } },
     });
   });
 });
