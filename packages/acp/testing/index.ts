@@ -11,6 +11,17 @@ export interface FakeAgentOptions {
   efforts?: string[];
   /** Fail to start (`cli` step fails). */
   broken?: boolean;
+  /** Numbers the fake reports for usage. Defaults: 5h 42 %, week 18 %, plan "max", resets in 3 hours and 3 days. */
+  usage?: {
+    fiveHourPct?: number;
+    weekPct?: number;
+    /** Adds an "Opus" weekly window on Claude. */
+    opusPct?: number;
+    /** ISO time. */
+    fiveHourResetsAt?: string;
+    weekResetsAt?: string;
+    plan?: string;
+  };
 }
 
 const FAKE_AGENT = fileURLToPath(new URL("./fake-agent.ts", import.meta.url));
@@ -25,5 +36,21 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
   if (options.broken) args.push("--broken");
   if (options.models) args.push("--models", options.models.join(","));
   if (options.efforts) args.push("--efforts", options.efforts.join(","));
+  const u = options.usage;
+  if (u?.fiveHourPct !== undefined) args.push("--five-hour-pct", String(u.fiveHourPct));
+  if (u?.weekPct !== undefined) args.push("--week-pct", String(u.weekPct));
+  if (u?.opusPct !== undefined) args.push("--opus-pct", String(u.opusPct));
+  if (u?.fiveHourResetsAt) args.push("--five-hour-resets-at", u.fiveHourResetsAt);
+  if (u?.weekResetsAt) args.push("--week-resets-at", u.weekResetsAt);
+  if (u?.plan) args.push("--plan", u.plan);
   return { command: process.execPath, args };
+}
+
+/**
+ * Command that prints the fake Claude usage, for `RuntimeOptions.usage.claude`.
+ * Takes the same options as `fakeAdapter`.
+ */
+export function fakeUsage(options: FakeAgentOptions = {}): Command {
+  const adapter = fakeAdapter("claude", options);
+  return { command: adapter.command, args: [...adapter.args, "usage"] };
 }

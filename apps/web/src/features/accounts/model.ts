@@ -81,17 +81,83 @@ export function formatIn(iso: string, now: number): string {
   return `in ${Math.round(hours / 24)} days`;
 }
 
-/** Usage lines for the table. Empty when there is nothing to show. */
-export function usageLines(usage: AccountUsage | undefined, now: number): string[] {
-  if (!usage) return [];
-  const mark = usage.estimated ? " (estimated)" : "";
-  const lines: string[] = [];
-  if (usage.window) {
-    const reset = usage.window.resetsAt ? `, resets ${formatIn(usage.window.resetsAt, now)}` : "";
-    lines.push(`${Math.round(usage.window.usedPct)}% of current window${reset}${mark}`);
+/** Share of a window at which the bar turns amber, and at which it turns red. */
+export const USAGE_HIGH_PCT = 80;
+export const USAGE_FULL_PCT = 100;
+
+/** "42%". Whole numbers; the tools report whole percentages anyway. */
+export function formatPct(pct: number): string {
+  return `${Math.round(pct)}%`;
+}
+
+/** Amber from 80 %, red at 100 %, calm below. */
+export function usageTone(pct: number): Tone {
+  if (pct >= USAGE_FULL_PCT) return "red";
+  if (pct >= USAGE_HIGH_PCT) return "amber";
+  return "neutral";
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Reset time in local time for the table: the time only when it is today ("9:30 PM"),
+ * a short weekday within the next six days ("Thu"), otherwise a short date ("Oct 6").
+ */
+export function resetLabel(iso: string, now: number, locale?: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "unknown time";
+  if (sameDay(at, new Date(now))) {
+    return at.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   }
-  if (usage.weekly) lines.push(`${Math.round(usage.weekly.usedPct)}% this week${mark}`);
-  return lines;
+  if (at.getTime() - now < 6 * DAY_MS) return at.toLocaleDateString(locale, { weekday: "short" });
+  return at.toLocaleDateString(locale, { month: "short", day: "numeric" });
+}
+
+/** Full reset for the details panel: "Thu, Oct 3, 12:00 AM". */
+export function resetFull(iso: string, locale?: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "unknown time";
+  return at.toLocaleString(locale, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export interface UsageRow {
+  /** "5h", "Week", or a model name. */
+  label: string;
+  pct: number;
+  tone: Tone;
+  /** Reset for the table, like "9:30 PM" or "Thu". Absent when the tool gave none. */
+  reset?: string;
+}
+
+/** The 5-hour and weekly rows for the table. Empty when the account reported neither. */
+export function usageRows(usage: AccountUsage | undefined, now: number, locale?: string): UsageRow[] {
+  if (!usage) return [];
+  const row = (label: string, w: { usedPct: number; resetsAt?: string | undefined }): UsageRow => ({
+    label,
+    pct: w.usedPct,
+    tone: usageTone(w.usedPct),
+    ...(w.resetsAt ? { reset: resetLabel(w.resetsAt, now, locale) } : {}),
+  });
+  const rows: UsageRow[] = [];
+  if (usage.window) rows.push(row("5h", usage.window));
+  if (usage.weekly) rows.push(row("Week", usage.weekly));
+  return rows;
+}
+
+/** "5h 42% · 9:30 PM", or "Week 18%" when there is no reset time. */
+export function usageRowText(row: UsageRow): string {
+  const base = `${row.label} ${formatPct(row.pct)}`;
+  return row.reset ? `${base} · ${row.reset}` : base;
 }
 
 /** The first step that failed, or undefined when all passed. */

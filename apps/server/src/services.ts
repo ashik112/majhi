@@ -2,6 +2,7 @@ import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
+import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { ConfigService } from "./config/service.ts";
@@ -31,6 +32,7 @@ export interface Services {
   terminals: TerminalManager;
   events: EventHub;
   watcher: HomeWatcher;
+  usageSweeper: UsageSweeper;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
 }
 
@@ -42,12 +44,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const agentStore = new AgentStore(env.majhiHome);
   const events = new EventHub();
   const terminals = new TerminalManager(options.terminalTimers);
+  const usage = new AccountUsageReader({
+    majhiHome: env.majhiHome,
+    runtime,
+    options: env.runtime,
+    cache,
+    onChanged: () => events.emit(["accounts"]),
+  });
   const probes = new AccountProbes({
     majhiHome: env.majhiHome,
     runtime,
     options: env.runtime,
     secrets,
     cache,
+    usage,
   });
   const accounts = new AccountService({
     majhiHome: env.majhiHome,
@@ -56,6 +66,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secrets,
     cache,
     probes,
+    usage,
     runtime,
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
@@ -71,6 +82,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     terminals,
     events,
     watcher: new HomeWatcher(env.majhiHome, events),
+    usageSweeper: new UsageSweeper({ reader: usage, candidates: () => accounts.usageCandidates() }),
     startLogin: (id) =>
       startLogin(
         {

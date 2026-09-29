@@ -10,7 +10,8 @@
  *   <tmp>/majhi-e2e/home/.majhi                 empty, so majhi starts in first-run
  *   <tmp>/majhi-e2e/secrets/key                 throwaway age identity for secrets.age
  *
- * Agent CLIs are fake adapters that start signed out (see @majhi/acp/testing).
+ * Agent CLIs are fake adapters that start signed out (see @majhi/acp/testing). Once signed in they
+ * report 5-hour 42 % and weekly 18 % usage.
  *
  * The helper runs with that home as HOME and without MAJHI_REPO, so it browses
  * and suggests folders but never remounts (`canRemount` is false) and never
@@ -23,7 +24,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../apps/server/src/secrets/store.ts";
-import { fakeAdapter } from "../packages/acp/testing/index.ts";
+import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
 import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, SECRETS_KEY_FILE } from "./fixture.ts";
 
 // Keep the owner's own git config (signing, hooks, templates) out of the fixture and the server.
@@ -72,6 +73,8 @@ writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
 const fakes = {
   models: ["fake-model-a", "fake-model-b", "fake-model-c"],
   efforts: ["low", "medium", "high"],
+  // Usage the fakes report once signed in: 5h 42 %, week 18 %, plus an Opus window.
+  usage: { fiveHourPct: 42, weekPct: 18, opusPct: 30, plan: "max" },
 };
 const command = (tool: "claude" | "codex") => {
   const { command, args } = fakeAdapter(tool, fakes);
@@ -87,6 +90,7 @@ Object.assign(process.env, gitEnv, {
   MAJHI_SECRETS_KEY_FILE: SECRETS_KEY_FILE,
   MAJHI_ADAPTER_CLAUDE: command("claude"),
   MAJHI_ADAPTER_CODEX: command("codex"),
+  MAJHI_USAGE_CLAUDE: JSON.stringify([fakeUsage(fakes).command, ...fakeUsage(fakes).args]),
 });
 
 // Dynamic on purpose: main.ts reads process.env as it loads, and a static import would run

@@ -7,7 +7,8 @@ import { StatusDot, TONE_TEXT } from "@/components/ui/status-dot";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
 import { HealthSteps } from "./health-steps";
-import { orgLabel, statusInfo, usageLines } from "./model";
+import { orgLabel, statusInfo } from "./model";
+import { UsageDetails } from "./usage-view";
 import { agentsByAccount, usedByGroups, whereLabel } from "./used-by-model";
 
 /** The selected account in full: what it is, how it is doing, and every agent that uses it. */
@@ -28,7 +29,6 @@ export function AccountDetails({
 }) {
   const status = statusInfo(account.status);
   const org = orgLabel(account.org, orgs);
-  const usage = usageLines(account.usage, now);
   const groups = usedByGroups(agentsByAccount(agents).get(account.id) ?? [], orgs);
 
   return (
@@ -69,15 +69,7 @@ export function AccountDetails({
           )}
         </Row>
         <Row label="Usage">
-          {usage.length === 0 ? (
-            <span className="text-fg-faint">No usage yet</span>
-          ) : (
-            usage.map((line) => (
-              <span key={line} className="block text-sm">
-                {line}
-              </span>
-            ))
-          )}
+          <UsageDetails account={account} now={now} />
         </Row>
         <Row label="Last health check">
           {account.lastHealth ? (

@@ -1,6 +1,13 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AccountModels, AccountModelsSchema, type HealthCheck, HealthCheckSchema } from "@majhi/shared";
+import {
+  type AccountModels,
+  AccountModelsSchema,
+  type AccountUsage,
+  AccountUsageSchema,
+  type HealthCheck,
+  HealthCheckSchema,
+} from "@majhi/shared";
 import { z } from "zod";
 import { errorCode } from "../errors.ts";
 
@@ -8,6 +15,7 @@ const CachedAccountSchema = z.object({
   health: HealthCheckSchema.optional(),
   signedInAs: z.string().optional(),
   models: AccountModelsSchema.optional(),
+  usage: AccountUsageSchema.optional(),
 });
 export type CachedAccount = z.infer<typeof CachedAccountSchema>;
 
@@ -39,9 +47,18 @@ export class AccountCache {
   ): Promise<CachedAccount> {
     const before = await this.get(id);
     const next: CachedAccount = { health };
+    if (before.usage !== undefined) next.usage = before.usage;
     if (extra.signedInAs !== undefined) next.signedInAs = extra.signedInAs;
     const models = extra.models ?? before.models;
     if (models !== undefined) next.models = models;
+    this.memory.set(id, next);
+    await this.writeDisk(id, next);
+    return next;
+  }
+
+  /** Stores the account's usage. Health and models stay as they were. */
+  async setUsage(id: string, usage: AccountUsage): Promise<CachedAccount> {
+    const next: CachedAccount = { ...(await this.get(id)), usage };
     this.memory.set(id, next);
     await this.writeDisk(id, next);
     return next;

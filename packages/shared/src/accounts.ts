@@ -201,10 +201,22 @@ export const UsageWindowSchema = z.object({
   resetsAt: z.string().optional(),
 });
 
+export const ModelUsageWindowSchema = UsageWindowSchema.extend({
+  /** Model name as the tool shows it, like "Opus" or "Sonnet". */
+  label: z.string(),
+});
+export type ModelUsageWindow = z.infer<typeof ModelUsageWindowSchema>;
+
 export const AccountUsageSchema = z.object({
+  /** Subscription plan as the tool reports it: "max", "plus", "pro". */
+  plan: z.string().optional(),
   /** The current short window (5 hours for Claude and Codex today). */
   window: UsageWindowSchema.optional(),
   weekly: UsageWindowSchema.optional(),
+  /** Weekly windows scoped to one model, like Opus or Sonnet. */
+  models: z.array(ModelUsageWindowSchema).default([]),
+  /** Why the last read failed. The numbers above are then from the last good read. */
+  error: z.string().optional(),
   /** True when majhi counted tokens itself because the CLI did not report usage (5.8). */
   estimated: z.boolean(),
   updatedAt: z.string(),

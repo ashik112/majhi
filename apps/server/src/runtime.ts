@@ -1,6 +1,6 @@
 import type { AccountProbe, AccountRuntime, LoginSpec, RuntimeOptions } from "@majhi/acp";
 import * as acp from "@majhi/acp";
-import type { ToolId, ToolInfo } from "@majhi/shared";
+import type { AccountUsage, ToolId, ToolInfo } from "@majhi/shared";
 
 /**
  * The part of `@majhi/acp` the server calls. Services take this so tests can
@@ -11,6 +11,8 @@ export interface AcpRuntime {
   prepareHome(account: AccountRuntime): Promise<void>;
   loginCommand(account: AccountRuntime, options: RuntimeOptions): LoginSpec;
   probeAccount(account: AccountRuntime, options: RuntimeOptions): Promise<AccountProbe>;
+  /** Undefined for API-key accounts. Rejects when the read fails. */
+  readUsage(account: AccountRuntime, options: RuntimeOptions): Promise<AccountUsage | undefined>;
   cliVersion(tool: ToolId, options: RuntimeOptions): Promise<string>;
 }
 
@@ -19,5 +21,6 @@ export const realRuntime: AcpRuntime = {
   prepareHome: acp.prepareHome,
   loginCommand: acp.loginCommand,
   probeAccount: acp.probeAccount,
+  readUsage: acp.readUsage,
   cliVersion: acp.cliVersion,
 };

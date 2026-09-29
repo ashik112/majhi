@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   AccountModelsSchema,
+  AccountUsageSchema,
   AccountViewSchema,
   AgentEntrySchema,
   AgentFrontmatterSchema,
@@ -169,6 +170,12 @@ export const commands = {
     summary: "Check that the account's CLI starts, is signed in and opens an ACP session. Spends no tokens",
     input: ById,
     output: z.object({ account: AccountViewSchema, health: HealthCheckSchema }),
+  },
+  "accounts.usage": {
+    risk: "read",
+    summary: "Read the account's 5-hour and weekly usage. Null for API-key accounts. Spends no model tokens",
+    input: z.object({ id: IdSchema, refresh: z.boolean().optional() }),
+    output: AccountUsageSchema.nullable(),
   },
   "accounts.models": {
     risk: "read",

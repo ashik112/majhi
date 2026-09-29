@@ -1,5 +1,8 @@
+import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
-import type { ToolDef } from "./types.ts";
+import { exec } from "../exec.ts";
+import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
+import type { ToolDef, UsageContext } from "./types.ts";
 
 const AuthStatusJson = z.looseObject({
   loggedIn: z.boolean().optional(),
@@ -8,6 +11,96 @@ const AuthStatusJson = z.looseObject({
   subscriptionType: z.string().optional(),
   apiKeySource: z.string().optional(),
 });
+
+const Window = z
+  .looseObject({ utilization: z.number().nullable(), resets_at: z.string().nullable() })
+  .nullish();
+
+/** What the helper prints. Only the fields majhi reads are required. */
+const UsageJson = z.looseObject({
+  subscription_type: z.string().nullable().optional(),
+  rate_limits_available: z.boolean(),
+  rate_limits: z
+    .looseObject({
+      five_hour: Window,
+      seven_day: Window,
+      seven_day_opus: Window,
+      seven_day_sonnet: Window,
+      model_scoped: z
+        .array(
+          z.looseObject({
+            display_name: z.string(),
+            utilization: z.number().nullable(),
+            resets_at: z.string().nullable(),
+          }),
+        )
+        .nullish(),
+    })
+    .nullable(),
+});
+
+type ParsedWindow = z.infer<typeof Window>;
+
+function toWindow(w: ParsedWindow) {
+  if (w === null || w === undefined || w.utilization === null) return undefined;
+  return {
+    usedPct: Math.min(100, Math.max(0, w.utilization)),
+    ...(w.resets_at === null ? {} : { resetsAt: w.resets_at }),
+  };
+}
+
+/** Maps the helper's JSON to majhi's usage. Throws a one-line message when the shape or the plan does not fit. */
+export function mapClaudeUsage(json: unknown, now: Date = new Date()): AccountUsage {
+  const parsed = UsageJson.safeParse(json);
+  if (!parsed.success) throw new Error("Claude reported usage in a shape majhi does not know");
+  const { subscription_type, rate_limits_available, rate_limits } = parsed.data;
+  if (!rate_limits_available || rate_limits === null) {
+    throw new Error("Claude reports no plan limits for this account");
+  }
+  const models: ModelUsageWindow[] = [];
+  const add = (label: string, w: ParsedWindow) => {
+    const window = toWindow(w);
+    if (window === undefined) return;
+    if (models.some((m) => m.label.toLowerCase() === label.toLowerCase())) return;
+    models.push({ label, ...window });
+  };
+  for (const m of rate_limits.model_scoped ?? []) add(m.display_name, m);
+  add("Opus", rate_limits.seven_day_opus);
+  add("Sonnet", rate_limits.seven_day_sonnet);
+
+  const usage: AccountUsage = { models, estimated: false, updatedAt: now.toISOString() };
+  if (subscription_type) usage.plan = subscription_type;
+  const window = toWindow(rate_limits.five_hour);
+  if (window !== undefined) usage.window = window;
+  const weekly = toWindow(rate_limits.seven_day);
+  if (weekly !== undefined) usage.weekly = weekly;
+  return usage;
+}
+
+async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
+  const helper = ctx.options.usage?.claude ?? {
+    command: process.execPath,
+    args: [
+      "--input-type=module",
+      "-e",
+      CLAUDE_USAGE_SCRIPT,
+      ctx.adapter.command,
+      String(Math.max(1000, ctx.timeoutMs - 2000)),
+    ],
+  };
+  const res = await exec(helper.command, helper.args, ctx.env, ctx.timeoutMs);
+  if (res.error) throw new Error(res.error);
+  if (res.code !== 0) {
+    throw new Error(res.stderr.trim().split("\n").pop()?.trim() || `Usage read exited with code ${res.code}`);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(res.stdout);
+  } catch {
+    throw new Error("Claude reported usage in a shape majhi does not know");
+  }
+  return mapClaudeUsage(json);
+}
 
 export const claude: ToolDef = {
   info: {
@@ -23,6 +116,7 @@ export const claude: ToolDef = {
   versionArgs: ["--cli", "--version"],
   authStatusArgs: ["--cli", "auth", "status", "--json"],
   loginArgs: ["--cli", "auth", "login", "--claudeai"],
+  readUsage: readClaudeUsage,
   parseAuthStatus(exitCode, stdout) {
     if (exitCode !== 0) return { signedIn: false };
     try {

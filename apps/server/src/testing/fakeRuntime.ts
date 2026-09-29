@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import type { AccountProbe, AccountRuntime, LoginSpec, RuntimeOptions } from "@majhi/acp";
-import type { HealthCheck, ToolId, ToolInfo } from "@majhi/shared";
+import type { AccountUsage, HealthCheck, ToolId, ToolInfo } from "@majhi/shared";
 import type { AcpRuntime } from "../runtime.ts";
 
 const TOOLS: ToolInfo[] = [
@@ -47,6 +47,9 @@ export interface FakeRuntime extends AcpRuntime {
   prepared: AccountRuntime[];
   /** What `loginCommand` returns. */
   login: LoginSpec;
+  /** What `readUsage` returns, or throws when it is an Error. Undefined means the tool reports none. */
+  usage: AccountUsage | Error | undefined;
+  usageReads: AccountRuntime[];
   cliVersions: Partial<Record<ToolId, string>>;
 }
 
@@ -77,6 +80,8 @@ export function fakeRuntime(): FakeRuntime {
       env: { PATH: "/usr/bin:/bin" },
       display: "fake login",
     },
+    usage: undefined,
+    usageReads: [],
     cliVersions: { claude: "2.1.0", codex: "0.158.0" },
     toolInfos: () => TOOLS,
     async prepareHome(account) {
@@ -87,6 +92,11 @@ export function fakeRuntime(): FakeRuntime {
     async probeAccount(account, options) {
       runtime.probes.push({ account, options });
       return runtime.probe;
+    },
+    async readUsage(account) {
+      runtime.usageReads.push(account);
+      if (runtime.usage instanceof Error) throw runtime.usage;
+      return runtime.usage;
     },
     async cliVersion(tool) {
       const version = runtime.cliVersions[tool];

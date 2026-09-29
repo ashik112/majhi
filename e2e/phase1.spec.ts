@@ -234,6 +234,11 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   ).toHaveText(["@acme-builder"]);
   await expect(accountRow("codex-key")).toContainText("Not used");
 
+  // Usage is read in the background after each sign-in, without spending tokens.
+  await expect(accountRow("claude-acme-1")).toContainText("5h 42%");
+  await expect(accountRow("claude-acme-1")).toContainText("Week 18%");
+  await expect(accountRow("codex-key")).toContainText("After first run");
+
   const personal = accountRow("claude-personal").getByRole("list", { name: "Used by" });
   const boss = personal.getByRole("link", { name: /, boss$/ });
   await expect(boss).toHaveCount(1);
@@ -246,6 +251,13 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   await expect(acme.getByRole("listitem")).toHaveCount(2);
   await expect(acme).toContainText("@acme-lead");
   await expect(acme).toContainText("@acme-reviewer");
+  const usage = details;
+  await expect(usage).toContainText("Plan: max");
+  await expect(usage).toContainText("5-hour window");
+  await expect(usage).toContainText("42%");
+  await expect(usage).toContainText("Week, Opus");
+  await usage.getByRole("button", { name: "Refresh" }).click();
+  await expect(usage).toContainText("Read just now");
   await shot(page, "studio-accounts");
   await page.getByRole("button", { name: "Close account details" }).click();
 

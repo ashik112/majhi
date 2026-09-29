@@ -5,6 +5,7 @@ import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { AccountCache, CachedAccount } from "./cache.ts";
 import { accountRuntime, secretName } from "./homes.ts";
+import type { AccountUsageReader } from "./usage.ts";
 
 /** A probe younger than this is reused, so a screen that asks often does not start the CLI each time. */
 export const PROBE_REUSE_MS = 30_000;
@@ -15,6 +16,8 @@ export interface ProbeDeps {
   options: RuntimeOptions;
   secrets: SecretStore;
   cache: AccountCache;
+  /** Reads usage after a passing check of a login account. */
+  usage?: AccountUsageReader;
   now?: () => number;
 }
 
@@ -90,6 +93,8 @@ export class AccountProbes {
       health = fail({ name: "cli", ok: false, detail: errorMessage(err) });
     }
     await this.deps.cache.setHealth(id, health, extra);
+    // In the background: the check must not wait for the usage read.
+    if (health.ok) void this.deps.usage?.read(id, config);
     return health;
   }
 

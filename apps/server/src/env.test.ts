@@ -18,6 +18,7 @@ describe("parseEnv", () => {
     expect(env.runtime).toEqual({
       base: { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", SSH_AUTH_SOCK: "/run/ssh.sock" },
       adapters: {},
+      usage: {},
     });
   });
 
@@ -31,6 +32,11 @@ describe("parseEnv", () => {
       claude: { command: "node", args: ["/x/fake.ts", "--tool", "claude"] },
     });
     expect(env.secretsKeyFile).toBe("/k/key");
+  });
+
+  it("reads the Claude usage helper override", () => {
+    const env = parseEnv({ ...base, MAJHI_USAGE_CLAUDE: '["node","/x/fake.ts","usage"]' });
+    expect(env.runtime.usage).toEqual({ claude: { command: "node", args: ["/x/fake.ts", "usage"] } });
   });
 
   it("rejects an adapter that is not a JSON array of strings", () => {

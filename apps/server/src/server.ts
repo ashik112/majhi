@@ -44,10 +44,12 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     services,
     attach(server) {
       services.watcher.start();
+      services.usageSweeper.start();
       sockets = attachSockets(server, { events: services.events, terminals: services.terminals });
     },
     close() {
       services.watcher.stop();
+      services.usageSweeper.stop();
       services.terminals.closeAll();
       sockets?.close();
     },

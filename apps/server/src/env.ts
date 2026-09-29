@@ -40,6 +40,8 @@ const EnvSchema = z.object({
   MAJHI_SECRETS_KEY_FILE: AbsolutePath.default("/run/secrets/majhi_key"),
   MAJHI_ADAPTER_CLAUDE: JsonCommand.optional(),
   MAJHI_ADAPTER_CODEX: JsonCommand.optional(),
+  /** Replaces the Claude usage helper, for tests. */
+  MAJHI_USAGE_CLAUDE: JsonCommand.optional(),
 });
 
 export interface ServerEnv {
@@ -72,6 +74,8 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   const adapters: NonNullable<RuntimeOptions["adapters"]> = {};
   if (env.MAJHI_ADAPTER_CLAUDE !== undefined) adapters.claude = env.MAJHI_ADAPTER_CLAUDE;
   if (env.MAJHI_ADAPTER_CODEX !== undefined) adapters.codex = env.MAJHI_ADAPTER_CODEX;
+  const usage: NonNullable<RuntimeOptions["usage"]> = {};
+  if (env.MAJHI_USAGE_CLAUDE !== undefined) usage.claude = env.MAJHI_USAGE_CLAUDE;
   return {
     host: env.MAJHI_HOST,
     port: env.MAJHI_PORT,
@@ -80,7 +84,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     webDist: env.MAJHI_WEB_DIST ?? DEFAULT_WEB_DIST,
     version: env.MAJHI_VERSION ?? pkg.version,
     secretsKeyFile: env.MAJHI_SECRETS_KEY_FILE,
-    runtime: { base: baseEnv(source), adapters },
+    runtime: { base: baseEnv(source), adapters, usage },
   };
 }
 

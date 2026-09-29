@@ -1,5 +1,6 @@
 import type {
   AccountModels,
+  AccountUsage,
   AccountView,
   AgentEntry,
   CommandInput,
@@ -105,6 +106,15 @@ export function useAccountHealth() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"accounts.health">, ApiRequestError, string>({
     mutationFn: (id) => cmd("accounts.health", { id }),
+    onSuccess: () => refresh(client, queryKeys.accounts),
+  });
+}
+
+/** Reads the account's usage windows from the tool now. Spends no model tokens. */
+export function useRefreshUsage() {
+  const client = useQueryClient();
+  return useMutation<AccountUsage | null, ApiRequestError, string>({
+    mutationFn: (id) => cmd("accounts.usage", { id, refresh: true }),
     onSuccess: () => refresh(client, queryKeys.accounts),
   });
 }

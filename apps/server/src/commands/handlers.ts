@@ -94,6 +94,7 @@ export function createHandlers({ config, scanner, hostLink, services }: HandlerD
     },
     "accounts.login.start": (input) => services.startLogin(input.id),
     "accounts.health": (input) => accounts.health(input.id),
+    "accounts.usage": (input) => accounts.usage(input.id, input.refresh === true),
     "accounts.models": (input) => accounts.models(input.id, input.refresh === true),
 
     "agents.list": () => agents.list(),

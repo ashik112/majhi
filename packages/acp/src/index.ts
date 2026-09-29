@@ -34,6 +34,11 @@ export interface RuntimeOptions {
    * adapters installed in the image (`claude-agent-acp`, `codex-acp`).
    */
   adapters?: Partial<Record<ToolId, Command>>;
+  /**
+   * Replaces the command that reads Claude usage. Tests point this at the fake
+   * agent. Codex usage goes through the adapter, so `adapters` covers it.
+   */
+  usage?: Partial<Record<ToolId, Command>>;
   /** Per-step timeout for probes. Default 20 s. */
   timeoutMs?: number;
 }
@@ -75,4 +80,7 @@ export { buildEnv } from "./env.ts";
 export { prepareHome } from "./home.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";
+export { mapClaudeUsage } from "./tools/claude.ts";
+export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
+export { readUsage } from "./usage.ts";

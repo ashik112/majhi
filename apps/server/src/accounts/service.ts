@@ -3,6 +3,7 @@ import type { RuntimeOptions } from "@majhi/acp";
 import {
   type AccountConfig,
   type AccountModels,
+  type AccountUsage,
   type AccountView,
   type CommandMeta,
   type HealthCheck,
@@ -18,7 +19,8 @@ import { SECRETS_NOT_SET_UP, type SecretStore } from "../secrets/store.ts";
 import type { AccountCache } from "./cache.ts";
 import type { AccountProbes } from "./health.ts";
 import { accountHome, accountRuntime, secretName } from "./homes.ts";
-import { statusFromHealth } from "./status.ts";
+import { statusFromHealthAndUsage } from "./status.ts";
+import type { AccountUsageReader } from "./usage.ts";
 
 export interface AccountCreate {
   id: string;
@@ -35,6 +37,7 @@ export interface AccountDeps {
   secrets: SecretStore;
   cache: AccountCache;
   probes: AccountProbes;
+  usage: AccountUsageReader;
   runtime: AcpRuntime;
   options: RuntimeOptions;
   /** Called with the account id before its home is deleted, to end a running login. */
@@ -135,6 +138,23 @@ export class AccountService {
     return this.deps.probes.models(id, await this.require(id), refresh);
   }
 
+  /** The account's usage windows, or null for API-key accounts. Reads when there is none cached or `refresh` is set. */
+  async usage(id: string, refresh: boolean): Promise<AccountUsage | null> {
+    return this.deps.usage.get(id, await this.require(id), refresh);
+  }
+
+  /** Login accounts whose last check passed: the ones the background sweep reads. */
+  async usageCandidates(): Promise<{ id: string; config: AccountConfig }[]> {
+    const { accounts } = await this.deps.config.sections();
+    const found = await Promise.all(
+      Object.entries(accounts).map(async ([id, config]) => {
+        if (config.auth !== "login") return undefined;
+        return (await this.deps.probes.cached(id)).health?.ok === true ? { id, config } : undefined;
+      }),
+    );
+    return found.filter((c) => c !== undefined);
+  }
+
   async require(id: string): Promise<AccountConfig> {
     const { accounts } = await this.deps.config.sections();
     const account = accounts[id];
@@ -151,10 +171,11 @@ export class AccountService {
       auth: config.auth,
       home: accountHome(this.deps.majhiHome, id),
       agentCount: users.length,
-      status: statusFromHealth(cached.health),
+      status: statusFromHealthAndUsage(cached.health, cached.usage),
     };
     if (cached.signedInAs !== undefined) view.signedInAs = cached.signedInAs;
     if (cached.health !== undefined) view.lastHealth = cached.health;
+    if (cached.usage !== undefined) view.usage = cached.usage;
     return view;
   }
 }

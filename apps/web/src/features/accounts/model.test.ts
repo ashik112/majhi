@@ -3,12 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   failingStep,
   formatIn,
+  formatPct,
   isUsableStatus,
   orgIdFromName,
   orgLabel,
+  resetFull,
+  resetLabel,
   statusInfo,
   suggestOrgColor,
-  usageLines,
+  usageRows,
+  usageRowText,
+  usageTone,
 } from "./model";
 
 describe("orgIdFromName", () => {
@@ -59,22 +64,57 @@ describe("orgLabel", () => {
   });
 });
 
-describe("usageLines", () => {
-  const now = Date.parse("2026-09-29T10:00:00Z");
-  it("is empty without usage", () => {
-    expect(usageLines(undefined, now)).toEqual([]);
+describe("usage formatting", () => {
+  // Local time, so the tests do not depend on the machine's zone.
+  const now = new Date(2026, 8, 29, 10, 0).getTime();
+  const at = (d: number, h: number, m = 0) => new Date(2026, 8, d, h, m).toISOString();
+
+  it("rounds percentages", () => {
+    expect(formatPct(41.6)).toBe("42%");
+    expect(formatPct(0)).toBe("0%");
   });
-  it("shows window and week, and marks estimates", () => {
-    const lines = usageLines(
+
+  it("turns amber at 80 and red at 100", () => {
+    expect(usageTone(79.9)).toBe("neutral");
+    expect(usageTone(80)).toBe("amber");
+    expect(usageTone(99)).toBe("amber");
+    expect(usageTone(100)).toBe("red");
+  });
+
+  it("shows only the time for a reset today", () => {
+    expect(resetLabel(at(29, 21, 30), now, "en-US")).toBe("9:30 PM");
+  });
+
+  it("shows the weekday for another day and the date after a week", () => {
+    // 2026-10-01 is a Thursday.
+    expect(resetLabel(new Date(2026, 9, 1, 12).toISOString(), now, "en-US")).toBe("Thu");
+    expect(resetLabel(new Date(2026, 9, 8, 12).toISOString(), now, "en-US")).toBe("Oct 8");
+  });
+
+  it("formats the full reset", () => {
+    expect(resetFull(new Date(2026, 9, 3, 0, 0).toISOString(), "en-US")).toBe("Sat, Oct 3, 12:00 AM");
+    expect(resetFull("nope")).toBe("unknown time");
+  });
+
+  it("builds the 5h and Week rows", () => {
+    const rows = usageRows(
       {
-        window: { usedPct: 41.6, resetsAt: "2026-09-29T12:00:00Z" },
-        weekly: { usedPct: 12 },
-        estimated: true,
-        updatedAt: "2026-09-29T10:00:00Z",
+        window: { usedPct: 42, resetsAt: at(29, 21, 30) },
+        weekly: { usedPct: 85 },
+        models: [],
+        estimated: false,
+        updatedAt: at(29, 10),
       },
       now,
+      "en-US",
     );
-    expect(lines).toEqual(["42% of current window, resets in 2 h (estimated)", "12% this week (estimated)"]);
+    expect(rows.map(usageRowText)).toEqual(["5h 42% · 9:30 PM", "Week 85%"]);
+    expect(rows.map((r) => r.tone)).toEqual(["neutral", "amber"]);
+  });
+
+  it("has no rows without usage or windows", () => {
+    expect(usageRows(undefined, now)).toEqual([]);
+    expect(usageRows({ models: [], estimated: false, updatedAt: "x", error: "boom" }, now)).toEqual([]);
   });
 });
 

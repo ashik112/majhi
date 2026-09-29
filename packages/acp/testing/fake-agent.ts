@@ -25,6 +25,15 @@ const Flags = z.object({
   broken: z.boolean(),
   models: z.array(z.string().min(1)),
   efforts: z.array(z.string().min(1)),
+  /** Canned usage for the Claude `usage` argv and the Codex app-server. */
+  usage: z.object({
+    fiveHourPct: z.number(),
+    weekPct: z.number(),
+    opusPct: z.number().optional(),
+    fiveHourResetsAt: z.string().optional(),
+    weekResetsAt: z.string().optional(),
+    plan: z.string(),
+  }),
 });
 type Flags = z.infer<typeof Flags>;
 
@@ -35,11 +44,20 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     broken: boolean;
     models: string[];
     efforts: string[];
+    usage: {
+      fiveHourPct: number;
+      weekPct: number;
+      opusPct?: number;
+      fiveHourResetsAt?: string;
+      weekResetsAt?: string;
+      plan: string;
+    };
   } = {
     signedIn: false,
     broken: false,
     models: ["fake-model-a", "fake-model-b"],
     efforts: ["low", "medium", "high"],
+    usage: { fiveHourPct: 42, weekPct: 18, plan: "max" },
   };
   let i = 0;
   for (; i < argv.length; i++) {
@@ -49,6 +67,12 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--broken") raw.broken = true;
     else if (a === "--models") raw.models = (argv[++i] ?? "").split(",").filter(Boolean);
     else if (a === "--efforts") raw.efforts = (argv[++i] ?? "").split(",").filter(Boolean);
+    else if (a === "--five-hour-pct") raw.usage.fiveHourPct = Number(argv[++i]);
+    else if (a === "--week-pct") raw.usage.weekPct = Number(argv[++i]);
+    else if (a === "--opus-pct") raw.usage.opusPct = Number(argv[++i]);
+    else if (a === "--five-hour-resets-at") raw.usage.fiveHourResetsAt = argv[++i] ?? "";
+    else if (a === "--week-resets-at") raw.usage.weekResetsAt = argv[++i] ?? "";
+    else if (a === "--plan") raw.usage.plan = argv[++i] ?? "";
     else break;
   }
   return { flags: Flags.parse(raw), rest: argv.slice(i) };
@@ -94,6 +118,86 @@ async function writeCredentials(flags: Flags): Promise<void> {
   await writeFile(credentialFile(flags), JSON.stringify(body), { mode: 0o600 });
 }
 
+const HOUR_MS = 3_600_000;
+
+/** Reset times: the flags, or fixed offsets from now (3 hours and 3 days). */
+function resets(flags: Flags): { fiveHour: string; week: string } {
+  const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+  return {
+    fiveHour: flags.usage.fiveHourResetsAt ?? at(3 * HOUR_MS),
+    week: flags.usage.weekResetsAt ?? at(72 * HOUR_MS),
+  };
+}
+
+/** What the Claude usage helper prints, in the shape of the SDK's usage response. */
+function claudeUsageJson(flags: Flags): string {
+  const r = resets(flags);
+  const { usage } = flags;
+  return JSON.stringify({
+    subscription_type: usage.plan,
+    rate_limits_available: true,
+    rate_limits: {
+      five_hour: { utilization: usage.fiveHourPct, resets_at: r.fiveHour },
+      seven_day: { utilization: usage.weekPct, resets_at: r.week },
+      seven_day_opus: null,
+      seven_day_sonnet: null,
+      model_scoped:
+        usage.opusPct === undefined
+          ? []
+          : [{ display_name: "Opus", utilization: usage.opusPct, resets_at: r.week }],
+    },
+  });
+}
+
+/** Just enough of `codex app-server`: initialize, initialized, account/rateLimits/read. */
+async function serveCodexAppServer(flags: Flags): Promise<number> {
+  const rl = createInterface({ input: process.stdin });
+  const reply = (message: object) => process.stdout.write(`${JSON.stringify(message)}\n`);
+  for await (const line of rl) {
+    const msg = z
+      .object({ id: z.number().optional(), method: z.string() })
+      .safeParse(JSON.parse(line) as unknown);
+    if (!msg.success) continue;
+    const { id, method } = msg.data;
+    if (method === "initialize") {
+      reply({
+        id,
+        result: { userAgent: "fake", codexHome: homeFor(flags), platformFamily: "unix", platformOs: "linux" },
+      });
+    } else if (method === "account/rateLimits/read") {
+      if (!isSignedIn(flags)) {
+        reply({
+          id,
+          error: { code: -32600, message: "codex account authentication required to read rate limits" },
+        });
+        continue;
+      }
+      const r = resets(flags);
+      const seconds = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+      reply({
+        id,
+        result: {
+          rateLimits: {
+            primary: {
+              usedPercent: flags.usage.fiveHourPct,
+              windowDurationMins: 300,
+              resetsAt: seconds(r.fiveHour),
+            },
+            secondary: {
+              usedPercent: flags.usage.weekPct,
+              windowDurationMins: 10080,
+              resetsAt: seconds(r.week),
+            },
+            planType: flags.usage.plan,
+            credits: null,
+          },
+        },
+      });
+    }
+  }
+  return 0;
+}
+
 async function runCli(flags: Flags, argv: string[]): Promise<number> {
   const line = argv.join(" ");
   if (flags.tool === "claude") {
@@ -112,6 +216,14 @@ async function runCli(flags: Flags, argv: string[]): Promise<number> {
       );
       return signedIn ? 0 : 1;
     }
+    if (line === "usage") {
+      if (!isSignedIn(flags)) {
+        console.error("Not signed in");
+        return 1;
+      }
+      process.stdout.write(claudeUsageJson(flags));
+      return 0;
+    }
     if (line === "--cli auth login --claudeai") {
       console.log("Opening browser to sign in: https://claude.ai/oauth/authorize?fake=1");
       process.stdout.write("Paste code here if prompted > ");
@@ -129,6 +241,7 @@ async function runCli(flags: Flags, argv: string[]): Promise<number> {
       console.log(CODEX_VERSION);
       return 0;
     }
+    if (line === "cli app-server") return serveCodexAppServer(flags);
     if (line === "cli login status") {
       const signedIn = isSignedIn(flags);
       console.log(signedIn ? "Logged in using ChatGPT" : "Not logged in");

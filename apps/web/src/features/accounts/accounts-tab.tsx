@@ -23,7 +23,8 @@ import { useNow } from "@/lib/use-now";
 import { AccountDetails } from "./account-details";
 import { AccountProgress, AddAccountFlow, type ProgressStage } from "./add-account-flow";
 import { HealthDialog } from "./health-dialog";
-import { orgLabel, statusInfo, usageLines } from "./model";
+import { orgLabel, statusInfo } from "./model";
+import { UsageCell } from "./usage-view";
 import { UsedByChips } from "./used-by-chips";
 import { agentsByAccount, type MissingAccount, missingAccounts } from "./used-by-model";
 
@@ -226,7 +227,6 @@ function AccountRow({
   onAction: (kind: Dialog["kind"]) => void;
 }) {
   const status = statusInfo(account.status);
-  const usage = usageLines(account.usage, now);
   return (
     <tr
       className={cn("border-b border-line last:border-b-0 hover:bg-raised/40", selected && "bg-selected/60")}
@@ -266,16 +266,8 @@ function AccountRow({
         )}
       </td>
       {showUsage && (
-        <td className="px-3 py-2.5 whitespace-nowrap text-fg-soft">
-          {usage.length === 0 ? (
-            <span className="text-fg-faint">No usage yet</span>
-          ) : (
-            usage.map((line) => (
-              <span key={line} className="block text-sm">
-                {line}
-              </span>
-            ))
-          )}
+        <td className="px-3 py-2.5">
+          <UsageCell account={account} now={now} />
         </td>
       )}
       <td className="px-3 py-2.5">
