@@ -1,7 +1,7 @@
 import type { AccountUsage, AccountView, AgentLive } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, RefreshCcw } from "lucide-react";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
@@ -36,6 +36,7 @@ export function AgentRow({
   state,
   account,
   now,
+  change,
 }: {
   task: string;
   id: string;
@@ -44,6 +45,8 @@ export function AgentRow({
   state: AgentState;
   account: AccountView | undefined;
   now: number;
+  /** The Change agent control, on the task's own agent. */
+  change?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -85,6 +88,7 @@ export function AgentRow({
             className={cn("size-3.5 shrink-0 text-fg-faint transition-transform", open && "rotate-180")}
           />
         </button>
+        {change}
         {live && <FreshButton task={task} agent={id} />}
       </div>
       {open && <AgentDetails id={detailsId} agent={id} live={live} info={info} account={account} now={now} />}

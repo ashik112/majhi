@@ -1,22 +1,9 @@
-import type { AccountStatus, AgentFrontmatter, Role } from "@majhi/shared";
+import { type AccountStatus, type AgentFrontmatter, canWorkIn, type Role } from "@majhi/shared";
 
 /** Account states where a new run would fail at once. `unknown` is allowed: the account has not been checked yet. */
 const UNUSABLE: ReadonlySet<AccountStatus> = new Set(["needs-login", "at-limit", "unreachable"]);
 
 const ROLE_RANK: Record<Role, number> = { Lead: 0, Builder: 1, Reviewer: 2, Tester: 2, Root: 2 };
-
-/**
- * May this agent work in the org? Root agents go where their `where` says. An org agent
- * works in its own org, and in another only when `where` names it. A task without an org
- * (`org` undefined) is for root agents.
- */
-export function canWorkIn(agent: AgentFrontmatter, org: string | undefined): boolean {
-  const anywhere = agent.where.includes("anywhere");
-  if (org === undefined) return agent.scope === "root" && anywhere;
-  if (agent.scope === "root") return anywhere || agent.where.includes(org);
-  if (agent.scope === org) return anywhere || agent.where.includes(org);
-  return agent.where.includes(org);
-}
 
 export interface PickInput {
   agents: readonly AgentFrontmatter[];

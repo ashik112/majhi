@@ -9,7 +9,8 @@ import { useCopy } from "@/lib/use-copy";
 import { useNow } from "@/lib/use-now";
 import { ChangesPanel } from "../room/changes-panel";
 import { AgentRow } from "./agent-row";
-import { agentState } from "./model";
+import { ChangeAgent } from "./change-agent";
+import { agentState, agentsBusy } from "./model";
 
 /** The right column of the task view: who is in the room, the branch, the changes. */
 export function RoomPanel({
@@ -39,6 +40,7 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
   const accounts = useAccounts().data;
   const now = useNow(30_000);
   const orgName = orgs?.find((o) => o.id === task.org)?.name;
+  const busy = agentsBusy(agents);
   return (
     <Card aria-labelledby="in-room-heading" className="gap-0 px-3 py-2.5">
       <div className="flex items-baseline gap-2 pb-1.5">
@@ -62,10 +64,16 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
             state={agentState(live, task.pausedReason)}
             account={accounts?.find((a) => a.id === info?.account)}
             now={now}
+            change={id === task.team[0] ? <ChangeAgent task={task} busy={busy} /> : undefined}
           />
         );
       })}
-      {task.team.length === 0 && <p className="text-sm text-fg-faint">No agent yet.</p>}
+      {task.team.length === 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-fg-faint">No agent yet.</p>
+          <ChangeAgent task={task} busy={busy} />
+        </div>
+      )}
     </Card>
   );
 }

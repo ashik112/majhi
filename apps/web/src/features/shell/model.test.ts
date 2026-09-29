@@ -43,6 +43,7 @@ const agent = (id: string, account: string): AgentInfo => ({
   perms: [],
   fallback: undefined,
   scope: "acme",
+  where: ["anywhere"],
   isBoss: false,
 });
 
