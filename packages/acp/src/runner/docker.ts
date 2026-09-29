@@ -78,19 +78,21 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   mounts.push({ path: req.account.home });
   for (const m of req.mounts ?? []) mounts.push(m);
 
-  const majhiHome = resolve(cfg.majhiHome);
-  const accountsDir = resolve(majhiHome, "accounts");
-  const ownHome = resolve(req.account.home);
-  const protectedPaths = [majhiHome, ...cfg.protectedPaths.map((p) => resolve(p)), ...ALWAYS_PROTECTED];
+  // Protected paths in both forms too: a symlink into the config folder resolves to its real path,
+  // which only matches when the config folder's own path is resolved the same way.
+  const majhiHomes = realForms(cfg.majhiHome);
+  const accountsDirs = majhiHomes.map((h) => resolve(h, "accounts"));
+  const ownHomes = realForms(req.account.home);
+  const protectedPaths = [...majhiHomes, ...cfg.protectedPaths.flatMap(realForms), ...ALWAYS_PROTECTED];
 
-  const isOwnHome = (path: string) => path === ownHome && dirname(ownHome) === accountsDir;
+  const isOwnHome = (path: string) => ownHomes.includes(path) && accountsDirs.includes(dirname(path));
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
     for (const path of realForms(m.path)) {
       if (path === "/") throw new MountRefused("A run cannot mount the whole disk.");
       for (const p of protectedPaths) {
         if (inside(p, path)) throw new MountRefused(`A run cannot mount ${path}: it holds ${p}.`);
-        if (inside(path, p) && !(p === majhiHome && isOwnHome(path))) {
+        if (inside(path, p) && !(majhiHomes.includes(p) && isOwnHome(path))) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }
       }
