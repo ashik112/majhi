@@ -92,11 +92,18 @@ describe("update", () => {
     expect(status.lines.join("\n")).toContain("changes you have not committed");
 
     const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
-    const order = ["compose build", "run --rm", "compose run", "compose up -d --wait", "create", "cp"];
+    const order = [
+      "compose --profile runner build",
+      "run --rm",
+      "compose run",
+      "compose up -d --wait",
+      "create",
+      "cp",
+    ];
     const at = order.map((prefix) => docker.findIndex((a) => a.startsWith(prefix)));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
-    expect(s.calls.find((c) => c.args === "compose build")?.env.MAJHI_COMMIT).toBe(HEAD);
+    expect(s.calls.find((c) => c.args === "compose --profile runner build")?.env.MAJHI_COMMIT).toBe(HEAD);
     expect(await readFile(s.bundle, "utf8")).toBe("bundle");
     expect(await readFile(s.key, "utf8")).toBe("AGE-SECRET-KEY-TEST\n");
     expect(s.exit).toEqual(["exit"]);
@@ -112,7 +119,7 @@ describe("update", () => {
   });
 
   it("fails with the reason, leaves the running majhi alone and does not replace the helper", async () => {
-    const s = setup({ failOn: "compose build", selfIsBundle: true });
+    const s = setup({ failOn: "compose --profile runner build", selfIsBundle: true });
     const status = await s.run();
     expect(status.state).toBe("failed");
     expect(status.error).toContain("build failed");

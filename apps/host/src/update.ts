@@ -85,7 +85,8 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     const env = { ...remount.env, MAJHI_COMMIT: repo.commit };
     const step = dockerStep({ ...remount, env }, "update");
     await say("Building the new image. This takes a few minutes");
-    await step("build", ["compose", "build"], BUILD_TIMEOUT_MS);
+    // The runner image too: agents run in it (it is never started by compose).
+    await step("build", ["compose", "--profile", "runner", "build"], BUILD_TIMEOUT_MS);
 
     await ensureSecretsKey(options, env, say);
     await regenerateAndUp({ ...remount, env }, "update", (text) => void say(text));

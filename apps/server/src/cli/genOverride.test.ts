@@ -106,4 +106,9 @@ describe("renderOverride", () => {
       InvalidConfigError,
     );
   });
+
+  it("lets the server use the Docker socket through its group", () => {
+    const out = parse(renderOverride({ status: "first-run", ...base }, [], 991));
+    expect(out).toEqual({ services: { server: { group_add: ["991"] } } });
+  });
 });

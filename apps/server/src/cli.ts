@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { formatChecks, runDoctor } from "./cli/doctor.ts";
 import { InvalidConfigError, isPublicKeyPath, renderOverride } from "./cli/genOverride.ts";
 import { loadConfig } from "./config/load.ts";
@@ -20,6 +21,17 @@ Commands:
   gen-key          Print a new age identity for secrets.age (make up saves it to ~/.config/majhi/secrets.key)
   doctor [--json]  Check that majhi can run here. Exits 1 when a check fails
 `;
+
+/** The group of the Docker socket compose mounts into the server, when there is one. */
+function dockerSocketGid(): number | undefined {
+  try {
+    return statSync(DOCKER_SOCKET).gid;
+  } catch {
+    return undefined;
+  }
+}
+
+const DOCKER_SOCKET = "/var/run/docker.sock";
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
@@ -45,7 +57,9 @@ async function main(argv: string[]): Promise<number> {
     case "gen-override": {
       const { state } = await loadConfig(env);
       try {
-        process.stdout.write(renderOverride(state, publicKeysFromEnv(process.env.MAJHI_SSH_PUBKEYS)));
+        process.stdout.write(
+          renderOverride(state, publicKeysFromEnv(process.env.MAJHI_SSH_PUBKEYS), dockerSocketGid()),
+        );
         return 0;
       } catch (err) {
         if (!(err instanceof InvalidConfigError)) throw err;

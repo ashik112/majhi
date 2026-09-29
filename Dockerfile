@@ -27,24 +27,14 @@ RUN mkdir /sqlite \
   && cp -rL apps/server/node_modules/better-sqlite3 /sqlite/better-sqlite3 \
   && rm -rf /sqlite/better-sqlite3/deps /sqlite/better-sqlite3/src /sqlite/better-sqlite3/prebuilds/darwin-* /sqlite/better-sqlite3/prebuilds/win32-*
 
-FROM node:22-bookworm-slim AS runtime
+# What the server and the runner share: Node, git, the agent CLIs and ACP adapters, and a passwd
+# entry for the owner's uid (OpenSSH and some CLIs refuse to run without one).
+FROM node:22-bookworm-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-# Agents work on real projects in this container, majhi included: build tools for native modules,
-# pnpm, and Playwright's Chromium with its system libraries. The browsers live outside any home, and
-# PLAYWRIGHT_BROWSERS_PATH is one of the few variables passed to agent runs (see packages/acp BaseEnv).
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ curl \
-  && npm install -g pnpm@11.21.0 \
-  && npx -y playwright@1.63.0 install --with-deps chromium \
-  && chmod -R a+rX /opt/ms-playwright \
-  && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
-# The container runs as the owner's uid so files it writes belong to the owner. OpenSSH refuses to
-# start for a uid with no passwd entry, so the entry is created here, at build time, with the owner's
-# real home (where ~/.ssh/config is mounted). /etc/passwd stays read-only, and setuid/setgid bits are
-# stripped from every binary, so an agent process in this container has no path to root.
+# The container runs as the owner's uid so files it writes belong to the owner. The passwd entry is
+# created here, at build time, with the owner's real home (where ~/.ssh/config is mounted).
 ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_HOME=/home/majhi
@@ -53,11 +43,37 @@ RUN if ! getent group "$HOST_GID" >/dev/null; then groupadd -g "$HOST_GID" majhi
        usermod -d "$HOST_HOME" "$(getent passwd "$HOST_UID" | cut -d: -f1)"; \
      else \
        useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -M -s /bin/sh majhi; \
-     fi \
-  && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+     fi
 # The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
 RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
   && npm cache clean --force
+ENV GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0=*
+
+# Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
+# task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
+# real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
+# libraries. The browsers live outside any home, and PLAYWRIGHT_BROWSERS_PATH is one of the few
+# variables passed to agent runs (see packages/acp BaseEnv).
+FROM base AS runner
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ curl \
+  && npm install -g pnpm@11.21.0 \
+  && npx -y playwright@1.63.0 install --with-deps chromium \
+  && chmod -R a+rX /opt/ms-playwright \
+  && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
+# /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
+# process has no path to root.
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
+WORKDIR /tmp
+CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
+
+FROM base AS runtime
+# The server starts runner containers through the Docker socket. Only the CLI, a static binary.
+COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
+RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /app
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /pty/node-pty ./node_modules/node-pty
@@ -73,10 +89,7 @@ ENV MAJHI_COMMIT=$MAJHI_COMMIT \
     MAJHI_HOST=0.0.0.0 \
     MAJHI_PORT=7070 \
     MAJHI_WEB_DIST=/app/web \
-    HOME=/tmp/majhi \
-    GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0=safe.directory \
-    GIT_CONFIG_VALUE_0=*
+    HOME=/tmp/majhi
 EXPOSE 7070
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:7070/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

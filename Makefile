@@ -3,17 +3,19 @@ export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 # The commit baked into the image, so majhi can tell when newer code is on disk.
 export MAJHI_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo dev)
+# The Mac's time zone, for days, weeks and months of tokens and cost.
+export MAJHI_TZ := $(shell readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||' | grep . || echo UTC)
 COMPOSE := docker compose
 SECRETS_KEY := $(or $(MAJHI_SECRETS_KEY),$(HOME)/.config/majhi/secrets.key)
 export MAJHI_SECRETS_KEY := $(SECRETS_KEY)
 
 .PHONY: up down logs host-logs doctor ci
 
-## Build, install the host helper, mount every workspace root from majhi.yaml, and start majhi on http://127.0.0.1:7070
+## Build the server and runner images, install the host helper, mount every workspace root from majhi.yaml, and start majhi on http://127.0.0.1:7070
 up:
 	@mkdir -p "$(HOME)/.majhi" "$(HOME)/.ssh"
 	@touch "$(HOME)/.ssh/config" "$(HOME)/.ssh/known_hosts"
-	$(COMPOSE) build
+	$(COMPOSE) --profile runner build
 	@if [ ! -s "$(SECRETS_KEY)" ]; then \
 		echo "Creating the secrets key at $(SECRETS_KEY)"; \
 		mkdir -p "$$(dirname "$(SECRETS_KEY)")" && chmod 700 "$$(dirname "$(SECRETS_KEY)")"; \
