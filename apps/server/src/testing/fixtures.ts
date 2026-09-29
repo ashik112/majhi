@@ -49,6 +49,16 @@ export function testEnv(dir: string, overrides: Partial<ServerEnv> = {}): Server
     runtime: { base: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, adapters: {} },
     // Tests never reach the network; they inject a probe when they test offline.
     netProbe: "off",
+    runner: {
+      mode: "local",
+      image: "majhi-runner:dev",
+      network: "majhi-runners",
+      mcpHost: "majhi-server",
+      memory: "4g",
+      // Never the real CLI: a test must not touch the machine's containers.
+      docker: "/nonexistent/docker",
+      cliEnv: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+    },
     ...overrides,
   };
 }

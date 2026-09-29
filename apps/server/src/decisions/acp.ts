@@ -74,6 +74,8 @@ export class AcpProvider implements DecisionProvider {
       account: runtimeAccount,
       options: deps.options,
       cwd,
+      // The stand-in needs no files: a runner gives it an empty folder of its own.
+      scratch: true,
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
     });

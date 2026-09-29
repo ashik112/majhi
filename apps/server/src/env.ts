@@ -52,6 +52,24 @@ const EnvSchema = z.object({
     .optional(),
   /** How often the network probe runs, in ms. Default 20000. */
   MAJHI_NET_PROBE_MS: z.coerce.number().int().min(100).optional(),
+  /** Where agent sessions run: `local` (next to majhi, for tests and development) or `container` (a runner container per run). */
+  MAJHI_RUNNER: z.enum(["local", "container"]).default("local"),
+  MAJHI_RUNNER_IMAGE: z.string().trim().min(1).default("majhi-runner:dev"),
+  MAJHI_RUNNER_NETWORK: z.string().trim().min(1).default("majhi-runners"),
+  /** `uid:gid` agents run as, the owner's. */
+  MAJHI_RUNNER_USER: z
+    .string()
+    .trim()
+    .regex(/^\d+:\d+$/, "Use uid:gid, like 501:20")
+    .optional(),
+  /** The name runners reach majhi at on their network. */
+  MAJHI_RUNNER_MCP_HOST: z.string().trim().min(1).default("majhi-server"),
+  /** Memory cap per run. */
+  MAJHI_RUNNER_MEMORY: z
+    .string()
+    .trim()
+    .regex(/^\d+[kmg]$/, "Use a size like 4g")
+    .default("4g"),
 });
 
 export interface ServerEnv {
@@ -73,6 +91,21 @@ export interface ServerEnv {
   netProbe?: string;
   /** `MAJHI_NET_PROBE_MS`. */
   netProbeMs?: number;
+  /** Runner isolation (Phase 2c). */
+  runner: RunnerEnv;
+}
+
+export interface RunnerEnv {
+  mode: "local" | "container";
+  image: string;
+  network: string;
+  user?: string;
+  mcpHost: string;
+  memory: string;
+  /** The docker CLI. */
+  docker: string;
+  /** PATH and DOCKER_HOST for the docker CLI. Never passed to an agent. */
+  cliEnv: Record<string, string>;
 }
 
 /** Reads the server settings from environment variables. Throws with one line per bad variable. */
@@ -104,6 +137,19 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     runtime: { base: baseEnv(source), adapters, usage },
     ...(env.MAJHI_NET_PROBE === undefined ? {} : { netProbe: env.MAJHI_NET_PROBE }),
     ...(env.MAJHI_NET_PROBE_MS === undefined ? {} : { netProbeMs: env.MAJHI_NET_PROBE_MS }),
+    runner: {
+      mode: env.MAJHI_RUNNER,
+      image: env.MAJHI_RUNNER_IMAGE,
+      network: env.MAJHI_RUNNER_NETWORK,
+      ...(env.MAJHI_RUNNER_USER === undefined ? {} : { user: env.MAJHI_RUNNER_USER }),
+      mcpHost: env.MAJHI_RUNNER_MCP_HOST,
+      memory: env.MAJHI_RUNNER_MEMORY,
+      docker: "docker",
+      cliEnv: {
+        PATH: source.PATH || "/usr/local/bin:/usr/bin:/bin",
+        ...(source.DOCKER_HOST ? { DOCKER_HOST: source.DOCKER_HOST } : {}),
+      },
+    },
   };
 }
 

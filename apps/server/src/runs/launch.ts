@@ -1,4 +1,6 @@
-import type { AgentSession, RuntimeOptions } from "@majhi/acp";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import type { AgentSession, RunMount, RuntimeOptions } from "@majhi/acp";
 import type { AccountConfig, AgentFrontmatter, Task } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
@@ -6,6 +8,7 @@ import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
+import { isDirectory } from "../fs.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
@@ -95,6 +98,7 @@ export async function launch(
       account: runtimeAccount,
       options: deps.options,
       cwd: task.folder,
+      mounts: await repoMounts(task),
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
@@ -115,4 +119,26 @@ export async function launch(
     model,
     effort,
   };
+}
+
+/**
+ * What a runner needs besides the task folder: each task repo's `.git`, where the worktree keeps
+ * its objects and refs. `config` and `hooks` are read-only, so a run cannot plant a hook or a
+ * command in the config that the owner's own git would later run on the host.
+ */
+export async function repoMounts(task: Task): Promise<RunMount[]> {
+  const mounts: RunMount[] = [];
+  for (const repo of task.repos) {
+    if (repo.worktree === undefined) continue;
+    const gitDir = join(repo.source, ".git");
+    if (!(await isDirectory(gitDir))) continue;
+    // A read-only mount needs the folder to exist, or the run could create it and add hooks.
+    await mkdir(join(gitDir, "hooks"), { recursive: true });
+    mounts.push(
+      { path: gitDir },
+      { path: join(gitDir, "config"), readOnly: true },
+      { path: join(gitDir, "hooks"), readOnly: true },
+    );
+  }
+  return mounts;
 }

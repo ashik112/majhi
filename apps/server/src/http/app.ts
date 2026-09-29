@@ -32,6 +32,8 @@ export interface AppDeps {
   mcp?: { tokens: AdminTokens; admin: AdminService };
   /** The majhi-decide MCP server at `/mcp/decide`. */
   decideMcp?: DecideMcpDeps;
+  /** True for a request from an agent's runner container: it may reach only `/mcp` (Phase 2c). */
+  isRunner?: (remoteAddress: string | undefined) => boolean;
 }
 
 const NOT_BUILT =
@@ -40,6 +42,19 @@ const NOT_BUILT =
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+
+  // Agent runs share a network with majhi so they can reach their MCP tools. Everything else,
+  // the commands above all, answers only the owner.
+  const isRunner = deps.isRunner;
+  if (isRunner !== undefined) {
+    app.use("*", async (c, next) => {
+      const path = c.req.path;
+      if (isRunner(remoteAddress(c.env)) && path !== "/mcp" && !path.startsWith("/mcp/")) {
+        return c.json({ error: "Agent runs can only reach majhi's MCP tools" } satisfies ApiError, 403);
+      }
+      await next();
+    });
+  }
 
   app.get("/health", (c) =>
     c.json({ status: "ok", version: deps.version, commit: deps.commit ?? "dev" } satisfies Health),
@@ -91,3 +106,11 @@ export function createApp(deps: AppDeps): Hono {
 }
 
 export { isLoopbackOrigin };
+
+/** The peer address of a request served by @hono/node-server; undefined in tests that call `app.request`. */
+function remoteAddress(env: unknown): string | undefined {
+  if (typeof env !== "object" || env === null) return undefined;
+  const incoming = (env as { incoming?: { socket?: { remoteAddress?: unknown } } }).incoming;
+  const address = incoming?.socket?.remoteAddress;
+  return typeof address === "string" ? address : undefined;
+}

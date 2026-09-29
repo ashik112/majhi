@@ -80,6 +80,9 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     },
     mcp: { tokens: services.adminTokens, admin: services.admin },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
+    ...(services.runner === undefined
+      ? {}
+      : { isRunner: (address: string | undefined) => services.runner?.network.isRunner(address) ?? false }),
   });
   let sockets: { close: () => void } | undefined;
   let sweeper: NodeJS.Timeout | undefined;

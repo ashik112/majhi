@@ -24,6 +24,8 @@ import type { HostLink } from "./host/link.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
+import type { Inspect } from "./runner/network.ts";
+import { type Runner, runnerSetup } from "./runner/setup.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
@@ -52,6 +54,8 @@ export interface ServiceOptions {
   hostLink?: HostLink;
   /** Replaces the network probe, so tests can go offline. Default: from `MAJHI_NET_PROBE`. */
   probe?: Probe;
+  /** Replaces `docker network inspect` for the runner network. */
+  runnerInspect?: Inspect;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -88,6 +92,8 @@ export interface Services {
   usage: UsageService;
   /** Writes one row per agent turn. */
   usageRecorder: UsageRecorder;
+  /** The runner network and config, when agents run in runner containers (MAJHI_RUNNER=container). */
+  runner: Runner | undefined;
   /** Stops every agent process and closes the database. */
   close: () => Promise<void>;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
@@ -145,6 +151,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
   });
+  const runner = runnerSetup(env, options.runnerInspect);
+  const sessionOptions = runner.sessionOptions;
   const usageRepo = new UsageRepo(store.raw);
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
@@ -165,7 +173,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       agents: agentStore,
       secrets,
       runtime,
-      options: env.runtime,
+      options: sessionOptions,
       majhiHome: env.majhiHome,
       standIn: async () => (await decisions.settings()).acp_agent,
       usage: usageRecorder,
@@ -180,7 +188,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     usage: usageRecorder,
     room,
     runtime,
-    options: env.runtime,
+    options: sessionOptions,
     agents: agentStore,
     config,
     secrets,
@@ -244,6 +252,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     resilience,
     usage: usageService,
     usageRecorder,
+    runner: runner.runner,
     close: async () => {
       resilience.stop();
       await runs.closeAll();

@@ -16,6 +16,7 @@ import {
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import { checkRunnerIsolation } from "../runner/check.ts";
 import type { Services } from "../services.ts";
 
 const run = promisify(execFile);
@@ -81,6 +82,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkDisk(state, home).then((c) => [c]),
     checkSecrets(ctx.services),
     checkTools(ctx),
+    checkRunner(ctx),
     checkAccounts(ctx),
   ]);
   return groups.flat();
@@ -382,6 +384,34 @@ async function checkTools(ctx: CheckContext): Promise<Check[]> {
       return check;
     }),
   );
+}
+
+/**
+ * Runner isolation (Phase 2c): a throwaway runner started like every agent run must not see
+ * majhi's config, the secrets key or another account. Only when agents run in runners; the
+ * result is kept for a while, as starting a container is not free.
+ */
+async function checkRunner(ctx: CheckContext): Promise<Check[]> {
+  const runner = ctx.services.runner;
+  if (runner === undefined) return [];
+  const now = ctx.now ?? Date.now;
+  const cached = ctx.toolCache?.get("runner");
+  if (cached !== undefined && now() - cached.at < TOOL_CACHE_MS) return [cached.check];
+  const verdict = await checkRunnerIsolation({
+    runner,
+    majhiHome: ctx.env.majhiHome,
+    hostHome: ctx.env.hostHome,
+    secretsKeyFile: ctx.env.secretsKeyFile,
+  });
+  const check: Check = {
+    id: "runner",
+    group: "majhi",
+    name: "Agent runner",
+    status: verdict.ok ? "pass" : "fail",
+    detail: verdict.detail,
+  };
+  ctx.toolCache?.set("runner", { at: now(), check });
+  return [check];
 }
 
 /** Each account's sign-in. Spends no tokens. */
