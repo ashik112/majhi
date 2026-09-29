@@ -86,3 +86,56 @@ export function draftFromConfig(config: ResolvedConfig, home: string): RootsDraf
   const isDefault = first !== undefined && config.tasksDir === defaultTasksDir(first);
   return { rows, tasksDir: isDefault ? "" : collapseHome(config.tasksDir, home) };
 }
+
+/** Absolute paths of the roots in a draft, for marking folders that are already roots. */
+export function chosenPaths(rows: readonly RootRow[], home: string): Set<string> {
+  const paths = new Set<string>();
+  for (const row of rows) if (row.value.trim() !== "") paths.add(expandHome(row.value, home));
+  return paths;
+}
+
+/**
+ * Checks one typed root before it joins the list, with the same rules as `checkRoots`.
+ * Returns the value to store, or the error to show under the field.
+ */
+export function checkNewRoot(
+  value: string,
+  rows: readonly RootRow[],
+  home: string,
+): { value: string } | { error: string } {
+  const parsed = ConfigPath.safeParse(value);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid path" };
+  if (chosenPaths(rows, home).has(expandHome(parsed.data, home))) return { error: "Already a root" };
+  return { value: parsed.data };
+}
+
+export interface Crumb {
+  label: string;
+  path: string;
+}
+
+/**
+ * Splits an absolute path into clickable steps. Paths under home start at `~`, others at `/`:
+ * `/home/me/Work/ops` gives `~`, `Work`, `ops`.
+ */
+export function breadcrumbs(path: string, home: string): Crumb[] {
+  const base = home.replace(/\/+$/, "");
+  const underHome = path === base || path.startsWith(`${base}/`);
+  const crumbs: Crumb[] = [underHome ? { label: "~", path: base } : { label: "/", path: "/" }];
+  let current = underHome ? base : "";
+  const rest = underHome ? path.slice(base.length) : path;
+  for (const name of rest.split("/")) {
+    if (name === "") continue;
+    current = `${current}/${name}`;
+    crumbs.push({ label: name, path: current });
+  }
+  return crumbs;
+}
+
+/** The folder above an absolute path, or null at `/`. */
+export function parentPath(path: string): string | null {
+  const trimmed = path.replace(/\/+$/, "");
+  if (trimmed === "") return null;
+  const cut = trimmed.lastIndexOf("/");
+  return cut <= 0 ? "/" : trimmed.slice(0, cut);
+}

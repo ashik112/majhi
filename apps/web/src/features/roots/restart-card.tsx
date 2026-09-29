@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { plural } from "@/lib/format";
 
 /**
- * Shown after saving roots that majhi cannot see yet. Container mounts are fixed at start,
- * so the owner has to run the restart command on the host (SPEC 3.5).
+ * Shown after saving roots that majhi cannot see yet when no host helper can remount them.
+ * Container mounts are fixed at start, so the owner runs the restart command on the host (SPEC 3.5).
  */
 export function RestartCard({
   result,

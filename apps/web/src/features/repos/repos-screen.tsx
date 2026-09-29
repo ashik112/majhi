@@ -1,6 +1,17 @@
 import { collapseHome, RESTART_COMMAND, type ReposResponse, type RootScan } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CircleAlert, FolderCog, FolderGit2, FolderX, RefreshCw, Search, SearchX, X } from "lucide-react";
+import {
+  CircleAlert,
+  FolderCog,
+  FolderGit2,
+  FolderSync,
+  FolderX,
+  RefreshCw,
+  Search,
+  SearchX,
+  X,
+} from "lucide-react";
 import * as m from "motion/react-m";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -12,6 +23,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { CenteredPage } from "@/components/centered-page";
 import { InlineCommand } from "@/components/command-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,9 +31,10 @@ import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
 import { ServerError } from "@/features/home/server-error";
+import { RestartingCard } from "@/features/roots/restarting-card";
 import { cn } from "@/lib/cn";
 import { formatAgo, formatDuration, plural } from "@/lib/format";
-import { useRepos, useRescan } from "@/lib/queries";
+import { reloadAfterRestart, useHostStatus, useRemount, useRepos, useRescan } from "@/lib/queries";
 import { useCopy } from "@/lib/use-copy";
 import { useNow } from "@/lib/use-now";
 import { filterRoots, searchTerms } from "./filter";
@@ -29,9 +42,60 @@ import { RepoDetails } from "./repo-details";
 import { RepoRow, rowId } from "./repo-row";
 import { ReposSkeleton } from "./repos-skeleton";
 
+/** Mounts the roots majhi cannot see, through the host helper. */
+interface MountAction {
+  run: () => void;
+  pending: boolean;
+}
+
 export function ReposScreen({ home }: { home: string }) {
   const repos = useRepos(true);
-  if (repos.data) return <ReposView data={repos.data} home={home} />;
+  const host = useHostStatus();
+  const remount = useRemount();
+  const client = useQueryClient();
+  const toast = useToast();
+  const [restarting, setRestarting] = useState<readonly string[] | null>(null);
+  const canMount = host.data?.connected === true && host.data.info?.canRemount === true;
+
+  function mountNow() {
+    if (remount.isPending) return;
+    remount.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.remount === "restarting") {
+          setRestarting(result.unmounted);
+        } else if (result.remount === "manual") {
+          toast("majhi cannot remount on its own", {
+            detail: `Run ${RESTART_COMMAND} on your machine`,
+            tone: "error",
+          });
+        } else {
+          void reloadAfterRestart(client).then(() => toast("Already mounted"));
+        }
+      },
+      onError: (error) => toast("Could not mount", { detail: error.message, tone: "error" }),
+    });
+  }
+
+  if (restarting) {
+    const done = () => setRestarting(null);
+    return (
+      <CenteredPage>
+        <RestartingCard
+          roots={restarting}
+          home={home}
+          continueLabel="Back to repos"
+          onBack={() => {
+            done();
+            toast("Roots mounted");
+          }}
+          onContinue={done}
+        />
+      </CenteredPage>
+    );
+  }
+
+  const mount = canMount ? { run: mountNow, pending: remount.isPending } : null;
+  if (repos.data) return <ReposView data={repos.data} home={home} mount={mount} />;
   if (repos.isError) {
     return (
       <ServerError error={repos.error} onRetry={() => void repos.refetch()} retrying={repos.isFetching} />
@@ -40,7 +104,7 @@ export function ReposScreen({ home }: { home: string }) {
   return <ReposSkeleton />;
 }
 
-function ReposView({ data, home }: { data: ReposResponse; home: string }) {
+function ReposView({ data, home, mount }: { data: ReposResponse; home: string; mount: MountAction | null }) {
   const rescan = useRescan();
   const copy = useCopy();
   const toast = useToast();
@@ -263,7 +327,7 @@ function ReposView({ data, home }: { data: ReposResponse; home: string }) {
             <NoMatches query={deferredQuery.trim()} onClear={() => setQuery("")} />
           ) : (
             visible.map((root) => (
-              <RootGroup key={root.path} root={root} home={home} searching={searching}>
+              <RootGroup key={root.path} root={root} home={home} searching={searching} mount={mount}>
                 {root.repos.map((repo) => (
                   <RepoRow
                     key={repo.path}
@@ -297,11 +361,13 @@ function RootGroup({
   root,
   home,
   searching,
+  mount,
   children,
 }: {
   root: RootScan;
   home: string;
   searching: boolean;
+  mount: MountAction | null;
   children: ReactNode;
 }) {
   const label = collapseHome(root.path, home);
@@ -330,12 +396,23 @@ function RootGroup({
         {root.error && <Badge tone="red">scan failed</Badge>}
       </div>
 
-      {!root.mounted && (
-        <p className="border-b border-line py-3 pr-4 pl-[2.625rem] text-base leading-7 text-fg-muted">
-          majhi cannot see this folder yet. Roots are mounted when majhi starts. Run{" "}
-          <InlineCommand command={RESTART_COMMAND} /> on your machine, then rescan.
-        </p>
-      )}
+      {!root.mounted &&
+        (mount ? (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line py-3 pr-4 pl-[2.625rem]">
+            <p className="text-base text-fg-muted">
+              majhi cannot see this folder yet. Mounting it restarts majhi for a few seconds.
+            </p>
+            <Button variant="secondary" size="sm" onClick={mount.run} disabled={mount.pending}>
+              <FolderSync aria-hidden="true" />
+              {mount.pending ? "Mounting" : "Mount now"}
+            </Button>
+          </div>
+        ) : (
+          <p className="border-b border-line py-3 pr-4 pl-[2.625rem] text-base leading-7 text-fg-muted">
+            majhi cannot see this folder yet. Roots are mounted when majhi starts. Run{" "}
+            <InlineCommand command={RESTART_COMMAND} /> on your machine, then rescan.
+          </p>
+        ))}
 
       {root.error && (
         <p className="flex items-start gap-2 border-b border-line py-3 pr-4 pl-[2.625rem] font-mono text-sm text-red">

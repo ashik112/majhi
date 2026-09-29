@@ -8,6 +8,7 @@ import { ServerError } from "@/features/home/server-error";
 import { useConfig } from "@/lib/queries";
 import { draftFromConfig } from "./model";
 import { RestartCard } from "./restart-card";
+import { RestartingCard } from "./restarting-card";
 import { RootsForm } from "./roots-form";
 
 /** `/settings/roots`: the onboarding roots form, filled with the current roots. */
@@ -15,19 +16,32 @@ export function EditRootsRoute() {
   const config = useConfig();
   const navigate = useNavigate();
   const toast = useToast();
-  const [restart, setRestart] = useState<WorkspacesUpdateResult | null>(null);
+  const [pending, setPending] = useState<WorkspacesUpdateResult | null>(null);
   const state = config.data;
   const goHome = () => void navigate({ to: "/" });
 
-  if (restart) {
+  if (pending) {
     return (
       <CenteredPage>
-        <RestartCard
-          result={restart}
-          home={restart.state.home}
-          continueLabel="Show repos now"
-          onContinue={goHome}
-        />
+        {pending.remount === "restarting" ? (
+          <RestartingCard
+            roots={pending.unmounted}
+            home={pending.state.home}
+            continueLabel="Show repos now"
+            onBack={() => {
+              toast("Roots mounted");
+              goHome();
+            }}
+            onContinue={goHome}
+          />
+        ) : (
+          <RestartCard
+            result={pending}
+            home={pending.state.home}
+            continueLabel="Show repos now"
+            onContinue={goHome}
+          />
+        )}
       </CenteredPage>
     );
   }
@@ -56,8 +70,8 @@ export function EditRootsRoute() {
         file={state.file}
         initial={draftFromConfig(state.config, state.home)}
         onSaved={(result) => {
-          if (result.unmounted.length > 0) {
-            setRestart(result);
+          if (result.remount !== "not-needed") {
+            setPending(result);
             return;
           }
           toast("Roots saved");

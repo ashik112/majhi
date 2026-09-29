@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { checkRoots, defaultTasksDir, draftFromConfig, type RootsDraft } from "./model";
+import {
+  breadcrumbs,
+  checkNewRoot,
+  checkRoots,
+  defaultTasksDir,
+  draftFromConfig,
+  parentPath,
+  type RootsDraft,
+} from "./model";
 
 const HOME = "/home/me";
 
@@ -64,5 +72,56 @@ describe("draftFromConfig", () => {
 describe("defaultTasksDir", () => {
   it("puts .majhi under the first root, without doubling a trailing slash", () => {
     expect(defaultTasksDir("~/Work/")).toBe("~/Work/.majhi");
+  });
+});
+
+describe("checkNewRoot", () => {
+  const rows = [
+    { id: 0, value: "~/Work" },
+    { id: 1, value: "" },
+  ];
+
+  it("returns the trimmed path for a new root", () => {
+    expect(checkNewRoot("  /srv/code ", rows, HOME)).toEqual({ value: "/srv/code" });
+  });
+
+  it("rejects a root that is already listed under another spelling", () => {
+    expect(checkNewRoot("/home/me/Work/", rows, HOME)).toEqual({ error: "Already a root" });
+  });
+
+  it("rejects relative and empty paths with the schema's messages", () => {
+    expect(checkNewRoot("Work", rows, HOME)).toEqual({
+      error: "Use an absolute path, or one starting with ~/",
+    });
+    expect(checkNewRoot("   ", rows, HOME)).toEqual({ error: "Path is empty" });
+  });
+});
+
+describe("breadcrumbs", () => {
+  it("starts paths under home at ~", () => {
+    expect(breadcrumbs("/home/me/Work/ops", HOME)).toEqual([
+      { label: "~", path: "/home/me" },
+      { label: "Work", path: "/home/me/Work" },
+      { label: "ops", path: "/home/me/Work/ops" },
+    ]);
+    expect(breadcrumbs("/home/me", `${HOME}/`)).toEqual([{ label: "~", path: "/home/me" }]);
+  });
+
+  it("starts other paths at /, and does not mistake a sibling of home for home", () => {
+    expect(breadcrumbs("/home/meta/x", HOME)).toEqual([
+      { label: "/", path: "/" },
+      { label: "home", path: "/home" },
+      { label: "meta", path: "/home/meta" },
+      { label: "x", path: "/home/meta/x" },
+    ]);
+    expect(breadcrumbs("/", HOME)).toEqual([{ label: "/", path: "/" }]);
+  });
+});
+
+describe("parentPath", () => {
+  it("goes up one folder and stops at /", () => {
+    expect(parentPath("/home/me/Work/")).toBe("/home/me");
+    expect(parentPath("/srv")).toBe("/");
+    expect(parentPath("/")).toBeNull();
   });
 });

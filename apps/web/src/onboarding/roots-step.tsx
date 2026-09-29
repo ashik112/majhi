@@ -2,23 +2,43 @@ import type { WorkspacesUpdateResult } from "@majhi/shared";
 import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { RestartCard } from "@/features/roots/restart-card";
+import { RestartingCard } from "@/features/roots/restarting-card";
 import { RootsForm } from "@/features/roots/roots-form";
 import { useConfig } from "@/lib/queries";
 import type { OnboardingStepProps } from "./steps";
 
-/** Step 1: pick workspace roots. Roots majhi cannot see yet get the restart card before moving on. */
+/**
+ * Step 1: pick workspace roots. Roots majhi cannot see yet are mounted by the host helper, which
+ * restarts majhi, or need a manual restart when no helper is connected.
+ */
 export function RootsStep({ isLast, onComplete }: OnboardingStepProps) {
   const config = useConfig();
   const toast = useToast();
-  const [restart, setRestart] = useState<WorkspacesUpdateResult | null>(null);
+  const [pending, setPending] = useState<WorkspacesUpdateResult | null>(null);
   const state = config.data;
+  const continueLabel = isLast ? "Show repos now" : "Continue";
 
-  if (restart) {
+  if (pending?.remount === "restarting") {
+    return (
+      <RestartingCard
+        roots={pending.unmounted}
+        home={pending.state.home}
+        continueLabel={continueLabel}
+        onBack={() => {
+          toast("Roots mounted");
+          onComplete();
+        }}
+        onContinue={onComplete}
+      />
+    );
+  }
+
+  if (pending) {
     return (
       <RestartCard
-        result={restart}
-        home={restart.state.home}
-        continueLabel={isLast ? "Show repos now" : "Continue"}
+        result={pending}
+        home={pending.state.home}
+        continueLabel={continueLabel}
         onContinue={onComplete}
       />
     );
@@ -34,8 +54,8 @@ export function RootsStep({ isLast, onComplete }: OnboardingStepProps) {
       file={state.file}
       initial={{ rows: [], tasksDir: "" }}
       onSaved={(result) => {
-        if (result.unmounted.length > 0) {
-          setRestart(result);
+        if (result.remount !== "not-needed") {
+          setPending(result);
           return;
         }
         toast("Roots saved");

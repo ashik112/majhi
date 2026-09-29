@@ -14,6 +14,9 @@ import type { z } from "zod";
 /** Metadata the caller may attach; the server fills in defaults (actor: owner). */
 export type CommandMetaInput = z.input<typeof CommandMetaSchema>;
 
+/** The `error` a command answers with (HTTP 503) when it needs the host helper and none is connected. */
+const HOST_OFFLINE_ERROR = "host-offline";
+
 /** A command or health request that failed. `status` is 0 when the server could not be reached. */
 export class ApiRequestError extends Error {
   override readonly name = "ApiRequestError";
@@ -31,6 +34,11 @@ export class ApiRequestError extends Error {
   /** True when the request never got an answer from the server. */
   get unreachable(): boolean {
     return this.status === 0;
+  }
+
+  /** True when an `fs.*` command failed because no host helper is connected. */
+  get hostOffline(): boolean {
+    return this.status === 503 && this.message === HOST_OFFLINE_ERROR;
   }
 }
 
@@ -56,9 +64,13 @@ export async function cmd<N extends CommandName>(
   return parseWith(name, schema, body) as CommandOutput<N>;
 }
 
-/** Reads `GET /health`. */
-export async function getHealth(): Promise<Health> {
-  const body = await request("health", "/health", { method: "GET", cache: "no-store" });
+/** Reads `GET /health`. `signal` lets a caller give up on a server that accepts but never answers. */
+export async function getHealth(signal?: AbortSignal): Promise<Health> {
+  const body = await request("health", "/health", {
+    method: "GET",
+    cache: "no-store",
+    signal: signal ?? null,
+  });
   return parseWith("health", HealthSchema, body);
 }
 

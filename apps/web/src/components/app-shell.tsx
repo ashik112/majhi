@@ -1,7 +1,7 @@
 import { collapseHome } from "@majhi/shared";
 import { Link, Outlet } from "@tanstack/react-router";
 import { cn } from "@/lib/cn";
-import { useConfig, useHealth } from "@/lib/queries";
+import { useConfig, useHealth, useHostStatus } from "@/lib/queries";
 
 export function AppShell() {
   return (
@@ -60,11 +60,14 @@ function TopBar() {
 
 function OnlinePill() {
   const health = useHealth();
+  const host = useHostStatus();
   const state = health.isPending ? "checking" : health.online ? "online" : "offline";
   const label = { checking: "Connecting", online: "Online", offline: "Offline" }[state];
+  // Only a known "not connected" counts; while the status loads the pill stays as it is.
+  const helperOff = state === "online" && host.data?.connected === false;
   const title =
     state === "online"
-      ? `majhi ${health.data?.version ?? ""} is running`
+      ? `majhi ${health.data?.version ?? ""} is running.${helperOff ? " The host helper is not connected; make up installs it." : ""}`
       : state === "offline"
         ? "majhi is not answering. Start it with make up."
         : "Checking the server";
@@ -84,7 +87,10 @@ function OnlinePill() {
           state === "checking" && "animate-shimmer bg-fg-faint",
         )}
       />
-      {label}
+      <span>
+        {label}
+        {helperOff && <span className="text-fg-faint">, helper off</span>}
+      </span>
     </span>
   );
 }

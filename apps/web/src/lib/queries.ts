@@ -1,12 +1,31 @@
-import type { ConfigState, ReposResponse, WorkspacesUpdate, WorkspacesUpdateResult } from "@majhi/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  CommandInput,
+  CommandOutput,
+  ConfigState,
+  DirListing,
+  HostStatus,
+  ReposResponse,
+  RootSuggestion,
+  WorkspacesUpdate,
+  WorkspacesUpdateResult,
+} from "@majhi/shared";
+import {
+  keepPreviousData,
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { type ApiRequestError, cmd, getHealth } from "./api";
+import { ApiRequestError, cmd, getHealth } from "./api";
 
 export const queryKeys = {
   config: ["config"],
   repos: ["repos"],
   health: ["health"],
+  hostStatus: ["host-status"],
+  suggestRoots: ["fs", "suggest-roots"],
+  listDirs: ["fs", "list-dirs"],
 } as const;
 
 export function useConfig() {
@@ -59,7 +78,7 @@ export function useHealth() {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.health,
-    queryFn: getHealth,
+    queryFn: ({ signal }) => getHealth(signal),
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
     retry: false,
@@ -76,4 +95,72 @@ export function useHealth() {
   }, [online, query.isError, client]);
 
   return { ...query, online };
+}
+
+/** Whether the host helper is connected. Polled every 10 s, like the online pill. */
+export function useHostStatus() {
+  return useQuery<HostStatus, ApiRequestError>({
+    queryKey: queryKeys.hostStatus,
+    queryFn: () => cmd("host.status", {}),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Runs a command the host helper answers. A 503 `host-offline` also marks the helper as
+ * disconnected, so the roots form falls back to typed paths without waiting for the next poll.
+ */
+async function hostCmd<N extends "fs.listDirs" | "fs.suggestRoots">(
+  client: QueryClient,
+  name: N,
+  input: CommandInput<N>,
+): Promise<CommandOutput<N>> {
+  try {
+    return await cmd(name, input);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.hostOffline) {
+      // A status request already in flight would overwrite this with its older answer.
+      await client.cancelQueries({ queryKey: queryKeys.hostStatus });
+      client.setQueryData<HostStatus>(queryKeys.hostStatus, { connected: false });
+    }
+    throw error;
+  }
+}
+
+/** Folders under home that hold git repos, with their repo counts. */
+export function useSuggestRoots() {
+  const client = useQueryClient();
+  return useQuery<RootSuggestion[], ApiRequestError>({
+    queryKey: queryKeys.suggestRoots,
+    queryFn: async () => (await hostCmd(client, "fs.suggestRoots", {})).suggestions,
+    staleTime: 60_000,
+  });
+}
+
+/** Subfolders of `path` on the host. Keeps the previous listing on screen while the next one loads. */
+export function useListDirs(path: string, showHidden: boolean) {
+  const client = useQueryClient();
+  return useQuery<DirListing, ApiRequestError>({
+    queryKey: [...queryKeys.listDirs, path, showHidden],
+    queryFn: () => hostCmd(client, "fs.listDirs", { path, showHidden }),
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+}
+
+/** Asks the host helper to mount every root in majhi.yaml, which restarts majhi. */
+export function useRemount() {
+  return useMutation<CommandOutput<"workspaces.remount">, ApiRequestError>({
+    mutationFn: () => cmd("workspaces.remount", {}, { reason: "Owner asked to mount workspace roots" }),
+  });
+}
+
+/** After majhi restarts, loads what the restart changed: the config, a fresh scan and the helper link. */
+export async function reloadAfterRestart(client: QueryClient): Promise<void> {
+  await Promise.all([
+    client.fetchQuery({ queryKey: queryKeys.config, queryFn: () => cmd("config.get", {}) }),
+    client.fetchQuery({ queryKey: queryKeys.repos, queryFn: () => cmd("repos.scan", { refresh: true }) }),
+  ]);
+  await client.invalidateQueries({ queryKey: queryKeys.hostStatus });
 }
