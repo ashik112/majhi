@@ -150,7 +150,7 @@ export function durableNote(s: DurableState): string {
     "",
     s.diff.trim() === ""
       ? "No changes in the worktrees."
-      : "```\n" + trimMiddle(s.diff.trim(), BUDGET.diff) + "\n```",
+      : ["```", trimMiddle(s.diff.trim(), BUDGET.diff), "```"].join("\n"),
     "",
     "## Next step",
     "",

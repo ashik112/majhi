@@ -122,15 +122,16 @@ function ContextMeter({ share, label, agent }: { share: number; label: string; a
   const percent = Math.round(share * 100);
   return (
     <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>
-      <span
-        role="meter"
+      <meter
+        className="sr-only"
         aria-label={`Context of @${agent}`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
         aria-valuetext={`${label} tokens`}
-        className="h-1 w-24 overflow-hidden rounded-full bg-selected"
-      >
+        min={0}
+        max={100}
+        value={percent}
+      />
+      {/* The native meter is for assistive tech; this bar is what the eye reads. */}
+      <span aria-hidden="true" className="h-1 w-24 overflow-hidden rounded-full bg-selected">
         <span
           className={cn("block h-full rounded-full", share >= 0.8 ? "bg-amber" : "bg-fg-dim")}
           style={{ width: `${percent}%` }}

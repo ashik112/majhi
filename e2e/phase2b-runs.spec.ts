@@ -28,12 +28,12 @@ async function setPerms(request: APIRequestContext, id: string, perms: string[])
     { status: string; agent: { frontmatter: { id: string }; instructions: string } }[]
   >(request, "agents.list", {});
   const entry = entries.find((e) => e.status === "ok" && e.agent.frontmatter.id === id);
-  expect(entry, `agent ${id} exists`).toBeTruthy();
-  const { id: _id, ...frontmatter } = entry?.agent.frontmatter as { id: string };
+  if (entry === undefined) throw new Error(`agent ${id} does not exist`);
+  const { id: _id, ...frontmatter } = entry.agent.frontmatter;
   await cmd(request, "agents.update", {
     id,
     frontmatter: { ...frontmatter, perms },
-    instructions: entry?.agent.instructions,
+    instructions: entry.agent.instructions,
   });
 }
 
