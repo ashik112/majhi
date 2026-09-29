@@ -1,17 +1,24 @@
 /**
- * Starts majhi for Playwright against a throwaway home:
+ * Starts majhi and its host helper for Playwright against a throwaway home:
  *
- *   <tmp>/majhi-e2e/home/Work/alpha-api        GitHub remote
- *   <tmp>/majhi-e2e/home/Work/beta-web         GitLab remote over https, on `develop`
- *   <tmp>/majhi-e2e/home/Work/ops/gamma-infra  Bitbucket through the SSH alias `bitbucket-acme`
- *   <tmp>/majhi-e2e/home/.ssh/config           defines that alias
- *   <tmp>/majhi-e2e/home/.majhi                empty, so majhi starts in first-run
+ *   <tmp>/majhi-e2e/home/Work/alpha-api         GitHub remote
+ *   <tmp>/majhi-e2e/home/Work/beta-web          GitLab remote over https, on `develop`
+ *   <tmp>/majhi-e2e/home/Work/ops/gamma-infra   Bitbucket through the SSH alias `bitbucket-acme`
+ *   <tmp>/majhi-e2e/home/Projects/delta-app     GitHub remote, so root suggestions have a second entry
+ *   <tmp>/majhi-e2e/home/Empty                  no repos, so it is never suggested
+ *   <tmp>/majhi-e2e/home/.ssh/config            defines that alias
+ *   <tmp>/majhi-e2e/home/.majhi                 empty, so majhi starts in first-run
+ *
+ * The helper runs with that home as HOME and without MAJHI_REPO, so it browses
+ * and suggests folders but never remounts (`canRemount` is false) and never
+ * touches Docker. It reaches the server a moment after `/health` answers.
  *
  * Expects `apps/web/dist` to be built already; the Playwright config builds it first.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME } from "./fixture.ts";
 
 // Keep the owner's own git config (signing, hooks, templates) out of the fixture and the server.
@@ -41,6 +48,8 @@ const work = join(HOST_HOME, "Work");
 makeRepo(join(work, "alpha-api"), "main", "git@github.com:acme/alpha-api.git");
 makeRepo(join(work, "beta-web"), "develop", "https://gitlab.com/acme/beta-web.git");
 makeRepo(join(work, "ops", "gamma-infra"), "main", "git@bitbucket-acme:acme/gamma-infra.git");
+makeRepo(join(HOST_HOME, "Projects", "delta-app"), "main", "git@github.com:acme/delta-app.git");
+mkdirSync(join(HOST_HOME, "Empty"));
 
 mkdirSync(join(HOST_HOME, ".ssh"), { recursive: true });
 writeFileSync(
@@ -60,3 +69,19 @@ Object.assign(process.env, gitEnv, {
 // Dynamic on purpose: main.ts reads process.env as it loads, and a static import would run
 // before the assignments above.
 await import("../apps/server/src/main.ts");
+
+// The helper runs under tsx like this script: the same node binary with the same loader flags.
+const helperEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  HOME: HOST_HOME,
+  MAJHI_URL: `http://127.0.0.1:${E2E_PORT}`,
+  MAJHI_HOME,
+  MAJHI_HOST_VERSION: "e2e",
+};
+delete helperEnv.MAJHI_REPO;
+const helper = spawn(
+  process.execPath,
+  [...process.execArgv, fileURLToPath(new URL("../apps/host/src/main.ts", import.meta.url))],
+  { env: helperEnv, stdio: ["ignore", "inherit", "inherit"] },
+);
+process.once("exit", () => helper.kill());
