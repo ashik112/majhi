@@ -8,3 +8,4 @@ playwright-report/
 blob-report/
 *.tsbuildinfo
 .DS_Store
+e2e/screenshots/
