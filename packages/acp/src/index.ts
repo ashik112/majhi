@@ -24,6 +24,8 @@ export interface BaseEnv {
   PATH: string;
   TMPDIR?: string;
   LANG?: string;
+  /** Where the image keeps Playwright's browsers, so agents can run browser tests. */
+  PLAYWRIGHT_BROWSERS_PATH?: string;
 }
 
 export interface RuntimeOptions {

@@ -18,6 +18,7 @@ export function buildEnv(account: AccountRuntime, base: BaseEnv, git?: GitIdenti
   const env: Record<string, string> = { PATH: base.PATH };
   if (base.TMPDIR) env.TMPDIR = base.TMPDIR;
   if (base.LANG) env.LANG = base.LANG;
+  if (base.PLAYWRIGHT_BROWSERS_PATH) env.PLAYWRIGHT_BROWSERS_PATH = base.PLAYWRIGHT_BROWSERS_PATH;
 
   env.HOME = account.home;
   env[tool.configHomeVar] = account.home;

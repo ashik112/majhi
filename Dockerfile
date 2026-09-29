@@ -31,6 +31,16 @@ FROM node:22-bookworm-slim AS runtime
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+# Agents work on real projects in this container, majhi included: build tools for native modules,
+# pnpm, and Playwright's Chromium with its system libraries. The browsers live outside any home, and
+# PLAYWRIGHT_BROWSERS_PATH is one of the few variables passed to agent runs (see packages/acp BaseEnv).
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ curl \
+  && npm install -g pnpm@11.21.0 \
+  && npx -y playwright@1.63.0 install --with-deps chromium \
+  && chmod -R a+rX /opt/ms-playwright \
+  && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
 # The container runs as the owner's uid so files it writes belong to the owner. OpenSSH refuses to
 # start for a uid with no passwd entry, so the entry is created here, at build time, with the owner's
 # real home (where ~/.ssh/config is mounted). /etc/passwd stays read-only, and setuid/setgid bits are

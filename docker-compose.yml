@@ -31,7 +31,7 @@ services:
     secrets:
       - majhi_key
     # Agent CLIs (Claude Code, Codex) need far more than the 512m the bare server did.
-    mem_limit: 2g
+    mem_limit: 6g
 
 secrets:
   # The age key for ~/.majhi/secrets.age. `make up` creates it when missing.
