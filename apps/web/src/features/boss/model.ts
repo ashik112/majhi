@@ -94,6 +94,8 @@ export interface SettingsForm {
   perTask: string;
   idleTimeout: string;
   resumeAuto: boolean;
+  maxAgentTurns: string;
+  reviewRounds: string;
 }
 
 const percent = (fraction: number) => String(Math.round(fraction * 100));
@@ -108,6 +110,8 @@ export function formFromSettings(s: Settings): SettingsForm {
     perTask: String(s.limits.per_task),
     idleTimeout: s.limits.idle_timeout,
     resumeAuto: s.resume.auto,
+    maxAgentTurns: String(s.rooms.max_agent_turns),
+    reviewRounds: String(s.rooms.review_rounds),
   };
 }
 
@@ -115,6 +119,7 @@ export type SettingsPatch = {
   context?: { compact_at?: number; compact_target?: number; max_turns?: number };
   limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
   resume?: { auto?: boolean };
+  rooms?: { max_agent_turns?: number; review_rounds?: number };
 };
 
 export type SettingsErrors = Partial<Record<keyof SettingsForm, string>>;
@@ -145,6 +150,10 @@ export function patchFromForm(
   const agents = whole(form.agentsMax, 1, 64, "Agents at once");
   const account = whole(form.perAccount, 1, 16, "Per account");
   const task = whole(form.perTask, 1, 16, "Per task");
+  const agentTurns = whole(form.maxAgentTurns, 1, 200, "Agent turns without you");
+  const rounds = whole(form.reviewRounds, 1, 50, "Review rounds");
+  if (agentTurns.error) errors.maxAgentTurns = agentTurns.error;
+  if (rounds.error) errors.reviewRounds = rounds.error;
   if (at.error) errors.compactAt = at.error;
   if (target.error) errors.compactTarget = target.error;
   if (turns.error) errors.maxTurns = turns.error;
@@ -173,6 +182,13 @@ export function patchFromForm(
   if (Object.keys(context).length > 0) patch.context = context;
   if (Object.keys(limits).length > 0) patch.limits = limits;
   if (form.resumeAuto !== current.resume.auto) patch.resume = { auto: form.resumeAuto };
+  const rooms: NonNullable<SettingsPatch["rooms"]> = {};
+  if (agentTurns.value !== undefined && agentTurns.value !== current.rooms.max_agent_turns) {
+    rooms.max_agent_turns = agentTurns.value;
+  }
+  if (rounds.value !== undefined && rounds.value !== current.rooms.review_rounds)
+    rooms.review_rounds = rounds.value;
+  if (Object.keys(rooms).length > 0) patch.rooms = rooms;
   return { patch, errors };
 }
 

@@ -62,7 +62,33 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <SystemLine item={item} />;
     case "context":
       return <ContextLine item={item} />;
+    case "handoff":
+      return <HandoffLine item={item} />;
   }
+}
+
+const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {
+  mention: "handed to",
+  tool: "handed to",
+  pipeline: "finished, next step:",
+  "review-loop": "passed the work to",
+};
+
+/** One agent woke another (5.3), as a quiet line. The message itself is the agent's above it. */
+function HandoffLine({ item }: { item: Of<"handoff"> }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="font-mono text-xs text-fg-faint">
+        @{item.from} {HANDOFF_WORDS[item.via]} @{item.to}
+        {item.queued ? ", after its current turn" : ""}
+      </span>
+      {item.via === "tool" && (
+        <p className="max-w-[640px] text-sm whitespace-pre-wrap break-words text-fg-muted">
+          <TaskRefText text={item.text.length > 600 ? `${item.text.slice(0, 600)}...` : item.text} />
+        </p>
+      )}
+    </div>
+  );
 }
 
 /** A compaction, as one quiet line, with the handoff note when there is one. */

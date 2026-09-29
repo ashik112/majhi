@@ -111,6 +111,18 @@ export function useUpdateTask() {
   });
 }
 
+/** `team.add`, `team.remove`, `team.swap` and `team.set` (5.3). Each answers with the task. */
+export function useTeamCommand<N extends "team.add" | "team.remove" | "team.swap" | "team.set">(name: N) {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, CommandInput<N>>({
+    mutationFn: (input) => cmd(name, input) as Promise<Task>,
+    onSuccess: (task) => {
+      setTaskInCache(client, task);
+      return refreshTasks(client);
+    },
+  });
+}
+
 export function useLinkTask() {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, CommandInput<"tasks.link">>({

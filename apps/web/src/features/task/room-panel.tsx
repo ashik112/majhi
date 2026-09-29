@@ -11,6 +11,7 @@ import { ChangesPanel } from "../room/changes-panel";
 import { AgentRow } from "./agent-row";
 import { ChangeAgent } from "./change-agent";
 import { agentState, agentsBusy } from "./model";
+import { AddAgent, MemberMenu, ModePicker } from "./team-controls";
 
 /** The right column of the task view: who is in the room, the branch, the changes. */
 export function RoomPanel({
@@ -43,14 +44,20 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
   const busy = agentsBusy(agents);
   return (
     <Card aria-labelledby="in-room-heading" className="gap-0 px-3 py-2.5">
-      <div className="flex items-baseline gap-2 pb-1.5">
+      <div className="flex items-center gap-2 pb-1">
         <h2 id="in-room-heading" className="text-sm font-semibold">
           In this room
         </h2>
-        <span className="min-w-0 truncate text-xs text-fg-faint">
+        <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
           {orgName ? `${orgName} agents + root agents` : "Root agents"}
         </span>
+        {task.kind !== "chat" && task.team.length > 0 && <AddAgent task={task} />}
       </div>
+      {task.team.length > 1 && (
+        <div className="flex items-center pb-1">
+          <ModePicker task={task} />
+        </div>
+      )}
       {task.team.map((id) => {
         const live = agents.find((a) => a.agent === id);
         const info = index.get(id);
@@ -64,7 +71,13 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
             state={agentState(live, task.pausedReason)}
             account={accounts?.find((a) => a.id === info?.account)}
             now={now}
-            change={id === task.team[0] ? <ChangeAgent task={task} busy={busy} /> : undefined}
+            change={
+              task.kind === "chat" ? (
+                <ChangeAgent task={task} busy={busy} />
+              ) : (
+                <MemberMenu task={task} id={id} />
+              )
+            }
           />
         );
       })}

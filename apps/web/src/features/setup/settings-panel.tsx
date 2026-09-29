@@ -138,6 +138,21 @@ function SettingsForms({
             )}
           </Field>
         </fieldset>
+        <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0">
+          <legend className="mb-2 p-0 text-sm font-semibold">Teams</legend>
+          <NumberField
+            label="Agent turns without you"
+            value={form.maxAgentTurns}
+            error={err("maxAgentTurns")}
+            onChange={(v) => set("maxAgentTurns", v)}
+          />
+          <NumberField
+            label="Review rounds"
+            value={form.reviewRounds}
+            error={err("reviewRounds")}
+            onChange={(v) => set("reviewRounds", v)}
+          />
+        </fieldset>
         <Switch
           label="Resume interrupted runs on their own"
           checked={form.resumeAuto}
