@@ -162,7 +162,7 @@ Each step is one entry in a step list, so later phases add steps without redesig
 | Git worktrees | `git worktree` via a thin wrapper |
 | Web terminal for logins | `xterm.js` + `node-pty` |
 | Command palette | `cmdk` |
-| Diff view | `@git-diff-view/react` or Monaco diff editor, pick one in Phase 5 and log it |
+| Diff view | `@git-diff-view/react` or Monaco diff editor, pick one in Phase 4 and log it |
 
 Verify each package name and version before installing. Several of these moved fast in 2026.
 
@@ -552,7 +552,7 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 - **Models load lazily.** Laya and the embedding model load on first use and unload after idle. Docker memory limits cap each service.
 - **Server.** SQLite in WAL mode with prepared statements, bounded caches, streaming with backpressure, repo scans cached and refreshed by file watchers. The UI pages and virtualizes long rooms and lists.
 - **Configurable.** Every limit lives in `majhi.yaml` under `limits` and can be changed live, by hand, in Studio, or by the boss.
-- **Targets**, measured in Phase 10: task switch under 100 ms, room updates on screen under 50 ms after the server receives them, server memory under 200 MB with no agents running.
+- **Targets**, measured in Phase 9: task switch under 100 ms, room updates on screen under 50 ms after the server receives them, server memory under 200 MB with no agents running.
 
 ---
 
@@ -616,49 +616,57 @@ Delivered in two parts, each usable and reviewed on its own.
 - No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
 - **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact.
 
-### Phase 3: Teams and rooms
+### Phase 3: Teams, rooms and decisions
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.
 - Team editing in the room: add, remove, swap agent, change model.
-- **Done when:** lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round.
+- `majhi-tasks` MCP tool: a lead splits a task into children and adds dependencies. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
+- Decision provider (5.12) with Laya (`laya-mlx` natively on Apple silicon through the host helper, `laya` in Docker elsewhere), Jev (off by default), ACP simulation and rules, in a fallback chain. `majhi-decide` MCP tool for every agent. Model and effort picking for `auto` agents. Choosing the default team for a new task.
+- **Done when:** lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round; an `auto` agent gets a model and effort picked by Laya with the decision recorded on the run, and with Laya stopped the chain falls back to the ACP simulation, then rules.
 
-### Phase 4: Connections and ops tasks
-- Connection registry (`kubectl`, `mcp`, `ssh`, `env`, `mail`), secrets in `secrets.age`, Studio Connections tab with Test, per-run injection, `majhi-connections` MCP tool.
-- Permission gate for connection writes, audit log.
-- Task kind `ops`, `REPORT.md` and the Report tab, `majhi-tasks` MCP tool so agents can create linked fix tasks.
-- Agents split tasks into children and add dependencies through `majhi-tasks`. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
-- **Done when:** asked "why is the api down in prod", a root agent investigates with a read-only kubectl connection and New Relic, streams what it is doing, can be stopped midway and resumed, writes a report, and proposes a fix task and a restart that both wait for approval. An org agent cannot use another org's connection.
-
-### Phase 5: Multi-repo and MRs
+### Phase 4: Multi-repo and MRs
 - Multiple task repos, merge order from links, pushing via SSH aliases, MRs on GitHub, GitLab and Bitbucket with sibling links, merge policies.
 - Changes tab with per-repo diffs.
 - `merged` dependencies (5.4a): a waiting task starts when its dependency's MRs are merged.
 - **Done when:** one task changes two repos on two different hosts and ends with two linked MRs merged in order.
 
-### Phase 6: Memory
+
+### Phase 5: Memory
 - Memory store, local embeddings, `majhi-memory` MCP server, recall into TASK.md, Housekeeper proposals, approval flow, promotion to AGENTS.md, Studio Memory tab.
 - **Done when:** a fact learned in one task is approved and then recalled in a later task in the same repo.
 
-### Phase 7: Skills
+
+### Phase 6: Skills
 - Install from link, registry name, zip or folder via the skills CLI. Per-agent enablement. Installing by message in a room ("@agent install this skill <link>").
 - **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run.
 
-### Phase 8: Resilience and health
+
+### Phase 7: Resilience and health
 - Limit detection per CLI, fallback handoff, auto-resume at reset, context-window error recovery (5.13). (Checkpoints and resume after sleep, shutdown, offline and crashes arrive in Phase 2b.)
 - Usage meters and health in Studio and the top bar.
 - **Done when:** unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work. A simulated limit error hands off to the fallback.
 
-### Phase 9: Root agents and trackers
-- Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves.
-- Decision provider interface with Laya, Jev, ACP simulation and rules. `majhi-decide` MCP tool for every agent and "Ask the decision model" in the palette. Model and effort picking for `auto` agents.
-- Jira, ClickUp and GitHub Issues adapters. Push a local task to a tracker.
-- **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, a Jira item flows into a room and gets its MR link written back, and an `auto` agent gets a model picked with the decision recorded on the run.
 
-### Phase 10: Token receipts and polish
+### Phase 8: Root agents
+- Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves. The Dispatcher routes new tasks to an org, repos and team with the decision provider.
+- **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, and the Dispatcher routes a new task with its decision recorded.
+
+### Phase 9: Token receipts and polish
 - Token receipts per task and agent, Serena wiring, tool gating per role, cache-friendly prompts.
 - Command palette complete, keyboard shortcuts, performance pass against the targets in 5.17.
 - **Done when:** receipts show where tokens go, and the owner can run a full day of work without touching a terminal.
 
-### Phase 11: Creative and marketing
+
+### Phase 10: Connections and ops tasks
+- Connection registry (`kubectl`, `mcp`, `ssh`, `env`, `mail`, `browser`) with typed fields, Connections page with Test, per-run injection, `majhi-connections` MCP tool.
+- Permission gate for connection writes, audit log.
+- Task kind `ops`, `REPORT.md` and the Report tab; agents create linked fix tasks through `majhi-tasks`.
+- **Done when:** asked "why is the api down in prod", a root agent investigates with a read-only kubectl connection and New Relic, streams what it is doing, can be stopped midway and resumed, writes a report, and proposes a fix task and a restart that both wait for approval. An org agent cannot use another org's connection.
+
+### Phase 11: Trackers
+- Jira, ClickUp and GitHub Issues adapters, per org. Items flow into the board through the Dispatcher; push a local task to a tracker; MR links and status written back.
+- **Done when:** a Jira item flows into a room and gets its MR link written back, and a local task pushed to ClickUp stays in sync.
+
+### Phase 12: Creative and marketing
 - Work without a repo for marketing projects, using `ops` tasks and the task folder for drafts and assets.
 - Media in the room: images and videos render inline, with Approve, Redo and Edit.
 - Tools in the runner image for media: ffmpeg, Remotion. Video and image generation APIs (for example Higgsfield) as `env` connections per org.
@@ -672,8 +680,8 @@ Delivered in two parts, each usable and reviewed on its own.
 
 Ask these when the phase that needs them starts, not before.
 
-1. Commit history on merge: keep WIP commits, squash per repo, or rewrite into clean commits? (Phase 5)
-2. Auto-handoff on limits: allowed by default for all orgs, or opt-in per org? (Phase 8)
-3. Which languages need Serena language servers in the runner image? (Phase 10)
+1. Commit history on merge: keep WIP commits, squash per repo, or rewrite into clean commits? (Phase 4)
+2. Auto-handoff on limits: allowed by default for all orgs, or opt-in per org? (Phase 7)
+3. Which languages need Serena language servers in the runner image? (Phase 9)
 4. Should majhi ever be reachable from a phone on the local network? (Default: no.)
-5. Which mail provider does each org use (Gmail, Outlook, plain IMAP)? (Phase 4)
+5. Which mail provider does each org use (Gmail, Outlook, plain IMAP)? (Phase 10)
