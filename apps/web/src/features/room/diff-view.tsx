@@ -22,9 +22,18 @@ const LINE_STYLE: Record<"ctx" | "add" | "del", string> = {
 const SIGN = { ctx: " ", add: "+", del: "-" } as const;
 
 /** A change to one file from its old and new text, unified or side by side. */
-export function DiffView({ diff, compact = false }: { diff: DiffContent; compact?: boolean }) {
+export function DiffView({
+  diff,
+  compact = false,
+  fill = false,
+}: {
+  diff: DiffContent;
+  compact?: boolean;
+  /** In the file viewer: every line, no inner scroll box; the viewer pane scrolls. */
+  fill?: boolean;
+}) {
   const [mode, setMode] = useState<"unified" | "split">("unified");
-  const [all, setAll] = useState(false);
+  const [all, setAll] = useState(fill);
   const lines = useMemo(() => diffLines(diff.oldText, diff.newText), [diff.oldText, diff.newText]);
   const shown = useMemo(() => collapseContext(lines), [lines]);
   const stats = diffStats(lines);
@@ -47,7 +56,7 @@ export function DiffView({ diff, compact = false }: { diff: DiffContent; compact
           {mode === "split" ? "Unified" : "Split"}
         </button>
       </figcaption>
-      <div className="max-h-[420px] overflow-auto">
+      <div className={fill ? "overflow-x-auto" : "max-h-[420px] overflow-auto"}>
         {mode === "unified" ? <Unified lines={visible} /> : <Split lines={visible} />}
       </div>
       {!all && shown.length > MAX_ROWS && (
