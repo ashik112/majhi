@@ -21,6 +21,17 @@ export interface FakeAgentOptions {
   risingUsage?: number;
   /** `/compact` answers but leaves usage where it was, so majhi must hand off. */
   compactNoop?: boolean;
+  /**
+   * Tokens each prompt reports in its response. Default: input 1000, output 200, cache read 4000,
+   * and cache write 500 (Claude) or reasoning 50 (Codex). `none` reports no usage.
+   */
+  turnTokens?:
+    | { input: number; output: number; thought?: number; cacheRead?: number; cacheWrite?: number }
+    | "none";
+  /** Dollars each prompt adds to the running cost. Default: 0.0125 on Claude, none on Codex (like the real adapters). */
+  turnCost?: number | "none";
+  /** The model named with the cost, like claude-agent-acp's `_claude/model`. */
+  usageModel?: string;
   /** Numbers the fake reports for usage. Defaults: 5h 42 %, week 18 %, plan "max", resets in 3 hours and 3 days. */
   usage?: {
     fiveHourPct?: number;
@@ -51,6 +62,15 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
   if (options.noImages) args.push("--no-images");
   if (options.risingUsage) args.push("--rising-usage", String(options.risingUsage));
   if (options.compactNoop) args.push("--compact-noop");
+  const t = options.turnTokens;
+  if (t === "none") args.push("--turn-tokens", "none");
+  else if (t !== undefined)
+    args.push(
+      "--turn-tokens",
+      [t.input, t.output, t.thought ?? 0, t.cacheRead ?? 0, t.cacheWrite ?? 0].join(","),
+    );
+  if (options.turnCost !== undefined) args.push("--turn-cost", String(options.turnCost));
+  if (options.usageModel) args.push("--usage-model", options.usageModel);
   const u = options.usage;
   if (u?.fiveHourPct !== undefined) args.push("--five-hour-pct", String(u.fiveHourPct));
   if (u?.weekPct !== undefined) args.push("--week-pct", String(u.weekPct));

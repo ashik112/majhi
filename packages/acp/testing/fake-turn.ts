@@ -110,6 +110,14 @@ export interface ServeOptions {
   risingUsage: number;
   /** `/compact` answers but does not lower usage. */
   compactNoop: boolean;
+  /** Token counts every prompt reports in its response, like claude-agent-acp's per-turn tally. Undefined: none. */
+  turnTokens:
+    | { input: number; output: number; thought: number; cacheRead: number; cacheWrite: number }
+    | undefined;
+  /** Dollars each prompt adds to the running session cost sent in `usage_update`. Undefined: no cost, like codex-acp. */
+  turnCost: number | undefined;
+  /** Sent as `_meta["_claude/model"]` with the cost, like claude-agent-acp. */
+  usageModel: string | undefined;
 }
 
 interface McpEntry {
@@ -127,6 +135,8 @@ interface Session {
   mcp: McpEntry[];
   /** The last usage reported, in tokens. */
   used: number;
+  /** Running cost of this process's session, in dollars. */
+  cost: number;
 }
 
 const McpResponse = z.object({
@@ -330,6 +340,7 @@ export function serveAcp(o: ServeOptions): void {
         cancel: new AbortController(),
         mcp,
         used: 0,
+        cost: 0,
       };
       sessions.set(sessionId, state);
       return state;
@@ -671,7 +682,29 @@ export function serveAcp(o: ServeOptions): void {
         }
         if (agentText) stored.messages.push({ role: "agent", text: agentText });
         await writeStored(s.cwd, params.sessionId, stored);
-        return { stopReason };
+        if (o.turnCost !== undefined) {
+          s.cost += o.turnCost;
+          await update(params.sessionId, {
+            sessionUpdate: "usage_update",
+            used: s.used,
+            size: USAGE_SIZE,
+            cost: { amount: s.cost, currency: "USD" },
+            ...(o.usageModel === undefined ? {} : { _meta: { "_claude/model": o.usageModel } }),
+          });
+        }
+        const t = o.turnTokens;
+        if (t === undefined) return { stopReason };
+        return {
+          stopReason,
+          usage: {
+            totalTokens: t.input + t.output + t.thought + t.cacheRead + t.cacheWrite,
+            inputTokens: t.input,
+            outputTokens: t.output,
+            thoughtTokens: t.thought,
+            cachedReadTokens: t.cacheRead,
+            cachedWriteTokens: t.cacheWrite,
+          },
+        };
       },
       cancel: async (params) => {
         sessions.get(params.sessionId)?.cancel.abort();

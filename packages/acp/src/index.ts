@@ -95,4 +95,5 @@ export {
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
+export { TurnMeter, type TurnUsage, type UsageMode } from "./turn-usage.ts";
 export { readUsage } from "./usage.ts";

@@ -186,9 +186,19 @@ function normalizeInner(update: SessionUpdate, runs: MessageRuns, log: DebugLog)
     case "plan_removed":
       runs.reset();
       return [{ type: "plan", entries: [] }];
-    case "usage_update":
+    case "usage_update": {
       runs.reset();
-      return [{ type: "usage", used: update.used, size: update.size }];
+      const event: Extract<SessionEvent, { type: "usage" }> = {
+        type: "usage",
+        used: update.used,
+        size: update.size,
+      };
+      if (update.cost) event.cost = { amount: update.cost.amount, currency: update.cost.currency };
+      // claude-agent-acp names the model the usage belongs to here; ACP has no field for it.
+      const model = update._meta?.["_claude/model"];
+      if (typeof model === "string" && model !== "") event.model = model;
+      return [event];
+    }
     case "available_commands_update":
       runs.reset();
       return [

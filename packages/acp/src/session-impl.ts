@@ -24,6 +24,7 @@ import type {
   SessionStart,
 } from "./session.ts";
 import { getTool } from "./tools/index.ts";
+import { TurnMeter } from "./turn-usage.ts";
 
 const DEFAULT_HANDSHAKE_MS = 30_000;
 const DEFAULT_CANCEL_MS = 10_000;
@@ -146,6 +147,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   let handler: PermissionHandler | undefined;
   let turn: { abort: AbortController; settled: Promise<void> } | undefined;
   const runs = new MessageRuns(crypto.randomUUID().slice(0, 8));
+  const meter = new TurnMeter(getTool(account.tool).turnUsage);
 
   const currentValues = (): { model?: string; effort?: string } => {
     const o = extractOptions(configOptions);
@@ -181,6 +183,8 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
         return;
       }
       for (const e of normalizeUpdate(update, runs, log)) {
+        // A replayed cost belongs to the old process, so only live reports count toward a turn.
+        if (e.type === "usage" && !loading) meter.note(e);
         if (!loading) emit(e);
         else if (e.type === "commands" || e.type === "usage") loadState.set(e.type, e);
       }
@@ -311,6 +315,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
       if (closing || exited) throw new Error("Session is closed");
       if (turn) throw new Error("A prompt is already running in this session");
       runs.reset();
+      meter.begin();
       const abort = new AbortController();
       const running = alive(conn.prompt({ sessionId, prompt: blocks.map((b) => toBlock(b, imageOk)) }));
       turn = {
@@ -322,6 +327,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
       };
       try {
         const res = await running;
+        emit({ type: "turn", usage: meter.end(res.usage, currentValues().model) });
         return { stopReason: res.stopReason as StopReason };
       } finally {
         abort.abort();

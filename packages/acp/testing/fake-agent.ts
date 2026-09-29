@@ -27,6 +27,19 @@ const Flags = z.object({
   risingUsage: z.number().int().nonnegative(),
   /** `/compact` does not lower usage. */
   compactNoop: z.boolean(),
+  /** Tokens per prompt as input,output,thought,cacheRead,cacheWrite; `none` reports none. */
+  turnTokens: z
+    .object({
+      input: z.number().int().nonnegative(),
+      output: z.number().int().nonnegative(),
+      thought: z.number().int().nonnegative(),
+      cacheRead: z.number().int().nonnegative(),
+      cacheWrite: z.number().int().nonnegative(),
+    })
+    .optional(),
+  /** Dollars per prompt in the running cost; absent reports no cost. */
+  turnCost: z.number().nonnegative().optional(),
+  usageModel: z.string().min(1).optional(),
   /** Canned usage for the Claude `usage` argv and the Codex app-server. */
   usage: z.object({
     fiveHourPct: z.number(),
@@ -51,6 +64,9 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     images: boolean;
     risingUsage: number;
     compactNoop: boolean;
+    turnTokens?: { input: number; output: number; thought: number; cacheRead: number; cacheWrite: number };
+    turnCost?: number;
+    usageModel?: string;
     usage: {
       fiveHourPct: number;
       weekPct: number;
@@ -71,6 +87,9 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     compactNoop: false,
     usage: { fiveHourPct: 42, weekPct: 18, plan: "max" },
   };
+  // Unless a flag says otherwise, every prompt reports tokens, and the Claude fake a running cost.
+  let tokensSet = false;
+  let costSet = false;
   let i = 0;
   for (; i < argv.length; i++) {
     const a = argv[i];
@@ -84,6 +103,20 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--no-images") raw.images = false;
     else if (a === "--rising-usage") raw.risingUsage = Number(argv[++i]);
     else if (a === "--compact-noop") raw.compactNoop = true;
+    else if (a === "--turn-tokens") {
+      tokensSet = true;
+      const v = argv[++i] ?? "";
+      if (v === "none") delete raw.turnTokens;
+      else {
+        const [input = 0, output = 0, thought = 0, cacheRead = 0, cacheWrite = 0] = v.split(",").map(Number);
+        raw.turnTokens = { input, output, thought, cacheRead, cacheWrite };
+      }
+    } else if (a === "--turn-cost") {
+      costSet = true;
+      const v = argv[++i] ?? "";
+      if (v === "none") delete raw.turnCost;
+      else raw.turnCost = Number(v);
+    } else if (a === "--usage-model") raw.usageModel = argv[++i] ?? "";
     else if (a === "--five-hour-pct") raw.usage.fiveHourPct = Number(argv[++i]);
     else if (a === "--week-pct") raw.usage.weekPct = Number(argv[++i]);
     else if (a === "--opus-pct") raw.usage.opusPct = Number(argv[++i]);
@@ -92,6 +125,13 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     else if (a === "--plan") raw.usage.plan = argv[++i] ?? "";
     else break;
   }
+  if (!tokensSet) {
+    raw.turnTokens =
+      raw.tool === "codex"
+        ? { input: 1_000, output: 200, thought: 50, cacheRead: 4_000, cacheWrite: 0 }
+        : { input: 1_000, output: 200, thought: 0, cacheRead: 4_000, cacheWrite: 500 };
+  }
+  if (!costSet && raw.tool === "claude") raw.turnCost = 0.0125;
   return { flags: Flags.parse(raw), rest: argv.slice(i) };
 }
 
@@ -287,6 +327,9 @@ function serve(flags: Flags): void {
     images: flags.images,
     risingUsage: flags.risingUsage,
     compactNoop: flags.compactNoop,
+    turnTokens: flags.turnTokens,
+    turnCost: flags.turnCost,
+    usageModel: flags.usageModel,
     signedIn: () => isSignedIn(flags),
   });
 }

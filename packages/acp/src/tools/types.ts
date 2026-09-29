@@ -1,5 +1,6 @@
 import type { AccountUsage } from "@majhi/shared";
 import type { AccountRuntime, Command, RuntimeOptions, ToolSpec } from "../index.ts";
+import type { UsageMode } from "../turn-usage.ts";
 
 /** What a tool's auth status command reported. */
 export interface AuthStatus {
@@ -43,4 +44,6 @@ export interface ToolDef extends ToolSpec {
    * plugins' MCP servers) out of agent sessions: an agent gets only the tools majhi attaches.
    */
   runEnv?: Record<string, string>;
+  /** How the adapter's per-prompt `usage` counts (see turn-usage.ts). */
+  turnUsage: UsageMode;
 }

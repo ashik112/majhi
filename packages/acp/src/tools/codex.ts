@@ -146,6 +146,8 @@ export const codex: ToolDef = {
   versionArgs: ["cli", "--version"],
   authStatusArgs: ["cli", "login", "status"],
   loginArgs: ["cli", "login", "--device-auth"],
+  // codex-acp 2.0.0 reports the last model call of the turn, not a running total.
+  turnUsage: "turn",
   // Without this the adapter answers authRequired instead of using the key.
   apiKeyEnv: { DEFAULT_AUTH_REQUEST: JSON.stringify({ methodId: "api-key" }) },
   readUsage: readCodexUsage,

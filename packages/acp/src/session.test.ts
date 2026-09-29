@@ -90,6 +90,8 @@ describe("default turn", () => {
       "plan",
       "usage",
       "text",
+      "usage",
+      "turn",
     ]);
     expect(events[0]).toEqual({
       type: "commands",
@@ -135,7 +137,7 @@ describe("default turn", () => {
     const exec = events.filter((e) => e.type === "tool" && e.toolCallId === "t-exec");
     expect(exec.at(-1)).toMatchObject({ status: "failed" });
     expect(await readFile(join(cwd, "HEALTH.md"), "utf8")).toContain("Health");
-    expect(events.at(-1)).toMatchObject({
+    expect(events.filter((e) => e.type === "text").at(-1)).toMatchObject({
       type: "text",
       text: expect.stringContaining("could not run the tests"),
     });
@@ -375,3 +377,39 @@ function pidOf(session: AgentSession): number {
   if (session.pid === undefined) throw new Error("no pid");
   return session.pid;
 }
+
+describe("turn usage", () => {
+  it("reports each prompt's tokens and the cost it added, with the model the agent named", async () => {
+    const { session, events } = await start({
+      turnTokens: { input: 900, output: 120, cacheRead: 3000, cacheWrite: 400 },
+      turnCost: 0.02,
+      usageModel: "claude-sonnet-5-5",
+    });
+    await session.prompt(text("echo: one"));
+    await session.prompt(text("echo: two"));
+    const turns = events.flatMap((e) => (e.type === "turn" ? [e.usage] : []));
+    expect(turns).toHaveLength(2);
+    for (const t of turns) {
+      expect(t).toMatchObject({
+        inputTokens: 900,
+        outputTokens: 120,
+        cacheReadTokens: 3000,
+        cacheWriteTokens: 400,
+        reported: true,
+        model: "claude-sonnet-5-5",
+      });
+      expect(t.costUsd).toBeCloseTo(0.02);
+    }
+  });
+
+  it("has no cost or tokens when the agent reports none", async () => {
+    const { session, events } = await start({ turnTokens: "none", turnCost: "none" });
+    await session.prompt(text("echo: one"));
+    const turn = events.find((e) => e.type === "turn");
+    expect(turn).toEqual({
+      type: "turn",
+      usage: expect.objectContaining({ reported: false, inputTokens: 0, model: "fake-model-a" }),
+    });
+    expect(turn?.type === "turn" ? turn.usage.costUsd : "missing").toBeUndefined();
+  });
+});

@@ -4,6 +4,7 @@ import type { GitIdentity } from "./env.ts";
 import type { AccountRuntime, RuntimeOptions } from "./index.ts";
 import type { DebugLog } from "./normalize.ts";
 import { openSession } from "./session-impl.ts";
+import type { TurnUsage } from "./turn-usage.ts";
 
 /**
  * One live ACP session with an agent process (SPEC 5.1, 5.15). The server's
@@ -43,7 +44,16 @@ export type SessionEvent =
       content?: ToolContent[];
     } // create or patch
   | { type: "plan"; entries: { content: string; status: "pending" | "in_progress" | "completed" }[] }
-  | { type: "usage"; used: number; size: number }
+  /** Context use, and the adapter's running session cost when it reports one. */
+  | {
+      type: "usage";
+      used: number;
+      size: number;
+      cost?: { amount: number; currency: string };
+      model?: string;
+    }
+  /** A prompt finished: its tokens and cost (Phase 2c). Sent just before `prompt()` resolves. */
+  | { type: "turn"; usage: TurnUsage }
   | { type: "commands"; commands: { name: string; description?: string }[] }
   | { type: "notice"; level: "info" | "warn" | "error"; text: string }
   /** Current model and effort ids changed (the agent reported new config options, or `setOption` ran). */

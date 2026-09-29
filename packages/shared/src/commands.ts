@@ -56,6 +56,19 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
+import {
+  DaySchema,
+  PriceKeySchema,
+  PriceRowSchema,
+  PriceSchema,
+  TimeZoneSchema,
+  TurnRowSchema,
+  UsageBreakdownSchema,
+  UsageDimensionSchema,
+  UsageFiltersSchema,
+  UsageRangeSchema,
+  UsageSummarySchema,
+} from "./usage.ts";
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
@@ -733,6 +746,57 @@ export const commands = {
     summary: "Install Laya on this Mac through the host helper and download its model (about 850 MB, once)",
     input: Empty,
     output: LayaStatusSchema,
+  },
+
+  // Tokens and cost (5.8, Phase 2c) -------------------------------------------
+  "usage.summary": {
+    risk: "read",
+    summary:
+      "Tokens and cost for today, this week (from Monday), this month and all time, the last 30 days and this month's top tasks. Filter by org, project, agent, account, model or task",
+    input: z.object({
+      filters: UsageFiltersSchema.default({}),
+      /** Days follow this time zone. Default: majhi's own. */
+      tz: TimeZoneSchema.optional(),
+    }),
+    output: UsageSummarySchema,
+  },
+  "usage.breakdown": {
+    risk: "read",
+    summary:
+      "Tokens and cost grouped by org, project, agent, account, model, task or day, for a range or the days from and to (inclusive), with filters",
+    input: z.object({
+      by: UsageDimensionSchema,
+      range: UsageRangeSchema.default("month"),
+      /** First local day, with `to`. Replaces `range`. */
+      from: DaySchema.optional(),
+      to: DaySchema.optional(),
+      filters: UsageFiltersSchema.default({}),
+      tz: TimeZoneSchema.optional(),
+      limit: z.number().int().min(1).max(500).default(50),
+    }),
+    output: UsageBreakdownSchema,
+  },
+  "usage.turns": {
+    risk: "read",
+    summary: "The recorded turns behind the totals, newest first, with filters",
+    input: z.object({
+      filters: UsageFiltersSchema.default({}),
+      limit: z.number().int().min(1).max(500).default(50),
+    }),
+    output: z.array(TurnRowSchema),
+  },
+  "usage.prices": {
+    risk: "read",
+    summary: "The price table in dollars per million tokens: majhi's defaults and the owner's rows",
+    input: Empty,
+    output: z.object({ checked: z.string(), rows: z.array(PriceRowSchema) }),
+  },
+  "usage.setPrice": {
+    risk: "change",
+    summary:
+      "Set the price of a model (dollars per million tokens), or remove the owner's row with price null. New turns use it; recorded turns keep their cost",
+    input: z.object({ model: PriceKeySchema, price: PriceSchema.nullable() }),
+    output: z.object({ checked: z.string(), rows: z.array(PriceRowSchema) }),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

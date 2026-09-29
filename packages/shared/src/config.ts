@@ -3,6 +3,7 @@ import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import { ContextPatchSchema, LimitsPatchSchema, PolicyPatchSchema, ResumePatchSchema } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
+import { PricesConfigSchema } from "./usage.ts";
 
 /** A path in majhi.yaml: absolute, or relative to the owner's home with `~/`. */
 export const ConfigPath = z
@@ -25,6 +26,8 @@ export const MajhiConfigSchema = z.strictObject({
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),
+  /** The owner's rows of the price table (Phase 2c), in dollars per million tokens. */
+  prices: PricesConfigSchema.optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   orgs: z.record(IdSchema, OrgConfigSchema).optional(),
   projects: z.record(IdSchema, ProjectConfigSchema).optional(),
