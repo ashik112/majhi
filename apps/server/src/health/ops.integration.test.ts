@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommandOutput, HostInfo, HostJob, HostMethod } from "@majhi/shared";
@@ -5,6 +6,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { HostLink } from "../host/link.ts";
 import { createMajhiApp } from "../server.ts";
+import { SystemService, UPDATE_WAIT_FILE } from "../system/service.ts";
 import { fakeRuntime } from "../testing/fakeRuntime.ts";
 import { tempDir, testEnv } from "../testing/fixtures.ts";
 
@@ -236,5 +238,72 @@ describe("health.run, health.fix, system.version and system.update", () => {
       state: "manual",
       reason: "An update is already running.",
     });
+  });
+});
+
+describe("Update when they finish", () => {
+  let dir: string;
+  let cleanup: () => Promise<void>;
+  let link: HostLink;
+  let helper: ReturnType<typeof fakeHelper> | undefined;
+  const services: SystemService[] = [];
+  let working = 1;
+
+  const system = () => {
+    const s = new SystemService({
+      hostLink: link,
+      commit: RUNNING,
+      majhiHome: dir,
+      working: () => working,
+      waitPollMs: 5,
+    });
+    services.push(s);
+    return s;
+  };
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 400 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5));
+  };
+
+  beforeEach(async () => {
+    ({ dir, cleanup } = await tempDir());
+    working = 1;
+    link = new HostLink({ pollTimeoutMs: 20 });
+    helper = fakeHelper(link, INFO, { update: { accepted: true } });
+    await until(() => link.isConnected());
+  });
+  afterEach(async () => {
+    for (const s of services.splice(0)) s.close();
+    await helper?.stop();
+    await cleanup();
+  });
+
+  it("keeps waiting across a restart and starts the update once the agents are done", async () => {
+    expect(await system().update("idle")).toEqual({ state: "waiting" });
+    expect(existsSync(join(dir, UPDATE_WAIT_FILE))).toBe(true);
+    // majhi restarts while agents still work: the new server picks the wait up.
+    for (const s of services.splice(0)) s.close();
+    const after = system();
+    expect(await after.restore()).toBe(true);
+    expect(after.waiting).toBe(true);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(helper?.seen.map((j) => j.method)).toEqual([]);
+
+    working = 0;
+    await until(() => (helper?.seen.length ?? 0) > 0);
+    expect(helper?.seen.map((j) => j.method)).toEqual(["update"]);
+    expect(after.waiting).toBe(false);
+    expect(existsSync(join(dir, UPDATE_WAIT_FILE))).toBe(false);
+  });
+
+  it("drops a wait older than a day, and Update now clears a pending one", async () => {
+    await writeFile(join(dir, UPDATE_WAIT_FILE), JSON.stringify({ requestedAt: "2026-01-01T00:00:00.000Z" }));
+    expect(await system().restore(new Date("2026-01-03T00:00:00.000Z"))).toBe(false);
+    expect(existsSync(join(dir, UPDATE_WAIT_FILE))).toBe(false);
+
+    const s = system();
+    await s.update("idle");
+    expect(await s.update("now")).toEqual({ state: "restarting" });
+    expect(s.waiting).toBe(false);
+    expect(existsSync(join(dir, UPDATE_WAIT_FILE))).toBe(false);
   });
 });

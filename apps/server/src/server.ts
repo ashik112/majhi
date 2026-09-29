@@ -60,6 +60,8 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     majhiHome: env.majhiHome,
     working: () => services.runs.turnsInFlight(),
   });
+  // An "Update when they finish" from before a restart goes on waiting.
+  void system.restore().catch(() => undefined);
   const dispatch = createDispatcher(
     createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts, health, system }),
     (name) => services.events.emit(topicsFor(name)),

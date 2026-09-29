@@ -1,6 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type CommandOutput, UPDATE_STATUS_FILE, type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
+import { z } from "zod";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { isUpdateReady } from "./version.ts";
 
@@ -14,6 +15,15 @@ export interface SystemDeps {
   /** How often a waiting update looks again. Default 2 s. */
   waitPollMs?: number;
 }
+
+/**
+ * "Update when they finish", kept on disk so a restart (a crash, `make up`) does not forget it.
+ * Written by majhi only; the helper never reads it.
+ */
+export const UPDATE_WAIT_FILE = "update-wait.json";
+const UpdateWaitSchema = z.object({ requestedAt: z.string() });
+/** A wait older than this is dropped at startup: the owner has long moved on. */
+const WAIT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const NO_HELPER =
   "The host helper is not connected, so majhi cannot rebuild itself from here. Run `make up` in the majhi folder.";
@@ -31,10 +41,47 @@ export class SystemService {
     return this.waiter !== undefined;
   }
 
-  /** Stops a waiting update, for shutdown. */
+  /** Stops watching, for shutdown. A waiting update stays on disk and is picked up again by `restore`. */
   close(): void {
     if (this.waiter !== undefined) clearInterval(this.waiter);
     this.waiter = undefined;
+  }
+
+  /** At startup: goes on waiting when an "Update when they finish" was pending. Returns whether it was. */
+  async restore(now: Date = new Date()): Promise<boolean> {
+    let requestedAt: string;
+    try {
+      const raw: unknown = JSON.parse(await readFile(this.waitFile, "utf8"));
+      requestedAt = UpdateWaitSchema.parse(raw).requestedAt;
+    } catch {
+      return false;
+    }
+    const age = now.getTime() - Date.parse(requestedAt);
+    if (!(age >= 0 && age < WAIT_MAX_AGE_MS)) {
+      await this.dropWait();
+      return false;
+    }
+    this.watch();
+    return true;
+  }
+
+  private get waitFile(): string {
+    return join(this.deps.majhiHome, UPDATE_WAIT_FILE);
+  }
+
+  private async dropWait(): Promise<void> {
+    await rm(this.waitFile, { force: true }).catch(() => undefined);
+  }
+
+  /** Starts the update once no agent is working and the helper can run it (after a restart it reconnects late). */
+  private watch(): void {
+    if (this.waiter !== undefined) return;
+    this.waiter = setInterval(() => {
+      if ((this.deps.working?.() ?? 0) > 0 || this.blocked() !== undefined) return;
+      this.close();
+      void this.start().catch(() => undefined);
+    }, this.deps.waitPollMs ?? 2000);
+    this.waiter.unref();
   }
 
   async version(): Promise<CommandOutput<"system.version">> {
@@ -77,14 +124,8 @@ export class SystemService {
       this.close();
       return this.start();
     }
-    if (this.waiter === undefined) {
-      this.waiter = setInterval(() => {
-        if ((this.deps.working?.() ?? 0) > 0) return;
-        this.close();
-        void this.start().catch(() => undefined);
-      }, this.deps.waitPollMs ?? 2000);
-      this.waiter.unref();
-    }
+    await writeFile(this.waitFile, `${JSON.stringify({ requestedAt: new Date().toISOString() })}\n`);
+    this.watch();
     return { state: "waiting" };
   }
 
@@ -100,6 +141,8 @@ export class SystemService {
     const { hostLink } = this.deps;
     // The helper may have gone away while the update waited.
     const blocked = this.blocked();
+    // Whatever happens next, the wait is over: the server is replaced, or the owner sees why not.
+    await this.dropWait();
     if (blocked !== undefined) return blocked;
     try {
       await hostLink.call("update", {});
