@@ -51,7 +51,7 @@ The owner works for several companies (orgs). Each org gives official Claude and
 | **Root agent** | An agent with scope "anywhere", usually on a personal account. Examples: Dispatcher (routes new tasks), Housekeeper (curates memory, cleans worktrees), Setup (scans the machine, drafts config, organizes projects). Root agents can create tasks and edit config, always with owner approval. |
 | **Workspace root** | A folder the owner picks that holds projects, like `~/Work`. There can be several. majhi scans them for repos and mounts each one into the containers. |
 | **Project** | A git repo under one of the workspace roots, belonging to one org. Has aliases used for parsing ("api", "web"), remotes, the remote used for MRs, and links to other projects. |
-| **Task** | A unit of work. Local by default, optionally mirrored to a tracker. Has a kind (`code`, `ops` or `chat`, see 5.15), a brief, attachments, zero or more task repos, a team, a coordination mode and a status. |
+| **Task** | A unit of work. Local by default, optionally mirrored to a tracker. Has a kind (`code`, `ops` or `chat`, see 5.15), a brief, attachments, zero or more task repos, a team, a coordination mode and a status. Can have a parent task and depend on other tasks (5.4a). |
 | **Task repo** | One repo inside a task: base branch, working branch, worktree path, MR, merge order. |
 | **Room** | The task's conversation: owner messages, agent messages, and system events. |
 | **Run** | One agent's ACP session working on a task. Has checkpoints and token usage. |
@@ -69,6 +69,7 @@ The owner works for several companies (orgs). Each org gives official Claude and
 - `paused` always carries a reason: `limit`, `offline`, `error`, or `owner`, plus the checkpoint to resume from.
 - `review` means the team finished and the reviewer agent approved. The owner decides next.
 - The task list groups these as: **Needs you** (review, paused, mr), **Working** (running), **Up next** (inbox, ready), **Done**.
+- A task waiting on a dependency stays in **Up next** with a "Waiting on #12" chip. Waiting is derived from its links, not a separate status.
 
 ---
 
@@ -326,6 +327,25 @@ projects:
 - Generate `TASK.md` at the task root: brief, repos with branches and paths, team with roles, attachment list with summaries, recalled memory, org rules (merge policy, commit identity). Keep it short. Regenerate when the team or repos change.
 - Attachments: images are passed to agents that support images, and noted in TASK.md. Documents are converted to text once and summarized once, and the summary goes in TASK.md with the full file available on disk. Links are fetched once, stored as markdown in `attachments/`, and summarized the same way.
 
+### 5.4a Parent tasks, child tasks and dependencies
+
+- **One link model.** A task has links of three types: `parent` (it is part of a bigger task), `depends-on` (it waits for another task), and `follow-up` (created from another task, like the fix tasks of an ops task, 5.15). Links are stored in `majhi.db` and shown on both tasks.
+- **Parent and child tasks.**
+  - A task can have one parent. Nesting can go several levels deep.
+  - Each child is a full task: its own room, team, repos, worktrees and branch.
+  - The parent shows its children's progress ("3 of 5 done") and a rollup of their statuses. It moves to `done` when every child is done, unless the owner closes it earlier.
+  - The owner, the boss or a lead agent can split a task into children. Agents do it through `majhi-tasks`, which follows the approval policy (5.16).
+  - The task list nests children under their parent, collapsed by default.
+- **Dependencies.**
+  - `depends-on` points at one or more tasks. Cycles are refused when the link is made.
+  - A task with an unmet dependency does not start. When the last one is met, majhi starts it automatically, subject to the concurrency limits (5.17).
+  - Each link says when the dependency counts as met:
+    - `merged` (default): the dependency's MRs are merged. The waiting task starts from the updated base branch.
+    - `ready`: the dependency reached `review`. The waiting task stacks its branch on the dependency's working branch, and is rebased when that branch changes.
+  - If a dependency is closed without finishing, the waiting task pauses with reason `owner` and asks what to do.
+- **Context for agents.** `TASK.md` lists related tasks in one or two lines each: the parent and its goal, what this task waits on or builds on (with the branch), and its children. Agents do not read other tasks' rooms unless they ask for them.
+- **Commands.** `tasks.link`, `tasks.unlink` and `tasks.split` are commands like any other (5.16), so the UI, the palette, the boss and agents use the same rules.
+
 ### 5.5 Multi-repo MRs and merging
 
 - On approval, push each repo's branch through its SSH alias and open one MR per repo.
@@ -556,6 +576,7 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 ### Phase 2: One agent, one repo, end to end
 - ACP client wrapper, spawning with a clean environment, streaming to the room.
 - Task box with live parsing, task creation, worktree creation, TASK.md generation.
+- Task links from 5.4a in the data model from the start: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
 - Room UI with streaming messages, permission prompts, attachments (images, docs, links).
 - Context budget from 5.13: usage meter per agent, native compaction at the threshold, handoff to a fresh session, `max_turns` rotation.
 - Live control from 5.15: plan and tool calls streamed in the room, "now doing" status, Esc to stop a turn, Stop all, queue or interrupt with a new message, inline permission prompts, slash commands, `@file` mentions. Task kind `chat`.
@@ -571,11 +592,13 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - Connection registry (`kubectl`, `mcp`, `ssh`, `env`, `mail`), secrets in `secrets.age`, Studio Connections tab with Test, per-run injection, `majhi-connections` MCP tool.
 - Permission gate for connection writes, audit log.
 - Task kind `ops`, `REPORT.md` and the Report tab, `majhi-tasks` MCP tool so agents can create linked fix tasks.
+- Agents split tasks into children and add dependencies through `majhi-tasks`. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
 - **Done when:** asked "why is the api down in prod", a root agent investigates with a read-only kubectl connection and New Relic, streams what it is doing, can be stopped midway and resumed, writes a report, and proposes a fix task and a restart that both wait for approval. An org agent cannot use another org's connection.
 
 ### Phase 5: Multi-repo and MRs
 - Multiple task repos, merge order from links, pushing via SSH aliases, MRs on GitHub, GitLab and Bitbucket with sibling links, merge policies.
 - Changes tab with per-repo diffs.
+- `merged` dependencies (5.4a): a waiting task starts when its dependency's MRs are merged.
 - **Done when:** one task changes two repos on two different hosts and ends with two linked MRs merged in order.
 
 ### Phase 6: Memory
