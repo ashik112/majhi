@@ -3,7 +3,7 @@ import { constants, existsSync } from "node:fs";
 import { access, stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
-import { type ConfigState, collapseHome } from "@majhi/shared";
+import { type ConfigState, collapseHome, HostStatusSchema } from "@majhi/shared";
 import { loadConfig } from "../config/load.ts";
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
@@ -24,8 +24,9 @@ const GB = 1_000_000_000;
 const DISK_WARN_BYTES = 5 * GB;
 const DISK_FAIL_BYTES = 1 * GB;
 const TOOL_TIMEOUT_MS = 5_000;
+const HOST_STATUS_TIMEOUT_MS = 3_000;
 
-/** Checks that majhi can run here: config, config folder, git, mounts, SSH agent, disk space. */
+/** Checks that majhi can run here: config, config folder, git, mounts, SSH agent, disk space, host helper. */
 export async function runDoctor(env: ServerEnv): Promise<Check[]> {
   const { state } = await loadConfig(env);
   const groups = await Promise.all([
@@ -35,6 +36,7 @@ export async function runDoctor(env: ServerEnv): Promise<Check[]> {
     checkRoots(state, env.hostHome),
     checkSshAgent().then((c) => [c]),
     checkDisk(state, env.hostHome).then((c) => [c]),
+    checkHostHelper(env.port).then((c) => [c]),
   ]);
   return groups.flat();
 }
@@ -162,4 +164,37 @@ function diskStatus(freeBytes: number): CheckStatus {
   if (freeBytes < DISK_FAIL_BYTES) return "fail";
   if (freeBytes < DISK_WARN_BYTES) return "warn";
   return "pass";
+}
+
+/** Asks the running server, on its own port, whether the host helper is connected. */
+async function checkHostHelper(port: number): Promise<Check> {
+  const name = "Host helper";
+  let body: unknown;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/cmd/host.status`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(HOST_STATUS_TIMEOUT_MS),
+    });
+    if (!res.ok) return { name, status: "warn", detail: `majhi answered ${res.status} to host.status` };
+    body = await res.json();
+  } catch {
+    return { name, status: "warn", detail: "majhi is not running, so the host helper was not checked" };
+  }
+  const status = HostStatusSchema.safeParse(body);
+  if (!status.success) return { name, status: "warn", detail: "majhi sent an invalid host.status answer" };
+  if (!status.data.connected) {
+    return {
+      name,
+      status: "warn",
+      detail: "Not connected, so folder browsing and automatic remounts are off. Run `make up` on the host.",
+    };
+  }
+  const version = status.data.info === undefined ? "" : ` (version ${status.data.info.version})`;
+  const remounts =
+    status.data.info?.canRemount === true
+      ? "automatic remounts are on"
+      : "it cannot run Docker, so remounts need `make up`";
+  return { name, status: "pass", detail: `Connected${version}, ${remounts}` };
 }

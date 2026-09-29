@@ -8,9 +8,13 @@ import {
 import type { z } from "zod";
 import { ConfigConflictError } from "../config/write.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
+import { HostJobError, HostOfflineError } from "../host/link.ts";
 import type { CommandHandler, CommandHandlers, ParsedInput } from "./handlers.ts";
 
-type Failure = { ok: false; status: 400 | 404 | 409 | 500; error: ApiError };
+/** The `error` of a 503 answer: the command needs the host helper and none is connected. */
+const HOST_OFFLINE_ERROR = "host-offline";
+
+type Failure = { ok: false; status: 400 | 404 | 409 | 500 | 503; error: ApiError };
 export type DispatchResult = { ok: true; output: unknown } | Failure;
 
 export type Dispatch = (
@@ -64,6 +68,10 @@ async function run<N extends CommandName>(
       if (err.details.length > 0) error.details = err.details;
       return { ok: false, status: 409, error };
     }
+    if (err instanceof HostOfflineError) {
+      return { ok: false, status: 503, error: { error: HOST_OFFLINE_ERROR, details: [err.message] } };
+    }
+    if (err instanceof HostJobError) return { ok: false, status: 400, error: { error: err.message } };
     return { ok: false, status: 500, error: { error: `${name} failed: ${errorMessage(err)}` } };
   }
 

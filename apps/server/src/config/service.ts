@@ -48,12 +48,28 @@ export class ConfigService {
   /**
    * Starts the history on first use, and commits edits made by hand since the
    * last change, so undoing a command never undoes the owner's own edits.
+   * Lines majhi adds to `.gitignore` later get their own commit.
    */
   private async commitPending(): Promise<void> {
-    const { initialized, created } = await this.history.ensureRepo();
+    const { initialized, changed } = await this.history.ensureRepo();
+    if (initialized) {
+      await this.history.commit({
+        files: [CONFIG_FILE_NAME, ...changed],
+        message: "init: start config history",
+        actor: OWNER,
+      });
+      return;
+    }
+    if (changed.length > 0) {
+      await this.history.commit({
+        files: changed,
+        message: "gitignore: keep new private files out of the history",
+        actor: OWNER,
+      });
+    }
     await this.history.commit({
-      files: [CONFIG_FILE_NAME, ...created],
-      message: initialized ? "init: start config history" : "manual: changes made outside majhi",
+      files: [CONFIG_FILE_NAME],
+      message: "manual: changes made outside majhi",
       actor: OWNER,
     });
   }

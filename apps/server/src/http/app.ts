@@ -5,12 +5,15 @@ import { type ApiError, COMMAND_META_HEADER, type Health } from "@majhi/shared";
 import { Hono } from "hono";
 import type { Dispatch } from "../commands/dispatch.ts";
 import { errorMessage } from "../errors.ts";
+import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
 
 export interface AppDeps {
   version: string;
   /** Built web app. When it has no index.html, `/` explains that instead. */
   webDist: string;
   dispatch: Dispatch;
+  /** The host helper link, served at `/api/host`. */
+  host: HostRoutesDeps;
 }
 
 const NOT_BUILT =
@@ -43,6 +46,8 @@ export function createApp(deps: AppDeps): Hono {
     const result = await deps.dispatch(c.req.param("name"), input, c.req.header(COMMAND_META_HEADER));
     return result.ok ? c.json(result.output) : c.json(result.error, result.status);
   });
+
+  app.route("/api/host", hostRoutes(deps.host));
 
   app.all("/api/*", (c) =>
     c.json({ error: `Not found: ${c.req.method} ${c.req.path}` } satisfies ApiError, 404),

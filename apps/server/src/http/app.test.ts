@@ -62,6 +62,7 @@ describe("HTTP API", () => {
         config: { workspaces: [join(dir, "Work"), join(dir, "Later")], tasksDir: join(dir, "Work/.majhi") },
       },
       unmounted: [join(dir, "Later")],
+      remount: "manual",
       restartCommand: "make up",
     });
 

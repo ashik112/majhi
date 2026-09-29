@@ -82,6 +82,30 @@ describe("ConfigService.setWorkspaces", () => {
     expect(await git(majhiHome, "status", "--porcelain")).toBe("");
   });
 
+  it("adds the lines an older .gitignore lacks, in their own commit, keeping the owner's lines", async () => {
+    await service.setWorkspaces({ workspaces: ["~/Work"] }, change());
+    const old = "accounts/\nagent-homes/\n# mine\nnotes/";
+    await writeFile(join(majhiHome, ".gitignore"), old);
+    await git(majhiHome, "add", ".gitignore");
+    await git(majhiHome, "commit", "--quiet", "-m", "old gitignore");
+
+    await service.setWorkspaces({ workspaces: ["~/Work", "~/personal"] }, change());
+
+    const lines = (await readFile(join(majhiHome, ".gitignore"), "utf8")).split("\n");
+    expect(lines.slice(0, 4)).toEqual(["accounts/", "agent-homes/", "# mine", "notes/"]);
+    expect(lines.filter((l) => l === "accounts/")).toHaveLength(1);
+    expect(new Set(lines)).toEqual(new Set([...GITIGNORE, "# mine", "notes/", ""]));
+    expect((await log("%s")).split("\n").slice(0, 2)).toEqual([
+      "workspaces.set: set workspaces",
+      "gitignore: keep new private files out of the history",
+    ]);
+
+    await mkdir(join(majhiHome, "logs"));
+    await writeFile(join(majhiHome, "logs", "host.log"), "x");
+    await writeFile(join(majhiHome, "host.token"), "secret");
+    expect(await git(majhiHome, "status", "--porcelain")).toBe("");
+  });
+
   it("makes no commit when the content does not change", async () => {
     await service.setWorkspaces({ workspaces: ["~/Work"] }, change());
     const before = await log("%H");

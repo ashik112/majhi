@@ -1,0 +1,181 @@
+import { randomUUID } from "node:crypto";
+import {
+  HOST_POLL_TIMEOUT_MS,
+  type HostInfo,
+  type HostJob,
+  HostJobSchema,
+  type HostMethod,
+  type HostReply,
+  HostResultSchemas,
+  type HostStatus,
+} from "@majhi/shared";
+import type { z } from "zod";
+
+/** A helper that polled this recently still counts as connected between two polls. */
+export const CONNECTED_WINDOW_MS = 35_000;
+/** How long a command waits for the helper to answer a job. */
+export const DEFAULT_CALL_TIMEOUT_MS = 10_000;
+
+export type HostParams<M extends HostMethod> = Extract<HostJob, { method: M }>["params"];
+export type HostResult<M extends HostMethod> = z.infer<(typeof HostResultSchemas)[M]>;
+
+/**
+ * One parser per method. Indexing this mapped type with a generic method keeps
+ * the link between the method and its result type, which indexing
+ * `HostResultSchemas` directly loses.
+ */
+const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult<HostResult<M>> } = {
+  listDirs: (value) => HostResultSchemas.listDirs.safeParse(value),
+  suggestRoots: (value) => HostResultSchemas.suggestRoots.safeParse(value),
+  remount: (value) => HostResultSchemas.remount.safeParse(value),
+};
+
+/** The helper is not connected, or did not answer in time. */
+export class HostOfflineError extends Error {
+  constructor(message = "The host helper is not connected. Run `make up` in the majhi folder to start it.") {
+    super(message);
+    this.name = "HostOfflineError";
+  }
+}
+
+/** The helper ran the job and reported a failure, like a folder that does not exist. */
+export class HostJobError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HostJobError";
+  }
+}
+
+export interface HostLinkOptions {
+  /** How long a poll waits for a job before it ends empty. */
+  pollTimeoutMs?: number;
+  connectedWindowMs?: number;
+  now?: () => number;
+}
+
+interface Waiter {
+  deliver(job: HostJob | undefined): void;
+}
+
+/**
+ * The server's end of the host helper link. The helper cannot be called: it
+ * polls for jobs and posts replies. `call` queues a job and waits for its
+ * reply; `poll` hands the next job to the helper, waiting for one if needed.
+ */
+export class HostLink {
+  private readonly queue: HostJob[] = [];
+  private readonly pending = new Map<string, (reply: HostReply) => void>();
+  private waiter: Waiter | undefined;
+  private lastPollEnd: number | undefined;
+  private lastSeen: number | undefined;
+  private info: HostInfo | undefined;
+  private closed = false;
+  private readonly pollTimeoutMs: number;
+  private readonly connectedWindowMs: number;
+  private readonly now: () => number;
+
+  constructor(options: HostLinkOptions = {}) {
+    this.pollTimeoutMs = options.pollTimeoutMs ?? HOST_POLL_TIMEOUT_MS;
+    this.connectedWindowMs = options.connectedWindowMs ?? CONNECTED_WINDOW_MS;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** Connected while a poll waits, and for a short window after the last one ended. */
+  isConnected(): boolean {
+    if (this.waiter !== undefined) return true;
+    return this.lastPollEnd !== undefined && this.now() - this.lastPollEnd < this.connectedWindowMs;
+  }
+
+  status(): HostStatus {
+    const status: HostStatus = { connected: this.isConnected() };
+    if (this.info !== undefined) status.info = this.info;
+    if (this.lastSeen !== undefined) status.lastSeen = new Date(this.lastSeen).toISOString();
+    return status;
+  }
+
+  /** Sends a job to the helper and resolves with its checked result. */
+  call<M extends HostMethod>(
+    method: M,
+    params: HostParams<M>,
+    timeoutMs = DEFAULT_CALL_TIMEOUT_MS,
+  ): Promise<HostResult<M>> {
+    if (!this.isConnected()) return Promise.reject(new HostOfflineError());
+    const job = HostJobSchema.parse({ id: randomUUID(), method, params });
+    const parse = parseResult[method];
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(job.id);
+        const queued = this.queue.findIndex((j) => j.id === job.id);
+        if (queued !== -1) this.queue.splice(queued, 1);
+        const seconds = Math.round(timeoutMs / 1000);
+        reject(new HostOfflineError(`The host helper did not answer within ${seconds} seconds.`));
+      }, timeoutMs);
+      this.pending.set(job.id, (reply) => {
+        clearTimeout(timer);
+        this.pending.delete(job.id);
+        if (!reply.ok) {
+          reject(new HostJobError(reply.error));
+          return;
+        }
+        const parsed = parse(reply.result);
+        if (parsed.success) resolve(parsed.data);
+        else reject(new HostJobError(`The host helper sent an invalid ${method} result.`));
+      });
+      if (this.waiter !== undefined) this.waiter.deliver(job);
+      else this.queue.push(job);
+    });
+  }
+
+  /**
+   * Called for each poll from the helper. Resolves with the next job, or with
+   * undefined when none arrived in time, when a newer poll took over, when the
+   * request went away, or when the link is closing.
+   */
+  poll(info: HostInfo, signal?: AbortSignal): Promise<HostJob | undefined> {
+    this.info = info;
+    this.lastSeen = this.now();
+    const next = this.queue.shift();
+    if (next !== undefined || this.closed || signal?.aborted === true) {
+      this.lastPollEnd = this.now();
+      return Promise.resolve(next);
+    }
+    this.waiter?.deliver(undefined);
+
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (job: HostJob | undefined): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        if (this.waiter === waiter) this.waiter = undefined;
+        this.lastPollEnd = this.now();
+        this.lastSeen = this.lastPollEnd;
+        resolve(job);
+      };
+      const onAbort = (): void => finish(undefined);
+      const waiter: Waiter = { deliver: finish };
+      const timer = setTimeout(() => finish(undefined), this.pollTimeoutMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiter = waiter;
+    });
+  }
+
+  /** Settles the call waiting for this reply. False when nothing waits for it, like after a timeout. */
+  reply(reply: HostReply): boolean {
+    const settle = this.pending.get(reply.id);
+    if (settle === undefined) return false;
+    settle(reply);
+    return true;
+  }
+
+  /** Ends the waiting poll so the server can stop at once. Later polls end straight away. */
+  close(): void {
+    this.closed = true;
+    this.waiter?.deliver(undefined);
+  }
+
+  get isClosed(): boolean {
+    return this.closed;
+  }
+}

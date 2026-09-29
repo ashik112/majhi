@@ -1,15 +1,30 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Actor } from "@majhi/shared";
-import { exitCode } from "../errors.ts";
+import { errorCode, exitCode } from "../errors.ts";
 
 const run = promisify(execFile);
 
-/** Credentials, databases and caches never enter the config history (SPEC 5.16). */
-export const GITIGNORE = ["accounts/", "agent-homes/", "connections/", "memory/", "*.db", "*.db-*", "cache/"];
+/**
+ * Credentials, databases, caches and the host helper's token, bundle, logs
+ * and runtime files never enter the config history (SPEC 5.16).
+ */
+export const GITIGNORE = [
+  "accounts/",
+  "agent-homes/",
+  "connections/",
+  "memory/",
+  "*.db",
+  "*.db-*",
+  "cache/",
+  "host.token",
+  "bin/",
+  "logs/",
+  "run/",
+];
 
 export const COMMITTER = { name: "majhi", email: "majhi@majhi.local" };
 
@@ -28,17 +43,31 @@ export interface CommitRequest {
 export class ConfigHistory {
   constructor(readonly dir: string) {}
 
-  /** Runs `git init` and writes `.gitignore` when missing. Reports what it did. */
-  async ensureRepo(): Promise<{ initialized: boolean; created: string[] }> {
+  /**
+   * Runs `git init` when needed, and writes `.gitignore`, or appends the lines
+   * it is missing. Reports what it did.
+   */
+  async ensureRepo(): Promise<{ initialized: boolean; changed: string[] }> {
     await mkdir(this.dir, { recursive: true });
     const initialized = !existsSync(join(this.dir, ".git"));
     if (initialized) await this.git(["init", "--quiet", "--initial-branch=main"]);
-    const created: string[] = [];
-    if (!existsSync(join(this.dir, ".gitignore"))) {
-      await writeFile(join(this.dir, ".gitignore"), `${GITIGNORE.join("\n")}\n`);
-      created.push(".gitignore");
-    }
-    return { initialized, created };
+    const changed = (await this.ensureGitignore()) ? [".gitignore"] : [];
+    return { initialized, changed };
+  }
+
+  /** Keeps the owner's own lines and adds the ones majhi needs. True when the file changed. */
+  private async ensureGitignore(): Promise<boolean> {
+    const file = join(this.dir, ".gitignore");
+    const current = await readFile(file, "utf8").catch((err: unknown) => {
+      if (errorCode(err) === "ENOENT") return "";
+      throw err;
+    });
+    const present = new Set(current.split("\n").map((line) => line.trim()));
+    const missing = GITIGNORE.filter((line) => !present.has(line));
+    if (missing.length === 0) return false;
+    const base = current === "" || current.endsWith("\n") ? current : `${current}\n`;
+    await writeFile(file, `${base}${missing.join("\n")}\n`);
+    return true;
   }
 
   /** Stages `files` and commits them. Returns the new commit, or undefined when nothing changed. */
