@@ -1,0 +1,200 @@
+import type { CoordinationMode, HandoffVia, Role } from "@majhi/shared";
+import { OWNER_HANDLE } from "@majhi/shared";
+import type { RoomState } from "./state.ts";
+
+/**
+ * Who works next when an agent ends its turn (SPEC 5.3). Pure: the coordinator reads the task,
+ * the settings and the agent's message, and applies the plan this returns.
+ */
+
+export interface Member {
+  id: string;
+  role: Role;
+}
+
+/** A reviewer's reply, read from its message (`verdictOf`) or asked of the decision provider. */
+export type Verdict = "approved" | "changes" | "unclear";
+
+export interface TurnEnd {
+  mode: CoordinationMode;
+  /** The task's team, lead first. */
+  team: readonly Member[];
+  /** The agent whose turn ended. */
+  from: string;
+  /** Agents its last message mentions, in order, `owner` included. Never `from` itself. */
+  mentions: readonly string[];
+  state: RoomState;
+  limits: { maxAgentTurns: number; reviewRounds: number };
+  /** For the reviewer in the review loop: what it said about the work. */
+  verdict?: Verdict | undefined;
+}
+
+export interface Plan {
+  handoffs: { to: string; via: HandoffVia }[];
+  state: RoomState;
+  /** The loop guard or the round cap stopped the room: pause the task with reason owner and say this. */
+  pause?: string;
+  /** The work goes back to the owner: it was approved, the pipeline finished, or someone asked for them. */
+  toOwner?: string;
+}
+
+/** Pipeline order (5.3): lead, builders, reviewer, tester. Root agents work with the builders. */
+const STAGE_OF: Record<Role, number> = { Lead: 0, Builder: 1, Root: 1, Reviewer: 2, Tester: 3 };
+
+/** The pipeline's stages in order, each the agents of one role, empty stages left out. */
+export function pipelineStages(team: readonly Member[]): string[][] {
+  const stages: string[][] = [[], [], [], []];
+  for (const m of team) stages[STAGE_OF[m.role]]?.push(m.id);
+  return stages.filter((s) => s.length > 0);
+}
+
+/** The builder and reviewer of the review loop: the first of each role, else the first two agents. */
+export function loopPair(team: readonly Member[]): { builder?: string; reviewer?: string } {
+  const reviewer = team.find((m) => m.role === "Reviewer")?.id;
+  const builder =
+    team.find((m) => m.role === "Builder")?.id ??
+    team.find((m) => m.id !== reviewer && m.role !== "Tester")?.id;
+  return {
+    ...(builder === undefined ? {} : { builder }),
+    ...(reviewer === undefined ? {} : { reviewer }),
+  };
+}
+
+/** Who gets the brief when the task starts, and the room state to start from. */
+export function firstTurn(
+  mode: CoordinationMode,
+  team: readonly Member[],
+): { agents: string[]; state: RoomState } {
+  if (mode === "pipeline") {
+    const first = pipelineStages(team)[0] ?? [];
+    return { agents: first, state: { agentTurns: 0, stage: 0, pending: first } };
+  }
+  if (mode === "review-loop") {
+    const { builder } = loopPair(team);
+    const agents = builder === undefined ? team.slice(0, 1).map((m) => m.id) : [builder];
+    return { agents, state: { agentTurns: 0, round: 0 } };
+  }
+  return { agents: team.slice(0, 1).map((m) => m.id), state: { agentTurns: 0 } };
+}
+
+/**
+ * The plan after one finished turn. Every handoff counts toward the loop guard; when the next
+ * ones would pass `maxAgentTurns` since the owner last wrote, nothing is handed on and the room
+ * pauses instead.
+ */
+export function planTurn(input: TurnEnd): Plan {
+  const { mode, team, from, state } = input;
+  const inTeam = new Set(team.map((m) => m.id));
+  const mentioned = input.mentions.filter((m) => m !== from && inTeam.has(m));
+  const ownerAsked = input.mentions.includes(OWNER_HANDLE);
+  let plan: Plan;
+  switch (mode) {
+    case "lead":
+      plan = {
+        handoffs: mentioned.map((to) => ({ to, via: "mention" as const })),
+        state: { ...state },
+      };
+      break;
+    case "pipeline":
+      plan = pipelineTurn(input, ownerAsked);
+      break;
+    case "review-loop":
+      plan = reviewTurn(input, mentioned);
+      break;
+  }
+  if (ownerAsked && plan.toOwner === undefined) plan.toOwner = `@${from} asked for you.`;
+  return guard(plan, input.limits.maxAgentTurns);
+}
+
+function pipelineTurn(input: TurnEnd, ownerAsked: boolean): Plan {
+  const { team, from, state } = input;
+  const stages = pipelineStages(team);
+  const stage = state.stage ?? 0;
+  const current = stages[stage] ?? [];
+  // Someone outside the current step (the owner talked to them): the pipeline does not move.
+  if (!current.includes(from)) return { handoffs: [], state: { ...state } };
+  const pending = (state.pending ?? current).filter((a) => a !== from);
+  if (pending.length > 0) return { handoffs: [], state: { ...state, stage, pending } };
+  // The owner was asked: the next step waits until the owner answers and the agent ends again.
+  if (ownerAsked) return { handoffs: [], state: { ...state, stage, pending: [from] } };
+  const next = stages[stage + 1];
+  if (next === undefined) {
+    return {
+      handoffs: [],
+      state: { ...state, stage: stage + 1, pending: [] },
+      toOwner: "Every step of the pipeline ran.",
+    };
+  }
+  return {
+    handoffs: next.map((to) => ({ to, via: "pipeline" as const })),
+    state: { ...state, stage: stage + 1, pending: next },
+  };
+}
+
+function reviewTurn(input: TurnEnd, mentioned: readonly string[]): Plan {
+  const { team, from, state, limits } = input;
+  const { builder, reviewer } = loopPair(team);
+  const round = state.round ?? 0;
+  if (builder === undefined || reviewer === undefined) {
+    // No pair to alternate between: mentions still work.
+    return { handoffs: mentioned.map((to) => ({ to, via: "mention" as const })), state: { ...state } };
+  }
+  if (from === builder) {
+    return { handoffs: [{ to: reviewer, via: "review-loop" }], state: { ...state, round } };
+  }
+  if (from === reviewer) {
+    const verdict = input.verdict ?? "unclear";
+    if (verdict === "approved") {
+      return { handoffs: [], state: { ...state, round }, toOwner: `@${reviewer} approved the work.` };
+    }
+    if (verdict === "unclear") {
+      return {
+        handoffs: [],
+        state: { ...state, round },
+        toOwner: `@${reviewer} did not say whether the work is approved.`,
+      };
+    }
+    const next = round + 1;
+    if (next >= limits.reviewRounds) {
+      return {
+        handoffs: [],
+        state: { ...state, round: next },
+        pause: `${next} review rounds without approval. Read the last review, then reply to continue.`,
+      };
+    }
+    return { handoffs: [{ to: builder, via: "review-loop" }], state: { ...state, round: next } };
+  }
+  // Another member (a lead, a tester) ended: its mentions route as usual.
+  return { handoffs: mentioned.map((to) => ({ to, via: "mention" as const })), state: { ...state } };
+}
+
+/** The loop guard (5.3): too many agent-to-agent turns without the owner pause the room. */
+function guard(plan: Plan, max: number): Plan {
+  if (plan.handoffs.length === 0) return plan;
+  const turns = plan.state.agentTurns + plan.handoffs.length;
+  if (turns > max) {
+    return {
+      handoffs: [],
+      state: { ...plan.state },
+      pause: `${plan.state.agentTurns} agent turns without you. Paused so agents do not loop. Reply to continue.`,
+    };
+  }
+  return { ...plan, state: { ...plan.state, agentTurns: turns } };
+}
+
+/**
+ * A reviewer's verdict from its own words. The handoff prompt asks it to end with APPROVED or
+ * CHANGES NEEDED; other plain phrasings count too. Undefined when the text says neither, so the
+ * caller can ask the decision provider.
+ */
+export function verdictOf(text: string): "approved" | "changes" | undefined {
+  const t = text.replace(/`[^`]*`/g, " ");
+  if (
+    /\b(changes (are )?needed|request(ed|ing)? changes|needs? (a )?fix(es)?|not approved|(do not|don't|cannot|can't) approve)\b/i.test(
+      t,
+    )
+  )
+    return "changes";
+  if (/\b(approved?|lgtm|looks good to me|ship it)\b/i.test(t)) return "approved";
+  return undefined;
+}

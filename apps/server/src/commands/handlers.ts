@@ -195,6 +195,19 @@ export function createHandlers({
       await services.tasks.remove(input.id, input.force === true);
       return { removed: input.id };
     },
+    "tasks.split": async (input) => {
+      const children = [];
+      for (const c of input.children) {
+        const captured = await services.secretService.capture(c.text);
+        children.push({ ...c, text: captured.text });
+      }
+      return { children: await services.tasks.split({ ...input, children }) };
+    },
+    "team.add": (input) =>
+      services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
+    "team.remove": (input) => services.tasks.removeFromTeam(input.task, input.agent),
+    "team.swap": (input) => services.tasks.swapInTeam(input.task, input.agent, input.with),
+    "team.set": (input) => services.tasks.setOverride(input),
 
     "room.send": async (input) => {
       services.tasks.get(input.task);
@@ -249,6 +262,7 @@ export function createHandlers({
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
+        ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
       };
       await config.setSettings(patch, {
         command: ctx.command,

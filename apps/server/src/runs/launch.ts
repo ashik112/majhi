@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentSession, RunMount, RuntimeOptions } from "@majhi/acp";
-import type { AccountConfig, AgentFrontmatter, Task } from "@majhi/shared";
+import type { AccountConfig, AgentFrontmatter, Task, TeamOverride } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import type { AgentStore } from "../agents/store.ts";
@@ -37,6 +37,19 @@ export async function resolveAgent(
     throw new UserError(`@${fm.id} works in "${fm.scope}" and cannot use the account of "${account.org}".`);
   }
   return { fm, instructions: stored.agent.instructions, account, boss };
+}
+
+/** The agent with the owner's model and effort for one task put in place of its own. */
+export function withOverride(agent: ResolvedAgent, override: TeamOverride | undefined): ResolvedAgent {
+  if (override?.model === undefined && override?.effort === undefined) return agent;
+  return {
+    ...agent,
+    fm: {
+      ...agent.fm,
+      ...(override.model === undefined ? {} : { model: override.model }),
+      ...(override.effort === undefined ? {} : { effort: override.effort }),
+    },
+  };
 }
 
 export interface LaunchDeps {

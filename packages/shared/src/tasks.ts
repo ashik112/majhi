@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema, OrgIdSchema } from "./accounts.ts";
+import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 
 /**
  * Projects, tasks, rooms and runs (SPEC 2, 3.1, 5.1, 5.4, 5.4a, 5.15).
@@ -69,6 +70,11 @@ export const TaskRepoSchema = z.object({
   worktree: z.string().optional(),
   /** True when majhi created the branch; false when the owner named an existing one. */
   createdBranch: z.boolean(),
+  /**
+   * Set when the branch is stacked on a `ready` dependency's working branch (5.4a): that task,
+   * its branch, and the commit of it this branch sits on now. majhi rebases when it moves.
+   */
+  stack: z.object({ task: TaskIdSchema, branch: z.string(), commit: z.string() }).optional(),
 });
 export type TaskRepo = z.infer<typeof TaskRepoSchema>;
 
@@ -112,8 +118,12 @@ export const TaskSchema = z.object({
   /** Absolute path of the task folder. */
   folder: z.string(),
   repos: z.array(TaskRepoSchema),
-  /** Agent ids. Phase 2a runs one agent per task. */
+  /** Agent ids. The first is the lead: owner messages without a mention go to it. */
   team: z.array(IdSchema),
+  /** How the team takes turns (5.3). */
+  mode: CoordinationModeSchema,
+  /** The owner's model, effort and repo choices per agent for this task. */
+  overrides: z.record(IdSchema, TeamOverrideSchema),
   links: z.array(TaskLinkSchema),
   attachments: z.array(AttachmentSchema),
   createdAt: z.string(),
@@ -130,6 +140,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   status: true,
   pausedReason: true,
   team: true,
+  mode: true,
   updatedAt: true,
 }).extend({
   repos: z.array(z.object({ project: IdSchema, branch: z.string() })),
@@ -248,6 +259,18 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     media: z.array(MediaRefSchema).optional(),
   }),
   RoomItemBase.extend({ type: z.literal("thought"), agent: IdSchema, text: z.string() }),
+  /**
+   * One agent woke another (5.3): by @mention, the pipeline's next step or the review loop. `text`
+   * is the message that did it. `queued` while the target is busy; it is sent on its next turn.
+   */
+  RoomItemBase.extend({
+    type: z.literal("handoff"),
+    from: IdSchema,
+    to: IdSchema,
+    via: HandoffViaSchema,
+    text: z.string(),
+    queued: z.boolean(),
+  }),
   RoomItemBase.extend({
     type: z.literal("tool"),
     agent: IdSchema,

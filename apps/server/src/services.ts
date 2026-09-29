@@ -24,6 +24,7 @@ import type { HostLink } from "./host/link.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
+import { RoomCoordinator } from "./rooms/coordinator.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
 import { RunManager } from "./runs/manager.ts";
@@ -200,6 +201,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),
     onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
+    onTurnEnd: (turn) => coordinator.turnEnded(turn),
+    onCheckpoint: (task) => void tasks.restackOnto(task).catch(() => undefined),
     onNetworkError: () => void resilience.networkError().catch(() => undefined),
   });
   runs.recover();
@@ -215,8 +218,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runs,
     room,
     events,
+    decisions,
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
+  });
+  const coordinator = new RoomCoordinator({
+    store,
+    room,
+    runs,
+    tasks,
+    agents: agentStore,
+    config,
+    decisions,
   });
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const resilience = new Resilience({

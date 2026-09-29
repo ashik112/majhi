@@ -1,5 +1,7 @@
 import {
   type Attachment,
+  type CoordinationMode,
+  CoordinationModeSchema,
   type PausedReason,
   type Task,
   type TaskId,
@@ -8,14 +10,27 @@ import {
   TaskSchema,
   type TaskStatus,
   type TaskSummary,
+  type TeamOverride,
+  TeamOverrideSchema,
 } from "@majhi/shared";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
 import type { Db } from "./db.ts";
 import { attachments, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
 
 const TeamSchema = z.array(z.string());
+const OverridesSchema = z.record(z.string(), TeamOverrideSchema);
+
+function parseOverrides(json: string): Record<string, TeamOverride> {
+  try {
+    const parsed = OverridesSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : {};
+  } catch {
+    return {};
+  }
+}
 
 /** A task row with its repos, links and attachments, as the store keeps it. */
 export class TaskRepo {
@@ -45,6 +60,8 @@ export class TaskRepo {
           pausedReason: task.pausedReason ?? null,
           folder: task.folder,
           team: JSON.stringify(task.team),
+          mode: task.mode,
+          overrides: JSON.stringify(task.overrides),
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
         })
@@ -60,6 +77,9 @@ export class TaskRepo {
             worktree: r.worktree ?? null,
             createdBranch: r.createdBranch,
             pos,
+            stackTask: r.stack?.task ?? null,
+            stackBranch: r.stack?.branch ?? null,
+            stackCommit: r.stack?.commit ?? null,
           })
           .run();
       });
@@ -108,8 +128,13 @@ export class TaskRepo {
         branch: r.branch,
         ...(r.worktree === null ? {} : { worktree: r.worktree }),
         createdBranch: r.createdBranch,
+        ...(r.stackTask === null || r.stackBranch === null || r.stackCommit === null
+          ? {}
+          : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
       })),
       team: TeamSchema.parse(JSON.parse(row.team)),
+      mode: CoordinationModeSchema.catch("lead").parse(row.mode),
+      overrides: parseOverrides(row.overrides),
       links: links.map((l) => ({
         type: TaskLinkTypeSchema.parse(l.type),
         task: l.other,
@@ -164,6 +189,7 @@ export class TaskRepo {
         kind: TaskSchema.shape.kind.parse(row.kind),
         status: TaskSchema.shape.status.parse(row.status),
         team: TeamSchema.parse(JSON.parse(row.team)),
+        mode: CoordinationModeSchema.catch("lead").parse(row.mode),
         updatedAt: row.updatedAt,
         repos: byTask.get(row.id) ?? [],
         links: own.map(toLink),
@@ -279,6 +305,63 @@ export class TaskRepo {
       .set({ team: JSON.stringify(team), updatedAt: at })
       .where(eq(tasks.id, id))
       .run();
+  }
+
+  setMode(id: string, mode: CoordinationMode, at: string): void {
+    this.db.update(tasks).set({ mode, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  setOverrides(id: string, overrides: Record<string, TeamOverride>, at: string): void {
+    this.db
+      .update(tasks)
+      .set({ overrides: JSON.stringify(overrides), updatedAt: at })
+      .where(eq(tasks.id, id))
+      .run();
+  }
+
+  roomState(id: string): RoomState {
+    const row = this.db.select({ v: tasks.roomState }).from(tasks).where(eq(tasks.id, id)).get();
+    return parseRoomState(row?.v ?? "{}");
+  }
+
+  setRoomState(id: string, state: RoomState): void {
+    this.db
+      .update(tasks)
+      .set({ roomState: JSON.stringify(state) })
+      .where(eq(tasks.id, id))
+      .run();
+  }
+
+  /** Records the dependency branch a repo is stacked on, and the commit it sits on now. */
+  setStack(task: string, project: string, stack: { task: string; branch: string; commit: string }): void {
+    this.db
+      .update(taskRepos)
+      .set({ stackTask: stack.task, stackBranch: stack.branch, stackCommit: stack.commit })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** Changes the base branch a repo's worktree will be made from. Only before the worktree exists. */
+  setBase(task: string, project: string, base: string): void {
+    this.db
+      .update(taskRepos)
+      .set({ base })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** Repos of other tasks stacked on this task's branches. */
+  stackedOn(task: string): { task: string; project: string; branch: string; commit: string }[] {
+    return this.db
+      .select()
+      .from(taskRepos)
+      .where(eq(taskRepos.stackTask, task))
+      .all()
+      .flatMap((r) =>
+        r.stackBranch === null || r.stackCommit === null
+          ? []
+          : [{ task: r.task, project: r.project, branch: r.stackBranch, commit: r.stackCommit }],
+      );
   }
 
   /** Renames an agent in every task team. Returns the ids of the tasks that changed. */

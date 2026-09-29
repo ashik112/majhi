@@ -9,6 +9,8 @@ export type QueueEntry =
   | { kind: "brief" }
   /** An owner message stored in the room. */
   | { kind: "owner"; itemId: string }
+  /** Another agent handed work over (5.3): a handoff item stored in the room. */
+  | { kind: "handoff"; itemId: string }
   /** Continue a turn that was cut (restart, crash, offline, wake). */
   | { kind: "resume" }
   /** Continue after a recovery compaction, in the same turn. */
@@ -44,6 +46,8 @@ export class AgentRun {
   closing = false;
   exited = false;
   turning = false;
+  /** The loop sent its last prompt and is handing back: not working any more, though `turning` is still set. */
+  settling = false;
   cancelBeforePrompt = false;
   needsBrief = false;
   /** Stop reason of the last finished turn. */
@@ -100,6 +104,8 @@ export class AgentRun {
   freshDue = false;
   /** The room already said this run waits for a slot. */
   queuedNoted = false;
+  /** Aborts a wait for another agent's worktree lock (5.3). */
+  lockWait: AbortController | undefined;
 
   constructor(
     readonly task: Task["id"],

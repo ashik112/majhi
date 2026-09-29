@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ContextPatchSchema, ResumePatchSchema } from "./settings.ts";
+import { ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -89,6 +89,10 @@ export const OrgConfigSchema = z.looseObject({
   context: ContextPatchSchema.pick({ compact_at: true }).optional(),
   /** Overrides whether this org's runs resume on their own (5.7). */
   resume: ResumePatchSchema.optional(),
+  /** Overrides the loop guard for this org's tasks (5.3). */
+  rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
+  /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
+  team: z.array(IdSchema).optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 

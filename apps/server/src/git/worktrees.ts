@@ -20,6 +20,11 @@ export interface WorktreeRequest {
   /** Where the worktree goes. Must not exist, or be empty. */
   path: string;
   /**
+   * The base is a local branch of this checkout (another task's working branch, 5.4a): no fetch,
+   * and the new branch starts at its local tip.
+   */
+  localBase?: boolean;
+  /**
    * Called once when a fetch fails for lack of SSH access. Asks the host helper to load the
    * owner's keys again; resolves true when that was possible, and the fetch is then retried.
    */
@@ -71,7 +76,7 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   await requireFreePath(path);
 
   const warnings: string[] = [];
-  const remote = await remoteOf(source);
+  const remote = req.localBase === true ? undefined : await remoteOf(source);
   if (remote !== undefined) {
     const failed = await fetchWithKeys(source, remote, base, req.reloadKeys);
     if (failed !== undefined) {
@@ -179,6 +184,48 @@ async function isWorktreeOf(path: string, branch: string): Promise<boolean> {
 async function sameDir(a: string, b: string): Promise<boolean> {
   const [x, y] = await Promise.all([stat(a), stat(b)]);
   return x.ino === y.ino && x.dev === y.dev;
+}
+
+export type RestackResult =
+  | { status: "rebased"; commit: string }
+  | { status: "current" }
+  | { status: "skipped"; reason: string }
+  | { status: "conflict"; files: string[] };
+
+/**
+ * Moves a stacked branch onto the new tip of the branch it builds on (5.4a): `git rebase --onto
+ * <new tip> <old base> <branch>` in the worktree. Skipped when the worktree has uncommitted
+ * changes. On a conflict the rebase is aborted, so the worktree is left as it was.
+ */
+export async function restack(input: {
+  worktree: string;
+  branch: string;
+  /** The branch it is stacked on, and the commit of it the branch sits on now. */
+  onto: string;
+  from: string;
+  /** Who the rebased commits are committed by. */
+  identity: { name: string; email: string };
+}): Promise<RestackResult> {
+  const { worktree, branch, onto, from } = input;
+  const who = ["-c", `user.name=${input.identity.name}`, "-c", `user.email=${input.identity.email}`];
+  return queue.run(worktree, async () => {
+    const tip = (await git(worktree, ["rev-parse", `${onto}^{commit}`])).trim();
+    if (tip === from) return { status: "current" };
+    const dirty = await uncommitted(worktree);
+    if (dirty.length > 0) return { status: "skipped", reason: "it has uncommitted changes" };
+    try {
+      await git(worktree, [...who, "rebase", "--quiet", "--onto", tip, from, branch]);
+      return { status: "rebased", commit: tip };
+    } catch (err) {
+      const files = (await git(worktree, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "");
+      await git(worktree, ["rebase", "--abort"]).catch(() => undefined);
+      if (files.length === 0) throw err;
+      return { status: "conflict", files };
+    }
+  });
 }
 
 /** Worktrees with uncommitted changes, from the paths given. Missing folders count as clean. */

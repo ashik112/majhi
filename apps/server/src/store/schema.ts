@@ -18,6 +18,12 @@ export const tasks = sqliteTable("tasks", {
   team: text("team").notNull(),
   /** Start the task by itself once its dependencies are met (5.4a). */
   startWhenReady: integer("start_when_ready", { mode: "boolean" }).notNull().default(false),
+  /** Coordination mode (5.3). */
+  mode: text("mode").notNull().default("lead"),
+  /** JSON: agent id to the owner's model, effort and repos for this task. */
+  overrides: text("overrides").notNull().default("{}"),
+  /** JSON: the room's turn counters (loop guard, pipeline step, review round). */
+  roomState: text("room_state").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -33,6 +39,10 @@ export const taskRepos = sqliteTable(
     worktree: text("worktree"),
     createdBranch: integer("created_branch", { mode: "boolean" }).notNull(),
     pos: integer("pos").notNull(),
+    /** A `ready` dependency this branch is stacked on, its branch and the commit it sits on (5.4a). */
+    stackTask: text("stack_task"),
+    stackBranch: text("stack_branch"),
+    stackCommit: text("stack_commit"),
   },
   (t) => [primaryKey({ columns: [t.task, t.project] })],
 );

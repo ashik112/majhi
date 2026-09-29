@@ -186,6 +186,20 @@ CREATE INDEX turns_task ON turns (task);
 CREATE INDEX turns_org_at ON turns (org, at);
 `,
   },
+  {
+    // Teams in a room (Phase 3): how the team takes turns, the owner's per-task agent choices,
+    // the room's turn counters, and branches stacked on a `ready` dependency.
+    id: 50,
+    name: "coordination modes, team overrides and stacked branches",
+    sql: `
+ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'lead';
+ALTER TABLE tasks ADD COLUMN overrides TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE tasks ADD COLUMN room_state TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE task_repos ADD COLUMN stack_task TEXT;
+ALTER TABLE task_repos ADD COLUMN stack_branch TEXT;
+ALTER TABLE task_repos ADD COLUMN stack_commit TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -24,6 +24,8 @@ export class ItemMapper {
   private readonly media = new Map<string, MediaRef[]>();
   private readonly tools = new Map<string, ToolPayload>();
   private plan: PlanEntries = [];
+  /** Key of the agent message this turn wrote last: its final message (5.3). */
+  private lastMessage: string | undefined;
 
   constructor(
     private readonly agent: string,
@@ -34,6 +36,12 @@ export class ItemMapper {
 
   beginTurn(): void {
     this.turn++;
+    this.lastMessage = undefined;
+  }
+
+  /** The text of the turn's last agent message, or empty when it wrote none. */
+  finalText(): string {
+    return this.lastMessage === undefined ? "" : (this.text.get(this.lastMessage) ?? "");
   }
 
   apply(event: SessionEvent): void {
@@ -83,6 +91,7 @@ export class ItemMapper {
     const key = `${this.turn}:${tag}:${messageId}`;
     const text = (this.text.get(key) ?? "") + chunk;
     this.text.set(key, text);
+    if (type === "agent") this.lastMessage = key;
     const media = type === "agent" ? this.media.get(key) : undefined;
     this.sink.post(
       `${this.agent}:${this.run}:${key}`,
@@ -143,6 +152,19 @@ export function trimContent(content: ToolContent): ToolContent {
 }
 
 type OwnerPayload = Extract<RoomPayload, { type: "owner" }>;
+type HandoffPayload = Extract<RoomPayload, { type: "handoff" }>;
+
+/** A handoff item's own fields, to write it back. */
+export function handoffPayload(item: Extract<RoomItem, { type: "handoff" }>): HandoffPayload {
+  return {
+    type: "handoff",
+    from: item.from,
+    to: item.to,
+    via: item.via,
+    text: item.text,
+    queued: item.queued,
+  };
+}
 type PermissionPayload = Extract<RoomPayload, { type: "permission" }>;
 
 /** An owner item's own fields with some replaced, to write it back. */

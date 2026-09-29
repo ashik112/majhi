@@ -18,6 +18,8 @@ function task(id: string, patch: Partial<Task> = {}): Task {
       { project: "acme-web", source: "/w/web", base: "develop", branch: "feat/x", createdBranch: false },
     ],
     team: ["builder"],
+    mode: "lead",
+    overrides: {},
     links: [{ type: "depends-on", task: "ACME-1", when: "merged" }],
     attachments: [{ id: "a1", kind: "link", name: "Spec", url: "https://e.com" }],
     createdAt: "2026-01-01T00:00:00.000Z",

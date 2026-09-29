@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@majhi/acp";
-import type { OptionValue, Role } from "@majhi/shared";
+import type { DecideRequest, DecisionRecord, DecisionResult, OptionValue, Role } from "@majhi/shared";
 
 /**
  * What the run manager asks of the decision provider (SPEC 5.12). The decision
@@ -49,6 +49,15 @@ export interface Decisions {
    */
   attachTool(task: string, agent: string): { token: string; server: McpServerSpec } | undefined;
   revoke(token: string): void;
+  /**
+   * Runs the chain on typed questions and records the decision on the task (5.12). Rooms use it
+   * for the default team of a new task, whether a message needs the owner, and a review verdict.
+   * Resolves undefined when there is no provider at all.
+   */
+  decide(
+    request: DecideRequest,
+    use: { use: DecisionRecord["use"]; task?: string; agent?: string },
+  ): Promise<DecisionResult | undefined>;
 }
 
 /** Used until the decision provider is wired: never picks, attaches nothing. */
@@ -56,4 +65,5 @@ export const noDecisions: Decisions = {
   pickModel: async () => undefined,
   attachTool: () => undefined,
   revoke: () => {},
+  decide: async () => undefined,
 };

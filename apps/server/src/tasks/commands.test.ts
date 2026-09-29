@@ -62,6 +62,7 @@ describe("tasks.create", () => {
         org: "acme",
         status: "inbox",
         team: ["acme-builder"],
+        mode: "lead",
         updatedAt: task.updatedAt,
         repos: [{ project: "acme-api", branch: "task/acm-1-add-a-health-endpoint-to-api" }],
         working: [],

@@ -1,5 +1,5 @@
 import { type RoomItem, RoomItemSchema, type TaskId } from "@majhi/shared";
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
 import { roomItems } from "./schema.ts";
@@ -74,7 +74,7 @@ export class RoomRepo {
     return { items: rows.slice(0, limit).map(toItem), more: rows.length > limit };
   }
 
-  /** Owner items waiting for the agent's next turn, in the order they were sent. */
+  /** Owner messages and handoffs waiting for the agent's next turn, in the order they were sent. */
   queuedFor(task: string, agent: string): RoomItem[] {
     return this.db
       .select()
@@ -82,7 +82,7 @@ export class RoomRepo {
       .where(
         and(
           eq(roomItems.task, task),
-          eq(roomItems.type, "owner"),
+          inArray(roomItems.type, ["owner", "handoff"]),
           sql`json_extract(${roomItems.payload}, '$.queued') = 1`,
           sql`coalesce(json_extract(${roomItems.payload}, '$.to'), '') = ${agent}`,
         ),

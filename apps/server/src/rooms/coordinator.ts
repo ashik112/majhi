@@ -1,0 +1,185 @@
+import { randomUUID } from "node:crypto";
+import {
+  type AgentFrontmatter,
+  canWorkIn,
+  type DecisionResult,
+  OWNER_HANDLE,
+  parseMentions,
+  type Task,
+  type TaskId,
+} from "@majhi/shared";
+import { isBossChat } from "../admin/boss.ts";
+import type { AgentStore } from "../agents/store.ts";
+import type { ConfigService } from "../config/service.ts";
+import type { Decisions } from "../decisions/api.ts";
+import type { RoomService } from "../room/service.ts";
+import type { RunManager } from "../runs/manager.ts";
+import type { Store } from "../store/index.ts";
+import type { TaskService } from "../tasks/service.ts";
+import { loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
+
+/** Below this a verdict or a "needs the owner" answer from the decision provider is not used. */
+const DECISION_FLOOR = 0.6;
+/** How much of a message the decision provider reads. */
+const STATE_MAX = 2000;
+
+export interface CoordinatorDeps {
+  store: Store;
+  room: RoomService;
+  runs: RunManager;
+  tasks: TaskService;
+  agents: AgentStore;
+  config: ConfigService;
+  decisions?: Decisions | undefined;
+}
+
+/**
+ * Teams in a room (SPEC 5.3). When an agent ends a turn, reads the @mentions in its final message,
+ * adds mentioned agents that may join, works out who goes next for the task's mode, and hands the
+ * work on with a handoff prompt. Stops the room when the loop guard or the review round cap says
+ * so. Asks the decision provider only when the words alone do not say (a reviewer's verdict,
+ * whether a message needs the owner).
+ */
+export class RoomCoordinator {
+  constructor(private readonly deps: CoordinatorDeps) {}
+
+  async turnEnded(turn: { task: string; agent: string; text: string }): Promise<void> {
+    const { store, runs } = this.deps;
+    let task = store.tasks.get(turn.task);
+    if (task === undefined || task.status !== "running" || isBossChat(task)) return;
+    const text = turn.text.trim();
+    const agents = await this.frontmatters();
+    const mentions = parseMentions(
+      text,
+      agents.map((a) => a.id),
+    ).filter((m) => m !== turn.agent);
+
+    // An agent mentioned from outside the team joins when it may work in the org.
+    for (const m of mentions) {
+      if (m === OWNER_HANDLE || task.team.includes(m)) continue;
+      const fm = agents.find((a) => a.id === m);
+      if (fm !== undefined && canWorkIn(fm, task.org)) {
+        task = await this.deps.tasks.addToTeam(task.id, m, { by: turn.agent });
+      } else {
+        this.say(
+          task.id,
+          "warn",
+          `@${turn.agent} mentioned @${m}, who cannot work in ${task.org ?? "a task without an org"}. Add it to the team if it should help.`,
+        );
+      }
+    }
+
+    const team = members(task, agents);
+    const role = team.find((m) => m.id === turn.agent)?.role;
+    const verdict = await this.verdict(task, turn.agent, role, text, mentions);
+    const settings = await this.deps.config.settings();
+    const org = task.org === undefined ? undefined : (await this.deps.config.sections()).orgs[task.org];
+    const plan = planTurn({
+      mode: task.mode,
+      team,
+      from: turn.agent,
+      mentions,
+      state: store.tasks.roomState(task.id),
+      limits: {
+        maxAgentTurns: org?.rooms?.max_agent_turns ?? settings.rooms.max_agent_turns,
+        reviewRounds: settings.rooms.review_rounds,
+      },
+      verdict,
+    });
+    store.tasks.setRoomState(task.id, plan.state);
+
+    if (plan.pause !== undefined) {
+      // Not awaited: stopping waits for this agent's loop, which is waiting for this call.
+      void this.deps.tasks.pauseForOwner(task.id, plan.pause).catch(() => undefined);
+      return;
+    }
+    for (const h of plan.handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    if (plan.toOwner !== undefined) {
+      this.say(task.id, "info", `${plan.toOwner} Over to you.`);
+      return;
+    }
+    // Lead delegates: in a team, a message nobody else is woken by may still be for the owner.
+    if (task.mode === "lead" && plan.handoffs.length === 0 && task.team.length > 1 && text !== "") {
+      const others = runs.working(task.id).filter((a) => a !== turn.agent);
+      if (others.length > 0 && (await this.needsOwner(task, turn.agent, text))) {
+        this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
+      }
+    }
+  }
+
+  /**
+   * What a reviewer said about the work: in the review loop always, and in lead mode when it woke
+   * nobody (so the owner hears that it approved). The words first, then the decision provider.
+   */
+  private async verdict(
+    task: Task,
+    agent: string,
+    role: Member["role"] | undefined,
+    text: string,
+    mentions: readonly string[],
+  ): Promise<Verdict | undefined> {
+    const agents = members(task, await this.frontmatters());
+    const isLoopReviewer = task.mode === "review-loop" && loopPair(agents).reviewer === agent;
+    if (!isLoopReviewer && !(task.mode === "lead" && role === "Reviewer" && mentions.length === 0))
+      return undefined;
+    const said = verdictOf(text);
+    if (said !== undefined) return said;
+    if (!isLoopReviewer) return undefined;
+    const answer = await this.ask(task, agent, text, {
+      approved: {
+        type: "noul",
+        instructions: "The reviewer approves the work and asks for no more changes.",
+      },
+    });
+    if (answer === undefined) return "unclear";
+    const a = answer.answers.approved;
+    if (a === undefined || a.confidence < DECISION_FLOOR) return "unclear";
+    return a.value === true ? "approved" : "changes";
+  }
+
+  private async needsOwner(task: Task, agent: string, text: string): Promise<boolean> {
+    const answer = await this.ask(task, agent, text, {
+      owner: {
+        type: "noul",
+        instructions: "The message asks the owner a question, or needs the owner to decide or do something.",
+      },
+    });
+    const a = answer?.answers.owner;
+    return a !== undefined && a.value === true && a.confidence >= DECISION_FLOOR;
+  }
+
+  private async ask(
+    task: Task,
+    agent: string,
+    text: string,
+    questions: Parameters<Decisions["decide"]>[0]["questions"],
+  ): Promise<DecisionResult | undefined> {
+    return this.deps.decisions
+      ?.decide(
+        { state: `Message from @${agent}:\n${text.slice(0, STATE_MAX)}`, questions },
+        {
+          use: "routing",
+          task: task.id,
+          agent,
+        },
+      )
+      .catch(() => undefined);
+  }
+
+  private async frontmatters(): Promise<AgentFrontmatter[]> {
+    return (await this.deps.agents.list()).flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
+  }
+
+  private say(task: string, level: "info" | "warn", text: string): void {
+    this.deps.room.post(task as TaskId, `${level}:${randomUUID()}`, { type: "system", level, text });
+  }
+}
+
+function members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
+  return task.team.map((id) => ({ id, role: agents.find((a) => a.id === id)?.role ?? "Builder" }));
+}
+
+function firstLine(text: string): string {
+  const line = text.split("\n").find((l) => l.trim() !== "") ?? text;
+  return line.length > 200 ? `${line.slice(0, 199)}...` : line;
+}

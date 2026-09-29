@@ -40,11 +40,13 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import { CoordinationModeSchema } from "./rooms.ts";
 import {
   ContextPatchSchema,
   LimitsPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
+  RoomPatchSchema,
   SettingsSchema,
 } from "./settings.ts";
 import {
@@ -419,6 +421,10 @@ export const commands = {
       kind: TaskKindSchema.optional(),
       /** Overrides the default agent. */
       agent: IdSchema.optional(),
+      /** The whole team, lead first. Overrides @mentions and the default team. */
+      team: z.array(IdSchema).min(1).max(12).optional(),
+      /** How the team takes turns. Default: from the team the decision provider picked, else `lead`. */
+      mode: CoordinationModeSchema.optional(),
       /** Upload ids from POST /api/uploads. */
       attachments: z.array(z.string()).max(20).default([]),
       start: z.boolean(),
@@ -451,6 +457,72 @@ export const commands = {
       brief: z.string().max(100_000).optional(),
       /** Gives the task to another agent. Refused while an agent of the task is working. */
       agent: IdSchema.optional(),
+      /** How the team takes turns (5.3). */
+      mode: CoordinationModeSchema.optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.split": {
+    risk: "change",
+    summary:
+      "Split a task into child tasks. Each child can wait for earlier children (dependsOn: their positions in the list, from 0). Children start when the owner starts them, or with start",
+    input: z.object({
+      task: TaskIdSchema,
+      children: z
+        .array(
+          z.object({
+            /** Task box text for the child: what to do, which repos. */
+            text: z.string().trim().min(1).max(20_000),
+            /** Positions of earlier children this one waits for. */
+            dependsOn: z.array(z.number().int().min(0).max(19)).max(20).default([]),
+            /** When a dependency counts as met. `ready` stacks this child's branch on the dependency's. */
+            when: z.enum(["merged", "ready"]).optional(),
+            agent: IdSchema.optional(),
+          }),
+        )
+        .min(1)
+        .max(20),
+      /** Start the children that do not wait, and let the others start when they are free. */
+      start: z.boolean().default(false),
+    }),
+    output: z.object({ children: z.array(TaskSchema) }),
+  },
+
+  // Teams (5.3) ---------------------------------------------------------------
+  "team.add": {
+    risk: "change",
+    summary: "Add an agent to a task's team. It must be able to work in the task's org",
+    input: z.object({
+      task: TaskIdSchema,
+      agent: IdSchema,
+      /** Make it the lead: first in the team. */
+      lead: z.boolean().optional(),
+    }),
+    output: TaskSchema,
+  },
+  "team.remove": {
+    risk: "change",
+    summary: "Remove an agent from a task's team. Its session closes",
+    input: z.object({ task: TaskIdSchema, agent: IdSchema }),
+    output: TaskSchema,
+  },
+  "team.swap": {
+    risk: "change",
+    summary: "Replace an agent in a task's team with another, in the same place. The old session closes",
+    input: z.object({ task: TaskIdSchema, agent: IdSchema, with: IdSchema }),
+    output: TaskSchema,
+  },
+  "team.set": {
+    risk: "change",
+    summary:
+      "Set an agent's model, effort or repos for this task only. null clears a value. A change applies from its next session",
+    input: z.object({
+      task: TaskIdSchema,
+      agent: IdSchema,
+      model: z.string().trim().min(1).nullable().optional(),
+      effort: z.string().trim().min(1).nullable().optional(),
+      /** Projects the agent edits in this task; null: every repo. */
+      repos: z.array(IdSchema).nullable().optional(),
     }),
     output: TaskSchema,
   },
@@ -612,17 +684,19 @@ export const commands = {
   // Settings (5.7, 5.13, 5.16, 5.17) ------------------------------------------
   "settings.get": {
     risk: "read",
-    summary: "Context budget, limits, resume and approval policy, with defaults applied",
+    summary: "Context budget, limits, resume, room and approval policy settings, with defaults applied",
     input: Empty,
     output: SettingsSchema,
   },
   "settings.set": {
     risk: "change",
-    summary: "Change context budget, limits or resume settings. Policy changes use policy.set",
+    summary:
+      "Change context budget, limits, resume or room settings (loop guard, review rounds). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
+      rooms: RoomPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },

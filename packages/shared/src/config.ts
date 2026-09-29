@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
-import { ContextPatchSchema, LimitsPatchSchema, PolicyPatchSchema, ResumePatchSchema } from "./settings.ts";
+import {
+  ContextPatchSchema,
+  LimitsPatchSchema,
+  PolicyPatchSchema,
+  ResumePatchSchema,
+  RoomPatchSchema,
+} from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 import { PricesConfigSchema } from "./usage.ts";
 
@@ -23,6 +29,8 @@ export const MajhiConfigSchema = z.strictObject({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  /** Teams in a room: the loop guard and review rounds (5.3). */
+  rooms: RoomPatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),

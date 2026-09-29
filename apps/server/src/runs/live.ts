@@ -42,7 +42,9 @@ export class RunLive {
 
   /** The owner's messages waiting for the agent's next turn. majhi's own entries do not count. */
   refreshQueued(run: AgentRun): void {
-    const queued = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief").length;
+    const queued = run.queue.filter(
+      (e) => e.kind === "owner" || e.kind === "brief" || e.kind === "handoff",
+    ).length;
     if (run.live.queued !== queued) this.set(run, { queued });
   }
 

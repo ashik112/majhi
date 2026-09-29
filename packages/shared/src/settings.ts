@@ -66,6 +66,20 @@ export const ResumeSettingsSchema = z.strictObject({
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
 export const ResumePatchSchema = z.strictObject({ auto: z.boolean() }).partial();
 
+/** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
+const roomFields = {
+  /** Agent-to-agent turns without an owner message before the task pauses and asks (loop guard). */
+  max_agent_turns: z.number().int().min(1).max(200),
+  /** Rounds of the build and review loop before it stops and asks the owner. */
+  review_rounds: z.number().int().min(1).max(50),
+};
+export const RoomSettingsSchema = z.strictObject({
+  max_agent_turns: roomFields.max_agent_turns.default(12),
+  review_rounds: roomFields.review_rounds.default(5),
+});
+export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
+export const RoomPatchSchema = z.strictObject(roomFields).partial();
+
 /** How the boss's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
   /** Runs without asking. */
@@ -103,6 +117,7 @@ export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
   limits: LimitsSettingsSchema,
   resume: ResumeSettingsSchema,
+  rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

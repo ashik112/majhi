@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
-import type { Attachment, RoomItem, Task } from "@majhi/shared";
+import type { Attachment, HandoffVia, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
@@ -9,10 +9,13 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
+import { handoffPrompt } from "../rooms/handoff.ts";
+import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
+import { diffStat } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
@@ -22,10 +25,10 @@ import {
   needsCompaction,
   rotationDue,
 } from "./context.ts";
-import { checkpointTurn } from "./durable.ts";
-import { freshPrompt } from "./handoff.ts";
-import { ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
-import { launch, resolveAgent } from "./launch.ts";
+import { checkpointRepos, checkpointTurn } from "./durable.ts";
+import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
+import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
+import { launch, resolveAgent, withOverride } from "./launch.ts";
 import { Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
@@ -59,6 +62,13 @@ export interface RunDeps {
   usage?: UsageRecorder;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
+  /**
+   * An agent ended a turn by itself (stop reason end_turn) with this final message. The room
+   * routes its @mentions (5.3) before the task can count as idle, so this is awaited.
+   */
+  onTurnEnd?: (turn: { task: string; agent: string; text: string }) => Promise<void>;
+  /** After every checkpoint of a task: branches stacked on it may need a rebase. */
+  onCheckpoint?: (task: string) => void;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
   onIdle?: (task: string) => void;
   /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
@@ -85,6 +95,8 @@ export class RunManager {
   private readonly live: RunLive;
   private readonly permissions: PermissionFlow;
   private readonly compaction: Compaction;
+  /** One lock per worktree: two agents never edit one worktree at the same time (5.3). */
+  readonly locks = new WorktreeLocks();
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -121,10 +133,12 @@ export class RunManager {
     return [...this.runs.values()].some((r) => r.agent === agent && WORKING.has(r.live.status));
   }
 
-  /** Agents of the task that are queued, starting, working or waiting. */
+  /** Agents of the task that are queued, starting, working or waiting, or whose loop is about to send. */
   working(task: string): string[] {
     return [...this.runs.values()]
-      .filter((r) => r.task === task && WORKING.has(r.live.status))
+      .filter(
+        (r) => r.task === task && (WORKING.has(r.live.status) || (r.turning && !r.closing && !r.settling)),
+      )
       .map((r) => r.agent);
   }
 
@@ -140,12 +154,14 @@ export class RunManager {
    * when it was sent before. A paused or cut run continues from where it stopped. Returns at
    * once: the run streams into the room.
    */
-  startTask(task: Task, agent: string): void {
+  startTask(task: Task, agent: string, options: { ownBrief?: boolean } = {}): void {
     const run = this.runFor(task.id, agent);
     const { room } = this.deps;
+    // Several agents start together (a pipeline's first step): each after the first gets its own brief.
+    const briefId = options.ownBrief === true ? `${BRIEF_ITEM_ID}:${agent}` : BRIEF_ITEM_ID;
     // The boss chat has no brief to send: the owner's first message starts it.
-    if (room.get(task.id, BRIEF_ITEM_ID) === undefined && !isBossChat(task)) {
-      room.post(task.id, BRIEF_ITEM_ID, {
+    if (room.get(task.id, briefId) === undefined && !isBossChat(task)) {
+      room.post(task.id, briefId, {
         type: "owner",
         text: task.brief,
         attachments: task.attachments,
@@ -168,7 +184,13 @@ export class RunManager {
   async send(
     task: Task,
     agent: string,
-    input: { text: string; attachments: Attachment[]; mode: "queue" | "interrupt" },
+    input: {
+      text: string;
+      attachments: Attachment[];
+      mode: "queue" | "interrupt";
+      /** More agents the owner addressed: the same message goes to their next turn too. */
+      also?: readonly string[];
+    },
   ): Promise<RoomItem> {
     const run = this.runFor(task.id, agent);
     const busy = run.turning;
@@ -189,7 +211,80 @@ export class RunManager {
     this.live.refreshQueued(run);
     if (interrupt) await this.cancelRun(run);
     void this.drive(run);
+    for (const other of input.also ?? []) {
+      if (other === agent) continue;
+      const extra = this.runFor(task.id, other);
+      extra.queue.push({ kind: "owner", itemId: id });
+      extra.held = false;
+      this.live.refreshQueued(extra);
+      void this.drive(extra);
+    }
     return item;
+  }
+
+  /** The owner changed an agent's model or effort for this task: a live session switches now (5.15). */
+  async applyOptions(
+    task: string,
+    agent: string,
+    options: { model?: string; effort?: string },
+  ): Promise<boolean> {
+    const run = this.runs.get(this.key(task, agent));
+    const session = run?.session;
+    if (run === undefined || session === undefined) return false;
+    if (options.model !== undefined) await session.setOption("model", options.model);
+    if (options.effort !== undefined) await session.setOption("thought_level", options.effort);
+    this.setLive(run, {
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.effort === undefined ? {} : { effort: options.effort }),
+    });
+    return true;
+  }
+
+  /**
+   * Wakes `to` with work another agent handed over (5.3): stores a handoff item in the room and
+   * queues it, sent now when `to` is idle, else on its next turn. Starts its session if needed.
+   */
+  handoff(task: Task, input: { from: string; to: string; via: HandoffVia; text: string }): RoomItem {
+    const run = this.runFor(task.id, input.to);
+    const busy = run.turning;
+    const id = `handoff:${randomUUID()}`;
+    this.deps.room.post(task.id, id, {
+      type: "handoff",
+      from: input.from,
+      to: input.to,
+      via: input.via,
+      text: input.text,
+      queued: busy,
+    });
+    const item = this.deps.room.get(task.id, id);
+    if (item === undefined) throw new Error("The handoff was not stored");
+    run.queue.push({ kind: "handoff", itemId: id });
+    run.held = false;
+    this.live.refreshQueued(run);
+    if (run.paused === undefined) void this.drive(run);
+    return item;
+  }
+
+  /** Closes one agent's session in a task, for a team change. Its queue is dropped. */
+  async remove(task: string, agent: string): Promise<void> {
+    const run = this.runs.get(this.key(task, agent));
+    if (run === undefined) return;
+    run.closing = true;
+    run.held = true;
+    run.clearTimers();
+    run.lockWait?.abort();
+    this.permissions.cancelAll(run);
+    const session = run.session;
+    if (session !== undefined) {
+      await session.cancel().catch(() => undefined);
+      await session.close().catch(() => undefined);
+    }
+    await run.drive?.catch(() => undefined);
+    await run.session?.close().catch(() => undefined);
+    this.endSession(run, "removed");
+    this.deps.store.runs.setInFlight(task, agent, 0, false);
+    this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
+    this.runs.delete(this.key(task, agent));
   }
 
   /** Stops the current turn of one agent, or of every agent in the task. Queued messages wait. */
@@ -210,6 +305,7 @@ export class RunManager {
         run.closing = true;
         run.held = true;
         run.clearTimers();
+        run.lockWait?.abort();
         this.permissions.cancelAll(run);
         this.slots.release(this.key(run.task, run.agent));
         const session = run.session;
@@ -225,7 +321,7 @@ export class RunManager {
         run.interrupted = false;
         run.resuming = false;
         run.freshDue = false;
-        run.queue = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief");
+        run.queue = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief" || e.kind === "handoff");
         this.deps.store.runs.setInFlight(run.task, run.agent, 0, false);
         this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
         run.closing = false;
@@ -388,7 +484,9 @@ export class RunManager {
       const queued = this.deps.store.room.queuedFor(task, agent);
       run = new AgentRun(task, agent, queued.length);
       run.live.commands = this.deps.room.knownCommands(agent);
-      run.queue = queued.map((item) => ({ kind: "owner", itemId: item.id }));
+      run.queue = queued.map((item) =>
+        item.type === "handoff" ? { kind: "handoff", itemId: item.id } : { kind: "owner", itemId: item.id },
+      );
       run.held = run.queue.length > 0;
       this.runs.set(key, run);
     }
@@ -422,6 +520,7 @@ export class RunManager {
       this.setLive(run, { status: "error", nowDoing: undefined });
     } finally {
       run.turning = false;
+      run.settling = false;
       run.drive = undefined;
       // Idle between turns: a waiting start may stop this process now.
       if (run.session !== undefined && run.live.status === "idle") {
@@ -481,13 +580,22 @@ export class RunManager {
       }
       run.turns++;
       this.setLive(run, { turns: run.turns });
+      const finalText = run.mapper?.finalText() ?? "";
       if (!(await this.afterTurn(run, stopReason, budget))) break;
+      // The room routes the final message before this agent can count as idle.
+      if (stopReason === "end_turn" && !run.closing && run.paused === undefined) {
+        await this.routeTurn(run, finalText);
+      }
     }
     if (run.session !== undefined && !run.exited && !run.closing && run.paused === undefined) {
       this.setLive(run, { status: "idle", nowDoing: undefined });
       this.scheduleIdleStop(run);
       // Only a turn the agent ended itself hands the task back; Esc and stops keep it with the owner.
-      if (run.queue.length === 0 && !run.held && run.lastStop === "end_turn") this.deps.onIdle?.(run.task);
+      if (run.queue.length === 0 && !run.held && run.lastStop === "end_turn") {
+        // This loop is done sending, so it no longer counts as working.
+        run.settling = true;
+        this.deps.onIdle?.(run.task);
+      }
     }
   }
 
@@ -497,6 +605,50 @@ export class RunManager {
    * when the loop must stop (an error, a lost connection, a pause).
    */
   private async turn(
+    run: AgentRun,
+    session: NonNullable<AgentRun["session"]>,
+    blocks: PromptBlock[],
+  ): Promise<string | undefined> {
+    const release = await this.lockWorktrees(run);
+    if (release === undefined) return undefined;
+    try {
+      return await this.promptTurn(run, session, blocks);
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Takes the locks of the worktrees the agent may edit, waiting while another agent holds one
+   * (5.3). Agents without the edit permission take none. Undefined when stopped while waiting.
+   */
+  private async lockWorktrees(run: AgentRun): Promise<(() => void) | undefined> {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined || !run.perms.includes("edit")) return () => {};
+    const repos = task.overrides[run.agent]?.repos;
+    const paths = task.repos.flatMap((r) =>
+      r.worktree === undefined || (repos !== undefined && !repos.includes(r.project)) ? [] : [r.worktree],
+    );
+    if (paths.length === 0) return () => {};
+    const wait = new AbortController();
+    run.lockWait = wait;
+    try {
+      return await this.locks.acquire(paths, this.key(run.task, run.agent), {
+        signal: wait.signal,
+        onWait: (path, holder) => {
+          const other = holder.split("\u0000")[1] ?? "another agent";
+          const repo = task.repos.find((r) => r.worktree === path)?.project ?? path;
+          this.setLive(run, { status: "waiting", nowDoing: `Waiting for @${other} to finish in ${repo}` });
+        },
+      });
+    } catch {
+      return undefined;
+    } finally {
+      run.lockWait = undefined;
+    }
+  }
+
+  private async promptTurn(
     run: AgentRun,
     session: NonNullable<AgentRun["session"]>,
     blocks: PromptBlock[],
@@ -548,6 +700,14 @@ export class RunManager {
     return stopReason;
   }
 
+  private async routeTurn(run: AgentRun, text: string): Promise<void> {
+    try {
+      await this.deps.onTurnEnd?.({ task: run.task, agent: run.agent, text });
+    } catch (err) {
+      this.live.system(run, "warn", `Could not route @${run.agent}'s message: ${errorMessage(err)}`);
+    }
+  }
+
   /** The budget check after a turn: recovery, compaction or rotation, then a pending Fresh session. False stops the loop. */
   private async afterTurn(run: AgentRun, stopReason: string, budget: ContextBudget): Promise<boolean> {
     if (stopReason !== "cancelled") {
@@ -582,6 +742,35 @@ export class RunManager {
         return [{ type: "text", text: CONTINUE_TEXT }];
       case "fresh":
         return undefined;
+      case "handoff": {
+        const item = this.deps.room.get(run.task, entry.itemId);
+        if (item === undefined || item.type !== "handoff") return undefined;
+        if (item.queued) this.deps.room.post(item.task, item.id, { ...handoffPayload(item), queued: false });
+        const stored = await this.deps.agents.get(run.agent);
+        const role = stored?.ok ? stored.agent.frontmatter.role : "Builder";
+        this.deps.room.flush(run.task);
+        const recent = this.deps.store.room
+          .page(run.task, 40)
+          .items.filter((i) => i.id !== item.id && i.type !== "context");
+        const needsBrief = run.needsBrief && run.carry === undefined;
+        if (needsBrief) run.needsBrief = false;
+        return [
+          {
+            type: "text",
+            text: handoffPrompt({
+              task: task.id,
+              from: item.from,
+              to: { id: run.agent, role },
+              via: item.via,
+              mode: task.mode,
+              text: item.text,
+              room: roomLines(recent, BUDGET.roomSummary, 300),
+              diffStat: await diffStat(checkpointRepos(task)).catch(() => ""),
+              needsBrief,
+            }),
+          },
+        ];
+      }
       case "owner": {
         const item = this.deps.room.get(run.task, entry.itemId);
         if (item === undefined || item.type !== "owner") return undefined;
@@ -663,6 +852,8 @@ export class RunManager {
     } catch (err) {
       this.live.system(run, "warn", `Checkpoint failed: ${errorMessage(err)}`);
     }
+    // Branches stacked on this task's branches follow it (5.4a).
+    this.deps.onCheckpoint?.(run.task);
   }
 
   // ---------------------------------------------------------------------------
@@ -674,7 +865,11 @@ export class RunManager {
     const key = this.key(run.task, run.agent);
     this.setLive(run, { status: "starting", nowDoing: undefined });
     try {
-      const agent = await resolveAgent(deps, run.agent);
+      // The owner's model and effort for this task win over the agent file (5.1).
+      const agent = withOverride(
+        await resolveAgent(deps, run.agent),
+        deps.store.tasks.get(run.task)?.overrides[run.agent],
+      );
       const { fm } = agent;
       run.account = fm.account;
       run.accountKind = { tool: agent.account.tool, auth: agent.account.auth };

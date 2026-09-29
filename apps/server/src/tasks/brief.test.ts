@@ -29,6 +29,8 @@ const task: Task = {
     },
   ],
   team: ["builder"],
+  mode: "lead",
+  overrides: {},
   links: [],
   attachments: [
     { id: "1", kind: "image", name: "shot.png", path: "shot.png" },

@@ -5,6 +5,7 @@ import {
   LimitsPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
+  RoomPatchSchema,
   type Settings,
   SettingsSchema,
 } from "@majhi/shared";
@@ -18,6 +19,7 @@ export const SettingsPatchSchema = z.object({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  rooms: RoomPatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
 });
@@ -29,11 +31,12 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     context: raw.context ?? {},
     limits: raw.limits ?? {},
     resume: raw.resume ?? {},
+    rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
   });
 }
 
-/** Reads the four settings sections of majhi.yaml. A missing file or section means defaults. */
+/** Reads the settings sections of majhi.yaml. A missing file or section means defaults. */
 export async function readSettings(file: string): Promise<Settings> {
   let text: string;
   try {
@@ -55,6 +58,7 @@ export async function readSettings(file: string): Promise<Settings> {
     context: record.context,
     limits: record.limits,
     resume: record.resume,
+    rooms: record.rooms,
     policy: record.policy,
   });
   if (!parsed.success) {
