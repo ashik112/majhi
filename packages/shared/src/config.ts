@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** A path in hub.yaml: absolute, or relative to the owner's home with `~/`. */
+/** A path in majhi.yaml: absolute, or relative to the owner's home with `~/`. */
 export const ConfigPath = z
   .string()
   .trim()
@@ -16,7 +16,7 @@ export const ConfigPath = z
  */
 const LaterSection = z.record(z.string(), z.unknown());
 
-export const HubConfigSchema = z.strictObject({
+export const MajhiConfigSchema = z.strictObject({
   workspaces: z.array(ConfigPath).min(1, "Add at least one workspace root"),
   tasks_dir: ConfigPath.optional(),
   decisions: LaterSection.optional(),
@@ -28,7 +28,7 @@ export const HubConfigSchema = z.strictObject({
   projects: LaterSection.optional(),
 });
 
-export type HubConfig = z.infer<typeof HubConfigSchema>;
+export type MajhiConfig = z.infer<typeof MajhiConfigSchema>;
 
 /** Name of the directory created under the first root when tasks_dir is not set. */
-export const DEFAULT_TASKS_DIR_NAME = ".hub";
+export const DEFAULT_TASKS_DIR_NAME = ".majhi";

@@ -7,8 +7,8 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @majhi/hub --filter @majhi/web dev",
-    "build": "pnpm --filter @majhi/web build && pnpm --filter @majhi/hub build",
+    "dev": "pnpm --parallel --filter @majhi/server --filter @majhi/web dev",
+    "build": "pnpm --filter @majhi/web build && pnpm --filter @majhi/server build",
     "check": "biome check .",
     "format": "biome check --write .",
     "typecheck": "pnpm -r typecheck",

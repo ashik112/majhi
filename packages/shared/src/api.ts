@@ -54,14 +54,14 @@ export const RepoSchema = z.object({
   relPath: z.string(),
   branch: z.string().optional(),
   remotes: z.array(RemoteSchema),
-  /** True when a project in hub.yaml points at this path. */
+  /** True when a project in majhi.yaml points at this path. */
   registered: z.boolean(),
 });
 export type Repo = z.infer<typeof RepoSchema>;
 
 export const RootScanSchema = z.object({
   path: z.string(),
-  /** False when the path is not visible to the hub, usually because it is not mounted yet. */
+  /** False when the path is not visible to the server, usually because it is not mounted yet. */
   mounted: z.boolean(),
   repos: z.array(RepoSchema),
   error: z.string().optional(),
@@ -83,7 +83,7 @@ export type WorkspacesUpdate = z.infer<typeof WorkspacesUpdateSchema>;
 
 export const WorkspacesUpdateResultSchema = z.object({
   state: ConfigStateSchema,
-  /** Roots the hub cannot see yet. Non-empty means the owner must restart with `make up`. */
+  /** Roots the server cannot see yet. Non-empty means the owner must restart with `make up`. */
   unmounted: z.array(z.string()),
   restartCommand: z.string(),
 });
