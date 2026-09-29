@@ -55,19 +55,31 @@ const room = (page: Page) => page.getByRole("region", { name: "Task room" });
 const messages = (page: Page) => page.getByRole("log", { name: "Room messages" });
 const composer = (page: Page) => page.getByRole("textbox", { name: "Message the room" });
 
-/** Types into the task box and starts the task; resolves with the new task's id once its room is open. */
-async function startTask(page: Page, text: string): Promise<string> {
+const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task" });
+
+/** Opens the New task dialog with `n` and types the title. */
+async function openNewTask(page: Page, title: string) {
   await page.goto("/");
-  await page.getByRole("textbox", { name: "New task" }).fill(text);
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await page.keyboard.press("n");
+  await expect(newTaskDialog(page)).toBeVisible();
+  await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);
+}
+
+/** Adds a task from the dialog and starts it; resolves with the new task's id once its room is open. */
+async function startTask(page: Page, text: string): Promise<string> {
+  await openNewTask(page, text);
+  await newTaskDialog(page).getByRole("button", { name: "Add and start" }).click();
   await expect(page).toHaveURL(/\/t\/[A-Z]+-\d+$/);
   await expect(room(page)).toBeVisible();
   return taskIdOf(page);
 }
 
-/** The agent finished its turn: the header says idle and the composer offers Send, not Stop. */
+const panel = (page: Page) => page.getByRole("complementary", { name: "Task details" });
+
+/** The agent finished its turn: the room panel says idle and the composer offers Send, not Stop. */
 async function expectIdle(page: Page) {
-  await expect(room(page).getByText("idle", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(panel(page).getByText("Idle", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
 }
 
@@ -85,8 +97,8 @@ test.beforeAll(async ({ request }) => {
   await setPerms(request, bossId as string, ["edit", "shell"]);
 });
 
-test("register a repo as a project from the Repos view", async ({ page, request }) => {
-  await page.goto("/repos");
+test("register a repo as a project from the Projects page", async ({ page, request }) => {
+  await page.goto("/projects");
   await page.getByRole("button", { name: "Register alpha-api" }).click();
   const dialog = page.getByRole("dialog", { name: "Register alpha-api" });
   await dialog.getByRole("combobox", { name: "Org" }).selectOption({ label: "Acme" });
@@ -111,15 +123,18 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   page,
   request,
 }) => {
-  await page.goto("/");
-  await page.getByRole("textbox", { name: "New task" }).fill("add a health endpoint to api from develop");
-  const chips = page.getByRole("list", { name: "What majhi understood" });
-  await expect(chips.getByText("api: from develop")).toBeVisible();
-  await expect(chips.getByRole("button", { name: /^Agent: @acme-lead/ })).toBeVisible();
-  await expect(chips.getByRole("button", { name: /^Kind: code/ })).toBeVisible();
+  // Typing everything in the title still works: the project chip and the base follow the words.
+  await openNewTask(page, "add a health endpoint to api from develop");
+  const dialog = newTaskDialog(page);
+  await expect(dialog.getByRole("button", { name: "api", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(dialog.getByText("Branches from develop")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /^Agent: @acme-lead/ })).toBeVisible();
   await shot(page, "task-screen");
 
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await dialog.getByRole("button", { name: "Add and start" }).click();
   await expect(page).toHaveURL(/\/t\/ACM-\d+$/);
   apiTaskId = taskIdOf(page);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("health endpoint");
@@ -138,7 +153,7 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   await expect(log.getByRole("button", { name: /Read package\.json/ })).toBeVisible();
   const edit = log.getByRole("button", { name: /Edit HEALTH\.md/ });
   await expect(edit).toBeVisible();
-  await room(page).getByRole("button", { name: "Stop all" }).waitFor();
+  await page.getByRole("button", { name: "Stop all" }).waitFor();
   await shot(page, "room-running");
 
   await expect(log.getByText("Allowed: Run npm test, by rule")).toBeVisible();
@@ -201,15 +216,15 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   expect(readFileSync(file, "utf8")).toBe("# Health\n\nok\n");
   expect(git(join(apiTask.folder, "api"), "status", "--porcelain")).toContain("HEALTH.md");
 
-  const changes = page.getByRole("complementary", { name: "Task details" });
-  await expect(changes.getByRole("tab", { name: "Changes" })).toBeVisible();
+  const changes = panel(page);
+  await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
+  await expect(changes.getByRole("region", { name: "Branch and worktree" })).toContainText("develop");
   const section = changes.getByRole("region", { name: "Changes in api" });
-  await expect(section).toContainText("develop");
   const row = section.getByRole("button", { name: /HEALTH\.md/ });
   await expect(row).toBeVisible();
   await row.click();
   await expect(section.getByText("# Health")).toBeVisible();
-  await expect(section.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
+  await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
 });
 
 test("Esc stops a slow turn, and a queued message waits until the next send", async ({ page, request }) => {
@@ -237,7 +252,7 @@ test("Esc stops a slow turn, and a queued message waits until the next send", as
 
   await composer(page).press("Escape");
   await expect(log.getByText("Stopped @acme-slow's turn.")).toBeVisible();
-  await expect(room(page).getByText("idle").first()).toBeVisible();
+  await expect(panel(page).getByText("Idle", { exact: true })).toBeVisible();
   // The plan still has open entries, so it stays pinned. The turn ended before the tests ran,
   // and the queued message did not go.
   await expect(room(page).getByRole("region", { name: "Plan of acme-slow" })).toBeVisible();
@@ -267,8 +282,15 @@ test("a command the agent may not run asks inline: Deny fails the tool and the t
   await expect(room(page).getByRole("region", { name: "Plan of acme-builder" })).toBeVisible();
   await shot(page, "room-permission");
 
+  // The shell's banner points at the prompt too, and goes away once it is answered.
+  const banner = page.getByRole("status").filter({ hasText: "waiting for your answer" });
+  await expect(banner).toContainText("@acme-builder is waiting for your answer in");
+  await banner.getByRole("button", { name: "Show" }).click();
+  await expect(prompt).toBeFocused();
+
   await prompt.getByRole("button", { name: "Deny" }).click();
   await expect(prompt).toBeHidden();
+  await expect(banner).toBeHidden();
   await expect(log.getByText("Denied: Run npm test")).toBeVisible();
   await expect(log.getByRole("button", { name: /Run npm test.*failed/ })).toBeVisible();
   await expect(log.getByText(/I could not run the tests\./)).toBeVisible();
@@ -292,11 +314,10 @@ test("Allow for this task answers the next ask of that kind by itself", async ({
 });
 
 test("a chat task without a repo replies in the room", async ({ page, request }) => {
-  await page.goto("/");
-  await page.getByRole("textbox", { name: "New task" }).fill("echo: hello");
-  const chips = page.getByRole("list", { name: "What majhi understood" });
-  await expect(chips.getByRole("button", { name: /^Kind: chat/ })).toBeVisible();
-  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await openNewTask(page, "echo: hello");
+  const dialog = newTaskDialog(page);
+  await expect(dialog.getByText("this becomes a chat task")).toBeVisible();
+  await dialog.getByRole("button", { name: "Add and start" }).click();
   await expect(page).toHaveURL(/\/t\/LOCAL-\d+$/);
   const id = taskIdOf(page);
   chatTaskId = id;
@@ -391,7 +412,7 @@ test("removing a task with uncommitted changes is refused, and Remove anyway rem
   expect(existsSync(worktree)).toBe(true);
   expect(git(API_SOURCE, "worktree", "list")).toContain(worktree);
 
-  await room(page).getByRole("button", { name: "Task menu" }).click();
+  await page.getByRole("button", { name: "Task menu" }).click();
   await page.getByRole("menuitem", { name: "Remove task" }).click();
   const dialog = page.getByRole("dialog", { name: `Remove ${apiTaskId}` });
   await dialog.getByRole("button", { name: "Remove task" }).click();

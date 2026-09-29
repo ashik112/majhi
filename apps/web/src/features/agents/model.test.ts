@@ -3,14 +3,21 @@ import { describe, expect, it } from "vitest";
 import {
   accountsForScope,
   agentDot,
+  agentState,
+  agentSubline,
   buildOptions,
   draftFromAgent,
+  fallbackCandidates,
   groupAgents,
   newAgentFrontmatter,
+  optionChips,
+  rolesForScope,
+  scopeBadge,
   scopeForAccount,
   suggestAgentId,
   toggleWhere,
   updateInput,
+  worksOutsideScope,
 } from "./model";
 
 function ok(id: string, scope: string, extra: { isBoss?: boolean; account?: string } = {}): AgentEntry {
@@ -42,8 +49,8 @@ function account(id: string, org: string, status: AccountView["status"] = "healt
 }
 
 const orgs: OrgView[] = [
-  { id: "acme", name: "Acme", color: "#8ab8f5", accountCount: 1, agentCount: 1 },
-  { id: "zed", name: "Zed", accountCount: 0, agentCount: 0 },
+  { id: "acme", name: "Acme", key: "ACM", color: "#8ab8f5", accountCount: 1, agentCount: 1 },
+  { id: "zed", name: "Zed", key: "ZED", accountCount: 0, agentCount: 0 },
 ];
 
 describe("groupAgents", () => {
@@ -185,5 +192,87 @@ describe("suggestAgentId and newAgentFrontmatter", () => {
   it("defaults root agents to anywhere and org agents to their org", () => {
     expect(newAgentFrontmatter("root", "Root", "a").where).toEqual(["anywhere"]);
     expect(newAgentFrontmatter("acme", "Builder", "a").where).toEqual(["acme"]);
+  });
+});
+
+describe("agent presentation", () => {
+  it("badges root as RT and orgs by their first two letters", () => {
+    expect(scopeBadge("root", "Root")).toBe("RT");
+    expect(scopeBadge("acme", "Acme")).toBe("AC");
+    expect(scopeBadge("x", "!!")).toBe("?");
+  });
+
+  it("offers Root only to root agents, and keeps a role the agent already has", () => {
+    expect(rolesForScope("root", "Root")).toEqual(["Root", "Lead", "Builder", "Reviewer"]);
+    expect(rolesForScope("acme", "Builder")).toEqual(["Lead", "Builder", "Reviewer", "Tester"]);
+    expect(rolesForScope("acme", "Root")).toEqual(["Lead", "Builder", "Reviewer", "Tester", "Root"]);
+  });
+
+  it("describes an agent on one line", () => {
+    const entry = ok("acme-lead", "acme");
+    if (entry.status !== "ok") throw new Error("fixture");
+    expect(agentSubline(entry.agent)).toBe("Builder · claude-acme · account default");
+  });
+
+  it("lets an org agent fall back to its org or root, never itself", () => {
+    const list = [ok("a", "acme"), ok("b", "acme"), ok("c", "zed"), ok("r", "root")];
+    const self = list[0];
+    if (self?.status !== "ok") throw new Error("fixture");
+    const ids = fallbackCandidates(list, self).map((e) => (e.status === "ok" ? e.agent.frontmatter.id : ""));
+    expect(ids).toEqual(["b", "r"]);
+  });
+
+  it("warns when an org agent may work outside its org", () => {
+    expect(worksOutsideScope("acme", ["acme"])).toBe(false);
+    expect(worksOutsideScope("acme", ["anywhere"])).toBe(true);
+    expect(worksOutsideScope("acme", ["acme", "zed"])).toBe(true);
+    expect(worksOutsideScope("root", ["anywhere"])).toBe(false);
+  });
+
+  it("names the special model chips and keeps ids on the rest", () => {
+    const offered = [
+      { id: "sonnet-5.5", name: "Sonnet 5.5" },
+      { id: "haiku", name: "haiku" },
+    ];
+    const chips = optionChips(buildOptions("model", offered, "gone", "sonnet-5.5"), offered);
+    expect(chips.map((c) => c.label)).toEqual([
+      "Account default",
+      "Auto",
+      "sonnet-5.5",
+      "haiku",
+      "gone (not offered)",
+    ]);
+    expect(chips[2]?.title).toBe("Sonnet 5.5");
+    expect(chips[3]?.title).toBeUndefined();
+  });
+});
+
+describe("agentState", () => {
+  const entry = ok("acme-builder", "acme");
+  if (entry.status !== "ok") throw new Error("fixture");
+  const task = (
+    over: Partial<{ id: string; status: "running" | "paused"; team: string[]; working: string[] }>,
+  ) => ({
+    id: "ACM-1",
+    status: "running" as const,
+    team: ["acme-builder"],
+    working: [] as string[],
+    ...over,
+  });
+
+  it("says working, paused, limit, error and idle, in that order", () => {
+    const fine = { status: "healthy" as const };
+    expect(agentState(entry, fine, [task({ working: ["acme-builder"] })])).toMatchObject({
+      kind: "working",
+      label: "Working on ACM-1",
+    });
+    expect(agentState(entry, fine, [task({ status: "paused" })])).toMatchObject({
+      kind: "paused",
+      label: "Paused on ACM-1",
+    });
+    expect(agentState(entry, { status: "at-limit" }, [])).toMatchObject({ kind: "limit" });
+    expect(agentState(entry, { status: "needs-login" }, [])).toMatchObject({ kind: "error" });
+    expect(agentState(entry, undefined, [])).toMatchObject({ kind: "error" });
+    expect(agentState(entry, fine, [task({})])).toMatchObject({ kind: "idle", label: "Idle" });
   });
 });

@@ -153,6 +153,20 @@ export const commands = {
       .extend(OrgConfigSchema.pick({ name: true, color: true, base: true, key: true }).shape),
     output: OrgViewSchema,
   },
+  "orgs.update": {
+    risk: "change",
+    summary:
+      "Edit an org: name, color, task key, base branch or commit identity. null clears an optional field",
+    input: z.object({
+      id: IdSchema,
+      name: OrgConfigSchema.shape.name.optional(),
+      color: OrgConfigSchema.shape.color.optional(),
+      base: OrgConfigSchema.shape.base.nullable().optional(),
+      key: OrgConfigSchema.shape.key.nullable().optional(),
+      identity: OrgConfigSchema.shape.identity.nullable().optional(),
+    }),
+    output: OrgViewSchema,
+  },
 
   // Accounts ----------------------------------------------------------------
   "accounts.list": {

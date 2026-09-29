@@ -28,7 +28,7 @@ export function RestartCard({
       initial={{ opacity: 0, y: 10, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-      className="flex h-fit w-full max-w-[600px] flex-col rounded-xl border border-amber-line bg-panel"
+      className="flex h-fit w-full max-w-[600px] flex-col rounded-xl border border-amber-line bg-raised"
     >
       <div className="flex flex-col gap-2 p-5 pb-4">
         <h1 id="restart-title" className="text-lg font-semibold text-balance">

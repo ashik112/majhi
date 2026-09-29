@@ -73,6 +73,8 @@ writeFileSync(
   "Host bitbucket-acme\n  HostName bitbucket.org\n  User git\n  IdentityFile ~/.ssh/id_acme\n",
 );
 mkdirSync(MAJHI_HOME, { recursive: true });
+// `ui.config.ts` asks for a filled-in home to photograph the pages; the phase specs start empty.
+if (process.env.MAJHI_E2E_SEED === "ui") (await import("./ui-seed.ts")).seedUiHome();
 
 // The age identity lives outside MAJHI_HOME, as it does in the container.
 mkdirSync(dirname(SECRETS_KEY_FILE), { recursive: true });

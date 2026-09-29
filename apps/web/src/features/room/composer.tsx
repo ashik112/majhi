@@ -1,6 +1,6 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Paperclip, SendHorizontal, Square } from "lucide-react";
+import { Paperclip, Square } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -172,7 +172,7 @@ export function Composer({
   }
 
   return (
-    <div className="flex flex-col gap-1.5 px-[22px] pt-2.5 pb-4">
+    <div className="flex flex-col gap-1.5">
       <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
       <div className="relative">
         {popupOpen && popupTrigger && (
@@ -205,7 +205,7 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2 rounded-xl border border-line-control bg-field p-1.5 focus-within:border-blue">
+        <div className="flex items-end gap-2 rounded-[10px] border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover focus-within:border-blue">
           <Button
             variant="ghost"
             size="icon"
@@ -234,7 +234,7 @@ export function Composer({
             aria-autocomplete={popupOpen ? "list" : undefined}
             aria-controls={popupOpen ? listId : undefined}
             aria-activedescendant={popupOpen ? `${listId}-${activeIndex}` : undefined}
-            placeholder="Message the agent. / for commands, @ for files."
+            placeholder="Talk to the room. / for commands, @ for files."
             spellCheck={false}
             onChange={(event) => {
               setText(event.target.value);
@@ -244,7 +244,7 @@ export function Composer({
             onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            className="max-h-[176px] min-h-[34px] min-w-0 flex-1 resize-none bg-transparent px-1 py-[7px] text-md text-fg outline-none placeholder:text-fg-faint"
+            className="max-h-[176px] min-h-[34px] min-w-0 flex-1 resize-none bg-transparent px-1 py-[7px] text-body text-fg outline-none placeholder:text-fg-faint"
           />
           {working && (
             <Button variant="secondary" disabled={cancelling} onClick={onCancel} title="Stop this turn (Esc)">
@@ -257,8 +257,13 @@ export function Composer({
               Stop and send
             </Button>
           )}
-          <Button variant="primary" disabled={!canSend} onClick={() => send.mutate("queue")}>
-            <SendHorizontal aria-hidden="true" />
+          <Button
+            variant="primary"
+            size="lg"
+            className="text-body"
+            disabled={!canSend}
+            onClick={() => send.mutate("queue")}
+          >
             Send
           </Button>
         </div>

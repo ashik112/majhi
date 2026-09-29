@@ -345,7 +345,7 @@ describe("tools and orgs", () => {
     await withOrg();
     await h.cmd("accounts.create", { id: "claude-acme", tool: "claude", org: "acme", auth: "login" });
     expect((await h.cmd("orgs.list")).body).toEqual([
-      { id: "acme", name: "Acme", accountCount: 1, agentCount: 0 },
+      { id: "acme", name: "Acme", key: "ACM", accountCount: 1, agentCount: 0 },
     ]);
     expect((await h.cmd("orgs.create", { id: "acme", name: "Again" })).status).toBe(409);
     expect((await h.cmd("orgs.create", { id: "personal", name: "Me" })).status).toBe(400);

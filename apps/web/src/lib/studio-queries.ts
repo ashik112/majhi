@@ -80,6 +80,14 @@ export function useCreateOrg() {
   });
 }
 
+export function useUpdateOrg() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"orgs.update">, ApiRequestError, CommandInput<"orgs.update">>({
+    mutationFn: (input) => cmd("orgs.update", input),
+    onSuccess: () => refresh(client, queryKeys.orgs),
+  });
+}
+
 export function useCreateAccount() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"accounts.create">, ApiRequestError, CommandInput<"accounts.create">>({

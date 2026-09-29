@@ -40,8 +40,8 @@ export function ChoiceGroup<T extends string>({
             />
             <span
               className={cn(
-                "flex min-h-[34px] flex-col justify-center rounded-md border border-line-control bg-field px-3 text-base text-fg-soft",
-                "transition-colors peer-hover:border-line-hover peer-checked:border-amber-line peer-checked:bg-amber-wash peer-checked:text-amber",
+                "flex min-h-[34px] flex-col justify-center rounded-md border border-line-strong bg-card px-3 text-sm text-fg-muted",
+                "transition-colors peer-hover:border-line-hover peer-checked:border-blue peer-checked:bg-[#23324a] peer-checked:text-fg",
                 "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue",
               )}
             >

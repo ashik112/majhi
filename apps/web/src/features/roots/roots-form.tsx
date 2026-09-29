@@ -127,7 +127,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
         onSubmit={submit}
         onKeyDown={onFormKeyDown}
         aria-label="Workspace roots"
-        className="flex flex-col rounded-xl border border-line-strong bg-panel"
+        className="flex flex-col rounded-xl border border-line-strong bg-raised"
       >
         {helper === "online" ? (
           <RootPicker

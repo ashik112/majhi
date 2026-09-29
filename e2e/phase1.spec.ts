@@ -61,6 +61,19 @@ async function addClaudeLogin(page: Page, id: string, org?: string) {
   await expect(page.getByRole("status").filter({ hasText: `${id} is signed in and healthy` })).toBeVisible();
 }
 
+async function openHealthPage(page: Page) {
+  await page.goto("/usage");
+  await expect(page.getByRole("heading", { name: "Health and usage" })).toBeVisible();
+}
+
+const accountRow = (page: Page, id: string) =>
+  page
+    .getByRole("list", { name: "Accounts" })
+    .getByRole("listitem")
+    .filter({
+      has: page.getByRole("button", { name: id, exact: true }),
+    });
+
 async function openHealthCheck(page: Page, title: string) {
   await page.getByRole("button", { name: "Health check", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: title });
@@ -106,16 +119,19 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await expect(page.getByRole("heading", { name: "Choose the boss" })).toBeVisible();
   await expect(progress).toContainText("Step 3 of 3");
   const form = page.getByRole("form", { name: "Boss agent" });
-  await expect(form.getByRole("combobox", { name: "Account" })).toHaveValue("claude-personal");
-  await expect(form.getByRole("combobox", { name: "Model" })).not.toHaveValue("");
+  await expect(form.getByRole("button", { name: /^claude-personal/, pressed: true })).toBeVisible();
+  // The account's default model is picked, not "Account default".
+  await expect(form.getByRole("group", { name: "Model" }).getByRole("button", { pressed: true })).toHaveText(
+    /fake-model/,
+  );
   await form.getByRole("button", { name: "Create boss" }).click();
   await expect(form.getByText("Health check passed")).toBeVisible();
   await shot(page, "onboarding-boss");
   await form.getByRole("button", { name: "Open majhi" }).click();
-  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add your first account" })).toHaveCount(0);
 
   const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));
@@ -123,14 +139,13 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   expect(readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8")).toMatch(/^boss: /m);
 });
 
-test("Studio: an org, two Claude accounts, three agents, each health check passes", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Studio" }).click();
-  await page.getByRole("tab", { name: "Accounts" }).click();
-  const accounts = page.getByRole("table", { name: "Accounts" });
-  await expect(accounts.getByRole("button", { name: "claude-personal", exact: true })).toBeVisible();
+test("Health and Agents: an org, two Claude accounts, three agents, each health check passes", async ({
+  page,
+}) => {
+  await openHealthPage(page);
+  await expect(accountRow(page, "claude-personal")).toBeVisible();
 
-  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByRole("button", { name: "Add account", exact: true }).click();
   const form = page.getByRole("form", { name: "Add an account" });
   await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: "New org..." });
   const orgForm = page.getByRole("form", { name: "New org" });
@@ -144,19 +159,22 @@ test("Studio: an org, two Claude accounts, three agents, each health check passe
   await page.getByRole("button", { name: "Add another account" }).click();
   await addClaudeLogin(page, "claude-acme-2", "Acme");
 
-  // Agent 1, through "Create an agent on this account".
-  await page.getByRole("button", { name: "Create an agent on this account" }).click();
+  // Agent 1, through "Create an agent on this account": the Acme tab opens with that account chosen.
+  await page.getByRole("link", { name: "Create an agent on this account" }).click();
   const newAgent = page.getByRole("form", { name: "New agent" });
-  await expect(newAgent.getByRole("combobox", { name: "Scope" })).toHaveValue("acme");
-  await expect(newAgent.getByRole("combobox", { name: "Account" })).toHaveValue("claude-acme-2");
+  await expect(page.getByRole("tab", { name: /^Acme/ })).toHaveAttribute("aria-selected", "true");
+  await expect(newAgent.getByRole("button", { name: /^claude-acme-2/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await newAgent.getByRole("textbox", { name: "Agent id" }).fill("acme-builder");
-  await newAgent.getByRole("combobox", { name: "Role" }).selectOption("Builder");
+  await newAgent.getByRole("button", { name: "Builder", exact: true }).click();
   await newAgent.getByRole("button", { name: "Create agent" }).click();
   await expect(page.getByRole("heading", { name: "@acme-builder" })).toBeVisible();
   await openHealthCheck(page, "Health check: @acme-builder");
 
-  // Agents 2 and 3, from the group's "New" button.
-  const agentList = page.getByRole("navigation", { name: "Agents" });
+  // Agents 2 and 3, from the list's "New agent" button.
+  const agentList = page.getByRole("navigation", { name: "Agents in scope" });
   for (const [id, role, account] of [
     ["acme-lead", "Lead", "claude-acme-1"],
     ["acme-reviewer", "Reviewer", "claude-acme-1"],
@@ -164,25 +182,26 @@ test("Studio: an org, two Claude accounts, three agents, each health check passe
     await agentList.getByRole("button", { name: "New agent in Acme" }).click();
     await expect(newAgent).toBeVisible();
     await newAgent.getByRole("textbox", { name: "Agent id" }).fill(id);
-    await newAgent.getByRole("combobox", { name: "Role" }).selectOption(role);
-    await newAgent.getByRole("combobox", { name: "Account" }).selectOption(account);
+    await newAgent.getByRole("button", { name: role, exact: true }).click();
+    await newAgent.getByRole("button", { name: new RegExp(`^${account}`) }).click();
     await newAgent.getByRole("button", { name: "Create agent" }).click();
     await expect(page.getByRole("heading", { name: `@${id}` })).toBeVisible();
     await openHealthCheck(page, `Health check: @${id}`);
   }
 
-  await expect(agentList.getByRole("region", { name: "Acme" }).getByRole("button")).toHaveCount(4);
+  await expect(agentList.getByRole("button", { name: /^@acme-/ })).toHaveCount(3);
+  await expect(page.getByRole("tab", { name: /^Acme/ })).toContainText("3");
   expect(readAgent("acme-lead")).toContain("account: claude-acme-1");
   expect(readAgent("acme-builder")).toContain("account: claude-acme-2");
-  await shot(page, "studio-agents");
+  await shot(page, "agents-editor");
 });
 
 test("an API-key account passes its health check and the key is never stored in the clear or sent back", async ({
   page,
 }) => {
   const traffic = recordTraffic(page);
-  await page.goto("/studio/accounts");
-  await page.getByRole("button", { name: "Add account" }).click();
+  await openHealthPage(page);
+  await page.getByRole("button", { name: "Add account", exact: true }).click();
   const form = page.getByRole("form", { name: "Add an account" });
   await form.getByRole("radio", { name: "Codex" }).click();
   await form.getByRole("radio", { name: "API key" }).click();
@@ -195,18 +214,21 @@ test("an API-key account passes its health check and the key is never stored in 
   ).toBeVisible();
   await expect(page.getByRole("list", { name: "Health check steps" }).getByRole("listitem")).toHaveCount(3);
   await page.getByRole("button", { name: "Close add account" }).click();
-  const row = page
-    .getByRole("row")
-    .filter({ has: page.getByRole("button", { name: "codex-key", exact: true }) });
+  const row = accountRow(page, "codex-key");
   await expect(row).toContainText("API key");
   await expect(row).toContainText("Healthy");
+  await expect(row).toContainText("Tokens and cost show after the first run");
 
   // The account list and the health check ran again after the key was sent; none of it echoes the key.
+  await row.getByRole("button", { name: "codex-key", exact: true }).click();
   await page.getByRole("button", { name: "Health check codex-key" }).click();
   await expect(
     page.getByRole("dialog", { name: "Health check: codex-key" }).getByText("Health check passed"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Account details" })).toContainText(
+    "Tokens and cost show after the first run",
+  );
 
   expect(traffic.length).toBeGreaterThan(3);
   expect(traffic.filter((body) => body.includes(FAKE_KEY))).toEqual([]);
@@ -223,43 +245,45 @@ test("an API-key account passes its health check and the key is never stored in 
 test("Accounts show who uses them, and a file with a missing account appears without a reload", async ({
   page,
 }) => {
-  await page.goto("/studio/accounts");
-  const accountRow = (id: string) =>
-    page.getByRole("row").filter({ has: page.getByRole("button", { name: id, exact: true }) });
+  await openHealthPage(page);
 
-  const acme1 = accountRow("claude-acme-1").getByRole("list", { name: "Used by" });
-  await expect(acme1.getByRole("link")).toHaveText(["@acme-lead", "@acme-reviewer"]);
-  await expect(
-    accountRow("claude-acme-2").getByRole("list", { name: "Used by" }).getByRole("link"),
-  ).toHaveText(["@acme-builder"]);
-  await expect(accountRow("codex-key")).toContainText("Not used");
+  await expect(accountRow(page, "claude-acme-1")).toContainText("2 agents");
+  await expect(accountRow(page, "claude-acme-2")).toContainText("1 agent");
+  await expect(accountRow(page, "codex-key")).toContainText("0 agents");
 
   // Usage is read in the background after each sign-in, without spending tokens.
-  await expect(accountRow("claude-acme-1")).toContainText("5h 42%");
-  await expect(accountRow("claude-acme-1")).toContainText("Week 18%");
-  await expect(accountRow("codex-key")).toContainText("After first run");
+  await expect(accountRow(page, "claude-acme-1")).toContainText("42%");
+  await expect(accountRow(page, "claude-acme-1")).toContainText("18%");
+  await expect(accountRow(page, "codex-key")).toContainText("Tokens and cost show after the first run");
 
-  const personal = accountRow("claude-personal").getByRole("list", { name: "Used by" });
-  const boss = personal.getByRole("link", { name: /, boss$/ });
-  await expect(boss).toHaveCount(1);
-  await expect(boss).toContainText("boss");
+  // The boss shows in its account's details, with a link to its editor.
+  await accountRow(page, "claude-personal")
+    .getByRole("button", { name: "claude-personal", exact: true })
+    .click();
+  const details = page.getByRole("complementary", { name: "Account details" });
+  const root = details.getByRole("region", { name: "Used by, Root" });
+  await expect(root.getByRole("link")).toHaveCount(1);
+  await expect(root).toContainText("Boss");
 
   // Details group agents by scope.
-  await accountRow("claude-acme-1").getByRole("button", { name: "claude-acme-1", exact: true }).click();
-  const details = page.getByRole("complementary", { name: "Account details" });
+  await accountRow(page, "claude-acme-1").getByRole("button", { name: "claude-acme-1", exact: true }).click();
   const acme = details.getByRole("region", { name: "Used by, Acme" });
   await expect(acme.getByRole("listitem")).toHaveCount(2);
   await expect(acme).toContainText("@acme-lead");
   await expect(acme).toContainText("@acme-reviewer");
-  const usage = details;
-  await expect(usage).toContainText("Plan: max");
-  await expect(usage).toContainText("5-hour window");
-  await expect(usage).toContainText("42%");
-  await expect(usage).toContainText("Week, Opus");
-  await usage.getByRole("button", { name: "Refresh" }).click();
-  await expect(usage).toContainText("Read just now");
-  await shot(page, "studio-accounts");
+  await expect(details).toContainText("Plan: max");
+  await expect(details).toContainText("Current window");
+  await expect(details).toContainText("42%");
+  await expect(details).toContainText("Week, Opus");
+  await details.getByRole("button", { name: "Refresh" }).click();
+  await expect(details).toContainText("Read just now");
+  await shot(page, "health-accounts");
   await page.getByRole("button", { name: "Close account details" }).click();
+
+  // "Run health check" checks every account and the page says so.
+  await page.getByRole("button", { name: "Run health check" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Health check finished" })).toHaveCount(1);
+  await expect(page.getByText(/Checked just now/)).toBeVisible();
 
   // A hand-written agent file naming an account that does not exist.
   await expect(page.getByRole("region", { name: "Missing accounts" })).toHaveCount(0);
@@ -275,21 +299,22 @@ test("Accounts show who uses them, and a file with a missing account appears wit
 });
 
 test("the agent editor saves model and effort to the file, and follows a hand edit", async ({ page }) => {
-  await page.goto("/studio/agents?agent=acme-lead");
+  await page.goto("/agents?agent=acme-lead");
   await expect(page.getByRole("heading", { name: "@acme-lead" })).toBeVisible();
-  const model = page.getByRole("combobox", { name: "Model" });
-  const effort = page.getByRole("combobox", { name: "Effort" });
-  await expect(model.locator("option")).not.toHaveCount(1);
+  const model = page.getByRole("group", { name: "Model" });
+  const effort = page.getByRole("group", { name: "Effort" });
+  // Account default and Auto are always there; the account's own models follow once they load.
+  await expect(model.getByRole("button")).not.toHaveCount(2);
 
-  await model.selectOption("fake-model-c");
-  await effort.selectOption("high");
+  await model.getByRole("button", { name: "fake-model-c" }).click();
+  await effort.getByRole("button", { name: "high", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   await expect.poll(() => readAgent("acme-lead")).toMatch(/^model: fake-model-c$/m);
   expect(readAgent("acme-lead")).toMatch(/^effort: high$/m);
 
   // Reload: what was saved is what comes back.
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Model" })).toHaveValue("fake-model-c");
+  await expect(model.getByRole("button", { name: "fake-model-c" })).toHaveAttribute("aria-pressed", "true");
 
   // A hand edit shows in the open editor.
   writeFileSync(
@@ -299,16 +324,37 @@ test("the agent editor saves model and effort to the file, and follows a hand ed
       .replace(/^effort: .*$/m, "effort: low")
       .concat("\nEdited by hand.\n"),
   );
-  await expect(page.getByRole("combobox", { name: "Model" })).toHaveValue("fake-model-b");
-  await expect(page.getByRole("combobox", { name: "Effort" })).toHaveValue("low");
+  await expect(model.getByRole("button", { name: "fake-model-b" })).toHaveAttribute("aria-pressed", "true");
+  await expect(effort.getByRole("button", { name: "low", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByRole("textbox", { name: "Instructions" })).toHaveValue(/Edited by hand\./);
+});
+
+test("permissions are tiles: Read code is always allowed, the rest toggle and save to the file", async ({
+  page,
+}) => {
+  await page.goto("/agents?agent=acme-reviewer");
+  await expect(page.getByRole("heading", { name: "@acme-reviewer" })).toBeVisible();
+  await expect(page.getByText("Read code")).toBeVisible();
+  const push = page.getByRole("button", { name: "Push branches: Off" });
+  await push.click();
+  await expect(page.getByRole("button", { name: "Push branches: Allowed" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect.poll(() => readAgent("acme-reviewer")).toMatch(/^perms: \[.*push.*\]/m);
+  await page.getByRole("button", { name: "Push branches: Allowed" }).click();
+  await expect.poll(() => readAgent("acme-reviewer")).not.toMatch(/^perms: \[.*push.*\]/m);
 });
 
 test("removing an account that agents use is refused, and so is removing the boss", async ({
   page,
   request,
 }) => {
-  await page.goto("/studio/accounts");
+  await openHealthPage(page);
+  await accountRow(page, "claude-acme-1").getByRole("button", { name: "claude-acme-1", exact: true }).click();
   await page.getByRole("button", { name: "Remove claude-acme-1" }).click();
   const dialog = page.getByRole("dialog", { name: "Remove claude-acme-1?" });
   await dialog.getByRole("button", { name: "Remove account" }).click();
@@ -317,6 +363,9 @@ test("removing an account that agents use is refused, and so is removing the bos
   await expect(page.getByRole("button", { name: "claude-acme-1", exact: true })).toBeVisible();
 
   // The boss's account is in use too.
+  await accountRow(page, "claude-personal")
+    .getByRole("button", { name: "claude-personal", exact: true })
+    .click();
   await page.getByRole("button", { name: "Remove claude-personal" }).click();
   await page.getByRole("button", { name: "Remove account" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Agents still use claude-personal" })).toBeVisible();
@@ -325,9 +374,11 @@ test("removing an account that agents use is refused, and so is removing the bos
   // The editor blocks removing the boss, and the server refuses it too.
   const bossId = readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8").match(/^boss: (\S+)/m)?.[1];
   expect(bossId).toBeTruthy();
-  await page.goto(`/studio/agents?agent=${bossId}`);
-  await expect(page.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
-  await expect(page.getByText("The boss cannot be removed")).toBeVisible();
+  await page.goto(`/agents?agent=${bossId}`);
+  await page.getByRole("button", { name: "Agent actions" }).click();
+  const remove = page.getByRole("menuitem", { name: /^Remove/ });
+  await expect(remove).toBeDisabled();
+  await expect(remove).toContainText("the boss cannot be removed");
   const res = await request.post("/api/cmd/agents.remove", { data: { id: bossId } });
   expect(res.ok()).toBe(false);
   expect(await res.text()).toContain("is the boss");

@@ -1,26 +1,32 @@
-import type { Tone } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 
-const TONE: Record<Tone, string> = {
+const DOT_COLOR = {
   green: "bg-green",
   amber: "bg-amber",
   red: "bg-red",
-  neutral: "bg-fg-faint",
-};
+  coral: "bg-coral",
+  violet: "bg-violet",
+  neutral: "bg-fg-dim",
+} as const;
+export type DotTone = keyof typeof DOT_COLOR;
 
-/** A small colored dot. Color never carries meaning alone: pair it with text or pass `title`. */
-export function StatusDot({ tone, className }: { tone: Tone; className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn("inline-block size-[7px] shrink-0 rounded-full", TONE[tone], className)}
-    />
-  );
-}
-
-export const TONE_TEXT: Record<Tone, string> = {
+const TEXT_COLOR = {
   green: "text-green",
   amber: "text-amber",
   red: "text-red",
+  coral: "text-coral",
+  violet: "text-violet",
   neutral: "text-fg-muted",
-};
+} as const;
+export const toneText = (tone: DotTone): string => TEXT_COLOR[tone];
+
+/** A status dot, 8 px like the design. Color never carries meaning alone: it always sits next to words. */
+export function Dot({ tone, size = 8, className }: { tone: DotTone; size?: number; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{ width: size, height: size }}
+      className={cn("inline-block shrink-0 rounded-full", DOT_COLOR[tone], className)}
+    />
+  );
+}

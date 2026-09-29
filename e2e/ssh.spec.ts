@@ -34,7 +34,7 @@ async function fakeHost(
 
 test("Repos shows one calm notice to unlock an SSH key, and it goes away once unlocked", async ({ page }) => {
   await fakeHost(page, { ssh: WAITING }, (p) => p === PASSPHRASE);
-  await page.goto("/repos");
+  await page.goto("/projects");
 
   const notice = page.getByRole("region", { name: "majhi cannot reach your git hosts over SSH yet." });
   await expect(notice).toBeVisible();
@@ -60,7 +60,7 @@ test("Repos shows one calm notice to unlock an SSH key, and it goes away once un
 test("Check again reloads the keys, and Repos shows no notice when SSH works", async ({ page }) => {
   const state = { ssh: WAITING };
   await fakeHost(page, state, () => false);
-  await page.goto("/repos");
+  await page.goto("/projects");
   const notice = page.getByRole("region", { name: "majhi cannot reach your git hosts over SSH yet." });
   await expect(notice).toBeVisible();
 
@@ -69,7 +69,7 @@ test("Check again reloads the keys, and Repos shows no notice when SSH works", a
   await expect(notice).toHaveCount(0);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Repos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects and links" })).toBeVisible();
   await expect(page.getByText("cannot reach your git hosts")).toHaveCount(0);
 });
 
@@ -91,7 +91,7 @@ test("Repos names a git host that took none of the keys", async ({ page }) => {
       }),
     }),
   );
-  await page.goto("/repos");
+  await page.goto("/projects");
   const notice = page.getByRole("region", { name: "majhi cannot reach your git hosts over SSH yet." });
   await expect(notice).toContainText("gitlab-ashik112 did not accept any SSH key");
 });

@@ -3,11 +3,16 @@ import { Brain, ChevronRight, ListChecks, Paperclip, ShieldQuestion } from "luci
 import { memo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
+import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { Markdown } from "./markdown";
 import { MediaView, type TaskFiles } from "./media";
 import { permissionOptionLabel, permissionSummary } from "./model";
 import { ToolRow } from "./tool-row";
+
+export function permissionDomId(itemId: string): string {
+  return `perm-${itemId}`;
+}
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -25,7 +30,7 @@ export interface ItemContext {
 export const RoomItemView = memo(function RoomItemView({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
   if (item.type === "plan" && ctx.pinned.has(item.id)) return null;
   return (
-    <li className="list-none [contain-intrinsic-size:auto_64px] [content-visibility:auto]">
+    <li className="animate-fade-in list-none [contain-intrinsic-size:auto_64px] [content-visibility:auto]">
       <ItemBody item={item} ctx={ctx} />
     </li>
   );
@@ -55,31 +60,42 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
 function OwnerMessage({ item }: { item: Of<"owner"> }) {
   return (
     <div className="flex justify-end">
-      <div className="flex max-w-[640px] flex-col items-end gap-1">
-        <div
-          className={cn(
-            "rounded-lg bg-selected px-3 py-2 text-md whitespace-pre-wrap break-words text-fg",
-            item.queued && "opacity-70",
-          )}
+      <div className="flex max-w-[700px] gap-2.5">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-fg text-[11px] font-semibold text-canvas"
         >
-          {item.text}
-        </div>
-        {item.attachments.length > 0 && (
-          <ul aria-label="Attachments" className="flex flex-wrap justify-end gap-1.5">
-            {item.attachments.map((a) => (
-              <li
-                key={a.id}
-                className="flex h-6 items-center gap-1 rounded-sm border border-line-strong px-1.5 font-mono text-xs text-fg-muted"
-              >
-                <Paperclip aria-hidden="true" className="size-3" />
-                {a.name}
-              </li>
-            ))}
-          </ul>
-        )}
-        <span className="text-xs text-fg-faint">
-          {item.queued ? "Queued, waits for the agent's next turn" : "You"}
+          Y
         </span>
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-baseline gap-2 font-mono">
+            <span className="text-base font-semibold">you</span>
+            {item.queued && (
+              <span className="text-xs text-fg-faint">Queued, waits for the agent's next turn</span>
+            )}
+          </div>
+          <div
+            className={cn(
+              "rounded-lg bg-blue-wash px-3 py-2.5 text-body leading-normal whitespace-pre-wrap break-words text-fg-soft",
+              item.queued && "opacity-70",
+            )}
+          >
+            {item.text}
+          </div>
+          {item.attachments.length > 0 && (
+            <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
+              {item.attachments.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex h-6 items-center gap-1 rounded-sm border border-line-strong px-1.5 font-mono text-xs text-fg-muted"
+                >
+                  <Paperclip aria-hidden="true" className="size-3" />
+                  {a.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -94,16 +110,18 @@ function AgentMessage({
   live: AgentLive | undefined;
   task: TaskFiles;
 }) {
+  const info = useAgentIndex().get(item.agent);
+  const meta = [info?.account, live?.model ?? info?.model].filter(Boolean).join(" · ");
   return (
-    <div className="flex max-w-[720px] gap-2.5">
-      <AgentAvatar id={item.agent} size={26} className="mt-0.5" />
+    <div className="flex max-w-[700px] gap-2.5">
+      <AgentAvatar id={item.agent} size={28} className="mt-0.5" />
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex items-baseline gap-2 font-mono">
-          <span className="text-sm font-semibold">{item.agent}</span>
-          {live?.model && <span className="text-xs text-fg-faint">{live.model}</span>}
+          <span className="text-base font-semibold">@{item.agent}</span>
+          {meta && <span className="text-xs text-fg-faint">{meta}</span>}
         </div>
         {item.text !== "" && (
-          <div className="text-md text-fg-soft">
+          <div className="min-w-0 rounded-lg bg-raised px-3 py-2.5 text-body leading-normal text-[#e2e4e8]">
             <Markdown text={item.text} task={task} />
           </div>
         )}
@@ -124,7 +142,7 @@ function AgentMessage({
 function Thought({ item }: { item: Of<"thought"> }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="pl-9">
+    <div className="pl-[38px]">
       <button
         type="button"
         aria-expanded={open}
@@ -147,7 +165,7 @@ function Thought({ item }: { item: Of<"thought"> }) {
 function PlanSummary({ item }: { item: Of<"plan"> }) {
   const done = item.entries.filter((e) => e.status === "completed").length;
   return (
-    <details className="pl-9 text-sm text-fg-faint">
+    <details className="pl-[38px] text-sm text-fg-faint">
       <summary className="flex cursor-pointer items-center gap-1.5 hover:text-fg-muted">
         <ListChecks aria-hidden="true" className="size-3.5" />
         Plan, {done} of {item.entries.length} done
@@ -190,7 +208,7 @@ export function PinnedPlan({ plan }: { plan: Of<"plan"> }) {
   return (
     <section
       aria-label={`Plan of ${plan.agent}`}
-      className="rounded-md border border-line-strong bg-card px-3 py-2.5"
+      className="rounded-lg border border-line-strong bg-card px-3 py-2.5"
     >
       <h3 className="flex items-center gap-2 text-xs font-normal tracking-[0.08em] text-fg-faint uppercase">
         <ListChecks aria-hidden="true" className="size-3.5" />
@@ -216,7 +234,7 @@ function Permission({
   const summary = permissionSummary(item);
   if (!summary.pending) {
     return (
-      <p className="flex items-center gap-2 pl-9 text-sm text-fg-faint">
+      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
         <ShieldQuestion aria-hidden="true" className="size-3.5" />
         {summary.text}
       </p>
@@ -224,8 +242,10 @@ function Permission({
   }
   return (
     <section
+      id={permissionDomId(item.id)}
+      tabIndex={-1}
       aria-label={`Permission: ${item.title}`}
-      className="flex max-w-[720px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+      className="flex max-w-[700px] outline-none flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />

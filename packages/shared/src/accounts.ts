@@ -51,6 +51,13 @@ export const OrgConfigSchema = z.looseObject({
     .regex(/^[A-Z][A-Z0-9]{0,9}$/, "Use 1 to 10 capital letters or digits, starting with a letter")
     .refine((k) => k !== "LOCAL", "LOCAL is reserved for tasks without an org")
     .optional(),
+  /** Who commits made in this org's repos are authored as. */
+  identity: z
+    .object({
+      name: z.string().trim().min(1, "Give the commit name"),
+      email: z.email("Use an email address like you@company.com"),
+    })
+    .optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -250,6 +257,9 @@ export const OrgViewSchema = z.object({
   name: z.string(),
   color: z.string().optional(),
   base: z.string().optional(),
+  /** The task key prefix: the configured `key`, else the one derived from the name. */
+  key: z.string(),
+  identity: OrgConfigSchema.shape.identity,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });

@@ -1,4 +1,5 @@
-import { IdSchema, type ProjectView } from "@majhi/shared";
+import { IdSchema, type ProjectView, type Repo } from "@majhi/shared";
+import { repoMatches } from "./filter";
 
 /** A project id from a folder name: `Globex API` becomes `globex-api`. Empty when nothing usable is left. */
 export function suggestProjectId(folder: string, taken: readonly string[] = []): string {
@@ -39,4 +40,30 @@ export function aliasClashes(
 /** The registered project whose checkout is this path. */
 export function projectForPath(projects: readonly ProjectView[], path: string): ProjectView | undefined {
   return projects.find((p) => p.path === path);
+}
+
+/** Whether a registered project matches the search: its id, aliases, org or repo fields. */
+export function projectMatches(
+  project: Pick<ProjectView, "id" | "aliases" | "org" | "path">,
+  repo: Repo | undefined,
+  terms: readonly string[],
+): boolean {
+  if (terms.length === 0) return true;
+  const own = [project.id, project.org, project.path, ...project.aliases].join("\n").toLowerCase();
+  return terms.every((term) => own.includes(term)) || (repo !== undefined && repoMatches(repo, terms));
+}
+
+export interface OrgGroup<T> {
+  org: string;
+  items: T[];
+}
+
+/** Projects grouped by org, in the order of `orgIds`; orgs no project uses are left out, unknown orgs come last. */
+export function groupByOrg<T extends { org: string }>(
+  items: readonly T[],
+  orgIds: readonly string[],
+): OrgGroup<T>[] {
+  const known = orgIds.filter((id) => items.some((i) => i.org === id));
+  const strays = [...new Set(items.map((i) => i.org))].filter((id) => !orgIds.includes(id)).sort();
+  return [...known, ...strays].map((org) => ({ org, items: items.filter((i) => i.org === org) }));
 }

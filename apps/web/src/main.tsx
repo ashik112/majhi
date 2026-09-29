@@ -17,6 +17,8 @@ import { router } from "./router";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      // Server events invalidate what changes, so a page switch shows the cache at once and refetches only when stale.
+      staleTime: 10_000,
       // Retry only when the server did not answer; a 4xx or a contract mismatch will not fix itself.
       retry: (failures, error) => error instanceof ApiRequestError && error.unreachable && failures < 2,
     },

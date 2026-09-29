@@ -1,16 +1,24 @@
-import { collapseHome } from "@majhi/shared";
-import { Link, Outlet } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
-import { useStudioShortcut } from "@/features/studio/use-studio-shortcut";
-import { cn } from "@/lib/cn";
-import { MOD_KEY } from "@/lib/format";
-import { useConfig, useHealth, useHostStatus } from "@/lib/queries";
+import { Outlet, useRouterState } from "@tanstack/react-router";
+import * as m from "motion/react-m";
+import { useMemo } from "react";
+import { InShellContext } from "@/components/centered-page";
+import { AttentionBanner } from "@/components/shell/banner";
+import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
+import { Sidebar } from "@/components/shell/sidebar";
+import { AppGate } from "@/features/home/app-gate";
+import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
+import { deriveBanner } from "@/features/shell/model";
+import { useShortcuts } from "@/features/shell/use-shortcuts";
+import { useAgentIndex } from "@/lib/agent-index";
+import { usePendingPermission } from "@/lib/attention";
+import { useOrgFilter } from "@/lib/org-filter";
+import { useAccounts } from "@/lib/studio-queries";
+import { useTasks } from "@/lib/task-queries";
+import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
 
 export function AppShell() {
   useServerEvents();
-  useStudioShortcut();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <a
@@ -19,96 +27,52 @@ export function AppShell() {
       >
         Skip to content
       </a>
-      <TopBar />
-      <div id="main" className="flex min-h-0 flex-1 flex-col">
-        <Outlet />
-      </div>
+      <AppGate>
+        <NewTaskProvider>
+          <Frame />
+        </NewTaskProvider>
+      </AppGate>
     </div>
   );
 }
 
-function TopBar() {
-  const config = useConfig();
-  const state = config.data;
-  const roots =
-    state?.status === "loaded" ? state.config.workspaces.map((path) => collapseHome(path, state.home)) : [];
-
-  return (
-    <header className="flex h-[52px] shrink-0 items-center gap-4 border-b border-line bg-panel px-4">
-      <Link to="/" className="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="majhi, go to tasks">
-        <span
-          aria-hidden="true"
-          className="flex size-[26px] items-center justify-center rounded-[7px] bg-amber font-mono text-xs font-semibold text-amber-ink"
-        >
-          mj
-        </span>
-        <span className="text-md font-semibold tracking-[-0.01em]">majhi</span>
-      </Link>
-      {roots.length > 0 && (
-        <Link
-          to="/settings/roots"
-          title={`Workspace roots: ${roots.join(", ")}. Click to edit.`}
-          className="hidden min-w-0 items-center gap-2 overflow-hidden rounded-xs font-mono text-xs whitespace-nowrap text-fg-faint transition-colors hover:text-fg-muted sm:flex"
-        >
-          {roots.map((root, i) => (
-            <span key={root} className="flex shrink-0 items-center gap-2">
-              {i > 0 && <span aria-hidden="true" className="size-[3px] rounded-full bg-line-hover" />}
-              {root}
-            </span>
-          ))}
-        </Link>
-      )}
-      <div className="ml-auto flex items-center gap-2">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/repos" activeProps={{ "aria-current": "page" }}>
-            Repos
-          </Link>
-        </Button>
-        <Button asChild variant="secondary" size="sm">
-          <Link to="/studio/$tab" params={{ tab: "agents" }} search={{}} title={`Open Studio (${MOD_KEY} .)`}>
-            Studio
-            <Kbd aria-hidden="true">{MOD_KEY} .</Kbd>
-          </Link>
-        </Button>
-        <OnlinePill />
-      </div>
-    </header>
+/** The sidebar, the banner that appears when something needs the owner, and the page. */
+function Frame() {
+  const newTask = useNewTask();
+  const { helpOpen, setHelpOpen } = useShortcuts(newTask.open);
+  const { org } = useOrgFilter();
+  const tasks = useTasks().data;
+  const accounts = useAccounts().data;
+  const agents = useAgentIndex();
+  const permission = usePendingPermission();
+  const now = useNow(60_000);
+  const banner = useMemo(
+    () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
+    [tasks, agents, accounts, permission, now],
   );
-}
-
-function OnlinePill() {
-  const health = useHealth();
-  const host = useHostStatus();
-  const state = health.isPending ? "checking" : health.online ? "online" : "offline";
-  const label = { checking: "Connecting", online: "Online", offline: "Offline" }[state];
-  // Only a known "not connected" counts; while the status loads the pill stays as it is.
-  const helperOff = state === "online" && host.data?.connected === false;
-  const title =
-    state === "online"
-      ? `majhi ${health.data?.version ?? ""} is running.${helperOff ? " The host helper is not connected; make up installs it." : ""}`
-      : state === "offline"
-        ? "majhi is not answering. Start it with make up."
-        : "Checking the server";
+  // The page fades in when the section changes (board, task, a page), not on every task switch.
+  const section = useRouterState({
+    select: (s) => (s.location.pathname.startsWith("/t/") ? "/" : s.location.pathname),
+  });
 
   return (
-    <span
-      role="status"
-      title={title}
-      className="flex h-8 items-center gap-[7px] rounded-full border border-line-strong px-3 text-sm text-fg-soft"
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "size-[7px] rounded-full",
-          state === "online" && "bg-green",
-          state === "offline" && "bg-red",
-          state === "checking" && "animate-shimmer bg-fg-faint",
-        )}
-      />
-      <span>
-        {label}
-        {helperOff && <span className="text-fg-faint">, helper off</span>}
-      </span>
-    </span>
+    <div className="flex min-h-0 flex-1">
+      <Sidebar />
+      <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
+        <AttentionBanner banner={banner} org={org} />
+        <m.div
+          key={section}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        >
+          <InShellContext.Provider value={true}>
+            <Outlet />
+          </InShellContext.Provider>
+        </m.div>
+      </main>
+      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+    </div>
   );
 }

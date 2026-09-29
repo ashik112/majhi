@@ -61,11 +61,11 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await expect(progress).toContainText("Step 2 of 3");
   await page.getByRole("button", { name: "Skip for now" }).click();
 
-  // Home is the task screen now; the repos list is its own view.
-  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
-  await page.getByRole("link", { name: "Repos" }).click();
-  await expect(page).toHaveURL(/\/repos$/);
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  // Home is the board now; the projects list is its own page.
+  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Projects and links" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByRole("heading", { name: "Projects and links", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(3);
   await expect(row(page, "alpha-api")).toContainText("GitHub");
   await expect(row(page, "beta-web")).toContainText("GitLab");
@@ -119,7 +119,7 @@ test("the folder browser marks repos, goes up with Backspace, and adds the folde
   await expect(chosenRoots(page).getByRole("listitem")).toHaveText([/^~\/Work/, /^~\/Projects/]);
   await page.getByRole("button", { name: /Save changes/ }).click();
 
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects and links", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(4);
   await expect(row(page, "delta-app")).toContainText("GitHub");
 });
@@ -158,7 +158,7 @@ test("roots can be picked with the keyboard alone", async ({ page, request }) =>
 
   // Cmd/Ctrl+Enter anywhere else in the form saves.
   await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects and links", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(4);
 });
 
@@ -208,12 +208,12 @@ test("without the host helper the roots form falls back to typed paths", async (
   await expect(page.getByRole("textbox", { name: "Workspace root 1" })).toHaveValue("~/Work");
   await expect(page.getByRole("textbox", { name: "Workspace root 3" })).toHaveValue("~/Missing");
   await expect(page.getByRole("button", { name: "Browse folders" })).toHaveCount(0);
-  await expect(page.getByRole("status").filter({ hasText: "Online" })).toHaveText("Online, helper off");
+  await expect(page.getByRole("status").filter({ hasText: "online" })).toContainText("helper off");
   await shot(page, "helper-offline");
 });
 
 test("search filters repos and / focuses it", async ({ page }) => {
-  await page.goto("/repos");
+  await page.goto("/projects");
   await expect(rows(page)).toHaveCount(4);
 
   await page.keyboard.press("/");
@@ -238,18 +238,12 @@ test("search filters repos and / focuses it", async ({ page }) => {
   await expect(rows(page)).toHaveCount(4);
 });
 
-test("j moves the selection and Enter copies the repo path", async ({ page }) => {
-  await page.goto("/repos");
+test("a repo row shows its remote URL and copies its path", async ({ page }) => {
+  await page.goto("/projects");
   await expect(rows(page)).toHaveCount(4);
-  await expect(row(page, "alpha-api")).toHaveAttribute("aria-current", "true");
+  await expect(row(page, "beta-web").getByTitle("https://gitlab.com/acme/beta-web.git")).toBeVisible();
 
-  await page.keyboard.press("j");
-  await expect(row(page, "beta-web")).toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("complementary", { name: "Repo details" })).toContainText(
-    "https://gitlab.com/acme/beta-web.git",
-  );
-
-  await page.keyboard.press("Enter");
+  await row(page, "beta-web").getByRole("button", { name: "Copy path of beta-web" }).click();
   await expect(page.getByText("Copied", { exact: true })).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toBe(join(HOST_HOME, "Work", "beta-web"));
@@ -260,7 +254,7 @@ test("a broken majhi.yaml shows the file and each error, and Retry recovers", as
   const good = readFileSync(file, "utf8");
   writeFileSync(file, "workspaces: []\ntasks_dir: tasks\nsurprise: true\n");
   try {
-    await page.goto("/repos");
+    await page.goto("/projects");
     await expect(page.getByRole("heading", { name: "majhi.yaml has errors" })).toBeVisible();
     await expect(page.getByText("~/.majhi/majhi.yaml")).toBeVisible();
     const errors = page.getByRole("region", { name: /errors/ }).getByRole("listitem");
@@ -276,7 +270,6 @@ test("a broken majhi.yaml shows the file and each error, and Retry recovers", as
     .getByRole("button", { name: "Retry" })
     .click({ timeout: 2_000 })
     .catch(() => {});
-  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
-  await page.goto("/repos");
+  await expect(page.getByRole("heading", { name: "Projects and links", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(4);
 });

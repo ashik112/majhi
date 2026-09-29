@@ -149,7 +149,7 @@ function Card({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "flex h-fit w-full max-w-[600px] flex-col rounded-xl border bg-panel",
+        "flex h-fit w-full max-w-[600px] flex-col rounded-xl border bg-raised",
         tone === "amber" ? "border-amber-line" : "border-line-strong",
       )}
     >

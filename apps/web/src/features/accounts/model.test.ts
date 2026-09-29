@@ -1,6 +1,8 @@
 import type { OrgView } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
+  authInfo,
+  barTone,
   failingStep,
   formatIn,
   formatPct,
@@ -10,6 +12,7 @@ import {
   resetFull,
   resetLabel,
   statusInfo,
+  statusText,
   suggestOrgColor,
   usageRows,
   usageRowText,
@@ -56,7 +59,9 @@ describe("statusInfo", () => {
 });
 
 describe("orgLabel", () => {
-  const orgs: OrgView[] = [{ id: "acme", name: "Acme", color: "#8ab8f5", accountCount: 1, agentCount: 0 }];
+  const orgs: OrgView[] = [
+    { id: "acme", name: "Acme", key: "ACM", color: "#8ab8f5", accountCount: 1, agentCount: 0 },
+  ];
   it("resolves personal, known and unknown orgs", () => {
     expect(orgLabel("personal", orgs)).toEqual({ name: "Personal" });
     expect(orgLabel("acme", orgs)).toEqual({ name: "Acme", color: "#8ab8f5" });
@@ -140,5 +145,33 @@ describe("failingStep", () => {
     };
     expect(failingStep(health)?.name).toBe("auth");
     expect(failingStep({ ...health, steps: [] })).toBeUndefined();
+  });
+});
+
+describe("health table text", () => {
+  const at = Date.parse("2026-10-01T10:00:00Z");
+  it("turns bars green, amber and red", () => {
+    expect([10, 79, 80, 99, 100].map(barTone)).toEqual(["green", "green", "amber", "amber", "red"]);
+  });
+
+  it("puts the reset time on an account at its limit", () => {
+    const usage = {
+      window: { usedPct: 100, resetsAt: "2026-10-01T15:40:00Z" },
+      models: [],
+      estimated: false,
+      updatedAt: "",
+    };
+    const text = statusText({ status: "at-limit", usage }, at, "en-US");
+    expect(text.tone).toBe("red");
+    expect(text.label).toMatch(/^Limit reached · \d{1,2}:40/);
+    expect(statusText({ status: "at-limit" }, at)).toEqual({ label: "Limit reached", tone: "red" });
+    expect(statusText({ status: "healthy" }, at)).toEqual({ label: "Healthy", tone: "green" });
+  });
+
+  it("says what is wrong with the login", () => {
+    expect(authInfo({ auth: "login", status: "healthy" })).toEqual({ label: "Signed in", tone: "green" });
+    expect(authInfo({ auth: "login", status: "needs-login" })).toEqual({ label: "Needs login", tone: "red" });
+    expect(authInfo({ auth: "login", status: "relogin-soon" }).tone).toBe("amber");
+    expect(authInfo({ auth: "api-key", status: "needs-login" })).toEqual({ label: "API key", tone: "green" });
   });
 });

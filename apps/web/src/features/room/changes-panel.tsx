@@ -1,39 +1,38 @@
-import type { RoomItem, Task, TaskRepo } from "@majhi/shared";
-import { ChevronRight, Copy, FileDiff, FileMinus, FileSymlink } from "lucide-react";
+import type { RoomItem, Task } from "@majhi/shared";
+import { ChevronRight, FileDiff, FileMinus, FileSymlink } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
-import { useCopy } from "@/lib/use-copy";
+import { plural } from "@/lib/format";
 import { DiffView } from "./diff-view";
 import { filesByRepo, shortPath, touchedFiles } from "./model";
 
-/** The Changes tab: per repo its branch, worktree and the files the agent touched in this task. */
+/** The Changes card: per repo the files the agent touched in this task, each with its diff. */
 export function ChangesPanel({ task, items }: { task: Task; items: readonly RoomItem[] }) {
   const groups = useMemo(() => filesByRepo(touchedFiles(items), task.repos), [items, task.repos]);
-  const copy = useCopy();
+  const total = groups.reduce((sum, group) => sum + group.files.length, 0);
 
   return (
-    <div className="flex flex-col gap-3">
-      {task.repos.length === 0 && (
-        <p className="text-sm text-amber">
-          No repo yet. Say which repos in the room, like "use api and web".
-        </p>
-      )}
+    <Card aria-labelledby="changes-heading">
+      <div className="flex items-baseline gap-2">
+        <h2 id="changes-heading" className="text-body font-semibold">
+          Changes
+        </h2>
+        <span className="tnum text-sm text-fg-faint">{total === 0 ? "none yet" : plural(total, "file")}</span>
+      </div>
       {groups.map((group) => (
         <section
           key={group.repo?.project ?? "outside"}
           aria-label={group.repo ? `Changes in ${group.repo.project}` : "Changes outside the worktrees"}
-          className="flex flex-col gap-2 rounded-lg border border-line-strong bg-card p-3"
+          className="flex flex-col gap-1.5 border-t border-line-strong pt-2.5"
         >
-          {group.repo ? (
-            <RepoHeader repo={group.repo} onCopy={(path) => void copy(path)} />
-          ) : (
-            <h3 className="text-base font-semibold">Outside the worktrees</h3>
-          )}
+          <h3 className="font-mono text-xs text-fg-muted">
+            {group.repo ? group.repo.project : "Outside the worktrees"}
+          </h3>
           {group.files.length === 0 ? (
             <p className="text-sm text-fg-faint">No files changed yet.</p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul className="flex flex-col gap-0.5">
               {group.files.map((file) => (
                 <FileRow
                   key={file.path}
@@ -44,41 +43,13 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
           )}
         </section>
       ))}
-      <p className="text-sm text-fg-faint text-pretty">
-        These are the changes the agent made in this task, from its edits. Full git diffs come with merge
-        requests.
-      </p>
-    </div>
-  );
-}
-
-function RepoHeader({ repo, onCopy }: { repo: TaskRepo; onCopy: (path: string) => void }) {
-  return (
-    <>
-      <h3 className="font-mono text-base font-semibold">{repo.project}</h3>
-      <p className="font-mono text-xs text-fg-muted">
-        {repo.branch} from {repo.base}
-      </p>
-      {repo.worktree ? (
-        <div className="flex items-center gap-1">
-          <span className="min-w-0 truncate font-mono text-xs text-fg-faint" title={repo.worktree}>
-            {repo.worktree}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="-my-1 size-6"
-            aria-label={`Copy worktree path of ${repo.project}`}
-            title="Copy path"
-            onClick={() => onCopy(repo.worktree ?? "")}
-          >
-            <Copy aria-hidden="true" />
-          </Button>
-        </div>
-      ) : (
-        <p className="text-xs text-fg-faint">Worktree not created yet. It is made when the task starts.</p>
+      {task.repos.length === 0 && groups.length === 0 && (
+        <p className="text-sm text-fg-faint">Files the agent changes show up here.</p>
       )}
-    </>
+      <p className="text-xs text-fg-faint text-pretty">
+        Edits the agent made in this task. Full git diffs come with merge requests.
+      </p>
+    </Card>
   );
 }
 

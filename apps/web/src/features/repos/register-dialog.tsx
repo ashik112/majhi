@@ -5,6 +5,7 @@ import { ChipsInput } from "@/components/ui/chips-input";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
+import { PageLink } from "@/components/ui/page-link";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
@@ -107,7 +108,13 @@ export function RegisterDialog({
           )}
         </Field>
         {orgs.isSuccess && orgList.length === 0 && (
-          <p className="-mt-2 text-sm text-amber">No orgs yet. Add one in Studio, under Accounts.</p>
+          <p className="-mt-2 text-sm text-amber">
+            No orgs yet.{" "}
+            <PageLink page="orgs" className="underline underline-offset-2 hover:text-amber-hover">
+              Add one in Orgs and accounts
+            </PageLink>
+            .
+          </p>
         )}
 
         <Field

@@ -26,3 +26,13 @@ export function formatAgo(iso: string, now: number): string {
 /** "⌘" on Apple platforms, "Ctrl" elsewhere, for key hints. */
 export const MOD_KEY =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+
+/** Two letters for an org tile, from its task key ("GLX" gives "ID"). */
+export function badgeLetters(key: string): string {
+  return (
+    key
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 2)
+      .toUpperCase() || "?"
+  );
+}

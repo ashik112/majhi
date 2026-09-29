@@ -5,6 +5,7 @@ import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { useHostStatus, useSshReload, useSshUnlock } from "@/lib/queries";
 
 /** True when majhi's git cannot reach hosts over SSH yet: no key loaded, or a key waits for its passphrase. */
@@ -13,10 +14,10 @@ export function sshNeedsAttention(ssh: SshStatus | undefined): ssh is SshStatus 
 }
 
 /**
- * One calm notice on the Repos screen. It shows nothing while SSH works, or while the host
+ * One calm notice on the Projects and Hub setup pages. It shows nothing while SSH works, or while the host
  * helper has not reported yet.
  */
-export function SshNotice() {
+export function SshNotice({ className }: { className?: string }) {
   const status = useHostStatus().data;
   const ssh = status?.info?.ssh;
   const failing = (status?.sshHosts ?? []).filter((h) => h.state === "auth-failed");
@@ -36,7 +37,10 @@ export function SshNotice() {
   return (
     <section
       aria-labelledby="ssh-notice-title"
-      className="flex shrink-0 flex-col gap-3 border-b border-line bg-sunken px-5 py-3"
+      className={cn(
+        "flex shrink-0 flex-col gap-3 rounded-xl border border-amber-line bg-amber-wash px-4 py-3",
+        className,
+      )}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <KeyRound aria-hidden="true" className="size-4 shrink-0 text-amber" />

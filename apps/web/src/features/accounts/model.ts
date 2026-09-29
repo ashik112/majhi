@@ -1,6 +1,7 @@
 import {
   type AccountStatus,
   type AccountUsage,
+  type AccountView,
   type HealthCheck,
   type HealthStep,
   type OrgView,
@@ -174,4 +175,39 @@ const STEP_LABEL: Record<HealthStep["name"], string> = {
 
 export function stepLabel(name: HealthStep["name"]): string {
   return STEP_LABEL[name];
+}
+
+/** Bar color: green while there is room, amber from 80 %, red at 100 %. */
+export function barTone(pct: number): "green" | "amber" | "red" {
+  const tone = usageTone(pct);
+  return tone === "neutral" ? "green" : tone === "amber" ? "amber" : "red";
+}
+
+/** The status column: the status label, and for an account at its limit when it resets, like `Limit reached · 3:40 PM`. */
+export function statusText(
+  account: Pick<AccountView, "status" | "usage">,
+  now: number,
+  locale?: string,
+): StatusInfo {
+  if (account.status !== "at-limit") return statusInfo(account.status);
+  const resets = account.usage?.window?.resetsAt ?? account.usage?.weekly?.resetsAt;
+  const label = resets ? `Limit reached · ${resetLabel(resets, now, locale)}` : "Limit reached";
+  return { label, tone: "red" };
+}
+
+/** The auth column: "Signed in", "API key", or what is wrong with the login. */
+export function authInfo(account: Pick<AccountView, "status" | "auth">): StatusInfo {
+  if (account.auth === "api-key") return { label: "API key", tone: "green" };
+  switch (account.status) {
+    case "needs-login":
+      return { label: "Needs login", tone: "red" };
+    case "relogin-soon":
+      return { label: "Expires soon", tone: "amber" };
+    case "unreachable":
+      return { label: "Unreachable", tone: "red" };
+    case "unknown":
+      return { label: "Not checked", tone: "neutral" };
+    default:
+      return { label: "Signed in", tone: "green" };
+  }
 }

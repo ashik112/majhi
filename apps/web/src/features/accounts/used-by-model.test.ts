@@ -27,8 +27,8 @@ function ok(id: string, scope: string, account: string, isBoss = false): AgentEn
 }
 const invalid: AgentEntry = { status: "invalid", file: "/h/bad.md", id: "bad", errors: ["x"] };
 const orgs: OrgView[] = [
-  { id: "acme", name: "Acme", color: "#8ab8f5", accountCount: 1, agentCount: 1 },
-  { id: "zed", name: "Zed", accountCount: 0, agentCount: 0 },
+  { id: "acme", name: "Acme", key: "ACM", color: "#8ab8f5", accountCount: 1, agentCount: 1 },
+  { id: "zed", name: "Zed", key: "ZED", accountCount: 0, agentCount: 0 },
 ];
 
 describe("agentsByAccount", () => {

@@ -88,7 +88,7 @@ export function Timeline({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {plans.length > 0 && (
-        <div className="flex max-h-[40%] shrink-0 flex-col gap-2 overflow-y-auto px-[22px] pt-3">
+        <div className="flex max-h-[40%] shrink-0 flex-col gap-2 overflow-y-auto pb-2">
           {plans.map((plan) => (
             <PinnedPlan key={plan.id} plan={plan} />
           ))}
@@ -102,7 +102,7 @@ export function Timeline({
         aria-live="off"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus so the keyboard can scroll it
         tabIndex={0}
-        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-[22px] py-4 focus-visible:outline-none"
+        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 py-1 focus-visible:outline-none"
       >
         {state.more && <p className="text-center text-xs text-fg-faint">Loading earlier messages</p>}
         {!state.loaded && state.items.length === 0 && (
@@ -111,7 +111,7 @@ export function Timeline({
         {state.loaded && state.items.length === 0 && (
           <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
         )}
-        <ol className="m-0 flex flex-col gap-3.5 p-0">
+        <ol className="m-0 mt-auto flex flex-col gap-3.5 p-0">
           {state.items.map((item: RoomItem) => (
             <RoomItemView key={item.id} item={item} ctx={ctx} />
           ))}

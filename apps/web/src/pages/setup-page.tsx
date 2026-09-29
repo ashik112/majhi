@@ -1,4 +1,6 @@
-/** "Hub setup" page, rendered by the app shell inside the main area (the shell draws the sidebar and banner). */
+import { SetupView } from "@/features/setup/setup-view";
+
+/** "Hub setup" page, rendered by the app shell inside the main area. */
 export function SetupPage() {
-  return <h1 className="text-[22px] font-semibold">Hub setup</h1>;
+  return <SetupView />;
 }

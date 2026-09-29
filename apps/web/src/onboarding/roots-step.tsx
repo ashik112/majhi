@@ -1,6 +1,7 @@
 import type { WorkspacesUpdateResult } from "@majhi/shared";
 import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
+import { draftFromConfig } from "@/features/roots/model";
 import { RestartCard } from "@/features/roots/restart-card";
 import { RestartingCard } from "@/features/roots/restarting-card";
 import { RootsForm } from "@/features/roots/roots-form";
@@ -52,7 +53,9 @@ export function RootsStep({ isLast, onComplete }: OnboardingStepProps) {
       mode="first-run"
       home={state.home}
       file={state.file}
-      initial={{ rows: [], tasksDir: "" }}
+      initial={
+        state.status === "loaded" ? draftFromConfig(state.config, state.home) : { rows: [], tasksDir: "" }
+      }
       onSaved={(result) => {
         if (result.remount !== "not-needed") {
           setPending(result);

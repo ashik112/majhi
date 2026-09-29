@@ -1,41 +1,51 @@
 import type { AccountView, AgentEntry, HealthCheck, OrgView, Perm } from "@majhi/shared";
-import { AUTO } from "@majhi/shared";
+import { AUTO, collapseHome } from "@majhi/shared";
+import { Check, Ellipsis } from "lucide-react";
+import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ALLOWED, ChoiceChip } from "@/components/ui/choice-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
-import { Select, Textarea } from "@/components/ui/select";
-import { StatusDot, TONE_TEXT } from "@/components/ui/status-dot";
-import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/select";
 import { HealthDialog } from "@/features/accounts/health-dialog";
-import { statusInfo } from "@/features/accounts/model";
+import { orgLabel } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 import { describeError, errorDetails } from "@/lib/errors";
+import { useConfig } from "@/lib/queries";
 import {
   useAccountModels,
   useAgentHealth,
   useDuplicateAgent,
   useRemoveAgent,
   useSetBoss,
+  useTools,
   useUpdateAgent,
 } from "@/lib/studio-queries";
 import {
   type AgentDraft,
+  type AgentState,
   accountsForScope,
   buildOptions,
   draftFromAgent,
   entryId,
+  fallbackCandidates,
   type OkAgent,
+  optionChips,
   PERMS,
-  ROLES,
   ROOT_SCOPE,
+  rolesForScope,
   togglePerm,
   toggleWhere,
   updateInput,
+  worksOutsideScope,
 } from "./model";
+import { UsageStrip } from "./usage-strip";
 
 const SAVE_DELAY_MS = 600;
 
@@ -50,14 +60,26 @@ export interface AgentEditorProps {
   agents: readonly AgentEntry[];
   accounts: readonly AccountView[];
   orgs: readonly OrgView[];
+  state: AgentState;
+  now: number;
   onHealth: (id: string, health: HealthCheck) => void;
   onSelect: (id: string | undefined) => void;
 }
 
 /** Edits one agent file. Every change saves after a short pause, so there is no Save button. */
-export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect }: AgentEditorProps) {
+export function AgentEditor({
+  entry,
+  agents,
+  accounts,
+  orgs,
+  state,
+  now,
+  onHealth,
+  onSelect,
+}: AgentEditorProps) {
   const id = entry.agent.frontmatter.id;
   const update = useUpdateAgent();
+  const boss = useSetBoss();
   const [draft, setDraft] = useState<AgentDraft>(() => draftFromAgent(entry.agent));
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const [serverWarnings, setServerWarnings] = useState<string[]>();
@@ -115,6 +137,8 @@ export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect 
   }, [entry]);
 
   const models = useAccountModels(draft.account);
+  const tools = useTools();
+  const home = useConfig().data?.home;
   const scopeAccounts = accountsForScope(accounts, draft.scope);
   const account = accounts.find((a) => a.id === draft.account);
   const accountFits = scopeAccounts.some((a) => a.id === draft.account);
@@ -129,44 +153,87 @@ export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect 
     ...(serverWarnings ?? entry.warnings),
     ...(accountFits ? [] : [`The account ${draft.account} cannot be used in scope ${draft.scope}.`]),
   ];
-  const others = agents.filter((a): a is OkAgent => a.status === "ok" && entryId(a) !== id);
-  const status = account ? statusInfo(account.status) : undefined;
+  const fallbacks = fallbackCandidates(agents, entry);
   const bossBlock = entry.isBoss
     ? "The boss cannot be removed. Make another root agent the boss first."
     : undefined;
+  const whereOptions = [
+    { id: "anywhere", name: "Anywhere" },
+    ...orgs.map((o) => ({ id: o.id, name: o.name })),
+  ];
+  const accountChoices = accountFits ? scopeAccounts : [...scopeAccounts, ...(account ? [account] : [])];
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-5 overflow-auto p-6">
+    <m.div
+      initial={{ opacity: 0, y: 3 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+      className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto px-7 pt-[18px] pb-7"
+    >
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="font-mono text-lg font-semibold">@{id}</h2>
-        {entry.isBoss && <Badge tone="amber">Boss</Badge>}
+        <AgentAvatar id={id} role={draft.role} size={36} decorative ring="border-canvas" />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h2 className="font-mono text-[1.0625rem] leading-6 font-semibold">@{id}</h2>
+          <p className="truncate font-mono text-xs text-fg-faint" title={entry.file}>
+            {home ? collapseHome(entry.file, home) : entry.file}
+          </p>
+        </div>
+        {entry.isBoss && (
+          <Badge tone="amber" className="h-6 rounded-full px-2.5 text-xs">
+            Boss
+          </Badge>
+        )}
+        {entry.agent.frontmatter.origin === "setup" && (
+          <Badge tone="blue" className="h-6 rounded-full px-2.5 text-xs">
+            Drafted by @setup
+          </Badge>
+        )}
         <SaveStatus state={save} />
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Button onClick={() => setDialog("duplicate")}>Duplicate</Button>
-          <Button onClick={() => setDialog("health")}>Health check</Button>
-          {draft.scope === ROOT_SCOPE && !entry.isBoss && <MakeBoss id={id} />}
-          <span title={bossBlock}>
-            <Button
-              onClick={() => setDialog("remove")}
-              disabled={entry.isBoss}
-              aria-describedby={bossBlock ? "remove-reason" : undefined}
-            >
-              Remove
-            </Button>
-          </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <fieldset aria-label="Role" className="m-0 flex gap-1.5 border-0 p-0">
+            {rolesForScope(draft.scope, draft.role).map((role) => (
+              <ChoiceChip
+                key={role}
+                pressed={draft.role === role}
+                className="h-[34px] px-2.5"
+                onClick={() => change({ role })}
+              >
+                {role}
+              </ChoiceChip>
+            ))}
+          </fieldset>
+          <Button className="ml-1.5" onClick={() => setDialog("health")}>
+            Health check
+          </Button>
+          <Menu
+            label="Agent actions"
+            icon={<Ellipsis aria-hidden="true" />}
+            items={[
+              { label: "Duplicate", onSelect: () => setDialog("duplicate") },
+              ...(draft.scope === ROOT_SCOPE && !entry.isBoss
+                ? [{ label: "Make boss", onSelect: () => boss.mutate(id) }]
+                : []),
+              {
+                label: entry.isBoss ? "Remove (the boss cannot be removed)" : "Remove",
+                onSelect: () => setDialog("remove"),
+                disabled: entry.isBoss,
+                tone: "danger" as const,
+              },
+            ]}
+          />
         </div>
       </div>
-      {bossBlock && (
-        <p id="remove-reason" className="text-sm text-fg-faint">
-          {bossBlock}
+      {bossBlock && <p className="sr-only">{bossBlock}</p>}
+      {boss.isError && (
+        <p role="alert" className="text-sm text-red">
+          Could not make {id} the boss: {describeError(boss.error)}
         </p>
       )}
-      <p className="font-mono text-xs break-all text-fg-faint">{entry.file}</p>
 
       {warnings.length > 0 && (
         <ul
           aria-label="Warnings"
-          className="flex flex-col gap-1 rounded-md border border-amber-line bg-amber-wash px-3 py-2"
+          className="flex flex-col gap-1 rounded-lg border border-amber-line bg-amber-wash px-3 py-2"
         >
           {warnings.map((w) => (
             <li key={w} className="text-base text-amber text-pretty">
@@ -178,7 +245,7 @@ export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect 
       {save.kind === "error" && (
         <div
           role="alert"
-          className="flex flex-col gap-1 rounded-md border border-red-line bg-red-wash px-3 py-2 text-base text-red"
+          className="flex flex-col gap-1 rounded-lg border border-red-line bg-red-wash px-3 py-2 text-base text-red"
         >
           <p>Could not save: {save.message}</p>
           {save.details.map((d) => (
@@ -189,170 +256,181 @@ export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect 
         </div>
       )}
 
-      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
-        <Field label="Scope">
-          {(p) => (
-            <Select {...p} value={draft.scope} onChange={(e) => change({ scope: e.target.value })}>
-              <option value={ROOT_SCOPE}>Root</option>
-              {orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-              {draft.scope !== ROOT_SCOPE && !orgs.some((o) => o.id === draft.scope) && (
-                <option value={draft.scope}>{draft.scope}</option>
-              )}
-            </Select>
-          )}
-        </Field>
-        <Field label="Role">
-          {(p) => (
-            <Select
-              {...p}
-              value={draft.role}
-              onChange={(e) => change({ role: e.target.value as AgentDraft["role"] })}
-            >
-              {ROLES.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <WhereField draft={draft} orgs={orgs} onChange={(where) => change({ where })} />
-        <Field label="Account" className="md:col-span-1">
-          {(p) => (
-            <>
-              <Select {...p} value={draft.account} onChange={(e) => change({ account: e.target.value })}>
-                {!accountFits && <option value={draft.account}>{draft.account} (not usable here)</option>}
-                {scopeAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.id}
-                  </option>
-                ))}
-              </Select>
-              {status ? (
-                <span className={cn("flex items-center gap-2 text-sm", TONE_TEXT[status.tone])}>
-                  <StatusDot tone={status.tone} />
-                  {status.label}
-                  {account?.signedInAs && (
-                    <span className="font-mono text-fg-faint">{account.signedInAs}</span>
-                  )}
-                </span>
-              ) : (
-                <span className="text-sm text-red">This account does not exist.</span>
-              )}
-            </>
-          )}
-        </Field>
-        <Field label="Model" warning={modelChoices.warning}>
-          {(p) => (
-            <Select
-              {...p}
-              value={draft.model ?? ""}
-              onChange={(e) => change({ model: e.target.value || undefined })}
-            >
-              {modelChoices.options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Effort" warning={effortChoices.warning}>
-          {(p) => (
-            <Select
-              {...p}
-              value={draft.effort ?? ""}
-              onChange={(e) => change({ effort: e.target.value || undefined })}
-            >
-              {effortChoices.options.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-      </div>
-      {models.isError && (
-        <p className="text-sm text-fg-faint">
-          Could not read this account's models: {describeError(models.error)}
-        </p>
-      )}
+      <UsageStrip state={state} account={account} accountId={draft.account} now={now} />
 
-      {draft.model === AUTO && (
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1 p-0 text-sm text-fg-faint">Models allowed for auto</legend>
-          <div className="flex flex-wrap gap-x-5">
-            {(models.data?.models ?? []).map((m) => (
-              <label key={m.id} className="flex h-8 cursor-pointer items-center gap-2 text-base text-fg-soft">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-[var(--color-amber)]"
-                  checked={draft.models.includes(m.id)}
-                  onChange={(e) =>
+      <div className="grid grid-cols-2 gap-x-[18px] gap-y-4">
+        <Group label="Account">
+          {accountChoices.map((a) => {
+            const org = orgLabel(a.org, orgs);
+            const tool = tools.data?.find((t) => t.id === a.tool)?.name ?? a.tool;
+            return (
+              <ChoiceChip
+                key={a.id}
+                pressed={draft.account === a.id}
+                aria-label={`${a.id}, ${tool}, ${org.name}`}
+                className="min-h-11 flex-col items-start gap-px px-2.5 py-1"
+                onClick={() => change({ account: a.id })}
+              >
+                <span className="font-mono text-sm">{a.id}</span>
+                <span className="text-[0.625rem] leading-4 font-normal text-fg-faint">
+                  {tool} · {org.name}
+                </span>
+              </ChoiceChip>
+            );
+          })}
+          {!account && <span className="text-sm text-red">The account {draft.account} does not exist.</span>}
+        </Group>
+        <div className="flex flex-col gap-4">
+          <Group label="Model" warning={modelChoices.warning}>
+            {optionChips(modelChoices, models.data?.models).map((o) => (
+              <ChoiceChip
+                key={o.value}
+                mono={o.value !== "" && o.value !== AUTO}
+                pressed={(draft.model ?? "") === o.value}
+                title={o.title}
+                className="h-11 px-3"
+                onClick={() => change({ model: o.value || undefined })}
+              >
+                {o.label}
+              </ChoiceChip>
+            ))}
+          </Group>
+          <Group label="Effort" warning={effortChoices.warning}>
+            {optionChips(effortChoices, models.data?.efforts).map((o) => (
+              <ChoiceChip
+                key={o.value}
+                mono={o.value !== "" && o.value !== AUTO}
+                pressed={(draft.effort ?? "") === o.value}
+                title={o.title}
+                onClick={() => change({ effort: o.value || undefined })}
+              >
+                {o.label}
+              </ChoiceChip>
+            ))}
+          </Group>
+        </div>
+        {models.isError && (
+          <p className="col-span-2 -mt-2 text-sm text-fg-faint">
+            Could not read this account's models: {describeError(models.error)}
+          </p>
+        )}
+
+        {draft.model === AUTO && (
+          <div className="col-span-2">
+            <Group
+              label="Models allowed for auto"
+              note="Leave all off to allow every model the account offers."
+            >
+              {(models.data?.models ?? []).map((m) => (
+                <ChoiceChip
+                  key={m.id}
+                  mono
+                  pressed={draft.models.includes(m.id)}
+                  onClick={() =>
                     change({
-                      models: e.target.checked
-                        ? [...draft.models, m.id]
-                        : draft.models.filter((x) => x !== m.id),
+                      models: draft.models.includes(m.id)
+                        ? draft.models.filter((x) => x !== m.id)
+                        : [...draft.models, m.id],
                     })
                   }
-                />
-                {m.name}
-              </label>
-            ))}
+                >
+                  {m.id}
+                </ChoiceChip>
+              ))}
+            </Group>
           </div>
-          <p className="text-sm text-fg-faint">
-            Leave all unchecked to allow every model the account offers.
-          </p>
-        </fieldset>
-      )}
+        )}
+
+        <Group
+          label="Where it can work"
+          {...(worksOutsideScope(draft.scope, draft.where)
+            ? {
+                warning: `This agent will use ${draft.account} on other orgs' code. Allowed because you said so.`,
+              }
+            : {})}
+        >
+          {whereOptions.map((o) => (
+            <ChoiceChip
+              key={o.id}
+              pressed={draft.where.includes(o.id)}
+              onClick={() => change({ where: toggleWhere(draft.where, o.id) })}
+            >
+              {o.name}
+            </ChoiceChip>
+          ))}
+        </Group>
+        <Group
+          label="When usage runs out or the run breaks"
+          note="Hand the run to another agent, or wait for the account to reset."
+        >
+          <ChoiceChip pressed={draft.fallback === undefined} onClick={() => change({ fallback: undefined })}>
+            No fallback, wait
+          </ChoiceChip>
+          {fallbacks.map((a) => (
+            <ChoiceChip
+              key={entryId(a)}
+              mono
+              pressed={draft.fallback === entryId(a)}
+              aria-label={`Hand off to @${entryId(a)}`}
+              onClick={() => change({ fallback: entryId(a) })}
+            >
+              @{entryId(a)}
+            </ChoiceChip>
+          ))}
+          {draft.fallback && !fallbacks.some((a) => entryId(a) === draft.fallback) && (
+            <ChoiceChip mono pressed onClick={() => change({ fallback: undefined })}>
+              @{draft.fallback} (not found)
+            </ChoiceChip>
+          )}
+        </Group>
+      </div>
 
       <Field label="Instructions">
         {(p) => (
           <Textarea
             {...p}
-            rows={8}
+            rows={4}
             value={draft.instructions}
             onChange={(e) => change({ instructions: e.target.value })}
+            className="rounded-[10px] border-line-strong bg-[#0c0d0f] px-3.5 py-3 text-[0.8125rem] leading-[1.55] text-[#e2e4e8]"
           />
         )}
       </Field>
 
-      <fieldset className="flex flex-col gap-0.5">
-        <legend className="mb-1 p-0 text-sm text-fg-faint">Allowed to</legend>
-        <div className="grid gap-x-6 sm:grid-cols-2">
-          {PERMS.map((perm) => (
-            <Switch
-              key={perm.id}
-              label={perm.label}
-              checked={draft.perms.includes(perm.id)}
-              onChange={(on) => change({ perms: togglePerm(draft.perms, perm.id as Perm, on) })}
-            />
-          ))}
+      <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+        <legend className="mb-2 p-0 text-sm text-fg-faint">Permissions</legend>
+        <div className="grid grid-cols-6 gap-2">
+          <div
+            className={cn("flex h-[50px] flex-col justify-center gap-0.5 rounded-lg border px-2.5", ALLOWED)}
+          >
+            <span className="text-sm">Read code</span>
+            <span className="text-xs text-green">
+              Allowed<span className="sr-only">, always</span>
+            </span>
+          </div>
+          {PERMS.map((perm) => {
+            const on = draft.perms.includes(perm.id);
+            return (
+              <button
+                key={perm.id}
+                type="button"
+                aria-pressed={on}
+                aria-label={`${perm.label}: ${on ? "Allowed" : "Off"}`}
+                onClick={() => change({ perms: togglePerm(draft.perms, perm.id as Perm, !on) })}
+                className={cn(
+                  "flex h-[50px] cursor-pointer flex-col items-start justify-center gap-0.5 rounded-lg border px-2.5 text-left transition-[background-color,border-color] duration-150",
+                  on ? ALLOWED : "border-line-strong bg-card hover:border-line-hover",
+                )}
+              >
+                <span className="text-sm text-fg">{perm.label}</span>
+                <span className={cn("text-xs", on ? "text-green" : "text-fg-faint")}>
+                  {on ? "Allowed" : "Off"}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </fieldset>
-
-      <Field label="If its account hits a limit or the run breaks, use" className="max-w-[320px]">
-        {(p) => (
-          <Select
-            {...p}
-            value={draft.fallback ?? ""}
-            onChange={(e) => change({ fallback: e.target.value || undefined })}
-          >
-            <option value="">No fallback</option>
-            {others.map((a) => (
-              <option key={entryId(a)} value={entryId(a)}>
-                @{entryId(a)}
-              </option>
-            ))}
-            {draft.fallback && !others.some((a) => entryId(a) === draft.fallback) && (
-              <option value={draft.fallback}>{draft.fallback} (not found)</option>
-            )}
-          </Select>
-        )}
-      </Field>
 
       {dialog === "duplicate" && (
         <DuplicateDialog id={id} onClose={() => setDialog(null)} onDone={(newId) => onSelect(newId)} />
@@ -363,7 +441,29 @@ export function AgentEditor({ entry, agents, accounts, orgs, onHealth, onSelect 
       {dialog === "remove" && (
         <RemoveAgentDialog id={id} onClose={() => setDialog(null)} onDone={() => onSelect(undefined)} />
       )}
-    </div>
+    </m.div>
+  );
+}
+
+/** A label over a wrapping row of chips, with an optional note or warning below. */
+function Group({
+  label,
+  note,
+  warning,
+  children,
+}: {
+  label: string;
+  note?: string;
+  warning?: string | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-2 p-0 text-sm text-fg-faint">{label}</legend>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+      {warning && <p className="text-sm text-amber text-pretty">{warning}</p>}
+      {note && <p className="text-sm text-fg-muted text-pretty">{note}</p>}
+    </fieldset>
   );
 }
 
@@ -373,53 +473,11 @@ function SaveStatus({ state }: { state: SaveState }) {
     <span
       role="status"
       aria-live="polite"
-      className={cn("text-sm", state.kind === "error" ? "text-red" : "text-fg-faint")}
+      className={cn("flex items-center gap-1 text-sm", state.kind === "error" ? "text-red" : "text-fg-faint")}
     >
+      {state.kind === "saved" && <Check aria-hidden="true" className="size-3 text-green" />}
       {text}
     </span>
-  );
-}
-
-function WhereField({
-  draft,
-  orgs,
-  onChange,
-}: {
-  draft: AgentDraft;
-  orgs: readonly OrgView[];
-  onChange: (where: string[]) => void;
-}) {
-  const options = [{ id: "anywhere", name: "Anywhere" }, ...orgs.map((o) => ({ id: o.id, name: o.name }))];
-  return (
-    <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1 p-0 text-sm text-fg-faint">Can work in</legend>
-      <div className="flex flex-wrap gap-x-4">
-        {options.map((o) => (
-          <label key={o.id} className="flex h-8 cursor-pointer items-center gap-2 text-base text-fg-soft">
-            <input
-              type="checkbox"
-              className="size-4 accent-[var(--color-amber)]"
-              checked={draft.where.includes(o.id)}
-              onChange={() => onChange(toggleWhere(draft.where, o.id))}
-            />
-            {o.name}
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-function MakeBoss({ id }: { id: string }) {
-  const boss = useSetBoss();
-  return (
-    <Button
-      onClick={() => boss.mutate(id)}
-      disabled={boss.isPending}
-      title={boss.isError ? describeError(boss.error) : undefined}
-    >
-      Make boss
-    </Button>
   );
 }
 

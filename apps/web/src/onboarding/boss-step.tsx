@@ -2,12 +2,12 @@ import type { HealthCheck } from "@majhi/shared";
 import { AUTO } from "@majhi/shared";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { HealthSteps } from "@/features/accounts/health-steps";
 import { isUsableStatus, statusInfo } from "@/features/accounts/model";
-import { buildOptions, newAgentFrontmatter } from "@/features/agents/model";
+import { buildOptions, newAgentFrontmatter, optionChips } from "@/features/agents/model";
 import { cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import { useAccountModels, useAccounts, useAgents, useCreateAgent, useSetBoss } from "@/lib/studio-queries";
@@ -85,7 +85,7 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
         <h1 className="text-lg font-semibold text-balance">Choose the boss</h1>
         <p className="text-base text-fg-muted text-pretty">
           The boss is an agent that sets up and runs majhi for you. Pick the account it uses. You can change
-          all of this later in Studio.
+          all of this later in Agents.
         </p>
       </div>
 
@@ -100,7 +100,7 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
             e.preventDefault();
             void run();
           }}
-          className="flex flex-col gap-4 rounded-xl border border-line-strong bg-panel p-5"
+          className="flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-5"
         >
           <Field label="Agent id">
             {(p) => (
@@ -113,55 +113,55 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
               />
             )}
           </Field>
-          <Field label="Account">
-            {(p) => (
-              <Select
-                {...p}
-                value={account?.id ?? ""}
+          <Chips label="Account">
+            {usable.map((a) => (
+              <ChoiceChip
+                key={a.id}
+                pressed={account?.id === a.id}
                 disabled={locked}
-                onChange={(e) => {
-                  setAccountPick(e.target.value);
+                aria-label={`${a.id}, ${statusInfo(a.status).label.toLowerCase()}`}
+                className="min-h-11 flex-col items-start gap-px px-2.5 py-1"
+                onClick={() => {
+                  setAccountPick(a.id);
                   setModelPick(undefined);
                   setEffortPick(undefined);
                 }}
               >
-                {usable.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.id} ({statusInfo(a.status).label.toLowerCase()})
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Model" warning={modelChoices.warning}>
-              {(p) => (
-                <Select {...p} value={model} disabled={locked} onChange={(e) => setModelPick(e.target.value)}>
-                  {modelChoices.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="Effort" warning={effortChoices.warning}>
-              {(p) => (
-                <Select
-                  {...p}
-                  value={effort}
-                  disabled={locked}
-                  onChange={(e) => setEffortPick(e.target.value)}
-                >
-                  {effortChoices.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          </div>
+                <span className="font-mono text-sm">{a.id}</span>
+                <span className="text-[0.625rem] leading-4 font-normal text-fg-faint">
+                  {statusInfo(a.status).label}
+                </span>
+              </ChoiceChip>
+            ))}
+          </Chips>
+          <Chips label="Model" note={modelChoices.warning}>
+            {optionChips(modelChoices, models.data?.models).map((o) => (
+              <ChoiceChip
+                key={o.value}
+                mono={o.value !== "" && o.value !== AUTO}
+                pressed={model === o.value}
+                disabled={locked}
+                title={o.title}
+                onClick={() => setModelPick(o.value)}
+              >
+                {o.label}
+              </ChoiceChip>
+            ))}
+          </Chips>
+          <Chips label="Effort" note={effortChoices.warning}>
+            {optionChips(effortChoices, models.data?.efforts).map((o) => (
+              <ChoiceChip
+                key={o.value}
+                mono={o.value !== "" && o.value !== AUTO}
+                pressed={effort === o.value}
+                disabled={locked}
+                title={o.title}
+                onClick={() => setEffortPick(o.value)}
+              >
+                {o.label}
+              </ChoiceChip>
+            ))}
+          </Chips>
           {models.isError && (
             <p className="text-sm text-fg-faint">
               Could not read the account's models. It will use its defaults.
@@ -217,5 +217,24 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
         </div>
       )}
     </>
+  );
+}
+
+/** A label over a row of chips, with an optional warning under it. */
+function Chips({
+  label,
+  note,
+  children,
+}: {
+  label: string;
+  note?: string | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-2 p-0 text-sm text-fg-faint">{label}</legend>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+      {note && <p className="text-sm text-amber text-pretty">{note}</p>}
+    </fieldset>
   );
 }

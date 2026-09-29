@@ -3,43 +3,88 @@ import {
   createRoute,
   createRouter,
   Link,
+  lazyRouteComponent,
   redirect,
-  useParams,
 } from "@tanstack/react-router";
 import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
-import type { AgentsSearch } from "@/features/agents/agents-tab";
-import { HomeRoute } from "@/features/home/home-route";
-import { ReposRoute } from "@/features/repos/repos-route";
+import { BoardScreen } from "@/features/board/board-screen";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
-import { searchString } from "@/features/studio/model";
-import { StudioRoute } from "@/features/studio/studio-route";
+import { TaskScreen } from "@/features/task/task-screen";
+import { PAGE_PATH } from "@/lib/pages";
+
+/** Search params every page may carry: the org filter, and the agent or account a link points at. */
+export interface AppSearch {
+  org?: string;
+  agent?: string;
+  account?: string;
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function validateSearch(search: Record<string, unknown>): AppSearch {
+  const org = text(search.org);
+  const agent = text(search.agent);
+  const account = text(search.account);
+  return { ...(org ? { org } : {}), ...(agent ? { agent } : {}), ...(account ? { account } : {}) };
+}
 
 const rootRoute = createRootRoute({
   component: AppShell,
+  validateSearch,
   notFoundComponent: () => (
     <Problem icon={<MapPinOff />} title="Nothing here" body="This address does not match any page in majhi.">
       <div>
         <Button asChild variant="secondary">
-          <Link to="/">Go to tasks</Link>
+          <Link to="/">Go to the board</Link>
         </Button>
       </div>
     </Problem>
   ),
 });
 
-const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomeRoute });
+const boardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.board,
+  component: BoardScreen,
+});
+const taskRoute = createRoute({ getParentRoute: () => rootRoute, path: "/t/$taskId", component: TaskScreen });
 
-function TaskRoute() {
-  const { taskId } = useParams({ from: "/t/$taskId" });
-  return <HomeRoute taskId={taskId} />;
-}
-
-const taskRoute = createRoute({ getParentRoute: () => rootRoute, path: "/t/$taskId", component: TaskRoute });
-
-const reposRoute = createRoute({ getParentRoute: () => rootRoute, path: "/repos", component: ReposRoute });
+// Pages load on demand, so the main chunk holds only the shell, the board and the room.
+const agentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.agents,
+  component: lazyRouteComponent(() => import("@/pages/agents-page"), "AgentsPage"),
+});
+const healthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.usage,
+  component: lazyRouteComponent(() => import("@/pages/health-page"), "HealthPage"),
+});
+const skillsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.skills,
+  component: lazyRouteComponent(() => import("@/pages/skills-page"), "SkillsPage"),
+});
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.setup,
+  component: lazyRouteComponent(() => import("@/pages/setup-page"), "SetupPage"),
+});
+const projectsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.projects,
+  component: lazyRouteComponent(() => import("@/pages/projects-page"), "ProjectsPage"),
+});
+const orgsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.orgs,
+  component: lazyRouteComponent(() => import("@/pages/orgs-page"), "OrgsPage"),
+});
 
 const editRootsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -47,35 +92,49 @@ const editRootsRoute = createRoute({
   component: EditRootsRoute,
 });
 
-const studioRoute = createRoute({
+// Old addresses from the three-column design.
+const reposRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/studio/$tab",
-  component: StudioRoute,
-  validateSearch: (search: Record<string, unknown>): AgentsSearch => {
-    const agent = searchString(search.agent);
-    const account = searchString(search.account);
-    return { ...(agent ? { agent } : {}), ...(account ? { account } : {}) };
+  path: "/repos",
+  beforeLoad: () => {
+    throw redirect({ to: PAGE_PATH.projects });
   },
 });
-
 const studioIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio",
   beforeLoad: () => {
-    throw redirect({ to: "/studio/$tab", params: { tab: "agents" }, search: {} });
+    throw redirect({ to: PAGE_PATH.agents });
+  },
+});
+const studioTabRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/studio/$tab",
+  beforeLoad: ({ params, search }) => {
+    if (params.tab === "accounts") {
+      throw redirect({ to: PAGE_PATH.orgs, search: search.account ? { account: search.account } : {} });
+    }
+    throw redirect({ to: PAGE_PATH.agents, search: search.agent ? { agent: search.agent } : {} });
   },
 });
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    homeRoute,
+    boardRoute,
     taskRoute,
-    reposRoute,
+    agentsRoute,
+    healthRoute,
+    skillsRoute,
+    setupRoute,
+    projectsRoute,
+    orgsRoute,
     editRootsRoute,
-    studioRoute,
+    reposRoute,
     studioIndexRoute,
+    studioTabRoute,
   ]),
-  defaultPreload: false,
+  defaultPreload: "intent",
+  defaultPreloadStaleTime: 30_000,
 });
 
 declare module "@tanstack/react-router" {

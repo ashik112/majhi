@@ -127,6 +127,7 @@ export function createHandlers({
 
     "orgs.list": () => orgs.list(),
     "orgs.create": (input, ctx) => orgs.create(input, ctx.command, ctx.meta),
+    "orgs.update": (input, ctx) => orgs.update(input, ctx.command, ctx.meta),
 
     "accounts.list": () => accounts.list(),
     "accounts.suggestId": async (input) => ({ id: await accounts.suggestId(input.tool, input.org) }),

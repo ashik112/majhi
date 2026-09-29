@@ -10,6 +10,7 @@ import {
   PERSONAL,
   type Perm,
   type Role,
+  type TaskSummary,
 } from "@majhi/shared";
 import { statusInfo, type Tone } from "../accounts/model";
 
@@ -141,6 +142,29 @@ export function buildOptions(
   return { options, warning: `This account does not offer the ${kind} "${current}". Pick another.` };
 }
 
+export interface OptionChip {
+  value: string;
+  /** The words on the chip: the id for a model, `Account default` and `Auto` for the two special ones. */
+  label: string;
+  /** The longer name, when the account gave one. */
+  title?: string;
+}
+
+/** `buildOptions` as chips: ids on the model chips, the two special ones named plainly. */
+export function optionChips(
+  choices: OptionChoices,
+  offered: readonly OptionValue[] | undefined,
+): OptionChip[] {
+  return choices.options.map((o) => {
+    if (o.value === "") return { value: "", label: "Account default", title: o.label };
+    if (o.value === AUTO) return { value: AUTO, label: "Auto", title: "Let majhi pick for each run" };
+    const name = offered?.find((x) => x.id === o.value)?.name;
+    const chip: OptionChip = { value: o.value, label: o.label.endsWith("(not offered)") ? o.label : o.value };
+    if (name && name !== o.value) chip.title = name;
+    return chip;
+  });
+}
+
 export interface AgentDraft {
   scope: string;
   role: Role;
@@ -232,8 +256,79 @@ export function newAgentFrontmatter(
 export const ROLES: readonly Role[] = ["Lead", "Builder", "Reviewer", "Tester", "Root"];
 export const PERMS: readonly { id: Perm; label: string }[] = [
   { id: "edit", label: "Edit files" },
-  { id: "shell", label: "Run shell commands" },
-  { id: "push", label: "Push" },
-  { id: "mr", label: "Open merge requests" },
+  { id: "shell", label: "Run shell" },
+  { id: "push", label: "Push branches" },
+  { id: "mr", label: "Open MRs" },
   { id: "merge", label: "Merge" },
 ];
+
+/** Roles the segmented control offers: root agents pick from Root first, org agents get Tester. The current role always shows. */
+export function rolesForScope(scope: string, current: Role): Role[] {
+  const base: Role[] =
+    scope === ROOT_SCOPE
+      ? ["Root", "Lead", "Builder", "Reviewer"]
+      : ["Lead", "Builder", "Reviewer", "Tester"];
+  return base.includes(current) ? base : [...base, current];
+}
+
+/** Two capitals for a scope tab: `RT` for root, else the first two letters of the org name. */
+export function scopeBadge(scope: string, label: string): string {
+  if (scope === ROOT_SCOPE) return "RT";
+  const letters = label
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 2)
+    .toUpperCase();
+  return letters === "" ? "?" : letters;
+}
+
+/** Agents that can take over when this one's account is out: same scope or root, never itself. */
+export function fallbackCandidates(entries: readonly AgentEntry[], self: OkAgent): OkAgent[] {
+  const id = self.agent.frontmatter.id;
+  const scope = self.agent.frontmatter.scope;
+  return entries.filter(
+    (e): e is OkAgent =>
+      e.status === "ok" &&
+      e.agent.frontmatter.id !== id &&
+      (scope === ROOT_SCOPE ||
+        e.agent.frontmatter.scope === scope ||
+        e.agent.frontmatter.scope === ROOT_SCOPE),
+  );
+}
+
+/** True when an org agent may work outside its own org, so the editor says its account will be used there. */
+export function worksOutsideScope(scope: string, where: readonly string[]): boolean {
+  return scope !== ROOT_SCOPE && (where.includes("anywhere") || where.some((w) => w !== scope));
+}
+
+/** What an agent is doing, for the list dots and the health grid. `coral` is the paused color. */
+export interface AgentState {
+  kind: "working" | "paused" | "limit" | "error" | "idle";
+  label: string;
+  tone: Tone | "coral";
+}
+
+/**
+ * Working on a running task, Paused on a paused one, Limit reached or Error from the account,
+ * else Idle. A working agent wins over the account state.
+ */
+export function agentState(
+  entry: OkAgent,
+  account: Pick<AccountView, "status"> | undefined,
+  tasks: readonly Pick<TaskSummary, "id" | "status" | "team" | "working">[],
+): AgentState {
+  const id = entry.agent.frontmatter.id;
+  const working = tasks.find((t) => t.working.includes(id));
+  if (working) return { kind: "working", label: `Working on ${working.id}`, tone: "amber" };
+  const paused = tasks.find((t) => t.status === "paused" && t.team.includes(id));
+  if (paused) return { kind: "paused", label: `Paused on ${paused.id}`, tone: "coral" };
+  if (account?.status === "at-limit") return { kind: "limit", label: "Limit reached", tone: "red" };
+  if (account === undefined || account.status === "needs-login" || account.status === "unreachable")
+    return { kind: "error", label: "Error", tone: "red" };
+  return { kind: "idle", label: "Idle", tone: "neutral" };
+}
+
+/** The line under an agent's handle: `Builder · claude-globex · sonnet-5.5`. */
+export function agentSubline(agent: OkAgent["agent"]): string {
+  const f = agent.frontmatter;
+  return [f.role, f.account, f.model ?? "account default"].join(" · ");
+}

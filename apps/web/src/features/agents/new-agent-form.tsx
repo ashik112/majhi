@@ -1,37 +1,52 @@
 import { IdSchema, type Role } from "@majhi/shared";
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { statusInfo } from "@/features/accounts/model";
+import { PageLink } from "@/components/ui/page-link";
+import { isUsableStatus, orgLabel, statusInfo } from "@/features/accounts/model";
 import { describeError } from "@/lib/errors";
-import { useAccounts, useAgents, useCreateAgent, useOrgs } from "@/lib/studio-queries";
-import { accountsForScope, entryId, newAgentFrontmatter, ROLES, ROOT_SCOPE, suggestAgentId } from "./model";
+import { useAccounts, useAgents, useCreateAgent, useOrgs, useTools } from "@/lib/studio-queries";
+import {
+  accountsForScope,
+  entryId,
+  newAgentFrontmatter,
+  ROOT_SCOPE,
+  rolesForScope,
+  suggestAgentId,
+} from "./model";
 
-/** Creates an agent with sensible defaults; the editor then opens for the rest. */
+/** Creates an agent with sensible defaults in the scope of the open tab; the editor then opens for the rest. */
 export function NewAgentForm({
-  scope: initialScope,
+  scope,
+  scopeLabel,
   presetAccount,
   onCreated,
   onCancel,
 }: {
   scope: string;
+  scopeLabel: string;
   presetAccount?: string | undefined;
   onCreated: (id: string) => void;
   onCancel: () => void;
 }) {
   const accounts = useAccounts().data ?? [];
   const orgs = useOrgs().data ?? [];
+  const tools = useTools().data ?? [];
   const agents = useAgents().data ?? [];
   const create = useCreateAgent();
-  const [scope, setScope] = useState(initialScope);
-  const [role, setRole] = useState<Role>(initialScope === ROOT_SCOPE ? "Root" : "Builder");
+  const [role, setRole] = useState<Role>(scope === ROOT_SCOPE ? "Root" : "Builder");
   const [accountPick, setAccountPick] = useState(presetAccount);
   const [idEdit, setIdEdit] = useState<string>();
   const [problem, setProblem] = useState<string>();
 
-  const usable = accountsForScope(accounts, scope);
+  // The scope's own accounts first, then the owner's personal ones; ones that work before ones that do not.
+  const usable = accountsForScope(accounts, scope).toSorted(
+    (a, b) =>
+      Number(b.org === scope) - Number(a.org === scope) ||
+      Number(isUsableStatus(b.status)) - Number(isUsableStatus(a.status)),
+  );
   const account = usable.find((a) => a.id === accountPick) ?? usable[0];
   const suggested = suggestAgentId(scope, account?.tool ?? "agent", agents.map(entryId));
   const id = idEdit ?? suggested;
@@ -49,8 +64,17 @@ export function NewAgentForm({
   }
 
   return (
-    <form onSubmit={submit} aria-label="New agent" className="flex max-w-[520px] flex-col gap-4 p-6">
-      <h2 className="text-md font-semibold">New agent</h2>
+    <form
+      onSubmit={submit}
+      aria-label="New agent"
+      className="flex min-w-0 max-w-[560px] flex-1 flex-col gap-5 px-7 pt-[18px] pb-7"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-semibold">New agent in {scopeLabel}</h2>
+        <p className="text-base text-fg-muted">
+          Pick a role and an account. You tune everything else after it exists.
+        </p>
+      </div>
       <Field label="Agent id">
         {(p) => (
           <Input
@@ -62,55 +86,45 @@ export function NewAgentForm({
           />
         )}
       </Field>
-      <Field label="Scope">
-        {(p) => (
-          <Select
-            {...p}
-            value={scope}
-            onChange={(e) => {
-              setScope(e.target.value);
-              setIdEdit(undefined);
-            }}
-          >
-            <option value={ROOT_SCOPE}>Root</option>
-            {orgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
-      <Field label="Role">
-        {(p) => (
-          <Select {...p} value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            {ROLES.map((r) => (
-              <option key={r}>{r}</option>
-            ))}
-          </Select>
-        )}
-      </Field>
-      <Field
-        label="Account"
-        {...(usable.length === 0
-          ? { error: "No account fits this scope. Add one in the Accounts tab." }
-          : {})}
-      >
-        {(p) => (
-          <Select
-            {...p}
-            value={account?.id ?? ""}
-            onChange={(e) => setAccountPick(e.target.value)}
-            disabled={usable.length === 0}
-          >
+      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+        <legend className="mb-2 p-0 text-sm text-fg-faint">Role</legend>
+        <div className="flex flex-wrap gap-1.5">
+          {rolesForScope(scope, role).map((r) => (
+            <ChoiceChip key={r} pressed={role === r} onClick={() => setRole(r)} className="h-[34px]">
+              {r}
+            </ChoiceChip>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+        <legend className="mb-2 p-0 text-sm text-fg-faint">Account</legend>
+        {usable.length === 0 ? (
+          <p role="alert" className="text-base text-red">
+            No account fits this scope.{" "}
+            <PageLink page="usage" className="underline underline-offset-2 hover:text-fg">
+              Add one in Health and usage
+            </PageLink>
+            .
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
             {usable.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} ({statusInfo(a.status).label.toLowerCase()})
-              </option>
+              <ChoiceChip
+                key={a.id}
+                pressed={account?.id === a.id}
+                aria-label={`${a.id}, ${statusInfo(a.status).label.toLowerCase()}`}
+                className="min-h-11 flex-col items-start gap-px px-2.5 py-1"
+                onClick={() => setAccountPick(a.id)}
+              >
+                <span className="font-mono text-sm">{a.id}</span>
+                <span className="text-[0.625rem] leading-4 font-normal text-fg-faint">
+                  {tools.find((t) => t.id === a.tool)?.name ?? a.tool} · {orgLabel(a.org, orgs).name}
+                </span>
+              </ChoiceChip>
             ))}
-          </Select>
+          </div>
         )}
-      </Field>
+      </fieldset>
       {problem && (
         <p role="alert" className="text-base text-red text-pretty">
           {problem}

@@ -31,6 +31,15 @@ export function useTask(id: string | undefined) {
   });
 }
 
+/** Loads a task ahead of a click, so opening it from the board shows the header at once. */
+export function prefetchTask(client: QueryClient, id: string): void {
+  void client.prefetchQuery({
+    queryKey: [...queryKeys.tasks, "one", id],
+    queryFn: () => cmd("tasks.get", { id }),
+    staleTime: 30_000,
+  });
+}
+
 /** Writes a task the room socket just sent into the cache, so the header and list follow at once. */
 export function setTaskInCache(client: QueryClient, task: Task): void {
   client.setQueryData([...queryKeys.tasks, "one", task.id], task);

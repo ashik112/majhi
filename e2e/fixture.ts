@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Shared by the Playwright config, the server script and the tests. */
-export const E2E_PORT = 7071;
+export const E2E_PORT = Number(process.env.MAJHI_E2E_PORT ?? 7071);
 
 /** Recreated on every run by `start-server.ts`. Real path, so macOS /var -> /private/var does not leak in. */
-export const E2E_ROOT = join(realpathSync(tmpdir()), "majhi-e2e");
+export const E2E_ROOT = join(
+  realpathSync(tmpdir()),
+  E2E_PORT === 7071 ? "majhi-e2e" : `majhi-e2e-${E2E_PORT}`,
+);
 
 /** Stands in for the owner's home on the host (`HOST_HOME`). */
 export const HOST_HOME = join(E2E_ROOT, "home");

@@ -1,9 +1,10 @@
-import type { CommandMeta } from "@majhi/shared";
+import type { CommandInput, CommandMeta } from "@majhi/shared";
 import { type OrgConfig, type OrgView, PERSONAL } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { writeOrg } from "../config/write.ts";
 import { UserError } from "../errors.ts";
+import { orgKeys } from "./keys.ts";
 
 export interface OrgCreate extends OrgConfig {
   id: string;
@@ -17,8 +18,11 @@ export class OrgService {
 
   async list(): Promise<OrgView[]> {
     const { orgs, accounts } = await this.config.sections();
-    const agents = (await this.agents.list()).flatMap((a) => (a.ok ? [a.agent.frontmatter.scope] : []));
-    return Object.entries(orgs).map(([id, org]) => view(id, org, Object.values(accounts), agents));
+    const agents = await this.agentScopes();
+    const keys = orgKeys(orgs);
+    return Object.entries(orgs).map(([id, org]) =>
+      view(id, org, keys.get(id) ?? "", Object.values(accounts), agents),
+    );
   }
 
   async create(input: OrgCreate, command: string, meta: CommandMeta): Promise<OrgView> {
@@ -31,26 +35,61 @@ export class OrgService {
     const config: OrgConfig = { name: org.name };
     if (org.color !== undefined) config.color = org.color;
     if (org.base !== undefined) config.base = org.base;
+    if (org.key !== undefined) config.key = org.key;
     await this.config.change({ command, meta, summary: `added org ${id}` }, () =>
       writeOrg(this.config.file, id, config),
     );
-    return view(id, config, [], []);
+    const keys = orgKeys({ ...sections.orgs, [id]: config });
+    return view(id, config, keys.get(id) ?? "", [], []);
+  }
+
+  /** Changes the fields that are present; `null` removes an optional one. One config commit per call. */
+  async update(input: CommandInput<"orgs.update">, command: string, meta: CommandMeta): Promise<OrgView> {
+    const { id, ...patch } = input;
+    const sections = await this.config.sections();
+    const current = sections.orgs[id];
+    if (current === undefined) throw new UserError(`Org "${id}" does not exist.`, 404);
+    const next: OrgConfig = { ...current };
+    if (patch.name !== undefined) next.name = patch.name;
+    if (patch.color !== undefined) next.color = patch.color;
+    for (const field of ["base", "key", "identity"] as const) {
+      const value = patch[field];
+      if (value === null) delete next[field];
+      else if (value !== undefined) Object.assign(next, { [field]: value });
+    }
+    if (next.key !== undefined) {
+      const clash = Object.entries(sections.orgs).find(([other, o]) => other !== id && o.key === next.key);
+      if (clash) throw new UserError(`The task key ${next.key} is already used by ${clash[1].name}.`, 409);
+    }
+    const orgs = { ...sections.orgs, [id]: next };
+    await this.config.change({ command, meta, summary: `edited org ${id}` }, () =>
+      writeOrg(this.config.file, id, next),
+    );
+    const [agentScopes, accounts] = [await this.agentScopes(), Object.values(sections.accounts)];
+    return view(id, next, orgKeys(orgs).get(id) ?? "", accounts, agentScopes);
+  }
+
+  private async agentScopes(): Promise<string[]> {
+    return (await this.agents.list()).flatMap((a) => (a.ok ? [a.agent.frontmatter.scope] : []));
   }
 }
 
 function view(
   id: string,
   org: OrgConfig,
+  key: string,
   accounts: readonly { org: string }[],
   agentScopes: readonly string[],
 ): OrgView {
   const out: OrgView = {
     id,
     name: org.name,
+    key,
     accountCount: accounts.filter((a) => a.org === id).length,
     agentCount: agentScopes.filter((s) => s === id).length,
   };
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
+  if (org.identity !== undefined) out.identity = org.identity;
   return out;
 }

@@ -1,15 +1,17 @@
 import type { AccountView, AgentEntry, OrgView, ToolInfo } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { StatusDot, TONE_TEXT } from "@/components/ui/status-dot";
+import { PageLink } from "@/components/ui/page-link";
+import { Dot, toneText } from "@/components/ui/status-dot";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
 import { HealthSteps } from "./health-steps";
-import { orgLabel, statusInfo } from "./model";
+import { orgLabel, statusText } from "./model";
 import { UsageDetails } from "./usage-view";
 import { agentsByAccount, usedByGroups, whereLabel } from "./used-by-model";
+
+export type AccountAction = "health" | "signin" | "remove";
 
 /** The selected account in full: what it is, how it is doing, and every agent that uses it. */
 export function AccountDetails({
@@ -19,6 +21,7 @@ export function AccountDetails({
   agents,
   now,
   onClose,
+  onAction,
 }: {
   account: AccountView;
   tool: ToolInfo | undefined;
@@ -26,17 +29,15 @@ export function AccountDetails({
   agents: readonly AgentEntry[];
   now: number;
   onClose: () => void;
+  onAction: (action: AccountAction) => void;
 }) {
-  const status = statusInfo(account.status);
+  const status = statusText(account, now);
   const org = orgLabel(account.org, orgs);
   const groups = usedByGroups(agentsByAccount(agents).get(account.id) ?? [], orgs);
 
   return (
-    <aside
-      aria-label="Account details"
-      className="flex w-[380px] shrink-0 flex-col border-l border-line-strong bg-rail"
-    >
-      <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
+    <aside aria-label="Account details" className="flex h-full w-full flex-col bg-rail">
+      <div className="flex items-center gap-2 border-b border-line-strong px-5 py-3.5">
         <h2 className="min-w-0 truncate font-mono text-md font-semibold">{account.id}</h2>
         <Button
           className="ml-auto"
@@ -60,8 +61,8 @@ export function AccountDetails({
         </Row>
         <Row label="Signs in with">{account.auth === "login" ? "The tool's own sign-in" : "An API key"}</Row>
         <Row label="Status">
-          <span className={cn("inline-flex items-center gap-2", TONE_TEXT[status.tone])}>
-            <StatusDot tone={status.tone} />
+          <span className={cn("inline-flex items-center gap-2", toneText(status.tone))}>
+            <Dot tone={status.tone} size={7} />
             {status.label}
           </span>
           {account.signedInAs && (
@@ -106,16 +107,15 @@ export function AccountDetails({
                     {group.agents.map((a) => {
                       const f = a.agent.frontmatter;
                       return (
-                        <li key={f.id} className="rounded-md border border-line-strong bg-card px-2.5 py-2">
-                          <Link
-                            to="/studio/$tab"
-                            params={{ tab: "agents" }}
+                        <li key={f.id} className="rounded-lg border border-line-strong bg-raised px-2.5 py-2">
+                          <PageLink
+                            page="agents"
                             search={{ agent: f.id }}
                             className="font-mono text-base text-fg hover:underline"
                           >
                             @{f.id}
                             {a.isBoss && <span className="ml-2 font-sans text-xs text-amber">Boss</span>}
-                          </Link>
+                          </PageLink>
                           <span className="block text-sm text-fg-muted">
                             {f.role}, model {f.model ?? "account default"}, effort{" "}
                             {f.effort ?? "account default"}
@@ -133,6 +133,24 @@ export function AccountDetails({
           )}
         </Row>
       </dl>
+      <div className="flex flex-wrap gap-2 border-t border-line-strong px-5 py-3">
+        <Button onClick={() => onAction("health")} aria-label={`Health check ${account.id}`}>
+          Check now
+        </Button>
+        {account.auth === "login" && (
+          <Button onClick={() => onAction("signin")} aria-label={`Sign in again ${account.id}`}>
+            Sign in again
+          </Button>
+        )}
+        <Button
+          className="ml-auto"
+          variant="ghost"
+          onClick={() => onAction("remove")}
+          aria-label={`Remove ${account.id}`}
+        >
+          Remove
+        </Button>
+      </div>
     </aside>
   );
 }
