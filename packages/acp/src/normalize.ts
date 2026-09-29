@@ -1,7 +1,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 import type { ToolContent } from "@majhi/shared";
 import { z } from "zod";
-import type { SessionEvent } from "./session.ts";
+import type { MediaBlock, SessionEvent } from "./session.ts";
 
 /** Debug logging hook. Unknown or malformed updates go here and are otherwise ignored. */
 export type DebugLog = (message: string, detail?: unknown) => void;
@@ -95,6 +95,38 @@ function toolEvent(u: {
   return e;
 }
 
+/** An image or a link from an ACP content block. Other kinds (audio, embedded resources) are not kept. */
+function mediaOf(block: unknown): MediaBlock | undefined {
+  if (typeof block !== "object" || block === null) return undefined;
+  const b = block as Record<string, unknown>;
+  if (b.type === "image" && typeof b.data === "string" && b.data !== "" && typeof b.mimeType === "string") {
+    return { kind: "image", mime: b.mimeType, data: b.data };
+  }
+  const uri = typeof b.uri === "string" && b.uri !== "" ? b.uri : undefined;
+  if (b.type === "resource_link" && uri !== undefined) {
+    const name = typeof b.name === "string" && b.name !== "" ? b.name : uri;
+    return typeof b.mimeType === "string"
+      ? { kind: "link", uri, name, mime: b.mimeType }
+      : { kind: "link", uri, name };
+  }
+  if (b.type === "image" && uri !== undefined) return { kind: "link", uri, name: uri };
+  return undefined;
+}
+
+/** Media inside tool call content. They are shown as their own message beside the tool row. */
+function toolMedia(
+  toolCallId: string,
+  content: readonly { type: string }[] | null | undefined,
+): SessionEvent[] {
+  const out: SessionEvent[] = [];
+  for (const c of (content ?? []) as readonly Record<string, unknown>[]) {
+    if (c.type !== "content") continue;
+    const block = mediaOf(c.content);
+    if (block) out.push({ type: "media", messageId: `tool-${toolCallId}`, block });
+  }
+  return out;
+}
+
 function textOf(block: { type: string; text?: string }): string | undefined {
   return block.type === "text" && typeof block.text === "string" ? block.text : undefined;
 }
@@ -117,11 +149,15 @@ function normalizeInner(update: SessionUpdate, runs: MessageRuns, log: DebugLog)
     case "agent_message_chunk":
     case "agent_thought_chunk": {
       const text = textOf(update.content);
-      if (text === undefined) {
-        log("non-text chunk ignored", update.content.type);
-        return [];
-      }
       const type = update.sessionUpdate === "agent_message_chunk" ? "text" : "thought";
+      if (text === undefined) {
+        const block = type === "text" ? mediaOf(update.content) : undefined;
+        if (block === undefined) {
+          log("non-text chunk ignored", update.content.type);
+          return [];
+        }
+        return [{ type: "media", messageId: runs.idFor("text", update.messageId), block }];
+      }
       return [{ type, messageId: runs.idFor(type, update.messageId), text }];
     }
     case "tool_call":
@@ -131,7 +167,7 @@ function normalizeInner(update: SessionUpdate, runs: MessageRuns, log: DebugLog)
         log("tool call without an id ignored");
         return [];
       }
-      return [toolEvent(update)];
+      return [toolEvent(update), ...toolMedia(update.toolCallId, update.content)];
     case "plan":
       runs.reset();
       return [

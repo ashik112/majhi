@@ -28,13 +28,23 @@ export interface TaskGroupView {
   tasks: TaskSummary[];
 }
 
+/** A running task whose agents all finished their turn: it waits for the owner. */
+export function isYourTurn(task: Pick<TaskSummary, "status" | "working">): boolean {
+  return task.status === "running" && task.working.length === 0;
+}
+
+/** The list group of a task: its status group, except running tasks that wait for the owner. */
+export function listGroup(task: TaskSummary): GroupId {
+  return isYourTurn(task) ? "needs-you" : taskGroup(task.status);
+}
+
 /** Groups in the fixed order of SPEC 2, newest update first inside each. Empty groups are left out. */
 export function groupTasks(tasks: readonly TaskSummary[]): TaskGroupView[] {
   return GROUP_ORDER.map((id) => ({
     id,
     label: GROUP_LABEL[id],
     tasks: tasks
-      .filter((task) => taskGroup(task.status) === id)
+      .filter((task) => listGroup(task) === id)
       .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   })).filter((group) => group.tasks.length > 0);
 }
@@ -63,7 +73,8 @@ export interface StatusInfo {
   tone: StatusTone;
 }
 
-export function statusInfo(status: TaskStatus, pausedReason?: string): StatusInfo {
+export function statusInfo(status: TaskStatus, pausedReason?: string, yourTurn = false): StatusInfo {
+  if (status === "running" && yourTurn) return { label: "Your turn", tone: "violet" };
   switch (status) {
     case "inbox":
       return { label: "Not started", tone: "neutral" };

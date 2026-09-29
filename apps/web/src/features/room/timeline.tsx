@@ -15,11 +15,13 @@ export function Timeline({
   onLoadOlder,
   onPermission,
   answering,
+  task,
 }: {
   state: RoomState;
   onLoadOlder: () => Promise<void>;
   onPermission: (item: string, option: string) => void;
   answering: string | undefined;
+  task: { id: string; folder: string };
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -27,9 +29,20 @@ export function Timeline({
   const previous = useRef<{ count: number; last: string | undefined; height: number } | null>(null);
 
   const plans = useMemo(() => pinnedPlans(state.items), [state.items]);
+  // Images and clips load after the room scrolled to the bottom; keep the view there when it was.
+  const onMediaLoad = useCallback(() => {
+    const el = scroller.current;
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, []);
   const ctx = useMemo<ItemContext>(
-    () => ({ agents: state.agents, pinned: new Set(plans.map((p) => p.id)), onPermission, answering }),
-    [state.agents, plans, onPermission, answering],
+    () => ({
+      agents: state.agents,
+      pinned: new Set(plans.map((p) => p.id)),
+      onPermission,
+      answering,
+      task: { id: task.id, folder: task.folder, onLoad: onMediaLoad },
+    }),
+    [state.agents, plans, onPermission, answering, task.id, task.folder, onMediaLoad],
   );
 
   // After every render that changed the items: stay at the bottom, keep the view when older

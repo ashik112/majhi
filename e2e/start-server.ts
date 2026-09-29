@@ -1,7 +1,7 @@
 /**
  * Starts majhi and its host helper for Playwright against a throwaway home:
  *
- *   <tmp>/majhi-e2e/home/Work/alpha-api         GitHub remote
+ *   <tmp>/majhi-e2e/home/Work/alpha-api         GitHub remote, plus a `develop` branch one commit ahead of `main`
  *   <tmp>/majhi-e2e/home/Work/beta-web          GitLab remote over https, on `develop`
  *   <tmp>/majhi-e2e/home/Work/ops/gamma-infra   Bitbucket through the SSH alias `bitbucket-acme`
  *   <tmp>/majhi-e2e/home/Projects/delta-app     GitHub remote, so root suggestions have a second entry
@@ -35,6 +35,8 @@ const gitEnv = {
   GIT_AUTHOR_EMAIL: "e2e@majhi.invalid",
   GIT_COMMITTER_NAME: "majhi e2e",
   GIT_COMMITTER_EMAIL: "e2e@majhi.invalid",
+  // The fixture remotes are made up: fetching them must fail at once and never reach the network.
+  GIT_SSH_COMMAND: "false",
 };
 
 function git(cwd: string, ...args: string[]): void {
@@ -48,10 +50,18 @@ function makeRepo(dir: string, branch: string, remote: string): void {
   git(dir, "remote", "add", "origin", remote);
 }
 
+/** A `develop` branch one commit ahead of the checked-out branch, so "from develop" is provable. */
+function addDevelop(dir: string, back: string): void {
+  git(dir, "checkout", "--quiet", "-b", "develop");
+  git(dir, "commit", "--quiet", "--allow-empty", "--message", "develop work");
+  git(dir, "checkout", "--quiet", back);
+}
+
 rmSync(E2E_ROOT, { recursive: true, force: true });
 
 const work = join(HOST_HOME, "Work");
 makeRepo(join(work, "alpha-api"), "main", "git@github.com:acme/alpha-api.git");
+addDevelop(join(work, "alpha-api"), "main");
 makeRepo(join(work, "beta-web"), "develop", "https://gitlab.com/acme/beta-web.git");
 makeRepo(join(work, "ops", "gamma-infra"), "main", "git@bitbucket-acme:acme/gamma-infra.git");
 makeRepo(join(HOST_HOME, "Projects", "delta-app"), "main", "git@github.com:acme/delta-app.git");
@@ -76,8 +86,11 @@ const fakes = {
   // Usage the fakes report once signed in: 5h 42 %, week 18 %, plus an Opus window.
   usage: { fiveHourPct: 42, weekPct: 18, opusPct: 30, plan: "max" },
 };
+// A short pause between the steps of a turn lets the tests see the plan pinned and the tools running;
+// Codex is slow enough to stop a turn halfway with Esc.
+const SLOW_MS = { claude: 250, codex: 600 } as const;
 const command = (tool: "claude" | "codex") => {
-  const { command, args } = fakeAdapter(tool, fakes);
+  const { command, args } = fakeAdapter(tool, { ...fakes, slowMs: SLOW_MS[tool] });
   return JSON.stringify([command, ...args]);
 };
 

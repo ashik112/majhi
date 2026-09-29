@@ -41,6 +41,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
+    taskFiles: { folderOf: (id) => services.store.tasks.get(id)?.folder },
   });
   let sockets: { close: () => void } | undefined;
   let sweeper: NodeJS.Timeout | undefined;

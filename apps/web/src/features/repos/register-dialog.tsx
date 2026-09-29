@@ -148,7 +148,7 @@ export function RegisterDialog({
               {...props}
               value={base}
               onChange={(event) => setBase(event.target.value)}
-              placeholder="develop"
+              placeholder={repo.branch ?? "main"}
               className="font-mono"
             />
           )}

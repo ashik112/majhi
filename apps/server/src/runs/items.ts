@@ -1,6 +1,7 @@
 import type { SessionEvent } from "@majhi/acp";
-import type { RoomItem, ToolContent } from "@majhi/shared";
+import type { MediaRef, RoomItem, ToolContent } from "@majhi/shared";
 import type { RoomPayload } from "../store/index.ts";
+import type { MediaSink } from "./media.ts";
 
 /** Terminal output past this is cut in the middle. */
 export const TERMINAL_MAX_CHARS = 16 * 1024;
@@ -20,6 +21,7 @@ type PlanEntries = Extract<RoomPayload, { type: "plan" }>["entries"];
 export class ItemMapper {
   private turn = 0;
   private readonly text = new Map<string, string>();
+  private readonly media = new Map<string, MediaRef[]>();
   private readonly tools = new Map<string, ToolPayload>();
   private plan: PlanEntries = [];
 
@@ -27,6 +29,7 @@ export class ItemMapper {
     private readonly agent: string,
     private readonly run: number,
     private readonly sink: ItemSink,
+    private readonly files?: MediaSink,
   ) {}
 
   beginTurn(): void {
@@ -40,6 +43,9 @@ export class ItemMapper {
         return;
       case "thought":
         this.stream("thought", "h", event.messageId, event.text);
+        return;
+      case "media":
+        this.addMedia(event);
         return;
       case "tool":
         this.tool(event);
@@ -77,7 +83,31 @@ export class ItemMapper {
     const key = `${this.turn}:${tag}:${messageId}`;
     const text = (this.text.get(key) ?? "") + chunk;
     this.text.set(key, text);
-    this.sink.post(`${this.agent}:${this.run}:${key}`, { type, agent: this.agent, text }, { defer: true });
+    const media = type === "agent" ? this.media.get(key) : undefined;
+    this.sink.post(
+      `${this.agent}:${this.run}:${key}`,
+      media === undefined
+        ? { type, agent: this.agent, text }
+        : { type: "agent", agent: this.agent, text, media },
+      { defer: true },
+    );
+  }
+
+  /** An image or link joins its message, next to the text. Without a place to save files it is dropped. */
+  private addMedia(event: Extract<SessionEvent, { type: "media" }>): void {
+    const ref =
+      event.block.kind === "image"
+        ? this.files?.image(event.block.mime, event.block.data)
+        : this.files?.link(event.block);
+    if (ref === undefined) return;
+    const key = `${this.turn}:t:${event.messageId}`;
+    const media = [...(this.media.get(key) ?? []), ref];
+    this.media.set(key, media);
+    this.sink.post(
+      `${this.agent}:${this.run}:${key}`,
+      { type: "agent", agent: this.agent, text: this.text.get(key) ?? "", media },
+      { defer: true },
+    );
   }
 
   private tool(event: Extract<SessionEvent, { type: "tool" }>): void {

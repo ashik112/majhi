@@ -10,6 +10,7 @@ import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
 import { ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
+import { taskMediaSink } from "./media.ts";
 import { decidePermission } from "./permissions.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
 
@@ -431,6 +432,9 @@ export class RunManager {
         ...(effort === undefined ? {} : { effort }),
       });
 
+      // What the agent runs after the session applied the options: a refused model keeps the default.
+      const shownModel = session.models.defaultModel ?? model;
+      const shownEffort = session.models.defaultEffort ?? effort;
       run.session = session;
       run.exited = false;
       run.perms = fm.perms;
@@ -439,19 +443,20 @@ export class RunManager {
         task: run.task,
         agent: run.agent,
         sessionId: session.sessionId,
-        model: model ?? session.models.defaultModel,
-        effort: effort ?? session.models.defaultEffort,
+        model: shownModel,
+        effort: shownEffort,
         at: this.now().toISOString(),
       });
-      run.mapper = new ItemMapper(run.agent, run.runId, {
-        post: (id, payload, options) => deps.room.post(run.task, id, payload, options),
-      });
+      run.mapper = new ItemMapper(
+        run.agent,
+        run.runId,
+        { post: (id, payload, options) => deps.room.post(run.task, id, payload, options) },
+        taskMediaSink(run.task, task.folder),
+      );
       // Attach before anything else: the session buffers early events, and a crash must not be missed.
       run.unsubscribe = session.onEvent((event) => this.onEvent(run, event));
       session.setPermissionHandler((ask, signal) => this.onPermission(run, ask, signal));
 
-      const shownModel = model ?? session.models.defaultModel;
-      const shownEffort = effort ?? session.models.defaultEffort;
       this.system(
         run,
         "info",
@@ -481,6 +486,7 @@ export class RunManager {
     switch (event.type) {
       case "text":
       case "thought":
+      case "media":
       case "plan":
         run.mapper?.apply(event);
         break;

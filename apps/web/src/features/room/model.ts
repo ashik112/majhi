@@ -158,6 +158,12 @@ export function toolTarget(item: ToolItem): string | undefined {
   return undefined;
 }
 
+/** A path as the owner reads it: relative to the task folder when inside it. */
+export function shortPath(path: string, folder: string): string {
+  const base = folder.endsWith("/") ? folder : `${folder}/`;
+  return path.startsWith(base) ? path.slice(base.length) : path;
+}
+
 export function hasToolDetail(item: ToolItem): boolean {
   return item.content.length > 0;
 }
@@ -167,6 +173,13 @@ export function trimOutput(text: string, max = 40): { text: string; hidden: numb
   const lines = text.replace(/\s+$/, "").split("\n");
   if (lines.length <= max) return { text: lines.join("\n"), hidden: 0 };
   return { text: lines.slice(0, max).join("\n"), hidden: lines.length - max };
+}
+
+/** What majhi does with each option kind, in the owner's words. Adapters name them "Always allow" and "Reject". */
+export function permissionOptionLabel(option: PermissionItem["options"][number]): string {
+  if (option.kind === "allow_always") return "Allow for this task";
+  if (option.kind === "reject_once") return "Deny";
+  return option.name;
 }
 
 export type PermissionSummary = { pending: true } | { pending: false; text: string };

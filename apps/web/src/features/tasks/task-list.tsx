@@ -6,7 +6,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { TONE_CLASS } from "@/components/ui/status-badge";
 import { cn } from "@/lib/cn";
 import type { TaskGroupView } from "./model";
-import { GROUP_LABEL, type GroupId, orgColor, repoLabel, statusInfo } from "./model";
+import { GROUP_LABEL, type GroupId, isYourTurn, orgColor, repoLabel, statusInfo } from "./model";
 
 const GROUP_TONE: Record<GroupId, string> = {
   "needs-you": "text-amber",
@@ -93,7 +93,7 @@ const TaskRow = memo(function TaskRow({
   open: boolean;
   cursor: boolean;
 }) {
-  const info = statusInfo(task.status, task.pausedReason);
+  const info = statusInfo(task.status, task.pausedReason, isYourTurn(task));
   const agent = task.team[0];
   return (
     <li>

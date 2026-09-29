@@ -164,6 +164,35 @@ describe("default turn", () => {
   });
 });
 
+describe("show: media", () => {
+  it("writes a chart and a page, links them in markdown, and sends an image block and a link", async () => {
+    const { session, events, cwd } = await start();
+    await session.prompt(text("show: media"));
+    const png = await readFile(join(cwd, "media", "chart.png"));
+    expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(await readFile(join(cwd, "media", "report.html"), "utf8")).toContain("/api/cmd/tasks.list");
+    expect(events.filter((e) => e.type === "text")).toEqual([
+      {
+        type: "text",
+        messageId: expect.any(String),
+        text: expect.stringContaining("![Latency chart](media/chart.png)"),
+      },
+    ]);
+    expect(events.filter((e) => e.type === "media")).toEqual([
+      {
+        type: "media",
+        messageId: expect.any(String),
+        block: { kind: "image", mime: "image/png", data: png.toString("base64") },
+      },
+      {
+        type: "media",
+        messageId: expect.any(String),
+        block: { kind: "link", uri: "https://example.com/spec", name: "Spec sheet" },
+      },
+    ]);
+  });
+});
+
 describe("cancel and busy", () => {
   it("cancels mid-turn and aborts a pending permission", async () => {
     const { session } = await start({ slowMs: 100 });

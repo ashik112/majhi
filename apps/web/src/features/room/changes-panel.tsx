@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { useCopy } from "@/lib/use-copy";
 import { DiffView } from "./diff-view";
-import { filesByRepo, touchedFiles } from "./model";
+import { filesByRepo, shortPath, touchedFiles } from "./model";
 
 /** The Changes tab: per repo its branch, worktree and the files the agent touched in this task. */
 export function ChangesPanel({ task, items }: { task: Task; items: readonly RoomItem[] }) {
@@ -35,7 +35,10 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
           ) : (
             <ul className="flex flex-col gap-1">
               {group.files.map((file) => (
-                <FileRow key={file.path} file={file} />
+                <FileRow
+                  key={file.path}
+                  file={group.repo ? file : { ...file, shown: shortPath(file.path, task.folder) }}
+                />
               ))}
             </ul>
           )}

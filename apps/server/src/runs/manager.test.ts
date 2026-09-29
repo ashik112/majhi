@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PermissionAsk } from "@majhi/acp";
 import type { RoomItem } from "@majhi/shared";
@@ -523,6 +523,67 @@ describe("failures and restarts", () => {
   });
 });
 
+describe("media from the agent", () => {
+  it("saves an image block into the task's media folder and lists it on the message", async () => {
+    await started(async (turn) => {
+      turn.emit({ type: "text", messageId: "m", text: "Chart:" });
+      turn.emit({
+        type: "media",
+        messageId: "m",
+        block: { kind: "image", mime: "image/png", data: "aGVsbG8=" },
+      });
+      turn.emit({
+        type: "media",
+        messageId: "m",
+        block: { kind: "image", mime: "image/png", data: "aGVsbG8=" },
+      });
+      turn.emit({
+        type: "media",
+        messageId: "m",
+        block: { kind: "link", uri: "https://example.com/a.mp4", name: "Clip" },
+      });
+      // Not the agent's to show: a file outside the task folder, and a type that is not an image.
+      turn.emit({
+        type: "media",
+        messageId: "m",
+        block: { kind: "link", uri: "file:///etc/passwd", name: "x" },
+      });
+      turn.emit({ type: "media", messageId: "m", block: { kind: "image", mime: "text/html", data: "aGk=" } });
+      return "end_turn";
+    });
+    await runs().idle();
+    const message = (await items()).find((i) => i.type === "agent");
+    expect(message).toMatchObject({
+      text: "Chart:",
+      media: [
+        { kind: "image", name: "1.png", src: "/api/tasks/ACM-1/files/media/1.png", mime: "image/png" },
+        { kind: "image", name: "2.png", src: "/api/tasks/ACM-1/files/media/2.png" },
+        { kind: "video", name: "Clip", src: "https://example.com/a.mp4" },
+      ],
+    });
+    const task = services().store.tasks.get("ACM-1");
+    expect(await readFile(join(task?.folder ?? "", "media", "1.png"), "utf8")).toBe("hello");
+  });
+
+  it("links a file the agent made in the task folder through the files endpoint", async () => {
+    await started(async (turn) => {
+      const folder = services().store.tasks.get("ACM-1")?.folder ?? "";
+      turn.emit({
+        type: "media",
+        messageId: "m",
+        block: { kind: "link", uri: `file://${join(folder, "media", "my report.html")}`, name: "Report" },
+      });
+      return "end_turn";
+    });
+    await runs().idle();
+    const message = (await items()).find((i) => i.type === "agent");
+    expect(message).toMatchObject({
+      text: "",
+      media: [{ kind: "page", name: "Report", src: "/api/tasks/ACM-1/files/media/my%20report.html" }],
+    });
+  });
+});
+
 describe("start-up messages", () => {
   it("says when model or effort is auto", async () => {
     w = await taskWorld({ agent: { model: "auto", effort: "auto" } });
@@ -535,6 +596,18 @@ describe("start-up messages", () => {
     expect(t).toContain(
       "system: @acme-builder is set to auto for model or effort. This version uses the agent's own default.",
     );
+  });
+
+  it("shows the model the session runs, not the one that was refused", async () => {
+    w = await taskWorld({ agent: { model: "opus", effort: "high" } });
+    w.h.runtime.onSession = (session) => {
+      // The adapter refused both options and kept its own defaults.
+      session.models = { models: [], efforts: [], defaultModel: "sonnet", defaultEffort: "low" };
+    };
+    await w.h.cmd("tasks.create", { text: "fix api", start: true });
+    await runs().idle();
+    expect(await texts()).toContain("system: @acme-builder started on claude-acme, model sonnet, effort low");
+    expect(w.h.runtime.sessions).toHaveLength(1);
   });
 
   it("refuses an account of another org", async () => {

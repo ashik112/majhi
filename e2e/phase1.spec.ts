@@ -112,10 +112,10 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await expect(form.getByText("Health check passed")).toBeVisible();
   await shot(page, "onboarding-boss");
   await form.getByRole("button", { name: "Open majhi" }).click();
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add your first account" })).toHaveCount(0);
 
   const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));

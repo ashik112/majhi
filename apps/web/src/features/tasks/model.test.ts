@@ -8,6 +8,8 @@ import {
   eligibleAgents,
   groupTasks,
   initialOf,
+  isYourTurn,
+  listGroup,
   moveCursor,
   primaryAction,
   repoLabel,
@@ -17,7 +19,9 @@ import {
 } from "./model";
 
 function summary(id: string, status: TaskSummary["status"], updatedAt: string): TaskSummary {
-  return { id, title: id, kind: "code", status, team: [], updatedAt, repos: [], working: [] };
+  // Running tasks have a working agent here; `your turn` below covers idle ones.
+  const working = status === "running" ? ["lead"] : [];
+  return { id, title: id, kind: "code", status, team: [], updatedAt, repos: [], working };
 }
 
 describe("groupTasks", () => {
@@ -265,5 +269,17 @@ describe("repoLabel", () => {
   it("joins projects", () => {
     expect(repoLabel([{ project: "api" }, { project: "web" }])).toBe("api + web");
     expect(repoLabel([])).toBe("no repo");
+  });
+});
+
+describe("your turn", () => {
+  it("puts a running task whose agents are idle under Needs you, labelled Your turn", () => {
+    const idle: TaskSummary = { ...summary("A-1", "running", "2026-09-29T10:00:00Z"), working: [] };
+    const busy = { ...summary("A-2", "running", "2026-09-29T10:00:00Z"), working: ["lead"] };
+    expect(isYourTurn(idle)).toBe(true);
+    expect(listGroup(idle)).toBe("needs-you");
+    expect(listGroup(busy)).toBe("working");
+    expect(statusInfo("running", undefined, true)).toEqual({ label: "Your turn", tone: "violet" });
+    expect(statusInfo("running", undefined, false).label).toBe("Working");
   });
 });

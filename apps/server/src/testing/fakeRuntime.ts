@@ -111,6 +111,12 @@ export function fakeRuntime(): FakeRuntime {
       if (runtime.startError !== undefined) throw runtime.startError;
       const resumed = runtime.resumes ? start.resume : undefined;
       const session = new FakeSession(resumed ?? `fake-session-${runtime.sessions.length + 1}`);
+      session.models = {
+        models: [],
+        efforts: [],
+        defaultModel: start.model ?? "fake-model",
+        defaultEffort: start.effort ?? "medium",
+      };
       runtime.onSession?.(session, start);
       runtime.sessions.push(session);
       return session;

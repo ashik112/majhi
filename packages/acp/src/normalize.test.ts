@@ -90,6 +90,8 @@ describe("tools", () => {
           { type: "text", text: "ok" },
         ],
       },
+      // The image is kept, as its own message beside the tool row.
+      { type: "media", messageId: "tool-t1", block: { kind: "image", mime: "image/png", data: "AA" } },
     ]);
   });
 
@@ -157,5 +159,78 @@ describe("other updates", () => {
     ].flatMap((u: Update) => normalizeUpdate(u, runs, (m) => logs.push(m)));
     expect(out).toEqual([]);
     expect(logs).toHaveLength(4);
+  });
+});
+
+describe("media", () => {
+  it("keeps an image and a link from a message, in the same message as its text", () => {
+    const events = run([
+      chunk("agent_message_chunk", "Here it is. "),
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "image", data: "aGk=", mimeType: "image/png" },
+      },
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "resource_link",
+          uri: "https://example.com/docs",
+          name: "Docs",
+          mimeType: "text/html",
+        },
+      },
+    ]);
+    expect(events).toEqual([
+      { type: "text", messageId: "p-1", text: "Here it is. " },
+      { type: "media", messageId: "p-1", block: { kind: "image", mime: "image/png", data: "aGk=" } },
+      {
+        type: "media",
+        messageId: "p-1",
+        block: { kind: "link", uri: "https://example.com/docs", name: "Docs", mime: "text/html" },
+      },
+    ]);
+  });
+
+  it("keeps an image with only a uri as a link, and never keeps images from thoughts", () => {
+    const events = run([
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "image", data: "", mimeType: "image/png", uri: "file:///t/a.png" },
+      },
+      {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "image", data: "aGk=", mimeType: "image/png" },
+      },
+    ]);
+    expect(events).toEqual([
+      {
+        type: "media",
+        messageId: "p-1",
+        block: { kind: "link", uri: "file:///t/a.png", name: "file:///t/a.png" },
+      },
+    ]);
+  });
+
+  it("takes images out of tool content into their own message", () => {
+    const events = run([
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+        content: [
+          { type: "content", content: { type: "text", text: "ok" } },
+          { type: "content", content: { type: "image", data: "aGk=", mimeType: "image/png" } },
+        ],
+      },
+    ]);
+    expect(events).toEqual([
+      {
+        type: "tool",
+        toolCallId: "t1",
+        status: "completed",
+        content: [{ type: "text", text: "ok" }],
+      },
+      { type: "media", messageId: "tool-t1", block: { kind: "image", mime: "image/png", data: "aGk=" } },
+    ]);
   });
 });

@@ -1,0 +1,142 @@
+import { type MediaRef, mediaKindOfPath, taskFileUrl } from "@majhi/shared";
+import { ExternalLink, FileCode2, FileText, Film, Globe, Music } from "lucide-react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { Modal } from "@/components/ui/modal";
+
+/** What the room needs to show a task's files: its id for the files endpoint, and its folder to read absolute paths. */
+export interface TaskFiles {
+  id: string;
+  folder: string;
+  /** Called when media finished loading, so the room can stay at the bottom. */
+  onLoad?: () => void;
+}
+
+const isTaskUrl = (src: string) => src.startsWith("/api/tasks/");
+
+/** An image at most 480 px wide. Click opens it full size; Esc closes. */
+export function ImageView({
+  src,
+  alt,
+  onLoad,
+}: {
+  src: string;
+  alt: string;
+  onLoad?: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = alt || "image";
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`View ${label} full size`}
+        onClick={() => setOpen(true)}
+        className="block max-w-full cursor-zoom-in rounded-md border border-line-strong bg-sunken p-0 hover:border-line-hover"
+      >
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          onLoad={onLoad}
+          className="block max-h-[320px] max-w-[min(480px,100%)] rounded-md object-contain"
+        />
+      </button>
+      {open &&
+        // The dialog sits in the top layer; a portal keeps it out of the paragraph the image is in.
+        createPortal(
+          <Modal label={label} onClose={() => setOpen(false)} className="bg-sunken">
+            <img
+              src={src}
+              alt={alt}
+              className="block max-h-[calc(100dvh-64px)] max-w-[calc(100vw-64px)] object-contain"
+            />
+          </Modal>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function VideoView({ src, name, onLoad }: { src: string; name: string; onLoad?: (() => void) | undefined }) {
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: agent-made clips have no caption track
+    <video
+      controls
+      preload="metadata"
+      aria-label={name}
+      src={src}
+      onLoadedMetadata={onLoad}
+      className="block max-h-[320px] max-w-[min(480px,100%)] rounded-md border border-line-strong bg-sunken"
+    />
+  );
+}
+
+function AudioView({ src, name }: { src: string; name: string }) {
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: agent-made audio has no caption track
+    <audio controls preload="metadata" aria-label={name} src={src} className="block w-[min(360px,100%)]" />
+  );
+}
+
+/** A compact card for a page, file or link. It opens in a new tab; pages run sandboxed. */
+export function FileCard({ href, name, kind }: { href: string; name: string; kind: MediaRef["kind"] }) {
+  const Icon =
+    kind === "link"
+      ? Globe
+      : kind === "page"
+        ? FileCode2
+        : kind === "video"
+          ? Film
+          : kind === "audio"
+            ? Music
+            : FileText;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${name}`}
+      className="inline-flex max-w-[min(360px,100%)] items-center gap-2 rounded-md border border-line-strong bg-card px-2.5 py-1.5 align-middle text-base text-fg-soft no-underline hover:border-line-hover hover:bg-raised"
+    >
+      <Icon aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />
+      <span className="min-w-0 truncate">{name}</span>
+      <span className="ml-1 flex shrink-0 items-center gap-1 text-sm text-fg-faint">
+        Open
+        <ExternalLink aria-hidden="true" className="size-3" />
+      </span>
+    </a>
+  );
+}
+
+/** One file of the task folder or one web address, shown by what it is. */
+export function MediaView({ media, onLoad }: { media: MediaRef; onLoad?: (() => void) | undefined }) {
+  const local = isTaskUrl(media.src);
+  if (local && media.kind === "image") return <ImageView src={media.src} alt={media.name} onLoad={onLoad} />;
+  if (local && media.kind === "video") return <VideoView src={media.src} name={media.name} onLoad={onLoad} />;
+  if (local && media.kind === "audio") return <AudioView src={media.src} name={media.name} />;
+  // Web images and clips are not loaded into the room: the owner opens them on purpose.
+  return (
+    <FileCard
+      href={media.src}
+      name={media.name}
+      kind={media.kind === "image" && !local ? "link" : media.kind}
+    />
+  );
+}
+
+/** Media from a markdown target that is a path in the task folder: `taskPath` is relative to it. */
+export function TaskFileView({
+  taskId,
+  taskPath,
+  name,
+  onLoad,
+}: {
+  taskId: string;
+  taskPath: string;
+  name: string;
+  onLoad?: (() => void) | undefined;
+}) {
+  const kind = mediaKindOfPath(taskPath);
+  return <MediaView media={{ kind, name, src: taskFileUrl(taskId, taskPath) }} onLoad={onLoad} />;
+}

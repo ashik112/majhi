@@ -51,7 +51,15 @@ function attachmentLine(a: Attachment): string {
 
 /** `AGENTS.md` and `CLAUDE.md`: the same short pointer. */
 export function renderPointer(task: Pick<Task, "id">): string {
-  return `# ${task.id}\n\nRead TASK.md in this folder first. It has the brief, the repos and the rules for this task.\n`;
+  return [
+    `# ${task.id}`,
+    "",
+    "Read TASK.md in this folder first. It has the brief, the repos and the rules for this task.",
+    "",
+    "To show the owner an image, video, audio or a page, save it in this folder (for example under `media/`) and link it in your message with markdown: `![title](media/chart.png)` or `[title](media/report.html)`.",
+    "Web links are clickable.",
+    "",
+  ].join("\n");
 }
 
 /** The first prompt of a task. TASK.md carries everything else. */

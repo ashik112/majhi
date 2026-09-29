@@ -66,6 +66,7 @@ export function RoomPane({
         onLoadOlder={loadOlder}
         onPermission={onPermission}
         answering={answer.isPending ? answer.variables?.item : undefined}
+        task={{ id: task.id, folder: task.folder }}
       />
       <Composer
         taskId={task.id}

@@ -5,6 +5,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
+import { crc32, deflateSync } from "node:zlib";
 import {
   type Agent,
   AgentSideConnection,
@@ -15,6 +16,57 @@ import {
   type StopReason,
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+
+/** A small valid PNG: a bar chart on a dark ground, so screenshots show something. */
+export function chartPng(): Buffer {
+  const w = 160;
+  const h = 90;
+  const bars = [30, 52, 41, 68, 60, 78];
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 3 + 1);
+    for (let x = 0; x < w; x++) {
+      const bar = Math.floor((x - 8) / 24);
+      const inBar = x >= 8 && (x - 8) % 24 < 18 && bar >= 0 && bar < bars.length;
+      const lit = inBar && h - 8 - y < (bars[bar] ?? 0) && y < h - 8;
+      const px = lit ? [240, 180, 85] : [23, 24, 28];
+      raw.set(px, row + 1 + x * 3);
+    }
+  }
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, "ascii");
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+    return Buffer.concat([head, data, tail]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** A page that tries to call majhi's API. From a sandboxed page the request must fail. */
+export const REPORT_HTML = `<!doctype html>
+<meta charset="utf-8">
+<title>Latency report</title>
+<body style="font-family: sans-serif; padding: 24px">
+<h1>Latency report</h1>
+<p id="out">Checking access to majhi.</p>
+<script>
+fetch("/api/cmd/tasks.list", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+  .then((r) => { document.getElementById("out").textContent = "reached majhi: " + r.status; })
+  .catch(() => { document.getElementById("out").textContent = "blocked from majhi"; });
+</script>
+</body>
+`;
 
 export interface ServeOptions {
   tool: "claude" | "codex";
@@ -323,7 +375,22 @@ export function serveAcp(o: ServeOptions): void {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
         }
-        if (text.startsWith("echo:")) {
+        if (text.startsWith("show:")) {
+          const say = (content: object) =>
+            update(params.sessionId, { sessionUpdate: "agent_message_chunk", content: content as never });
+          await mkdir(join(s.cwd, "media"), { recursive: true });
+          const png = chartPng();
+          await writeFile(join(s.cwd, "media", "chart.png"), png);
+          await writeFile(join(s.cwd, "media", "report.html"), REPORT_HTML);
+          agentText = "Here is the chart and the report.";
+          await say({
+            type: "text",
+            text: `${agentText}\n\n![Latency chart](media/chart.png)\n\n[Latency report](media/report.html)\n\nMore at [the docs](https://example.com/docs).`,
+          });
+          await say({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
+          await say({ type: "resource_link", uri: "https://example.com/spec", name: "Spec sheet" });
+          stopReason = "end_turn";
+        } else if (text.startsWith("echo:")) {
           agentText = `echo: ${text}`;
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",

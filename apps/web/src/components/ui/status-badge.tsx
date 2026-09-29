@@ -15,11 +15,14 @@ export const TONE_CLASS = {
 export function StatusBadge({
   status,
   pausedReason,
+  yourTurn = false,
 }: {
   status: TaskStatus;
   pausedReason?: string | undefined;
+  /** Running, but no agent is working: the task waits for the owner. */
+  yourTurn?: boolean;
 }) {
-  const info = statusInfo(status, pausedReason);
+  const info = statusInfo(status, pausedReason, yourTurn);
   return (
     <span
       className={cn(

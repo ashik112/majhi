@@ -61,6 +61,10 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await expect(progress).toContainText("Step 2 of 3");
   await page.getByRole("button", { name: "Skip for now" }).click();
 
+  // Home is the task screen now; the repos list is its own view.
+  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
+  await page.getByRole("link", { name: "Repos" }).click();
+  await expect(page).toHaveURL(/\/repos$/);
   await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(3);
   await expect(row(page, "alpha-api")).toContainText("GitHub");
@@ -209,7 +213,7 @@ test("without the host helper the roots form falls back to typed paths", async (
 });
 
 test("search filters repos and / focuses it", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/repos");
   await expect(rows(page)).toHaveCount(4);
 
   await page.keyboard.press("/");
@@ -235,7 +239,7 @@ test("search filters repos and / focuses it", async ({ page }) => {
 });
 
 test("j moves the selection and Enter copies the repo path", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/repos");
   await expect(rows(page)).toHaveCount(4);
   await expect(row(page, "alpha-api")).toHaveAttribute("aria-current", "true");
 
@@ -256,7 +260,7 @@ test("a broken majhi.yaml shows the file and each error, and Retry recovers", as
   const good = readFileSync(file, "utf8");
   writeFileSync(file, "workspaces: []\ntasks_dir: tasks\nsurprise: true\n");
   try {
-    await page.goto("/");
+    await page.goto("/repos");
     await expect(page.getByRole("heading", { name: "majhi.yaml has errors" })).toBeVisible();
     await expect(page.getByText("~/.majhi/majhi.yaml")).toBeVisible();
     const errors = page.getByRole("region", { name: /errors/ }).getByRole("listitem");
@@ -272,6 +276,7 @@ test("a broken majhi.yaml shows the file and each error, and Retry recovers", as
     .getByRole("button", { name: "Retry" })
     .click({ timeout: 2_000 })
     .catch(() => {});
-  await expect(page.getByRole("heading", { name: "Repos", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pick a task, or write a new one" })).toBeVisible();
+  await page.goto("/repos");
   await expect(rows(page)).toHaveCount(4);
 });

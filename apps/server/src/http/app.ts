@@ -9,6 +9,7 @@ import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import { isLoopbackOrigin } from "./origin.ts";
+import { type TaskFilesDeps, taskFileRoutes } from "./taskFiles.ts";
 
 export interface AppDeps {
   version: string;
@@ -19,6 +20,8 @@ export interface AppDeps {
   host: HostRoutesDeps;
   /** Serves `POST /api/uploads`. */
   uploads: UploadStore;
+  /** Serves `GET /api/tasks/<id>/files/<path>`. */
+  taskFiles: TaskFilesDeps;
 }
 
 const NOT_BUILT =
@@ -52,6 +55,7 @@ export function createApp(deps: AppDeps): Hono {
 
   app.route("/api/host", hostRoutes(deps.host));
   app.route("/api/uploads", uploadRoutes(deps.uploads));
+  app.route("/api/tasks", taskFileRoutes(deps.taskFiles));
 
   app.all("/api/*", (c) =>
     c.json({ error: `Not found: ${c.req.method} ${c.req.path}` } satisfies ApiError, 404),

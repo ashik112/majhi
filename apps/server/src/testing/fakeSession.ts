@@ -19,7 +19,13 @@ export type Script = (turn: Turn) => Promise<StopReason | undefined>;
 /** An agent session in memory. Tests set `script` to say what each turn does. */
 export class FakeSession implements AgentSession {
   readonly pid = undefined;
-  readonly models = { models: [], efforts: [], defaultModel: "fake-model", defaultEffort: "medium" };
+  /** Current model and effort, like a real session after it applied the requested options. */
+  models: AgentSession["models"] = {
+    models: [],
+    efforts: [],
+    defaultModel: "fake-model",
+    defaultEffort: "medium",
+  };
   /** Every prompt received, in order. */
   readonly prompts: PromptBlock[][] = [];
   cancels = 0;

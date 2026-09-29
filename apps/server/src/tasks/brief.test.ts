@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { branchName, renderTaskMd, slugify } from "./brief.ts";
+import { branchName, renderPointer, renderTaskMd, slugify } from "./brief.ts";
 
 const task: Task = {
   id: "ACM-7",
@@ -75,6 +75,17 @@ describe("renderTaskMd", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+describe("the pointer file", () => {
+  it("names TASK.md and tells the agent how to show the owner media", () => {
+    const text = renderPointer({ id: "ACM-1" });
+    expect(text).toContain("# ACM-1");
+    expect(text).toContain("Read TASK.md in this folder first.");
+    expect(text).toContain("![title](media/chart.png)");
+    expect(text).toContain("[title](media/report.html)");
+    expect(text).toContain("Web links are clickable.");
   });
 });
 

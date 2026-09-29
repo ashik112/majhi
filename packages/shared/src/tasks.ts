@@ -207,6 +207,16 @@ export const ToolContentSchema = z.discriminatedUnion("type", [
 ]);
 export type ToolContent = z.infer<typeof ToolContentSchema>;
 
+/** Something the agent shows the owner: an image, video, audio, a page or file in the task folder, or a web link. */
+export const MediaRefSchema = z.object({
+  kind: z.enum(["image", "video", "audio", "file", "page", "link"]),
+  name: z.string(),
+  /** A task-files URL (`/api/tasks/<id>/files/<path>`) or an http(s) URL. */
+  src: z.string(),
+  mime: z.string().optional(),
+});
+export type MediaRef = z.infer<typeof MediaRefSchema>;
+
 export const PermissionOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -223,7 +233,13 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The agent it went to. */
     to: IdSchema.optional(),
   }),
-  RoomItemBase.extend({ type: z.literal("agent"), agent: IdSchema, text: z.string() }),
+  RoomItemBase.extend({
+    type: z.literal("agent"),
+    agent: IdSchema,
+    text: z.string(),
+    /** Images and links the agent sent as ACP content blocks, beside its text. */
+    media: z.array(MediaRefSchema).optional(),
+  }),
   RoomItemBase.extend({ type: z.literal("thought"), agent: IdSchema, text: z.string() }),
   RoomItemBase.extend({
     type: z.literal("tool"),

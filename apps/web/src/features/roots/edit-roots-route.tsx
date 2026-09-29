@@ -18,7 +18,7 @@ export function EditRootsRoute() {
   const toast = useToast();
   const [pending, setPending] = useState<WorkspacesUpdateResult | null>(null);
   const state = config.data;
-  const goHome = () => void navigate({ to: "/" });
+  const goHome = () => void navigate({ to: "/repos" });
 
   if (pending) {
     return (

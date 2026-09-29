@@ -15,9 +15,11 @@ import {
   nearBottom,
   oldestSeq,
   parseRoomMessage,
+  permissionOptionLabel,
   permissionSummary,
   pinnedPlans,
   roomReducer,
+  shortPath,
   splitRows,
   toolTarget,
   touchedFiles,
@@ -431,5 +433,24 @@ describe("nearBottom", () => {
   it("is true within the slack", () => {
     expect(nearBottom({ scrollHeight: 1000, scrollTop: 560, clientHeight: 400 })).toBe(true);
     expect(nearBottom({ scrollHeight: 1000, scrollTop: 300, clientHeight: 400 })).toBe(false);
+  });
+});
+
+describe("permissionOptionLabel", () => {
+  it("names what majhi does, not what the adapter calls it", () => {
+    expect(permissionOptionLabel({ id: "a", name: "Always Allow", kind: "allow_always" })).toBe(
+      "Allow for this task",
+    );
+    expect(permissionOptionLabel({ id: "r", name: "Reject", kind: "reject_once" })).toBe("Deny");
+    expect(permissionOptionLabel({ id: "o", name: "Allow", kind: "allow_once" })).toBe("Allow");
+  });
+});
+
+describe("shortPath", () => {
+  it("shows paths inside the task folder relative to it, and others as they are", () => {
+    expect(shortPath("/t/ACM-1/api/HEALTH.md", "/t/ACM-1")).toBe("api/HEALTH.md");
+    expect(shortPath("/t/ACM-1/api/HEALTH.md", "/t/ACM-1/")).toBe("api/HEALTH.md");
+    expect(shortPath("/t/ACM-10/x.md", "/t/ACM-1")).toBe("/t/ACM-10/x.md");
+    expect(shortPath("relative.md", "/t/ACM-1")).toBe("relative.md");
   });
 });

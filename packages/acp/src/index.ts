@@ -83,6 +83,7 @@ export { cliVersion, probeAccount } from "./probe.ts";
 export {
   type AgentSession,
   type McpServerSpec,
+  type MediaBlock,
   type PermissionAsk,
   type PromptBlock,
   type SessionEvent,

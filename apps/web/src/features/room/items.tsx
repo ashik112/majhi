@@ -4,7 +4,9 @@ import { memo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { permissionSummary } from "./model";
+import { Markdown } from "./markdown";
+import { MediaView, type TaskFiles } from "./media";
+import { permissionOptionLabel, permissionSummary } from "./model";
 import { ToolRow } from "./tool-row";
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
@@ -15,6 +17,8 @@ export interface ItemContext {
   pinned: ReadonlySet<string>;
   onPermission: (item: string, option: string) => void;
   answering: string | undefined;
+  /** The task, so agent text can link to its files. */
+  task: TaskFiles;
 }
 
 /** One room item. Wrapped so a long room paints only what is on screen. */
@@ -32,11 +36,13 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
     case "owner":
       return <OwnerMessage item={item} />;
     case "agent":
-      return <AgentMessage item={item} live={ctx.agents.find((a) => a.agent === item.agent)} />;
+      return (
+        <AgentMessage item={item} live={ctx.agents.find((a) => a.agent === item.agent)} task={ctx.task} />
+      );
     case "thought":
       return <Thought item={item} />;
     case "tool":
-      return <ToolRow item={item} />;
+      return <ToolRow item={item} folder={ctx.task.folder} />;
     case "plan":
       return <PlanSummary item={item} />;
     case "permission":
@@ -79,7 +85,15 @@ function OwnerMessage({ item }: { item: Of<"owner"> }) {
   );
 }
 
-function AgentMessage({ item, live }: { item: Of<"agent">; live: AgentLive | undefined }) {
+function AgentMessage({
+  item,
+  live,
+  task,
+}: {
+  item: Of<"agent">;
+  live: AgentLive | undefined;
+  task: TaskFiles;
+}) {
   return (
     <div className="flex max-w-[720px] gap-2.5">
       <AgentAvatar id={item.agent} size={26} className="mt-0.5" />
@@ -88,7 +102,20 @@ function AgentMessage({ item, live }: { item: Of<"agent">; live: AgentLive | und
           <span className="text-sm font-semibold">{item.agent}</span>
           {live?.model && <span className="text-xs text-fg-faint">{live.model}</span>}
         </div>
-        <div className="text-md whitespace-pre-wrap break-words text-fg-soft">{item.text}</div>
+        {item.text !== "" && (
+          <div className="text-md text-fg-soft">
+            <Markdown text={item.text} task={task} />
+          </div>
+        )}
+        {item.media !== undefined && item.media.length > 0 && (
+          <ul aria-label="Attached media" className="m-0 flex list-none flex-col items-start gap-2 p-0">
+            {item.media.map((m) => (
+              <li key={`${m.kind}:${m.src}`} className="max-w-full">
+                <MediaView media={m} onLoad={task.onLoad} />
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -216,7 +243,7 @@ function Permission({
             disabled={busy}
             onClick={() => onAnswer(item.id, option.id)}
           >
-            {option.name}
+            {permissionOptionLabel(option)}
           </Button>
         ))}
       </div>

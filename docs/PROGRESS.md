@@ -1,8 +1,44 @@
 # Progress
 
-## Phase 2a: Working with one agent (in progress)
+## Phase 2a: Working with one agent (built, waiting for owner review)
 
-Branch `phase-2a`, from `phase-1-accounts`.
+Branch `phase-2a`, from `phase-1-accounts`. The plan below is kept for reference; the result comes first.
+
+### What works
+
+- **Register a project** from Repos: pick the org, a project id, aliases and an optional base branch. Projects live in `majhi.yaml`.
+- **Task box** on the home screen. "add a health endpoint to api from develop" shows chips (`api: from develop`, the agent, the kind) before anything starts. `@agent` picks the agent, a kind chip switches code and chat, files and images can be attached, links are fetched once. Start (or Cmd+Enter) creates the task and its folder `<tasks_dir>/<KEY>/` with `TASK.md`, `AGENTS.md` and `CLAUDE.md`, a git worktree at `<KEY>/<project>` on `task/<key>-<slug>` from the base branch, and starts the agent. A failed fetch is a warning in the room; the task starts from the local copy. Nothing is ever pushed.
+- **Room**: the owner's text, the plan pinned while it has open entries, streamed agent text as markdown, tool rows that expand to their output or diff, permission prompts inline, system lines, a composer with Enter to queue, Cmd+Enter to stop and send, Esc to stop, slash commands and `@file`, attachments.
+- **Permissions**: reads always pass, `edit` and `shell` on the agent cover edits and commands, everything else asks. "Allow for this task" is remembered per task and tool kind. Pushes and MR commands always ask.
+- **Stop and queue**: Esc cancels the turn. A message queued while the agent worked stays queued until the next send.
+- **Changes tab**: per repo the branch and worktree path, and the files the agent touched, with diffs.
+- **Remove a task**: refused with the reason when a worktree has uncommitted changes; "Remove anyway" removes the worktree and the folder.
+- **Markdown** in agent text: paragraphs, headings, bold, italic, inline code, fenced code (an unclosed fence renders as code while it streams), lists, quotes, rules, links. Built as React elements; no HTML is ever injected.
+- **Media**: agents show images, video, audio and pages by saving them in the task folder and linking them (`![chart](media/chart.png)`, `[report](media/report.html)`). Images render inline at most 480 px wide and open full size on click (Esc closes), video and audio get controls, pages and other files are compact cards that open in a new tab. Image blocks and links an agent sends over ACP are saved under `<task>/media/` and shown with the message. `GET /api/tasks/<id>/files/<path>` serves the task folder: no dot names, no path outside the folder (symlinks included), Range for video and audio, `nosniff`, `no-store`. Pages and SVG carry `Content-Security-Policy: sandbox allow-scripts ...`, so they run in an opaque origin and their requests to `/api/cmd` carry `Origin: null` and are refused. `AGENTS.md` tells agents how to use this.
+
+### How to try it
+
+1. `make up`, open http://127.0.0.1:7070. Have an org, a signed-in account and an agent (Phase 1).
+2. Repos: Register a repo, pick the org, add an alias.
+3. Home: type "add a health endpoint to api from develop", check the chips, Start. Watch the room. Look at `<tasks_dir>/<KEY>/` and `git -C <repo> worktree list`.
+4. Tell the agent to draw something and link it, and to show a page, to see media.
+5. Task menu, Remove task, on a task with edits: it is refused until you choose Remove anyway.
+
+### Verified
+
+- `sh scripts/ci.sh`: Biome clean, typecheck, 635 unit and integration tests, both builds, 23 Playwright tests (8 Phase 0, 6 Phase 1, 9 Phase 2a). The whole suite passed 3 more runs in a row (the specs build on each other's state, so they run together).
+- e2e with the fake ACP adapter (Claude fake pauses 250 ms between steps, Codex fake 600 ms) covers: registering a project; the done-when task with chips, the streamed turn, the expanded diff, the rule-answered `npm test`, and on disk the worktree, the branch made from `develop`, `TASK.md`, `AGENTS.md`, an unchanged remote with nothing pushed; a file requested in the worktree showing under Changes; Esc on a slow turn with a queued message that stays queued until the next send; Deny and "Allow for this task"; a chat task; media inline, the lightbox, the sandboxed page that cannot reach `/api/cmd`, the files endpoint refusals; remove refused then forced.
+- Screenshots (1440x900) in `e2e/screenshots/`: `task-screen`, `room-running`, `room-permission`, `repos-register`, `room-media`.
+
+### Left and known issues
+
+- Not run with a real account yet: a real Claude run on a real repo, the real adapters' permission option names (the room shows "Allow", "Allow for this task", "Deny" by option kind), and real image content blocks. This is the owner's review step.
+- A task stays "Working" in the list while its agent is idle between turns. Status follows the task, not the turn.
+- `.md` files are served as `text/plain` so a new tab shows them instead of downloading.
+- Web images (`![x](https://...)`) are not loaded into the room: they show as a link card, so an agent cannot make the room call out to a tracker.
+- Task-folder media links need the file to exist when the owner clicks; nothing checks it when the message arrives.
+- Full git diffs, MRs and pushing come in later phases. The Changes tab shows the agent's own edits.
+- Only one agent per task; teams and the boss's compaction are Phase 2b.
 
 ### Goal
 

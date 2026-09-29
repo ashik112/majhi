@@ -47,7 +47,11 @@ export function RoomHeader({ task, agents }: { task: Task; agents: readonly Agen
         />
         <span className="font-mono text-sm text-fg-muted">{task.id}</span>
         {task.org && <span className="font-mono text-sm text-fg-faint">{task.org}</span>}
-        <StatusBadge status={task.status} pausedReason={task.pausedReason} />
+        <StatusBadge
+          status={task.status}
+          pausedReason={task.pausedReason}
+          yourTurn={!agents.some((a) => isWorking(a))}
+        />
         <div className="ml-auto flex items-center gap-2">
           {action === "stop" && (
             <Button
@@ -177,7 +181,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
       body="This deletes the task, its folder and its worktrees. Branches already pushed stay on the remote."
       confirmLabel={refused ? "Remove anyway" : "Remove task"}
       busy={remove.isPending}
-      error={remove.error?.message}
+      error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}
       onCancel={onDone}
       onConfirm={() => run(refused)}
     />

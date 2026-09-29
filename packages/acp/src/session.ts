@@ -31,6 +31,8 @@ export type McpServerSpec = { type: "http"; name: string; url: string; headers: 
 export type SessionEvent =
   | { type: "text"; messageId: string; text: string } // appended chunk
   | { type: "thought"; messageId: string; text: string }
+  /** An image (base64) or a link the agent sent as a content block of a message or tool call. */
+  | { type: "media"; messageId: string; block: MediaBlock }
   | {
       type: "tool";
       toolCallId: string;
@@ -47,6 +49,10 @@ export type SessionEvent =
   /** Current model and effort ids changed (the agent reported new config options, or `setOption` ran). */
   | { type: "config"; model?: string; effort?: string }
   | { type: "exit"; code: number | null; error?: string }; // process died
+
+export type MediaBlock =
+  | { kind: "image"; mime: string; data: string }
+  | { kind: "link"; uri: string; name: string; mime?: string };
 
 export interface PermissionAsk {
   toolCallId?: string;

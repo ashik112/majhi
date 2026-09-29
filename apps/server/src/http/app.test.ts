@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
 import { git, makeRepo, tempDir, testEnv } from "../testing/fixtures.ts";
+import { isLoopbackOrigin } from "./origin.ts";
 
 describe("HTTP API", () => {
   let dir: string;
@@ -126,6 +127,19 @@ describe("HTTP API", () => {
     expect(evil.status).toBe(403);
     const local = await cmd("config.get", {}, { origin: "http://localhost:5173" });
     expect(local.status).toBe(200);
+  });
+
+  it("refuses commands, uploads and sockets from an opaque origin, like a sandboxed agent page", async () => {
+    // A page served with `Content-Security-Policy: sandbox` sends `Origin: null`.
+    const cmdRes = await cmd("config.get", {}, { origin: "null" });
+    expect(cmdRes.status).toBe(403);
+    const upload = await app.request("/api/uploads", {
+      method: "POST",
+      headers: { origin: "null" },
+      body: new FormData(),
+    });
+    expect(upload.status).toBe(403);
+    expect(isLoopbackOrigin("null")).toBe(false);
   });
 
   it("says the web app is not built when there is no dist folder", async () => {
