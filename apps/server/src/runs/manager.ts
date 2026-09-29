@@ -107,6 +107,11 @@ export class RunManager {
     }
   }
 
+  /** True when the agent is starting, working or waiting in any task. */
+  isWorking(agent: string): boolean {
+    return [...this.runs.values()].some((r) => r.agent === agent && WORKING.has(r.live.status));
+  }
+
   /** Agents of the task that are starting, working or waiting. */
   working(task: string): string[] {
     return [...this.runs.values()]

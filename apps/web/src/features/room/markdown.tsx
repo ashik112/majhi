@@ -101,7 +101,7 @@ function buildComponents({ task, baseDir }: Scope): Components {
         );
       }
       if (target.type === "file" && task !== undefined) {
-        return <TaskFileLink path={target.path} kind={target.kind} label={children} />;
+        return <TaskFileLink path={target.path} kind={target.kind} label={children} project={task.project} />;
       }
       return <>{children}</>;
     },
@@ -118,7 +118,13 @@ function buildComponents({ task, baseDir }: Scope): Components {
               {shown === "player" ? (
                 <TaskFileView taskId={task.id} taskPath={target.path} name={name} onLoad={task.onLoad} />
               ) : (
-                <TaskFileLink path={target.path} kind={target.kind} label={name} card />
+                <TaskFileLink
+                  path={target.path}
+                  kind={target.kind}
+                  label={name}
+                  card
+                  project={task.project}
+                />
               )}
             </div>
           );
@@ -149,7 +155,14 @@ function buildComponents({ task, baseDir }: Scope): Components {
             />
           );
         }
-        return <TaskFileLink path={target.path} kind={target.kind} label={name || target.path} />;
+        return (
+          <TaskFileLink
+            path={target.path}
+            kind={target.kind}
+            label={name || target.path}
+            project={task.project}
+          />
+        );
       }
       return <>{name}</>;
     },

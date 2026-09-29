@@ -131,3 +131,30 @@ async function writeAtomically(file: string, content: string): Promise<void> {
   await writeFile(temp, content);
   await rename(temp, target);
 }
+
+/** Points `boss` and `decisions.acp_agent` at the new id when they name the old one. */
+export function renameAgentInConfig(file: string, id: string, newId: string): Promise<void> {
+  return editConfig(file, (doc) => {
+    if (doc.get("boss") === id) doc.set("boss", newId);
+    if (doc.getIn(["decisions", "acp_agent"]) === id) doc.setIn(["decisions", "acp_agent"], newId);
+  });
+}
+
+/** Renames the `orgs` key and the `org` of every account and project that names it, in place. */
+export function renameOrgInConfig(file: string, id: string, newId: string): Promise<void> {
+  return editConfig(file, (doc) => {
+    const orgs: unknown = doc.get("orgs", true);
+    if (isMap(orgs)) {
+      for (const pair of orgs.items) {
+        if (isScalar(pair.key) && pair.key.value === id) pair.key.value = newId;
+      }
+    }
+    for (const section of ["accounts", "projects"]) {
+      const map: unknown = doc.get(section, true);
+      if (!isMap(map)) continue;
+      for (const pair of map.items) {
+        if (isMap(pair.value) && pair.value.get("org") === id) pair.value.set("org", newId);
+      }
+    }
+  });
+}

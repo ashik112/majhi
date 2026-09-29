@@ -1,11 +1,13 @@
 import type { Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
-import { Link2, X } from "lucide-react";
+import { Check, MoreHorizontal, Plus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
@@ -15,133 +17,196 @@ import { linkTargets, relations } from "./model";
 
 type Picking = "parent" | "depends-on" | null;
 
-/** Parent, what the task waits on and its children, with a menu to add or remove links. */
+type Unlinking = { task: string; type: "parent" | "depends-on"; target: string; label: string };
+
+/** Subtasks shown before "Show all": the header is pinned, so it stays short. */
+const SHOWN_CHILDREN = 2;
+
+/** Parent, what the task waits on and its subtasks, one labeled line each, and a quiet way to link more. */
 export function TaskLinks({ task }: { task: Task }) {
   const list = useTasks().data ?? [];
   const { org } = useOrgFilter();
   const unlink = useUnlinkTask();
   const [picking, setPicking] = useState<Picking>(null);
+  const [asking, setAsking] = useState<Unlinking | null>(null);
+  const [all, setAll] = useState(false);
   const rel = relations(task, list);
   const search = orgSearch(org);
-  const idLink = "font-mono text-fg hover:underline";
+  const byId = new Map(list.map((t) => [t.id, t]));
+  const kids = all ? rel.children : rel.children.slice(0, SHOWN_CHILDREN);
+  const openLink = "flex min-w-0 items-baseline gap-1.5 hover:text-fg";
+  const linkTo = (id: string) => ({ to: "/t/$taskId" as const, params: { taskId: id }, search });
 
   return (
-    <div className="flex flex-col gap-1.5 text-sm" data-testid="task-links">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        {rel.parent && (
-          <span className="flex items-center gap-1.5 text-fg-muted">
-            Part of{" "}
-            <Link
-              to="/t/$taskId"
-              params={{ taskId: rel.parent.id }}
-              search={search}
-              title={rel.parent.title}
-              className={idLink}
-            >
-              {rel.parent.id}
-            </Link>
-            <RemoveLink
-              label={`Remove link to ${rel.parent.id}`}
-              onClick={() => unlink.mutate({ task: task.id, type: "parent", target: rel.parent?.id ?? "" })}
-            />
-          </span>
-        )}
-        {rel.depends.map((d) => (
-          <span
-            key={d.id}
-            className={cn("flex items-center gap-1.5", d.waiting ? "text-coral" : "text-fg-muted")}
-          >
-            {d.waiting ? "Waiting on" : "After"}{" "}
-            <Link
-              to="/t/$taskId"
-              params={{ taskId: d.id }}
-              search={search}
-              title={d.title}
-              className={cn(idLink, d.waiting && "text-coral")}
-            >
-              {d.id}
-            </Link>
-            <RemoveLink
-              label={`Remove link to ${d.id}`}
-              onClick={() => unlink.mutate({ task: task.id, type: "depends-on", target: d.id })}
-            />
-          </span>
-        ))}
-        <Menu
-          label="Add link"
-          align="left"
-          items={[
-            {
-              label: "Make child of...",
-              onSelect: () => setPicking("parent"),
-              disabled: rel.parent !== undefined,
-            },
-            { label: "Waits for...", onSelect: () => setPicking("depends-on") },
-          ]}
-          trigger={({ ref, ...props }) => (
-            <Button ref={ref} {...props} variant="ghost" size="sm" className="-ml-2 text-fg-muted">
-              <Link2 aria-hidden="true" />
-              Add link
-            </Button>
-          )}
-        />
-      </div>
-
-      {rel.children.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-3">
-            <span className="text-fg-muted">
-              {rel.progress ? `${rel.progress.done} of ${rel.progress.total} done` : "Subtasks"}
-            </span>
-            {rel.progress && rel.progress.total > 0 && (
-              <span className="w-28">
-                <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
-              </span>
-            )}
-          </div>
-          <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
-            {rel.children.map((c) => (
-              <li key={c.id} className="flex items-center gap-1.5 text-fg-muted">
-                <Link
-                  to="/t/$taskId"
-                  params={{ taskId: c.id }}
-                  search={search}
-                  title={c.title}
-                  className={idLink}
-                >
-                  {c.id}
+    <div className="flex flex-col gap-2 text-sm" data-testid="task-links">
+      {(rel.parent || rel.depends.length > 0 || rel.children.length > 0) && (
+        <dl className="m-0 grid max-w-[760px] grid-cols-[76px_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2">
+          {rel.parent && (
+            <>
+              <dt className="text-fg-faint">Part of</dt>
+              <dd className="m-0 flex items-center gap-2">
+                <Link {...linkTo(rel.parent.id)} className={cn(openLink, "text-fg-soft")}>
+                  <span className="shrink-0 font-mono text-xs text-fg-muted">{rel.parent.id}</span>
+                  <span className="truncate">{rel.parent.title}</span>
                 </Link>
-                <span className="text-fg-faint">{c.status === "done" ? "done" : c.status}</span>
-                <RemoveLink
-                  label={`Remove ${c.id} from this task`}
-                  onClick={() => unlink.mutate({ task: c.id, type: "parent", target: task.id })}
+                <RowMenu
+                  label={`Options for ${rel.parent.id}`}
+                  onUnlink={() =>
+                    setAsking({
+                      task: task.id,
+                      type: "parent",
+                      target: rel.parent?.id ?? "",
+                      label: `Stop ${task.id} being part of ${rel.parent?.id}?`,
+                    })
+                  }
                 />
-              </li>
-            ))}
-          </ul>
-        </div>
+              </dd>
+            </>
+          )}
+          {rel.depends.length > 0 && (
+            <>
+              <dt className="text-fg-faint">Waits for</dt>
+              <dd className="m-0 flex min-w-0 flex-col gap-1">
+                {rel.depends.map((d) => (
+                  <span key={d.id} className="flex items-center gap-2">
+                    <Link
+                      {...linkTo(d.id)}
+                      className={cn(openLink, d.waiting ? "text-coral" : "text-fg-faint")}
+                    >
+                      {!d.waiting && <Check aria-hidden="true" className="size-3 shrink-0 self-center" />}
+                      <span className="shrink-0 font-mono text-xs">{d.id}</span>
+                      <span className="truncate">{d.title}</span>
+                      <span className="shrink-0 text-fg-faint">
+                        · until {d.when === "ready" ? "ready for review" : "done"}
+                      </span>
+                    </Link>
+                    <RowMenu
+                      label={`Options for ${d.id}`}
+                      onUnlink={() =>
+                        setAsking({
+                          task: task.id,
+                          type: "depends-on",
+                          target: d.id,
+                          label: `Stop ${task.id} waiting for ${d.id}?`,
+                        })
+                      }
+                    />
+                  </span>
+                ))}
+              </dd>
+            </>
+          )}
+          {rel.children.length > 0 && (
+            <>
+              <dt className="text-fg-faint">Subtasks</dt>
+              <dd className="m-0 flex min-w-0 flex-col gap-1">
+                <span className="flex items-center gap-3 text-fg-muted">
+                  {rel.progress
+                    ? `${rel.progress.done} of ${rel.progress.total} done`
+                    : `${rel.children.length}`}
+                  {rel.progress && rel.progress.total > 0 && (
+                    <span className="w-28">
+                      <UsageBar
+                        pct={(rel.progress.done / rel.progress.total) * 100}
+                        tone="green"
+                        height={3}
+                      />
+                    </span>
+                  )}
+                </span>
+                {/* Expanded, the list scrolls inside the header instead of pushing the room down. */}
+                <span className={cn("flex flex-col gap-1.5", all && "max-h-40 overflow-y-auto pr-1")}>
+                  {kids.map((c) => (
+                    <span key={c.id} className="flex items-center gap-2">
+                      <Link {...linkTo(c.id)} className={cn(openLink, "flex-1 text-fg-soft")}>
+                        <span className="shrink-0 font-mono text-xs text-fg-muted">{c.id}</span>
+                        <span className="truncate">{byId.get(c.id)?.title ?? c.title}</span>
+                      </Link>
+                      <StatusBadge status={c.status} />
+                      <RowMenu
+                        label={`Options for ${c.id}`}
+                        onUnlink={() =>
+                          setAsking({
+                            task: c.id,
+                            type: "parent",
+                            target: task.id,
+                            label: `Remove ${c.id} from ${task.id}?`,
+                          })
+                        }
+                      />
+                    </span>
+                  ))}
+                </span>
+                {rel.children.length > SHOWN_CHILDREN && (
+                  <button
+                    type="button"
+                    onClick={() => setAll((v) => !v)}
+                    className="w-fit cursor-pointer rounded-xs text-fg-muted hover:text-fg"
+                  >
+                    {all ? "Show fewer" : `Show all ${rel.children.length}`}
+                  </button>
+                )}
+              </dd>
+            </>
+          )}
+        </dl>
       )}
+      <Menu
+        label="Link a task"
+        align="left"
+        items={[
+          {
+            label: "Make child of...",
+            onSelect: () => setPicking("parent"),
+            disabled: rel.parent !== undefined,
+          },
+          { label: "Waits for...", onSelect: () => setPicking("depends-on") },
+        ]}
+        trigger={({ ref, ...props }) => (
+          <button
+            ref={ref}
+            {...props}
+            type="button"
+            className="flex h-6 w-fit cursor-pointer items-center gap-1.5 rounded-sm text-fg-faint hover:text-fg"
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+            Link a task
+          </button>
+        )}
+      />
       {unlink.error && (
         <p role="alert" className="text-sm text-red">
           {unlink.error.message}
         </p>
+      )}
+      {asking && (
+        <ConfirmDialog
+          title="Remove link"
+          body={asking.label}
+          confirmLabel="Remove link"
+          busy={unlink.isPending}
+          error={unlink.error?.message}
+          onCancel={() => setAsking(null)}
+          onConfirm={() =>
+            unlink.mutate(
+              { task: asking.task, type: asking.type, target: asking.target },
+              { onSuccess: () => setAsking(null) },
+            )
+          }
+        />
       )}
       {picking && <LinkPicker task={task} type={picking} onClose={() => setPicking(null)} />}
     </div>
   );
 }
 
-function RemoveLink({ label, onClick }: { label: string; onClick: () => void }) {
+function RowMenu({ label, onUnlink }: { label: string; onUnlink: () => void }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-5 cursor-pointer place-items-center rounded-xs text-fg-faint transition-colors duration-150 hover:text-fg"
-    >
-      <X aria-hidden="true" className="size-3" />
-    </button>
+    <Menu
+      label={label}
+      icon={<MoreHorizontal aria-hidden="true" className="size-3.5" />}
+      items={[{ label: "Remove link", tone: "danger", onSelect: onUnlink }]}
+    />
   );
 }
 

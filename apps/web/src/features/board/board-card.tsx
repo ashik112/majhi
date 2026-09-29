@@ -70,7 +70,9 @@ export const BoardCard = memo(function BoardCard({
         </span>
       </span>
       {parent && <span className="-mt-1 truncate font-mono text-xs text-fg-faint">Part of {parent}</span>}
-      <span className="text-body leading-[1.35] font-medium">{task.title}</span>
+      <span title={task.title} className="line-clamp-3 text-body leading-[1.35] font-medium break-words">
+        {task.title}
+      </span>
       {(task.repos.length > 0 || task.team.length > 0) && (
         <span className="flex flex-wrap items-center gap-1.5">
           {task.repos.map((repo) => (

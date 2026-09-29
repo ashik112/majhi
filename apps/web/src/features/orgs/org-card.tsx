@@ -1,4 +1,4 @@
-import type { AccountView, OrgView, ToolInfo } from "@majhi/shared";
+import { type AccountView, IdSchema, type OrgView, PRIVATE, type ToolInfo } from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,7 +11,7 @@ import { ORG_COLORS, statusInfo } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters, plural } from "@/lib/format";
-import { useUpdateOrg } from "@/lib/studio-queries";
+import { useRenameOrg, useUpdateOrg } from "@/lib/studio-queries";
 import { checkOrgDraft, draftFromOrg, identityLabel, type OrgDraft, type OrgErrors } from "./model";
 
 export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-[18px]";
@@ -23,16 +23,23 @@ export function OrgCard({
   tools,
   openTasks,
   onAddAccount,
+  highlighted = false,
 }: {
   org: OrgView;
   accounts: readonly AccountView[];
   tools: readonly ToolInfo[] | undefined;
   openTasks: number;
   onAddAccount: () => void;
+  /** This is the org the sidebar filter is set to. */
+  highlighted?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   return (
-    <section aria-label={org.name} className={CARD}>
+    <section
+      aria-label={org.name}
+      aria-current={highlighted ? "true" : undefined}
+      className={cn(CARD, highlighted && "border-amber-line")}
+    >
       <div className="flex items-center gap-3">
         <OrgBadge label={badgeLetters(org.key)} color={org.color} className="size-8 rounded-lg text-xs" />
         <h2 className="min-w-0 truncate text-lg font-semibold">{org.name}</h2>
@@ -174,6 +181,8 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
   const update = useUpdateOrg();
+  const rename = useRenameOrg();
+  const [orgId, setOrgId] = useState(org.id);
   const [draft, setDraft] = useState<OrgDraft>(() => draftFromOrg(org));
   const [errors, setErrors] = useState<OrgErrors>({});
   const [failure, setFailure] = useState<string>();
@@ -182,12 +191,25 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
   function submit() {
     const check = checkOrgDraft(org, draft);
     if (!check.ok) return setErrors(check.errors);
+    const nextId = orgId.trim();
+    if (nextId !== org.id && !IdSchema.safeParse(nextId).success) {
+      setFailure("Org id: use lowercase letters, digits and dashes");
+      return;
+    }
     setErrors({});
-    if (!check.input) return onDone();
-    update.mutate(check.input, {
-      onSuccess: onDone,
-      onError: (e) => setFailure(describeError(e)),
-    });
+    setFailure(undefined);
+    const save = (id: string) => {
+      if (!check.input) return onDone();
+      update.mutate(
+        { ...check.input, id },
+        { onSuccess: onDone, onError: (e) => setFailure(describeError(e)) },
+      );
+    };
+    if (nextId === org.id) return save(org.id);
+    rename.mutate(
+      { id: org.id, newId: nextId },
+      { onSuccess: () => save(nextId), onError: (e) => setFailure(describeError(e)) },
+    );
   }
 
   const colors =
@@ -205,6 +227,24 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
     >
       <Field label="Name" error={errors.name}>
         {(p) => <Input {...p} value={draft.name} onChange={(e) => set({ name: e.target.value })} />}
+      </Field>
+      <Field
+        label="Org id"
+        hint={
+          org.id === PRIVATE
+            ? "The built-in org keeps its id."
+            : "Renaming updates its agents, accounts and projects. Task keys stay."
+        }
+      >
+        {(p) => (
+          <Input
+            {...p}
+            className="font-mono"
+            disabled={org.id === PRIVATE}
+            value={orgId}
+            onChange={(e) => setOrgId(e.target.value)}
+          />
+        )}
       </Field>
       <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
         <legend className="mb-1.5 p-0 text-sm text-fg-faint">Color</legend>
@@ -279,8 +319,8 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" variant="primary" disabled={update.isPending}>
-          {update.isPending ? "Saving" : "Save"}
+        <Button type="submit" variant="primary" disabled={update.isPending || rename.isPending}>
+          {update.isPending || rename.isPending ? "Saving" : "Save"}
         </Button>
         <Button onClick={onDone}>Cancel</Button>
       </div>

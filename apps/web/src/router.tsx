@@ -22,6 +22,8 @@ export interface AppSearch {
   account?: string;
   /** A file of the open task, shown in the viewer drawer. */
   file?: string;
+  /** How the board shows tasks. The board is the default. */
+  view?: "tree";
 }
 
 function text(value: unknown): string | undefined {
@@ -33,7 +35,9 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const agent = text(search.agent);
   const account = text(search.account);
   const file = text(search.file);
+  const view = search.view === "tree" ? "tree" : undefined;
   return {
+    ...(view ? { view } : {}),
     ...(org ? { org } : {}),
     ...(agent ? { agent } : {}),
     ...(account ? { account } : {}),

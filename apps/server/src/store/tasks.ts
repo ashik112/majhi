@@ -267,6 +267,33 @@ export class TaskRepo {
       .run();
   }
 
+  /** Replaces the title and brief text of a task. */
+  setText(id: string, title: string, brief: string, at: string): void {
+    this.db.update(tasks).set({ title, brief, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  /** Renames an agent in every task team. Returns the ids of the tasks that changed. */
+  renameAgent(id: string, newId: string): string[] {
+    const changed: string[] = [];
+    for (const row of this.db.select({ id: tasks.id, team: tasks.team }).from(tasks).all()) {
+      const team = TeamSchema.parse(JSON.parse(row.team));
+      if (!team.includes(id)) continue;
+      const next = team.map((a) => (a === id ? newId : a));
+      this.db
+        .update(tasks)
+        .set({ team: JSON.stringify([...new Set(next)]) })
+        .where(eq(tasks.id, row.id))
+        .run();
+      changed.push(row.id);
+    }
+    return changed;
+  }
+
+  /** Moves the tasks of one org to another org id. */
+  renameOrg(id: string, newId: string): void {
+    this.db.update(tasks).set({ org: newId }).where(eq(tasks.org, id)).run();
+  }
+
   touch(id: string, at: string): void {
     this.db.update(tasks).set({ updatedAt: at }).where(eq(tasks.id, id)).run();
   }

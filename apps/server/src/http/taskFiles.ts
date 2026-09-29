@@ -3,7 +3,7 @@ import { realpath, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { Readable } from "node:stream";
 import { type ApiError, extensionOf } from "@majhi/shared";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 
 /** By extension. Anything else is a download, so a browser never guesses. */
 const TYPES: Record<string, string> = {
@@ -50,10 +50,13 @@ const SANDBOXED = new Set(["html", "htm", "svg"]);
 export interface TaskFilesDeps {
   /** The task folder, or undefined when there is no such task. */
   folderOf(taskId: string): string | undefined;
+  /** The repos of a task (checkout and worktree), or undefined when there is no such task. */
+  reposOf?(taskId: string): { project: string; source: string; worktree?: string | undefined }[] | undefined;
 }
 
 const TASK_ID = /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/;
 const PREFIX = /^\/api\/tasks\/[^/]+\/files\//;
+const REPO_PREFIX = /^\/api\/tasks\/[^/]+\/repo\/[^/]+\/files\//;
 
 /**
  * `GET /api/tasks/<id>/files/<path>`: a file from the task folder, so the room can show what the
@@ -69,10 +72,26 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
     const id = c.req.param("id");
     const folder = TASK_ID.test(id) ? deps.folderOf(id) : undefined;
     if (folder === undefined) return refuse(c, 404, "No such task.");
+    return serveFrom(c, folder, PREFIX, "task folder");
+  });
 
+  // A file of one of the task's repos: its worktree once created, else the project's own checkout.
+  app.get("/:id/repo/:project/files/*", async (c) => {
+    const id = c.req.param("id");
+    const repos = TASK_ID.test(id) ? deps.reposOf?.(id) : undefined;
+    const repo = repos?.find((r) => r.project === c.req.param("project"));
+    if (repo === undefined) return refuse(c, 404, "No such task or project.");
+    let root = repo.source;
+    if (repo.worktree !== undefined && (await stat(repo.worktree).catch(() => undefined))?.isDirectory()) {
+      root = repo.worktree;
+    }
+    return serveFrom(c, root, REPO_PREFIX, "project");
+  });
+
+  async function serveFrom(c: Context, folder: string, prefix: RegExp, what: string): Promise<Response> {
     let segments: string[];
     try {
-      segments = c.req.path.replace(PREFIX, "").split("/").map(decodeURIComponent);
+      segments = c.req.path.replace(prefix, "").split("/").map(decodeURIComponent);
     } catch {
       return refuse(c, 404, "Not found.");
     }
@@ -92,7 +111,7 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
     }
     const rel = relative(root, target);
     if (rel === "" || rel.startsWith("..") || rel.split(sep).some((s) => s.startsWith("."))) {
-      return refuse(c, 403, "That file is outside the task folder.");
+      return refuse(c, 403, `That file is outside the ${what}.`);
     }
     const info = await stat(target).catch(() => undefined);
     if (info === undefined || !info.isFile()) return refuse(c, 404, "Not found.");
@@ -126,7 +145,7 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
       return new Response(null, { status: range ? 206 : 200, headers });
     const stream = Readable.toWeb(createReadStream(target, { start, end })) as ReadableStream;
     return new Response(stream, { status: range ? 206 : 200, headers });
-  });
+  }
   return app;
 }
 

@@ -214,3 +214,56 @@ export function moveFocus(
   }
   return current;
 }
+
+export interface TreeNode {
+  task: TaskSummary;
+  children: TreeNode[];
+}
+
+/**
+ * The tasks as a tree: a task whose parent is also shown sits under it, the rest stand at the top.
+ * Roots follow the board's column order, children follow their ids.
+ */
+export function buildTree(columns: readonly Column[]): TreeNode[] {
+  const shown = columns.flatMap((c) => c.tasks);
+  const ids = new Set(shown.map((t) => t.id));
+  const kids = new Map<string, TaskSummary[]>();
+  const roots: TaskSummary[] = [];
+  for (const task of shown) {
+    const parent = partOf(task);
+    if (parent !== undefined && parent !== task.id && ids.has(parent)) {
+      kids.set(parent, [...(kids.get(parent) ?? []), task]);
+    } else {
+      roots.push(task);
+    }
+  }
+  const byId = (a: TaskSummary, b: TaskSummary) => {
+    const [pa, na] = idParts(a.id);
+    const [pb, nb] = idParts(b.id);
+    return pa.localeCompare(pb) || na - nb;
+  };
+  const seen = new Set<string>();
+  const node = (task: TaskSummary): TreeNode => {
+    seen.add(task.id);
+    return {
+      task,
+      children: (kids.get(task.id) ?? [])
+        .toSorted(byId)
+        .filter((k) => !seen.has(k.id))
+        .map(node),
+    };
+  };
+  return roots.map(node);
+}
+
+/** The rows a tree shows, skipping the children of collapsed parents. */
+export function visibleRows(
+  nodes: readonly TreeNode[],
+  collapsed: ReadonlySet<string>,
+  depth = 0,
+): { task: TaskSummary; depth: number; hasChildren: boolean }[] {
+  return nodes.flatMap((n) => [
+    { task: n.task, depth, hasChildren: n.children.length > 0 },
+    ...(collapsed.has(n.task.id) ? [] : visibleRows(n.children, collapsed, depth + 1)),
+  ]);
+}

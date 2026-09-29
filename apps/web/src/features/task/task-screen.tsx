@@ -1,16 +1,20 @@
+import type { Task } from "@majhi/shared";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
 import { permissionDomId } from "@/features/room/items";
+import { Markdown } from "@/features/room/markdown";
 import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
+import { linkifyPaths } from "@/features/viewer/model";
 import { setPendingPermission } from "@/lib/attention";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
-import { useTask } from "@/lib/task-queries";
+import { useTask, useUpdateTask } from "@/lib/task-queries";
 import { briefBody, briefLabel, firstPendingPermission } from "./model";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
@@ -100,46 +104,108 @@ function TaskView({ taskId }: { taskId: string }) {
           state={room.state}
           dispatch={room.dispatch}
           loadOlder={room.loadOlder}
-          top={brief ? <Brief label={briefLabel(data)} text={brief} /> : undefined}
+          top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
         />
         <RoomPanel task={data} agents={room.state.agents} items={room.state.items} yourTurn={yourTurn} />
       </div>
       {file !== undefined && (
         <Suspense fallback={null}>
-          <FileViewer taskId={data.id} folder={data.folder} path={file} items={room.state.items} />
+          <FileViewer
+            taskId={data.id}
+            folder={data.folder}
+            path={file}
+            items={room.state.items}
+            repos={data.repos}
+          />
         </Suspense>
       )}
     </div>
   );
 }
 
-/** What the owner wrote, verbatim, above the room. Long briefs fold. */
-function Brief({ label, text }: { label: string; text: string }) {
+/** What the owner wrote, as markdown. File paths in it open in the viewer, from the task's project. Long briefs fold. */
+function Brief({ label, text, task }: { label: string; text: string; task: Task }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(text);
+  const update = useUpdateTask();
+  const toast = useToast();
   const long = text.length > 420 || text.split("\n").length > 6;
+  const source = useMemo(() => linkifyPaths(text), [text]);
+  const files = useMemo(
+    () => ({ id: task.id, folder: task.folder, project: task.repos[0]?.project }),
+    [task.id, task.folder, task.repos],
+  );
   return (
     <section
       aria-label="Task brief"
       className="flex shrink-0 flex-col gap-1.5 rounded-[10px] border border-line-strong bg-card px-3.5 py-3"
     >
-      <SectionLabel>{label}</SectionLabel>
-      <p
-        className={
-          long && !open
-            ? "line-clamp-5 text-body leading-[1.55] whitespace-pre-wrap break-words text-[#d5d7dc]"
-            : "max-h-[40vh] overflow-y-auto text-body leading-[1.55] whitespace-pre-wrap break-words text-[#d5d7dc]"
-        }
-      >
-        {text}
-      </p>
-      {long && (
+      <div className="flex items-center">
+        <SectionLabel>{label}</SectionLabel>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => {
+              setValue(text);
+              setEditing(true);
+            }}
+            className="ml-auto cursor-pointer rounded-xs text-sm text-fg-muted hover:text-fg"
+          >
+            Edit description
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <textarea
+            aria-label="Task description"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            rows={8}
+            className="max-h-[40vh] w-full resize-y rounded-md border border-line-control bg-field p-2 text-body text-fg focus-visible:border-blue focus-visible:outline-none"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={update.isPending}
+              onClick={() =>
+                update.mutate(
+                  { id: task.id, brief: value },
+                  {
+                    onSuccess: () => setEditing(false),
+                    onError: (e) => toast("Could not save", { detail: e.message, tone: "error" }),
+                  },
+                )
+              }
+            >
+              Save
+            </Button>
+            <Button size="sm" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className={
+            long && !open
+              ? "max-h-[9.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"
+              : "max-h-[40vh] overflow-y-auto"
+          }
+        >
+          <Markdown text={source} task={files} />
+        </div>
+      )}
+      {long && !editing && (
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
           className="w-fit cursor-pointer rounded-xs text-sm text-fg-muted hover:text-fg"
         >
-          {open ? "Show less" : "Show more"}
+          {open ? "Show less" : "Show all"}
         </button>
       )}
     </section>

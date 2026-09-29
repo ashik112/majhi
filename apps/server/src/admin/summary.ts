@@ -9,6 +9,9 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "orgs.create": (i) => `Create org ${str(i.name) || str(i.id)}${i.key ? ` (key ${str(i.key)})` : ""}`,
   "orgs.update": (i) => `Change org ${str(i.id)}`,
+  "orgs.rename": (i) => `Rename org ${str(i.id)} to ${str(i.newId)}`,
+  "agents.rename": (i) => `Rename agent ${str(i.id)} to ${str(i.newId)}`,
+  "tasks.update": (i) => `Edit task ${str(i.id)}`,
   "accounts.create": (i) => `Add ${str(i.tool)} account ${str(i.id)} for ${str(i.org)}`,
   "accounts.remove": (i) => `Remove account ${str(i.id)}`,
   "accounts.login.start": (i) => `Start sign-in for account ${str(i.id)}`,

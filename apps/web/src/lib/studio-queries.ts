@@ -88,6 +88,30 @@ export function useUpdateOrg() {
   });
 }
 
+export function useRenameOrg() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"orgs.rename">, ApiRequestError, CommandInput<"orgs.rename">>({
+    mutationFn: (input) => cmd("orgs.rename", input),
+    onSuccess: () =>
+      refresh(
+        client,
+        queryKeys.orgs,
+        queryKeys.agents,
+        queryKeys.accounts,
+        queryKeys.projects,
+        queryKeys.tasks,
+      ),
+  });
+}
+
+export function useRenameAgent() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"agents.rename">, ApiRequestError, CommandInput<"agents.rename">>({
+    mutationFn: (input) => cmd("agents.rename", input),
+    onSuccess: () => refresh(client, queryKeys.agents, queryKeys.accounts, queryKeys.orgs, queryKeys.tasks),
+  });
+}
+
 export function useCreateAccount() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"accounts.create">, ApiRequestError, CommandInput<"accounts.create">>({

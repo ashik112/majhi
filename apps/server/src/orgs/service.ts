@@ -2,7 +2,7 @@ import type { CommandInput, CommandMeta } from "@majhi/shared";
 import { LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
-import { writeOrg } from "../config/write.ts";
+import { renameOrgInConfig, writeOrg } from "../config/write.ts";
 import { UserError } from "../errors.ts";
 import { orgKeys } from "./keys.ts";
 
@@ -14,6 +14,8 @@ export class OrgService {
   constructor(
     private readonly config: ConfigService,
     private readonly agents: AgentStore,
+    /** Moves the tasks of the org in the database. */
+    private readonly renameTasks: (id: string, newId: string) => void = () => undefined,
   ) {}
 
   async list(): Promise<OrgView[]> {
@@ -67,6 +69,39 @@ export class OrgService {
     );
     const [agentScopes, accounts] = [await this.agentScopes(), Object.values(sections.accounts)];
     return view(id, next, orgKeys(orgs).get(id) ?? "", accounts, agentScopes);
+  }
+
+  /**
+   * Changes the org id: `orgs` in majhi.yaml, the org of its accounts and projects, the scope and
+   * `where` of agent files, and its tasks. Task keys stay. One config commit.
+   */
+  async rename(id: string, newId: string, command: string, meta: CommandMeta): Promise<OrgView> {
+    const sections = await this.config.sections();
+    if (id === PRIVATE)
+      throw new UserError("The Private org cannot be renamed. Its name can be changed.", 409);
+    if (sections.orgs[id] === undefined) throw new UserError(`Org "${id}" does not exist.`, 404);
+    if (id === newId) throw new UserError("That is already its id.");
+    if (newId === PRIVATE || newId === LEGACY_PERSONAL || newId === "root")
+      throw new UserError(`"${newId}" is reserved`);
+    if (sections.orgs[newId] !== undefined) throw new UserError(`Org "${newId}" already exists.`, 409);
+    const swap = (v: string) => (v === id ? newId : v);
+    const stored = await this.agents.list();
+    await this.config.change({ command, meta, summary: `renamed org ${id} to ${newId}` }, async () => {
+      await renameOrgInConfig(this.config.file, id, newId);
+      for (const a of stored) {
+        if (!a.ok) continue;
+        const fm = a.agent.frontmatter;
+        if (fm.scope !== id && !fm.where.includes(id)) continue;
+        await this.agents.write({
+          ...a.agent,
+          frontmatter: { ...fm, scope: swap(fm.scope), where: fm.where.map(swap) },
+        });
+      }
+      this.renameTasks(id, newId);
+    });
+    const renamed = (await this.list()).find((o) => o.id === newId);
+    if (renamed === undefined) throw new Error("unreachable");
+    return renamed;
   }
 
   private async agentScopes(): Promise<string[]> {

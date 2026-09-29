@@ -346,6 +346,22 @@ export class TaskService {
     return stopped;
   }
 
+  /** Changes the title and the description. Key, folder and branch stay; TASK.md is written again. */
+  async update(input: { id: string; title?: string | undefined; brief?: string | undefined }): Promise<Task> {
+    const task = this.get(input.id);
+    const title = (input.title ?? task.title).trim();
+    if (title === "") throw new UserError("The title cannot be empty.");
+    const current = task.brief.trim().split(/\r?\n/);
+    const body =
+      input.brief ?? (current[0]?.startsWith(task.title) ? current.slice(1).join("\n") : task.brief).trim();
+    const brief = body.trim() === "" ? title : `${title}\n\n${body.trim()}`;
+    this.deps.store.tasks.setText(task.id, title, brief, this.now().toISOString());
+    await this.refreshBriefs([task.id]);
+    this.deps.room.publishTask(this.get(task.id));
+    this.deps.events.emit(["tasks"]);
+    return this.get(task.id);
+  }
+
   async close(id: string): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") return task;

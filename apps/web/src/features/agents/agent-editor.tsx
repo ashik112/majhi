@@ -1,5 +1,5 @@
 import type { AccountView, AgentEntry, HealthCheck, OrgView, Perm } from "@majhi/shared";
-import { AUTO, collapseHome } from "@majhi/shared";
+import { AUTO, collapseHome, IdSchema } from "@majhi/shared";
 import { Check, Ellipsis } from "lucide-react";
 import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +23,7 @@ import {
   useAgentHealth,
   useDuplicateAgent,
   useRemoveAgent,
+  useRenameAgent,
   useSetBoss,
   useTools,
   useUpdateAgent,
@@ -83,7 +84,7 @@ export function AgentEditor({
   const [draft, setDraft] = useState<AgentDraft>(() => draftFromAgent(entry.agent));
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const [serverWarnings, setServerWarnings] = useState<string[]>();
-  const [dialog, setDialog] = useState<"duplicate" | "health" | "remove" | null>(null);
+  const [dialog, setDialog] = useState<"duplicate" | "rename" | "health" | "remove" | null>(null);
 
   const latest = useRef(draft);
   const entryRef = useRef(entry);
@@ -209,6 +210,7 @@ export function AgentEditor({
             label="Agent actions"
             icon={<Ellipsis aria-hidden="true" />}
             items={[
+              { label: "Rename", onSelect: () => setDialog("rename") },
               { label: "Duplicate", onSelect: () => setDialog("duplicate") },
               ...(draft.scope === ROOT_SCOPE && !entry.isBoss
                 ? [{ label: "Make boss", onSelect: () => boss.mutate(id) }]
@@ -435,6 +437,9 @@ export function AgentEditor({
       {dialog === "duplicate" && (
         <DuplicateDialog id={id} onClose={() => setDialog(null)} onDone={(newId) => onSelect(newId)} />
       )}
+      {dialog === "rename" && (
+        <RenameDialog id={id} onClose={() => setDialog(null)} onDone={(newId) => onSelect(newId)} />
+      )}
       {dialog === "health" && (
         <AgentHealthDialog id={id} onClose={() => setDialog(null)} onHealth={onHealth} />
       )}
@@ -525,6 +530,69 @@ function DuplicateDialog({
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={duplicate.isPending || newId.trim() === ""}>
             Duplicate
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function RenameDialog({
+  id,
+  onClose,
+  onDone,
+}: {
+  id: string;
+  onClose: () => void;
+  onDone: (newId: string) => void;
+}) {
+  const rename = useRenameAgent();
+  const [newId, setNewId] = useState(id);
+  const next = newId.trim();
+  const valid = IdSchema.safeParse(next).success;
+  return (
+    <Modal label={`Rename @${id}`} onClose={onClose} className="w-[440px]">
+      <form
+        className="flex flex-col gap-4 p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          rename.mutate(
+            { id, newId: next },
+            {
+              onSuccess: () => {
+                onDone(next);
+                onClose();
+              },
+            },
+          );
+        }}
+      >
+        <h2 className="text-md font-semibold">Rename @{id}</h2>
+        <Field
+          label="New agent id"
+          hint="Tasks, the boss setting and fallbacks follow. Old room messages keep the old handle."
+          error={
+            rename.isError
+              ? describeError(rename.error)
+              : next !== id && !valid
+                ? "Use lowercase letters, digits and dashes"
+                : undefined
+          }
+        >
+          {(p) => (
+            <Input
+              {...p}
+              className="font-mono"
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+              autoFocus
+            />
+          )}
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={rename.isPending || next === id || !valid}>
+            Rename
           </Button>
         </div>
       </form>

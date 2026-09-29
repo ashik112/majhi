@@ -52,7 +52,8 @@ test("a task that depends on another waits, shows it on the board, and starts wh
   const a = await addTask(page, "links alpha on api", { start: false });
   const b = await addTask(page, "links beta on api", { start: true, dependsOn: [a] });
 
-  await expect(page.getByTestId("task-links").getByText(`Waiting on ${a}`)).toBeVisible();
+  await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
+  await expect(page.getByTestId("task-links").getByText("Waits for")).toBeVisible();
   expect(await status(request, b)).toBe("ready");
 
   await page.goto("/");
@@ -69,7 +70,7 @@ test("a task that depends on another waits, shows it on the board, and starts wh
 
   await page.goto(`/t/${b}`);
   await expect(page.getByText(`Started: ${a} is done.`)).toBeVisible();
-  await expect(page.getByTestId("task-links").getByText(`After ${a}`)).toBeVisible();
+  await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
 });
 
 test("a parent shows its progress and closes when its children are done", async ({ page, request }) => {
@@ -89,14 +90,22 @@ test("a parent shows its progress and closes when its children are done", async 
 
   // Add a link from the task view: make the second child wait for the first.
   await page.goto(`/t/${two}`);
-  await page.getByRole("button", { name: "Add link" }).first().click();
+  await page.getByRole("button", { name: "Link a task" }).click();
   await page.getByRole("menuitem", { name: "Waits for..." }).click();
   const picker = page.getByRole("dialog", { name: "Waits for" });
   await picker.getByRole("button", { name: new RegExp(`^${one}`) }).click();
   await picker.getByRole("button", { name: "Add link" }).click();
-  await expect(page.getByTestId("task-links").getByText(`Waiting on ${one}`)).toBeVisible();
-  await page.getByRole("button", { name: `Remove link to ${one}` }).click();
-  await expect(page.getByTestId("task-links").getByText(`Waiting on ${one}`)).toHaveCount(0);
+  await expect(page.getByTestId("task-links").getByText("Waits for")).toBeVisible();
+  await page
+    .getByRole("button", { name: `Options for ${one}` })
+    .last()
+    .click();
+  await page.getByRole("menuitem", { name: "Remove link" }).click();
+  await page
+    .getByRole("dialog", { name: "Remove link" })
+    .getByRole("button", { name: "Remove link" })
+    .click();
+  await expect(page.getByTestId("task-links").getByText("Waits for")).toHaveCount(0);
 
   await cmd(request, "tasks.close", { id: one });
   await page.goto(`/t/${parent}`);

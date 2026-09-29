@@ -1,6 +1,6 @@
 import { type ParsedTask, parseTaskText } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Paperclip, X } from "lucide-react";
+import { ChevronDown, Paperclip, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -17,6 +17,7 @@ import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { useToast } from "@/components/ui/toast";
+import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
@@ -56,6 +57,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const orgs = useOrgs().data ?? [];
   const projects = useProjects();
   const agents = useAgents().data;
+  const agentIndex = useAgentIndex();
+  const roleOf = (id: string) => agentIndex.get(id)?.role ?? "Agent";
   const create = useCreateTask();
   const openTasks = useTasks().data;
   const navigate = useNavigate();
@@ -273,7 +276,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
               label="Choose the agent"
               align="left"
               items={agentChoices.map((id) => ({
-                label: `@${id}`,
+                label: `@${id} · ${roleOf(id)}`,
                 checked: id === team,
                 onSelect: () => setAgentOverride(id),
               }))}
@@ -283,9 +286,12 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
                   type="button"
                   {...props}
                   aria-label={`Agent: @${team}. Click to change`}
-                  className="w-fit cursor-pointer rounded-sm font-mono text-sm leading-[1.5] text-fg underline decoration-line-hover decoration-dotted underline-offset-4 hover:decoration-fg-muted"
+                  className="flex h-8 w-fit cursor-pointer items-center gap-2 rounded-md border border-line-control bg-field px-2.5 text-sm text-fg hover:border-line-hover"
                 >
-                  @{team}
+                  <span className="font-mono">@{team}</span>
+                  <span className="text-fg-muted">{roleOf(team)}</span>
+                  <ChevronDown aria-hidden="true" className="size-3.5 text-fg-faint" />
+                  <span className="text-fg-muted">Change agent</span>
                 </button>
               )}
             />
@@ -293,7 +299,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             <span className="text-sm text-amber">No agent can work here yet. Add one in Agents.</span>
           )}
           <span className="text-sm text-fg-muted">
-            {agentOverride ? "Your pick." : `${orgName ?? "Default"} agent.`} Click to pick another.
+            {agentOverride ? "Your pick." : `${orgName ?? "Default"} agent, picked for you.`} This agent does
+            the task.
           </span>
         </div>
 

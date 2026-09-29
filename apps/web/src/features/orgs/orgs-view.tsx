@@ -22,7 +22,6 @@ export function OrgsView() {
 
   const orgList = orgs.data ?? [];
   const accountList = accounts.data ?? [];
-  const shown = filter === undefined ? orgList : orgList.filter((o) => o.id === filter);
   const open = (id: string) => (tasks.data ?? []).filter((t) => t.org === id && t.status !== "done").length;
 
   return (
@@ -44,36 +43,36 @@ export function OrgsView() {
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] items-start gap-5">
-            {shown.map((org) => (
+            {orgList.map((org) => (
               <OrgCard
                 key={org.id}
                 org={org}
                 accounts={accountList.filter((a) => a.org === org.id)}
                 tools={tools.data}
                 openTasks={open(org.id)}
+                highlighted={org.id === filter}
                 onAddAccount={() => setAddAccountTo(org.id)}
               />
             ))}
-            {filter === undefined &&
-              (adding ? (
-                <section aria-label="New org" className={CARD}>
-                  <h2 className="text-lg font-semibold">New org</h2>
-                  <NewOrgForm
-                    orgCount={orgList.length}
-                    onCreated={() => setAdding(false)}
-                    onCancel={() => setAdding(false)}
-                  />
-                </section>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-hover text-base text-fg-soft transition-colors hover:border-fg-faint hover:bg-raised hover:text-fg"
-                >
-                  <Plus aria-hidden="true" className="size-4" />
-                  New org
-                </button>
-              ))}
+            {adding ? (
+              <section aria-label="New org" className={CARD}>
+                <h2 className="text-lg font-semibold">New org</h2>
+                <NewOrgForm
+                  orgCount={orgList.length}
+                  onCreated={() => setAdding(false)}
+                  onCancel={() => setAdding(false)}
+                />
+              </section>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-hover text-base text-fg-soft transition-colors hover:border-fg-faint hover:bg-raised hover:text-fg"
+              >
+                <Plus aria-hidden="true" className="size-4" />
+                New org
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -120,7 +120,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const store = Store.open(env.majhiHome);
   const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
-  const agents = new AgentService(config, agentStore, cache, accounts);
+  const agents = new AgentService(config, agentStore, cache, accounts, Date.now, {
+    isWorking: (agent) => runs.isWorking(agent),
+    renameInTasks: (agent, newId) => {
+      for (const id of store.tasks.renameAgent(agent, newId)) {
+        const task = store.tasks.get(id);
+        if (task !== undefined) room.publishTask(task);
+      }
+      events.emit(["tasks"]);
+    },
+    renameCommands: (agent, newId) => room.renameCommands(agent, newId),
+  });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
   const decideTokens = new DecideTokens();
   const decisions = new DecisionService({
@@ -194,7 +204,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await runs.closeAll();
       store.close();
     },
-    orgs: new OrgService(config, agentStore),
+    orgs: new OrgService(config, agentStore, (id, newId) => {
+      store.tasks.renameOrg(id, newId);
+      events.emit(["tasks"]);
+    }),
     accounts,
     terminals,
     events,

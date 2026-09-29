@@ -159,6 +159,11 @@
     height: 100%;
   }
 
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
   html {
     color-scheme: dark;
     background: var(--color-canvas);

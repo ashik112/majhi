@@ -220,15 +220,13 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
   await expect(changes.getByRole("region", { name: "Branch and worktree" })).toContainText("develop");
   const section = changes.getByRole("region", { name: "Changes in api" });
-  const row = section.getByRole("button", { name: /HEALTH\.md/ });
-  await expect(row).toBeVisible();
-  await row.click();
-  await expect(section.getByText("# Health")).toBeVisible();
   await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
 
-  // View opens the file in the viewer, rendered.
-  await section.getByRole("link", { name: "View HEALTH.md" }).click();
+  // A changed file opens in the viewer with its diff, and the full file one click away.
+  await section.getByRole("link", { name: "Show changes in HEALTH.md" }).click();
   const viewer = page.getByRole("dialog", { name: "File api/HEALTH.md" });
+  await expect(viewer.getByText("# Health")).toBeVisible();
+  await viewer.getByRole("button", { name: "Full file" }).click();
   await expect(viewer.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();

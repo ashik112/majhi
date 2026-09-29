@@ -28,6 +28,12 @@ export function taskFileUrl(taskId: string, relPath: string): string {
   return `/api/tasks/${taskId}/files/${segments.map(encodeURIComponent).join("/")}`;
 }
 
+/** `GET` URL of a file in one of a task's repos: its worktree once created, else the project's checkout. */
+export function repoFileUrl(taskId: string, project: string, relPath: string): string {
+  const segments = relPath.split("/").filter((s) => s !== "" && s !== "." && s !== "..");
+  return `/api/tasks/${taskId}/repo/${encodeURIComponent(project)}/files/${segments.map(encodeURIComponent).join("/")}`;
+}
+
 /** How the in-app file viewer shows a file. */
 export type ViewerKind = "markdown" | "image" | "pdf" | "page" | "video" | "audio" | "text";
 

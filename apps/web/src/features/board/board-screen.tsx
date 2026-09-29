@@ -1,8 +1,10 @@
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ListChecks, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { PageHeader } from "@/components/ui/page-header";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { useOrgFilter } from "@/lib/org-filter";
@@ -11,6 +13,7 @@ import { useProjects, useTasks } from "@/lib/task-queries";
 import { useNewTask } from "../new-task/new-task-context";
 import { BoardCard, cardDomId } from "./board-card";
 import { boardCounts, buildColumns, COLUMN_DOT, directionOf, isBossChat, moveFocus } from "./model";
+import { TreeView } from "./tree-view";
 
 /** Keys the board answers while focus is on a card or on the page itself, not in a field or dialog. */
 function boardKeyTarget(target: EventTarget | null): boolean {
@@ -25,6 +28,8 @@ export function BoardScreen() {
   const projects = useProjects();
   const { org } = useOrgFilter();
   const newTask = useNewTask();
+  const tree = useSearch({ strict: false }).view === "tree";
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [showDone, setShowDone] = useState(false);
 
@@ -82,6 +87,23 @@ export function BoardScreen() {
           </span>
         }
       >
+        <Segmented
+          label="Board layout"
+          value={tree ? "tree" : "board"}
+          onChange={(value) =>
+            navigate({
+              to: ".",
+              search: (prev: object) => {
+                const { view: _view, ...rest } = prev as { view?: string };
+                return value === "tree" ? { ...rest, view: "tree" } : rest;
+              },
+            })
+          }
+          segments={[
+            { value: "board", label: "Board" },
+            { value: "tree", label: "Tree" },
+          ]}
+        />
         <label htmlFor="task-search" className="sr-only">
           Search tasks
         </label>
@@ -115,37 +137,46 @@ export function BoardScreen() {
         </p>
       ) : empty ? (
         <EmptyBoard onNew={newTask.open} noProjects={noProjects} />
+      ) : tree ? (
+        <TreeView
+          columns={columns}
+          orgs={orgs}
+          filterOrg={org}
+          empty={query ? "No task matches." : "No open tasks."}
+        />
       ) : (
         <div
-          className="grid min-h-0 flex-1 gap-4 overflow-auto px-8 py-[22px]"
+          className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-4 overflow-x-auto px-8 pt-[22px]"
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(200px, 1fr))` }}
         >
           {columns.map((column) => (
-            <section key={column.id} aria-label={column.label} className="flex min-w-0 flex-col gap-2.5">
-              <div className="flex items-center gap-2 px-1 pb-1">
+            <section key={column.id} aria-label={column.label} className="flex min-h-0 min-w-0 flex-col">
+              <div className="flex shrink-0 items-center gap-2 border-b border-line px-1 pb-2">
                 <span aria-hidden="true" className={cn("size-2 rounded-full", COLUMN_DOT[column.id])} />
                 <h2 className="text-base leading-[18px] font-semibold">{column.label}</h2>
                 <span className="tnum font-mono text-sm leading-[18px] text-fg-faint">
                   {column.tasks.length}
                 </span>
               </div>
-              {column.tasks.map((task, index) => (
-                <BoardCard key={task.id} task={task} orgs={orgs} filterOrg={org} index={index} />
-              ))}
-              {column.tasks.length === 0 && (
-                <div className="rounded-lg border border-dashed border-line-strong p-[18px] text-center text-sm text-fg-faint">
-                  {query ? "No match" : "Nothing here"}
-                </div>
-              )}
-              {column.id === "inbox" && (
-                <button
-                  type="button"
-                  onClick={newTask.open}
-                  className="h-10 cursor-pointer rounded-lg border border-dashed border-line-hover text-base text-fg-soft transition-colors duration-150 hover:border-fg-faint hover:bg-raised hover:text-fg"
-                >
-                  + Add a task
-                </button>
-              )}
+              <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pt-2.5 pb-[22px]">
+                {column.tasks.map((task, index) => (
+                  <BoardCard key={task.id} task={task} orgs={orgs} filterOrg={org} index={index} />
+                ))}
+                {column.tasks.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-line-strong p-[18px] text-center text-sm text-fg-faint">
+                    {query ? "No match" : "Nothing here"}
+                  </div>
+                )}
+                {column.id === "inbox" && (
+                  <button
+                    type="button"
+                    onClick={newTask.open}
+                    className="h-10 cursor-pointer rounded-lg border border-dashed border-line-hover text-base text-fg-soft transition-colors duration-150 hover:border-fg-faint hover:bg-raised hover:text-fg"
+                  >
+                    + Add a task
+                  </button>
+                )}
+              </div>
             </section>
           ))}
         </div>

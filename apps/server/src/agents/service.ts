@@ -11,12 +11,22 @@ import type { AccountCache } from "../accounts/cache.ts";
 import type { AccountService } from "../accounts/service.ts";
 import { withBuiltInOrgs } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
-import { writeBoss } from "../config/write.ts";
+import { renameAgentInConfig, writeBoss } from "../config/write.ts";
 import { UserError } from "../errors.ts";
 import type { AgentStore, StoredAgent } from "./store.ts";
 import { agentWarnings } from "./warnings.ts";
 
 type Draft = Omit<Agent, "frontmatter"> & { frontmatter: Omit<Agent["frontmatter"], "id"> };
+
+/** What renaming an agent touches outside the config folder. */
+export interface AgentRenameLinks {
+  /** True when the agent is starting, working or waiting in any task. */
+  isWorking(agent: string): boolean;
+  /** Moves the agent in every task team. */
+  renameInTasks(agent: string, newId: string): void;
+  /** Moves the remembered slash commands. */
+  renameCommands(agent: string, newId: string): void;
+}
 
 export class AgentService {
   constructor(
@@ -25,6 +35,7 @@ export class AgentService {
     private readonly cache: AccountCache,
     private readonly accounts: AccountService,
     private readonly now: () => number = Date.now,
+    private readonly links?: AgentRenameLinks,
   ) {}
 
   async list(): Promise<AgentEntry[]> {
@@ -61,6 +72,34 @@ export class AgentService {
       meta,
       `copied agent ${id} to ${newId}`,
     );
+    return this.entry(newId);
+  }
+
+  /**
+   * Changes the id (the @handle): the file, its frontmatter, and every reference in majhi.yaml, other
+   * agents and task teams, in one config commit. Room history keeps the old handle.
+   */
+  async rename(id: string, newId: string, command: string, meta: CommandMeta): Promise<AgentEntry> {
+    if (id === newId) throw new UserError("That is already its id.");
+    const source = await this.require(id);
+    if (!source.ok) {
+      throw new UserError(`Agent "${id}" is invalid, so it cannot be renamed.`, 409, source.errors);
+    }
+    if (await this.store.get(newId)) throw new UserError(`Agent "${newId}" already exists.`, 409);
+    if (this.links?.isWorking(id)) throw new UserError(`@${id} is working. Stop it first.`, 409);
+    const others = (await this.store.list()).flatMap((a) =>
+      a.ok && a.id !== id && a.agent.frontmatter.fallback === id ? [a.agent] : [],
+    );
+    await this.config.change({ command, meta, summary: `renamed agent ${id} to ${newId}` }, async () => {
+      await this.store.write({ ...source.agent, frontmatter: { ...source.agent.frontmatter, id: newId } });
+      await this.store.remove(id);
+      for (const other of others) {
+        await this.store.write({ ...other, frontmatter: { ...other.frontmatter, fallback: newId } });
+      }
+      await renameAgentInConfig(this.config.file, id, newId);
+      this.links?.renameInTasks(id, newId);
+      this.links?.renameCommands(id, newId);
+    });
     return this.entry(newId);
   }
 

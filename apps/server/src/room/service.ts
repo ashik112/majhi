@@ -50,6 +50,14 @@ export class RoomService {
     return this.commands.get(agent) ?? [];
   }
 
+  /** Moves the remembered slash commands of a renamed agent to its new handle. */
+  renameCommands(agent: string, newAgent: string): void {
+    const list = this.commands.get(agent);
+    if (list === undefined) return;
+    this.commands.delete(agent);
+    this.rememberCommands(newAgent, list);
+  }
+
   rememberCommands(agent: string, list: AgentLive["commands"]): void {
     this.commands.set(agent, list);
     if (this.commandsFile === undefined) return;

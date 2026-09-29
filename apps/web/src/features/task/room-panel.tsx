@@ -79,6 +79,11 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
             <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
               <span className="flex items-baseline gap-2">
                 <span className="truncate font-mono text-base font-medium">@{id}</span>
+                {info && (
+                  <span className="rounded-sm bg-selected px-1.5 py-0.5 text-xs text-fg-soft">
+                    {info.role}
+                  </span>
+                )}
                 <span className={cn("text-xs", STATE_TEXT[state.tone])}>{state.label}</span>
               </span>
               <span className="flex flex-wrap gap-1.5">
@@ -87,11 +92,9 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
                     {info.account}
                   </span>
                 )}
-                {model && (
-                  <span className="flex h-[26px] items-center rounded-sm border border-line-control bg-blue-wash px-2 font-mono text-xs text-blue-soft">
-                    {model}
-                  </span>
-                )}
+                <span className="flex h-[26px] items-center rounded-sm border border-line-control bg-blue-wash px-2 font-mono text-xs text-blue-soft">
+                  {model ?? "account default"}
+                </span>
               </span>
               {live?.nowDoing && state.tone === "amber" && (
                 <span aria-live="polite" title={live.nowDoing} className="truncate text-xs text-fg-faint">
@@ -189,8 +192,8 @@ function BranchCard({ task }: { task: Task }) {
             label={`Copy branch of ${repo.project}`}
             onCopy={() => void copy(repo.branch)}
           >
-            {repo.branch}
-            <span className="text-fg-faint"> from {repo.base}</span>
+            <span className="[overflow-wrap:anywhere]">{repo.branch}</span>{" "}
+            <span className="whitespace-nowrap text-fg-faint">from {repo.base}</span>
           </CopyValue>
           {repo.worktree ? (
             <CopyValue
@@ -241,7 +244,9 @@ function CopyValue({
 }) {
   return (
     <div className="group flex items-start gap-1">
-      <span className="min-w-0 flex-1 break-all font-mono text-sm leading-[1.45]">{children}</span>
+      <span className="min-w-0 flex-1 font-mono [overflow-wrap:anywhere] text-sm leading-[1.45]">
+        {children}
+      </span>
       <Button
         variant="ghost"
         size="icon-sm"

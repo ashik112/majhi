@@ -14,6 +14,7 @@ import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { UpdateOverlay } from "@/features/update/update-overlay";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
+import { cn } from "@/lib/cn";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
@@ -23,7 +24,7 @@ import { useServerEvents } from "@/lib/use-server-events";
 export function AppShell() {
   useServerEvents();
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
       <a
         href="#main"
         className="sr-only z-50 rounded-md bg-amber px-3 py-2 font-semibold text-amber-ink focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
@@ -60,6 +61,8 @@ function Frame() {
   const section = useRouterState({
     select: (s) => (s.location.pathname.startsWith("/t/") ? "/" : s.location.pathname),
   });
+  // The board and the task view fix their own frame and scroll inside it; other pages scroll here.
+  const pinned = section === "/";
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -71,7 +74,7 @@ function Frame() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          className={cn("flex min-h-0 flex-1 flex-col", pinned ? "overflow-hidden" : "overflow-y-auto")}
         >
           <InShellContext.Provider value={true}>
             <Outlet />

@@ -139,6 +139,8 @@ export function createHandlers({
     "orgs.create": (input, ctx) => orgs.create(input, ctx.command, ctx.meta),
     "orgs.update": (input, ctx) => orgs.update(input, ctx.command, ctx.meta),
 
+    "orgs.rename": (input, ctx) => orgs.rename(input.id, input.newId, ctx.command, ctx.meta),
+
     "accounts.list": () => accounts.list(),
     "accounts.suggestId": async (input) => ({ id: await accounts.suggestId(input.tool, input.org) }),
     "accounts.create": (input, ctx) => accounts.create(input, ctx.command, ctx.meta),
@@ -159,6 +161,7 @@ export function createHandlers({
       await agents.remove(input.id, ctx.command, ctx.meta);
       return { removed: input.id };
     },
+    "agents.rename": (input, ctx) => agents.rename(input.id, input.newId, ctx.command, ctx.meta),
     "agents.health": (input) => agents.health(input.id),
     "boss.set": async (input, ctx) => {
       await agents.setBoss(input.id, ctx.command, ctx.meta);
@@ -184,6 +187,7 @@ export function createHandlers({
     },
     "tasks.start": (input) => services.tasks.start(input.id),
     "tasks.stop": (input) => services.tasks.stop(input.id),
+    "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input) => services.tasks.close(input.id),
     "tasks.remove": async (input) => {
       await services.tasks.remove(input.id, input.force === true);

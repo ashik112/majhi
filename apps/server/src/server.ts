@@ -67,7 +67,10 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
-    taskFiles: { folderOf: (id) => services.store.tasks.get(id)?.folder },
+    taskFiles: {
+      folderOf: (id) => services.store.tasks.get(id)?.folder,
+      reposOf: (id) => services.store.tasks.get(id)?.repos,
+    },
     mcp: { tokens: services.adminTokens, admin: services.admin },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
   });

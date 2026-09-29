@@ -191,6 +191,19 @@ export const commands = {
     }),
     output: OrgViewSchema,
   },
+  "orgs.rename": {
+    risk: "change",
+    summary:
+      "Change an org's id. Updates its accounts, projects, agents and tasks. Existing task keys stay. The built-in private org cannot be renamed",
+    input: z.object({
+      id: IdSchema,
+      newId: IdSchema.refine(
+        (id) => id !== PRIVATE && id !== LEGACY_PERSONAL && id !== "root",
+        "This id is reserved",
+      ),
+    }),
+    output: OrgViewSchema,
+  },
 
   // Accounts ----------------------------------------------------------------
   "accounts.list": {
@@ -280,6 +293,13 @@ export const commands = {
   "agents.duplicate": {
     risk: "change",
     summary: "Copy an agent under a new id",
+    input: z.object({ id: IdSchema, newId: IdSchema }),
+    output: AgentEntrySchema,
+  },
+  "agents.rename": {
+    risk: "change",
+    summary:
+      "Change an agent's id (its @handle). Updates the boss setting, fallbacks, task teams and the decisions agent. Refused while the agent is working. Old room messages keep the old handle",
     input: z.object({ id: IdSchema, newId: IdSchema }),
     output: AgentEntrySchema,
   },
@@ -374,6 +394,17 @@ export const commands = {
     risk: "change",
     summary: "Stop every agent in the task and pause it with reason owner",
     input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
+  "tasks.update": {
+    risk: "change",
+    summary:
+      "Change a task's title or description (brief: the text after the title line). Its key, folder and branch stay. TASK.md is rewritten",
+    input: z.object({
+      id: TaskIdSchema,
+      title: z.string().trim().min(1).max(300).optional(),
+      brief: z.string().max(100_000).optional(),
+    }),
     output: TaskSchema,
   },
   "tasks.close": {

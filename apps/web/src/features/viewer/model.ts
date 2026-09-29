@@ -1,5 +1,84 @@
-import type { RoomItem } from "@majhi/shared";
+import { type RoomItem, repoFileUrl, taskFileUrl } from "@majhi/shared";
 import { taskPathOf } from "../room/links";
+import { type DiffContent, filesByRepo, touchedFiles } from "../room/model";
+
+/**
+ * What `?file=` points at: a file of the task folder (`docs/a.md`), of one of its repos
+ * (`repo:web/SPEC.md`), or a changed file shown with its diffs (`changes:web/src/a.ts`, a
+ * task-relative path).
+ */
+export type FileRef =
+  | { kind: "task"; path: string }
+  | { kind: "repo"; project: string; path: string }
+  | { kind: "changes"; path: string };
+
+export function parseFileRef(param: string): FileRef {
+  if (param.startsWith("changes:")) return { kind: "changes", path: param.slice("changes:".length) };
+  const repo = /^repo:([^/]+)\/(.+)$/.exec(param);
+  if (repo?.[1] && repo[2]) return { kind: "repo", project: repo[1], path: repo[2] };
+  return { kind: "task", path: param };
+}
+
+export function fileRefParam(ref: FileRef): string {
+  if (ref.kind === "repo") return `repo:${ref.project}/${ref.path}`;
+  return ref.kind === "changes" ? `changes:${ref.path}` : ref.path;
+}
+
+export function fileRefUrl(taskId: string, ref: FileRef): string {
+  return ref.kind === "repo" ? repoFileUrl(taskId, ref.project, ref.path) : taskFileUrl(taskId, ref.path);
+}
+
+/** Where to look for a file, best first: the place it names, then the task's other places. */
+export function fileCandidates(ref: FileRef, projects: readonly string[]): FileRef[] {
+  if (ref.kind === "changes") return [ref];
+  const repos: FileRef[] = projects
+    .filter((p) => ref.kind !== "repo" || p !== ref.project)
+    .map((project) => ({ kind: "repo", project, path: ref.path }));
+  return ref.kind === "task" ? [ref, ...repos] : [ref, ...repos, { kind: "task", path: ref.path }];
+}
+
+/** The recorded edits of a changed file, found by its task-relative path. */
+export function findChange(
+  items: readonly RoomItem[],
+  repos: readonly { worktree?: string | undefined }[],
+  folder: string,
+  path: string,
+): { diffs: DiffContent[]; change: "edit" | "delete" | "move" } | undefined {
+  for (const group of filesByRepo(touchedFiles(items), repos)) {
+    for (const file of group.files) {
+      if (viewablePath({ ...file, change: "edit" }, group.repo?.worktree, folder) === path) return file;
+    }
+  }
+  return undefined;
+}
+
+const FILE_TOKEN = /((?:[\w-]+\/)*[\w.-]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,7})/;
+const BARE_EXT = new Set(
+  "md mdx ts tsx js jsx mjs cjs json yml yaml toml txt css scss html sql sh py go rs rb java kt swift lock ini cfg conf csv svg png jpg pdf".split(
+    " ",
+  ),
+);
+
+/** A relative file path with an extension; bare names need a well-known extension so "e.g" and "v1.2" stay text. */
+export function isFilePath(token: string): boolean {
+  const m = FILE_TOKEN.exec(token);
+  if (m?.[1] !== token || token.startsWith("/") || token.startsWith(".")) return false;
+  if (token.split("/").some((seg) => seg.startsWith("."))) return false;
+  if (token.includes("/")) return true;
+  return BARE_EXT.has(token.slice(token.lastIndexOf(".") + 1).toLowerCase());
+}
+
+const SKIP =
+  /(```[\s\S]*?```|~~~[\s\S]*?~~~|\[[^\]\n]*\]\([^)\n]*\)|<https?:[^>\n]*>|https?:\/\/[^\s)]+|`([^`\n]+)`|(?<![\w./@:#-])((?:[\w-]+\/)*[\w.-]*[\w-]\.[A-Za-z][A-Za-z0-9]{0,7})(?![\w/@-]|\.\w))/g;
+
+/** Markdown with every file path in it turned into a link, for the viewer. Code blocks and existing links stay as written. */
+export function linkifyPaths(text: string): string {
+  return text.replace(SKIP, (whole: string, _all, code: string | undefined, plain: string | undefined) => {
+    if (code !== undefined) return isFilePath(code) ? `[${whole}](${code})` : whole;
+    if (plain !== undefined) return isFilePath(plain) ? `[${plain}](${plain})` : whole;
+    return whole;
+  });
+}
 
 /** Text files longer than this show their first part only. */
 export const TEXT_LIMIT = 1_000_000;

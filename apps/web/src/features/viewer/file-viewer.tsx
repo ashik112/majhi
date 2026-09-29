@@ -1,22 +1,33 @@
-import type { RoomItem } from "@majhi/shared";
-import { codeLanguageOf, taskFileUrl, type ViewerKind, viewerKindOfPath } from "@majhi/shared";
+import type { RoomItem, TaskRepo } from "@majhi/shared";
+import { codeLanguageOf, type ViewerKind, viewerKindOfPath } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Copy, ExternalLink, RefreshCw, X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/segmented";
+import { DiffView } from "@/features/room/diff-view";
 import { dirOf } from "@/features/room/links";
 import { Markdown } from "@/features/room/markdown";
 import { formatAgo, formatBytes } from "@/lib/format";
 import { useCopy } from "@/lib/use-copy";
 import type { AppSearch } from "@/router";
 import { CodeView } from "./code-view";
-import { fileEditStamp, TEXT_LIMIT } from "./model";
-import { useFileMeta, useFileText } from "./use-task-file";
+import {
+  type FileRef,
+  fileEditStamp,
+  fileRefParam,
+  fileRefUrl,
+  findChange,
+  parseFileRef,
+  TEXT_LIMIT,
+} from "./model";
+import { useFileMeta, useFileText, useResolvedRef } from "./use-task-file";
 
 type Mode = "rendered" | "raw";
+type ChangeView = "changes" | "full";
+type DiffContentLike = Parameters<typeof DiffView>[0]["diff"];
 
 /**
  * The file viewer: a drawer over the task view, opened by `?file=<path>`. Markdown is rendered
@@ -28,11 +39,14 @@ export function FileViewer({
   folder,
   path,
   items,
+  repos,
 }: {
   taskId: string;
   folder: string;
+  /** The `?file=` value. */
   path: string;
   items: readonly RoomItem[];
+  repos: readonly TaskRepo[];
 }) {
   const navigate = useNavigate();
   const close = () =>
@@ -45,50 +59,104 @@ export function FileViewer({
     });
   return (
     <Modal
-      label={`File ${path}`}
+      label={`File ${parseFileRef(path).path}`}
       onClose={close}
       className="fixed top-0 right-0 bottom-0 left-auto m-0 h-dvh max-h-none w-[60vw] min-w-[min(560px,100vw)] max-w-none flex-col open:flex rounded-none rounded-l-2xl border-y-0 border-r-0 bg-canvas"
     >
-      <Viewer taskId={taskId} folder={folder} path={path} items={items} onClose={close} />
+      <Resolving taskId={taskId} folder={folder} param={path} items={items} repos={repos} onClose={close} />
     </Modal>
+  );
+}
+
+/** A path from a brief or a message may be in the task folder or in a repo: find where, then show it. */
+function Resolving({
+  taskId,
+  folder,
+  param,
+  items,
+  repos,
+  onClose,
+}: {
+  taskId: string;
+  folder: string;
+  param: string;
+  items: readonly RoomItem[];
+  repos: readonly TaskRepo[];
+  onClose: () => void;
+}) {
+  const requested = useMemo(() => parseFileRef(param), [param]);
+  const projects = useMemo(() => repos.map((r) => r.project), [repos]);
+  const resolved = useResolvedRef(taskId, requested, projects);
+  if (resolved.isPending && resolved.fetchStatus !== "idle") {
+    return (
+      <div role="status" aria-busy="true" className="p-6 text-base text-fg-faint">
+        Looking for {requested.path}
+      </div>
+    );
+  }
+  const ref = resolved.data ?? requested;
+  return (
+    <Viewer
+      key={fileRefParam(ref)}
+      taskId={taskId}
+      folder={folder}
+      fileRef={ref}
+      items={items}
+      repos={repos}
+      onClose={onClose}
+    />
   );
 }
 
 function Viewer({
   taskId,
   folder,
-  path,
+  fileRef,
   items,
+  repos,
   onClose,
 }: {
   taskId: string;
   folder: string;
-  path: string;
+  fileRef: FileRef;
   items: readonly RoomItem[];
+  repos: readonly TaskRepo[];
   onClose: () => void;
 }) {
+  const path = fileRef.path;
+  // A changed file is read from the task folder (its worktree lives there) for the full view.
+  const source: FileRef = useMemo(
+    () => (fileRef.kind === "changes" ? { kind: "task", path } : fileRef),
+    [fileRef, path],
+  );
+  const change = useMemo(
+    () => (fileRef.kind === "changes" ? findChange(items, repos, folder, path) : undefined),
+    [fileRef.kind, items, repos, folder, path],
+  );
+  const [view, setView] = useState<ChangeView>("changes");
+  const showingDiff = fileRef.kind === "changes" && view === "changes";
   const kind = viewerKindOfPath(path);
-  const stamp = useMemo(() => fileEditStamp(items, folder, path), [items, folder, path]);
-  const meta = useFileMeta(taskId, path, stamp);
-  const wantsText = kind === "markdown" || kind === "text" || kind === "page";
-  const text = useFileText(taskId, path, stamp, wantsText);
+  const stamp = useMemo(
+    () => (source.kind === "task" ? fileEditStamp(items, folder, path) : undefined),
+    [items, folder, path, source.kind],
+  );
+  const meta = useFileMeta(taskId, source, stamp);
+  const wantsText = !showingDiff && (kind === "markdown" || kind === "text" || kind === "page");
+  const text = useFileText(taskId, source, stamp, wantsText);
   const copy = useCopy();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("rendered");
-  // A new file starts rendered again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the path changes
-  useEffect(() => setMode("rendered"), [path]);
 
-  const url = taskFileUrl(taskId, path);
+  const url = fileRefUrl(taskId, source);
   const name = path.split("/").pop() ?? path;
   const refreshing = meta.isFetching || text.isFetching;
 
   async function refresh() {
-    await queryClient.invalidateQueries({ queryKey: ["task-file", "meta", taskId, path] });
-    await queryClient.invalidateQueries({ queryKey: ["task-file", "text", taskId, path] });
+    await queryClient.invalidateQueries({ queryKey: ["task-file", "meta", taskId] });
+    await queryClient.invalidateQueries({ queryKey: ["task-file", "text", taskId] });
   }
 
-  const error = meta.error ?? text.error;
+  const error = showingDiff ? undefined : (meta.error ?? text.error);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 flex-col gap-2.5 border-b border-line-strong px-5 pt-3.5 pb-3">
@@ -116,7 +184,18 @@ function Viewer({
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {kind === "markdown" && (
+          {fileRef.kind === "changes" && (
+            <Segmented
+              label="Show"
+              value={view}
+              onChange={setView}
+              segments={[
+                { value: "changes", label: "Changes" },
+                { value: "full", label: "Full file" },
+              ]}
+            />
+          )}
+          {kind === "markdown" && !showingDiff && (
             <Segmented
               label="View as"
               value={mode}
@@ -145,12 +224,15 @@ function Viewer({
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col">
-        {error ? (
+        {showingDiff ? (
+          <Diffs diffs={change?.diffs ?? []} deleted={change?.change === "delete"} />
+        ) : error ? (
           <Notice title="Could not open this file">{error.message}</Notice>
         ) : (
           <Body
             taskId={taskId}
             folder={folder}
+            fileRef={source}
             path={path}
             kind={kind}
             mode={mode}
@@ -161,6 +243,24 @@ function Viewer({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function Diffs({ diffs, deleted }: { diffs: readonly DiffContentLike[]; deleted: boolean }) {
+  if (diffs.length === 0) {
+    return (
+      <Notice title={deleted ? "This file was deleted" : "No recorded edits"}>
+        Switch to Full file to read it as it is now.
+      </Notice>
+    );
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      {diffs.map((d, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: edits to one file keep their order
+        <DiffView key={i} diff={d} compact />
+      ))}
     </div>
   );
 }
@@ -179,6 +279,7 @@ function Notice({ title, children }: { title: string; children?: ReactNode }) {
 function Body({
   taskId,
   folder,
+  fileRef,
   path,
   kind,
   mode,
@@ -189,6 +290,7 @@ function Body({
 }: {
   taskId: string;
   folder: string;
+  fileRef: FileRef;
   path: string;
   kind: ViewerKind;
   mode: Mode;
@@ -197,7 +299,11 @@ function Body({
   text: ReturnType<typeof useFileText>["data"];
   loading: boolean;
 }) {
-  const task = useMemo(() => ({ id: taskId, folder }), [taskId, folder]);
+  // Links inside a file of a repo point into that repo, which the viewer does not follow.
+  const task = useMemo(
+    () => (fileRef.kind === "repo" ? undefined : { id: taskId, folder }),
+    [taskId, folder, fileRef.kind],
+  );
   if (kind === "image") {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-sunken p-4">

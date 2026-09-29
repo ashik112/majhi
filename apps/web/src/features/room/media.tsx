@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/modal";
 export interface TaskFiles {
   id: string;
   folder: string;
+  /** Links to files open them from this project (its worktree, else its checkout). */
+  project?: string | undefined;
   /** Called when media finished loading, so the room can stay at the bottom. */
   onLoad?: () => void;
 }
@@ -129,17 +131,19 @@ export function TaskFileLink({
   kind,
   label,
   card = false,
+  project,
 }: {
   path: string;
   kind: ViewerKind;
   label: ReactNode;
   card?: boolean;
+  project?: string | undefined;
 }) {
   const Icon = FILE_ICON[kind];
   return (
     <Link
       to="."
-      search={(prev: object) => ({ ...prev, file: path })}
+      search={(prev: object) => ({ ...prev, file: project ? `repo:${project}/${path}` : path })}
       title={path}
       aria-label={card && typeof label === "string" ? `Open ${label}` : undefined}
       className={card ? "md-file-card" : "md-link md-file-link"}

@@ -80,6 +80,17 @@ export const useStartTask = () => useTaskAction("tasks.start");
 export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
 
+export function useUpdateTask() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, CommandInput<"tasks.update">>({
+    mutationFn: (input) => cmd("tasks.update", input),
+    onSuccess: (task) => {
+      setTaskInCache(client, task);
+      return refreshTasks(client);
+    },
+  });
+}
+
 export function useLinkTask() {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, CommandInput<"tasks.link">>({
