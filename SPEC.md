@@ -376,7 +376,10 @@ Two layers:
   - if the agent has a fallback whose account is not limited and the org policy allows auto-handoff, hand off and resume from the checkpoint
   - otherwise pause with reason `limit`, and auto-resume at the reset time if enabled
 - **Offline:** detect network failure (failed agent requests plus a periodic connectivity probe). Pause all running tasks with reason `offline`. When the connection returns, resume them from checkpoints, or wait for the owner if auto-resume is off.
-- **Crash:** if majhi restarts, it reloads running tasks as paused with reason `error` and offers resume.
+- **Sleep and wake:** the host helper notices a wake (a jump in wall-clock time, or macOS power events) and tells the server. Turns that failed or stalled while asleep resume on their own from the last checkpoint.
+- **Shutdown and reboot:** at login the host helper makes sure Docker and majhi are running. Tasks that were running when majhi stopped reload and resume on their own.
+- **Crash:** if majhi restarts, tasks that were running resume on their own from their checkpoints. If a resume fails twice, the task pauses with reason `error` and the room says why.
+- **What resume means.** Files the agent changed are already on disk in the worktree, and each turn ends with a checkpoint, so no finished work is lost. A reply that was streaming is cut off, and a command that was running (for example tests) is killed; the agent is told to continue and runs it again. Auto-resume is on by default and can be turned off per org.
 
 ### 5.8 Health, usage and status
 
@@ -599,8 +602,9 @@ Delivered in two parts, each usable and reviewed on its own.
 - The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents).
 - Task links UI from 5.4a: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
 - Agents on demand and concurrency limits (5.17). The two-agents-on-one-account token refresh check from 5.2.
+- Resume after sleep, shutdown, reboot, lost internet and crashes (5.7), without the owner clicking anything: checkpoints after every turn, wake and offline detection, auto-restart at login, auto-resume from the checkpoint. Limit handling and fallback handoff stay in Phase 8.
 - No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
-- **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room, and the boss creates an org and an agent after the owner approves.
+- **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact.
 
 ### Phase 3: Teams and rooms
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.
@@ -629,7 +633,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run.
 
 ### Phase 8: Resilience and health
-- Checkpoints, resume, limit detection per CLI, fallback handoff, auto-resume at reset, offline pause and resume, crash recovery, context-window error recovery (5.13).
+- Limit detection per CLI, fallback handoff, auto-resume at reset, context-window error recovery (5.13). (Checkpoints and resume after sleep, shutdown, offline and crashes arrive in Phase 2b.)
 - Usage meters and health in Studio and the top bar.
 - **Done when:** unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work. A simulated limit error hands off to the fallback.
 
