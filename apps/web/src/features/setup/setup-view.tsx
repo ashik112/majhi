@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { useConfig, useHostStatus, useRepos } from "@/lib/queries";
 import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
+import { DecisionsPanel } from "./decisions-panel";
 import { HistoryPanel } from "./history-panel";
 import { accountsCard, agentsCard, bossCard, type CardState, readyCount, rootsCard, sshCard } from "./model";
 import { SettingsPanel } from "./settings-panel";
@@ -134,6 +135,7 @@ export function SetupView() {
           </div>
           <div className="mt-3 flex flex-col gap-5">
             <HistoryPanel />
+            <DecisionsPanel />
             <SettingsPanel />
           </div>
         </aside>

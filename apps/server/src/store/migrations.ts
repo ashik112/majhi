@@ -123,6 +123,26 @@ ALTER TABLE tasks ADD COLUMN start_when_ready INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX task_links_other ON task_links (other);
 `,
   },
+  {
+    // Decision log (5.12). The id is well above the others so parallel work does not collide.
+    id: 20,
+    name: "decision log",
+    sql: `
+CREATE TABLE decisions (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  use TEXT NOT NULL,
+  task TEXT,
+  agent TEXT,
+  summary TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  estimated INTEGER NOT NULL,
+  duration_ms REAL NOT NULL
+);
+CREATE INDEX decisions_at ON decisions (at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

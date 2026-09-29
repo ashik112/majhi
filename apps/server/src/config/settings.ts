@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import {
   ContextPatchSchema,
+  DecisionPatchSchema,
   LimitsPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
@@ -18,6 +19,7 @@ export const SettingsPatchSchema = z.object({
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
+  decisions: DecisionPatchSchema.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 

@@ -37,6 +37,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   const hostLink = options.hostLink ?? new HostLink();
   const services = createServices(env, {
     ...options,
+    hostLink,
     reloadKeys: async () => {
       if (!hostLink.status().connected) return false;
       hostLink.noteSsh(await hostLink.call("ssh.reload", {}, SSH_RELOAD_TIMEOUT_MS));
@@ -68,6 +69,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     uploads: services.uploads,
     taskFiles: { folderOf: (id) => services.store.tasks.get(id)?.folder },
     mcp: { tokens: services.adminTokens, admin: services.admin },
+    decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
   });
   let sockets: { close: () => void } | undefined;
   let sweeper: NodeJS.Timeout | undefined;

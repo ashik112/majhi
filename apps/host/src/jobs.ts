@@ -1,4 +1,12 @@
-import type { DirListing, HostJob, HostReply, RootSuggestion, SshStatus } from "@majhi/shared";
+import type {
+  DirListing,
+  HostJob,
+  HostReply,
+  LayaDecideResult,
+  LayaStatus,
+  RootSuggestion,
+  SshStatus,
+} from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
 
 export interface JobHandlers {
@@ -15,6 +23,10 @@ export interface JobHandlers {
   restart(): void;
   /** Throws an error whose message is safe to show. It never holds the passphrase. */
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
+  layaStatus(): LayaStatus;
+  /** Starts the install if needed and returns the state at once. */
+  layaInstall(): LayaStatus;
+  layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
 }
 
 export type SendReply = (reply: HostReply) => Promise<void>;
@@ -60,6 +72,15 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
       case "restart":
         await reply({ id: job.id, ok: true, result: { accepted: true } });
         handlers.restart();
+        return;
+      case "decisions.status":
+        await reply({ id: job.id, ok: true, result: handlers.layaStatus() });
+        return;
+      case "decisions.install":
+        await reply({ id: job.id, ok: true, result: handlers.layaInstall() });
+        return;
+      case "decide":
+        await reply({ id: job.id, ok: true, result: await handlers.layaDecide(job.params) });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

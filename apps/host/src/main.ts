@@ -6,13 +6,15 @@
  */
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
+import { release } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { HostInfo } from "@majhi/shared";
+import type { HostInfo, LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
 import { errorMessage } from "./errors.ts";
 import { runJob } from "./jobs.ts";
+import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
 import { findExecutable, toolPath } from "./paths.ts";
@@ -100,6 +102,14 @@ async function main(): Promise<void> {
     env: { ...process.env, PATH: path },
     log,
   });
+  const laya = createLaya({
+    majhiHome: config.majhiHome,
+    home: config.home,
+    path,
+    osRelease: release(),
+    run: runCommand,
+    log,
+  });
   const info = (): HostInfo => {
     const status = ssh.status();
     const repo = facts.repo();
@@ -111,6 +121,7 @@ async function main(): Promise<void> {
       ...(status === undefined ? {} : { ssh: status }),
       ...(repo === undefined ? {} : { commit: repo.commit, dirty: repo.dirty }),
       ...(runtime === undefined ? {} : { dockerRuntime: runtime }),
+      laya: laya.status(),
     };
   };
   const link: LinkOptions = { url: config.url, token: () => ensureToken(config.majhiHome), info, log };
@@ -129,6 +140,7 @@ async function main(): Promise<void> {
   const stop = (signal: string): void => {
     log(`stopping (${signal})`);
     stopSsh();
+    laya.stop();
     controller.abort();
   };
   process.once("SIGTERM", () => stop("SIGTERM"));
@@ -151,6 +163,9 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(0), 300);
     },
     sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
+    layaStatus: () => laya.status(),
+    layaInstall: () => laya.install(),
+    layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),
   };
   if (remountOptions !== undefined) {
     // Start Docker and majhi if a login or a restart found them down. It never blocks the poll loop.

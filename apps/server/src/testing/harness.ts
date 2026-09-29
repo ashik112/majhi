@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { COMMAND_META_HEADER } from "@majhi/shared";
 import type { ServerEnv } from "../env.ts";
+import type { HostLink } from "../host/link.ts";
 import { generateKey } from "../secrets/store.ts";
 import type { Majhi } from "../server.ts";
 import { createMajhi } from "../server.ts";
@@ -30,6 +31,8 @@ export interface HarnessOptions {
   workspaces?: boolean;
   /** Replaces `fetch` for task links. */
   links?: LinkOptions;
+  /** The host helper link, so a test can play the helper. */
+  hostLink?: HostLink;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -37,7 +40,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const env = testEnv(dir);
   if (options.key !== false) await writeKeyFile(env.secretsKeyFile, await generateKey());
   const runtime = fakeRuntime();
-  const h = build(dir, env, runtime, cleanup, options.links);
+  const h = build(dir, env, runtime, cleanup, options.links, options.hostLink);
   if (options.workspaces !== false) {
     const res = await h.cmd("workspaces.set", { workspaces: ["~/Work"] });
     if (res.status !== 200) throw new Error(`workspaces.set failed: ${JSON.stringify(res.body)}`);
@@ -51,8 +54,13 @@ function build(
   runtime: FakeRuntime,
   cleanup: () => Promise<void>,
   links?: LinkOptions,
+  hostLink?: HostLink,
 ): Harness {
-  const majhi = createMajhi(env, { runtime, ...(links === undefined ? {} : { links }) });
+  const majhi = createMajhi(env, {
+    runtime,
+    ...(links === undefined ? {} : { links }),
+    ...(hostLink === undefined ? {} : { hostLink }),
+  });
   const h: Harness = {
     dir,
     env,
@@ -73,7 +81,7 @@ function build(
       const out = await git(join(env.majhiHome), "log", `--format=${format}`);
       return out === "" ? [] : out.split("\n");
     },
-    restart: () => build(dir, env, runtime, cleanup, links),
+    restart: () => build(dir, env, runtime, cleanup, links, hostLink),
     cleanup: async () => {
       await majhi.close();
       await cleanup();

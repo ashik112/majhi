@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LayaStatusSchema } from "./decisions.ts";
 
 /**
  * The host helper (`apps/host`) runs natively on the owner's machine and does
@@ -92,6 +93,34 @@ export const UpdateStatusSchema = z.object({
 export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
 export const UPDATE_STATUS_FILE = "update.json";
 
+/** A question in Laya's own format, as the Python service takes it. The server maps ours onto it. */
+export const LayaQuestionSchema = z.object({
+  type: z.enum(["choice", "score", "noul"]),
+  instructions: z.string(),
+  /** Choice labels or score level descriptions. Omitted for noul. */
+  criteria: z.union([z.array(z.string()), z.record(z.string(), z.string())]).optional(),
+});
+export type LayaQuestion = z.infer<typeof LayaQuestionSchema>;
+
+/** One answer as laya-mlx returns it. `noul` is the probability that the statement is true. */
+export const LayaAnswerSchema = z.object({
+  type: z.enum(["choice", "score", "noul"]),
+  confidence: z.number().min(0).max(1),
+  choice: z.string().optional(),
+  score: z.number().optional(),
+  noul: z.number().min(0).max(1).optional(),
+  probabilities: z.record(z.string(), z.number()).optional(),
+});
+export type LayaAnswer = z.infer<typeof LayaAnswerSchema>;
+
+export const LayaDecideResultSchema = z.object({
+  answers: z.record(z.string(), LayaAnswerSchema),
+  /** Time to load the model for this call, 0 when it was already loaded. */
+  loadMs: z.number().nonnegative(),
+  predictMs: z.number().nonnegative(),
+});
+export type LayaDecideResult = z.infer<typeof LayaDecideResultSchema>;
+
 export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({
     id: z.string(),
@@ -113,6 +142,16 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("update"), params: z.object({}) }),
   /** Exit so launchd starts the helper again with a fresh look at Docker. Answered first. */
   z.object({ id: z.string(), method: z.literal("restart"), params: z.object({}) }),
+  /** Laya's install state right now (the poll header can be up to 25 s old). */
+  z.object({ id: z.string(), method: z.literal("decisions.status"), params: z.object({}) }),
+  /** Installs Laya in a private venv and downloads its model. Answers with the state at once; the work goes on. */
+  z.object({ id: z.string(), method: z.literal("decisions.install"), params: z.object({}) }),
+  /** Asks Laya typed questions. Loads the model on the first call. */
+  z.object({
+    id: z.string(),
+    method: z.literal("decide"),
+    params: z.object({ state: z.string(), questions: z.record(z.string(), LayaQuestionSchema) }),
+  }),
   /**
    * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
    * must never be logged, stored or echoed in an error, on either side.
@@ -140,6 +179,9 @@ export const HostResultSchemas = {
   }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),
+  "decisions.status": LayaStatusSchema,
+  "decisions.install": LayaStatusSchema,
+  decide: LayaDecideResultSchema,
 } as const satisfies Record<HostMethod, z.ZodType>;
 
 export const HostReplySchema = z.discriminatedUnion("ok", [
@@ -161,6 +203,8 @@ export const HostInfoSchema = z.object({
   /** True when that checkout has uncommitted changes. */
   dirty: z.boolean().optional(),
   dockerRuntime: DockerRuntimeSchema.optional(),
+  /** Laya on this Mac. Absent from older helpers. */
+  laya: LayaStatusSchema.optional(),
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";

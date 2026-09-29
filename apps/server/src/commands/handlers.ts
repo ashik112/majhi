@@ -268,12 +268,11 @@ export function createHandlers({
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),
     "system.update": () => (system ? system.update() : notBuilt()),
-    // Decision provider (5.12), built in Phase 2b alongside the run manager work.
-    "decisions.ask": notBuilt,
-    "decisions.recent": notBuilt,
-    "decisions.status": notBuilt,
-    "decisions.set": notBuilt,
-    "decisions.install": notBuilt,
+    "decisions.ask": (input) => services.decisions.ask(input),
+    "decisions.recent": async (input) => services.decisions.recent(input.limit),
+    "decisions.status": () => services.decisions.status(),
+    "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
+    "decisions.install": () => services.decisions.install(),
   };
 }
 

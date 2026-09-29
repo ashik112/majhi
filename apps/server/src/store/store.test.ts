@@ -68,6 +68,7 @@ describe("store", () => {
     expect(names).toEqual([
       "attachments",
       "audit",
+      "decisions",
       "migrations",
       "room_items",
       "runs",

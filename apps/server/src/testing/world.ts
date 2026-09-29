@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { vi } from "vitest";
+import type { HostLink } from "../host/link.ts";
 import type { LinkOptions } from "../tasks/links.ts";
 import { git } from "./fixtures.ts";
 import { type Harness, harness } from "./harness.ts";
@@ -24,6 +25,7 @@ export interface WorldOptions {
   /** Skip the agent, to test tasks with nobody to run them. */
   noAgent?: boolean;
   links?: LinkOptions;
+  hostLink?: HostLink;
 }
 
 /**
@@ -34,7 +36,10 @@ export interface WorldOptions {
 export async function taskWorld(options: WorldOptions = {}): Promise<World> {
   vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
-  const h = await harness(options.links === undefined ? {} : { links: options.links });
+  const h = await harness({
+    ...(options.links === undefined ? {} : { links: options.links }),
+    ...(options.hostLink === undefined ? {} : { hostLink: options.hostLink }),
+  });
   const world: World = {
     h,
     repo: (name) => join(h.dir, "Work", name),

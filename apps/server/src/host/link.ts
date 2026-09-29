@@ -34,6 +34,9 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "version.changes": (value) => HostResultSchemas["version.changes"].safeParse(value),
   update: (value) => HostResultSchemas.update.safeParse(value),
   restart: (value) => HostResultSchemas.restart.safeParse(value),
+  "decisions.status": (value) => HostResultSchemas["decisions.status"].safeParse(value),
+  "decisions.install": (value) => HostResultSchemas["decisions.install"].safeParse(value),
+  decide: (value) => HostResultSchemas.decide.safeParse(value),
 };
 
 /** The helper is not connected, or did not answer in time. */

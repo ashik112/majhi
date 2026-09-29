@@ -90,7 +90,7 @@ export function removeProjectEntry(file: string, id: string): Promise<void> {
  */
 export function writeSettings(
   file: string,
-  patch: Partial<Record<"context" | "limits" | "resume" | "policy", object | undefined>>,
+  patch: Partial<Record<"context" | "limits" | "resume" | "policy" | "decisions", object | undefined>>,
 ): Promise<void> {
   return editConfig(file, (doc) => {
     for (const [section, fields] of Object.entries(patch)) {

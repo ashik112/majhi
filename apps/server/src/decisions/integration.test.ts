@@ -1,0 +1,278 @@
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { serve } from "@hono/node-server";
+import type { HostJob, LayaStatus } from "@majhi/shared";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { HostLink } from "../host/link.ts";
+import { taskWorld, type World } from "../testing/world.ts";
+
+let w: World | undefined;
+let stopHelper: (() => void) | undefined;
+let server: Server | undefined;
+afterEach(async () => {
+  stopHelper?.();
+  server?.closeAllConnections?.();
+  server?.close();
+  await w?.cleanup();
+  w = undefined;
+  server = undefined;
+});
+
+const READY: LayaStatus = { state: "ready", version: "0.2.0" };
+
+/** Plays the host helper: answers jobs from a fake Laya. */
+function playHelper(
+  link: HostLink,
+  laya: { status: LayaStatus; decide?: (job: Extract<HostJob, { method: "decide" }>) => unknown },
+) {
+  let stopped = false;
+  const jobs: HostJob[] = [];
+  void (async () => {
+    while (!stopped) {
+      const job = await link.poll({ version: "t", platform: "darwin", canRemount: false, laya: laya.status });
+      if (job === undefined) continue;
+      jobs.push(job);
+      if (job.method === "decisions.status" || job.method === "decisions.install") {
+        link.reply({ id: job.id, ok: true, result: laya.status });
+      } else if (job.method === "decide") {
+        link.reply({ id: job.id, ok: true, result: laya.decide?.(job) });
+      } else link.reply({ id: job.id, ok: false, error: "not in this test" });
+    }
+  })();
+  stopHelper = () => {
+    stopped = true;
+    link.close();
+  };
+  return jobs;
+}
+
+async function world(laya: Parameters<typeof playHelper>[1]) {
+  const link = new HostLink({ pollTimeoutMs: 20 });
+  const jobs = playHelper(link, laya);
+  w = await taskWorld({ hostLink: link });
+  // Let the first poll register.
+  await new Promise((r) => setTimeout(r, 30));
+  return { w, h: w.h, jobs };
+}
+
+const ask = {
+  state: "Fix a typo in the readme",
+  questions: {
+    model: { type: "choice", instructions: "Which model?", options: ["haiku", "sonnet", "opus"] },
+    risky: { type: "noul", instructions: "Touches payments?" },
+  },
+};
+
+const layaAnswers = () => ({
+  answers: {
+    model: {
+      type: "choice",
+      choice: "haiku",
+      confidence: 0.1,
+      probabilities: { haiku: 0.8, sonnet: 0.15, opus: 0.05 },
+    },
+    risky: { type: "noul", noul: 0.1, confidence: 0.9 },
+  },
+  loadMs: 0,
+  predictMs: 12,
+});
+
+describe("decisions.ask", () => {
+  it("answers through the host helper with Laya and logs the decision", async () => {
+    const { h, jobs } = await world({ status: READY, decide: layaAnswers });
+    const res = await h.cmd("decisions.ask", ask);
+    expect(res.status).toBe(200);
+    expect(res.body.provider).toBe("laya");
+    expect(res.body.answers.model).toMatchObject({ value: "haiku", confidence: 0.8 });
+    expect(res.body.answers.risky).toMatchObject({ value: false, confidence: 0.9 });
+    expect(res.body.skipped).toEqual([]);
+    expect(jobs.find((j) => j.method === "decide")).toBeDefined();
+    const recent = await h.cmd("decisions.recent", {});
+    expect(recent.body).toHaveLength(1);
+    expect(recent.body[0]).toMatchObject({ id: res.body.id, use: "owner", provider: "laya" });
+  });
+
+  it("falls back to the stand-in agent, then to rules", async () => {
+    const { w, h } = await world({ status: { state: "not-installed" } });
+    expect((await h.cmd("decisions.set", { acp_agent: "acme-builder" })).status).toBe(200);
+    h.runtime.onSession = (session) => {
+      session.script = async (turn) => {
+        turn.emit({
+          type: "text",
+          messageId: "m",
+          text: '{"model":{"value":"opus","confidence":0.8},"risky":{"value":true,"confidence":0.7}}',
+        });
+        return "end_turn";
+      };
+    };
+    const viaAcp = await h.cmd("decisions.ask", ask);
+    expect(viaAcp.body).toMatchObject({ provider: "acp", estimated: true });
+    expect(viaAcp.body.answers.model.value).toBe("opus");
+    expect(viaAcp.body.skipped[0]).toMatchObject({ provider: "laya" });
+    expect(h.runtime.sessions.at(-1)?.closed).toBe(true);
+
+    // A reply that is never valid JSON: one retry, then rules answer.
+    h.runtime.onSession = (session) => {
+      session.script = async (turn) => {
+        turn.emit({ type: "text", messageId: "m", text: "opus, I think" });
+        return "end_turn";
+      };
+    };
+    const viaRules = await h.cmd("decisions.ask", ask);
+    expect(viaRules.body.provider).toBe("rules");
+    expect(viaRules.body.skipped.map((s: { provider: string }) => s.provider)).toEqual(["laya", "acp"]);
+    expect(h.runtime.sessions.at(-1)?.prompts).toHaveLength(2);
+    expect(w.h.runtime.starts.length).toBeGreaterThan(0);
+  });
+
+  it("changes the order through the config history and rejects duplicates", async () => {
+    const { h } = await world({ status: READY, decide: layaAnswers });
+    expect((await h.cmd("decisions.set", { order: ["rules", "laya"] })).body.order).toEqual([
+      "rules",
+      "laya",
+    ]);
+    expect((await h.log())[0]).toContain("decisions.set");
+    expect((await h.cmd("decisions.set", { order: ["rules", "rules"] })).status).toBe(400);
+    expect((await h.cmd("decisions.set", { jev_key: "secret:nope" })).status).toBe(404);
+    const status = await h.cmd("decisions.status");
+    expect(status.body.settings.order).toEqual(["rules", "laya"]);
+    expect(status.body.providers.find((p: { id: string }) => p.id === "jev")).toMatchObject({
+      available: false,
+      detail: "No Jev key is set",
+    });
+  });
+
+  it("starts the install through the helper", async () => {
+    const { h, jobs } = await world({ status: { state: "installing", detail: "Installing" } });
+    const res = await h.cmd("decisions.install");
+    expect(res.body).toEqual({ state: "installing", detail: "Installing" });
+    expect(jobs.some((j) => j.method === "decisions.install")).toBe(true);
+  });
+});
+
+describe("pickModel", () => {
+  const request = {
+    task: "ACM-1",
+    agent: "acme-builder",
+    role: "Builder" as const,
+    context: "Fix a typo",
+    models: [
+      { id: "haiku", name: "Haiku" },
+      { id: "opus", name: "Opus" },
+    ],
+    efforts: [
+      { id: "low", name: "Low" },
+      { id: "high", name: "High" },
+    ],
+    pickModel: true,
+    pickEffort: true,
+  };
+  const answers = (model: number, effort: number) => () => ({
+    answers: {
+      model: {
+        type: "choice",
+        choice: "haiku",
+        confidence: 0,
+        probabilities: { haiku: model, opus: 1 - model },
+      },
+      effort: {
+        type: "choice",
+        choice: "low",
+        confidence: 0,
+        probabilities: { low: effort, high: 1 - effort },
+      },
+    },
+    loadMs: 0,
+    predictMs: 1,
+  });
+
+  it("returns the pick when both answers reach the floor, with a room line", async () => {
+    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
+    const pick = await w.h.majhi.services.decisions.pickModel(request);
+    expect(pick).toMatchObject({ model: "haiku", effort: "low", provider: "laya", confidence: 0.8 });
+    expect(pick?.reason).toBe("Laya picked haiku, effort low (0.80)");
+  });
+
+  it("keeps only the part that is confident, and nothing below the floor", async () => {
+    const half = await world({ status: READY, decide: answers(0.9, 0.55) });
+    expect(await half.w.h.majhi.services.decisions.pickModel(request)).toMatchObject({ model: "haiku" });
+    const pick = await half.w.h.majhi.services.decisions.pickModel(request);
+    expect(pick?.effort).toBeUndefined();
+  });
+
+  it("returns undefined when confidence is low, or when there is nothing to choose", async () => {
+    const { w } = await world({ status: READY, decide: answers(0.55, 0.55) });
+    const decisions = w.h.majhi.services.decisions;
+    expect(await decisions.pickModel(request)).toBeUndefined();
+    expect(
+      await decisions.pickModel({ ...request, models: request.models.slice(0, 1), efforts: [] }),
+    ).toBeUndefined();
+  });
+});
+
+describe("/mcp/decide", () => {
+  async function connect(token: string, url: string): Promise<Client> {
+    const client = new Client({ name: "test", version: "1" });
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    await client.connect(transport as unknown as Transport);
+    return client;
+  }
+
+  it("lists the decide tool, answers, and stops at the per-run limit", async () => {
+    const { w, h } = await world({ status: READY, decide: layaAnswers });
+    server = serve({ fetch: h.majhi.app.fetch, hostname: "127.0.0.1", port: 0 }) as unknown as Server;
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const port = (server.address() as AddressInfo).port;
+    h.majhi.services.adminTokens.mcpUrl = `http://127.0.0.1:${port}/mcp`;
+    expect((await h.cmd("decisions.set", { per_run_limit: 2 })).status).toBe(200);
+
+    const attached = h.majhi.services.decisions.attachTool("ACM-1", "acme-builder");
+    expect(attached?.server).toMatchObject({
+      type: "http",
+      name: "majhi-decide",
+      url: `http://127.0.0.1:${port}/mcp/decide`,
+    });
+    const noAuth = await fetch(attached?.server.url ?? "", { method: "POST" });
+    expect(noAuth.status).toBe(401);
+
+    const client = await connect(attached?.token ?? "", attached?.server.url ?? "");
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["decide"]);
+    expect(tools[0]?.inputSchema.required).toEqual(expect.arrayContaining(["state", "questions"]));
+
+    const call = async () => {
+      const res = await client.callTool({ name: "decide", arguments: ask });
+      return { text: (res.content as { text: string }[])[0]?.text ?? "", isError: res.isError === true };
+    };
+    const first = await call();
+    expect(first.isError).toBe(false);
+    expect(JSON.parse(first.text)).toMatchObject({
+      provider: "laya",
+      answers: { model: { value: "haiku" } },
+    });
+    expect((await call()).isError).toBe(false);
+    const third = await call();
+    expect(third).toMatchObject({ isError: true });
+    expect(third.text).toContain("limit reached: 2 calls");
+
+    const bad = await client.callTool({ name: "decide", arguments: { state: "x", questions: {} } });
+    expect(bad.isError).toBe(true);
+
+    const recent = await h.cmd("decisions.recent", {});
+    expect(recent.body[0]).toMatchObject({ use: "tool", task: "ACM-1", agent: "acme-builder" });
+
+    h.majhi.services.decisions.revoke(attached?.token ?? "");
+    expect(w).toBeDefined();
+    const after = await fetch(attached?.server.url ?? "", {
+      method: "POST",
+      headers: { authorization: `Bearer ${attached?.token}` },
+    });
+    expect(after.status).toBe(401);
+    await client.close();
+  });
+});

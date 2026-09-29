@@ -9,10 +9,17 @@ import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { ConfigService } from "./config/service.ts";
+import { AcpProvider } from "./decisions/acp.ts";
+import { LayaProvider } from "./decisions/layaProvider.ts";
+import { DecisionLog } from "./decisions/log.ts";
+import { rulesProvider } from "./decisions/rules.ts";
+import { DecisionService } from "./decisions/service.ts";
+import { DecideTokens } from "./decisions/tokens.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import type { HostLink } from "./host/link.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
@@ -34,6 +41,8 @@ export interface ServiceOptions {
   links?: LinkOptions;
   /** Asks the host helper to load the owner's SSH keys again, for a fetch that lacked them. */
   reloadKeys?: () => Promise<boolean>;
+  /** The host helper link, for Laya. Without it Laya reports the helper as not connected. */
+  hostLink?: HostLink;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -48,6 +57,10 @@ export interface Services {
   admin: AdminService;
   agents: AgentService;
   agentStore: AgentStore;
+  /** The decision provider: pass it to the run manager as `Decisions`. */
+  decisions: DecisionService;
+  /** Bearer tokens of `majhi-decide`. */
+  decideTokens: DecideTokens;
   orgs: OrgService;
   accounts: AccountService;
   terminals: TerminalManager;
@@ -108,6 +121,26 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const room = new RoomService(store);
   const agents = new AgentService(config, agentStore, cache, accounts);
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
+  const decideTokens = new DecideTokens();
+  const decisions = new DecisionService({
+    config,
+    log: new DecisionLog(store.raw),
+    tokens: decideTokens,
+    laya: new LayaProvider(options.hostLink),
+    acp: new AcpProvider({
+      config,
+      agents: agentStore,
+      secrets,
+      runtime,
+      options: env.runtime,
+      majhiHome: env.majhiHome,
+      standIn: async () => (await decisions.settings()).acp_agent,
+    }),
+    rules: rulesProvider,
+    secrets,
+    agents: agentStore,
+    adminMcpUrl: () => adminTokens.mcpUrl,
+  });
   const runs = new RunManager({
     store,
     room,
@@ -146,6 +179,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     admin,
     agents,
     agentStore,
+    decisions,
+    decideTokens,
     store,
     uploads,
     projects,

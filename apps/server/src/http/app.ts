@@ -7,6 +7,7 @@ import { mcpRoutes } from "../admin/mcp.ts";
 import type { AdminService } from "../admin/service.ts";
 import type { AdminTokens } from "../admin/tokens.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
+import { type DecideMcpDeps, decideMcpRoutes } from "../decisions/mcp.ts";
 import { errorMessage } from "../errors.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
@@ -29,6 +30,8 @@ export interface AppDeps {
   taskFiles: TaskFilesDeps;
   /** The majhi-admin MCP server at `/mcp`. */
   mcp?: { tokens: AdminTokens; admin: AdminService };
+  /** The majhi-decide MCP server at `/mcp/decide`. */
+  decideMcp?: DecideMcpDeps;
 }
 
 const NOT_BUILT =
@@ -63,6 +66,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   if (deps.mcp !== undefined) app.route("/", mcpRoutes(deps.mcp));
+  if (deps.decideMcp !== undefined) app.route("/", decideMcpRoutes(deps.decideMcp));
   app.route("/api/host", hostRoutes(deps.host));
   app.route("/api/uploads", uploadRoutes(deps.uploads));
   app.route("/api/tasks", taskFileRoutes(deps.taskFiles));
