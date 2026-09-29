@@ -46,7 +46,7 @@ The owner works for several companies (orgs). Each org gives official Claude and
 | Concept | Meaning |
 |---|---|
 | **Org** | A company. Has accounts, agents, projects, a default team, a default base branch, a merge policy, a tracker (optional), and a git commit identity. |
-| **Account** | One login for one tool (Claude Code or Codex in v1), owned by an org or marked personal. Signs in either with the tool's own login (subscription) or with an API key. Has its own isolated config home. Usage limits belong to accounts. |
+| **Account** | One login for one tool (Claude Code or Codex in v1), owned by an org or marked personal. Signs in either with the tool's own login (subscription) or with an API key. API-key accounts can carry extra fields the provider needs (a base URL for OpenRouter or a gateway, an org id, an Azure endpoint and deployment), with the same field kinds as connections (5.14). Has its own isolated config home. Usage limits belong to accounts. |
 | **Agent** | A configured worker: role, account, model, instructions, skills, MCP tools, permissions, where it can work, and a fallback agent. Several agents can share one account. |
 | **Root agent** | An agent with scope "anywhere", usually on a personal account. Examples: Dispatcher (routes new tasks), Housekeeper (curates memory, cleans worktrees), Setup (scans the machine, drafts config, organizes projects). Root agents can create tasks and edit config, always with owner approval. |
 | **Workspace root** | A folder the owner picks that holds projects, like `~/Work`. There can be several. majhi scans them for repos and mounts each one into the containers. |
@@ -469,8 +469,14 @@ Connections give agents access to the systems the owner debugs and reports on: c
   - `kubectl`: a kubeconfig, one context, a default namespace.
   - `mcp`: any MCP server, local command or remote URL, with auth from `secrets.age`. For example New Relic's official remote server (`mcp.newrelic.com/mcp`).
   - `ssh`: a host alias from `~/.ssh/config`. Only the SSH agent socket is forwarded, as everywhere else.
-  - `env`: named environment variables from `secrets.age`, for CLIs such as `aws`, `gcloud`, `psql`.
+  - `env`: any number of named values for CLIs and APIs such as `aws`, `gcloud`, `psql`, OpenRouter or a video API. One connection can hold several, for example `API_KEY`, `USER_ID` and `ORG_ID` for one service.
+  - `browser`: a browser the agent drives through a browser MCP server (Playwright or Chrome DevTools), with its own profile per connection, so each org's logins stay separate. Used for research and checking results; posting goes through platform APIs where they exist.
   - `mail`: an IMAP and SMTP account, or a mail MCP server.
+- **Fields.** Every connection type declares its fields, and each field has a kind:
+  - `secret`: stored in `secrets.age`, entered once through a secure input, never shown again.
+  - `text`: a plain value such as a user id, org id, region or endpoint URL. Stored in `majhi.yaml`, visible and editable.
+  - `file`: a file such as a kubeconfig or a service-account JSON, stored in `~/.majhi/connections/<id>/`. The run gets its path in a named variable (for example `GOOGLE_APPLICATION_CREDENTIALS`).
+  Each field maps to the variable name the tool expects. The `env` type lets the owner add any fields they need and pick the kind of each.
 - **Storage.** Definitions live under the org in `majhi.yaml`. Secret values live in `secrets.age`. Files such as kubeconfigs live in `~/.majhi/connections/<id>/` with owner-only permissions. Values are never logged and never written to TASK.md, the room, memory or reports. Agents see a connection's name and description, never its secrets.
 - **Who can use what.** An org agent can use the connections of its org that are listed in its `connections`. Root agents can use every connection of every org. A run only gets what the task needs: the connections of the task's org, or for a root task, the ones the task names plus any the root agent attaches with `majhi-connections.attach`. Every attach is logged and shown in the room. An org agent never gets another org's connection.
 - **How access reaches a run.** Built into the clean per-run environment (5.1): `KUBECONFIG` points to a per-run copy holding only that context; `env` values become variables; `mcp` connections are attached as MCP servers with their auth; `ssh` uses the forwarded agent socket. Everything is removed when the run ends.
@@ -634,6 +640,14 @@ Delivered in two parts, each usable and reviewed on its own.
 - Token receipts per task and agent, Serena wiring, tool gating per role, cache-friendly prompts.
 - Command palette complete, keyboard shortcuts, performance pass against the targets in 5.17.
 - **Done when:** receipts show where tokens go, and the owner can run a full day of work without touching a terminal.
+
+### Phase 11: Creative and marketing
+- Work without a repo for marketing projects, using `ops` tasks and the task folder for drafts and assets.
+- Media in the room: images and videos render inline, with Approve, Redo and Edit.
+- Tools in the runner image for media: ffmpeg, Remotion. Video and image generation APIs (for example Higgsfield) as `env` connections per org.
+- `browser` connections per org for research and checking results. Social platforms (Meta, X, LinkedIn, TikTok) as connections using their official APIs. Every public post is an outbound action with an approve card showing the exact post.
+- Scheduled and recurring tasks (for example "post three times a week"), which create tasks on a schedule.
+- **Done when:** a task for a project produces a short captioned video and three post drafts in the room, the owner approves one, it is scheduled, and it posts through the platform API at the set time.
 
 ---
 
