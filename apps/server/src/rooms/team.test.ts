@@ -175,6 +175,32 @@ describe("the build and review loop", () => {
   });
 });
 
+describe("the pipeline", () => {
+  it("runs lead, builder and reviewer once each, in order, then hands to the owner", async () => {
+    const { h, prompts } = await teamWorld({
+      "acme-lead": [say("Plan: one route and a test.")],
+      "acme-builder": [say("Built the route and the test.")],
+      "acme-reviewer": [say("Checked. APPROVED")],
+    });
+    const res = await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      team: ["acme-reviewer", "acme-builder", "acme-lead"],
+      mode: "pipeline",
+      start: true,
+    });
+    expect(res.status).toBe(200);
+    await until(async () => (await status("ACM-1")) === "review", "review");
+    expect(await handoffs("ACM-1")).toEqual([
+      "acme-lead>acme-builder (pipeline)",
+      "acme-builder>acme-reviewer (pipeline)",
+    ]);
+    // The lead went first although the reviewer is first in the team: the pipeline goes by role.
+    expect(prompts["acme-lead"]?.[0]).toMatch(/Read TASK.md/);
+    expect(prompts["acme-reviewer"]).toHaveLength(1);
+    expect(await systemTexts("ACM-1")).toContain("Every step of the pipeline ran. Over to you.");
+  });
+});
+
 describe("the loop guard", () => {
   it("pauses with reason owner after too many agent turns, and an owner message resets it", async () => {
     const ping = say("@acme-reviewer your turn.");

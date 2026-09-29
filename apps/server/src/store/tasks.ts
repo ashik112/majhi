@@ -367,13 +367,20 @@ export class TaskRepo {
   /** Renames an agent in every task team. Returns the ids of the tasks that changed. */
   renameAgent(id: string, newId: string): string[] {
     const changed: string[] = [];
-    for (const row of this.db.select({ id: tasks.id, team: tasks.team }).from(tasks).all()) {
+    for (const row of this.db
+      .select({ id: tasks.id, team: tasks.team, overrides: tasks.overrides })
+      .from(tasks)
+      .all()) {
       const team = TeamSchema.parse(JSON.parse(row.team));
       if (!team.includes(id)) continue;
       const next = team.map((a) => (a === id ? newId : a));
+      const overrides = parseOverrides(row.overrides);
+      const own = overrides[id];
+      delete overrides[id];
+      if (own !== undefined) overrides[newId] = own;
       this.db
         .update(tasks)
-        .set({ team: JSON.stringify([...new Set(next)]) })
+        .set({ team: JSON.stringify([...new Set(next)]), overrides: JSON.stringify(overrides) })
         .where(eq(tasks.id, row.id))
         .run();
       changed.push(row.id);

@@ -12,6 +12,7 @@ describe("mergeSettings", () => {
       context: { compact_at: 0.8, compact_target: 0.4, max_turns: 40 },
       limits: { agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "10m" },
       resume: { auto: true },
+      rooms: { max_agent_turns: 12, review_rounds: 5 },
       policy: {
         read: "auto",
         change: "when-asked",

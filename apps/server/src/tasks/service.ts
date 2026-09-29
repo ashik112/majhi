@@ -745,7 +745,7 @@ export class TaskService {
     }
   }
 
-  /** Gives the task to another agent that can work in its org. Its old sessions close; the room says so. */
+  /** Gives the task (the lead's place) to another agent that can work in its org. Its old sessions close; the room says so. */
   private async changeAgent(task: Task, agent: string): Promise<void> {
     if (this.deps.runs.working(task.id).length > 0) {
       throw new UserError(`An agent is working on ${task.id}. Stop it first.`, 409);
@@ -759,7 +759,9 @@ export class TaskService {
       );
     }
     await this.deps.runs.stop(task.id);
-    this.deps.store.tasks.setTeam(task.id, [agent], this.now().toISOString());
+    // The new agent takes the lead's place; the rest of the team stays.
+    const rest = task.team.slice(1).filter((a) => a !== agent);
+    this.deps.store.tasks.setTeam(task.id, [agent, ...rest], this.now().toISOString());
     this.note(task.id, `The task moved from @${task.team[0] ?? "nobody"} to @${agent}.`);
   }
 
