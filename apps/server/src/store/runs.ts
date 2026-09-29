@@ -116,7 +116,10 @@ export class RunRepo {
   }
 
   /** What the decision provider picked for this run, and the decision's id. */
-  setPick(id: number, pick: { model?: string | undefined; effort?: string | undefined; decisionId: string }): void {
+  setPick(
+    id: number,
+    pick: { model?: string | undefined; effort?: string | undefined; decisionId: string },
+  ): void {
     this.db
       .update(runs)
       .set({
