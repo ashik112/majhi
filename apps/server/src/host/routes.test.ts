@@ -5,7 +5,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
-import { git, tempDir } from "../testing/fixtures.ts";
+import { git, tempDir, testEnv } from "../testing/fixtures.ts";
 import { HostLink } from "./link.ts";
 
 const TOKEN = "0123456789abcdef".repeat(4);
@@ -20,14 +20,7 @@ describe("host helper link over HTTP", () => {
 
   beforeEach(async () => {
     ({ dir, cleanup } = await tempDir());
-    env = {
-      host: "127.0.0.1",
-      port: 0,
-      hostHome: dir,
-      majhiHome: join(dir, ".majhi"),
-      webDist: join(dir, "web-dist"),
-      version: "test",
-    };
+    env = testEnv(dir, { version: "test" });
     await mkdir(env.majhiHome);
     await writeFile(join(env.majhiHome, HOST_TOKEN_FILE), `${TOKEN}\n`);
     // Long enough that a poll only ends when a job arrives or its request is aborted.

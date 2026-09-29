@@ -7,6 +7,7 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "postinstall": "node scripts/fix-node-pty.mjs",
     "dev": "pnpm --parallel --filter @majhi/server --filter @majhi/web dev",
     "build": "pnpm --filter @majhi/web build && pnpm --filter @majhi/server build",
     "check": "biome check .",

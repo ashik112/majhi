@@ -1,0 +1,40 @@
+import type { EventTopic, ServerEvent } from "@majhi/shared";
+
+type Listener = (event: ServerEvent) => void;
+
+/** Fan-out of change events to every open `/api/events` socket. */
+export class EventHub {
+  private readonly listeners = new Set<Listener>();
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  emit(topics: readonly EventTopic[]): void {
+    const unique = [...new Set(topics)];
+    const [first, ...rest] = unique;
+    if (first === undefined) return;
+    const event: ServerEvent = { type: "changed", topics: [first, ...rest] };
+    for (const listener of this.listeners) listener(event);
+  }
+}
+
+/** Topics a command changes. Reads change nothing. */
+export function topicsFor(command: string): EventTopic[] {
+  const group = command.split(".", 1)[0];
+  switch (group) {
+    case "orgs":
+      return ["orgs", "config"];
+    case "accounts":
+      return ["accounts", "config"];
+    case "agents":
+      return ["agents"];
+    case "boss":
+      return ["agents", "config"];
+    case "workspaces":
+      return ["config"];
+    default:
+      return [];
+  }
+}

@@ -1,12 +1,5 @@
 import { z } from "zod";
 import {
-  ConfigStateSchema,
-  RemountSchema,
-  ReposResponseSchema,
-  WorkspacesUpdateResultSchema,
-  WorkspacesUpdateSchema,
-} from "./api.ts";
-import {
   AccountModelsSchema,
   AccountViewSchema,
   AgentEntrySchema,
@@ -19,6 +12,13 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import {
+  ConfigStateSchema,
+  RemountSchema,
+  ReposResponseSchema,
+  WorkspacesUpdateResultSchema,
+  WorkspacesUpdateSchema,
+} from "./api.ts";
 import { DirListingSchema, HostResultSchemas, HostStatusSchema } from "./host.ts";
 
 /**
@@ -111,9 +111,9 @@ export const commands = {
   "orgs.create": {
     risk: "change",
     summary: "Create an org",
-    input: z.object({ id: IdSchema.refine((id) => id !== "personal" && id !== "root", "This id is reserved") }).extend(
-      OrgConfigSchema.pick({ name: true, color: true, base: true }).shape,
-    ),
+    input: z
+      .object({ id: IdSchema.refine((id) => id !== "personal" && id !== "root", "This id is reserved") })
+      .extend(OrgConfigSchema.pick({ name: true, color: true, base: true }).shape),
     output: OrgViewSchema,
   },
 

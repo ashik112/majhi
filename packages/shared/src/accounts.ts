@@ -14,7 +14,10 @@ import { z } from "zod";
 export const IdSchema = z
   .string()
   .trim()
-  .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "Use lowercase letters, digits and dashes, starting with a letter or digit");
+  .regex(
+    /^[a-z0-9][a-z0-9-]{0,62}$/,
+    "Use lowercase letters, digits and dashes, starting with a letter or digit",
+  );
 
 /** Accounts not owned by an org. Never a valid org id. */
 export const PERSONAL = "personal";

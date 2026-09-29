@@ -8,6 +8,7 @@ import { loadConfig } from "../config/load.ts";
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import { createServices, type Services } from "../services.ts";
 
 const run = promisify(execFile);
 
@@ -27,7 +28,7 @@ const TOOL_TIMEOUT_MS = 5_000;
 const HOST_STATUS_TIMEOUT_MS = 3_000;
 
 /** Checks that majhi can run here: config, config folder, git, mounts, SSH agent, disk space, host helper. */
-export async function runDoctor(env: ServerEnv): Promise<Check[]> {
+export async function runDoctor(env: ServerEnv, services: Services = createServices(env)): Promise<Check[]> {
   const { state } = await loadConfig(env);
   const groups = await Promise.all([
     [checkConfig(state, env.hostHome)],
@@ -37,6 +38,9 @@ export async function runDoctor(env: ServerEnv): Promise<Check[]> {
     checkSshAgent().then((c) => [c]),
     checkDisk(state, env.hostHome).then((c) => [c]),
     checkHostHelper(env.port).then((c) => [c]),
+    checkSecrets(services),
+    checkTools(env, services),
+    checkAccounts(services),
   ]);
   return groups.flat();
 }
@@ -164,6 +168,60 @@ function diskStatus(freeBytes: number): CheckStatus {
   if (freeBytes < DISK_FAIL_BYTES) return "fail";
   if (freeBytes < DISK_WARN_BYTES) return "warn";
   return "pass";
+}
+
+async function checkSecrets(services: Services): Promise<Check[]> {
+  const name = "Secrets key";
+  return (await services.secrets.available())
+    ? [{ name, status: "pass", detail: "Found, so API-key accounts work" }]
+    : [{ name, status: "warn", detail: "No key file. API-key accounts need it: run `make up`." }];
+}
+
+/** Each agent CLI's version. A missing CLI fails when an account uses it, and warns otherwise. */
+async function checkTools(env: ServerEnv, services: Services): Promise<Check[]> {
+  const accounts = await services.accounts.list().catch(() => []);
+  return Promise.all(
+    services.runtime.toolInfos().map(async (tool): Promise<Check> => {
+      const name = `${tool.name} CLI`;
+      try {
+        return { name, status: "pass", detail: await services.runtime.cliVersion(tool.id, env.runtime) };
+      } catch (err) {
+        const used = accounts.some((a) => a.tool === tool.id);
+        return { name, status: used ? "fail" : "warn", detail: firstLine(errorMessage(err)) };
+      }
+    }),
+  );
+}
+
+/** Each account's sign-in, from a full health check. It spends no tokens. */
+async function checkAccounts(services: Services): Promise<Check[]> {
+  let accounts: Awaited<ReturnType<Services["accounts"]["list"]>>;
+  try {
+    accounts = await services.accounts.list();
+  } catch {
+    return [];
+  }
+  return Promise.all(
+    accounts.map(async (account): Promise<Check> => {
+      const name = `Account ${account.id}`;
+      try {
+        const { health, account: view } = await services.accounts.health(account.id, true);
+        if (health.ok) {
+          const who = view.signedInAs === undefined ? "" : ` as ${view.signedInAs}`;
+          return { name, status: "pass", detail: `Signed in${who}` };
+        }
+        const failed = health.steps.find((s) => !s.ok);
+        const detail = failed === undefined ? "Check failed" : `${failed.name}: ${failed.detail}`;
+        return { name, status: view.status === "needs-login" ? "warn" : "fail", detail };
+      } catch (err) {
+        return { name, status: "fail", detail: firstLine(errorMessage(err)) };
+      }
+    }),
+  );
+}
+
+function firstLine(text: string): string {
+  return text.split("\n", 1)[0] ?? text;
 }
 
 /** Asks the running server, on its own port, whether the host helper is connected. */

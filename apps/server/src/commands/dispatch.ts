@@ -7,7 +7,7 @@ import {
 } from "@majhi/shared";
 import type { z } from "zod";
 import { ConfigConflictError } from "../config/write.ts";
-import { errorMessage, formatIssues } from "../errors.ts";
+import { errorMessage, formatIssues, UserError } from "../errors.ts";
 import { HostJobError, HostOfflineError } from "../host/link.ts";
 import type { CommandHandler, CommandHandlers, ParsedInput } from "./handlers.ts";
 
@@ -27,14 +27,20 @@ export type Dispatch = (
  * Runs a command by name: checks the input and the meta header against their
  * schemas, runs the handler, and checks the output before it leaves.
  */
-export function createDispatcher(handlers: CommandHandlers): Dispatch {
+export function createDispatcher(
+  handlers: CommandHandlers,
+  /** Called after every command that is not a read and succeeded, so live channels can tell clients. */
+  onChanged?: (name: CommandName) => void,
+): Dispatch {
   return async (name, input, metaHeader) => {
     if (!isCommandName(name)) {
       return { ok: false, status: 404, error: { error: `Unknown command: ${name}` } };
     }
     const meta = parseMeta(metaHeader);
     if (!meta.ok) return meta;
-    return run(name, input, meta.meta, handlers);
+    const result = await run(name, input, meta.meta, handlers);
+    if (result.ok && commands[name].risk !== "read") onChanged?.(name);
+    return result;
   };
 }
 
@@ -67,6 +73,11 @@ async function run<N extends CommandName>(
       const error: ApiError = { error: err.message };
       if (err.details.length > 0) error.details = err.details;
       return { ok: false, status: 409, error };
+    }
+    if (err instanceof UserError) {
+      const error: ApiError = { error: err.message };
+      if (err.details.length > 0) error.details = err.details;
+      return { ok: false, status: err.status, error };
     }
     if (err instanceof HostOfflineError) {
       return { ok: false, status: 503, error: { error: HOST_OFFLINE_ERROR, details: [err.message] } };

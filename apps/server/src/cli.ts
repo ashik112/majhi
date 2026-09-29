@@ -3,11 +3,13 @@ import { InvalidConfigError, renderOverride } from "./cli/genOverride.ts";
 import { loadConfig } from "./config/load.ts";
 import { parseEnv, type ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
+import { generateKey } from "./secrets/store.ts";
 
 const USAGE = `Usage: majhi <command>
 
 Commands:
   gen-override     Print docker-compose.override.yml with one mount per workspace root
+  gen-key          Print a new age identity for secrets.age (make up saves it to ~/.config/majhi/secrets.key)
   doctor [--json]  Check that majhi can run here. Exits 1 when a check fails
 `;
 
@@ -16,6 +18,11 @@ async function main(argv: string[]): Promise<number> {
   if (command === undefined || command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(USAGE);
     return command === undefined ? 2 : 0;
+  }
+
+  if (command === "gen-key") {
+    process.stdout.write(`${await generateKey()}\n`);
+    return 0;
   }
 
   let env: ServerEnv;

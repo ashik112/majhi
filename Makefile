@@ -2,6 +2,8 @@ SHELL := /bin/sh
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 COMPOSE := docker compose
+SECRETS_KEY := $(or $(MAJHI_SECRETS_KEY),$(HOME)/.config/majhi/secrets.key)
+export MAJHI_SECRETS_KEY := $(SECRETS_KEY)
 
 .PHONY: up down logs host-logs doctor ci
 
@@ -10,6 +12,13 @@ up:
 	@mkdir -p "$(HOME)/.majhi" "$(HOME)/.ssh"
 	@touch "$(HOME)/.ssh/config" "$(HOME)/.ssh/known_hosts"
 	$(COMPOSE) build
+	@if [ ! -s "$(SECRETS_KEY)" ]; then \
+		echo "Creating the secrets key at $(SECRETS_KEY)"; \
+		mkdir -p "$$(dirname "$(SECRETS_KEY)")" && chmod 700 "$$(dirname "$(SECRETS_KEY)")"; \
+		( umask 077; docker run --rm --pull never majhi-server:dev node dist/cli.js gen-key > "$(SECRETS_KEY).tmp" ) \
+			&& chmod 600 "$(SECRETS_KEY).tmp" && mv "$(SECRETS_KEY).tmp" "$(SECRETS_KEY)" \
+			|| { rm -f "$(SECRETS_KEY).tmp"; exit 1; }; \
+	fi
 	@sh scripts/host.sh install
 	@$(COMPOSE) run --rm --no-deps -T server node dist/cli.js gen-override > docker-compose.override.yml.tmp \
 		&& mv docker-compose.override.yml.tmp docker-compose.override.yml \

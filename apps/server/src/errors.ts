@@ -43,3 +43,17 @@ export function exitCode(err: unknown): number | undefined {
   }
   return undefined;
 }
+
+/**
+ * A problem the caller can fix, like a missing org or a taken id. The dispatcher
+ * answers with `status` and this message as it is, not as a server failure.
+ */
+export class UserError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 404 | 409 = 400,
+    readonly details: string[] = [],
+  ) {
+    super(message);
+  }
+}

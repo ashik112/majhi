@@ -5,7 +5,7 @@ import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../env.ts";
 import { createMajhiApp } from "../server.ts";
-import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
+import { git, makeRepo, tempDir, testEnv } from "../testing/fixtures.ts";
 
 describe("HTTP API", () => {
   let dir: string;
@@ -15,14 +15,7 @@ describe("HTTP API", () => {
 
   beforeEach(async () => {
     ({ dir, cleanup } = await tempDir());
-    env = {
-      host: "127.0.0.1",
-      port: 0,
-      hostHome: dir,
-      majhiHome: join(dir, ".majhi"),
-      webDist: join(dir, "web-dist"),
-      version: "1.2.3-test",
-    };
+    env = testEnv(dir, { version: "1.2.3-test" });
     app = createMajhiApp(env);
   });
   afterEach(() => cleanup());

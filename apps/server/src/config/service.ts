@@ -1,7 +1,12 @@
 import type { CommandMeta, WorkspacesUpdate } from "@majhi/shared";
 import { ConfigHistory } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
+import { type ConfigSections, readSections } from "./sections.ts";
 import { writeWorkspaces } from "./write.ts";
+
+/** Folder of agent files, kept in the same history as majhi.yaml. */
+export const AGENTS_DIR_NAME = "agents";
+const TRACKED = [CONFIG_FILE_NAME, AGENTS_DIR_NAME];
 
 export interface ChangeRecord {
   /** Command name, the first part of the commit message. */
@@ -31,13 +36,26 @@ export class ConfigService {
     return loadConfig(this.paths);
   }
 
+  sections(): Promise<ConfigSections> {
+    return readSections(this.file);
+  }
+
   setWorkspaces(update: WorkspacesUpdate, change: ChangeRecord): Promise<LoadedConfig> {
+    return this.change(change, () => writeWorkspaces(this.file, update));
+  }
+
+  /**
+   * Runs one change: commits hand edits first, lets `write` change majhi.yaml
+   * or the agent files, commits the result with the actor, command and reason,
+   * and reloads the config. Changes run one at a time.
+   */
+  change(change: ChangeRecord, write: () => Promise<void>): Promise<LoadedConfig> {
     return this.serialize(async () => {
       await this.commitPending();
-      await writeWorkspaces(this.file, update);
+      await write();
       const reason = change.meta.reason?.trim();
       await this.history.commit({
-        files: [CONFIG_FILE_NAME],
+        files: TRACKED,
         message: `${change.command}: ${reason ? reason : change.summary}`,
         actor: change.meta.actor,
       });
@@ -54,7 +72,7 @@ export class ConfigService {
     const { initialized, changed } = await this.history.ensureRepo();
     if (initialized) {
       await this.history.commit({
-        files: [CONFIG_FILE_NAME, ...changed],
+        files: [...TRACKED, ...changed],
         message: "init: start config history",
         actor: OWNER,
       });
@@ -68,7 +86,7 @@ export class ConfigService {
       });
     }
     await this.history.commit({
-      files: [CONFIG_FILE_NAME],
+      files: TRACKED,
       message: "manual: changes made outside majhi",
       actor: OWNER,
     });

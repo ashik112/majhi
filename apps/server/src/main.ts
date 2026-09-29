@@ -1,8 +1,9 @@
+import { createServer } from "node:http";
 import { serve } from "@hono/node-server";
 import { parseEnv, type ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
 import { HostLink } from "./host/link.ts";
-import { createMajhiApp } from "./server.ts";
+import { createMajhi } from "./server.ts";
 
 const SHUTDOWN_GRACE_MS = 5_000;
 
@@ -15,11 +16,12 @@ try {
 }
 
 const hostLink = new HostLink();
-const app = createMajhiApp(env, { hostLink });
-const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
+const majhi = createMajhi(env, { hostLink });
+const server = serve({ fetch: majhi.app.fetch, hostname: env.host, port: env.port, createServer }, (info) => {
   const host = info.family === "IPv6" ? `[${info.address}]` : info.address;
   console.log(`majhi ${env.version} listening on http://${host}:${info.port}`);
 });
+majhi.attach(server);
 
 server.on("error", (err) => {
   console.error(`majhi could not start: ${errorMessage(err)}`);
@@ -30,6 +32,7 @@ function shutdown(signal: string): void {
   console.log(`majhi stopping (${signal})`);
   // The host helper's long poll would hold close() open for up to 25 seconds.
   hostLink.close();
+  majhi.close();
   // Open keep-alive connections would hold close() open. Give requests a moment, then force.
   const force = setTimeout(() => {
     if ("closeAllConnections" in server) server.closeAllConnections();

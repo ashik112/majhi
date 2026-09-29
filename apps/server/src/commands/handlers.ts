@@ -5,6 +5,7 @@ import type { ConfigService } from "../config/service.ts";
 import { isDirectory } from "../fs.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
+import type { Services } from "../services.ts";
 
 export interface CommandContext {
   command: CommandName;
@@ -26,9 +27,11 @@ export interface HandlerDeps {
   config: ConfigService;
   scanner: RepoScanner;
   hostLink: HostLink;
+  services: Services;
 }
 
-export function createHandlers({ config, scanner, hostLink }: HandlerDeps): CommandHandlers {
+export function createHandlers({ config, scanner, hostLink, services }: HandlerDeps): CommandHandlers {
+  const { orgs, accounts, agents } = services;
   return {
     "config.get": async () => (await config.load()).state,
 
@@ -76,6 +79,36 @@ export function createHandlers({ config, scanner, hostLink }: HandlerDeps): Comm
       }),
 
     "fs.suggestRoots": () => hostLink.call("suggestRoots", {}),
+
+    "tools.list": async () => services.runtime.toolInfos(),
+
+    "orgs.list": () => orgs.list(),
+    "orgs.create": (input, ctx) => orgs.create(input, ctx.command, ctx.meta),
+
+    "accounts.list": () => accounts.list(),
+    "accounts.suggestId": async (input) => ({ id: await accounts.suggestId(input.tool, input.org) }),
+    "accounts.create": (input, ctx) => accounts.create(input, ctx.command, ctx.meta),
+    "accounts.remove": async (input, ctx) => {
+      await accounts.remove(input.id, ctx.command, ctx.meta);
+      return { removed: input.id };
+    },
+    "accounts.login.start": (input) => services.startLogin(input.id),
+    "accounts.health": (input) => accounts.health(input.id),
+    "accounts.models": (input) => accounts.models(input.id, input.refresh === true),
+
+    "agents.list": () => agents.list(),
+    "agents.create": (input, ctx) => agents.create(input.id, input, ctx.command, ctx.meta),
+    "agents.update": (input, ctx) => agents.update(input.id, input, ctx.command, ctx.meta),
+    "agents.duplicate": (input, ctx) => agents.duplicate(input.id, input.newId, ctx.command, ctx.meta),
+    "agents.remove": async (input, ctx) => {
+      await agents.remove(input.id, ctx.command, ctx.meta);
+      return { removed: input.id };
+    },
+    "agents.health": (input) => agents.health(input.id),
+    "boss.set": async (input, ctx) => {
+      await agents.setBoss(input.id, ctx.command, ctx.meta);
+      return { boss: input.id };
+    },
   };
 }
 

@@ -20,6 +20,7 @@ export const GITIGNORE = [
   "*.db",
   "*.db-*",
   "cache/",
+  "secrets.age",
   "host.token",
   "bin/",
   "logs/",

@@ -62,6 +62,10 @@ describe("ConfigService.setWorkspaces", () => {
     });
   });
 
+  it("keeps the encrypted secrets file out of the history", () => {
+    expect(GITIGNORE).toContain("secrets.age");
+  });
+
   it("starts the history on first write, with a .gitignore for secrets and databases", async () => {
     await service.setWorkspaces({ workspaces: ["~/Work"], tasks_dir: "~/tasks" }, change());
 

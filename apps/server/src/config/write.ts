@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { WorkspacesUpdate } from "@majhi/shared";
+import type { AccountConfig, OrgConfig, WorkspacesUpdate } from "@majhi/shared";
 import { type Document, isCollection, isMap, isNode, isScalar, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 
@@ -15,11 +15,11 @@ export class ConfigConflictError extends Error {
 }
 
 /**
- * Sets `workspaces` and `tasks_dir` in majhi.yaml and leaves every other key,
- * and the comments the yaml library can keep, as they were. An omitted
- * `tasks_dir` is removed, so the default applies.
+ * Reads majhi.yaml, lets `edit` change the document, and writes it back
+ * atomically. Keys and comments the edit does not touch stay as they were.
+ * A missing file starts empty.
  */
-export async function writeWorkspaces(file: string, update: WorkspacesUpdate): Promise<void> {
+async function editConfig(file: string, edit: (doc: Document) => void): Promise<void> {
   const text = await readFile(file, "utf8").catch((err: unknown) => {
     if (errorCode(err) === "ENOENT") return "";
     throw err;
@@ -34,12 +34,45 @@ export async function writeWorkspaces(file: string, update: WorkspacesUpdate): P
   if (doc.contents !== null && !isMap(doc.contents)) {
     throw new ConfigConflictError("majhi.yaml must be a map of settings at the top level.");
   }
-
-  setKeepingStyle(doc, "workspaces", update.workspaces);
-  if (update.tasks_dir === undefined) doc.delete("tasks_dir");
-  else setKeepingStyle(doc, "tasks_dir", update.tasks_dir);
-
+  edit(doc);
   await writeAtomically(file, doc.toString());
+}
+
+/**
+ * Sets `workspaces` and `tasks_dir` in majhi.yaml and leaves every other key,
+ * and the comments the yaml library can keep, as they were. An omitted
+ * `tasks_dir` is removed, so the default applies.
+ */
+export function writeWorkspaces(file: string, update: WorkspacesUpdate): Promise<void> {
+  return editConfig(file, (doc) => {
+    setKeepingStyle(doc, "workspaces", update.workspaces);
+    if (update.tasks_dir === undefined) doc.delete("tasks_dir");
+    else setKeepingStyle(doc, "tasks_dir", update.tasks_dir);
+  });
+}
+
+/** Adds or replaces `orgs.<id>`. */
+export function writeOrg(file: string, id: string, org: OrgConfig): Promise<void> {
+  return editConfig(file, (doc) => doc.setIn(["orgs", id], doc.createNode(org)));
+}
+
+/** Adds or replaces `accounts.<id>`. */
+export function writeAccount(file: string, id: string, account: AccountConfig): Promise<void> {
+  return editConfig(file, (doc) => doc.setIn(["accounts", id], doc.createNode(account)));
+}
+
+/** Removes `accounts.<id>`, and the `accounts` key when it is left empty. */
+export function removeAccountEntry(file: string, id: string): Promise<void> {
+  return editConfig(file, (doc) => {
+    doc.deleteIn(["accounts", id]);
+    const accounts: unknown = doc.get("accounts", true);
+    if (isMap(accounts) && accounts.items.length === 0) doc.delete("accounts");
+  });
+}
+
+/** Sets `boss`. */
+export function writeBoss(file: string, id: string): Promise<void> {
+  return editConfig(file, (doc) => doc.set("boss", id));
 }
 
 /** Replaces a top-level value, keeping the old node's comments and flow style. Skips equal values. */

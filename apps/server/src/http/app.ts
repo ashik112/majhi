@@ -68,7 +68,7 @@ export function createApp(deps: AppDeps): Hono {
   return app;
 }
 
-function isLoopbackOrigin(origin: string): boolean {
+export function isLoopbackOrigin(origin: string): boolean {
   try {
     return LOOPBACK_HOSTS.includes(new URL(origin).hostname);
   } catch {
