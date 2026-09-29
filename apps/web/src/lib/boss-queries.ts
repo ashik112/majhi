@@ -17,6 +17,18 @@ export function useBossChat(enabled = true) {
   });
 }
 
+/** Archives the current boss chat and starts a new conversation. */
+export function useNewBossChat() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, void>({
+    mutationFn: () => cmd("boss.chat", { fresh: true }),
+    onSuccess: (task) => {
+      client.setQueryData([...queryKeys.agents, "boss-chat"], task);
+      void client.invalidateQueries({ queryKey: queryKeys.tasks });
+    },
+  });
+}
+
 export function useSettings() {
   return useQuery<Settings, ApiRequestError>({
     queryKey: queryKeys.settings,

@@ -1,3 +1,4 @@
+import { isBossChat } from "../admin/boss.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
@@ -593,6 +594,8 @@ export class TaskService {
   async agentsIdle(id: string): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "running") return;
+    // The boss chat is an ongoing conversation, never a piece of work to review.
+    if (isBossChat(task)) return;
     if (this.deps.runs.working(id).length > 0) return;
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
     this.note(task.id, "Ready for your review. Reply to continue, or mark it done.");

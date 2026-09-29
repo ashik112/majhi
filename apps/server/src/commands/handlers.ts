@@ -267,7 +267,8 @@ export function createHandlers({
       );
       return config.settings();
     },
-    "boss.chat": () => openBossChat({ config, store: services.store, tasks: services.tasks }),
+    "boss.chat": (input) =>
+      openBossChat({ config, store: services.store, tasks: services.tasks }, input.fresh === true),
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),

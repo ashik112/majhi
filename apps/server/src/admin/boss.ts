@@ -30,7 +30,7 @@ export interface BossChatDeps {
 }
 
 /** The boss's chat task: the open one for the current boss, or a new one. */
-export async function openBossChat({ config, store, tasks }: BossChatDeps): Promise<Task> {
+export async function openBossChat({ config, store, tasks }: BossChatDeps, fresh = false): Promise<Task> {
   const { boss } = await config.sections();
   if (boss === undefined) {
     throw new UserError("There is no boss yet. Create a root agent and make it the boss first.", 409);
@@ -38,7 +38,11 @@ export async function openBossChat({ config, store, tasks }: BossChatDeps): Prom
   for (const summary of store.tasks.list(false)) {
     if (summary.kind !== "chat" || summary.org !== undefined || summary.team[0] !== boss) continue;
     const task = tasks.get(summary.id);
-    if (isBossChat(task)) return task;
+    if (!isBossChat(task)) continue;
+    if (!fresh) return task;
+    // A new conversation: the current one is archived (done) and stays readable under Past chats.
+    await tasks.close(task.id);
+    break;
   }
   return tasks.create({ text: BOSS_CHAT_BRIEF, kind: "chat", agent: boss, attachments: [], start: false });
 }

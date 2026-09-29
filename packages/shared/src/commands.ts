@@ -589,8 +589,8 @@ export const commands = {
   // The boss (5.16) ---------------------------------------------------------
   "boss.chat": {
     risk: "change",
-    summary: "Open the boss chat: a chat task with the boss, created on first use",
-    input: Empty,
+    summary: "Open the boss chat, created on first use. With fresh, archive it and start a new conversation",
+    input: z.object({ fresh: z.boolean().optional() }),
     output: TaskSchema,
   },
 
