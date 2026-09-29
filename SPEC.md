@@ -574,14 +574,24 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - **Done when:** a fresh install walks through onboarding to a created boss agent whose health check passes; the owner can add two Claude accounts for one org and three agents on them from the UI, add one API-key account, and each agent's health check passes.
 
 ### Phase 2: One agent, one repo, end to end
-- ACP client wrapper, spawning with a clean environment, streaming to the room.
-- Task box with live parsing, task creation, worktree creation, TASK.md generation.
-- Task links from 5.4a in the data model from the start: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
-- Room UI with streaming messages, permission prompts, attachments (images, docs, links).
+
+Delivered in two parts, each usable and reviewed on its own.
+
+#### Phase 2a: Working with one agent
+- Projects: register repos from the repos screen with an org and aliases (`projects.*` commands). Task keys per org (`GLX-420`), `LOCAL-n` for tasks without an org.
+- Task store in SQLite (`majhi.db`, Drizzle over better-sqlite3): tasks, task repos, task links, room items, runs.
+- Task box with live parsing, task creation, worktree creation, TASK.md generation. Task links from 5.4a are in the data model from the start (UI in 2b).
+- ACP run engine: spawning with a clean environment, model and effort applied, streaming to the room, resume with `session/load`.
+- Room UI with streaming messages, plan, tool calls, diffs, "now doing" status, permission prompts, attachments (images, files, links).
+- Live control from 5.15: Esc to stop a turn, Stop all, queue or interrupt with a new message, inline permission prompts, slash commands, `@file` mentions. Task kind `chat`.
+- **Done when:** "add a health endpoint to api from develop" produces a working branch in a worktree, with the whole run visible in the room, stoppable with Esc, and a `chat` task works like opening the agent's CLI.
+
+#### Phase 2b: The boss and staying cheap
 - Context budget from 5.13: usage meter per agent, native compaction at the threshold, handoff to a fresh session, `max_turns` rotation.
-- Live control from 5.15: plan and tool calls streamed in the room, "now doing" status, Esc to stop a turn, Stop all, queue or interrupt with a new message, inline permission prompts, slash commands, `@file` mentions. Task kind `chat`.
-- The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents). Agents on demand and concurrency limits (5.17).
-- **Done when:** "add a health endpoint to api from develop" produces a working branch in a worktree, with the whole run visible in the room, and a fake agent pushed past 80% context gets compacted with the event shown in the room.
+- The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents).
+- Task links UI from 5.4a: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
+- Agents on demand and concurrency limits (5.17). The two-agents-on-one-account token refresh check from 5.2.
+- **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room, and the boss creates an org and an agent after the owner approves.
 
 ### Phase 3: Teams and rooms
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.
