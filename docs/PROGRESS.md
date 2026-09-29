@@ -1,8 +1,50 @@
 # Progress
 
-## Phase 3: Teams, rooms and decisions (in progress)
+## Phase 3: Teams, rooms and decisions (built, waiting for owner review)
 
-Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c merged). Lead orchestration (PRV-32), background processes (PRV-33) and more agents per task from the task box (PRV-45) are their own tasks. Task ids that open a drawer (PRV-34) are done.
+Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c merged). Lead orchestration (PRV-32), background processes (PRV-33) and more agents per task from the task box (PRV-45) are their own tasks. Task ids that open a drawer (PRV-34) are done. The plan below is kept for reference; the result comes first.
+
+### Done when, status
+
+- [x] Lead, builder and reviewer on different tools complete a task together, and the reviewer catching an issue causes a fix round. `apps/server/src/rooms/team.test.ts`: the lead (Codex) hands to the builder (Claude), who writes in the worktree and hands to the reviewer (a second Claude account), who asks for a test; the builder adds it, the reviewer approves, and the task goes to review with the work in checkpoints.
+- [x] A new task gets its default team picked by the decision provider, with the decision recorded (same file: the pick, the room line, and the decision log entry with the task).
+
+### What works
+
+- **@mention routing (5.3).** An agent's last message of a turn is read for @mentions, and each mentioned teammate is woken with a handoff prompt: the message, a TASK.md pointer, recent room lines and the diff stat. The room shows "@acme-lead handed to @acme-builder". `@owner` hands the task back. A mentioned agent from outside the team joins when it may work in the org. TASK.md has a Team section: who is in it, the mode, and how to hand work on.
+- **Owner messages** go to the mentioned agents (several at once is fine), else to the lead. The owner's message resets the loop guard.
+- **Three modes**, picked in "In this room" or with `tasks.update mode`:
+  - Lead delegates: mentions route. When the reviewer approves and wakes nobody, the room says so and the task goes to review.
+  - Pipeline: lead, builders, reviewer, tester, each once, in order.
+  - Build and review loop: builder and reviewer alternate until APPROVED, at most 5 rounds, then the room pauses and asks.
+- **Loop guard.** After 12 agent-to-agent turns without the owner (org override `rooms.max_agent_turns`), the task pauses with reason owner and says why.
+- **Worktree locks.** An agent with `edit` holds its worktrees' locks for its turn. Another editing agent waits, showing "Waiting for @x to finish in api". Builders on different repos (`team.set repos`) work in parallel.
+- **Team editing in the room.** Add agent, and a menu per agent: make lead, model and effort for this task, swap, remove. Commands: `team.add`, `team.remove`, `team.swap`, `team.set`. A model or effort change applies to a live session at once.
+- **`majhi-room`** (`read_recent`, `post`, `mention`) for team members, and **`majhi-tasks`** (`list`, `get`, `create`, `split`, `update`, `link`) for leads and root agents. `majhi-tasks` goes through the boss's approval policy, with cards in the room, and keeps an org agent to its org. New command `tasks.split` makes children in order, each able to wait for earlier ones.
+- **Dependencies.** Waiting tasks start on their own (2b). A `ready` dependency now stacks the waiting task's branch on the dependency's working branch, and majhi rebases it after every checkpoint of the dependency. Conflicts are aborted and named in the room.
+- **Decisions in teams.** The default team comes from the org's `team` when set. Otherwise the decision provider picks one of: one agent; builder and reviewer; lead, builder and reviewer. The pick is recorded, and the rules pick one agent when the provider is not sure. The decision provider also reads unclear reviewer verdicts in the review loop, and flags a lead-mode message that needs the owner while others work.
+- **Laya in Docker** for Linux and Windows. It is the `laya` compose service (`laya-serve` 0.3.22, PyTorch CPU), which `make up` builds everywhere but Apple silicon Macs. It starts on the first question and stops after 10 idle minutes. The provider tries native Laya first.
+- **Settings.** Hub setup, Settings has a Teams group (agent turns without you, review rounds). `orgs.update` takes `team` and `rooms`.
+- **The boss** has every new command through `majhi-admin` (`team.*`, `tasks.split`, `tasks.update mode`, `settings.set rooms`, `orgs.update team`).
+
+### How to try it
+
+1. Make three agents in one org, for example a Lead, a Builder and a Reviewer, on Claude and Codex accounts.
+2. New task: "add a health endpoint to api". With several teams possible, the room says which team the decision provider picked. Or name the team: "@acme-lead @acme-builder @acme-reviewer add a health endpoint to api".
+3. Watch the handoff lines. Change the mode, add or swap an agent, or set a model from the menu next to each agent.
+4. Ask the lead to split the work: it proposes `tasks.split` with a card to approve.
+5. On Linux: `make up` builds Laya's image; Hub setup, Decisions shows "Laya runs in Docker".
+
+### Left and known issues
+
+- **Not run with real CLIs or Docker here.** The flows run against fake sessions. The Laya image was not built: `laya-serve`'s request and answer shapes were read from its 0.3.22 source. The owner's review step: `make up` on Linux (or `LAYA=docker` on the Mac), then "Ask the decision model" in Hub setup.
+- The first question to Laya in Docker downloads the English checkpoint (about 850 MB). It can pass the 3-minute limit on a slow line; that question then falls back to the next provider.
+- A lock covers a whole turn, so two editing agents on one repo take turns even when one only reads. Reviewers should not have `edit`.
+- An agent added to the team mid-session gets `majhi-room` from its next session.
+- Changing the mode starts the new mode's turn order from its first step.
+- The Orgs form does not show the default team or the loop guard yet; the boss and `orgs.update` set them.
+- "Needs you" lines use the decision provider. With the ACP stand-in in the chain, each one costs a small prompt.
+- No new Playwright spec: the done-when runs as integration tests. `sh scripts/ci.sh` and e2e were not run from this task.
 
 ### Goal
 
