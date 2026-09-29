@@ -1,8 +1,39 @@
 # Progress
 
-## Phase 2c: Tokens, cost and runner isolation (in progress)
+## Phase 2c: Tokens, cost and runner isolation (built, waiting for owner review)
 
-Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phase 2b merged). Desktop notifications and the two backups are their own tasks (PRV-29, PRV-30, PRV-31) and are not part of this branch.
+Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phase 2b merged). Desktop notifications and the two backups are their own tasks (PRV-29, PRV-30, PRV-31) and are not part of this branch. The plan below is kept for reference; the result comes first.
+
+### What works
+
+- **Every turn is recorded.** Each prompt an agent finishes writes one row to `turns` (`majhi.db`, migration 40): input, output, reasoning, cache read and cache write tokens, cost, model, task, agent, account, org, project, run and time. majhi's own prompts (`/compact`, handoff notes) and the decision stand-in's answers count too. What each CLI reports, and what is estimated, is in `docs/DECISIONS.md`.
+- **Cost.** A cost the agent reports is used as is: real on an API-key account, the equivalent API price on a sign-in account (marked estimated). Otherwise majhi prices the tokens from the price table (marked estimated). A turn with neither is counted as unpriced, never guessed. The table has Claude's prices built in (checked 2026-09-25); the owner adds or changes rows on the page (`prices` in `majhi.yaml`, with history and undo).
+- **Health and usage, "Tokens and cost".** Today, this week and this month, filters by org, project, agent, account and model (the sidebar org preselects it), a 30-day chart split into real and estimated cost, this month's top tasks, the unpriced count with a link to the price table, and the price table itself. API-key accounts show today's and this week's cost in the accounts table. The task header shows the task's total; org cards show the month's cost.
+- **Commands.** `usage.summary`, `usage.breakdown` (by org, project, agent, account, model, task or day, for a named range or from/to days), `usage.turns` (the rows themselves), `usage.prices`, `usage.setPrice`. The boss has them through `majhi-admin`; the reads run without a confirm card, so "what did Acme cost this week?" is one tool call.
+- **Runner isolation.** With `make up`, agents no longer run in majhi's container:
+  - Each session starts its own container from the new `majhi-runner` image (pnpm, build tools, Playwright's Chromium).
+  - A container mounts only the task folder, each task repo's `.git` (`config` and `hooks` read-only) and the account's own home.
+  - A guard refuses anything else: `~/.majhi` and other accounts' homes, the secrets key, the Docker socket, system folders, symlinks included.
+  - Secrets reach a run only as environment variables, passed by name.
+  - Runners are on their own network, where majhi answers only `/mcp`.
+  - Health and usage has an "Agent runner" check that starts a throwaway runner the same way and proves it cannot see `~/.majhi`, the secrets key or another account.
+  - The server image no longer carries the dev toolchain.
+
+### How to try it
+
+1. `make up` (builds both images; the host helper's Update does the same from now on). Health and usage should show "Agent runner: Agent runs are isolated".
+2. Run a task or two in two orgs. Health and usage, Tokens and cost: pick an org, a project, an agent. The task header shows the task's total.
+3. Ask the boss (Cmd J): "What did Acme cost this week?"
+4. On a Codex account, set a price for its model in the price table (Codex reports no cost).
+
+### Left and known issues
+
+- **Not run with real Docker.** Docker is not available where this was built. The Docker arguments, the mount guard and the network guard are unit tested, and the spawner is tested against a stand-in `docker`. The owner's review step: `make up`, then check that "Agent runner" passes and that a real task runs, builds and commits in its runner.
+- The first `make up` builds the runner image with Chromium: expect several minutes and about 1.5 GB.
+- Codex reports only the last model call of a turn, so its token counts are low for turns with several calls. Claude's are complete.
+- Reported cost follows the adapter process. A resumed session's first turn may include cost from before the resume if the CLI counts it.
+- A new price applies to new turns only; the unpriced count stays until turns are priced.
+- Sign-in, health probes and usage reads still start the CLIs in the server container (they touch only the account home).
 
 ### Goal
 
