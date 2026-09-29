@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import {
   type Client,
@@ -11,7 +10,6 @@ import {
 } from "@agentclientprotocol/sdk";
 import { AcpAuthRequired, extractOptions, isAuthRequired, type SessionOptions } from "./acp-session.ts";
 import { buildEnv } from "./env.ts";
-import { killTree } from "./exec.ts";
 import { prepareHome } from "./home.ts";
 import { type DebugLog, MessageRuns, normalizeUpdate } from "./normalize.ts";
 import { buildAsk } from "./permission.ts";
@@ -23,6 +21,7 @@ import type {
   SessionEvent,
   SessionStart,
 } from "./session.ts";
+import { localSpawner } from "./spawn.ts";
 import { getTool } from "./tools/index.ts";
 import { TurnMeter } from "./turn-usage.ts";
 
@@ -75,17 +74,20 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
  * and usage, which are kept as current state.
  */
 export async function openSession(start: SessionStart, log: DebugLog = () => {}): Promise<AgentSession> {
-  const { account, options, cwd } = start;
+  const { account, options } = start;
   await prepareHome(account);
   const env = buildEnv(account, options.base, start.git);
   const adapter = options.adapters?.[account.tool] ?? getTool(account.tool).adapter;
 
-  const child = spawn(adapter.command, adapter.args, {
+  const spawned = await (options.spawner ?? localSpawner)({
+    command: adapter,
     env,
-    cwd,
-    detached: true,
-    stdio: ["pipe", "pipe", "pipe"],
+    cwd: start.cwd,
+    account,
+    ...(start.mounts === undefined ? {} : { mounts: start.mounts }),
+    ...(start.scratch === true ? { scratch: true } : {}),
   });
+  const { child, cwd } = spawned;
   let stderrTail = "";
   child.stderr.on("data", (d: Buffer) => {
     const line = d.toString().trim().split("\n").pop();
@@ -194,7 +196,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   let conn: ClientSideConnection;
   const fail = async (err: unknown): Promise<never> => {
     closing = true;
-    killTree(child);
+    spawned.kill();
     await exitDone;
     if (isAuthRequired(err)) throw new AcpAuthRequired("Sign-in required");
     throw err instanceof Error ? err : new Error(String(err));
@@ -354,7 +356,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
     async close() {
       closing = true;
       turn?.abort.abort();
-      killTree(child);
+      spawned.kill();
       await exitDone;
       listeners.clear();
     },

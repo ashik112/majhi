@@ -7,6 +7,7 @@
  * stable; implementation lives in the modules it re-exports.
  */
 import type { AccountModels, HealthCheck, ToolId, ToolInfo } from "@majhi/shared";
+import type { Spawner } from "./spawn.ts";
 
 /** A command to spawn: never a shell string. */
 export interface Command {
@@ -43,6 +44,12 @@ export interface RuntimeOptions {
   usage?: Partial<Record<ToolId, Command>>;
   /** Per-step timeout for probes. Default 20 s. */
   timeoutMs?: number;
+  /**
+   * Where agent sessions run. Default: next to majhi. The server sets `dockerSpawner` when
+   * MAJHI_RUNNER=container, so each session runs in its own runner container. Probes, logins and
+   * usage reads stay next to majhi: they touch only the account's home.
+   */
+  spawner?: Spawner;
 }
 
 /** One account as the runtime needs it. */
@@ -83,6 +90,14 @@ export { prepareHome } from "./home.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";
 export {
+  dockerRunArgs,
+  dockerSpawner,
+  MountRefused,
+  type RunnerConfig,
+  removeStaleRunners,
+  runMounts,
+} from "./runner/docker.ts";
+export {
   type AgentSession,
   type McpServerSpec,
   type MediaBlock,
@@ -92,6 +107,7 @@ export {
   type SessionStart,
   startSession,
 } from "./session.ts";
+export { localSpawner, type RunMount, type Spawned, type Spawner, type SpawnRequest } from "./spawn.ts";
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";

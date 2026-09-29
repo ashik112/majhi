@@ -4,6 +4,7 @@ import type { GitIdentity } from "./env.ts";
 import type { AccountRuntime, RuntimeOptions } from "./index.ts";
 import type { DebugLog } from "./normalize.ts";
 import { openSession } from "./session-impl.ts";
+import type { RunMount } from "./spawn.ts";
 import type { TurnUsage } from "./turn-usage.ts";
 
 /**
@@ -23,6 +24,10 @@ export interface SessionStart {
   resume?: string;
   model?: string;
   effort?: string;
+  /** More paths the run may use besides the task folder and the account home, like each task repo's `.git`. */
+  mounts?: RunMount[];
+  /** `cwd` is a throwaway folder (the decision stand-in): a runner container uses its own. */
+  scratch?: boolean;
   /** How long `cancel()` waits for the turn to end. Default 10 s. */
   cancelTimeoutMs?: number;
 }
