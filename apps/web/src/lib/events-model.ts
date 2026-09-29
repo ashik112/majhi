@@ -12,11 +12,22 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.accounts, queryKeys.accountModels];
     case "agents":
       return [queryKeys.agents];
+    case "projects":
+      return [queryKeys.projects];
+    case "tasks":
+      return [queryKeys.tasks];
   }
 }
 
 /** Every topic, for a refetch after the feed was down and events may have been missed. */
-export const ALL_TOPICS: readonly EventTopic[] = ["config", "orgs", "accounts", "agents"];
+export const ALL_TOPICS: readonly EventTopic[] = [
+  "config",
+  "orgs",
+  "accounts",
+  "agents",
+  "projects",
+  "tasks",
+];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */
 export function parseServerEvent(raw: unknown): ServerEvent | null {

@@ -6,6 +6,8 @@ describe("topicQueryKeys", () => {
     expect(topicQueryKeys("agents")).toEqual([["agents"]]);
     expect(topicQueryKeys("orgs")).toEqual([["orgs"]]);
     expect(topicQueryKeys("config")).toEqual([["config"]]);
+    expect(topicQueryKeys("projects")).toEqual([["projects"]]);
+    expect(topicQueryKeys("tasks")).toEqual([["tasks"]]);
     expect(topicQueryKeys("accounts")).toEqual([["accounts"], ["account-models"]]);
   });
 });

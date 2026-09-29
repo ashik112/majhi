@@ -35,7 +35,7 @@ function TopBar() {
 
   return (
     <header className="flex h-[52px] shrink-0 items-center gap-4 border-b border-line bg-panel px-4">
-      <Link to="/" className="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="majhi, go to repos">
+      <Link to="/" className="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="majhi, go to tasks">
         <span
           aria-hidden="true"
           className="flex size-[26px] items-center justify-center rounded-[7px] bg-amber font-mono text-xs font-semibold text-amber-ink"
@@ -59,6 +59,11 @@ function TopBar() {
         </Link>
       )}
       <div className="ml-auto flex items-center gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/repos" activeProps={{ "aria-current": "page" }}>
+            Repos
+          </Link>
+        </Button>
         <Button asChild variant="secondary" size="sm">
           <Link to="/studio/$tab" params={{ tab: "agents" }} search={{}} title={`Open Studio (${MOD_KEY} .)`}>
             Studio

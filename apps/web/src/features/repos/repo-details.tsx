@@ -1,4 +1,4 @@
-import { collapseHome, type Repo } from "@majhi/shared";
+import { collapseHome, type ProjectView, type Repo } from "@majhi/shared";
 import { Copy, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
 import { HostGlyph } from "@/components/host-glyph";
@@ -13,10 +13,12 @@ export function RepoDetails({
   repo,
   home,
   onCopyPath,
+  project,
 }: {
   repo: Repo | undefined;
   home: string;
   onCopyPath: () => void;
+  project?: ProjectView | undefined;
 }) {
   const copy = useCopy();
   return (
@@ -84,7 +86,16 @@ export function RepoDetails({
             </Field>
             <Field label="Project">
               <span className="text-sm text-fg-soft">
-                {repo.registered ? "Registered in majhi.yaml" : "Not registered in majhi.yaml"}
+                {project ? (
+                  <>
+                    <span className="font-mono">{project.id}</span> in {project.org}
+                    {project.aliases.length > 0 && `, also called ${project.aliases.join(", ")}`}
+                  </>
+                ) : repo.registered ? (
+                  "Registered in majhi.yaml"
+                ) : (
+                  "Not registered. Register it to use it in tasks."
+                )}
               </span>
             </Field>
           </dl>

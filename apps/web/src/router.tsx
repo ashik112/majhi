@@ -1,10 +1,18 @@
-import { createRootRoute, createRoute, createRouter, Link, redirect } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Link,
+  redirect,
+  useParams,
+} from "@tanstack/react-router";
 import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import type { AgentsSearch } from "@/features/agents/agents-tab";
 import { HomeRoute } from "@/features/home/home-route";
+import { ReposRoute } from "@/features/repos/repos-route";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
 import { searchString } from "@/features/studio/model";
 import { StudioRoute } from "@/features/studio/studio-route";
@@ -15,7 +23,7 @@ const rootRoute = createRootRoute({
     <Problem icon={<MapPinOff />} title="Nothing here" body="This address does not match any page in majhi.">
       <div>
         <Button asChild variant="secondary">
-          <Link to="/">Go to repos</Link>
+          <Link to="/">Go to tasks</Link>
         </Button>
       </div>
     </Problem>
@@ -23,6 +31,15 @@ const rootRoute = createRootRoute({
 });
 
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomeRoute });
+
+function TaskRoute() {
+  const { taskId } = useParams({ from: "/t/$taskId" });
+  return <HomeRoute taskId={taskId} />;
+}
+
+const taskRoute = createRoute({ getParentRoute: () => rootRoute, path: "/t/$taskId", component: TaskRoute });
+
+const reposRoute = createRoute({ getParentRoute: () => rootRoute, path: "/repos", component: ReposRoute });
 
 const editRootsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -50,7 +67,14 @@ const studioIndexRoute = createRoute({
 });
 
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([homeRoute, editRootsRoute, studioRoute, studioIndexRoute]),
+  routeTree: rootRoute.addChildren([
+    homeRoute,
+    taskRoute,
+    reposRoute,
+    editRootsRoute,
+    studioRoute,
+    studioIndexRoute,
+  ]),
   defaultPreload: false,
 });
 

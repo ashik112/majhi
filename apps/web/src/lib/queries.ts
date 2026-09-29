@@ -31,6 +31,8 @@ export const queryKeys = {
   accounts: ["accounts"],
   accountModels: ["account-models"],
   agents: ["agents"],
+  projects: ["projects"],
+  tasks: ["tasks"],
 } as const;
 
 export function useConfig() {

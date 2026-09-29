@@ -1,5 +1,7 @@
 import {
   ApiErrorSchema,
+  type Attachment,
+  AttachmentSchema,
   COMMAND_META_HEADER,
   type CommandInput,
   type CommandMetaSchema,
@@ -72,6 +74,14 @@ export async function getHealth(signal?: AbortSignal): Promise<Health> {
     signal: signal ?? null,
   });
   return parseWith("health", HealthSchema, body);
+}
+
+/** `POST /api/uploads`: stores one file for a task being written and answers with its attachment. */
+export async function uploadFile(file: File): Promise<Attachment> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const body = await request("uploads", "/api/uploads", { method: "POST", body: form });
+  return parseWith("uploads", AttachmentSchema, body);
 }
 
 async function request(target: string, url: string, init: RequestInit): Promise<unknown> {

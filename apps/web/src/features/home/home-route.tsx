@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { ReposScreen } from "@/features/repos/repos-screen";
-import { ReposSkeleton } from "@/features/repos/repos-skeleton";
+import { TasksScreen } from "@/features/tasks/tasks-screen";
 import { useConfig } from "@/lib/queries";
 import { useAccounts, useAgents } from "@/lib/studio-queries";
 import { firstIncompleteStep, type SetupStepId } from "@/onboarding/model";
@@ -8,10 +7,11 @@ import { OnboardingFlow } from "@/onboarding/onboarding-flow";
 import { setupSkipped, skipSetup } from "@/onboarding/skip";
 import { onboardingSteps } from "@/onboarding/steps";
 import { ConfigError } from "./config-error";
+import { HomeLoading } from "./home-loading";
 import { ServerError } from "./server-error";
 
-/** `/` picks the screen from the config state: onboarding on first run, a broken config, or the repos. */
-export function HomeRoute() {
+/** `/` and `/t/<id>` pick the screen from the config state: onboarding on first run, a broken config, or the tasks. */
+export function HomeRoute({ taskId }: { taskId?: string | undefined }) {
   const config = useConfig();
   const state = config.data;
   // Onboarding starts on first run and stays until its last step finishes, although the config
@@ -34,7 +34,7 @@ export function HomeRoute() {
         />
       );
     }
-    return <ReposSkeleton />;
+    return <HomeLoading />;
   }
 
   if (state.status === "first-run" || onboarding) {
@@ -72,7 +72,7 @@ export function HomeRoute() {
 
   if (!skipped) {
     // Wait for the server state, so a reload resumes at the right step instead of flashing the repos.
-    if (accounts.isPending || agents.isPending) return <ReposSkeleton />;
+    if (accounts.isPending || agents.isPending) return <HomeLoading />;
     if (accounts.data && agents.data) {
       const next = firstIncompleteStep({ noRoots: false, accounts: accounts.data, agents: agents.data });
       if (next) {
@@ -83,5 +83,5 @@ export function HomeRoute() {
     }
   }
 
-  return <ReposScreen home={state.home} />;
+  return <TasksScreen taskId={taskId} />;
 }

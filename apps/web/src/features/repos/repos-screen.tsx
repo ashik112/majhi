@@ -1,4 +1,11 @@
-import { collapseHome, RESTART_COMMAND, type ReposResponse, type RootScan } from "@majhi/shared";
+import {
+  collapseHome,
+  type ProjectView,
+  RESTART_COMMAND,
+  type Repo,
+  type ReposResponse,
+  type RootScan,
+} from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -27,6 +34,7 @@ import { CenteredPage } from "@/components/centered-page";
 import { InlineCommand } from "@/components/command-line";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
@@ -35,9 +43,12 @@ import { RestartingCard } from "@/features/roots/restarting-card";
 import { cn } from "@/lib/cn";
 import { formatAgo, formatDuration, plural } from "@/lib/format";
 import { reloadAfterRestart, useHostStatus, useRemount, useRepos, useRescan } from "@/lib/queries";
+import { useProjects, useRemoveProject } from "@/lib/task-queries";
 import { useCopy } from "@/lib/use-copy";
 import { useNow } from "@/lib/use-now";
 import { filterRoots, searchTerms } from "./filter";
+import { projectForPath } from "./project-model";
+import { RegisterDialog } from "./register-dialog";
 import { RepoDetails } from "./repo-details";
 import { RepoRow, rowId } from "./repo-row";
 import { ReposSkeleton } from "./repos-skeleton";
@@ -109,6 +120,18 @@ function ReposView({ data, home, mount }: { data: ReposResponse; home: string; m
   const copy = useCopy();
   const toast = useToast();
   const now = useNow(30_000);
+  const projects = useProjects().data;
+  const removeProject = useRemoveProject();
+  const [dialog, setDialog] = useState<{ repo: Repo; project?: ProjectView } | null>(null);
+  const [removing, setRemoving] = useState<ProjectView | null>(null);
+  const [removeError, setRemoveError] = useState<string | undefined>();
+  const projectOf = useCallback((path: string) => projectForPath(projects ?? [], path), [projects]);
+  const onRegister = useCallback((repo: Repo) => setDialog({ repo }), []);
+  const onEdit = useCallback((repo: Repo, project: ProjectView) => setDialog({ repo, project }), []);
+  const onRemove = useCallback((project: ProjectView) => {
+    setRemoveError(undefined);
+    setRemoving(project);
+  }, []);
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -336,6 +359,10 @@ function ReposView({ data, home, mount }: { data: ReposResponse; home: string; m
                     terms={terms}
                     onSelect={onSelect}
                     onOpen={copyPath}
+                    project={projectOf(repo.path)}
+                    onRegister={onRegister}
+                    onEdit={onEdit}
+                    onRemove={onRemove}
                   />
                 ))}
               </RootGroup>
@@ -343,8 +370,35 @@ function ReposView({ data, home, mount }: { data: ReposResponse; home: string; m
           )}
         </m.div>
 
-        <RepoDetails repo={selected} home={home} onCopyPath={() => selected && copyPath(selected.path)} />
+        <RepoDetails
+          repo={selected}
+          home={home}
+          onCopyPath={() => selected && copyPath(selected.path)}
+          project={selected ? projectOf(selected.path) : undefined}
+        />
       </div>
+      {dialog && (
+        <RegisterDialog repo={dialog.repo} project={dialog.project} onClose={() => setDialog(null)} />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove project ${removing.id}`}
+          body="majhi forgets this project and its aliases. The repo on disk is not touched. Existing tasks keep their worktrees."
+          confirmLabel="Remove project"
+          busy={removeProject.isPending}
+          error={removeError}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() =>
+            removeProject.mutate(removing.id, {
+              onSuccess: () => {
+                toast("Project removed", { detail: removing.id });
+                setRemoving(null);
+              },
+              onError: (error) => setRemoveError(error.message),
+            })
+          }
+        />
+      )}
 
       <footer className="hidden h-8 shrink-0 items-center gap-4 border-t border-line bg-panel px-4 text-xs text-fg-faint md:flex">
         <KeyHint keys={["J", "K"]} label="move" />
