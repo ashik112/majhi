@@ -110,6 +110,8 @@ async function main(): Promise<void> {
     run: runCommand,
     log,
   });
+  // The server resumes turns that stalled while the Mac slept when it sees this change.
+  let wokeAt: string | undefined;
   const info = (): HostInfo => {
     const status = ssh.status();
     const repo = facts.repo();
@@ -122,6 +124,7 @@ async function main(): Promise<void> {
       ...(repo === undefined ? {} : { commit: repo.commit, dirty: repo.dirty }),
       ...(runtime === undefined ? {} : { dockerRuntime: runtime }),
       laya: laya.status(),
+      ...(wokeAt === undefined ? {} : { wokeAt }),
     };
   };
   const link: LinkOptions = { url: config.url, token: () => ensureToken(config.majhiHome), info, log };
@@ -135,7 +138,11 @@ async function main(): Promise<void> {
     `majhi host helper ${config.version} started (pid ${process.pid}, ${config.url}, remounts ${remounts})`,
   );
 
-  const stopSsh = ssh.start();
+  const stopSsh = ssh.start({
+    onWake: (at) => {
+      wokeAt = at.toISOString();
+    },
+  });
   const controller = new AbortController();
   const stop = (signal: string): void => {
     log(`stopping (${signal})`);

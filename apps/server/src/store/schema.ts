@@ -91,6 +91,14 @@ export const runs = sqliteTable(
     stopReason: text("stop_reason"),
     model: text("model"),
     effort: text("effort"),
+    /** 1 while a turn runs, and after a turn was cut (crash, shutdown, offline) until it continues. */
+    inFlight: integer("in_flight").notNull().default(0),
+    /** The last checkpoint number this run committed, 0 for none. */
+    checkpoint: integer("checkpoint").notNull().default(0),
+    /** The room position at that checkpoint. */
+    roomSeq: integer("room_seq").notNull().default(0),
+    /** The decision that picked the model or effort, for `auto` agents. */
+    decisionId: text("decision_id"),
   },
   (t) => [index("runs_task_agent").on(t.task, t.agent)],
 );

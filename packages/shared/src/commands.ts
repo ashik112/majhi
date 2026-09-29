@@ -645,14 +645,20 @@ export const commands = {
       canUpdate: z.boolean().optional(),
       /** The last update the helper ran, while it runs and after. */
       update: UpdateStatusSchema.optional(),
+      /** Agents in the middle of a turn. An update cuts their turns; they resume after the restart. */
+      working: z.number().int().nonnegative().optional(),
+      /** True while an update waits for the working agents to finish ("Update when they finish"). */
+      waiting: z.boolean().optional(),
     }),
   },
   "system.update": {
     risk: "change",
-    summary: "Rebuild majhi from the code on disk and restart it, through the host helper",
-    input: Empty,
+    summary:
+      "Rebuild majhi from the code on disk and restart it, through the host helper. With when idle, wait until no agent is working",
+    input: z.object({ when: z.enum(["now", "idle"]).default("now") }),
     output: z.object({
-      state: z.enum(["restarting", "manual"]),
+      /** `waiting`: the update starts by itself once no agent is working. */
+      state: z.enum(["restarting", "manual", "waiting"]),
       /** Why the owner has to run `make up` when the state is manual. */
       reason: z.string().optional(),
     }),

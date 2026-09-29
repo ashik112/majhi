@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, max } from "drizzle-orm";
 import type { Db } from "./db.ts";
 import { audit, runs, taskAllowances } from "./schema.ts";
 
@@ -12,6 +12,9 @@ export interface RunRow {
   stopReason: string | undefined;
   model: string | undefined;
   effort: string | undefined;
+  inFlight: boolean;
+  checkpoint: number;
+  decisionId: string | undefined;
 }
 
 /** One row per agent process, for history and for resuming a session after a restart. */
@@ -66,6 +69,65 @@ export class RunRepo {
     return row?.sessionId ?? undefined;
   }
 
+  /** A turn started (true), or ended on its own or by the owner (false). Crashes and pauses leave it set. */
+  setInFlight(task: string, agent: string, runId: number, value: boolean): void {
+    if (value) {
+      this.db.update(runs).set({ inFlight: 1 }).where(eq(runs.id, runId)).run();
+      return;
+    }
+    // Every run of the pair: an older run cut by a crash is continued by this one.
+    this.db
+      .update(runs)
+      .set({ inFlight: 0 })
+      .where(and(eq(runs.task, task), eq(runs.agent, agent)))
+      .run();
+  }
+
+  /** (task, agent) pairs with a turn that was cut and has not continued yet. */
+  interrupted(): { task: string; agent: string }[] {
+    return this.db
+      .selectDistinct({ task: runs.task, agent: runs.agent })
+      .from(runs)
+      .where(eq(runs.inFlight, 1))
+      .all();
+  }
+
+  setCheckpoint(id: number, checkpoint: number, roomSeq: number): void {
+    this.db.update(runs).set({ checkpoint, roomSeq }).where(eq(runs.id, id)).run();
+  }
+
+  /** The task's newest checkpoint number and the room position at it; 0 and 0 before the first. */
+  lastCheckpoint(task: string): { checkpoint: number; roomSeq: number } {
+    const top = this.db
+      .select({ n: max(runs.checkpoint) })
+      .from(runs)
+      .where(eq(runs.task, task))
+      .get();
+    const n = top?.n ?? 0;
+    if (n === 0) return { checkpoint: 0, roomSeq: 0 };
+    const row = this.db
+      .select({ roomSeq: runs.roomSeq })
+      .from(runs)
+      .where(and(eq(runs.task, task), eq(runs.checkpoint, n)))
+      .orderBy(desc(runs.id))
+      .limit(1)
+      .get();
+    return { checkpoint: n, roomSeq: row?.roomSeq ?? 0 };
+  }
+
+  /** What the decision provider picked for this run, and the decision's id. */
+  setPick(id: number, pick: { model?: string | undefined; effort?: string | undefined; decisionId: string }): void {
+    this.db
+      .update(runs)
+      .set({
+        decisionId: pick.decisionId,
+        ...(pick.model === undefined ? {} : { model: pick.model }),
+        ...(pick.effort === undefined ? {} : { effort: pick.effort }),
+      })
+      .where(eq(runs.id, id))
+      .run();
+  }
+
   forTask(task: string): RunRow[] {
     return this.db
       .select()
@@ -83,6 +145,9 @@ export class RunRepo {
         stopReason: r.stopReason ?? undefined,
         model: r.model ?? undefined,
         effort: r.effort ?? undefined,
+        inFlight: r.inFlight === 1,
+        checkpoint: r.checkpoint,
+        decisionId: r.decisionId ?? undefined,
       }));
   }
 }

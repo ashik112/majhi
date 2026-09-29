@@ -164,7 +164,7 @@ export interface Ssh {
    * Checks now (the helper starts at login) and again after every wake from sleep. Keys stay
    * loaded while the owner is logged in, so there is no periodic reload. The returned function stops it.
    */
-  start(options?: { tickMs?: number; now?: () => number }): () => void;
+  start(options?: { tickMs?: number; now?: () => number; onWake?: (at: Date) => void }): () => void;
 }
 
 export function createSsh(deps: SshDeps): Ssh {
@@ -389,13 +389,14 @@ export function createSsh(deps: SshDeps): Ssh {
     reload: () => enqueue(runCheck).then((r) => r.status),
     inspect: () => enqueue(runCheck),
     unlock: (key, passphrase) => enqueue(() => unlockNow(key, passphrase)),
-    start({ tickMs = WAKE_TICK_MS, now = Date.now } = {}) {
+    start({ tickMs = WAKE_TICK_MS, now = Date.now, onWake } = {}) {
       void enqueue(runCheck);
       let lastTick = now();
       const timer = setInterval(() => {
         const at = now();
         if (isWake(lastTick, at, tickMs)) {
           log("woke from sleep; checking SSH keys");
+          onWake?.(new Date(at));
           void enqueue(runCheck);
         }
         lastTick = at;

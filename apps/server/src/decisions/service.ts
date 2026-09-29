@@ -8,6 +8,7 @@ import type {
   DecisionResult,
   DecisionSettings,
   LayaStatus,
+  OptionValue,
   ProviderId,
 } from "@majhi/shared";
 import type { z } from "zod";
@@ -157,6 +158,9 @@ export class DecisionService implements Decisions {
     const askEffort = request.pickEffort && request.efforts.length >= 2;
     if (!askModel && !askEffort) return undefined;
     const brief = `Role: ${request.role}\nAgent: @${request.agent}\n\n${request.context}`;
+    // Descriptions help the provider far more than bare ids; the answer maps back to the id.
+    const modelLabels = optionLabels(request.models);
+    const effortLabels = optionLabels(request.efforts);
     const questions: DecideRequest["questions"] = {
       ...(askModel
         ? {
@@ -164,7 +168,7 @@ export class DecisionService implements Decisions {
               type: "choice" as const,
               instructions:
                 "Which model fits this task? Use a small, fast model for simple work and a large one for hard, open-ended work.",
-              options: request.models.map((m) => m.id),
+              options: modelLabels.map((l) => l.label),
             },
           }
         : {}),
@@ -173,7 +177,7 @@ export class DecisionService implements Decisions {
             effort: {
               type: "choice" as const,
               instructions: "How much reasoning effort does this task need?",
-              options: request.efforts.map((e) => e.id),
+              options: effortLabels.map((l) => l.label),
             },
           }
         : {}),
@@ -184,11 +188,13 @@ export class DecisionService implements Decisions {
         { state: brief, questions },
         { use: "model-pick", task: request.task, agent: request.agent },
       );
+      const floor = request.minConfidence ?? settings.min_confidence;
       const chosen = (key: "model" | "effort") => {
         const a = result.answers[key];
-        return a !== undefined && a.confidence >= settings.min_confidence && typeof a.value === "string"
-          ? a
-          : undefined;
+        if (a === undefined || a.confidence < floor || typeof a.value !== "string") return undefined;
+        const labels = key === "model" ? modelLabels : effortLabels;
+        const id = labels.find((l) => l.label === a.value)?.id ?? labels.find((l) => l.id === a.value)?.id;
+        return id === undefined ? undefined : { ...a, value: id };
       };
       const model = askModel ? chosen("model") : undefined;
       const effort = askEffort ? chosen("effort") : undefined;
@@ -227,6 +233,18 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
+}
+
+/** `sonnet: Fast and capable`, at most 200 characters, unique per list; the bare id without a description. */
+export function optionLabels(options: readonly OptionValue[]): { id: string; label: string }[] {
+  const seen = new Set<string>();
+  return options.map((o) => {
+    const text = o.description?.trim() ? `${o.id}: ${o.description.trim()}` : o.id;
+    let label = text.length > 200 ? `${text.slice(0, 199)}\u2026` : text;
+    if (seen.has(label)) label = o.id;
+    seen.add(label);
+    return { id: o.id, label };
+  });
 }
 
 function layaReason(laya: LayaStatus): string | undefined {

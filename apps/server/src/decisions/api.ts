@@ -17,6 +17,11 @@ export interface ModelPickRequest {
   efforts: readonly OptionValue[];
   pickModel: boolean;
   pickEffort: boolean;
+  /**
+   * Answers below this are dropped. Default: the decision settings' floor. Model picks use 0.4:
+   * Laya spreads probability across similar models, so 0.6 rejects most picks.
+   */
+  minConfidence?: number;
 }
 
 export interface ModelPick {

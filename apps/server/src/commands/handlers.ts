@@ -272,7 +272,7 @@ export function createHandlers({
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),
-    "system.update": () => (system ? system.update() : notBuilt()),
+    "system.update": (input) => (system ? system.update(input.when) : notBuilt()),
     "decisions.ask": (input) => services.decisions.ask(input),
     "decisions.recent": async (input) => services.decisions.recent(input.limit),
     "decisions.status": () => services.decisions.status(),

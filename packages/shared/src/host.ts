@@ -205,6 +205,11 @@ export const HostInfoSchema = z.object({
   dockerRuntime: DockerRuntimeSchema.optional(),
   /** Laya on this Mac. Absent from older helpers. */
   laya: LayaStatusSchema.optional(),
+  /**
+   * When the helper last noticed a wake from sleep (clock gap). The server resumes turns that
+   * failed or stalled while the Mac slept each time this changes. Absent until the first wake.
+   */
+  wokeAt: z.string().optional(),
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";

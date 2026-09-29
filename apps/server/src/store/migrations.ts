@@ -143,6 +143,17 @@ CREATE TABLE decisions (
 CREATE INDEX decisions_at ON decisions (at);
 `,
   },
+  {
+    // The run manager (5.7, 5.13): what a restart needs to continue a turn, and what a run picked.
+    id: 30,
+    name: "checkpoints and interrupted turns on runs",
+    sql: `
+ALTER TABLE runs ADD COLUMN in_flight INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN checkpoint INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN room_seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN decision_id TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

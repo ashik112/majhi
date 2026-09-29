@@ -78,6 +78,7 @@ export class HostLink {
   private lastPollEnd: number | undefined;
   private lastSeen: number | undefined;
   private info: HostInfo | undefined;
+  private readonly wakeListeners = new Set<(at: string) => void>();
   private closed = false;
   private readonly pollTimeoutMs: number;
   private readonly connectedWindowMs: number;
@@ -108,6 +109,12 @@ export class HostLink {
    */
   noteSsh(ssh: SshStatus): void {
     if (this.info !== undefined) this.info = { ...this.info, ssh };
+  }
+
+  /** Called with the wake time each time the helper reports a new wake from sleep. Returns an unsubscribe. */
+  onWake(listener: (at: string) => void): () => void {
+    this.wakeListeners.add(listener);
+    return () => this.wakeListeners.delete(listener);
   }
 
   /** Sends a job to the helper and resolves with its checked result. */
@@ -149,7 +156,13 @@ export class HostLink {
    * request went away, or when the link is closing.
    */
   poll(info: HostInfo, signal?: AbortSignal): Promise<HostJob | undefined> {
+    const woke = info.wokeAt !== undefined && info.wokeAt !== this.info?.wokeAt;
+    // The first poll of a helper that started before this server tells of an old wake, not a new one.
+    const known = this.info !== undefined;
     this.info = info;
+    if (woke && known && info.wokeAt !== undefined) {
+      for (const listener of [...this.wakeListeners]) listener(info.wokeAt);
+    }
     this.lastSeen = this.now();
     const next = this.queue.shift();
     if (next !== undefined || this.closed || signal?.aborted === true) {
