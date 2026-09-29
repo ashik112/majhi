@@ -44,6 +44,14 @@ const EnvSchema = z.object({
   MAJHI_ADAPTER_CODEX: JsonCommand.optional(),
   /** Replaces the Claude usage helper, for tests. */
   MAJHI_USAGE_CLAUDE: JsonCommand.optional(),
+  /** Offline detection: `http` (default), `off`, or `file:<path>` (offline while the file exists, for tests). */
+  MAJHI_NET_PROBE: z
+    .string()
+    .trim()
+    .regex(/^(http|off|file:\/.+)$/, "Use http, off, or file:/absolute/path")
+    .optional(),
+  /** How often the network probe runs, in ms. Default 20000. */
+  MAJHI_NET_PROBE_MS: z.coerce.number().int().min(100).optional(),
 });
 
 export interface ServerEnv {
@@ -61,6 +69,10 @@ export interface ServerEnv {
   secretsKeyFile: string;
   /** How agent CLIs are started: the only host values they see, and adapter overrides for tests. */
   runtime: RuntimeOptions;
+  /** `MAJHI_NET_PROBE`: how majhi checks it is online. */
+  netProbe?: string;
+  /** `MAJHI_NET_PROBE_MS`. */
+  netProbeMs?: number;
 }
 
 /** Reads the server settings from environment variables. Throws with one line per bad variable. */
@@ -90,6 +102,8 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     commit: env.MAJHI_COMMIT ?? "dev",
     secretsKeyFile: env.MAJHI_SECRETS_KEY_FILE,
     runtime: { base: baseEnv(source), adapters, usage },
+    ...(env.MAJHI_NET_PROBE === undefined ? {} : { netProbe: env.MAJHI_NET_PROBE }),
+    ...(env.MAJHI_NET_PROBE_MS === undefined ? {} : { netProbeMs: env.MAJHI_NET_PROBE_MS }),
   };
 }
 

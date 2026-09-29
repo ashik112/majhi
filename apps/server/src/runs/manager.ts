@@ -1,22 +1,69 @@
 import { randomUUID } from "node:crypto";
-import type { AgentSession, PermissionAsk, PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
-import type { AgentLive, Attachment, Perm, RoomItem, Task } from "@majhi/shared";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { PermissionAsk, PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
+import type { AgentFrontmatter, AgentLive, Attachment, RoomItem, Task } from "@majhi/shared";
+import { durationMs } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
+import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
+import {
+  type CheckpointRepo,
+  commitCheckpoint,
+  DEFAULT_IDENTITY,
+  diffStat,
+  diffText,
+  type Identity,
+} from "./checkpoint.ts";
+import {
+  budgetFor,
+  COMPACT_NOTE,
+  type ContextBudget,
+  compactCommand,
+  estimateText,
+  estimateTokens,
+  isContextError,
+  isRecoveryStop,
+  MAX_COMPACTIONS_PER_TURN,
+  needsCompaction,
+  reachedTarget,
+  rotationDue,
+} from "./context.ts";
+import {
+  BUDGET,
+  durableNote,
+  freshPrompt,
+  HANDOFF_REQUEST,
+  looksLikeNote,
+  roomLines,
+  saveNote,
+} from "./handoff.ts";
 import { ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
+import { Slots } from "./limits.ts";
 import { taskMediaSink } from "./media.ts";
+import { looksLikeNetworkError } from "./network.ts";
 import { decidePermission } from "./permissions.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
+import { AgentRun, type Carry, type PauseReason, type QueueEntry } from "./run.ts";
+import { wakePlan } from "./wake.ts";
 
 export const BRIEF_ITEM_ID = "brief";
+
+/** How long native compaction waits for the agent's next usage report. */
+const USAGE_WAIT_MS = 5_000;
+/** How long before a failed resume is tried the second time. */
+const RESUME_RETRY_MS = 1_000;
+/** Model picks for `auto` agents: Laya spreads probability across similar models, so 0.6 rejects most. */
+const MODEL_PICK_FLOOR = 0.4;
+const CONTINUE_TEXT = "Continue from where you stopped.";
 
 export interface RunDeps {
   store: Store;
@@ -29,54 +76,19 @@ export interface RunDeps {
   majhiHome: string;
   /** Gives sessions of the boss (and other admin agents) the majhi-admin MCP server. */
   admin?: AdminAccess;
+  /** The decision provider: majhi-decide for every session, and model picks for `auto` agents. */
+  decisions?: Decisions;
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
   onIdle?: (task: string) => void;
+  /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
+  onPaused?: (task: string, reason: PauseReason) => void;
+  /** A paused or cut agent is resuming: the task runs again. */
+  onResumed?: (task: string) => void;
+  /** An agent failed in a way that looks like a lost connection: check the network now. */
+  onNetworkError?: () => void;
   now?: () => Date;
-}
-
-type QueueEntry = { kind: "brief" } | { kind: "owner"; itemId: string };
-
-interface Pending {
-  ask: PermissionAsk;
-  resolve: (option: string | undefined) => void;
-}
-
-/** Everything the manager holds for one (task, agent). */
-class AgentRun {
-  live: AgentLive;
-  session: AgentSession | undefined;
-  runId: number | undefined;
-  mapper: ItemMapper | undefined;
-  queue: QueueEntry[] = [];
-  /** The queue waits: the owner pressed Esc, or stopped the task. A new message releases it. */
-  held = false;
-  /** Stop was called: the drive loop leaves quietly. */
-  closing = false;
-  exited = false;
-  turning = false;
-  cancelBeforePrompt = false;
-  needsBrief = false;
-  /** Stop reason of the last finished turn. */
-  lastStop: string | undefined;
-  /** The majhi-admin token of this session, revoked when it ends. */
-  adminToken: string | undefined;
-  /** The admin preamble goes in front of the session's first prompt. */
-  preambleDue = false;
-  drive: Promise<void> | undefined;
-  readonly pending = new Map<string, Pending>();
-  perms: Perm[] = [];
-  permSeq = 0;
-  unsubscribe: (() => void) | undefined;
-
-  constructor(
-    readonly task: Task["id"],
-    readonly agent: string,
-    queued: number,
-  ) {
-    this.live = { agent, status: "stopped", queued, commands: [] };
-  }
 }
 
 /** A change to an agent's live state. `undefined` clears a field. */
@@ -87,14 +99,24 @@ const WORKING: ReadonlySet<AgentLive["status"]> = new Set(["starting", "working"
 /**
  * One ACP session per (task, agent), started when there is something to send. Runs the queue
  * of prompts, turns session events into room items and live state, and answers permission
- * requests from the agent's perms or from the owner.
+ * requests from the agent's perms or from the owner. Keeps each session inside its context
+ * budget, commits a checkpoint after every turn, holds a slot under the concurrency limits
+ * while its process runs, and pauses and resumes turns around restarts, lost connections and
+ * sleep (SPEC 5.7, 5.13, 5.17).
  */
 export class RunManager {
   private readonly runs = new Map<string, AgentRun>();
   private readonly now: () => Date;
+  private readonly slots: Slots;
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.slots = new Slots({
+      limits: async () => (await deps.config.settings()).limits,
+      evict: (key) => this.evict(key),
+      onQueue: (positions) => this.showLine(positions),
+      now: () => this.now().getTime(),
+    });
   }
 
   /** At server start: runs that were live are over, and prompts nobody can answer any more are cancelled. */
@@ -119,9 +141,15 @@ export class RunManager {
       .map((r) => r.agent);
   }
 
+  /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
+  turnsInFlight(): number {
+    return [...this.runs.values()].filter((r) => r.turning && r.session !== undefined).length;
+  }
+
   /**
    * Queues the task's first prompt, built from TASK.md, and starts the agent. Does nothing
-   * when it was sent before. Returns at once: the run streams into the room.
+   * when it was sent before. A paused or cut run continues from where it stopped. Returns at
+   * once: the run streams into the room.
    */
   startTask(task: Task, agent: string): void {
     const run = this.runFor(task.id, agent);
@@ -136,6 +164,10 @@ export class RunManager {
         to: agent,
       });
       run.queue.unshift({ kind: "brief" });
+    }
+    if (run.paused !== undefined || run.interrupted) {
+      this.resumeRun(run, "the task was resumed");
+      return;
     }
     run.held = false;
     this.refreshQueued(run);
@@ -180,14 +212,16 @@ export class RunManager {
     return targets.map((r) => r.agent);
   }
 
-  /** Cancels every turn and closes every session of the task. */
+  /** Cancels every turn and closes every session of the task. The owner stopped it, so nothing resumes by itself. */
   async stop(task: string): Promise<void> {
     const targets = [...this.runs.values()].filter((r) => r.task === task);
     await Promise.all(
       targets.map(async (run) => {
         run.closing = true;
         run.held = true;
+        run.clearTimers();
         this.cancelPending(run);
+        this.slots.release(this.key(run.task, run.agent));
         const session = run.session;
         if (session !== undefined) {
           await session.cancel().catch(() => undefined);
@@ -197,7 +231,13 @@ export class RunManager {
         // A session that opened while we were stopping.
         await run.session?.close().catch(() => undefined);
         this.endSession(run, "stopped");
-        this.setLive(run, { status: "stopped", nowDoing: undefined });
+        run.paused = undefined;
+        run.interrupted = false;
+        run.resuming = false;
+        run.freshDue = false;
+        run.queue = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief");
+        this.deps.store.runs.setInFlight(run.task, run.agent, 0, false);
+        this.setLive(run, { status: "stopped", nowDoing: undefined, slot: undefined });
         run.closing = false;
       }),
     );
@@ -238,6 +278,107 @@ export class RunManager {
     return updated;
   }
 
+  /**
+   * "Fresh session": replaces the agent's session with a new one that carries a handoff note.
+   * During a turn it happens when the turn ends; the room says so at once.
+   */
+  async fresh(task: Task, agent: string): Promise<RoomItem> {
+    const run = this.runFor(task.id, agent);
+    if (run.turning) {
+      run.freshDue = true;
+      return this.postSystem(run, "info", `@${agent} gets a fresh session when this turn ends.`);
+    }
+    // Hold the loop so nothing else prompts the agent meanwhile.
+    run.turning = true;
+    let item: RoomItem;
+    try {
+      item = await this.freshNow(run);
+    } finally {
+      run.turning = false;
+    }
+    if (run.queue.length > 0 && !run.held && run.paused === undefined) void this.drive(run);
+    return item;
+  }
+
+  /** The concurrency limits changed: starts that wait may fit now. */
+  limitsChanged(): Promise<void> {
+    return this.slots.pump();
+  }
+
+  /** Continues a cut turn after a restart or crash (5.7). */
+  resumeAfterRestart(task: string, agent: string): void {
+    const run = this.runFor(task, agent);
+    run.interrupted = true;
+    this.resumeRun(run, "majhi restarted during its turn");
+  }
+
+  /** The turn was cut and waits for the owner (auto-resume is off). Resume continues it. */
+  markInterrupted(task: string, agent: string): void {
+    const run = this.runFor(task, agent);
+    run.interrupted = true;
+    run.paused = "error";
+    this.setLive(run, { status: "paused", nowDoing: undefined });
+  }
+
+  /** majhi is offline: every agent in a turn stops it and waits (5.7). */
+  async pauseForOffline(): Promise<void> {
+    const targets = [...this.runs.values()].filter((r) => r.turning && r.paused === undefined && !r.closing);
+    await Promise.all(
+      targets.map(async (run) => {
+        run.interrupted = true;
+        this.pause(
+          run,
+          "offline",
+          `majhi is offline. @${run.agent} paused and continues when the connection is back.`,
+        );
+        await this.cancelRun(run);
+      }),
+    );
+  }
+
+  /** Runs paused because majhi went offline, for the network watch to resume. */
+  pausedOffline(): { task: string; agent: string }[] {
+    return [...this.runs.values()]
+      .filter((r) => r.paused === "offline")
+      .map((r) => ({ task: r.task, agent: r.agent }));
+  }
+
+  /** Continues a paused or cut run. */
+  resume(task: string, agent: string, why: string): void {
+    const run = this.runs.get(this.key(task, agent));
+    if (run !== undefined) this.resumeRun(run, why);
+  }
+
+  /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
+  async wake(): Promise<void> {
+    const now = this.now().getTime();
+    const views = [...this.runs.values()]
+      .filter((r) => !r.closing && r.paused !== "offline")
+      .map((r) => ({
+        key: this.key(r.task, r.agent),
+        turning: r.turning && r.session !== undefined,
+        interrupted: r.interrupted,
+        retryable: r.retryable && r.live.status === "error",
+        lastEventAt: r.lastEventAt,
+      }));
+    const plan = wakePlan(views, now);
+    for (const key of plan.resume) {
+      const run = this.runs.get(key);
+      if (run !== undefined) this.resumeRun(run, "the Mac woke up");
+    }
+    await Promise.all(
+      plan.restart.map(async (key) => {
+        const run = this.runs.get(key);
+        if (run === undefined) return;
+        run.interrupted = true;
+        // Quietly: the resume says what happened.
+        run.paused = "offline";
+        await this.cancelRun(run);
+        this.resumeRun(run, "its turn stalled while the Mac slept");
+      }),
+    );
+  }
+
   /** Resolves when no agent of the task (or of any task) is running a turn. For tests and shutdown. */
   async idle(task?: string): Promise<void> {
     for (;;) {
@@ -251,15 +392,21 @@ export class RunManager {
 
   /** Forgets a removed task. Sessions must be stopped first. */
   forget(task: string): void {
-    for (const [key, run] of this.runs) if (run.task === task) this.runs.delete(key);
+    for (const [key, run] of this.runs) {
+      if (run.task !== task) continue;
+      run.clearTimers();
+      this.slots.release(key);
+      this.runs.delete(key);
+    }
     this.deps.room.drop(task);
   }
 
-  /** Server shutdown: closes every session so no agent process outlives majhi. */
+  /** Server shutdown: closes every session so no agent process outlives majhi. Cut turns resume after the restart. */
   async closeAll(): Promise<void> {
     await Promise.all(
       [...this.runs.values()].map(async (run) => {
         run.closing = true;
+        run.clearTimers();
         this.cancelPending(run);
         await run.session?.close().catch(() => undefined);
         this.endSession(run, "server-stop");
@@ -299,16 +446,27 @@ export class RunManager {
     if (wasWorking !== WORKING.has(next.status)) this.deps.onTasksChanged();
   }
 
+  /** The owner's messages waiting for the agent's next turn. majhi's own entries do not count. */
   private refreshQueued(run: AgentRun): void {
-    if (run.live.queued !== run.queue.length) this.setLive(run, { queued: run.queue.length });
+    const queued = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief").length;
+    if (run.live.queued !== queued) this.setLive(run, { queued });
   }
 
-  private post(run: AgentRun, payload: RoomPayload, options?: { defer?: boolean }): void {
-    this.deps.room.post(run.task, `${run.agent}:${run.runId ?? "x"}:${randomUUID()}`, payload, options);
+  private post(run: AgentRun, payload: RoomPayload, options?: { defer?: boolean }): string {
+    const id = `${run.agent}:${run.runId ?? "x"}:${randomUUID()}`;
+    this.deps.room.post(run.task, id, payload, options);
+    return id;
   }
 
   private system(run: AgentRun, level: "info" | "warn" | "error", text: string): void {
     this.post(run, { type: "system", level, text, agent: run.agent });
+  }
+
+  private postSystem(run: AgentRun, level: "info" | "warn" | "error", text: string): RoomItem {
+    const id = this.post(run, { type: "system", level, text, agent: run.agent });
+    const item = this.deps.room.get(run.task, id);
+    if (item === undefined) throw new Error("The item was not stored");
+    return item;
   }
 
   /** Runs queued prompts one after another. One loop per agent at a time. */
@@ -335,46 +493,125 @@ export class RunManager {
     } finally {
       run.turning = false;
       run.drive = undefined;
+      if (run.redrive) {
+        run.redrive = false;
+        if (!run.closing) void this.drive(run);
+      }
     }
   }
 
   private async runQueue(run: AgentRun): Promise<void> {
-    while (run.queue.length > 0 && !run.held && !run.closing) {
+    while (run.queue.length > 0 && !run.held && !run.closing && run.paused === undefined) {
       if (run.session === undefined) {
         const started = await this.startSession(run);
-        if (!started) return;
+        if (!started) {
+          this.resumeFailed(run, "the agent could not start");
+          return;
+        }
         if (run.cancelBeforePrompt) {
           run.cancelBeforePrompt = false;
           if (run.queue.length > 0) run.held = true;
           break;
         }
       }
-      if (run.closing) break;
+      if (run.closing || run.paused !== undefined) break;
       const session = run.session;
       const entry = run.queue.shift();
       if (session === undefined || entry === undefined) break;
       this.refreshQueued(run);
-      const blocks = await this.blocksFor(run, entry);
-      if (blocks === undefined) continue;
+      if (entry.kind === "fresh") {
+        await this.freshNow(run);
+        continue;
+      }
+      if (entry.kind !== "continue") run.compactions = 0;
+      const raw = await this.blocksFor(run, entry);
+      if (raw === undefined) continue;
+
+      // Compact first when this prompt would take the session over its budget.
+      if (
+        run.carry === undefined &&
+        needsCompaction(run.usage, await this.budget(run), estimateTokens(raw))
+      ) {
+        const ok = await this.compact(run, "threshold");
+        if (!ok || run.session === undefined) {
+          // Paused, or handed off: the prompt goes to the next session.
+          run.queue.unshift(entry);
+          continue;
+        }
+      }
+      const blocks = this.withPreamble(run, this.withCarry(run, raw));
+
       this.setLive(run, { status: "working", nowDoing: undefined });
       run.mapper?.beginTurn();
+      this.markTurn(run, true);
       let stopReason: string;
       try {
         stopReason = (await session.prompt(blocks)).stopReason;
       } catch (err) {
         this.deps.room.flush(run.task);
         if (run.closing || run.exited) return;
-        this.system(run, "error", `@${run.agent} failed: ${errorMessage(err)}`);
+        const message = errorMessage(err);
+        run.mapper?.endTurn(true);
+        if (run.paused !== undefined) {
+          this.markTurn(run, false, false);
+          return;
+        }
+        if (looksLikeNetworkError(message)) {
+          run.interrupted = true;
+          this.markTurn(run, false, false);
+          this.pause(
+            run,
+            "offline",
+            `@${run.agent} lost its connection (${message}). It continues when majhi is online.`,
+          );
+          this.deps.onNetworkError?.();
+          return;
+        }
+        if (isContextError(message)) {
+          await this.checkpoint(run);
+          this.markTurn(run, false, false);
+          if (await this.recoverContext(run, message)) continue;
+          return;
+        }
+        this.markTurn(run, false, true);
+        this.system(run, "error", `@${run.agent} failed: ${message}`);
         this.endSession(run, "error");
         void session.close().catch(() => undefined);
         this.setLive(run, { status: "error", nowDoing: undefined });
+        this.resumeFailed(run, message);
         return;
       }
       run.lastStop = stopReason;
       this.finishTurn(run, stopReason);
+      await this.checkpoint(run);
+      // A turn cut by majhi (offline, a stall) keeps its in-flight mark, so it continues later.
+      this.markTurn(run, false, run.paused === undefined);
+      if (run.paused !== undefined) break;
+      if (entry.kind === "resume" && stopReason !== "cancelled") {
+        run.resuming = false;
+        run.resumeFailures = 0;
+      }
+      run.turns++;
+      this.setLive(run, { turns: run.turns });
+      if (stopReason === "cancelled") {
+        if (run.freshDue) await this.freshDueNow(run);
+        continue;
+      }
+      if (isRecoveryStop(stopReason)) {
+        if (await this.recoverContext(run, `it stopped with ${stopReason}`)) continue;
+        break;
+      }
+      const budget = await this.budget(run);
+      if (needsCompaction(run.usage, budget)) {
+        if (!(await this.compact(run, "threshold"))) break;
+      } else if (rotationDue(run.turns, budget)) {
+        await this.compact(run, "rotation");
+      }
+      if (run.freshDue) await this.freshDueNow(run);
     }
-    if (run.session !== undefined && !run.exited && !run.closing) {
+    if (run.session !== undefined && !run.exited && !run.closing && run.paused === undefined) {
       this.setLive(run, { status: "idle", nowDoing: undefined });
+      this.scheduleIdleStop(run);
       // Only a turn the agent ended itself hands the task back; Esc and stops keep it with the owner.
       if (run.queue.length === 0 && !run.held && run.lastStop === "end_turn") this.deps.onIdle?.(run.task);
     }
@@ -383,24 +620,34 @@ export class RunManager {
   private async blocksFor(run: AgentRun, entry: QueueEntry): Promise<PromptBlock[] | undefined> {
     const task = this.deps.store.tasks.get(run.task);
     if (task === undefined) return undefined;
-    if (entry.kind === "brief") {
-      run.needsBrief = false;
-      return this.withPreamble(
-        run,
-        await briefBlocks({ folder: task.folder, attachments: task.attachments }),
-      );
+    switch (entry.kind) {
+      case "brief":
+        run.needsBrief = false;
+        return briefBlocks({ folder: task.folder, attachments: task.attachments });
+      case "resume": {
+        const { checkpoint } = this.deps.store.runs.lastCheckpoint(run.task);
+        const where =
+          checkpoint > 0 ? `The last checkpoint is ${checkpoint}.` : "There is no checkpoint yet.";
+        return [{ type: "text", text: `${CONTINUE_TEXT} ${where}` }];
+      }
+      case "continue":
+        return [{ type: "text", text: CONTINUE_TEXT }];
+      case "fresh":
+        return undefined;
+      case "owner": {
+        const item = this.deps.room.get(run.task, entry.itemId);
+        if (item === undefined || item.type !== "owner") return undefined;
+        if (item.queued) this.deps.room.post(item.task, item.id, ownerPayload(item, { queued: false }));
+        const built = await ownerBlocks({
+          folder: task.folder,
+          attachments: item.attachments,
+          text: item.text,
+          needsBrief: run.needsBrief && run.carry === undefined,
+        });
+        if (built.briefSent) run.needsBrief = false;
+        return built.blocks;
+      }
     }
-    const item = this.deps.room.get(run.task, entry.itemId);
-    if (item === undefined || item.type !== "owner") return undefined;
-    if (item.queued) this.deps.room.post(item.task, item.id, ownerPayload(item, { queued: false }));
-    const built = await ownerBlocks({
-      folder: task.folder,
-      attachments: item.attachments,
-      text: item.text,
-      needsBrief: run.needsBrief,
-    });
-    if (built.briefSent) run.needsBrief = false;
-    return this.withPreamble(run, built.blocks);
   }
 
   /** Puts the admin preamble before a session's first prompt. Slash commands stay whole and keep it waiting. */
@@ -411,12 +658,30 @@ export class RunManager {
     return [{ type: "text", text: ADMIN_PREAMBLE }, ...blocks];
   }
 
+  /**
+   * The first prompt of a fresh session: prefix, TASK.md, the note, the room, the diff stat,
+   * then the prompt itself. A slash command stays whole and the carry waits for the next prompt.
+   */
+  private withCarry(run: AgentRun, blocks: PromptBlock[]): PromptBlock[] {
+    const carry = run.carry;
+    if (carry === undefined) return blocks;
+    const text = blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n");
+    if (text.startsWith("/")) return blocks;
+    run.carry = undefined;
+    run.needsBrief = false;
+    return [
+      { type: "text", text: freshPrompt({ ...carry, pending: text === "" ? undefined : text }) },
+      ...blocks.filter((b) => b.type !== "text"),
+    ];
+  }
+
   private finishTurn(run: AgentRun, stopReason: string): void {
     this.deps.room.flush(run.task);
     const cancelled = stopReason === "cancelled";
     run.mapper?.endTurn(cancelled);
     this.cancelPending(run);
-    if (cancelled) this.system(run, "info", `Stopped @${run.agent}'s turn.`);
+    // A turn majhi cut (offline, a stall) says so in its own words.
+    if (cancelled && run.paused === undefined) this.system(run, "info", `Stopped @${run.agent}'s turn.`);
     else if (stopReason === "max_tokens")
       this.system(run, "warn", `@${run.agent} stopped: it reached its output limit.`);
     else if (stopReason === "max_turn_requests")
@@ -425,9 +690,28 @@ export class RunManager {
     this.setLive(run, { nowDoing: undefined });
   }
 
+  /** A turn starts (busy) or ends. Ending with `clear` means it finished: nothing to continue after a crash. */
+  private markTurn(run: AgentRun, busy: boolean, clear = true): void {
+    const key = this.key(run.task, run.agent);
+    run.lastEventAt = this.now().getTime();
+    this.slots.mark(key, busy);
+    if (busy) {
+      if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
+      run.idleTimer = undefined;
+      if (run.runId !== undefined) this.deps.store.runs.setInFlight(run.task, run.agent, run.runId, true);
+    } else if (clear) {
+      this.deps.store.runs.setInFlight(run.task, run.agent, run.runId ?? 0, false);
+      run.interrupted = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sessions
+
   /** Opens the ACP session. On failure posts an error, sets the agent to `error`, and returns false. */
   private async startSession(run: AgentRun): Promise<boolean> {
     const { deps } = this;
+    const key = this.key(run.task, run.agent);
     this.setLive(run, { status: "starting", nowDoing: undefined });
     try {
       const stored = await deps.agents.get(run.agent);
@@ -442,6 +726,11 @@ export class RunManager {
           `@${fm.id} works in "${fm.scope}" and cannot use the account of "${account.org}".`,
         );
       }
+      run.account = fm.account;
+      run.compactAt = fm.context?.compact_at;
+      // A free slot under the concurrency limits first. Stopped while waiting: leave quietly.
+      if (!(await this.takeSlot(run))) return false;
+
       let apiKey: string | undefined;
       if (account.auth === "api-key" && account.key !== undefined) {
         apiKey = await deps.secrets.get(secretName(account.key));
@@ -455,8 +744,12 @@ export class RunManager {
 
       const model = fm.model === "auto" ? undefined : fm.model;
       const effort = fm.effort === "auto" ? undefined : fm.effort;
-      const resume = deps.store.runs.lastSessionId(run.task, run.agent);
+      const resume = run.freshNext ? undefined : deps.store.runs.lastSessionId(run.task, run.agent);
+      const hadRuns =
+        resume !== undefined || deps.store.runs.forTask(run.task).some((r) => r.agent === run.agent);
       const admin = deps.admin?.attach({ task: run.task, agent: run.agent }, fm, boss);
+      const decide = deps.decisions?.attachTool(run.task, run.agent);
+      const mcpServers = [admin?.server, decide?.server].flatMap((s) => (s === undefined ? [] : [s]));
       const session = await deps.runtime
         .startSession({
           account: runtimeAccount,
@@ -465,28 +758,29 @@ export class RunManager {
           ...(resume === undefined ? {} : { resume }),
           ...(model === undefined ? {} : { model }),
           ...(effort === undefined ? {} : { effort }),
-          ...(admin === undefined ? {} : { mcpServers: [admin.server] }),
+          ...(mcpServers.length === 0 ? {} : { mcpServers }),
         })
         .catch((err: unknown) => {
           if (admin !== undefined) deps.admin?.revoke(admin.token);
+          if (decide !== undefined) deps.decisions?.revoke(decide.token);
           throw err;
         });
 
-      // What the agent runs after the session applied the options: a refused model keeps the default.
-      const shownModel = session.models.defaultModel ?? model;
-      const shownEffort = session.models.defaultEffort ?? effort;
+      const resumed = resume !== undefined && session.sessionId === resume;
       run.session = session;
       run.exited = false;
+      run.freshNext = false;
       run.perms = fm.perms;
-      run.needsBrief = resume === undefined || session.sessionId !== resume;
       run.adminToken = admin?.token;
-      run.preambleDue = admin !== undefined && run.needsBrief;
+      run.decideToken = decide?.token;
+      run.turns = 0;
+      run.usage = undefined;
       run.runId = deps.store.runs.start({
         task: run.task,
         agent: run.agent,
         sessionId: session.sessionId,
-        model: shownModel,
-        effort: shownEffort,
+        model: session.models.defaultModel ?? model,
+        effort: session.models.defaultEffort ?? effort,
         at: this.now().toISOString(),
       });
       run.mapper = new ItemMapper(
@@ -499,45 +793,128 @@ export class RunManager {
       run.unsubscribe = session.onEvent((event) => this.onEvent(run, event));
       session.setPermissionHandler((ask, signal) => this.onPermission(run, ask, signal));
 
+      // A new session for a pair that worked before: carry the work over with a note built from saved state.
+      if (!resumed && hadRuns && run.carry === undefined) {
+        const built = await this.buildCarry(run, task, undefined, "the previous session could not be loaded");
+        run.carry = built.carry;
+        this.postContext(run, {
+          method: "recovery",
+          note: built.path,
+          after: estimateText(freshPrompt(built.carry)),
+        });
+      }
+      run.needsBrief = !resumed && run.carry === undefined;
+      run.preambleDue = admin !== undefined && !resumed;
+
+      const pick =
+        fm.model === "auto" || fm.effort === "auto"
+          ? await this.pickModel(run, fm, stored.agent.instructions, task)
+          : undefined;
+      // What the agent runs after the session applied the options: a refused model keeps the default.
+      const shownModel = session.models.defaultModel ?? model;
+      const shownEffort = session.models.defaultEffort ?? effort;
       this.system(
         run,
         "info",
-        `@${run.agent} ${run.needsBrief ? "started" : "resumed"} on ${fm.account}, model ${shownModel ?? "default"}, effort ${shownEffort ?? "default"}`,
+        `@${run.agent} ${resumed ? "resumed" : "started"} on ${fm.account}, model ${shownModel ?? "default"}, effort ${shownEffort ?? "default"}`,
       );
-      if (fm.model === "auto" || fm.effort === "auto") {
-        this.system(
-          run,
-          "info",
-          `@${run.agent} is set to auto for model or effort. This version uses the agent's own default.`,
-        );
-      }
+      if (pick !== undefined) this.system(run, "info", pick);
       this.setLive(run, {
         status: "idle",
+        slot: undefined,
+        turns: 0,
+        usage: undefined,
         ...(shownModel === undefined ? {} : { model: shownModel }),
         ...(shownEffort === undefined ? {} : { effort: shownEffort }),
       });
       return true;
     } catch (err) {
-      this.system(run, "error", `@${run.agent} could not start: ${errorMessage(err)}`);
-      this.setLive(run, { status: "error", nowDoing: undefined });
+      if (run.session === undefined) this.slots.release(key);
+      const message = errorMessage(err);
+      run.retryable = looksLikeNetworkError(message) || /timed out/i.test(message);
+      this.system(run, "error", `@${run.agent} could not start: ${message}`);
+      this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined });
       return false;
     }
   }
 
+  /**
+   * Model and effort for an `auto` agent (5.1, 5.12): the decision provider picks from what the
+   * session offers, narrowed to the agent's `models` list; the pick is applied and recorded on
+   * the run. Returns the line for the room.
+   */
+  private async pickModel(
+    run: AgentRun,
+    fm: AgentFrontmatter,
+    instructions: string,
+    task: Task,
+  ): Promise<string> {
+    const session = run.session;
+    const decisions = this.deps.decisions;
+    const kept = `No confident pick for @${run.agent}, so it keeps the agent's default model and effort.`;
+    if (session === undefined || decisions === undefined) return kept;
+    const offered = session.models;
+    const allowed = fm.models ?? [];
+    const models =
+      allowed.length === 0 ? offered.models : offered.models.filter((m) => allowed.includes(m.id));
+    const pick = await decisions
+      .pickModel({
+        task: run.task,
+        agent: run.agent,
+        role: fm.role,
+        context: `${task.brief}\n\n${instructions}`.trim(),
+        models,
+        efforts: offered.efforts,
+        pickModel: fm.model === "auto",
+        pickEffort: fm.effort === "auto",
+        minConfidence: MODEL_PICK_FLOOR,
+      })
+      .catch(() => undefined);
+    if (pick === undefined) return kept;
+    for (const [category, value] of [
+      ["model", pick.model],
+      ["thought_level", pick.effort],
+    ] as const) {
+      if (value === undefined) continue;
+      try {
+        await session.setOption(category, value);
+      } catch (err) {
+        this.system(run, "warn", `Could not apply the pick (${value}): ${errorMessage(err)}`);
+      }
+    }
+    if (run.runId !== undefined) {
+      this.deps.store.runs.setPick(run.runId, {
+        model: pick.model,
+        effort: pick.effort,
+        decisionId: pick.decisionId,
+      });
+    }
+    return pick.reason;
+  }
+
   private onEvent(run: AgentRun, event: SessionEvent): void {
+    run.lastEventAt = this.now().getTime();
+    const internal = run.internal;
     switch (event.type) {
       case "text":
+        if (internal !== undefined) internal.text += event.text;
+        else run.mapper?.apply(event);
+        break;
       case "thought":
       case "media":
       case "plan":
-        run.mapper?.apply(event);
+        if (internal === undefined) run.mapper?.apply(event);
         break;
       case "tool":
+        if (internal !== undefined) break;
         run.mapper?.apply(event);
         this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
         break;
       case "usage":
-        if (event.size > 0) this.setLive(run, { usage: { used: event.used, size: event.size } });
+        if (event.size > 0) {
+          run.noteUsage({ used: event.used, size: event.size });
+          this.setLive(run, { usage: { used: event.used, size: event.size } });
+        }
         break;
       case "commands":
         this.deps.room.rememberCommands(run.agent, event.commands);
@@ -555,6 +932,7 @@ export class RunManager {
       case "exit":
         if (run.closing) break;
         run.exited = true;
+        run.retryable = looksLikeNetworkError(event.error ?? "");
         this.deps.room.flush(run.task);
         this.system(
           run,
@@ -565,7 +943,8 @@ export class RunManager {
         this.setLive(run, { status: "error", nowDoing: undefined });
         break;
     }
-    if (event.type === "plan") this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
+    if (event.type === "plan" && internal === undefined)
+      this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
   }
 
   private async onPermission(
@@ -648,20 +1027,385 @@ export class RunManager {
       this.system(run, "error", `@${run.agent} did not stop: ${errorMessage(err)}. Its session was closed.`);
       this.endSession(run, "error");
       void session.close().catch(() => undefined);
-      this.setLive(run, { status: "error", nowDoing: undefined });
+      if (run.paused === undefined) this.setLive(run, { status: "error", nowDoing: undefined });
     }
   }
 
-  /** Drops the session and ends the run row. The queue stays for the next start. */
-  private endSession(run: AgentRun, reason: string): void {
+  /** Drops the session, frees its slot (unless a fresh session takes it over) and ends the run row. The queue stays. */
+  private endSession(run: AgentRun, reason: string, keepSlot = false): void {
     run.unsubscribe?.();
     run.unsubscribe = undefined;
     if (run.adminToken !== undefined) this.deps.admin?.revoke(run.adminToken);
     run.adminToken = undefined;
+    if (run.decideToken !== undefined) this.deps.decisions?.revoke(run.decideToken);
+    run.decideToken = undefined;
+    if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
+    run.idleTimer = undefined;
     this.cancelPending(run);
     if (run.runId !== undefined) this.deps.store.runs.end(run.runId, reason, this.now().toISOString());
     run.session = undefined;
     run.runId = undefined;
     run.mapper = undefined;
+    if (!keepSlot) this.slots.release(this.key(run.task, run.agent));
   }
+
+  // ---------------------------------------------------------------------------
+  // Limits and idle stop (5.17)
+
+  /** Waits for a slot. Resolves false when the start was withdrawn (the task stopped). */
+  private async takeSlot(run: AgentRun): Promise<boolean> {
+    const key = this.key(run.task, run.agent);
+    if (this.slots.holds(key)) return true;
+    const granted = await this.slots.acquire({ key, task: run.task, account: run.account ?? run.agent });
+    run.queuedNoted = false;
+    if (!granted || run.closing) {
+      if (granted) this.slots.release(key);
+      return false;
+    }
+    if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
+    return true;
+  }
+
+  /** Shows each waiting run's place in line. */
+  private showLine(positions: Map<string, number>): void {
+    for (const [key, slot] of positions) {
+      const run = this.runs.get(key);
+      if (run === undefined) continue;
+      this.setLive(run, { status: "queued", slot });
+      if (!run.queuedNoted) {
+        run.queuedNoted = true;
+        this.system(
+          run,
+          "info",
+          `Queued, #${slot} in line: majhi is running as many agents as the limits allow. @${run.agent} starts when a slot is free.`,
+        );
+      }
+    }
+  }
+
+  /** Stops an idle process to make room for a waiting start. It resumes from its session later. */
+  private evict(key: string): void {
+    const run = this.runs.get(key);
+    const session = run?.session;
+    if (run === undefined || session === undefined || run.turning) return;
+    this.endSession(run, "idle");
+    void session.close().catch(() => undefined);
+    this.setLive(run, { status: "idle", nowDoing: undefined });
+  }
+
+  /** Stops the process after `idle_timeout` without a turn. The next message resumes the session. */
+  private scheduleIdleStop(run: AgentRun): void {
+    void this.deps.config
+      .settings()
+      .then((s) => {
+        if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
+        run.idleTimer = setTimeout(() => {
+          run.idleTimer = undefined;
+          const session = run.session;
+          if (session === undefined || run.turning || run.closing) return;
+          this.endSession(run, "idle");
+          void session.close().catch(() => undefined);
+        }, durationMs(s.limits.idle_timeout));
+        run.idleTimer.unref();
+      })
+      .catch(() => undefined);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Context budget (5.13)
+
+  private async budget(run: AgentRun): Promise<ContextBudget> {
+    const [settings, sections] = await Promise.all([
+      this.deps.config.settings(),
+      this.deps.config.sections(),
+    ]);
+    const org = this.deps.store.tasks.get(run.task)?.org;
+    return budgetFor(
+      settings.context,
+      org === undefined ? undefined : sections.orgs[org]?.context,
+      run.compactAt === undefined ? undefined : { compact_at: run.compactAt },
+    );
+  }
+
+  /**
+   * Brings the session back under its budget: native `/compact` first (threshold only), else a
+   * handoff note from the agent, else one majhi builds. Handoffs close the session; the next
+   * prompt opens a fresh one with the note. Returns false when the run paused instead (the cap).
+   */
+  private async compact(
+    run: AgentRun,
+    why: "threshold" | "rotation" | "fresh" | "recovery",
+  ): Promise<boolean> {
+    if (why !== "fresh" && run.compactions >= MAX_COMPACTIONS_PER_TURN) {
+      this.pause(
+        run,
+        "error",
+        `@${run.agent} is still over its context budget after ${MAX_COMPACTIONS_PER_TURN} compactions in one turn, so it paused. Use Fresh session, then resume the task.`,
+      );
+      return false;
+    }
+    if (why !== "fresh") run.compactions++;
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined) return true;
+    const before = run.usage?.used;
+    this.setLive(run, { nowDoing: "Compacting its context" });
+
+    if (why === "threshold") {
+      const command = compactCommand(run.live.commands);
+      if (command !== undefined && run.session !== undefined) {
+        const seq = run.usageSeq;
+        const res = await this.internalPrompt(run, `${command} ${COMPACT_NOTE}`);
+        if (res.ok) await run.waitUsage(seq, USAGE_WAIT_MS);
+        if (res.ok && run.usageSeq > seq && reachedTarget(run.usage, await this.budget(run))) {
+          this.postContext(run, { method: "native", before, after: run.usage?.used });
+          this.setLive(run, { nowDoing: undefined });
+          return true;
+        }
+      }
+    }
+
+    // Hand off. The agent writes the note unless its session is past saving.
+    let note: string | undefined;
+    if (why !== "recovery" && run.session !== undefined && !run.exited) {
+      const res = await this.internalPrompt(run, HANDOFF_REQUEST);
+      if (res.ok && looksLikeNote(res.text)) note = res.text.trim();
+    }
+    const built = await this.buildCarry(
+      run,
+      task,
+      note,
+      why === "recovery" ? "the session hit its limit" : "the agent did not write a note",
+    );
+    const session = run.session;
+    if (session !== undefined) {
+      // The fresh session takes over the slot.
+      this.endSession(run, "handoff", true);
+      void session.close().catch(() => undefined);
+    }
+    run.freshNext = true;
+    run.carry = built.carry;
+    run.turns = 0;
+    run.usage = undefined;
+    this.setLive(run, { usage: undefined, turns: 0, nowDoing: undefined });
+    this.postContext(run, {
+      method: why === "threshold" ? "handoff" : why,
+      before,
+      after: estimateText(freshPrompt(built.carry)),
+      note: built.path,
+    });
+    return true;
+  }
+
+  /** Recovery after a stop reason or error that means the window is full: hand off with majhi's note, then continue. */
+  private async recoverContext(run: AgentRun, why: string): Promise<boolean> {
+    this.system(run, "warn", `@${run.agent} ran out of room (${why}). Moving it to a fresh session.`);
+    if (!(await this.compact(run, "recovery"))) return false;
+    run.queue.unshift({ kind: "continue" });
+    return true;
+  }
+
+  /** The owner's "Fresh session". Returns the room item that says what happened. */
+  private async freshNow(run: AgentRun): Promise<RoomItem> {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`, 404);
+    if (run.session !== undefined) {
+      await this.compact(run, "fresh");
+    } else {
+      const worked = this.deps.store.runs.forTask(run.task).some((r) => r.agent === run.agent);
+      if (!worked)
+        return this.postSystem(
+          run,
+          "info",
+          `@${run.agent} has no session yet. Its first message starts one.`,
+        );
+      const built = await this.buildCarry(run, task, undefined, "the owner asked for a fresh session");
+      run.carry = built.carry;
+      run.freshNext = true;
+      this.postContext(run, {
+        method: "fresh",
+        after: estimateText(freshPrompt(built.carry)),
+        note: built.path,
+      });
+    }
+    const last = this.deps.store.room.page(run.task, 1).items[0];
+    if (last === undefined) throw new Error("The item was not stored");
+    return last;
+  }
+
+  private async freshDueNow(run: AgentRun): Promise<void> {
+    run.freshDue = false;
+    await this.freshNow(run);
+  }
+
+  /** Sends majhi's own prompt (compact, handoff request). The reply is collected, not shown in the room. */
+  private async internalPrompt(run: AgentRun, text: string): Promise<{ ok: boolean; text: string }> {
+    const session = run.session;
+    if (session === undefined) return { ok: false, text: "" };
+    const internal = { text: "" };
+    run.internal = internal;
+    try {
+      const res = await session.prompt([{ type: "text", text }]);
+      return { ok: res.stopReason === "end_turn", text: internal.text };
+    } catch {
+      return { ok: false, text: internal.text };
+    } finally {
+      run.internal = undefined;
+    }
+  }
+
+  /** The note (the agent's, or one from durable state), saved under `.handoffs/`, and what the fresh session gets. */
+  private async buildCarry(
+    run: AgentRun,
+    task: Task,
+    agentNote: string | undefined,
+    why: string,
+  ): Promise<{ carry: Carry; path: string }> {
+    const { store, room } = this.deps;
+    room.flush(task.id);
+    const taskMd = await readFile(join(task.folder, "TASK.md"), "utf8").catch(() => "");
+    const repos = checkpointRepos(task);
+    const last = store.runs.lastCheckpoint(task.id);
+    const recent = store.room.page(task.id, 300).items.filter((i) => i.type !== "context");
+    const note =
+      agentNote ??
+      durableNote({
+        task: task.id,
+        agent: run.agent,
+        taskMd,
+        checkpoint: last.checkpoint,
+        room: recent.filter((i) => i.seq > last.roomSeq),
+        diff: await diffText(repos, BUDGET.diff),
+        why,
+      });
+    const path = await saveNote(task.folder, run.agent, note);
+    return {
+      carry: {
+        taskMd,
+        note,
+        room: roomLines(recent.slice(0, 40), BUDGET.roomSummary, 300),
+        diffStat: await diffStat(repos),
+      },
+      path,
+    };
+  }
+
+  private postContext(
+    run: AgentRun,
+    event: {
+      method: "native" | "handoff" | "rotation" | "fresh" | "recovery";
+      before?: number | undefined;
+      after?: number | undefined;
+      note?: string | undefined;
+    },
+  ): void {
+    this.deps.room.post(run.task, `context:${randomUUID()}`, {
+      type: "context",
+      agent: run.agent,
+      method: event.method,
+      ...(event.before === undefined ? {} : { before: event.before }),
+      ...(event.after === undefined ? {} : { after: event.after }),
+      ...(event.note === undefined ? {} : { note: event.note }),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Checkpoints (5.7)
+
+  /** Commits the task's changed worktrees as the next checkpoint and records it on the run. */
+  private async checkpoint(run: AgentRun): Promise<void> {
+    const { store, room } = this.deps;
+    const task = store.tasks.get(run.task);
+    if (task === undefined) return;
+    const repos = checkpointRepos(task);
+    if (repos.length === 0) return;
+    try {
+      const identity = await this.identityFor(task);
+      const n = store.runs.lastCheckpoint(task.id).checkpoint + 1;
+      const result = await commitCheckpoint(repos, task.id, n, identity.identity);
+      for (const line of result.skipped) this.system(run, "warn", `Checkpoint: ${line}`);
+      if (result.committed.length === 0) return;
+      room.flush(task.id);
+      const seq = store.room.page(task.id, 1).items[0]?.seq ?? 0;
+      if (run.runId !== undefined) store.runs.setCheckpoint(run.runId, n, seq);
+      if (identity.fallback && room.get(task.id, IDENTITY_HINT_ID) === undefined) {
+        room.post(task.id, IDENTITY_HINT_ID, {
+          type: "system",
+          level: "info",
+          text: `Checkpoints are committed as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Orgs.`,
+        });
+      }
+    } catch (err) {
+      this.system(run, "warn", `Checkpoint failed: ${errorMessage(err)}`);
+    }
+  }
+
+  private async identityFor(task: Task): Promise<{ identity: Identity; fallback: boolean; orgName: string }> {
+    const orgs = (await this.deps.config.sections()).orgs;
+    const org = orgs[task.org ?? "private"];
+    const orgName = org?.name ?? "the org";
+    return org?.identity === undefined
+      ? { identity: DEFAULT_IDENTITY, fallback: true, orgName }
+      : { identity: org.identity, fallback: false, orgName };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pause and resume (5.7)
+
+  private pause(run: AgentRun, reason: PauseReason, text: string): void {
+    run.paused = reason;
+    run.clearTimers();
+    this.system(run, reason === "offline" ? "warn" : "error", text);
+    this.setLive(run, { status: "paused", nowDoing: undefined });
+    this.deps.onPaused?.(run.task, reason);
+  }
+
+  /** Queues "continue from where you stopped" and starts the loop, or restarts it once the current one ends. */
+  private resumeRun(run: AgentRun, why: string): void {
+    if (run.closing) return;
+    run.paused = undefined;
+    run.retryable = false;
+    if (run.retryTimer !== undefined) clearTimeout(run.retryTimer);
+    run.retryTimer = undefined;
+    if (!run.queue.some((e) => e.kind === "resume")) run.queue.unshift({ kind: "resume" });
+    run.interrupted = false;
+    run.resuming = true;
+    run.held = false;
+    this.system(run, "info", `Resuming @${run.agent}: ${why}.`);
+    this.deps.onResumed?.(run.task);
+    if (run.turning) run.redrive = true;
+    else void this.drive(run);
+  }
+
+  /** A resume did not work: try once more, then pause with reason error. */
+  private resumeFailed(run: AgentRun, message: string): void {
+    if (!run.resuming || run.closing) return;
+    run.resumeFailures++;
+    if (run.resumeFailures < 2) {
+      run.retryTimer = setTimeout(() => {
+        run.retryTimer = undefined;
+        this.resumeRun(run, "trying again");
+      }, RESUME_RETRY_MS);
+      run.retryTimer.unref();
+      return;
+    }
+    run.resuming = false;
+    run.resumeFailures = 0;
+    run.interrupted = true;
+    this.pause(
+      run,
+      "error",
+      `Could not resume @${run.agent} after two tries: ${message}. Resume the task to try again.`,
+    );
+  }
+}
+
+const IDENTITY_HINT_ID = "hint:identity";
+
+/** The task's worktrees, as checkpoints and diffs see them. */
+function checkpointRepos(task: Task): CheckpointRepo[] {
+  return task.repos.flatMap((r) =>
+    r.worktree === undefined
+      ? []
+      : [{ project: r.project, worktree: r.worktree, branch: r.branch, base: r.base }],
+  );
 }

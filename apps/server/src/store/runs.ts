@@ -57,16 +57,17 @@ export class RunRepo {
     return this.db.update(runs).set({ endedAt: at, stopReason }).where(isNull(runs.endedAt)).run().changes;
   }
 
-  /** The newest ACP session id for the pair, to resume it. */
+  /** The newest ACP session id for the pair, to resume it. A session that was handed off is never resumed. */
   lastSessionId(task: string, agent: string): string | undefined {
     const row = this.db
-      .select({ sessionId: runs.sessionId })
+      .select({ sessionId: runs.sessionId, stopReason: runs.stopReason })
       .from(runs)
       .where(and(eq(runs.task, task), eq(runs.agent, agent), isNotNull(runs.sessionId)))
       .orderBy(desc(runs.id))
       .limit(1)
       .get();
-    return row?.sessionId ?? undefined;
+    if (row === undefined || row.stopReason === "handoff") return undefined;
+    return row.sessionId ?? undefined;
   }
 
   /** A turn started (true), or ended on its own or by the owner (false). Crashes and pauses leave it set. */

@@ -211,7 +211,7 @@ export function createHandlers({
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
-    "room.fresh": notBuilt,
+    "room.fresh": async (input) => ({ item: await services.tasks.fresh(input.task, input.agent) }),
     "room.approve": async (input) => ({
       item: await services.admin.decide(input.task, input.item, input.decision),
     }),
@@ -253,6 +253,8 @@ export function createHandlers({
         meta: ctx.meta,
         summary: `changed ${describePatch(patch)}`,
       });
+      // Limits apply live: starts waiting in line may fit now.
+      if (patch.limits !== undefined) await services.runs.limitsChanged();
       return config.settings();
     },
     "policy.set": async (input, ctx) => {

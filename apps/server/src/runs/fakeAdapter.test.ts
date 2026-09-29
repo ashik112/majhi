@@ -78,7 +78,10 @@ describe("the run manager with the fake ACP adapter", () => {
     await w.h.majhi.services.runs.idle();
     const worktree = join(folder, "acme-api");
     expect(existsSync(join(worktree, "health.txt"))).toBe(true);
-    expect(await git(worktree, "status", "--porcelain")).toBe("?? health.txt");
+    // The turn ended with a checkpoint on the task branch.
+    expect(await git(worktree, "status", "--porcelain")).toBe("");
+    expect(await git(worktree, "log", "-1", "--format=%s|%an")).toBe("wip(ACM-1): checkpoint 1|majhi");
+    expect(await git(worktree, "show", "--name-only", "--format=", "HEAD")).toBe("health.txt");
     expect(await git(worktree, "symbolic-ref", "--short", "HEAD")).toBe(
       "task/acm-1-add-a-health-endpoint-to-api",
     );

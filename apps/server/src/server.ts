@@ -54,7 +54,12 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     sshHosts,
     remount: (unmounted) => requestRemount(hostLink, unmounted),
   });
-  const system = new SystemService({ hostLink, commit: env.commit, majhiHome: env.majhiHome });
+  const system = new SystemService({
+    hostLink,
+    commit: env.commit,
+    majhiHome: env.majhiHome,
+    working: () => services.runs.turnsInFlight(),
+  });
   const dispatch = createDispatcher(
     createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts, health, system }),
     (name) => services.events.emit(topicsFor(name)),
@@ -82,6 +87,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     attach(server) {
       services.watcher.start();
       services.usageSweeper.start();
+      services.resilience.start();
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,
@@ -97,6 +103,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     close() {
       services.watcher.stop();
       services.usageSweeper.stop();
+      system.close();
       services.terminals.closeAll();
       sockets?.close();
       if (sweeper !== undefined) clearInterval(sweeper);

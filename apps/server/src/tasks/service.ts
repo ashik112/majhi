@@ -1,4 +1,3 @@
-import { isBossChat } from "../admin/boss.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
@@ -17,6 +16,7 @@ import {
   type TaskSummary,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
+import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
@@ -602,6 +602,33 @@ export class TaskService {
     this.deps.room.publishTask(this.get(id));
     this.deps.events.emit(["tasks"]);
     await this.statusChanged(id);
+  }
+
+  /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */
+  async pausedByRuns(id: string, reason: "offline" | "error"): Promise<void> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "running") return;
+    this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
+    this.deps.room.publishTask(this.get(id));
+    await this.statusChanged(id);
+  }
+
+  /** A paused agent resumes by itself: a task majhi paused runs again. Tasks the owner stopped stay stopped. */
+  async resumedByRuns(id: string): Promise<void> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "paused" || task.pausedReason === "owner") return;
+    this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
+    this.deps.room.publishTask(this.get(id));
+    await this.statusChanged(id);
+  }
+
+  /** "Fresh session" on an agent in the room (5.13). */
+  fresh(id: string, agent: string | undefined): Promise<RoomItem> {
+    const task = this.get(id);
+    const target = agent ?? task.team[0];
+    if (target === undefined) throw new UserError(`Task ${id} has no agent.`, 409);
+    if (!task.team.includes(target)) throw new UserError(`@${target} is not on this task.`);
+    return this.deps.runs.fresh(task, target);
   }
 
   async send(input: {

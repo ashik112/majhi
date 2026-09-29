@@ -420,7 +420,7 @@ describe("failures and restarts", () => {
     expect(w.h.runtime.sessions[0]).not.toBe(second);
   });
 
-  it("reminds a fresh session to read TASK.md when the old one could not be loaded", async () => {
+  it("gives a fresh session a handoff note when the old one could not be loaded", async () => {
     await started(async () => {
       throw new Error("boom");
     });
@@ -428,12 +428,17 @@ describe("failures and restarts", () => {
     w.h.runtime.resumes = false;
     await send("try again");
     await runs().idle();
-    const text = w.h.runtime.sessions[1]?.prompts[0]?.[0];
-    expect(text).toEqual({
-      type: "text",
-      text: "First read TASK.md in this folder for the task and its rules.\n\ntry again",
-    });
-    // A slash command stays whole.
+    const block = w.h.runtime.sessions[1]?.prompts[0]?.[0];
+    const text = block?.type === "text" ? block.text : "";
+    expect(text).toMatch(/^majhi replaced your previous session/);
+    expect(text).toContain("# TASK.md");
+    expect(text).toContain("## Next step");
+    expect(text.endsWith("# The owner's message\n\ntry again")).toBe(true);
+    const context = (await items()).find((i) => i.type === "context");
+    expect(context).toMatchObject({ method: "recovery", note: ".handoffs/acme-builder-1.md" });
+    expect(await readFile(join(w.taskDir("ACM-1"), ".handoffs", "acme-builder-1.md"), "utf8")).toContain(
+      "Written by majhi from saved state (the previous session could not be loaded)",
+    );
   });
 
   it("keeps slash commands whole", async () => {
@@ -594,7 +599,7 @@ describe("start-up messages", () => {
     const t = await texts();
     expect(t).toContain("system: @acme-builder started on claude-acme, model fake-model, effort medium");
     expect(t).toContain(
-      "system: @acme-builder is set to auto for model or effort. This version uses the agent's own default.",
+      "system: No confident pick for @acme-builder, so it keeps the agent's default model and effort.",
     );
   });
 

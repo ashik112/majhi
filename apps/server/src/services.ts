@@ -25,6 +25,8 @@ import { OrgService } from "./orgs/service.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RunManager } from "./runs/manager.ts";
+import { type Probe, probeFromSetting } from "./runs/network.ts";
+import { Resilience } from "./runs/resilience.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -42,8 +44,10 @@ export interface ServiceOptions {
   links?: LinkOptions;
   /** Asks the host helper to load the owner's SSH keys again, for a fetch that lacked them. */
   reloadKeys?: () => Promise<boolean>;
-  /** The host helper link, for Laya. Without it Laya reports the helper as not connected. */
+  /** The host helper link, for Laya and wake from sleep. Without it Laya reports the helper as not connected. */
   hostLink?: HostLink;
+  /** Replaces the network probe, so tests can go offline. Default: from `MAJHI_NET_PROBE`. */
+  probe?: Probe;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -74,6 +78,8 @@ export interface Services {
   room: RoomService;
   runs: RunManager;
   tasks: TaskService;
+  /** Resume after restarts, lost internet and sleep, and the network watch. */
+  resilience: Resilience;
   /** Stops every agent process and closes the database. */
   close: () => Promise<void>;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
@@ -162,9 +168,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secrets,
     majhiHome: env.majhiHome,
     admin: new AdminAccess(adminTokens),
+    decisions,
     onTasksChanged: () => events.emit(["tasks"]),
-    // Bound below: the task service is built after the run manager.
+    // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),
+    onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
+    onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
+    onNetworkError: () => void resilience.networkError().catch(() => undefined),
   });
   runs.recover();
   const uploads = new UploadStore(env.majhiHome);
@@ -183,6 +193,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
   const admin = new AdminService({ config, room, store, secrets, tasks });
+  const resilience = new Resilience({
+    runs,
+    tasks,
+    store,
+    room,
+    config,
+    probe: options.probe ?? probeFromSetting(env.netProbe),
+    ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
+  });
+  options.hostLink?.onWake(() => void resilience.wake().catch(() => undefined));
+  void resilience
+    .startup()
+    .catch((err: unknown) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`));
   return {
     config,
     runtime,
@@ -200,7 +223,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     runs,
     tasks,
+    resilience,
     close: async () => {
+      resilience.stop();
       await runs.closeAll();
       store.close();
     },
