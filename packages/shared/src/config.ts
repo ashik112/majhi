@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 
 /** A path in majhi.yaml: absolute, or relative to the owner's home with `~/`. */
 export const ConfigPath = z
@@ -23,8 +24,8 @@ export const MajhiConfigSchema = z.strictObject({
   context: LaterSection.optional(),
   limits: LaterSection.optional(),
   boss: z.string().trim().min(1).optional(),
-  accounts: LaterSection.optional(),
-  orgs: LaterSection.optional(),
+  accounts: z.record(IdSchema, AccountConfigSchema).optional(),
+  orgs: z.record(IdSchema, OrgConfigSchema).optional(),
   projects: LaterSection.optional(),
 });
 

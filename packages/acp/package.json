@@ -1,0 +1,18 @@
+{
+  "name": "@majhi/acp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./testing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.5.1",
+    "@majhi/shared": "workspace:*",
+    "zod": "4.6.5"
+  }
+}
