@@ -1,6 +1,6 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,11 @@ import { briefBody, briefLabel, firstPendingPermission } from "./model";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
 
+// The viewer and its code view load when a file is first opened.
+const FileViewer = lazy(() =>
+  import("@/features/viewer/file-viewer").then((m) => ({ default: m.FileViewer })),
+);
+
 /** `/t/<id>`: the header, the room in the main column and the panel on the right. */
 export function TaskScreen() {
   const { taskId } = useParams({ from: "/t/$taskId" });
@@ -25,6 +30,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const task = useTask(taskId);
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
+  const { file } = useSearch({ from: "/t/$taskId" });
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -98,6 +104,11 @@ function TaskView({ taskId }: { taskId: string }) {
         />
         <RoomPanel task={data} agents={room.state.agents} items={room.state.items} yourTurn={yourTurn} />
       </div>
+      {file !== undefined && (
+        <Suspense fallback={null}>
+          <FileViewer taskId={data.id} folder={data.folder} path={file} items={room.state.items} />
+        </Suspense>
+      )}
     </div>
   );
 }

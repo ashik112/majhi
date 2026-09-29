@@ -35,6 +35,20 @@ describe("task files", () => {
   });
   afterEach(() => cleanup());
 
+  it("answers size and modified time for ?meta=1, under the same rules", async () => {
+    const res = await get("media/chart.png?meta=1");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const body = (await res.json()) as { size: number; modified: string };
+    expect(body.size).toBe(10);
+    expect(Number.isNaN(Date.parse(body.modified))).toBe(false);
+    expect((await get(".env?meta=1")).status).toBe(403);
+    expect((await get("link.txt?meta=1")).status).toBe(403);
+    expect((await get("up/outside.txt?meta=1")).status).toBe(403);
+    expect((await get("media/missing.png?meta=1")).status).toBe(404);
+    expect((await get("media?meta=1")).status).toBe(404);
+  });
+
   it("serves a file with its type, no sniffing and no caching", async () => {
     const res = await get("media/chart.png");
     expect(res.status).toBe(200);

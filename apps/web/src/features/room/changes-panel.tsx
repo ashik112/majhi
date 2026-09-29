@@ -1,7 +1,9 @@
 import type { RoomItem, Task } from "@majhi/shared";
-import { ChevronRight, FileDiff, FileMinus, FileSymlink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ChevronRight, Eye, FileDiff, FileMinus, FileSymlink } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { viewablePath } from "@/features/viewer/model";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/format";
 import { DiffView } from "./diff-view";
@@ -37,6 +39,7 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
                 <FileRow
                   key={file.path}
                   file={group.repo ? file : { ...file, shown: shortPath(file.path, task.folder) }}
+                  viewPath={viewablePath(file, group.repo?.worktree, task.folder)}
                 />
               ))}
             </ul>
@@ -55,7 +58,13 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
 
 const CHANGE_ICON = { edit: FileDiff, delete: FileMinus, move: FileSymlink } as const;
 
-function FileRow({ file }: { file: ReturnType<typeof filesByRepo>[number]["files"][number] }) {
+function FileRow({
+  file,
+  viewPath,
+}: {
+  file: ReturnType<typeof filesByRepo>[number]["files"][number];
+  viewPath: string | undefined;
+}) {
   const [open, setOpen] = useState(false);
   const Icon = CHANGE_ICON[file.change];
   const diff = file.diffs.at(-1);
@@ -81,18 +90,31 @@ function FileRow({ file }: { file: ReturnType<typeof filesByRepo>[number]["files
   );
   return (
     <li>
-      {expandable ? (
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-7 w-full items-center gap-1.5 rounded-sm px-1 text-left hover:bg-raised"
-        >
-          {inner}
-        </button>
-      ) : (
-        <div className="flex h-7 items-center gap-1.5 px-1">{inner}</div>
-      )}
+      <div className="flex items-center gap-1">
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-left hover:bg-raised"
+          >
+            {inner}
+          </button>
+        ) : (
+          <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-1">{inner}</div>
+        )}
+        {viewPath !== undefined && (
+          <Link
+            to="."
+            search={(prev: object) => ({ ...prev, file: viewPath })}
+            aria-label={`View ${file.shown}`}
+            className="flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-xs text-fg-muted hover:bg-raised hover:text-fg"
+          >
+            <Eye aria-hidden="true" className="size-3" />
+            View
+          </Link>
+        )}
+      </div>
       {open && diff && (
         <div className="mt-1 flex flex-col gap-2">
           {file.diffs.map((d, i) => (
