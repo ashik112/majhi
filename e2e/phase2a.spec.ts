@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
+import { type APIRequestContext, expect, type Locator, type Page, test } from "@playwright/test";
 import { HOST_HOME, MAJHI_HOME } from "./fixture.ts";
 
 // Builds on phase 1: an org "Acme", the agents acme-lead, acme-builder and the boss, and the API-key
@@ -74,6 +74,10 @@ async function startTask(page: Page, text: string): Promise<string> {
   await expect(room(page)).toBeVisible();
   return taskIdOf(page);
 }
+
+/** A permission that no longer waits: its verdict ("Allowed by rule", "Denied") and the request, on one line. */
+const verdict = (log: Locator, text: string, request: string) =>
+  log.getByRole("group").filter({ hasText: text }).filter({ hasText: request });
 
 const panel = (page: Page) => page.getByRole("complementary", { name: "Task details" });
 
@@ -156,7 +160,7 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   await page.getByRole("button", { name: "Stop all" }).waitFor();
   await shot(page, "room-running");
 
-  await expect(log.getByText("Allowed: Run npm test, by rule")).toBeVisible();
+  await expect(verdict(log, "Allowed by rule", "Run npm test")).toBeVisible();
   await expect(log.getByText(/Done\..*Created HEALTH\.md\. Tests passed\./)).toBeVisible();
   // Nothing is left open, so the plan is no longer pinned; the room keeps a summary line.
   await expect(plan).toBeHidden();
@@ -300,7 +304,7 @@ test("a command the agent may not run asks inline: Deny fails the tool and the t
   await prompt.getByRole("button", { name: "Deny" }).click();
   await expect(prompt).toBeHidden();
   await expect(banner).toBeHidden();
-  await expect(log.getByText("Denied: Run npm test")).toBeVisible();
+  await expect(verdict(log, "Denied", "Run npm test")).toBeVisible();
   await expect(log.getByRole("button", { name: /Run npm test.*failed/ })).toBeVisible();
   await expect(log.getByText(/I could not run the tests\./)).toBeVisible();
   await expectIdle(page);
@@ -316,7 +320,7 @@ test("Allow for this task answers the next ask of that kind by itself", async ({
 
   await composer(page).fill("run it once more");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(log.getByText("Allowed: Run npm test, by rule")).toBeVisible({ timeout: 20_000 });
+  await expect(verdict(log, "Allowed by rule", "Run npm test").last()).toBeVisible({ timeout: 20_000 });
   await expect(log.getByText(/Tests passed\./)).toHaveCount(2, { timeout: 20_000 });
   await expect(room(page).getByRole("region", { name: "Permission: Run npm test" })).toHaveCount(0);
   await expectIdle(page);
