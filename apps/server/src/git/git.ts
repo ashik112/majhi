@@ -20,6 +20,18 @@ export const GIT_TIMEOUT_MS = 30_000;
 export const FETCH_TIMEOUT_MS = 60_000;
 
 /**
+ * The environment of majhi's own git: the server's, so the forwarded SSH agent socket
+ * (`SSH_AUTH_SOCK`) reaches fetches and pushes. Agent runs never get it (SPEC 4.5).
+ */
+export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...source,
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_SSH_COMMAND: source.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
+  };
+}
+
+/**
  * Runs `git` with an argument list, never through a shell. Prompts are off, so a
  * missing credential fails at once instead of hanging the server.
  */
@@ -33,11 +45,7 @@ export async function git(
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       maxBuffer: 64 * 1024 * 1024,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
-      },
+      env: gitEnv(process.env),
     });
     return stdout;
   } catch (err) {

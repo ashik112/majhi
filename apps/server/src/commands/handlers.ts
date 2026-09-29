@@ -2,10 +2,15 @@ import type { CommandMeta, CommandName, CommandOutput, commands, Remount } from 
 import { RESTART_COMMAND } from "@majhi/shared";
 import type { z } from "zod";
 import type { ConfigService } from "../config/service.ts";
+import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import type { Services } from "../services.ts";
+import type { SshHostProbe } from "../ssh/hosts.ts";
+
+/** Loading keys and asking the Keychain can take a few seconds. */
+const SSH_CALL_TIMEOUT_MS = 40_000;
 
 export interface CommandContext {
   command: CommandName;
@@ -28,9 +33,17 @@ export interface HandlerDeps {
   scanner: RepoScanner;
   hostLink: HostLink;
   services: Services;
+  /** Probes the git hosts registered projects use. Tests may leave it out. */
+  sshHosts?: SshHostProbe;
 }
 
-export function createHandlers({ config, scanner, hostLink, services }: HandlerDeps): CommandHandlers {
+export function createHandlers({
+  config,
+  scanner,
+  hostLink,
+  services,
+  sshHosts,
+}: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
   return {
     "config.get": async () => (await config.load()).state,
@@ -70,7 +83,37 @@ export function createHandlers({ config, scanner, hostLink, services }: HandlerD
       return { remount: await requestRemount(hostLink, unmounted), unmounted };
     },
 
-    "host.status": async () => hostLink.status(),
+    "host.status": async () => {
+      const hosts = sshHosts?.cached();
+      return hosts === undefined || hosts.length === 0
+        ? hostLink.status()
+        : { ...hostLink.status(), sshHosts: hosts };
+    },
+
+    "ssh.reload": async () => {
+      const ssh = await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS);
+      hostLink.noteSsh(ssh);
+      // New keys may change what the git hosts answer.
+      await sshHosts?.refresh().catch(() => undefined);
+      return ssh;
+    },
+
+    "ssh.unlock": async (input) => {
+      // Only a key the helper reported as waiting for a passphrase. The helper checks again.
+      if (hostLink.status().info?.ssh?.needsPassphrase.includes(input.key) !== true) {
+        throw new UserError(`${input.key} is not waiting for a passphrase.`);
+      }
+      // The passphrase goes to the helper in this one job and nowhere else: it is not logged,
+      // kept, or put in an error. Errors below carry the helper's fixed sentence only.
+      const ssh = await hostLink.call(
+        "ssh.unlock",
+        { key: input.key, passphrase: input.passphrase },
+        SSH_CALL_TIMEOUT_MS,
+      );
+      hostLink.noteSsh(ssh);
+      await sshHosts?.refresh().catch(() => undefined);
+      return ssh;
+    },
 
     "fs.listDirs": (input) =>
       hostLink.call("listDirs", {

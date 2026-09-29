@@ -184,7 +184,16 @@ host helper   `apps/host`, a small Node process on the owner's machine (not in
               Docker), installed by `make up` as a login item (macOS LaunchAgent).
               It opens no port: it long-polls the server over the published
               127.0.0.1 port with a token from `~/.majhi/host.token`, and does
-              only fixed jobs: list host folders, suggest roots, remount roots.
+              only fixed jobs: list host folders, suggest roots, remount roots,
+              keep the Mac's SSH agent loaded (below), and give a key's
+              passphrase to the macOS Keychain once (`ssh.unlock`; the
+              passphrase travels browser, server, helper over localhost, is
+              never logged or stored by majhi, and the Keychain holds it).
+              SSH keys: at start, every 30 minutes and on `ssh.reload` it runs
+              `/usr/bin/ssh-add --apple-load-keychain`, then loads every
+              private key from `~/.ssh/config` `IdentityFile` entries and the
+              default names that has no passphrase and is not loaded yet, and
+              reports the count and the keys that still need a passphrase.
               On Apple silicon it also runs Laya natively with `laya-mlx`
               (MLX on the GPU). Later it is also where MAJHI_RUNNER=native
               spawns agents.
@@ -280,7 +289,7 @@ projects:
 ### 4.5 Docker details
 
 - Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so majhi generates `docker-compose.override.yml` with one mount per root from `majhi.yaml`. The host helper regenerates it and recreates the server container whenever roots change; `make up` does the same on first start. Only roots are mounted, never the whole home folder, so agents cannot reach other credentials in it.
-- Mount `~/.ssh/config` and `known_hosts` read-only. Forward the host SSH agent (Docker Desktop: `/run/host-services/ssh-auth.sock`; OrbStack exposes its own socket). Private keys never enter the container.
+- Mount `~/.ssh/config` and `known_hosts` read-only. Forward the host SSH agent (Docker Desktop: `/run/host-services/ssh-auth.sock`; OrbStack exposes its own socket) to majhi's own git only (fetching the base when a task starts, pushing after approval). It is never forwarded to agent runs: agents have no SSH access, which also closes the push-by-script gap in the push check. Private keys never enter the container. Only the **public** keys (`<IdentityFile>.pub` for every `IdentityFile` in `~/.ssh/config` and the default names, when the file exists) are bind-mounted read-only at their host paths, in the generated override next to the roots: with `IdentitiesOnly yes` OpenSSH reads the `.pub` file to choose the matching agent key when the private file is missing. A mount source without the `.pub` suffix is refused. The image adds a passwd entry for the owner's uid at start (home = the host home), because ssh will not run without one. `doctor` runs `ssh -T -o BatchMode=yes -o ConnectTimeout=5` against each ssh alias or `user@host` used by a registered project's remotes and reports reachable, auth failed or unreachable; `host.status` carries the same result (`sshHosts`) and Repos names a host that took no key. The host helper keeps the Mac's agent loaded (4.2); a key with a passphrase is unlocked once from the Repos screen and kept by the macOS Keychain.
 - Mount `~/.majhi` read-write.
 - The macOS Keychain is not reachable from Linux containers. Login credentials live in each account's config home under `~/.majhi/accounts/<id>/`. Tracker tokens and API keys live in `secrets.age`, decrypted at startup with a key passed as a Docker secret.
 - Provide a `MAJHI_RUNNER=native` option that spawns agents directly on the host instead of in the runner container, for when bind-mount performance hurts (large test suites on macOS). UI and services stay in Docker either way.
@@ -293,7 +302,7 @@ projects:
 
 ### 5.1 Agent runtime (ACP)
 
-- majhi spawns one ACP agent process per run with an explicit environment built from scratch: PATH, HOME, TMPDIR, locale, the agent's config home variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the account's API key variable if it is an API-key account (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), git identity for the org, and the SSH agent socket. Never pass majhi's own environment through.
+- majhi spawns one ACP agent process per run with an explicit environment built from scratch: PATH, HOME, TMPDIR, locale, the agent's config home variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), the account's API key variable if it is an API-key account (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), git identity for the org. There is no SSH agent socket: agents cannot fetch or push over SSH, and only majhi's own git uses the forwarded agent (4.5). Never pass majhi's own environment through.
 - Tools live in a registry (`packages/acp/tools/`). Each entry declares: the ACP launch command, the config home variable, the API key variable, how login works, and how to detect limit errors. v1 ships Claude Code and Codex. Adding Cursor, OpenCode or another agent from the ACP Registry means adding one entry with its tests.
 - **Models and effort levels are never hardcoded.** majhi reads them from the agent's ACP session config options (categories `model` and `thought_level`, plus `model_config`), caches them per account, and refreshes them when a session starts. If an agent's saved model or effort is no longer offered, majhi warns in Studio and the room and uses the agent's own default until the owner picks again.
 - Working directory: the task folder `<tasks_dir>/<task-id>/`, so the agent sees every repo in the task.
@@ -472,7 +481,7 @@ Connections give agents access to the systems the owner debugs and reports on: c
 - **Types** are registry entries, like tools, so new ones are cheap to add:
   - `kubectl`: a kubeconfig, one context, a default namespace.
   - `mcp`: any MCP server, local command or remote URL, with auth from `secrets.age`. For example New Relic's official remote server (`mcp.newrelic.com/mcp`).
-  - `ssh`: a host alias from `~/.ssh/config`. Only the SSH agent socket is forwarded, as everywhere else.
+  - `ssh`: a host alias from `~/.ssh/config`. Agent runs get no SSH agent socket (4.5); giving a run that holds an `ssh` connection its own access is decided when connections are built.
   - `env`: any number of named values for CLIs and APIs such as `aws`, `gcloud`, `psql`, OpenRouter or a video API. One connection can hold several, for example `API_KEY`, `USER_ID` and `ORG_ID` for one service.
   - `browser`: a browser the agent drives through a browser MCP server (Playwright or Chrome DevTools), with its own profile per connection, so each org's logins stay separate. Used for research and checking results; posting goes through platform APIs where they exist.
   - `mail`: an IMAP and SMTP account, or a mail MCP server.
@@ -549,7 +558,7 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 ## 6. Security
 
 - Per-run environment built from scratch (5.1). An org's agent never gets another org's credentials, unless the owner explicitly allows that agent to work in the other org. Show a warning in the editor when they do.
-- Private SSH keys stay on the host. Only the agent socket is forwarded.
+- Private SSH keys stay on the host. Only the agent socket is forwarded, and only to majhi's own git, never to agent runs. A key's passphrase is typed into majhi once, goes to the host helper over localhost, and ends in the macOS Keychain; majhi never stores or logs it.
 - Tracker tokens encrypted at rest (`secrets.age`).
 - Anything read from attachments, links, tracker items or repos is data, not instructions. Wrap it as such in prompts.
 - majhi binds to `127.0.0.1` only by default.

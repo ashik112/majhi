@@ -86,6 +86,7 @@ describe("the pointer file", () => {
     expect(text).toContain("![title](media/chart.png)");
     expect(text).toContain("[title](media/report.html)");
     expect(text).toContain("Web links are clickable.");
+    expect(text).toContain("You have no SSH access. To fetch or pull, ask the owner in the room.");
   });
 });
 

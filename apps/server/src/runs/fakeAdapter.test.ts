@@ -5,6 +5,7 @@ import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { baseEnv } from "../env.ts";
 import { git } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -85,6 +86,25 @@ describe("the run manager with the fake ACP adapter", () => {
     expect(await git(w.remote("api"), "for-each-ref", "--format=%(refname)")).toBe(
       "refs/heads/develop\nrefs/heads/main",
     );
+  });
+
+  it("starts the agent without the SSH agent socket, even when the server has one", async () => {
+    const before = process.env.SSH_AUTH_SOCK;
+    process.env.SSH_AUTH_SOCK = "/run/ssh-agent.sock";
+    try {
+      await realWorld();
+      w.h.env.runtime.base = baseEnv({ ...process.env, SSH_AUTH_SOCK: "/run/ssh-agent.sock" });
+      await w.h.cmd("tasks.create", { text: "fix api", start: true });
+      await w.h.majhi.services.runs.idle();
+      await w.h.cmd("room.send", { task: "ACM-1", text: "report-env" });
+      await w.h.majhi.services.runs.idle();
+      const said = (await items()).flatMap((i) => (i.type === "agent" ? [i.text] : [])).join("");
+      expect(said).toContain("SSH_AUTH_SOCK=unset.");
+      expect(said).not.toContain("/run/ssh-agent.sock");
+    } finally {
+      if (before === undefined) delete process.env.SSH_AUTH_SOCK;
+      else process.env.SSH_AUTH_SOCK = before;
+    }
   });
 
   it("stops a slow turn with cancel and leaves the agent idle", async () => {

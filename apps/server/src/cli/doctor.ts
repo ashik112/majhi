@@ -3,12 +3,20 @@ import { constants, existsSync } from "node:fs";
 import { access, stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
-import { type ConfigState, collapseHome, HostStatusSchema } from "@majhi/shared";
+import {
+  type ConfigState,
+  collapseHome,
+  type HostStatus,
+  HostStatusSchema,
+  type SshStatus,
+  sshUnlockCommand,
+} from "@majhi/shared";
 import { loadConfig } from "../config/load.ts";
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import { createServices, type Services } from "../services.ts";
+import { probeHosts, sshTargets } from "../ssh/hosts.ts";
 
 const run = promisify(execFile);
 
@@ -29,15 +37,17 @@ const HOST_STATUS_TIMEOUT_MS = 3_000;
 
 /** Checks that majhi can run here: config, config folder, git, mounts, SSH agent, disk space, host helper. */
 export async function runDoctor(env: ServerEnv, services: Services = createServices(env)): Promise<Check[]> {
-  const { state } = await loadConfig(env);
+  const { state, projectPaths } = await loadConfig(env);
+  const host = fetchHostStatus(env.port);
   const groups = await Promise.all([
     [checkConfig(state, env.hostHome)],
     checkMajhiHome(env.majhiHome, env.hostHome).then((c) => [c]),
     checkGit().then((c) => [c]),
     checkRoots(state, env.hostHome),
-    checkSshAgent().then((c) => [c]),
+    host.then((h) => checkSshAgent(h.status?.info?.ssh)).then((c) => [c]),
+    checkSshHosts(projectPaths),
     checkDisk(state, env.hostHome).then((c) => [c]),
-    checkHostHelper(env.port).then((c) => [c]),
+    host.then(checkHostHelper).then((c) => [c]),
     checkSecrets(services),
     checkTools(env, services),
     checkAccounts(services),
@@ -122,26 +132,53 @@ async function checkRoots(state: ConfigState, home: string): Promise<Check[]> {
   );
 }
 
-async function checkSshAgent(): Promise<Check> {
+/** `ssh` is what the host helper last reported. It knows which keys need a passphrase. */
+export async function checkSshAgent(ssh: SshStatus | undefined): Promise<Check> {
   const name = "SSH agent";
   const socket = process.env.SSH_AUTH_SOCK;
   if (socket === undefined || socket === "") {
     return { name, status: "fail", detail: "SSH_AUTH_SOCK is not set, so git over SSH cannot use your keys" };
   }
+  let keys: number;
   try {
     const { stdout } = await run("ssh-add", ["-l"], { timeout: TOOL_TIMEOUT_MS });
-    const keys = stdout.trim().split("\n").filter(Boolean).length;
-    return { name, status: "pass", detail: `Reachable, ${keys} ${keys === 1 ? "key" : "keys"} loaded` };
+    keys = stdout.trim().split("\n").filter(Boolean).length;
   } catch (err) {
     if (errorCode(err) === "ENOENT") {
       return { name, status: "warn", detail: "ssh-add is not installed, so the agent was not checked" };
     }
     // Exit 1 means the agent answered but holds no keys yet.
-    if (exitCode(err) === 1) {
-      return { name, status: "pass", detail: "Reachable, no keys loaded yet" };
-    }
-    return { name, status: "fail", detail: `Cannot reach the agent at ${socket}` };
+    if (exitCode(err) !== 1) return { name, status: "fail", detail: `Cannot reach the agent at ${socket}` };
+    keys = 0;
   }
+  return sshVerdict(name, keys, ssh);
+}
+
+export function sshVerdict(name: string, keys: number, ssh: SshStatus | undefined): Check {
+  const held = `${keys} ${keys === 1 ? "key" : "keys"} loaded`;
+  const needs = ssh?.needsPassphrase ?? [];
+  if (needs.length > 0) {
+    const commands = needs.map(sshUnlockCommand).join(" ; ");
+    return {
+      name,
+      status: "warn",
+      detail: `Reachable, ${held}. A key needs its passphrase once: run ${commands}, or unlock it on the Repos screen.`,
+    };
+  }
+  if (keys === 0) {
+    const why = ssh === undefined ? "the host helper has not loaded any" : "no key file was found to load";
+    return { name, status: "warn", detail: `Reachable, no keys loaded (${why}), so git over SSH will fail` };
+  }
+  return { name, status: "pass", detail: `Reachable, ${held}` };
+}
+
+/** `ssh -T` against each git host the registered projects use. Prints states only, never key material. */
+async function checkSshHosts(projectPaths: readonly string[]): Promise<Check[]> {
+  const results = await probeHosts(await sshTargets(projectPaths));
+  return results.map((r): Check => {
+    const name = `SSH host ${r.host}`;
+    return { name, status: r.state === "reachable" ? "pass" : "warn", detail: `${r.state}: ${r.detail}` };
+  });
 }
 
 async function checkDisk(state: ConfigState, home: string): Promise<Check> {
@@ -224,9 +261,10 @@ function firstLine(text: string): string {
   return text.split("\n", 1)[0] ?? text;
 }
 
-/** Asks the running server, on its own port, whether the host helper is connected. */
-async function checkHostHelper(port: number): Promise<Check> {
-  const name = "Host helper";
+type HostFetch = { status: HostStatus; problem?: undefined } | { status?: undefined; problem: string };
+
+/** Asks the running server, on its own port, what the host helper reports. */
+async function fetchHostStatus(port: number): Promise<HostFetch> {
   let body: unknown;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/cmd/host.status`, {
@@ -235,23 +273,30 @@ async function checkHostHelper(port: number): Promise<Check> {
       body: "{}",
       signal: AbortSignal.timeout(HOST_STATUS_TIMEOUT_MS),
     });
-    if (!res.ok) return { name, status: "warn", detail: `majhi answered ${res.status} to host.status` };
+    if (!res.ok) return { problem: `majhi answered ${res.status} to host.status` };
     body = await res.json();
   } catch {
-    return { name, status: "warn", detail: "majhi is not running, so the host helper was not checked" };
+    return { problem: "majhi is not running, so the host helper was not checked" };
   }
   const status = HostStatusSchema.safeParse(body);
-  if (!status.success) return { name, status: "warn", detail: "majhi sent an invalid host.status answer" };
-  if (!status.data.connected) {
+  if (!status.success) return { problem: "majhi sent an invalid host.status answer" };
+  return { status: status.data };
+}
+
+function checkHostHelper(host: HostFetch): Check {
+  const name = "Host helper";
+  if (host.status === undefined) return { name, status: "warn", detail: host.problem };
+  const { status } = host;
+  if (!status.connected) {
     return {
       name,
       status: "warn",
       detail: "Not connected, so folder browsing and automatic remounts are off. Run `make up` on the host.",
     };
   }
-  const version = status.data.info === undefined ? "" : ` (version ${status.data.info.version})`;
+  const version = status.info === undefined ? "" : ` (version ${status.info.version})`;
   const remounts =
-    status.data.info?.canRemount === true
+    status.info?.canRemount === true
       ? "automatic remounts are on"
       : "it cannot run Docker, so remounts need `make up`";
   return { name, status: "pass", detail: `Connected${version}, ${remounts}` };

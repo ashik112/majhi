@@ -1,4 +1,4 @@
-import type { DirListing, HostJob, HostReply, RootSuggestion } from "@majhi/shared";
+import type { DirListing, HostJob, HostReply, RootSuggestion, SshStatus } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
 
 export interface JobHandlers {
@@ -6,6 +6,9 @@ export interface JobHandlers {
   suggestRoots(): Promise<RootSuggestion[]>;
   /** Undefined when this helper cannot run `docker compose`. */
   remount: (() => Promise<unknown>) | undefined;
+  sshReload(): Promise<SshStatus>;
+  /** Throws an error whose message is safe to show. It never holds the passphrase. */
+  sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
 }
 
 export type SendReply = (reply: HostReply) => Promise<void>;
@@ -26,6 +29,12 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         return;
       case "suggestRoots":
         await reply({ id: job.id, ok: true, result: { suggestions: await handlers.suggestRoots() } });
+        return;
+      case "ssh.reload":
+        await reply({ id: job.id, ok: true, result: await handlers.sshReload() });
+        return;
+      case "ssh.unlock":
+        await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });
         return;
       case "remount": {
         const remount = handlers.remount;

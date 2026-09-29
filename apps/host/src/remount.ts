@@ -31,6 +31,8 @@ export interface RemountOptions {
   env: NodeJS.ProcessEnv;
   exec: ExecFn;
   log: Logger;
+  /** Absolute `.pub` files to mount read-only. Only the host can tell which exist. */
+  sshPublicKeys?: () => Promise<string[]>;
 }
 
 /** The environment `make up` gives `docker compose`, so a remount starts majhi the same way. */
@@ -62,14 +64,19 @@ export function createRemounter(options: RemountOptions): () => Promise<boolean>
   };
 }
 
-async function remount({ repo, docker, env, exec, log }: RemountOptions): Promise<boolean> {
+async function remount({ repo, docker, env, exec, log, sshPublicKeys }: RemountOptions): Promise<boolean> {
   const started = Date.now();
   const target = join(repo, OVERRIDE_FILE);
   const temp = `${target}.${process.pid}.tmp`;
-  const step = async (label: string, args: string[], timeout: number): Promise<string> => {
+  const step = async (
+    label: string,
+    args: string[],
+    timeout: number,
+    stepEnv: NodeJS.ProcessEnv = env,
+  ): Promise<string> => {
     log(`remount: ${label}: docker ${args.join(" ")}`);
     try {
-      return (await exec(docker, args, { cwd: repo, env, timeout })).stdout;
+      return (await exec(docker, args, { cwd: repo, env: stepEnv, timeout })).stdout;
     } catch (err) {
       const detail = typeof err === "object" && err !== null ? err : {};
       // execFile's message repeats all of stderr after its first line. Keep the line, add a tail.
@@ -83,10 +90,24 @@ async function remount({ repo, docker, env, exec, log }: RemountOptions): Promis
   };
 
   try {
+    const keys = sshPublicKeys === undefined ? [] : await sshPublicKeys().catch(() => []);
     const override = await step(
       "generate mounts",
-      ["compose", "run", "--rm", "--no-deps", "-T", "server", "node", "dist/cli.js", "gen-override"],
+      [
+        "compose",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "-e",
+        "MAJHI_SSH_PUBKEYS",
+        "server",
+        "node",
+        "dist/cli.js",
+        "gen-override",
+      ],
       GEN_TIMEOUT_MS,
+      { ...env, MAJHI_SSH_PUBKEYS: keys.join("\n") },
     );
     if (override.trim() === "") throw new Error("generate mounts printed nothing, so the override was kept");
     await writeFile(temp, override);

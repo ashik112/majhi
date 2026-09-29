@@ -40,6 +40,28 @@ export const RootSuggestionSchema = z.object({
 });
 export type RootSuggestion = z.infer<typeof RootSuggestionSchema>;
 
+/**
+ * What the helper knows about SSH keys in the Mac's agent. majhi's own git
+ * (fetch now, push later) uses that agent through the forwarded socket.
+ */
+export const SshStatusSchema = z.object({
+  /** Keys the agent holds after the last check. */
+  loaded: z.number().int().nonnegative(),
+  /** Private key files, with `~`, that have a passphrase the Keychain does not hold yet. */
+  needsPassphrase: z.array(z.string()),
+  error: z.string().optional(),
+  checkedAt: z.string(),
+});
+export type SshStatus = z.infer<typeof SshStatusSchema>;
+
+/** Longest passphrase majhi accepts. It goes to the helper once and is never stored. */
+export const SSH_PASSPHRASE_MAX = 1024;
+
+/** The one-time command that gives a passphrase-protected key to the macOS Keychain. */
+export function sshUnlockCommand(key: string): string {
+  return `ssh-add --apple-use-keychain ${key}`;
+}
+
 export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({
     id: z.string(),
@@ -49,6 +71,17 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
   /** Regenerate the compose override from majhi.yaml and recreate the server container. */
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
+  /** Load the Mac's SSH keys into its agent again and report the result. */
+  z.object({ id: z.string(), method: z.literal("ssh.reload"), params: z.object({}) }),
+  /**
+   * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
+   * must never be logged, stored or echoed in an error, on either side.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("ssh.unlock"),
+    params: z.object({ key: z.string().min(1), passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX) }),
+  }),
 ]);
 export type HostJob = z.infer<typeof HostJobSchema>;
 export type HostMethod = HostJob["method"];
@@ -58,6 +91,8 @@ export const HostResultSchemas = {
   suggestRoots: z.object({ suggestions: z.array(RootSuggestionSchema) }),
   /** The helper answers before it restarts the server, so the server can tell the UI. */
   remount: z.object({ accepted: z.literal(true) }),
+  "ssh.reload": SshStatusSchema,
+  "ssh.unlock": SshStatusSchema,
 } as const satisfies Record<HostMethod, z.ZodType>;
 
 export const HostReplySchema = z.discriminatedUnion("ok", [
@@ -72,12 +107,26 @@ export const HostInfoSchema = z.object({
   platform: z.string(),
   /** False when the helper cannot run Docker commands, so remounting is manual. */
   canRemount: z.boolean(),
+  /** Absent until the helper's first key check ends, and from older helpers. */
+  ssh: SshStatusSchema.optional(),
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";
 
+/** What `ssh -T` said about one git host that a registered project's remote uses. */
+export const SshHostCheckSchema = z.object({
+  /** The alias or `user@host` the remote uses, like `gitlab-ashik112`. */
+  host: z.string(),
+  state: z.enum(["reachable", "auth-failed", "unreachable"]),
+  /** A fixed sentence. Never ssh's own output. */
+  detail: z.string(),
+});
+export type SshHostCheck = z.infer<typeof SshHostCheckSchema>;
+
 export const HostStatusSchema = z.object({
   connected: z.boolean(),
+  /** From majhi's own ssh probes, so it is there even when no helper is connected. Absent before the first probe ends. */
+  sshHosts: z.array(SshHostCheckSchema).optional(),
   info: HostInfoSchema.optional(),
   lastSeen: z.string().optional(),
 });

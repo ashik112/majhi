@@ -8,6 +8,7 @@ import { createApp } from "./http/app.ts";
 import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
 import { attachSockets, type UpgradeSource } from "./sockets.ts";
+import { SshHostProbe, sshTargets } from "./ssh/hosts.ts";
 
 /** Unused uploads are looked for this often. */
 const UPLOAD_SWEEP_MS = 60 * 60 * 1000;
@@ -31,8 +32,9 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   const hostLink = options.hostLink ?? new HostLink();
   const services = createServices(env, options);
   const config = services.config;
+  const sshHosts = new SshHostProbe(async () => sshTargets((await config.load()).projectPaths));
   const dispatch = createDispatcher(
-    createHandlers({ config, scanner: new RepoScanner(), hostLink, services }),
+    createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts }),
     (name) => services.events.emit(topicsFor(name)),
   );
   const app = createApp({

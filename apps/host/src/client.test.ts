@@ -30,7 +30,7 @@ async function runScript(steps: Step[]) {
   await pollLoop({
     url: "http://127.0.0.1:7070",
     token: async () => "tok",
-    info: INFO,
+    info: () => INFO,
     log: (m) => logs.push(m),
     fetch: fakeFetch as typeof fetch,
     signal: controller.signal,

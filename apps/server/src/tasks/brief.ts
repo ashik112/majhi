@@ -59,6 +59,8 @@ export function renderPointer(task: Pick<Task, "id">): string {
     "To show the owner an image, video, audio or a page, save it in this folder (for example under `media/`) and link it in your message with markdown: `![title](media/chart.png)` or `[title](media/report.html)`.",
     "Web links are clickable.",
     "",
+    "You have no SSH access. To fetch or pull, ask the owner in the room. majhi fetches the base when the task starts.",
+    "",
   ].join("\n");
 }
 

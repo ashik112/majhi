@@ -1,9 +1,17 @@
 import { formatChecks, runDoctor } from "./cli/doctor.ts";
-import { InvalidConfigError, renderOverride } from "./cli/genOverride.ts";
+import { InvalidConfigError, isPublicKeyPath, renderOverride } from "./cli/genOverride.ts";
 import { loadConfig } from "./config/load.ts";
 import { parseEnv, type ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
 import { generateKey } from "./secrets/store.ts";
+
+/** Newline-separated paths from the host. Anything that is not a `.pub` path is dropped, so a private key is never mounted. */
+function publicKeysFromEnv(value: string | undefined): string[] {
+  return (value ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(isPublicKeyPath);
+}
 
 const USAGE = `Usage: majhi <command>
 
@@ -37,7 +45,7 @@ async function main(argv: string[]): Promise<number> {
     case "gen-override": {
       const { state } = await loadConfig(env);
       try {
-        process.stdout.write(renderOverride(state));
+        process.stdout.write(renderOverride(state, publicKeysFromEnv(process.env.MAJHI_SSH_PUBKEYS)));
         return 0;
       } catch (err) {
         if (!(err instanceof InvalidConfigError)) throw err;

@@ -52,6 +52,7 @@ import { RegisterDialog } from "./register-dialog";
 import { RepoDetails } from "./repo-details";
 import { RepoRow, rowId } from "./repo-row";
 import { ReposSkeleton } from "./repos-skeleton";
+import { SshNotice } from "./ssh-notice";
 
 /** Mounts the roots majhi cannot see, through the host helper. */
 interface MountAction {
@@ -322,6 +323,8 @@ function ReposView({ data, home, mount }: { data: ReposResponse; home: string; m
           </Button>
         </div>
       </div>
+
+      <SshNotice />
 
       <div className="relative flex min-h-0 flex-1">
         {scanning && (

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CANNOT_REMOUNT, type JobHandlers, runJob } from "./jobs.ts";
 import { composeEnv, createRemounter, type ExecFn, type ExecOptions, OVERRIDE_FILE } from "./remount.ts";
 
+const SSH_OK = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:00:00.000Z" };
 const OVERRIDE = "services:\n  server:\n    volumes:\n      - /Users/a/Work:/Users/a/Work\n";
 
 describe("host jobs", () => {
@@ -43,7 +44,18 @@ describe("host jobs", () => {
       throw new Error("There is no folder at /nope");
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
-    remount: createRemounter({ repo, docker: "/usr/local/bin/docker", env, exec, log: (m) => logs.push(m) }),
+    sshReload: async () => SSH_OK,
+    sshUnlock: async () => {
+      throw new Error("That passphrase did not unlock ~/.ssh/id_work.");
+    },
+    remount: createRemounter({
+      repo,
+      docker: "/usr/local/bin/docker",
+      env,
+      exec,
+      log: (m) => logs.push(m),
+      sshPublicKeys: async () => ["/Users/a/.ssh/id_ed25519.pub", "/Users/a/.ssh/gl.pub"],
+    }),
   });
   const reply = async (r: HostReply) => {
     replies.push(r);
@@ -63,6 +75,8 @@ describe("host jobs", () => {
         "--rm",
         "--no-deps",
         "-T",
+        "-e",
+        "MAJHI_SSH_PUBKEYS",
         "server",
         "node",
         "dist/cli.js",
@@ -70,6 +84,11 @@ describe("host jobs", () => {
       ],
       ["/usr/local/bin/docker", "compose", "up", "-d", "--wait"],
     ]);
+    // Only the generating step gets the key list, as one path per line.
+    expect(calls[0]?.options.env.MAJHI_SSH_PUBKEYS).toBe(
+      "/Users/a/.ssh/id_ed25519.pub\n/Users/a/.ssh/gl.pub",
+    );
+    expect(calls[1]?.options.env.MAJHI_SSH_PUBKEYS).toBeUndefined();
     for (const call of calls) {
       expect(call.options.cwd).toBe(repo);
       expect(call.options.env).toMatchObject({
@@ -148,6 +167,20 @@ describe("host jobs", () => {
     expect(replies.slice(-2)).toEqual([
       { id: "j4", ok: false, error: "There is no folder at /nope" },
       { id: "j5", ok: true, result: { suggestions: [{ path: "/Users/a/Work", repoCount: 2 }] } },
+    ]);
+  });
+
+  it("answers ssh jobs with the status, or with the helper's plain message", async () => {
+    const h = handlers(fakeExec());
+    await runJob({ id: "j6", method: "ssh.reload", params: {} }, h, reply);
+    await runJob(
+      { id: "j7", method: "ssh.unlock", params: { key: "~/.ssh/id_work", passphrase: "s3cret-phrase" } },
+      h,
+      reply,
+    );
+    expect(replies.slice(-2)).toEqual([
+      { id: "j6", ok: true, result: SSH_OK },
+      { id: "j7", ok: false, error: "That passphrase did not unlock ~/.ssh/id_work." },
     ]);
   });
 });

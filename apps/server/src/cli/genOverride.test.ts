@@ -33,6 +33,68 @@ describe("renderOverride", () => {
     });
   });
 
+  it("mounts SSH public keys read-only at the same path, next to the roots", () => {
+    const text = renderOverride(
+      {
+        status: "loaded",
+        ...base,
+        config: { workspaces: ["/Users/me/Work"], tasksDir: "/Users/me/Work/.majhi" },
+      },
+      [
+        "/Users/me/.ssh/id_ed25519.pub",
+        "/Users/me/.ssh/gitlab-ashik112.pub",
+        "/Users/me/.ssh/id_ed25519.pub",
+      ],
+    );
+    expect(parse(text).services.server.volumes).toEqual([
+      "/Users/me/Work:/Users/me/Work",
+      {
+        type: "bind",
+        source: "/Users/me/.ssh/gitlab-ashik112.pub",
+        target: "/Users/me/.ssh/gitlab-ashik112.pub",
+        read_only: true,
+      },
+      {
+        type: "bind",
+        source: "/Users/me/.ssh/id_ed25519.pub",
+        target: "/Users/me/.ssh/id_ed25519.pub",
+        read_only: true,
+      },
+    ]);
+    expect(parse(renderOverride({ status: "first-run", ...base }, ["/Users/me/.ssh/id_rsa.pub"]))).toEqual({
+      services: {
+        server: {
+          volumes: [
+            {
+              type: "bind",
+              source: "/Users/me/.ssh/id_rsa.pub",
+              target: "/Users/me/.ssh/id_rsa.pub",
+              read_only: true,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("never mounts a source without the .pub suffix: a private key cannot reach the override", () => {
+    const config = { workspaces: ["/Users/me/Work"], tasksDir: "/Users/me/Work/.majhi" };
+    for (const bad of [
+      "/Users/me/.ssh/id_ed25519",
+      "/Users/me/.ssh",
+      "id_rsa.pub",
+      "/Users/me/.ssh/id_rsa.pub.bak",
+    ]) {
+      expect(() => renderOverride({ status: "loaded", ...base, config }, [bad])).toThrow(/only \.pub files/);
+    }
+    const text = renderOverride({ status: "loaded", ...base, config }, ["/Users/me/.ssh/id_rsa.pub"]);
+    const volumes = parse(text).services.server.volumes as Array<
+      string | { source: string; read_only?: boolean }
+    >;
+    const sources = volumes.flatMap((v) => (typeof v === "object" && v.read_only ? [v.source] : []));
+    expect(sources.every((s) => s.endsWith(".pub"))).toBe(true);
+  });
+
   it("prints a valid override with no mounts on first run", () => {
     const text = renderOverride({ status: "first-run", ...base });
     expect(text).toContain("no extra mounts");

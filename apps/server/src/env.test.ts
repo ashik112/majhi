@@ -4,7 +4,7 @@ import { parseEnv } from "./env.ts";
 describe("parseEnv", () => {
   const base = { HOST_HOME: "/home/o", MAJHI_HOME: "/home/o/.majhi" };
 
-  it("defaults the secrets key file and passes only PATH, TMPDIR, LANG and SSH_AUTH_SOCK to agents", () => {
+  it("defaults the secrets key file and passes only PATH, TMPDIR and LANG to agents, never the SSH agent socket", () => {
     const env = parseEnv({
       ...base,
       PATH: "/usr/bin",
@@ -16,7 +16,7 @@ describe("parseEnv", () => {
     });
     expect(env.secretsKeyFile).toBe("/run/secrets/majhi_key");
     expect(env.runtime).toEqual({
-      base: { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", SSH_AUTH_SOCK: "/run/ssh.sock" },
+      base: { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8" },
       adapters: {},
       usage: {},
     });

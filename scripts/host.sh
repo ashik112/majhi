@@ -171,11 +171,21 @@ uninstall() {
   fi
 }
 
+# Prints the SSH public keys to mount read-only, one path per line, using the installed helper.
+# Prints nothing when the helper or Node is missing: majhi then starts without those mounts.
+pubkeys() {
+  is_macos || exit 0
+  [ -f "$BUNDLE" ] || exit 0
+  node_bin=$(find_node) || exit 0
+  "$node_bin" "$BUNDLE" --ssh-pubkeys 2>/dev/null || true
+}
+
 case "${1:-}" in
   install) install ;;
+  pubkeys) pubkeys ;;
   uninstall) uninstall ;;
   *)
-    echo "Usage: sh scripts/host.sh install|uninstall" >&2
+    echo "Usage: sh scripts/host.sh install|uninstall|pubkeys" >&2
     exit 2
     ;;
 esac

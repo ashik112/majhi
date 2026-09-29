@@ -209,6 +209,12 @@ export function serveAcp(o: ServeOptions): void {
         if (await step()) return finish("cancelled");
       }
 
+      if (/\breport-env\b/.test(text)) {
+        const line = `SSH_AUTH_SOCK=${process.env.SSH_AUTH_SOCK ?? "unset"}. `;
+        reply += line;
+        await say(line);
+      }
+
       await update(sessionId, {
         sessionUpdate: "tool_call",
         toolCallId: "t-read",

@@ -5,6 +5,7 @@
  * port; it polls the server (SPEC 4.2).
  */
 import { execFile } from "node:child_process";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { HostInfo } from "@majhi/shared";
@@ -16,13 +17,30 @@ import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
 import { findExecutable, toolPath } from "./paths.ts";
 import { composeEnv, createRemounter, type ExecFn } from "./remount.ts";
+import { runCommand } from "./runCommand.ts";
+import { createSsh, discoverPublicKeys } from "./ssh.ts";
 import { suggestRoots } from "./suggestRoots.ts";
 import { ensureToken } from "./token.ts";
 
 const exec: ExecFn = promisify(execFile);
 
+const files = {
+  readText: (file: string) => readFile(file, "utf8").catch(() => undefined),
+  exists: (file: string) =>
+    access(file).then(
+      () => true,
+      () => false,
+    ),
+};
+
 async function main(): Promise<void> {
   const config = parseHostConfig();
+  const publicKeys = () => discoverPublicKeys({ ...files, home: config.home });
+  if (process.argv.includes("--ssh-pubkeys")) {
+    // For `make up`: the .pub files to mount, one per line. Nothing else is printed.
+    for (const key of await publicKeys()) process.stdout.write(`${key}\n`);
+    return;
+  }
   const log = createFileLogger(join(config.majhiHome, "logs", "host.log"));
   await ensureToken(config.majhiHome);
 
@@ -42,12 +60,20 @@ async function main(): Promise<void> {
           }),
           exec,
           log,
+          sshPublicKeys: publicKeys,
         });
 
-  const info: HostInfo = {
-    version: config.version,
-    platform: process.platform,
-    canRemount: remount !== undefined,
+  const ssh = createSsh({
+    run: runCommand,
+    ...files,
+    home: config.home,
+    env: { ...process.env, PATH: path },
+    log,
+  });
+  const info = (): HostInfo => {
+    const status = ssh.status();
+    const base = { version: config.version, platform: process.platform, canRemount: remount !== undefined };
+    return status === undefined ? base : { ...base, ssh: status };
   };
   const link: LinkOptions = { url: config.url, token: () => ensureToken(config.majhiHome), info, log };
   const remounts =
@@ -60,9 +86,11 @@ async function main(): Promise<void> {
     `majhi host helper ${config.version} started (pid ${process.pid}, ${config.url}, remounts ${remounts})`,
   );
 
+  const stopSsh = ssh.start();
   const controller = new AbortController();
   const stop = (signal: string): void => {
     log(`stopping (${signal})`);
+    stopSsh();
     controller.abort();
   };
   process.once("SIGTERM", () => stop("SIGTERM"));
@@ -72,6 +100,8 @@ async function main(): Promise<void> {
     listDirs: (params: { path: string; showHidden: boolean }) => listDirs(params, config.home),
     suggestRoots: () => suggestRoots(config.home),
     remount,
+    sshReload: () => ssh.reload(),
+    sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
   };
   await pollLoop({
     ...link,

@@ -20,7 +20,7 @@ up:
 			|| { rm -f "$(SECRETS_KEY).tmp"; exit 1; }; \
 	fi
 	@sh scripts/host.sh install
-	@$(COMPOSE) run --rm --no-deps -T server node dist/cli.js gen-override > docker-compose.override.yml.tmp \
+	@MAJHI_SSH_PUBKEYS="$$(sh scripts/host.sh pubkeys)" $(COMPOSE) run --rm --no-deps -T -e MAJHI_SSH_PUBKEYS server node dist/cli.js gen-override > docker-compose.override.yml.tmp \
 		&& mv docker-compose.override.yml.tmp docker-compose.override.yml \
 		|| { rm -f docker-compose.override.yml.tmp; exit 1; }
 	$(COMPOSE) up -d --wait

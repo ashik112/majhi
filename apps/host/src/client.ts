@@ -36,7 +36,8 @@ export interface LinkOptions {
   url: string;
   /** Read before each request, so a replaced token file is picked up. */
   token: () => Promise<string>;
-  info: HostInfo;
+  /** Read before each poll, so the SSH status in it stays current. */
+  info: () => HostInfo;
   log: Logger;
   fetch?: typeof fetch;
 }
@@ -71,7 +72,7 @@ export async function pollLoop(options: PollLoopOptions): Promise<void> {
         method: "POST",
         headers: {
           authorization: `Bearer ${await options.token()}`,
-          [HOST_INFO_HEADER]: JSON.stringify(info),
+          [HOST_INFO_HEADER]: encodeInfo(info()),
         },
         signal: AbortSignal.any([signal, AbortSignal.timeout(POLL_REQUEST_TIMEOUT_MS)]),
       });
@@ -97,6 +98,14 @@ export async function pollLoop(options: PollLoopOptions): Promise<void> {
     );
     await sleep(backoff.next(), signal);
   }
+}
+
+/** JSON for a header: non-ASCII characters, like an accented key path, become unicode escapes. */
+export function encodeInfo(info: HostInfo): string {
+  return JSON.stringify(info).replace(
+    /[\u0080-\uffff]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 }
 
 /** Posts the reply to a job. Throws when the server did not take it. */

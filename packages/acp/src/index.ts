@@ -15,15 +15,15 @@ export interface Command {
 }
 
 /**
- * The only host values a spawned agent may see. The server fills this from its
- * own environment once; nothing else from `process.env` ever reaches an agent.
+ * The only host values a spawned agent may see. There is no SSH agent socket
+ * here: agents have no SSH access, and only majhi's own git uses the socket.
+ * The server fills this from its own environment once; nothing else from
+ * `process.env` ever reaches an agent.
  */
 export interface BaseEnv {
   PATH: string;
   TMPDIR?: string;
   LANG?: string;
-  /** Forwarded SSH agent socket. Private keys never enter the container. */
-  SSH_AUTH_SOCK?: string;
 }
 
 export interface RuntimeOptions {

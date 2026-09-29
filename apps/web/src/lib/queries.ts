@@ -6,6 +6,7 @@ import type {
   HostStatus,
   ReposResponse,
   RootSuggestion,
+  SshStatus,
   WorkspacesUpdate,
   WorkspacesUpdateResult,
 } from "@majhi/shared";
@@ -111,6 +112,35 @@ export function useHostStatus() {
     queryFn: () => cmd("host.status", {}),
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+/** Puts the SSH status a command returned into the host status the Repos screen reads. */
+function noteSsh(client: QueryClient, ssh: SshStatus): void {
+  client.setQueryData<HostStatus>(queryKeys.hostStatus, (old) =>
+    old?.info === undefined ? old : { ...old, info: { ...old.info, ssh } },
+  );
+}
+
+/** Asks the host helper to load the Mac's SSH keys again. */
+export function useSshReload() {
+  const client = useQueryClient();
+  return useMutation<SshStatus, ApiRequestError>({
+    mutationFn: () => cmd("ssh.reload", {}, { reason: "Owner asked to check SSH keys again" }),
+    onSuccess: (ssh) => noteSsh(client, ssh),
+  });
+}
+
+/**
+ * Gives one key its passphrase. The passphrase lives only in this call: the mutation is not
+ * kept after it settles (`gcTime: 0`), and no reason or log line carries it.
+ */
+export function useSshUnlock() {
+  const client = useQueryClient();
+  return useMutation<SshStatus, ApiRequestError, { key: string; passphrase: string }>({
+    mutationFn: (input) => cmd("ssh.unlock", input, { reason: "Owner unlocked an SSH key" }),
+    onSuccess: (ssh) => noteSsh(client, ssh),
+    gcTime: 0,
   });
 }
 

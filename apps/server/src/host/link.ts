@@ -8,6 +8,7 @@ import {
   type HostReply,
   HostResultSchemas,
   type HostStatus,
+  type SshStatus,
 } from "@majhi/shared";
 import type { z } from "zod";
 
@@ -28,6 +29,8 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   listDirs: (value) => HostResultSchemas.listDirs.safeParse(value),
   suggestRoots: (value) => HostResultSchemas.suggestRoots.safeParse(value),
   remount: (value) => HostResultSchemas.remount.safeParse(value),
+  "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
+  "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
 };
 
 /** The helper is not connected, or did not answer in time. */
@@ -91,6 +94,14 @@ export class HostLink {
     if (this.info !== undefined) status.info = this.info;
     if (this.lastSeen !== undefined) status.lastSeen = new Date(this.lastSeen).toISOString();
     return status;
+  }
+
+  /**
+   * Takes the SSH status a job just returned, so `status()` is current before
+   * the helper's next poll brings it too.
+   */
+  noteSsh(ssh: SshStatus): void {
+    if (this.info !== undefined) this.info = { ...this.info, ssh };
   }
 
   /** Sends a job to the helper and resolves with its checked result. */

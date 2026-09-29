@@ -31,6 +31,20 @@ FROM node:22-bookworm-slim AS runtime
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+# The container runs as the owner's uid so files it writes belong to the owner. OpenSSH refuses to
+# start for a uid with no passwd entry, so the entry is created here, at build time, with the owner's
+# real home (where ~/.ssh/config is mounted). /etc/passwd stays read-only, and setuid/setgid bits are
+# stripped from every binary, so an agent process in this container has no path to root.
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG HOST_HOME=/home/majhi
+RUN if ! getent group "$HOST_GID" >/dev/null; then groupadd -g "$HOST_GID" majhi; fi \
+  && if getent passwd "$HOST_UID" >/dev/null; then \
+       usermod -d "$HOST_HOME" "$(getent passwd "$HOST_UID" | cut -d: -f1)"; \
+     else \
+       useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -M -s /bin/sh majhi; \
+     fi \
+  && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 # The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
 RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
   && npm cache clean --force

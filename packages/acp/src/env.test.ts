@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildEnv } from "./env.ts";
 import { loginCommand } from "./login.ts";
 
-const base = { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", SSH_AUTH_SOCK: "/run/agent.sock" };
+const base = { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8" };
 
 describe("buildEnv", () => {
   afterEach(() => {
@@ -18,7 +18,6 @@ describe("buildEnv", () => {
       PATH: "/usr/bin",
       TMPDIR: "/tmp",
       LANG: "C.UTF-8",
-      SSH_AUTH_SOCK: "/run/agent.sock",
       HOME: "/h/a",
       CLAUDE_CONFIG_DIR: "/h/a",
     });
@@ -57,11 +56,10 @@ describe("buildEnv", () => {
     });
   });
 
-  it("never sets NO_BROWSER or other SSH variables", () => {
-    const env = buildEnv({ tool: "claude", home: "/h", apiKey: "k" }, base);
-    expect(
-      Object.keys(env).filter((k) => k === "NO_BROWSER" || (k.startsWith("SSH_") && k !== "SSH_AUTH_SOCK")),
-    ).toEqual([]);
+  it("never sets NO_BROWSER or any SSH variable, so agents have no SSH access", () => {
+    const withSocket = { ...base, SSH_AUTH_SOCK: "/run/agent.sock" } as typeof base;
+    const env = buildEnv({ tool: "claude", home: "/h", apiKey: "k" }, withSocket);
+    expect(Object.keys(env).filter((k) => k === "NO_BROWSER" || k.startsWith("SSH_"))).toEqual([]);
   });
 });
 

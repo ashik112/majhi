@@ -88,12 +88,14 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   };
 }
 
-/** PATH, TMPDIR, LANG and SSH_AUTH_SOCK from the server's environment, and nothing else. */
+/**
+ * PATH, TMPDIR and LANG from the server's environment, and nothing else. SSH_AUTH_SOCK is
+ * left out on purpose: only the server's own git uses it, never an agent run (SPEC 4.5).
+ */
 export function baseEnv(source: NodeJS.ProcessEnv): RuntimeOptions["base"] {
   const base: RuntimeOptions["base"] = { PATH: source.PATH || "/usr/local/bin:/usr/bin:/bin" };
   if (source.TMPDIR) base.TMPDIR = source.TMPDIR;
   if (source.LANG) base.LANG = source.LANG;
-  if (source.SSH_AUTH_SOCK) base.SSH_AUTH_SOCK = source.SSH_AUTH_SOCK;
   return base;
 }
 

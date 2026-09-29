@@ -20,7 +20,13 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
-import { DirListingSchema, HostResultSchemas, HostStatusSchema } from "./host.ts";
+import {
+  DirListingSchema,
+  HostResultSchemas,
+  HostStatusSchema,
+  SSH_PASSPHRASE_MAX,
+  SshStatusSchema,
+} from "./host.ts";
 import {
   ProjectConfigSchema,
   ProjectViewSchema,
@@ -91,6 +97,27 @@ export const commands = {
     summary: "Show whether the host helper is connected",
     input: Empty,
     output: HostStatusSchema,
+  },
+  "ssh.reload": {
+    risk: "change",
+    summary: "Load the Mac's SSH keys into its agent again and report which need a passphrase",
+    input: Empty,
+    output: SshStatusSchema,
+  },
+  "ssh.unlock": {
+    risk: "change",
+    summary: "Unlock an SSH key with its passphrase once; the macOS Keychain keeps it, majhi does not",
+    input: z.object({
+      /** A path from the last status's `needsPassphrase`. */
+      key: z.string().min(1),
+      /** Sent to the host helper once. Never logged, stored or returned. */
+      passphrase: z
+        .string()
+        .min(1)
+        .max(SSH_PASSPHRASE_MAX)
+        .refine((p) => !/[\r\n\0]/.test(p), "A passphrase cannot hold a line break"),
+    }),
+    output: SshStatusSchema,
   },
   "fs.listDirs": {
     risk: "read",
