@@ -25,6 +25,7 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 - Examples, test data, fixtures and docs use only generic sample names (Acme, Globex, Northwind, `/Users/owner`). Never write the owner's real companies, clients, projects, repos or paths into the repo.
 - Build a fake ACP agent in `packages/acp/testing` early. Use it for tests so they never spend real tokens.
 - Git: small commits, messages like `feat(rooms): route @mentions to agents`. One branch per phase.
+- Commit messages and PR descriptions never mention Claude or any AI assistant: no `Co-Authored-By` trailers, no "generated with" lines. Describe the change only.
 - No secrets in the repo, logs or test fixtures.
 
 ## Things that must never happen
