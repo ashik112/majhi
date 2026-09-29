@@ -20,8 +20,8 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 - TypeScript strict, no `any` without a comment explaining why.
 - zod schemas at every boundary (HTTP, WebSocket, files on disk, ACP messages, MCP tools). Shared schemas live in `packages/shared`.
 - Small modules with clear names. No framework magic that hides control flow.
-- Every feature ships with tests: unit tests for logic (parsers, routing, merge order, limit detection), integration tests for ACP and git flows using fake agents, and at least one Playwright test per user-facing flow.
-- Match tests to the size of the change. Copy, text and styling changes get no new tests; run typecheck and only the tests of the files you touched. Run the full suite (`sh scripts/ci.sh`) once, when a feature is finished, not after every edit.
+- Tests only for crucial logic: security (secrets, auth, sandboxing, path containment), anything that can lose or corrupt data (git, worktrees, migrations, config writes), money and limits, and core state machines (task status, runs, approvals). No tests for UI layout, copy, styling or simple wiring. Keep the fake ACP agent in `packages/acp/testing` so tests never spend tokens.
+- While working, run typecheck and only the tests of the files you touched. Run e2e and `sh scripts/ci.sh` once, at the end of a phase or before a merge to `main`, never after small changes. Copy, text and styling changes need no test run beyond typecheck.
 - Examples, test data, fixtures and docs use only generic sample names (Acme, Globex, Northwind, `/Users/owner`). Never write the owner's real companies, clients, projects, repos or paths into the repo.
 - Build a fake ACP agent in `packages/acp/testing` early. Use it for tests so they never spend real tokens.
 - Git: small commits, messages like `feat(rooms): route @mentions to agents`. One branch per phase.
