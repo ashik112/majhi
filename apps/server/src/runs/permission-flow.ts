@@ -22,7 +22,6 @@ export class PermissionFlow {
   /** The session's permission handler. Resolves with the option id, or undefined when cancelled. */
   ask(run: AgentRun, ask: PermissionAsk, signal: AbortSignal): Promise<string | undefined> {
     const { store, room } = this.deps;
-    const kind = ask.kind ?? "other";
     const decision = decidePermission(ask, {
       perms: run.perms,
       rememberedFor: (k) => store.permissions.allowed(run.task, k),
