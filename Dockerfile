@@ -19,8 +19,13 @@ COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps apps
 RUN pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm --filter @majhi/host build
-# esbuild cannot bundle a .node file, so the server build leaves node-pty external. Keep the compiled module for the runtime image.
+# esbuild cannot bundle a .node file, so the server build leaves node-pty and better-sqlite3 external.
+# Keep the compiled node-pty for the runtime image. better-sqlite3 ships Linux prebuilds, so only its
+# JavaScript and the prebuilds for this image are needed: not the SQLite sources.
 RUN mkdir /pty && cp -rL apps/server/node_modules/node-pty /pty/node-pty
+RUN mkdir /sqlite \
+  && cp -rL apps/server/node_modules/better-sqlite3 /sqlite/better-sqlite3 \
+  && rm -rf /sqlite/better-sqlite3/deps /sqlite/better-sqlite3/src /sqlite/better-sqlite3/prebuilds/darwin-* /sqlite/better-sqlite3/prebuilds/win32-*
 
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update \
@@ -32,6 +37,7 @@ RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprot
 WORKDIR /app
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /pty/node-pty ./node_modules/node-pty
+COPY --from=build /sqlite/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=build /src/apps/web/dist ./web
 # The host helper runs on the owner's machine, not here. `make up` copies it out of the image.
 COPY --from=build /src/apps/host/dist/majhi-host.mjs ./host/majhi-host.mjs

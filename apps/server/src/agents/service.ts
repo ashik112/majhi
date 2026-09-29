@@ -150,7 +150,7 @@ export class AgentService {
     sections: Awaited<ReturnType<ConfigService["sections"]>> | undefined,
     agentIds: ReadonlySet<string> = new Set(stored.map((a) => a.id)),
   ): Promise<AgentEntry[]> {
-    const empty = { exists: false, orgs: {}, accounts: {}, boss: undefined };
+    const empty = { exists: false, orgs: {}, accounts: {}, projects: {}, boss: undefined };
     const config = sections ?? empty;
     const models = new Map<string, AccountModels>();
     for (const a of stored) {

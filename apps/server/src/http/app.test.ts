@@ -114,7 +114,7 @@ describe("HTTP API", () => {
   });
 
   it("answers 409 when majhi.yaml cannot be edited safely", async () => {
-    await mkdir(env.majhiHome);
+    await mkdir(env.majhiHome, { recursive: true });
     await writeFile(join(env.majhiHome, "majhi.yaml"), "workspaces: [~/Work\n");
     const res = await cmd("workspaces.set", { workspaces: ["~/Work"] });
     expect(res.status).toBe(409);

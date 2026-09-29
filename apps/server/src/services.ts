@@ -10,14 +10,23 @@ import type { ServerEnv } from "./env.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { OrgService } from "./orgs/service.ts";
+import { ProjectService } from "./projects/service.ts";
+import { RoomService } from "./room/service.ts";
+import { RunManager } from "./runs/manager.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretStore } from "./secrets/store.ts";
+import { Store } from "./store/index.ts";
+import type { LinkOptions } from "./tasks/links.ts";
+import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
+import { UploadStore } from "./uploads/store.ts";
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
   runtime?: AcpRuntime;
   terminalTimers?: TerminalTimers;
+  /** Replaces `fetch` and the limits for task links, so tests never reach the network. */
+  links?: LinkOptions;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -33,6 +42,14 @@ export interface Services {
   events: EventHub;
   watcher: HomeWatcher;
   usageSweeper: UsageSweeper;
+  store: Store;
+  uploads: UploadStore;
+  projects: ProjectService;
+  room: RoomService;
+  runs: RunManager;
+  tasks: TaskService;
+  /** Stops every agent process and closes the database. */
+  close: () => Promise<void>;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
 }
 
@@ -71,12 +88,51 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
   });
+  const store = Store.open(env.majhiHome);
+  const room = new RoomService(store);
+  const agents = new AgentService(config, agentStore, cache, accounts);
+  const runs = new RunManager({
+    store,
+    room,
+    runtime,
+    options: env.runtime,
+    agents: agentStore,
+    config,
+    secrets,
+    majhiHome: env.majhiHome,
+    onTasksChanged: () => events.emit(["tasks"]),
+  });
+  runs.recover();
+  const uploads = new UploadStore(env.majhiHome);
+  const projects = new ProjectService(config, store.tasks);
+  const tasks = new TaskService({
+    store,
+    config,
+    projects,
+    agents: agentStore,
+    accounts,
+    uploads,
+    runs,
+    room,
+    events,
+    ...(options.links === undefined ? {} : { links: options.links }),
+  });
   return {
     config,
     runtime,
     secrets,
-    agents: new AgentService(config, agentStore, cache, accounts),
+    agents,
     agentStore,
+    store,
+    uploads,
+    projects,
+    room,
+    runs,
+    tasks,
+    close: async () => {
+      await runs.closeAll();
+      store.close();
+    },
     orgs: new OrgService(config, agentStore),
     accounts,
     terminals,

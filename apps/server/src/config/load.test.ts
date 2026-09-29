@@ -92,15 +92,25 @@ describe("parseConfigText", () => {
     expect(state).toMatchObject({ status: "loaded", config: { tasksDir: "/home/owner/Work/.majhi" } });
   });
 
-  it("reads project paths defensively", () => {
+  it("reads the path of every registered project", () => {
     const text = [
       "workspaces: [~/Work]",
       "projects:",
       "  api: { org: acme, path: ~/Work/acme/api }",
+      "  web: { org: acme, path: /srv/web, aliases: [Frontend] }",
+    ].join("\n");
+    expect(parse(text).projectPaths).toEqual(["/home/owner/Work/acme/api", "/srv/web"]);
+  });
+
+  it("marks the config invalid when a project is malformed", () => {
+    const text = [
+      "workspaces: [~/Work]",
+      "projects:",
       "  broken: just-a-string",
-      "  relative: { path: acme/web }",
       "  nopath: { org: acme }",
     ].join("\n");
-    expect(parse(text).projectPaths).toEqual(["/home/owner/Work/acme/api"]);
+    const loaded = parse(text);
+    expect(loaded.state.status).toBe("invalid");
+    expect(loaded.projectPaths).toEqual([]);
   });
 });

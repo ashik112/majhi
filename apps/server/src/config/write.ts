@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AccountConfig, OrgConfig, WorkspacesUpdate } from "@majhi/shared";
+import type { AccountConfig, OrgConfig, ProjectConfig, WorkspacesUpdate } from "@majhi/shared";
 import { type Document, isCollection, isMap, isNode, isScalar, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 
@@ -67,6 +67,20 @@ export function removeAccountEntry(file: string, id: string): Promise<void> {
     doc.deleteIn(["accounts", id]);
     const accounts: unknown = doc.get("accounts", true);
     if (isMap(accounts) && accounts.items.length === 0) doc.delete("accounts");
+  });
+}
+
+/** Adds or replaces `projects.<id>`. */
+export function writeProject(file: string, id: string, project: ProjectConfig): Promise<void> {
+  return editConfig(file, (doc) => doc.setIn(["projects", id], doc.createNode(project)));
+}
+
+/** Removes `projects.<id>`, and the `projects` key when it is left empty. */
+export function removeProjectEntry(file: string, id: string): Promise<void> {
+  return editConfig(file, (doc) => {
+    doc.deleteIn(["projects", id]);
+    const projects: unknown = doc.get("projects", true);
+    if (isMap(projects) && projects.items.length === 0) doc.delete("projects");
   });
 }
 

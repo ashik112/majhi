@@ -6,6 +6,9 @@ import { Hono } from "hono";
 import type { Dispatch } from "../commands/dispatch.ts";
 import { errorMessage } from "../errors.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
+import { uploadRoutes } from "../uploads/routes.ts";
+import type { UploadStore } from "../uploads/store.ts";
+import { isLoopbackOrigin } from "./origin.ts";
 
 export interface AppDeps {
   version: string;
@@ -14,13 +17,13 @@ export interface AppDeps {
   dispatch: Dispatch;
   /** The host helper link, served at `/api/host`. */
   host: HostRoutesDeps;
+  /** Serves `POST /api/uploads`. */
+  uploads: UploadStore;
 }
 
 const NOT_BUILT =
   "majhi is running, but the web app is not built.\n" +
   "Run `pnpm build`, or run `pnpm dev` and open the Vite URL.\n";
-
-const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
@@ -48,6 +51,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.route("/api/host", hostRoutes(deps.host));
+  app.route("/api/uploads", uploadRoutes(deps.uploads));
 
   app.all("/api/*", (c) =>
     c.json({ error: `Not found: ${c.req.method} ${c.req.path}` } satisfies ApiError, 404),
@@ -68,10 +72,4 @@ export function createApp(deps: AppDeps): Hono {
   return app;
 }
 
-export function isLoopbackOrigin(origin: string): boolean {
-  try {
-    return LOOPBACK_HOSTS.includes(new URL(origin).hostname);
-  } catch {
-    return false;
-  }
-}
+export { isLoopbackOrigin };

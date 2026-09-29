@@ -9,6 +9,9 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
 import { attachSockets, type UpgradeSource } from "./sockets.ts";
 
+/** Unused uploads are looked for this often. */
+const UPLOAD_SWEEP_MS = 60 * 60 * 1000;
+
 export interface MajhiAppOptions extends ServiceOptions {
   /** Passed in by `main.ts` so shutdown can end the helper's poll, and by tests to shorten timeouts. */
   hostLink?: HostLink;
@@ -19,8 +22,8 @@ export interface Majhi {
   services: Services;
   /** Starts the file watcher and serves the WebSocket channels on `server`. */
   attach(server: UpgradeSource): void;
-  /** Kills login terminals and stops the watcher and sockets. */
-  close(): void;
+  /** Kills login terminals, stops the watcher and sockets, ends every agent process and closes the database. */
+  close(): Promise<void>;
 }
 
 /** Wires the config, accounts, agents, live channels, the host helper link and the commands together. */
@@ -37,21 +40,35 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     webDist: env.webDist,
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
+    uploads: services.uploads,
   });
   let sockets: { close: () => void } | undefined;
+  let sweeper: NodeJS.Timeout | undefined;
   return {
     app,
     services,
     attach(server) {
       services.watcher.start();
       services.usageSweeper.start();
-      sockets = attachSockets(server, { events: services.events, terminals: services.terminals });
+      sockets = attachSockets(server, {
+        events: services.events,
+        terminals: services.terminals,
+        rooms: {
+          snapshot: (id) => services.tasks.snapshot(id),
+          subscribe: (id, fn) => services.room.subscribe(id, fn),
+        },
+      });
+      void services.uploads.sweep().catch(() => undefined);
+      sweeper = setInterval(() => void services.uploads.sweep().catch(() => undefined), UPLOAD_SWEEP_MS);
+      sweeper.unref();
     },
     close() {
       services.watcher.stop();
       services.usageSweeper.stop();
       services.terminals.closeAll();
       sockets?.close();
+      if (sweeper !== undefined) clearInterval(sweeper);
+      return services.close().catch(() => undefined);
     },
   };
 }

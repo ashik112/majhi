@@ -1,0 +1,195 @@
+import { readdir, rm, stat } from "node:fs/promises";
+import { errorCode } from "../errors.ts";
+import {
+  FETCH_TIMEOUT_MS,
+  GitError,
+  git,
+  gitOk,
+  isGitRepo,
+  localBranchExists,
+  remoteBranchExists,
+  remoteOf,
+  uncommitted,
+} from "./git.ts";
+
+export interface WorktreeRequest {
+  /** The project's own checkout. */
+  source: string;
+  base: string;
+  branch: string;
+  /** Where the worktree goes. Must not exist, or be empty. */
+  path: string;
+}
+
+export interface WorktreeResult {
+  createdBranch: boolean;
+  /** Things the owner should know, like a fetch that failed while offline. */
+  warnings: string[];
+}
+
+/** Something the owner can fix: a busy branch, a missing base, a folder in the way. */
+export class WorktreeProblem extends Error {}
+
+/** Runs one job at a time per key, so two tasks never touch one repo's worktree list together. */
+class KeyedQueue {
+  private readonly tails = new Map<string, Promise<unknown>>();
+
+  run<T>(key: string, job: () => Promise<T>): Promise<T> {
+    const tail = this.tails.get(key) ?? Promise.resolve();
+    const next = tail.then(job, job);
+    const settled = next.catch(() => undefined);
+    this.tails.set(key, settled);
+    void settled.then(() => {
+      if (this.tails.get(key) === settled) this.tails.delete(key);
+    });
+    return next;
+  }
+}
+
+const queue = new KeyedQueue();
+
+/**
+ * Adds one worktree for a task: fetches the base (skipped without a remote, and not fatal
+ * when offline), then makes a new branch from it, or checks out the named branch when it
+ * already exists locally or on the remote. Never pushes.
+ */
+export function createWorktree(req: WorktreeRequest): Promise<WorktreeResult> {
+  return queue.run(req.source, () => create(req));
+}
+
+async function create(req: WorktreeRequest): Promise<WorktreeResult> {
+  const { source, base, branch, path } = req;
+  if (!(await isGitRepo(source)))
+    throw new WorktreeProblem(`${source} is not a git repo the server can see.`);
+
+  if (await isWorktreeOf(path, branch)) return { createdBranch: false, warnings: [] };
+  await requireFreePath(path);
+
+  const warnings: string[] = [];
+  const remote = await remoteOf(source);
+  if (remote !== undefined) {
+    const failed = await tryFetch(source, remote, base);
+    if (failed !== undefined) {
+      warnings.push(
+        `Could not fetch ${base} from ${remote} (${failed}). Using the last copy on this machine.`,
+      );
+    }
+    // A named branch that exists only on the remote needs its own fetch. Missing is fine.
+    await tryFetch(source, remote, branch);
+  }
+
+  if (await localBranchExists(source, branch)) {
+    await add(source, ["worktree", "add", path, branch], branch);
+    return { createdBranch: false, warnings };
+  }
+  if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
+    await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
+    return { createdBranch: false, warnings };
+  }
+  const baseRef = await resolveBase(source, remote, base);
+  await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
+  return { createdBranch: true, warnings };
+}
+
+async function tryFetch(source: string, remote: string, ref: string): Promise<string | undefined> {
+  try {
+    await git(source, ["fetch", "--quiet", remote, ref], { timeoutMs: FETCH_TIMEOUT_MS });
+    return undefined;
+  } catch (err) {
+    return err instanceof GitError ? err.message : String(err);
+  }
+}
+
+/** The remote copy of the base when there is one, else the local branch, tag or commit. */
+async function resolveBase(source: string, remote: string | undefined, base: string): Promise<string> {
+  if (remote !== undefined && (await remoteBranchExists(source, remote, base))) return `${remote}/${base}`;
+  if (await localBranchExists(source, base)) return base;
+  if (await gitOk(source, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`])) return base;
+  throw new WorktreeProblem(`Base branch "${base}" was not found in ${source}.`);
+}
+
+async function add(source: string, args: string[], branch: string): Promise<void> {
+  try {
+    await git(source, args);
+  } catch (err) {
+    if (!(err instanceof GitError)) throw err;
+    const busy = /already (?:checked out|used by worktree) at '([^']+)'/.exec(err.stderr);
+    if (busy?.[1] !== undefined) {
+      const dirty = await uncommitted(busy[1]).then(
+        (lines) => lines.length > 0,
+        () => false,
+      );
+      throw new WorktreeProblem(
+        `Branch "${branch}" is already checked out at ${busy[1]}${dirty ? ", which has uncommitted changes" : ""}. ` +
+          "Switch that checkout to another branch, or name a different working branch.",
+      );
+    }
+    throw new WorktreeProblem(`Could not add the worktree for "${branch}": ${err.message}`);
+  }
+}
+
+async function requireFreePath(path: string): Promise<void> {
+  try {
+    const info = await stat(path);
+    if (!info.isDirectory() || (await readdir(path)).length > 0) {
+      throw new WorktreeProblem(`${path} already exists. Remove it or pick another task.`);
+    }
+  } catch (err) {
+    if (errorCode(err) !== "ENOENT") throw err;
+  }
+}
+
+/** True when `path` is already this branch's worktree, so starting twice does nothing. */
+async function isWorktreeOf(path: string, branch: string): Promise<boolean> {
+  try {
+    const current = (await git(path, ["symbolic-ref", "--short", "HEAD"])).trim();
+    const top = (await git(path, ["rev-parse", "--show-toplevel"])).trim();
+    return current === branch && (await sameDir(top, path));
+  } catch {
+    return false;
+  }
+}
+
+async function sameDir(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([stat(a), stat(b)]);
+  return x.ino === y.ino && x.dev === y.dev;
+}
+
+/** Worktrees with uncommitted changes, from the paths given. Missing folders count as clean. */
+export async function dirtyWorktrees(
+  paths: readonly string[],
+): Promise<{ path: string; changes: string[] }[]> {
+  const found = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        return { path, changes: await uncommitted(path) };
+      } catch {
+        return { path, changes: [] };
+      }
+    }),
+  );
+  return found.filter((f) => f.changes.length > 0);
+}
+
+/**
+ * Removes a worktree from its source repo and deletes its folder. Without `force`
+ * git refuses when there are uncommitted changes. The branch stays.
+ */
+export function removeWorktree(source: string, path: string, force: boolean): Promise<void> {
+  return queue.run(source, async () => {
+    if (await isGitRepo(source)) {
+      const args = ["worktree", "remove", ...(force ? ["--force"] : []), path];
+      try {
+        await git(source, args);
+      } catch (err) {
+        const missing = await stat(path).then(
+          () => false,
+          () => true,
+        );
+        if (!missing && !force) throw new WorktreeProblem(err instanceof Error ? err.message : String(err));
+      }
+      await git(source, ["worktree", "prune"]).catch(() => undefined);
+    }
+    await rm(path, { recursive: true, force: true });
+  });
+}

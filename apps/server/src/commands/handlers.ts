@@ -110,6 +110,33 @@ export function createHandlers({ config, scanner, hostLink, services }: HandlerD
       await agents.setBoss(input.id, ctx.command, ctx.meta);
       return { boss: input.id };
     },
+
+    "projects.list": () => services.projects.list(),
+    "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
+    "projects.update": (input, ctx) => services.projects.update(input, ctx.command, ctx.meta),
+    "projects.remove": async (input, ctx) => {
+      await services.projects.remove(input.id, ctx.command, ctx.meta);
+      return { removed: input.id };
+    },
+
+    "tasks.list": async (input) => services.tasks.list(input.includeDone === true),
+    "tasks.get": async (input) => services.tasks.get(input.id),
+    "tasks.create": (input) => services.tasks.create(input),
+    "tasks.start": (input) => services.tasks.start(input.id),
+    "tasks.stop": (input) => services.tasks.stop(input.id),
+    "tasks.close": (input) => services.tasks.close(input.id),
+    "tasks.remove": async (input) => {
+      await services.tasks.remove(input.id, input.force === true);
+      return { removed: input.id };
+    },
+
+    "room.send": async (input) => ({ item: await services.tasks.send(input) }),
+    "room.cancel": async (input) => ({ cancelled: await services.tasks.cancel(input.task, input.agent) }),
+    "room.permission": async (input) => ({
+      item: services.tasks.answerPermission(input.task, input.item, input.option),
+    }),
+    "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
+    "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
   };
 }
 

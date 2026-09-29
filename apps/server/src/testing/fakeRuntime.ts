@@ -1,7 +1,15 @@
 import { mkdir } from "node:fs/promises";
-import type { AccountProbe, AccountRuntime, LoginSpec, RuntimeOptions } from "@majhi/acp";
+import type {
+  AccountProbe,
+  AccountRuntime,
+  AgentSession,
+  LoginSpec,
+  RuntimeOptions,
+  SessionStart,
+} from "@majhi/acp";
 import type { AccountUsage, HealthCheck, ToolId, ToolInfo } from "@majhi/shared";
 import type { AcpRuntime } from "../runtime.ts";
+import { FakeSession } from "./fakeSession.ts";
 
 const TOOLS: ToolInfo[] = [
   {
@@ -51,6 +59,16 @@ export interface FakeRuntime extends AcpRuntime {
   usage: AccountUsage | Error | undefined;
   usageReads: AccountRuntime[];
   cliVersions: Partial<Record<ToolId, string>>;
+  /** Every `startSession` call. */
+  starts: SessionStart[];
+  /** The sessions it handed out, oldest first. */
+  sessions: FakeSession[];
+  /** False: a resume request opens a new session instead, like an agent without session/load. */
+  resumes: boolean;
+  /** Makes `startSession` reject. */
+  startError: Error | undefined;
+  /** Shapes each new session, for example to set its `script`. */
+  onSession: ((session: FakeSession, start: SessionStart) => void) | undefined;
 }
 
 /** A runtime that starts nothing. Tests change `probe` and read `probes` and `prepared`. */
@@ -83,6 +101,20 @@ export function fakeRuntime(): FakeRuntime {
     usage: undefined,
     usageReads: [],
     cliVersions: { claude: "2.1.0", codex: "0.158.0" },
+    starts: [],
+    sessions: [],
+    startError: undefined,
+    resumes: true,
+    onSession: undefined,
+    async startSession(start): Promise<AgentSession> {
+      runtime.starts.push(start);
+      if (runtime.startError !== undefined) throw runtime.startError;
+      const resumed = runtime.resumes ? start.resume : undefined;
+      const session = new FakeSession(resumed ?? `fake-session-${runtime.sessions.length + 1}`);
+      runtime.onSession?.(session, start);
+      runtime.sessions.push(session);
+      return session;
+    },
     toolInfos: () => TOOLS,
     async prepareHome(account) {
       runtime.prepared.push(account);

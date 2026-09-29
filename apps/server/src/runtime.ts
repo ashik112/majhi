@@ -1,4 +1,11 @@
-import type { AccountProbe, AccountRuntime, LoginSpec, RuntimeOptions } from "@majhi/acp";
+import type {
+  AccountProbe,
+  AccountRuntime,
+  AgentSession,
+  LoginSpec,
+  RuntimeOptions,
+  SessionStart,
+} from "@majhi/acp";
 import * as acp from "@majhi/acp";
 import type { AccountUsage, ToolId, ToolInfo } from "@majhi/shared";
 
@@ -7,6 +14,8 @@ import type { AccountUsage, ToolId, ToolInfo } from "@majhi/shared";
  * pass a fake and never start a real CLI.
  */
 export interface AcpRuntime {
+  /** Opens an ACP session with an agent CLI. */
+  startSession(start: SessionStart): Promise<AgentSession>;
   toolInfos(): ToolInfo[];
   prepareHome(account: AccountRuntime): Promise<void>;
   loginCommand(account: AccountRuntime, options: RuntimeOptions): LoginSpec;
@@ -23,4 +32,5 @@ export const realRuntime: AcpRuntime = {
   probeAccount: acp.probeAccount,
   readUsage: acp.readUsage,
   cliVersion: acp.cliVersion,
+  startSession: (start) => acp.startSession(start),
 };

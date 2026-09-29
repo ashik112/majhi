@@ -23,7 +23,11 @@ describe("login terminals over WebSocket", () => {
     terminals = new TerminalManager({ removeAfterExitMs: 200 });
     events = new EventHub();
     server = createServer();
-    ({ close } = attachSockets(server, { events, terminals }));
+    ({ close } = attachSockets(server, {
+      events,
+      terminals,
+      rooms: { snapshot: () => undefined, subscribe: () => () => {} },
+    }));
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     base = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });

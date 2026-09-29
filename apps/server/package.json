@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "esbuild src/main.ts src/cli.ts --bundle --platform=node --format=esm --target=node22 --external:node-pty --outdir=dist --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "build": "esbuild src/main.ts src/cli.ts --bundle --platform=node --format=esm --target=node22 --external:node-pty --external:better-sqlite3 --outdir=dist --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json"
   },

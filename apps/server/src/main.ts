@@ -32,14 +32,15 @@ function shutdown(signal: string): void {
   console.log(`majhi stopping (${signal})`);
   // The host helper's long poll would hold close() open for up to 25 seconds.
   hostLink.close();
-  majhi.close();
+  const closed = majhi.close();
   // Open keep-alive connections would hold close() open. Give requests a moment, then force.
   const force = setTimeout(() => {
     if ("closeAllConnections" in server) server.closeAllConnections();
     process.exit(0);
   }, SHUTDOWN_GRACE_MS);
   force.unref();
-  server.close(() => process.exit(0));
+  // Agent processes are ended before we exit.
+  server.close(() => void closed.finally(() => process.exit(0)));
 }
 
 process.once("SIGTERM", () => shutdown("SIGTERM"));

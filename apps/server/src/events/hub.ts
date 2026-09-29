@@ -34,6 +34,10 @@ export function topicsFor(command: string): EventTopic[] {
       return ["agents", "config"];
     case "workspaces":
       return ["config"];
+    case "projects":
+      return ["projects", "config"];
+    case "tasks":
+      return ["tasks"];
     default:
       return [];
   }
