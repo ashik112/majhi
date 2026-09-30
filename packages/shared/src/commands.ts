@@ -46,6 +46,7 @@ import {
   MergeOrderSchema,
   OpenMrsResultSchema,
   RefreshMrsResultSchema,
+  RepoDiffSchema,
 } from "./mrs.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
@@ -634,6 +635,13 @@ export const commands = {
     output: z.array(z.object({ project: IdSchema, base: z.string(), branches: z.array(z.string()) })),
   },
   // Merge requests (5.5) ------------------------------------------------------
+  "tasks.diff": {
+    risk: "read",
+    summary:
+      "Show what each repo of a task changed against its base branch, as git diffs per file, commits and uncommitted work together",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.array(RepoDiffSchema),
+  },
   "tasks.mergeOrder": {
     risk: "read",
     summary:

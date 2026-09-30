@@ -33,6 +33,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
 import { localBranches, type MergeOutcome, mergeBranch } from "../git/merge.ts";
 import {
@@ -929,6 +930,12 @@ export class TaskService {
     const clean = results.every((r) => r.ok);
     if (clean && input.done) return { results, task: await this.close(task.id) };
     return { results, task: this.get(task.id) };
+  }
+
+  /** What each repo of the task changed against its base, as git diffs. */
+  async diff(id: string) {
+    const task = this.get(id);
+    return Promise.all(task.repos.map((r) => repoDiff(r)));
   }
 
   /** Local branches of each repo of the task, for picking where to merge. */

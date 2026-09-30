@@ -195,6 +195,7 @@ export function createHandlers({
     "tasks.close": (input) => services.tasks.close(input.id),
     "tasks.merge": (input) => services.tasks.merge(input),
     "tasks.branches": (input) => services.tasks.branches(input.id),
+    "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
     "tasks.setMergeOrder": (input) => services.mrs.setOrder(input.id, input.order),
     "tasks.openMrs": (input) => services.mrs.open(input.id),

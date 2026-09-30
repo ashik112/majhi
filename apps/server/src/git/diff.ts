@@ -1,0 +1,119 @@
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import type { RepoDiff, RepoDiffFile } from "@majhi/shared";
+import { git, listUntracked, localBranchExists } from "./git.ts";
+
+/** Files listed per repo, and patch text kept per file. Past these the owner reads the diff on the host. */
+export const MAX_DIFF_FILES = 300;
+export const MAX_PATCH_BYTES = 200_000;
+
+const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M"];
+
+type Repo = { project: string; source: string; base: string; branch: string; worktree?: string | undefined };
+
+/**
+ * What a task repo changed against its base: the branch's commits since it left the base, plus
+ * uncommitted and new files while the worktree exists. The patches are git's own.
+ */
+export async function repoDiff(repo: Repo): Promise<RepoDiff> {
+  const head = { project: repo.project, base: repo.base, branch: repo.branch };
+  const empty = { files: [], omitted: 0, uncommitted: false };
+  try {
+    const cwd = repo.worktree ?? repo.source;
+    if (repo.worktree === undefined && !(await localBranchExists(repo.source, repo.branch))) {
+      return { ...head, ...empty, error: "The branch is gone, so there is nothing to show." };
+    }
+    const tip = repo.worktree === undefined ? repo.branch : "HEAD";
+    const mergeBase = (await git(cwd, ["merge-base", repo.base, tip])).trim();
+    const target = repo.worktree === undefined ? [mergeBase, repo.branch] : [mergeBase];
+    const names = parseRaw(await git(cwd, [...DIFF_ARGS, "--raw", "-z", ...target]));
+    const patches = splitPatches(await git(cwd, [...DIFF_ARGS, ...target]));
+    const files: RepoDiffFile[] = names.map((n, i) => fileOf(n, patches[i] ?? ""));
+    let uncommitted = false;
+    if (repo.worktree !== undefined) {
+      const untracked = await listUntracked(repo.worktree);
+      for (const path of untracked) files.push(await newFile(repo.worktree, path));
+      const dirty = await git(repo.worktree, ["status", "--porcelain"]);
+      uncommitted = dirty.trim() !== "";
+    }
+    files.sort((a, b) => a.path.localeCompare(b.path));
+    return {
+      ...head,
+      files: files.slice(0, MAX_DIFF_FILES),
+      omitted: Math.max(0, files.length - MAX_DIFF_FILES),
+      uncommitted,
+    };
+  } catch (err) {
+    return { ...head, ...empty, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+type Named = { status: RepoDiffFile["status"]; path: string; oldPath?: string };
+
+/** `git diff --raw -z`: `:modes shas STATUS\0path\0`, and two paths for a rename or copy. */
+export function parseRaw(raw: string): Named[] {
+  const parts = raw.split("\0");
+  const out: Named[] = [];
+  for (let i = 0; i < parts.length; ) {
+    const meta = parts[i++] ?? "";
+    if (!meta.startsWith(":")) continue;
+    const letter = meta.split(" ").at(-1)?.[0] ?? "M";
+    if (letter === "R" || letter === "C") {
+      const oldPath = parts[i++] ?? "";
+      const path = parts[i++] ?? "";
+      out.push(letter === "R" ? { status: "renamed", path, oldPath } : { status: "added", path });
+    } else {
+      const path = parts[i++] ?? "";
+      out.push({ status: letter === "A" ? "added" : letter === "D" ? "deleted" : "modified", path });
+    }
+  }
+  return out;
+}
+
+/** One chunk per file of a `git diff`, in the order git prints them. */
+export function splitPatches(text: string): string[] {
+  return text === "" ? [] : text.split(/^(?=diff --git )/m);
+}
+
+function fileOf(named: Named, chunk: string): RepoDiffFile {
+  const binary = /^(Binary files .* differ|GIT binary patch)$/m.test(chunk);
+  const at = chunk.search(/^@@ /m);
+  const hunks = at < 0 || binary ? "" : chunk.slice(at);
+  const { additions, deletions } = countLines(hunks);
+  const truncated = hunks.length > MAX_PATCH_BYTES;
+  return {
+    ...named,
+    additions,
+    deletions,
+    binary,
+    patch: truncated ? "" : hunks,
+    truncated,
+  };
+}
+
+export function countLines(hunks: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of hunks.split("\n")) {
+    if (line.startsWith("+")) additions++;
+    else if (line.startsWith("-")) deletions++;
+  }
+  return { additions, deletions };
+}
+
+/** A file git does not track yet: shown as all added lines. */
+async function newFile(worktree: string, path: string): Promise<RepoDiffFile> {
+  const base = { path, status: "added" as const, deletions: 0 };
+  const full = join(worktree, path);
+  const info = await stat(full).catch(() => undefined);
+  if (!info?.isFile()) return { ...base, additions: 0, binary: false, patch: "", truncated: false };
+  if (info.size > MAX_PATCH_BYTES)
+    return { ...base, additions: 0, binary: false, patch: "", truncated: true };
+  const buffer = await readFile(full);
+  if (buffer.includes(0)) return { ...base, additions: 0, binary: true, patch: "", truncated: false };
+  const lines = buffer.toString("utf8").split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  const patch =
+    lines.length === 0 ? "" : `@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join("\n")}\n`;
+  return { ...base, additions: lines.length, binary: false, patch, truncated: false };
+}

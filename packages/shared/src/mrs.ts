@@ -66,3 +66,34 @@ export const MarkMergedResultSchema = z.object({
 export type MarkMergedResult = z.infer<typeof MarkMergedResultSchema>;
 
 export const MrTaskInputSchema = z.object({ id: TaskIdSchema });
+
+/** One file of a repo's change, as git shows it: the patch is git's own unified diff text. */
+export const RepoDiffFileSchema = z.object({
+  path: z.string(),
+  /** Where the file was before, for a rename. */
+  oldPath: z.string().optional(),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+  binary: z.boolean(),
+  /** Hunks only, from the first `@@`. Empty for a binary file or when it was cut. */
+  patch: z.string(),
+  /** True when the patch was left out for size. */
+  truncated: z.boolean(),
+});
+export type RepoDiffFile = z.infer<typeof RepoDiffFileSchema>;
+
+/** What one repo of a task changed against its base: commits and uncommitted work together. */
+export const RepoDiffSchema = z.object({
+  project: IdSchema,
+  base: z.string(),
+  branch: z.string(),
+  files: z.array(RepoDiffFileSchema),
+  /** Files past the cap that are not listed. */
+  omitted: z.number().int().nonnegative(),
+  /** True when the worktree has changes that are not committed (they are in `files`). */
+  uncommitted: z.boolean(),
+  /** Set when the diff could not be read, with the reason. */
+  error: z.string().optional(),
+});
+export type RepoDiff = z.infer<typeof RepoDiffSchema>;

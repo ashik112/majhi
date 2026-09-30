@@ -129,3 +129,9 @@ export async function listFiles(cwd: string): Promise<string[]> {
   const out = await git(cwd, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
   return out.split("\0").filter((p) => p !== "");
 }
+
+/** Untracked, not ignored, files. Paths are relative to `cwd`. */
+export async function listUntracked(cwd: string): Promise<string[]> {
+  const out = await git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  return out.split("\0").filter((p) => p !== "");
+}
