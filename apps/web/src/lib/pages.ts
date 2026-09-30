@@ -6,6 +6,7 @@ export const PAGE_PATH = {
   // Not `/health`: the server answers that address itself, so a reload there would show its JSON.
   usage: "/usage",
   skills: "/skills",
+  memory: "/memory",
   setup: "/setup",
   projects: "/projects",
   orgs: "/orgs",

@@ -96,6 +96,11 @@ const skillsRoute = createRoute({
   path: PAGE_PATH.skills,
   component: lazyRouteComponent(() => import("@/pages/skills-page"), "SkillsPage"),
 });
+const memoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.memory,
+  component: lazyRouteComponent(() => import("@/pages/memory-page"), "MemoryPage"),
+});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -152,6 +157,7 @@ export const router = createRouter({
     accountsRoute,
     healthRoute,
     skillsRoute,
+    memoryRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

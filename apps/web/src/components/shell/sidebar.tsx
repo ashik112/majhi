@@ -10,6 +10,7 @@ import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
+import { usePendingFactCount } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
@@ -24,6 +25,7 @@ const NAV: readonly { page: PageName; label: string }[] = [
   { page: "accounts", label: "Accounts" },
   { page: "usage", label: "Health and usage" },
   { page: "skills", label: "Skills" },
+  { page: "memory", label: "Memory" },
   { page: "setup", label: "Hub setup" },
   { page: "projects", label: "Projects and links" },
   { page: "orgs", label: "Orgs" },
@@ -103,11 +105,13 @@ function MainNav() {
   const checks = useHealthChecks().data?.checks;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const needYou = checksNeedingYou(checks);
+  const toReview = usePendingFactCount();
   const badge: Partial<Record<PageName, { text: string; alert?: boolean; dot?: boolean }>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
   if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
+  if (toReview > 0) badge.memory = { text: `${toReview} to review`, alert: true };
 
   return (
     <nav aria-label="Main" className="flex flex-col gap-0.5">

@@ -8,6 +8,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { ChangesView } from "@/features/changes/changes-view";
+import { hasMemoryTab, TaskMemory } from "@/features/memory/task-memory";
 import { permissionDomId } from "@/features/room/items";
 import { Markdown } from "@/features/room/markdown";
 import { isWorking } from "@/features/room/model";
@@ -15,6 +16,7 @@ import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
 import { linkifyPaths } from "@/features/viewer/model";
 import { setPendingPermission } from "@/lib/attention";
+import { useFacts } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTask, useUpdateTask } from "@/lib/task-queries";
 import { briefBody, briefLabel, firstPendingPermission } from "./model";
@@ -37,7 +39,8 @@ function TaskView({ taskId }: { taskId: string }) {
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
   const { file } = useSearch({ from: "/t/$taskId" });
-  const [tab, setTab] = useState<"room" | "changes">("room");
+  const [tab, setTab] = useState<"room" | "changes" | "memory">("room");
+  const facts = useFacts();
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -94,6 +97,11 @@ function TaskView({ taskId }: { taskId: string }) {
   }
 
   const data = task.data;
+  const taskFacts = (facts.data ?? []).filter((f) => f.task === data.id);
+  const memoryTab = hasMemoryTab(data, taskFacts);
+  const tabs = data.repos.length > 0 || memoryTab;
+  // A tab that is gone (a task with no facts left) falls back to the room.
+  const shown = tab === "memory" && !memoryTab ? "room" : tab;
   const brief = briefBody(data.brief, data.title);
   const yourTurn =
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
@@ -103,20 +111,23 @@ function TaskView({ taskId }: { taskId: string }) {
       <TaskHeader task={data} yourTurn={yourTurn} />
       <div className="flex min-h-0 flex-1 gap-4 px-5 pt-3 pb-3">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-          {data.repos.length > 0 && (
+          {tabs && (
             <Segmented
-              label="Room or changes"
-              value={tab}
+              label="Room, changes or memory"
+              value={shown}
               onChange={setTab}
               segments={[
                 { value: "room", label: "Room" },
-                { value: "changes", label: "Changes" },
+                ...(data.repos.length > 0 ? [{ value: "changes" as const, label: "Changes" }] : []),
+                ...(memoryTab
+                  ? [{ value: "memory" as const, label: "Memory", count: taskFacts.length }]
+                  : []),
               ]}
               className="w-fit"
             />
           )}
           {/* The room stays mounted while Changes shows, so a draft and the scroll place are kept. */}
-          <div className={tab === "room" || data.repos.length === 0 ? "contents" : "hidden"}>
+          <div className={shown === "room" || !tabs ? "contents" : "hidden"}>
             <RoomPane
               task={data}
               state={room.state}
@@ -125,7 +136,8 @@ function TaskView({ taskId }: { taskId: string }) {
               top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
             />
           </div>
-          {tab === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
+          {shown === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
+          {shown === "memory" && <TaskMemory task={data} />}
         </div>
         <RoomPanel
           task={data}
