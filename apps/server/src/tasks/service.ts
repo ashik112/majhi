@@ -6,7 +6,6 @@ import {
   type AgentFrontmatter,
   type Attachment,
   AUTO,
-  type CardAction,
   type CoordinationMode,
   canWorkIn,
   LOCAL_TASK_PREFIX,
@@ -17,8 +16,8 @@ import {
   type ProcessInfo,
   parseMentions,
   parseTaskText,
-  type ReviewOptions,
   type RoomItem,
+  type ShipOption,
   type Task,
   type TaskId,
   type TaskKind,
@@ -37,7 +36,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
-import { localBranches, type MergeOutcome, mergeBranch } from "../git/merge.ts";
+import { localBranches, type MergeOutcome, mergeBranch, remoteBranches } from "../git/merge.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -45,6 +44,7 @@ import {
   restack,
   WorktreeProblem,
 } from "../git/worktrees.ts";
+import { mrRemoteName } from "../mrs/remote.ts";
 import { orgKeys } from "../orgs/keys.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { wakeText } from "../processes/text.ts";
@@ -128,8 +128,6 @@ export class TaskService {
   private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
   /** The review and paused cards majhi posts in a task's room. */
   readonly cards: OwnerCards;
-  /** Cards an action is running on, so a second click never merges twice. */
-  private readonly acting = new Set<string>();
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -919,6 +917,8 @@ export class TaskService {
     project?: string | undefined;
     done: boolean;
     by?: string | undefined;
+    /** False: the caller settles the review card itself (a merge that also pushes). */
+    settle?: boolean | undefined;
   }) {
     const task = this.get(input.id);
     if (this.deps.runs.working(task.id).length > 0) {
@@ -972,7 +972,8 @@ export class TaskService {
     const by = input.by ?? "owner";
     const closes = input.done && this.openSubtasks(task.id).length === 0;
     const into = [...new Set(results.map((r) => r.into))].join(", ");
-    this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
+    if (input.settle !== false)
+      this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
     if (input.done) return { results, task: await this.close(task.id, { whenSubtasksOpen: "stay", by }) };
     return { results, task: this.get(task.id) };
   }
@@ -987,11 +988,16 @@ export class TaskService {
   async branches(id: string) {
     const task = this.get(id);
     return Promise.all(
-      task.repos.map(async (r) => ({
-        project: r.project,
-        base: r.base,
-        branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
-      })),
+      task.repos.map(async (r) => {
+        const project = await this.deps.projects.get(r.project).catch(() => undefined);
+        const remote = mrRemoteName(project?.remotes);
+        return {
+          project: r.project,
+          base: r.base,
+          branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
+          remote: (await remoteBranches(r.source, remote).catch(() => [])).filter((b) => b !== r.branch),
+        };
+      }),
     );
   }
 
@@ -1119,7 +1125,7 @@ export class TaskService {
   // Owner cards: review, paused, plain-text questions
 
   /** What the review card's buttons may do now, with the reason when not. */
-  async reviewOptions(id: string): Promise<ReviewOptions> {
+  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: ShipOption }> {
     const task = this.get(id);
     const base = task.repos[0]?.base;
     return {
@@ -1163,51 +1169,6 @@ export class TaskService {
       ok: false,
       why: `${open.length} subtask${open.length === 1 ? " is" : "s are"} not done (${list}). It closes by itself when they are.`,
     };
-  }
-
-  /**
-   * A button on a review or paused card. Refused when the card was already answered, or the task
-   * moved on and no longer allows the action. One action per card at a time.
-   */
-  async cardAction(input: {
-    task: string;
-    item: string;
-    action: CardAction;
-    into?: string | undefined;
-    by: string;
-  }): Promise<{
-    item: RoomItem;
-    results?: { project: string; into: string; ok: boolean; detail: string }[];
-  }> {
-    const key = `${input.task}\u0000${input.item}`;
-    if (this.acting.has(key)) throw new UserError("That card is already being handled.", 409);
-    this.acting.add(key);
-    try {
-      const card = this.deps.room.get(input.task, input.item);
-      if (card === undefined) throw new UserError("The card is gone.", 404);
-      const kind = input.action === "resume" ? "paused" : "review";
-      if (card.type !== kind) throw new UserError(`That is not a ${kind} card.`, 409);
-      if (card.state !== "pending") throw new UserError("This card was already answered.", 409);
-      const task = this.get(input.task);
-      const current = () => this.deps.room.get(input.task, input.item) ?? card;
-      if (input.action === "resume") {
-        if (task.status !== "paused") throw new UserError(`${task.id} is not paused any more.`, 409);
-        await this.start(task.id, input.by);
-        return { item: current() };
-      }
-      if (task.status !== "review")
-        throw new UserError(`${task.id} is not waiting for review any more.`, 409);
-      const option = input.action === "done" ? this.doneOption(task) : await this.mergeOption(task);
-      if (!option.ok) throw new UserError(option.why ?? "Not now.", 409);
-      if (input.action === "done") {
-        await this.close(task.id, { whenSubtasksOpen: "refuse", by: input.by });
-        return { item: current() };
-      }
-      const merged = await this.merge({ id: task.id, into: input.into, done: true, by: input.by });
-      return { item: current(), results: merged.results };
-    } finally {
-      this.acting.delete(key);
-    }
   }
 
   /** One of the choices under an agent's plain-text question: sent to that agent as the owner's answer. */

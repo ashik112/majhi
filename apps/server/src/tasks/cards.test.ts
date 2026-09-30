@@ -121,7 +121,7 @@ describe("the review card", () => {
     expect(
       (await w.h.cmd("tasks.create", { text: "child on api", start: false, parent: "ACM-1" })).status,
     ).toBe(200);
-    const options = await w.h.cmd("tasks.reviewOptions", { id: "ACM-1" });
+    const options = await w.h.cmd("tasks.shipOptions", { id: "ACM-1" });
     expect(options.body.done).toEqual({
       ok: false,
       why: "1 subtask is not done (ACM-2). It closes by itself when they are.",

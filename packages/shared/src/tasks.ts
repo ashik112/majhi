@@ -358,7 +358,7 @@ export const CardStateSchema = z.enum(["pending", "settled", "replaced"]);
 export type CardState = z.infer<typeof CardStateSchema>;
 
 /** Actions on a review or paused card (`room.cardAction`). */
-export const CardActionSchema = z.enum(["merge", "done", "resume"]);
+export const CardActionSchema = z.enum(["merge", "mergePush", "push", "mr", "done", "resume"]);
 export type CardAction = z.infer<typeof CardActionSchema>;
 
 export const RoomItemSchema = z.discriminatedUnion("type", [

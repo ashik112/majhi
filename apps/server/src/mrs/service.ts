@@ -11,13 +11,15 @@ import {
   type RefreshMrsResult,
   type RemoteConfig,
   type RepoMr,
+  type ShipOption,
+  type ShipOptions,
   type Task,
   type TaskRepo,
 } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { FETCH_TIMEOUT_MS, git, uncommitted } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, uncommitted } from "../git/git.ts";
 import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -28,7 +30,7 @@ import { mrTitle, renderMrDescription } from "./description.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
 import { nextMerge, type RepoMrState } from "./policy.ts";
-import { commitsAhead, pushBranch, remoteUrl } from "./push.ts";
+import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
 
 export interface MrDeps {
@@ -38,7 +40,7 @@ export interface MrDeps {
   secrets: SecretStore;
   room: RoomService;
   events: EventHub;
-  tasks: Pick<TaskService, "get" | "close" | "statusChanged">;
+  tasks: Pick<TaskService, "get" | "close" | "statusChanged" | "merge" | "reviewOptions" | "cards">;
   /** True while an agent of the task works. */
   working: (task: string) => boolean;
   hosts: Record<MrHost, MrHostClient>;
@@ -205,7 +207,7 @@ export class MrService {
   // Push and open
 
   /** Pushes each repo, opens one MR per repo in merge order, then writes the sibling links into each. */
-  async open(id: string): Promise<OpenMrsResult> {
+  async open(id: string, into?: string, by?: string): Promise<OpenMrsResult> {
     const task = this.deps.tasks.get(id);
     if (task.status !== "review" && task.status !== "mr") {
       throw new UserError(`${id} is ${task.status}. Open merge requests from review.`, 409);
@@ -218,7 +220,7 @@ export class MrService {
     }
     return this.exclusive(id, async () => {
       const { repos } = await this.ordered(task);
-      const plans = await this.preflight(repos);
+      const plans = await this.preflight(repos, into);
       const results: OpenMrsResult["repos"] = [];
       const opened: { ctx: RepoContext; target: MrTarget; number: number }[] = [];
       let failed = false;
@@ -259,7 +261,7 @@ export class MrService {
           const body = this.body(task, project, this.siblings(id, plans));
           const mr = await ctx.client.open(target, {
             head: ctx.repo.branch,
-            base: ctx.repo.base,
+            base: into ?? ctx.repo.base,
             title: mrTitle(task.id, task.title),
             body,
           });
@@ -305,6 +307,8 @@ export class MrService {
       if (!failed && anyMr) {
         if (task.status !== "mr") {
           this.deps.store.tasks.setStatus(id, "mr", undefined, this.now().toISOString());
+          const target = into ?? [...new Set(task.repos.map((r) => r.base))].join(", ");
+          this.deps.tasks.cards.settle(id, "review", `Opened merge requests into ${target}`, by ?? "owner");
           this.note(id, "Merge requests are open. Waiting for them to be merged.");
         }
         this.publish(id);
@@ -343,7 +347,7 @@ export class MrService {
   }
 
   /** Checks every repo before anything is pushed, so a problem in the last one does not leave the first half sent. */
-  private async preflight(repos: readonly TaskRepo[]): Promise<Plan[]> {
+  private async preflight(repos: readonly TaskRepo[], into?: string): Promise<Plan[]> {
     const plans: Plan[] = [];
     for (const repo of repos) {
       const ctx = await this.context(repo);
@@ -371,11 +375,12 @@ export class MrService {
           `No ${ctx.target.host} token is set for ${project}. Save one (secrets.save) and set it as mr_tokens.${ctx.target.host} on the org ${ctx.project.org}, or as token on the remote ${ctx.remote} of the project.`,
         );
       }
-      const ahead = await commitsAhead(repo.source, repo.base, ctx.remote, repo.branch).catch(() => 0);
+      const base = into ?? repo.base;
+      const ahead = await commitsAhead(repo.source, base, ctx.remote, repo.branch).catch(() => 0);
       const hasMr = repo.mr !== undefined;
       plans.push(
         ahead === 0 && !hasMr
-          ? { ctx, skip: `${repo.branch} has no commits past ${repo.base}, so there is nothing to merge.` }
+          ? { ctx, skip: `${repo.branch} has no commits past ${base}, so there is nothing to merge.` }
           : { ctx },
       );
     }
@@ -383,6 +388,258 @@ export class MrService {
       throw new UserError("No repo of this task has a commit to send.", 409);
     }
     return plans;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ship: push, merge and push, and what each can do now
+
+  /** Every Ship action for a task, allowed or refused with the reason and where to fix it. */
+  async shipOptions(id: string): Promise<ShipOptions> {
+    const task = this.deps.tasks.get(id);
+    const local = await this.deps.tasks.reviewOptions(id);
+    const push = await this.option(async () => {
+      const ready = await this.pushReady(task);
+      let ahead = 0;
+      for (const { repo, target } of ready) {
+        ahead += await commitsAhead(repo.source, repo.base, target.remote, repo.branch).catch(() => 1);
+      }
+      if (ahead === 0)
+        throw new UserError(`Nothing to push: no commits ahead of ${local.base ?? "the base"}.`);
+    });
+    let host: MrHost | undefined;
+    const mr = !push.ok
+      ? push
+      : task.status !== "review" && task.status !== "mr"
+        ? { ok: false, why: `Open merge requests from review. ${id} is ${task.status}.` }
+        : await this.option(async () => {
+            for (const repo of task.repos) {
+              const ctx = await this.context(repo);
+              host ??= ctx.target.host;
+              if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) {
+                const org =
+                  (await this.deps.config.sections()).orgs[ctx.project.org]?.name ?? ctx.project.org;
+                throw new UserError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Orgs > ${org}.`);
+              }
+            }
+          });
+    if (host === undefined) {
+      const first = task.repos[0];
+      host =
+        first === undefined
+          ? undefined
+          : await this.context(first).then(
+              (c) => c.target.host,
+              () => undefined,
+            );
+    }
+    return {
+      ...(local.base === undefined ? {} : { base: local.base }),
+      ...(host === undefined ? {} : { host }),
+      merge: local.merge,
+      mergePush: local.merge.ok ? push : local.merge,
+      push,
+      mr,
+      done: local.done,
+    };
+  }
+
+  private async option(check: () => Promise<void>): Promise<ShipOption> {
+    try {
+      await check();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, why: errorMessage(err) };
+    }
+  }
+
+  /** Pushes each repo's task branch to its MR remote, with no merge request. Never forced. */
+  async push(id: string): Promise<{ results: ShipResult[]; task: Task }> {
+    const task = this.deps.tasks.get(id);
+    return this.exclusive(id, async () => {
+      const ready = await this.pushReady(task);
+      const results: ShipResult[] = [];
+      for (const { repo, target } of ready) {
+        const project = repo.project;
+        try {
+          await pushBranch({
+            worktree: repo.worktree as string,
+            remote: target.remote,
+            branch: repo.branch,
+            url: target.pushUrl,
+            reloadKeys: this.deps.reloadKeys,
+          });
+          this.deps.store.tasks.setPushed(id, project, this.now().toISOString());
+          results.push({
+            project,
+            into: repo.branch,
+            ok: true,
+            detail: `Pushed ${repo.branch} to ${target.remote}.`,
+          });
+        } catch (err) {
+          results.push({
+            project,
+            into: repo.branch,
+            ok: false,
+            detail: pushFailure(err, target.remote, repo.branch),
+          });
+        }
+      }
+      for (const r of results) this.note(id, `${r.project}: ${r.detail}`, r.ok ? "info" : "error");
+      return { results, task: this.publish(id) };
+    });
+  }
+
+  /**
+   * Merges the task into a local branch, then pushes that branch to the MR remote. Never forced:
+   * before anything merges, the remote's copy of the branch must already be in the local one.
+   */
+  async mergeAndPush(input: {
+    id: string;
+    into?: string | undefined;
+    project?: string | undefined;
+    done: boolean;
+    by: string;
+  }): Promise<{ results: ShipResult[]; task: Task }> {
+    const task = this.deps.tasks.get(input.id);
+    return this.exclusive(input.id, async () => {
+      const ready = (await this.pushReady(task)).filter(
+        (r) => input.project === undefined || r.repo.project === input.project,
+      );
+      if (ready.length === 0) throw new UserError(`${task.id} has no repo ${input.project ?? ""}.`);
+      for (const { repo, target } of ready) {
+        const into = input.into ?? repo.base;
+        if (await this.remoteHasMore(repo.source, target, into)) {
+          throw new UserError(
+            `${target.remote}/${into} has commits that your local ${into} in ${repo.project} does not have. majhi never force-pushes: bring ${into} up to date first, then ship again.`,
+            409,
+          );
+        }
+      }
+      const merged = await this.deps.tasks.merge({
+        id: input.id,
+        into: input.into,
+        project: input.project,
+        done: false,
+        by: input.by,
+        settle: false,
+      });
+      if (!merged.results.every((r) => r.ok)) return merged;
+      const results: ShipResult[] = [];
+      for (const { repo, target } of ready) {
+        const into = input.into ?? repo.base;
+        try {
+          await pushBranch({
+            worktree: repo.source,
+            remote: target.remote,
+            branch: into,
+            url: target.pushUrl,
+            reloadKeys: this.deps.reloadKeys,
+          });
+          results.push({
+            project: repo.project,
+            into,
+            ok: true,
+            detail: `Pushed ${into} to ${target.remote}.`,
+          });
+        } catch (err) {
+          results.push({
+            project: repo.project,
+            into,
+            ok: false,
+            detail: `Merged into ${into}, but ${pushFailure(err, target.remote, into)}`,
+          });
+        }
+      }
+      for (const r of results) this.note(input.id, `${r.project}: ${r.detail}`, r.ok ? "info" : "error");
+      if (results.every((r) => r.ok)) {
+        const into = [...new Set(results.map((r) => r.into))].join(", ");
+        const closes =
+          input.done &&
+          this.deps.store.tasks
+            .children(input.id)
+            .every((c) => this.deps.store.tasks.get(c)?.status === "done");
+        this.deps.tasks.cards.settle(
+          input.id,
+          "review",
+          `Merged into ${into} and pushed it${closes ? ", marked done" : ""}`,
+          input.by,
+        );
+        if (input.done) await this.deps.tasks.close(input.id, { whenSubtasksOpen: "stay", by: input.by });
+      }
+      return { results, task: this.publish(input.id) };
+    });
+  }
+
+  /** Where a repo's branches are pushed: the MR remote, through the project's SSH alias. */
+  private async pushTarget(repo: TaskRepo): Promise<PushTarget> {
+    const project = await this.deps.projects.get(repo.project).catch(() => undefined);
+    if (project === undefined)
+      throw new UserError(
+        `${repo.project} is not a registered project any more. Register it in Projects.`,
+        409,
+      );
+    const remote = mrRemoteName(project.remotes);
+    const url = await remoteUrl(repo.source, remote).catch(() => undefined);
+    if (url === undefined)
+      throw new UserError(
+        `${project.id} has no MR remote: there is no remote named ${remote}. Pick its MR remote in Projects.`,
+        409,
+      );
+    const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
+    if (/^https?:\/\//i.test(pushUrl)) {
+      throw new UserError(
+        `No SSH alias for ${project.id}'s ${remote} remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.`,
+        409,
+      );
+    }
+    return { remote, pushUrl: pushUrl === url ? undefined : pushUrl };
+  }
+
+  /** Every repo of the task, ready to push its branch: a worktree, all committed, a remote to push to. */
+  private async pushReady(task: Task): Promise<{ repo: TaskRepo; target: PushTarget }[]> {
+    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    if (task.repos.length === 0) throw new UserError("The task has no repo.", 409);
+    if (this.deps.working(task.id))
+      throw new UserError("An agent is working. Wait for its turn to end.", 409);
+    const out: { repo: TaskRepo; target: PushTarget }[] = [];
+    for (const repo of task.repos) {
+      if (repo.worktree === undefined)
+        throw new UserError(`${repo.project} has no worktree yet, so there is nothing to push.`, 409);
+      const dirty = (await uncommitted(repo.worktree).catch(() => [])).filter((l) => !l.startsWith("??"));
+      if (dirty.length > 0)
+        throw new UserError(`${repo.project} has uncommitted changes. Ask the agent to commit them.`, 409);
+      out.push({ repo, target: await this.pushTarget(repo) });
+    }
+    return out;
+  }
+
+  /**
+   * True when the remote's copy of `branch` has commits the local one lacks, so a push would need a
+   * force. Reads the remote first. A branch the remote does not have yet is fine.
+   */
+  private async remoteHasMore(source: string, target: PushTarget, branch: string): Promise<boolean> {
+    if (!(await localBranchExists(source, branch))) return false;
+    const tracking = `refs/remotes/${target.remote}/${branch}`;
+    const from = target.pushUrl ?? target.remote;
+    const fetch = async (): Promise<string | undefined> => {
+      try {
+        await git(source, ["fetch", "--quiet", from, `+refs/heads/${branch}:${tracking}`], {
+          timeoutMs: FETCH_TIMEOUT_MS,
+        });
+        return undefined;
+      } catch (err) {
+        return errorMessage(err);
+      }
+    };
+    let failed = await fetch();
+    if (failed !== undefined && isSshAuthFailure(failed) && this.deps.reloadKeys !== undefined) {
+      if (await this.deps.reloadKeys().catch(() => false)) failed = await fetch();
+    }
+    if (failed !== undefined) {
+      if (/couldn't find remote ref|could not find remote ref/i.test(failed)) return false;
+      throw new UserError(`Could not read ${target.remote}/${branch} before pushing: ${failed}`, 409);
+    }
+    return !(await gitOk(source, ["merge-base", "--is-ancestor", tracking, `refs/heads/${branch}`]));
   }
 
   // ---------------------------------------------------------------------------
@@ -700,4 +957,23 @@ interface Plan {
   ctx: RepoContext;
   /** Why this repo sends nothing. */
   skip?: string;
+}
+
+/** Where a repo's branches are pushed. `pushUrl` is the SSH alias's address, when it differs. */
+interface PushTarget {
+  remote: string;
+  pushUrl: string | undefined;
+}
+
+type ShipResult = { project: string; into: string; ok: boolean; detail: string };
+
+const HOST_LABEL: Record<MrHost, string> = { github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" };
+
+/** A failed push in plain words. A refused non-fast-forward says majhi never forces. */
+function pushFailure(err: unknown, remote: string, branch: string): string {
+  const message = errorMessage(err);
+  if (/non-fast-forward|fetch first|\[rejected\]|failed to push some refs/i.test(message)) {
+    return `${remote}/${branch} has commits the local ${branch} does not have, so the push was refused. majhi never force-pushes: bring ${branch} up to date first.`;
+  }
+  return err instanceof PushProblem ? message : `the push failed: ${message}`;
 }

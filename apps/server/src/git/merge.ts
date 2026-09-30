@@ -62,6 +62,17 @@ export async function localBranches(source: string): Promise<string[]> {
   return out.split("\n").filter((b) => b !== "");
 }
 
+/** Branches of a remote as this machine last fetched them, without the remote's name or HEAD. */
+export async function remoteBranches(source: string, remote: string): Promise<string[]> {
+  const out = await git(source, ["for-each-ref", "--format=%(refname)", `refs/remotes/${remote}/`]);
+  const prefix = `refs/remotes/${remote}/`;
+  return out
+    .split("\n")
+    .filter((r) => r.startsWith(prefix))
+    .map((r) => r.slice(prefix.length))
+    .filter((b) => b !== "" && b !== "HEAD");
+}
+
 export async function mergeBranch(req: MergeRequest): Promise<MergeOutcome> {
   const { source, branch, into } = req;
   if (!(await gitOk(source, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]))) {
