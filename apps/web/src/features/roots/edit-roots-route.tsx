@@ -92,7 +92,7 @@ function FormSkeleton() {
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-3.5 w-96 max-w-full" />
         </div>
-        <div className="flex flex-col gap-2 rounded-xl border border-line-strong bg-raised p-4">
+        <div className="flex flex-col gap-2 rounded-xl border border-line-strong bg-card p-4">
           <Skeleton className="h-3 w-12" />
           <Skeleton className="h-10 w-full rounded-md" />
           <Skeleton className="h-10 w-full rounded-md" />

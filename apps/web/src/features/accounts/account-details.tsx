@@ -113,7 +113,7 @@ export function AccountDetails({
                     {group.agents.map((a) => {
                       const f = a.agent.frontmatter;
                       return (
-                        <li key={f.id} className="rounded-lg border border-line-strong bg-raised px-2.5 py-2">
+                        <li key={f.id} className="rounded-lg border border-line-strong bg-card px-2.5 py-2">
                           <PageLink
                             page="agents"
                             search={{ agent: f.id }}

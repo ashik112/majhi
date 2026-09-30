@@ -13,7 +13,7 @@ export const PROJECT_COLUMNS =
   "grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,1.7fr)_minmax(0,1.3fr)_112px]";
 
 const CHIP =
-  "inline-flex h-[22px] max-w-full items-center gap-1.5 rounded-[5px] bg-[#272a31] px-2 text-xs text-fg-soft";
+  "inline-flex h-[22px] max-w-full items-center gap-1.5 rounded-[5px] bg-selected px-2 text-xs text-fg-soft";
 
 /** Every remote of a repo as a small chip: host, and the SSH alias it goes through. */
 function Remotes({ repo, mrRemote }: { repo: Repo | undefined; mrRemote?: string | undefined }) {
@@ -38,7 +38,7 @@ function Remotes({ repo, mrRemote }: { repo: Repo | undefined; mrRemote?: string
 }
 
 const ROW =
-  "grid items-center gap-4 rounded-[10px] border border-line-strong bg-raised px-4 py-3 text-base transition-colors duration-150 hover:border-line-hover";
+  "grid items-center gap-4 rounded-[10px] border border-line-strong bg-card px-4 py-3 text-base transition-colors duration-150 hover:border-line-hover";
 
 /** A registered project: id, remotes, path, aliases and base, with Edit and Remove. */
 export function ProjectRow({

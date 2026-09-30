@@ -99,13 +99,15 @@ function RosterList({ rows, org }: { rows: readonly RosterRow[]; org: string | u
             <span className="flex min-w-0 items-center gap-2">
               <Lamp state={row.lamp} size={7} />
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-soft">@{row.id}</span>
-              <span className={cn("shrink-0 text-xs", LAMP_TEXT[row.lamp])}>{row.state}</span>
             </span>
             <span className="flex items-center gap-2 pl-[15px]">
+              <span className={cn("w-[76px] shrink-0 truncate text-xs", LAMP_TEXT[row.lamp])}>
+                {row.state}
+              </span>
               <UsageBar pct={row.pct ?? 0} tone={limitTone(row.pct)} height={3} className="flex-1" />
               <span
                 className={cn(
-                  "tnum w-12 shrink-0 text-right font-mono text-xs",
+                  "tnum w-9 shrink-0 text-right font-mono text-xs",
                   row.pct === undefined ? "text-fg-faint" : "text-fg-muted",
                 )}
               >

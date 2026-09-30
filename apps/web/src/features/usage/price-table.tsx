@@ -47,7 +47,7 @@ export function PriceTable({ id, models }: { id: string; models: readonly string
   }
 
   return (
-    <div id={id} className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3.5">
+    <div id={id} className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3.5">
       <p className="text-sm text-fg-muted text-pretty">
         Dollars per million tokens. New turns use these prices; recorded turns keep their cost.
         {prices.data &&

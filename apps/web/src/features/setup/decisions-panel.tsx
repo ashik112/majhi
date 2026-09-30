@@ -46,7 +46,7 @@ export function DecisionsPanel() {
       {status.isPending && <p className="text-sm text-fg-faint">Loading</p>}
       {status.isError && <p className="text-sm text-red">{describeError(status.error)}</p>}
       {status.data && (
-        <div className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3">
+        <div className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3">
           <Providers status={status.data} />
           <Picks status={status.data} />
           <JevKey status={status.data} />

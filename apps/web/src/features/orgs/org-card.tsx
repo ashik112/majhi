@@ -33,7 +33,7 @@ import {
 } from "./model";
 import { MrSettings } from "./mr-settings";
 
-export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-[18px]";
+export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-card p-[18px]";
 
 /** One org: its accounts, a way into its agents, and its settings, editable in place. */
 export function OrgCard({

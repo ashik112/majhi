@@ -209,7 +209,7 @@ function AccountRow({
   return (
     <li
       className={cn(
-        "relative grid items-center gap-4 rounded-[10px] border bg-raised px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
+        "relative grid items-center gap-4 rounded-[10px] border bg-card px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
         COLUMNS,
         selected ? "border-line-hover bg-selected" : "border-line-strong hover:border-line-hover",
       )}

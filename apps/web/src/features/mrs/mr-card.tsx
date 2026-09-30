@@ -98,7 +98,7 @@ function MrRow({
 }) {
   const mr = repo.mr;
   return (
-    <li className="flex items-center gap-1.5 rounded-md border border-line-strong bg-raised px-2 py-1.5">
+    <li className="flex items-center gap-1.5 rounded-md border border-line-strong bg-card px-2 py-1.5">
       {showPlace && <span className="tnum w-3 shrink-0 font-mono text-xs text-fg-faint">{place}</span>}
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-mono text-xs text-fg-soft">{repo.project}</span>

@@ -74,7 +74,7 @@ function Running({ startedAt }: { startedAt: string }) {
         aria-labelledby="update-title"
         aria-busy={!failed}
         className={cn(
-          "flex w-full max-w-[600px] flex-col rounded-xl border bg-raised",
+          "flex w-full max-w-[600px] flex-col rounded-xl border bg-card",
           failed ? "border-red-line" : "border-line-strong",
         )}
       >

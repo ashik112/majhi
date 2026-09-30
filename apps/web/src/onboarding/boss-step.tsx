@@ -100,7 +100,7 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
             e.preventDefault();
             void run();
           }}
-          className="flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-5"
+          className="flex flex-col gap-4 rounded-xl border border-line-strong bg-card p-5"
         >
           <Field label="Agent id">
             {(p) => (

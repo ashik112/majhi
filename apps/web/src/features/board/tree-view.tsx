@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/cn";
 import { orgSearch } from "@/lib/org-filter";
 import { orgTile } from "./board-card";
-import { buildTree, type Column, cardProgress, visibleRows, waitingText } from "./model";
+import { buildTree, type Column, cardProgress, plainTitle, visibleRows, waitingText } from "./model";
 
 /** Every task as a row, children nested under their parent. One scroll area; up, down and enter work. */
 export function TreeView({
@@ -84,7 +84,7 @@ export function TreeView({
               >
                 <OrgBadge label={tile.label} color={tile.color} size="sm" />
                 <span className="w-24 shrink-0 truncate font-mono text-xs text-fg-muted">{task.id}</span>
-                <span className="min-w-0 flex-1 truncate font-medium">{task.title}</span>
+                <span className="min-w-0 flex-1 truncate font-medium">{plainTitle(task.title)}</span>
                 {task.repos.slice(0, 1).map((repo) => (
                   <span
                     key={repo.project}

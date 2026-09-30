@@ -76,7 +76,7 @@ export function AppearanceButton() {
           id={id}
           aria-label="Appearance"
           className={cn(
-            "absolute bottom-full left-0 z-40 mb-2 flex w-[232px] animate-rise flex-col gap-3 rounded-xl p-3",
+            "absolute bottom-0 left-full z-40 ml-4 flex w-[232px] animate-rise flex-col gap-3 rounded-xl p-3",
             GLASS_STRONG,
           )}
         >

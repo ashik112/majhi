@@ -45,7 +45,10 @@ export function Sidebar() {
   return (
     <aside
       aria-label="Sidebar"
-      className={cn("flex h-full w-[228px] shrink-0 flex-col gap-4 rounded-2xl px-3 pt-4 pb-3", GLASS)}
+      className={cn(
+        "relative z-20 flex h-full w-[228px] shrink-0 flex-col gap-4 rounded-2xl px-3 pt-4 pb-3",
+        GLASS,
+      )}
     >
       <Brand />
       {/* The middle scrolls when an update notice or many orgs need the room; the lamps stay at the foot. */}
