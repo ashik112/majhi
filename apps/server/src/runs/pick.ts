@@ -18,9 +18,7 @@ import {
   effortOptions,
   labelModels,
   modelForTier,
-  needsEstimate,
   normalizeOffered,
-  plainOptions,
   rankModels,
 } from "./model-options.ts";
 
@@ -117,13 +115,10 @@ export async function pickForSession(input: {
             context: `${task.brief}\n\n${input.instructions}`.trim(),
             models: askModel ? modelOptions : [],
             efforts: askEffort ? effortList : [],
-            // Without prices the ranking is estimated, and the provider is asked for it in the same call.
-            rank: askModel && needsEstimate(models, input.prices) ? plainOptions(models) : [],
           })
           .catch(() => undefined);
 
-  const hint = { capable: pick?.capable, cheapest: pick?.cheapest };
-  const rank = rankModels(models, input.prices, hint);
+  const rank = rankModels(models, input.prices);
   const parts: string[] = [`@${fm.id} (${fm.role}).`];
   const applied: NonNullable<PickResult["applied"]> = {};
   const warnings: string[] = [];
@@ -154,7 +149,7 @@ export async function pickForSession(input: {
         settings.model_floor,
         tier.model,
         label,
-        () => modelForTier(models, tier.model, input.prices, hint),
+        () => modelForTier(models, tier.model, input.prices),
         rank.estimated ? "estimated rank" : undefined,
       );
     })();

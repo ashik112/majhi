@@ -170,36 +170,11 @@ describe("pickModel", () => {
     ).toBeUndefined();
   });
 
-  it("asks for the ranking in the same call and maps the two answers back to ids", async () => {
-    const plain = [
-      { id: "haiku-1", label: "haiku-1: Quick" },
-      { id: "opus-1", label: "opus-1: Thorough" },
-    ];
-    const choice = (label: string, other: string) => ({
-      type: "choice",
-      choice: label,
-      confidence: 0,
-      probabilities: { [label]: 0.5, [other]: 0.5 },
-    });
-    const ranking = () => ({
-      answers: {
-        model: choice("haiku-1: Quick", "opus-1: Thorough"),
-        effort: choice("low", "high"),
-        capable: choice("opus-1: Thorough", "haiku-1: Quick"),
-        cheapest: choice("haiku-1: Quick", "opus-1: Thorough"),
-      },
-      loadMs: 0,
-      predictMs: 1,
-    });
-    const { w } = await world({ status: READY, decide: ranking });
-    const pick = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain, rank: plain });
-    expect(pick).toMatchObject({ capable: "opus-1", cheapest: "haiku-1" });
-    const [logged] = w.h.majhi.services.decisions.recent(1);
-    expect(logged?.summary).toContain("capable: Which of these models is the most capable?");
-    expect(logged?.summary).toContain("cheapest: Which of these models is the cheapest and fastest?");
-    // Not asked without `rank`.
-    const none = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain });
-    expect(none?.capable).toBeUndefined();
+  it("never asks the provider to rank the models", async () => {
+    const { w, jobs } = await world({ status: READY, decide: answers(0.9, 0.8) });
+    await w.h.majhi.services.decisions.pickModel(request);
+    const asked = jobs.flatMap((j) => (j.method === "decide" ? Object.keys(j.params.questions) : []));
+    expect(asked).toEqual(["model", "effort"]);
   });
 
   it("puts the role in the question", async () => {

@@ -8,7 +8,6 @@ import {
   modelForTier,
   needsEstimate,
   normalizeOffered,
-  plainOptions,
   rankModels,
   rolePhrase,
 } from "./model-options.ts";
@@ -185,14 +184,6 @@ describe("labelModels", () => {
     expect(labelModels(models).map((l) => l.label)).toEqual(["acme-code-5: Best for code", "acme-fast-1"]);
   });
 
-  it("offers the ranking questions the CLI text for every model", () => {
-    const models = normalizeOffered([
-      { id: "acme-a-1", name: "a", description: "Quick" },
-      { id: "acme-b-1", name: "b" },
-    ]);
-    expect(plainOptions(models).map((o) => o.label)).toEqual(["acme-a-1: Quick", "acme-b-1"]);
-  });
-
   it("gives equal prices the same label", () => {
     const rows = { "a-1": price(5), "b-1": price(5), "c-1": price(20) };
     const labels = labelModels(normalizeOffered(opts("a-1", "b-1", "c-1")), rows);
@@ -239,40 +230,22 @@ describe("modelForTier", () => {
     expect(modelForTier([], "cheapest")).toBeUndefined();
   });
 
-  it("follows the CLI's order the other way round when the answers say so", () => {
-    const models = normalizeOffered(opts("a-1", "b-1", "c-1", "d-1"));
-    const hint = { capable: "d-1", cheapest: "a-1" };
-    expect(modelForTier(models, "most-capable", {}, hint)).toBe("d-1");
-    expect(modelForTier(models, "cheapest", {}, hint)).toBe("a-1");
-    expect(rankModels(models, {}, hint).order).toEqual(["a-1", "b-1", "c-1", "d-1"]);
-  });
-
-  it("puts the named model first and last, whatever the CLI's order", () => {
-    const models = normalizeOffered(opts("a-1", "b-1", "c-1", "d-1"));
-    const rank = rankModels(models, {}, { capable: "c-1", cheapest: "b-1" });
-    // c comes after b in the list, so the CLI lists the cheapest first: d, c, b, a from the dearest.
-    // c goes to the front and b to the back.
-    expect(rank.order).toEqual(["b-1", "a-1", "d-1", "c-1"]);
+  it("labels an estimated rank from the CLI's order, dearest first", () => {
+    const models = normalizeOffered(opts("a-1", "b-1", "c-1"));
+    const rank = rankModels(models);
+    expect(rank.order).toEqual(["c-1", "b-1", "a-1"]);
     expect(rank.estimated).toBe(true);
     expect([...rank.labels]).toEqual([
-      ["c-1", "most capable"],
-      ["d-1", "balanced"],
-      ["a-1", "balanced"],
-      ["b-1", "cheapest and fastest"],
+      ["a-1", "most capable"],
+      ["b-1", "balanced"],
+      ["c-1", "cheapest and fastest"],
     ]);
   });
 
-  it("uses one answer, and ignores a name that is not offered", () => {
-    const models = normalizeOffered(opts("a-1", "b-1", "c-1"));
-    expect(rankModels(models, {}, { cheapest: "a-1" }).order).toEqual(["a-1", "c-1", "b-1"]);
-    expect(rankModels(models, {}, { capable: "z-9", cheapest: "z-8" }).order).toEqual(["c-1", "b-1", "a-1"]);
-    expect(rankModels(models, {}, { capable: "b-1", cheapest: "b-1" }).order).toEqual(["c-1", "a-1", "b-1"]);
-  });
-
-  it("does not estimate when every model has a price, and the hint does nothing", () => {
+  it("does not estimate when every model has a price", () => {
     const models = normalizeOffered(opts("a-1", "b-1"));
     const p = { "a-1": price(9), "b-1": price(1) };
-    const rank = rankModels(models, p, { capable: "b-1", cheapest: "a-1" });
+    const rank = rankModels(models, p);
     expect(rank.estimated).toBe(false);
     expect(rank.order).toEqual(["b-1", "a-1"]);
     expect(needsEstimate(models, p)).toBe(false);

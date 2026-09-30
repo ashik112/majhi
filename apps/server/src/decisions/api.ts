@@ -17,11 +17,6 @@ export interface ModelPickRequest {
   models: readonly PickOption[];
   /** Efforts to choose from, lowest first. Fewer than two: not asked. */
   efforts: readonly PickOption[];
-  /**
-   * The models to rank when they have no price: asked in the same call as which is the most capable
-   * and which is the cheapest and fastest. Fewer than two: not asked.
-   */
-  rank?: readonly PickOption[];
 }
 
 /** An answer with its confidence, whatever it was. The caller applies the floors. */
@@ -33,9 +28,6 @@ export interface PickAnswer {
 export interface ModelPick {
   model?: PickAnswer;
   effort?: PickAnswer;
-  /** The model named most capable, and the one named cheapest and fastest, when `rank` was asked. */
-  capable?: string;
-  cheapest?: string;
   /** The decision's id in the log, for the run record. */
   decisionId: string;
   provider: ProviderId;

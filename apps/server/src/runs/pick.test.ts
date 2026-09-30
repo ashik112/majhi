@@ -184,54 +184,32 @@ describe("pickForSession", () => {
     expect(tester.line).toContain("fell back to cheapest (acme-mini-1, estimated rank)");
   });
 
-  it("asks which model is most capable and which is cheapest, in the same call, and ranks from the answers", async () => {
+  it("never lets a weak answer move the estimated rank: the tier follows the CLI's order", async () => {
     const models: OptionValue[] = [
       { id: "acme-a-1", name: "a", description: "Quick" },
       { id: "acme-b-1", name: "b", description: "Thorough" },
       { id: "acme-c-1", name: "c", description: "Middle" },
     ];
     const { s, set } = session(models, opts("low", "high"));
-    const { d, asked } = decisions(() => ({
-      ...pick(["acme-c-1", 0.2]),
-      capable: "acme-b-1",
-      cheapest: "acme-a-1",
-    }));
+    const { d, asked } = decisions(() => pick(["acme-c-1", 0.2]));
     const out = await run(d, s);
     expect(asked).toHaveLength(1);
-    expect(asked[0]?.rank?.map((o) => o.label)).toEqual([
-      "acme-a-1: Quick",
-      "acme-b-1: Thorough",
-      "acme-c-1: Middle",
-    ]);
-    // The model question reads the CLI text too: the estimate comes from this call.
     expect(asked[0]?.models.map((o) => o.label)).toEqual([
       "acme-a-1: Quick",
       "acme-b-1: Thorough",
       "acme-c-1: Middle",
     ]);
-    // b comes after a in the list, so the CLI lists the cheapest first; b is the most capable.
-    expect(set.model).toBe("acme-b-1");
+    expect(set.model).toBe("acme-a-1");
     expect(out.line).toContain(
-      "Laya's acme-c-1 was 0.20, under the 0.40 floor, so it fell back to most capable (acme-b-1, estimated rank).",
+      "Laya's acme-c-1 was 0.20, under the 0.40 floor, so it fell back to most capable (acme-a-1, estimated rank).",
     );
   });
 
   it("marks an estimated label in the line of a confident pick", async () => {
     const { s } = session(opts("acme-a-1", "acme-b-1"), opts("low", "high"));
-    const { d } = decisions(() => ({
-      ...pick(["acme-b-1", 0.71]),
-      capable: "acme-a-1",
-      cheapest: "acme-b-1",
-    }));
+    const { d } = decisions(() => pick(["acme-b-1", 0.71]));
     const out = await run(d, s);
     expect(out.line).toContain("Laya picked acme-b-1 (cheapest and fastest, estimated, 0.71).");
-  });
-
-  it("does not ask for a ranking when every model has a price", async () => {
-    const { s } = session(opts("a-1", "b-1"), opts("low", "high"));
-    const { d, asked } = decisions(() => undefined);
-    await run(d, s, { prices: { "a-1": price(2), "b-1": price(1) } });
-    expect(asked[0]?.rank).toEqual([]);
   });
 
   it("uses a lone option without asking, and asks only for the `auto` parts", async () => {
