@@ -426,7 +426,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
             <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
             <span className="min-w-0 break-words">{question.question}</span>
           </p>
-          {question.freeText ? (
+          {question.options.length === 0 && question.freeText ? (
             <input
               type="text"
               placeholder="Type your answer..."
@@ -436,33 +436,57 @@ function AskCard({ item }: { item: Of<"ask"> }) {
               className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
             />
           ) : question.options.length <= 4 ? (
-            <div className="flex flex-wrap gap-2">
-              {question.options.map((option) => (
-                <Button
-                  key={option.id}
-                  size="sm"
-                  variant={answers[question.id] === option.id ? "primary" : "secondary"}
+            <>
+              <div className="flex flex-wrap gap-2">
+                {question.options.map((option) => (
+                  <Button
+                    key={option.id}
+                    size="sm"
+                    variant={answers[question.id] === option.id ? "primary" : "secondary"}
+                    disabled={answer.isPending}
+                    onClick={() => handleAnswer(question.id, option.id)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              {question.freeText && (
+                <input
+                  type="text"
+                  placeholder="Or type your own..."
+                  value={answers[question.id]?.startsWith("opt") ? "" : answers[question.id] ?? ""}
+                  onChange={(e) => handleAnswer(question.id, e.target.value)}
                   disabled={answer.isPending}
-                  onClick={() => handleAnswer(question.id, option.id)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
+                  className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+                />
+              )}
+            </>
           ) : (
-            <select
-              value={answers[question.id] ?? question.default ?? ""}
-              onChange={(e) => handleAnswer(question.id, e.target.value)}
-              disabled={answer.isPending}
-              className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg focus:border-blue focus:outline-none disabled:bg-bg-hover"
-            >
-              <option value="">Select an option...</option>
-              {question.options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <>
+              <select
+                value={answers[question.id] ?? question.default ?? ""}
+                onChange={(e) => handleAnswer(question.id, e.target.value)}
+                disabled={answer.isPending}
+                className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg focus:border-blue focus:outline-none disabled:bg-bg-hover"
+              >
+                <option value="">Select an option...</option>
+                {question.options.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {question.freeText && (
+                <input
+                  type="text"
+                  placeholder="Or type your own..."
+                  value={answers[question.id]?.startsWith("opt") ? "" : answers[question.id] ?? ""}
+                  onChange={(e) => handleAnswer(question.id, e.target.value)}
+                  disabled={answer.isPending}
+                  className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+                />
+              )}
+            </>
           )}
         </div>
       ))}
