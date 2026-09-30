@@ -7,10 +7,15 @@ import {
   type MemoryAction,
   type MemoryEvent,
   type MemoryScope,
+  parseScope,
+  type Thread,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Embedder } from "./embedder.ts";
-import { capFacts, RECALL_CHARS } from "./recall.ts";
+import { renderMemorySection } from "./recall.ts";
+import { RecordStore } from "./record-store.ts";
+import { ProjectMemory } from "./records.ts";
+import { contentWords } from "./repo-docs.ts";
 import { hybridSearch } from "./search.ts";
 import type { FactFilter, MemoryStore } from "./store.ts";
 
@@ -52,7 +57,10 @@ export function actorName(actor: Actor): string {
 }
 
 export interface Recalled {
+  /** The lessons in the section. */
   facts: Fact[];
+  /** The section, without its heading. Empty when memory has nothing for the task. */
+  text: string;
   /** Only keywords ranked them. */
   keywordOnly: boolean;
 }
@@ -63,11 +71,45 @@ export class MemoryService {
   private readonly now: () => Date;
   private filling = false;
   private curate: Curate | undefined;
+  private listener: (() => void) | undefined;
+  /** Task records, project briefs and open threads, in the same database. */
+  readonly project: ProjectMemory;
 
   constructor(private readonly deps: MemoryDeps) {
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
     this.curate = deps.curate;
+    this.project = new ProjectMemory({
+      store: new RecordStore(deps.store.database),
+      embed: (texts) => this.embed(texts),
+      now: this.now,
+      onChange: () => this.changed(),
+    });
+  }
+
+  /** Called when memory changed outside a command (the Housekeeper, curation), so the UI refreshes. */
+  onChange(listener: () => void): void {
+    this.listener = listener;
+  }
+
+  /** Tells the UI that memory changed. */
+  changed(): void {
+    try {
+      this.listener?.();
+    } catch {
+      // Nothing to do.
+    }
+  }
+
+  /** Unit vectors for the texts, or undefined when the model is not there (or still loading). */
+  async embed(texts: readonly string[]): Promise<Float32Array[] | undefined> {
+    const embedder = this.embedder();
+    if (embedder === undefined || texts.length === 0) return undefined;
+    try {
+      return await embedder.embed(texts);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Hooks curation into proposals. Built after the decision provider, so it is set here. */
@@ -157,6 +199,22 @@ export class MemoryService {
 
   reject(id: number, actor: Actor, reason?: string): Fact {
     return this.move(id, ["pending"], "rejected", "rejected", actor, reason);
+  }
+
+  /**
+   * Approves or rejects every pending fact, or the pending ones among `ids`. Each is its own logged
+   * step, so each can be undone. Facts that are no longer pending are skipped. Resolves how many moved.
+   */
+  decideAll(action: "approve" | "reject", ids: readonly number[] | undefined, actor: Actor): number {
+    const pending =
+      ids === undefined
+        ? this.store.list({ status: "pending", limit: 10_000 })
+        : this.store.byIds(ids).filter((f) => f.status === "pending");
+    for (const fact of pending) {
+      if (action === "approve") this.approve(fact.id, actor, "Approved with Approve all.");
+      else this.reject(fact.id, actor, "Rejected with Reject all.");
+    }
+    return pending.length;
   }
 
   /** Retires an active fact: valid to is set, and it is no longer recalled. */
@@ -370,21 +428,53 @@ export class MemoryService {
   }
 
   /**
-   * The facts for a task's TASK.md: pinned facts of the scopes, then the best matches for the brief,
-   * cut at about 500 tokens. The task's recalls are replaced and each new fact's use count goes up.
+   * The Memory section of a task's TASK.md (about 1500 tokens): the briefs of its projects, the three
+   * past task records most like its brief, the open threads of its projects and the lessons (pinned
+   * first, then the best matches). The text is kept for the task, so rewriting TASK.md gives the same
+   * section; the task's recalls are replaced and each new lesson's use count goes up.
    */
-  async recall(task: { id: string; brief: string }, scopes: readonly MemoryScope[]): Promise<Recalled> {
-    const result = await hybridSearch(this.store, this.embedder(), task.brief, { scopes });
+  async recall(
+    task: { id: string; brief: string; title?: string | undefined },
+    scopes: readonly MemoryScope[],
+  ): Promise<Recalled> {
+    const query = [task.title ?? "", task.brief].join("\n").trim();
+    const result = await hybridSearch(this.store, this.embedder(), query, { scopes });
     const ordered = new Map<number, Fact>();
     for (const fact of this.store.pinned(scopes)) ordered.set(fact.id, fact);
     for (const { fact } of result.hits) if (!ordered.has(fact.id)) ordered.set(fact.id, fact);
-    const facts = capFacts([...ordered.values()], RECALL_CHARS);
+    const projects = scopes.flatMap((s) => {
+      const parsed = parseScope(s);
+      return parsed?.kind === "project" ? [parsed.id] : [];
+    });
+    // Records are never global: the task's org and projects only.
+    const recordScopes = scopes.filter((s) => s !== "global");
+    const records =
+      recordScopes.length === 0
+        ? []
+        : await this.project.records({ query, scopes: recordScopes, except: task.id, limit: 3 });
+    const threads = rankThreads(this.project.threads({ projects, status: "open", limit: 100 }), query);
+    const briefs = projects.flatMap((p) => {
+      const b = this.project.currentBrief(p);
+      return b === undefined ? [] : [{ project: p, body: b.body }];
+    });
+    const { text, lessons } = renderMemorySection({
+      briefs,
+      records: records.map((h) => h.record),
+      threads,
+      lessons: [...ordered.values()],
+    });
     this.store.recordRecall(
       task.id,
-      facts.map((f) => f.id),
+      lessons.map((f) => f.id),
     );
+    this.project.setTaskMemory(task.id, text);
     if (!result.keywordOnly) this.fillLater();
-    return { facts, keywordOnly: result.keywordOnly };
+    return { facts: lessons, text, keywordOnly: result.keywordOnly };
+  }
+
+  /** The Memory section a task got at its start, for rewriting TASK.md. Empty before. */
+  recalledText(task: string): string {
+    return this.project.taskMemory(task) ?? "";
   }
 
   /** The facts a task was given at its start, for rewriting TASK.md without counting them again. */
@@ -506,4 +596,11 @@ function refuseSecrets(text: string): void {
   if (detectSecrets(text).length > 0) {
     throw new UserError("That looks like it holds a secret. Facts never do: leave the value out.");
   }
+}
+
+/** Open threads that share the most words with the query first, then the newest. */
+export function rankThreads(threads: readonly Thread[], query: string): Thread[] {
+  const words = new Set(contentWords(query));
+  const score = (t: Thread) => contentWords(t.text).filter((w) => words.has(w)).length;
+  return [...threads].sort((a, b) => score(b) - score(a) || b.id - a.id);
 }

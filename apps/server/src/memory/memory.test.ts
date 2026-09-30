@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { UserError } from "../errors.ts";
 import { openMemoryDb } from "./db.ts";
 import { type Embedder, HashEmbedder } from "./embedder.ts";
-import { capFacts, RECALL_CHARS } from "./recall.ts";
+import { TASK_MEMORY_CHARS } from "./recall.ts";
 import { agentScopes, recallScopes } from "./scopes.ts";
 import { fuse } from "./search.ts";
 import { MemoryService } from "./service.ts";
@@ -213,7 +213,7 @@ describe("scope isolation", () => {
 });
 
 describe("recall", () => {
-  it("cuts at about 500 tokens, keeps ranking order, and counts a task's use of a fact once", async () => {
+  it("cuts the section at about 1500 tokens, keeps ranking order, and counts a task's use of a fact once", async () => {
     const m = service();
     const scope = "org:acme";
     for (let i = 0; i < 40; i++) {
@@ -224,12 +224,13 @@ describe("recall", () => {
     }
     const task = { id: "ACM-2", brief: "fix the build" };
     const first = await m.recall(task, [scope]);
-    const chars = first.facts.reduce((n, f) => n + f.text.length, 0);
     expect(first.facts.length).toBeGreaterThan(5);
     expect(first.facts.length).toBeLessThan(40);
-    expect(chars).toBeLessThanOrEqual(RECALL_CHARS);
-    expect(capFacts(first.facts)).toHaveLength(first.facts.length);
+    expect(first.text.length).toBeLessThanOrEqual(TASK_MEMORY_CHARS);
+    expect(first.text).toContain("### Lessons");
     expect(m.recalled("ACM-2").map((f) => f.id)).toEqual(first.facts.map((f) => f.id));
+    // A rewrite of TASK.md gets the same section.
+    expect(m.recalledText("ACM-2")).toBe(first.text);
 
     await m.recall(task, [scope]);
     for (const f of first.facts) expect(m.get(f.id)?.use_count).toBe(1);

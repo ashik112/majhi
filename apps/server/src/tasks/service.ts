@@ -476,7 +476,7 @@ export class TaskService {
       related,
       team,
       await this.readFacts(task),
-      this.deps.memory?.recalled(task.id),
+      this.deps.memory?.recalledText(task.id),
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -1545,7 +1545,7 @@ export class TaskService {
         this.relatedOf(task),
         team,
         await this.knownFacts(task),
-        this.deps.memory?.recalled(task.id),
+        this.deps.memory?.recalledText(task.id),
       );
       // The folder can be gone by hand; the links still stand.
       await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);

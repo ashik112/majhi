@@ -102,9 +102,12 @@ describe("majhi-memory", () => {
     const globex = await memoryOf("claude-globex");
     const acme = await memoryOf("claude-acme");
     expect((await globex.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "brief",
       "list_recent",
       "propose",
       "recall",
+      "records",
+      "threads",
     ]);
 
     const seen = text(
@@ -134,8 +137,70 @@ describe("majhi-memory", () => {
     ).toContain("pnpm");
   });
 
-  it("defaults a proposal to the task's org and leaves it pending", async () => {
-    const { h, create, memoryOf } = await world();
+  it("never shows an agent another org's task records, briefs or threads, in TASK.md or from the tools", async () => {
+    const { h, create, memoryOf, taskMd } = await world();
+    const project = h.majhi.services.memory.project;
+    await project.putRecord({
+      task: "ACM-90",
+      title: "Move the health check to a new route",
+      org: "acme",
+      projects: ["acme-api"],
+      asked: "Move the health check of the api to a new route.",
+      done: "Moved the health check handler to src/health.ts and added the route.",
+      decisions: "",
+      outcome: "Merged into main.",
+      left: "The old route still answers.",
+      repos: [],
+    });
+    project.patchBrief(
+      "acme-api",
+      { "What it is": "The acme api, with a health check route." },
+      { task: "ACM-90" },
+    );
+    project.openThread({
+      text: "Remove the old health check route",
+      project: "acme-api",
+      org: "acme",
+      task: "ACM-90",
+    });
+
+    const web = await create("fix the health check route in web");
+    const api = await create("fix the health check route in api");
+    const globex = await memoryOf("claude-globex");
+    const acme = await memoryOf("claude-acme");
+
+    // Globex's task and agent see nothing of Acme's.
+    const webMd = await taskMd(web.id);
+    expect(webMd).not.toContain("health.ts");
+    expect(webMd).not.toContain("acme api");
+    expect(webMd).not.toContain("old health check route");
+    expect(text(await globex.callTool({ name: "records", arguments: { query: "health check route" } }))).toBe(
+      "No task records found.",
+    );
+    expect(
+      failed(await globex.callTool({ name: "records", arguments: { query: "health", project: "acme-api" } })),
+    ).toBe(true);
+    expect(failed(await globex.callTool({ name: "brief", arguments: { project: "acme-api" } }))).toBe(true);
+    expect(failed(await globex.callTool({ name: "threads", arguments: { project: "acme-api" } }))).toBe(true);
+    expect(text(await globex.callTool({ name: "threads", arguments: {} }))).toBe("No open threads.");
+
+    // Acme's own task and agent get them.
+    const apiMd = await taskMd(api.id);
+    expect(apiMd).toContain("### Project brief: acme-api");
+    expect(apiMd).toContain("ACM-90: Move the health check to a new route");
+    expect(apiMd).toContain("Remove the old health check route");
+    expect(
+      text(await acme.callTool({ name: "records", arguments: { query: "health check route" } })),
+    ).toContain("src/health.ts");
+    expect(text(await acme.callTool({ name: "brief", arguments: { project: "acme-api" } }))).toContain(
+      "health check route",
+    );
+    expect(text(await acme.callTool({ name: "threads", arguments: {} }))).toContain("old health check route");
+  });
+
+  it("defaults a proposal to the task's org and leaves it pending when every fact is reviewed", async () => {
+    const { h, must, create, memoryOf } = await world();
+    await must("settings.set", { memory: { review_all: true } });
     const task = await create("fix the health check in api");
     const acme = await memoryOf("claude-acme");
     const res = await acme.callTool({
@@ -151,6 +216,8 @@ describe("majhi-memory", () => {
 describe("Done when", () => {
   it("a fact proposed in one task is approved and then in the next task's TASK.md, in the same repo only", async () => {
     const { h, must, create, memoryOf, taskMd } = await world();
+    // The owner reviews every fact, so the proposal waits.
+    await must("settings.set", { memory: { review_all: true } });
     const one = await create("document the install steps in api");
     const acme = await memoryOf("claude-acme");
     const fact = "Use pnpm, not npm, to install packages in acme-api";

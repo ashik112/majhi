@@ -357,6 +357,29 @@ export function createHandlers({
     "memory.promote": async (input, ctx) => services.promotion.promote(input.id, ctx.meta.actor),
     "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, ctx.meta.actor),
     "memory.events": async (input) => services.memory.events(input),
+    "memory.approveAll": async (input, ctx) => ({
+      count: services.memory.decideAll("approve", input.ids, ctx.meta.actor),
+    }),
+    "memory.rejectAll": async (input, ctx) => ({
+      count: services.memory.decideAll("reject", input.ids, ctx.meta.actor),
+    }),
+    "memory.records": async (input) =>
+      services.memory.project.records({ query: input.query, project: input.project, limit: input.limit }),
+    "memory.record": async (input) => services.memory.project.record(input.task) ?? null,
+    "memory.brief": async (input) => services.memory.project.brief(input.project),
+    "memory.restoreBrief": async (input) =>
+      services.memory.project.restoreBrief(input.project, input.version),
+    "memory.buildBrief": async (input) => services.extraction.buildBrief(input.project),
+    "memory.threads": async (input) =>
+      services.memory.project.threads({
+        ...(input.project === undefined ? {} : { projects: [input.project] }),
+        status: input.status,
+        task: input.task,
+        limit: input.limit,
+      }),
+    "memory.closeThread": async (input) =>
+      services.memory.project.closeThread(input.id, "owner", input.reason),
+    "memory.reopenThread": async (input) => services.memory.project.reopenThread(input.id),
     "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),
     "usage.breakdown": async (input) => services.usage.breakdown(input),
     "usage.turns": async (input) => services.usage.turns(input.filters, input.limit),

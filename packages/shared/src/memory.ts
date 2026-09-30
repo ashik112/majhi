@@ -205,10 +205,10 @@ export const MemoryRecallToolSchema = z.object({
 
 export const MemoryProposeToolSchema = z.object({
   text: FactTextSchema.describe(
-    "One short fact that will still hold in later tasks: a convention, a command, a decision. Not task chatter. Never a secret or personal data",
+    "One lesson: a non-obvious gotcha you ran into, what went wrong and how to avoid it. Not a rule the repo docs already state. Never a secret or personal data",
   ),
   scope: MemoryScopeSchema.optional().describe(
-    "global, org:<id> or project:<id>. Default: your task's org. It stays pending until it is approved",
+    "global, org:<id> or project:<id>. Default: your task's org. A global lesson waits for the owner",
   ),
 });
 

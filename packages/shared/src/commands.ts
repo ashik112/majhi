@@ -1245,7 +1245,8 @@ export const commands = {
   },
   "memory.rejectAll": {
     risk: "change",
-    summary: "Reject every pending fact (or the ones named). They are kept as rejected, so each can be undone",
+    summary:
+      "Reject every pending fact (or the ones named). They are kept as rejected, so each can be undone",
     input: MemoryBulkDecideInputSchema,
     output: MemoryBulkDecideOutputSchema,
   },
@@ -1264,7 +1265,8 @@ export const commands = {
   },
   "memory.brief": {
     risk: "read",
-    summary: "A project's living brief (what it is, architecture, state, plans, known problems) and every earlier version",
+    summary:
+      "A project's living brief (what it is, architecture, state, plans, known problems) and every earlier version",
     input: MemoryBriefInputSchema,
     output: MemoryBriefOutputSchema,
   },
