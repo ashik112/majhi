@@ -30,9 +30,9 @@ export function MrSettings({
     });
 
   return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-      <legend className="mb-1.5 p-0 text-sm text-fg-faint">Merge requests</legend>
-      <Field label="Merge policy" hint={POLICY_HINT[draft.merge]}>
+    <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+      <legend className="mb-3 p-0 text-base font-semibold text-fg">Merge requests</legend>
+      <Field label="Merge policy" hint={POLICY_HINT[draft.merge]} className="@[560px]:max-w-[calc(50%-6px)]">
         {(p) => (
           <Select
             {...p}
@@ -45,41 +45,44 @@ export function MrSettings({
           </Select>
         )}
       </Field>
-      {MR_HOSTS.map((host) => (
-        <div key={host} className="grid grid-cols-2 gap-2">
-          <Field label={`${HOST_LABEL[host]} token`} hint="A saved secret.">
-            {(p) => (
-              <Select
-                {...p}
-                value={draft.mrTokens[host]}
-                onChange={(e) => setToken(host, { ref: e.target.value })}
-              >
-                <option value="">Not set</option>
-                {secrets.map((s) => (
-                  <option key={s.name} value={s.ref}>
-                    {s.name}
-                  </option>
-                ))}
-                {draft.mrTokens[host] !== "" && !secrets.some((s) => s.ref === draft.mrTokens[host]) && (
-                  <option value={draft.mrTokens[host]}>{draft.mrTokens[host]}</option>
-                )}
-              </Select>
-            )}
-          </Field>
-          <Field label="Or paste a new one" hint="Saved as a secret. majhi keeps only its reference.">
-            {(p) => (
-              <Input
-                {...p}
-                type="password"
-                autoComplete="new-password"
-                placeholder="Token"
-                value={draft.newTokens[host]}
-                onChange={(e) => setToken(host, { fresh: e.target.value })}
-              />
-            )}
-          </Field>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-fg-faint">
+          Host tokens. Pick a saved secret, or paste a new token and majhi saves it as one.
+        </span>
+        <div className="grid grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-2 gap-y-2">
+          {MR_HOSTS.map((host) => {
+            const current = draft.mrTokens[host];
+            return (
+              <div key={host} className="contents">
+                <span className="text-sm text-fg-soft">{HOST_LABEL[host]}</span>
+                <Select
+                  aria-label={`${HOST_LABEL[host]} token`}
+                  value={current}
+                  onChange={(e) => setToken(host, { ref: e.target.value })}
+                >
+                  <option value="">Not set</option>
+                  {secrets.map((s) => (
+                    <option key={s.name} value={s.ref}>
+                      {s.name}
+                    </option>
+                  ))}
+                  {current !== "" && !secrets.some((s) => s.ref === current) && (
+                    <option value={current}>{current}</option>
+                  )}
+                </Select>
+                <Input
+                  aria-label={`New ${HOST_LABEL[host]} token`}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Paste a new token"
+                  value={draft.newTokens[host]}
+                  onChange={(e) => setToken(host, { fresh: e.target.value })}
+                />
+              </div>
+            );
+          })}
         </div>
-      ))}
+      </div>
       {error && <p className="text-sm text-red">{error}</p>}
     </fieldset>
   );

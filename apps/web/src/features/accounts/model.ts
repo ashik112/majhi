@@ -40,6 +40,18 @@ export function orgIdFromName(name: string): string {
 /** Colors offered for a new org. Same hues as the design tokens. */
 export const ORG_COLORS = ["#8ab8f5", "#7fd1b9", "#f59c7f", "#c3a6f5", "#f0b455"] as const;
 
+/** The name of an org color, for its swatch's label. A color set by hand is the "Custom" one. */
+export function orgColorName(color: string): string {
+  const names: Record<string, string> = {
+    "#8ab8f5": "Blue",
+    "#7fd1b9": "Green",
+    "#f59c7f": "Coral",
+    "#c3a6f5": "Violet",
+    "#f0b455": "Amber",
+  };
+  return names[color.toLowerCase()] ?? "Custom";
+}
+
 /** The next color in the palette for the nth org, so new orgs start out different. */
 export function suggestOrgColor(orgCount: number): string {
   return ORG_COLORS[orgCount % ORG_COLORS.length] ?? ORG_COLORS[0];

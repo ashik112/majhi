@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useCreateOrg } from "@/lib/studio-queries";
-import { ORG_COLORS, orgIdFromName, suggestOrgColor } from "./model";
+import { ORG_COLORS, orgColorName, orgIdFromName, suggestOrgColor } from "./model";
 
 /**
  * Inline "New org" form: a name, an id derived from it (editable) and a color. It sits inside the
@@ -17,10 +17,12 @@ export function NewOrgForm({
   orgCount,
   onCreated,
   onCancel,
+  className,
 }: {
   orgCount: number;
   onCreated: (orgId: string) => void;
   onCancel: () => void;
+  className?: string;
 }) {
   const create = useCreateOrg();
   const [name, setName] = useState("");
@@ -56,7 +58,7 @@ export function NewOrgForm({
       role="form"
       onKeyDown={onKeyDown}
       aria-label="New org"
-      className="flex flex-col gap-3 rounded-md border border-line-strong bg-sunken p-3"
+      className={cn("flex flex-col gap-3 rounded-md border border-line-strong bg-sunken p-3", className)}
     >
       <Field label="Org name">
         {(p) => (
@@ -87,7 +89,7 @@ export function NewOrgForm({
                 value={c}
                 checked={color === c}
                 onChange={() => setColor(c)}
-                aria-label={`Color ${c}`}
+                aria-label={orgColorName(c)}
                 className="peer absolute inset-0 size-full cursor-pointer opacity-0"
               />
               <span
