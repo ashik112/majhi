@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type AgentFrontmatter,
   canWorkIn,
+  type DecideRequestInput,
   OWNER_HANDLE,
   parseMentions,
   type RoomItem,
@@ -175,27 +176,8 @@ export class RoomCoordinator {
     const said = verdictOf(text);
     if (said !== undefined) return said;
     if (!isLoopReviewer) return undefined;
-    // Two neutral options, described, asked in both orders: on Laya this told approvals from
-    // change requests apart at 0.86 to 0.94.
     const answer = await this.deps.decisions
-      ?.decide(
-        {
-          state: { from: `@${agent}`, message: text.slice(0, STATE_MAX) },
-          questions: {
-            verdict: {
-              type: "choice",
-              instructions: "What is the reviewer's verdict in message?",
-              options: [
-                { key: "A", description: "approves the work as it is, with no more changes asked" },
-                { key: "B", description: "asks for changes, finds problems, or is not done reviewing" },
-              ],
-              abstain: false,
-              orders: "reversed",
-            },
-          },
-        },
-        { use: "routing", task: task.id, agent },
-      )
+      ?.decide(verdictQuestion(agent, text), { use: "routing", task: task.id, agent })
       .catch(() => undefined);
     const a = answer?.answers.verdict;
     const verdict: Verdict =
@@ -219,6 +201,28 @@ export class RoomCoordinator {
   private say(task: string, level: "info" | "warn", text: string): void {
     this.deps.room.post(task as TaskId, `${level}:${randomUUID()}`, { type: "system", level, text });
   }
+}
+
+/**
+ * A reviewer's verdict, when its words did not say: two neutral options, described, asked in both
+ * orders. On Laya this told approvals from change requests apart at 0.86 to 0.94.
+ */
+export function verdictQuestion(agent: string, text: string): DecideRequestInput {
+  return {
+    state: { from: `@${agent}`, message: text.slice(0, STATE_MAX) },
+    questions: {
+      verdict: {
+        type: "choice",
+        instructions: "What is the reviewer's verdict in message?",
+        options: [
+          { key: "A", description: "approves the work as it is, with no more changes asked" },
+          { key: "B", description: "asks for changes, finds problems, or is not done reviewing" },
+        ],
+        abstain: false,
+        orders: "reversed",
+      },
+    },
+  };
 }
 
 function members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
