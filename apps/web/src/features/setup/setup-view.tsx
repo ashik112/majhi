@@ -180,9 +180,7 @@ function Card({ title, state, actions }: { title: string; state: CardState; acti
             {state.pill}
           </span>
         </div>
-        <p className="text-sm leading-[1.4] break-words whitespace-pre-line text-fg-muted">
-          {state.detail}
-        </p>
+        <p className="text-sm leading-[1.4] break-words whitespace-pre-line text-fg-muted">{state.detail}</p>
       </div>
       {actions && <div className="flex shrink-0 flex-col gap-1.5">{actions}</div>}
     </section>

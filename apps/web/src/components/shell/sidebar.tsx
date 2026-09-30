@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { Layers } from "lucide-react";
 import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Kbd } from "@/components/ui/kbd";
@@ -212,7 +213,16 @@ function OrgList() {
                 active ? SELECTED : "text-fg-soft",
               )}
             >
-              <OrgBadge label={row.badge} color={row.color} size="sm" />
+              {row.id === undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-line-control bg-raised text-fg-soft"
+                >
+                  <Layers className="size-3" strokeWidth={2.25} />
+                </span>
+              ) : (
+                <OrgBadge label={row.badge} color={row.color} size="sm" />
+              )}
               <span className="min-w-0 truncate">{row.name}</span>
               <span className="tnum ml-auto font-mono text-sm text-fg-faint">{row.open}</span>
             </button>

@@ -58,8 +58,8 @@ export function SuggestionList({
         <p className="flex items-start gap-2 rounded-md border border-line-strong px-3 py-2.5 text-sm text-fg-muted">
           <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-red" />
           <span>
-            Could not look for suggestions: <span className="text-fg-soft">{error.message}</span>.
-            Browse instead.
+            Could not look for suggestions: <span className="text-fg-soft">{error.message}</span>. Browse
+            instead.
           </span>
         </p>
       ) : suggestions === undefined ? (
