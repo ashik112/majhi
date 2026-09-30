@@ -47,6 +47,8 @@ export function topicsFor(command: string): EventTopic[] {
       return ["secrets"];
     case "usage":
       return ["usage", "config"];
+    case "memory":
+      return ["memory"];
     default:
       return [];
   }

@@ -41,6 +41,17 @@ import {
   UpdateStatusSchema,
 } from "./host.ts";
 import {
+  FactHitSchema,
+  FactSchema,
+  MemoryAddInputSchema,
+  MemoryDecideInputSchema,
+  MemoryEventSchema,
+  MemoryEventsInputSchema,
+  MemoryListInputSchema,
+  MemoryPinInputSchema,
+  MemorySearchInputSchema,
+} from "./memory.ts";
+import {
   MarkMergedResultSchema,
   MergeMrsResultSchema,
   MergeOrderSchema,
@@ -1021,6 +1032,58 @@ export const commands = {
     summary: "Install Laya on this Mac through the host helper and download its model (about 850 MB, once)",
     input: Empty,
     output: LayaStatusSchema,
+  },
+
+  // Memory (5.6) --------------------------------------------------------------
+  "memory.search": {
+    risk: "read",
+    summary:
+      "Search facts by meaning and keywords, in the scopes you name (default all). Active facts unless a status is given; pinned facts first",
+    input: MemorySearchInputSchema,
+    output: z.array(FactHitSchema),
+  },
+  "memory.list": {
+    risk: "read",
+    summary:
+      "List facts, newest first, by scope, status (pending, active, retired, rejected) or the task they were learned in",
+    input: MemoryListInputSchema,
+    output: z.array(FactSchema),
+  },
+  "memory.add": {
+    risk: "change",
+    summary: "Add an active fact in a scope (global, org:<id> or project:<id>), as the owner",
+    input: MemoryAddInputSchema,
+    output: FactSchema,
+  },
+  "memory.approve": {
+    risk: "change",
+    summary: "Make a pending or rejected fact active, so later tasks recall it",
+    input: MemoryDecideInputSchema,
+    output: FactSchema,
+  },
+  "memory.reject": {
+    risk: "change",
+    summary: "Drop a pending fact. It is kept as rejected, so it can be approved later",
+    input: MemoryDecideInputSchema,
+    output: FactSchema,
+  },
+  "memory.forget": {
+    risk: "destructive",
+    summary: "Retire an active fact: it stops being recalled from now on and keeps its history",
+    input: MemoryDecideInputSchema,
+    output: FactSchema,
+  },
+  "memory.pin": {
+    risk: "change",
+    summary: "Pin a fact so it comes first in recall, or unpin it",
+    input: MemoryPinInputSchema,
+    output: FactSchema,
+  },
+  "memory.events": {
+    risk: "read",
+    summary: "The memory log, newest first: proposals, decisions and undo, for one task or fact, or all",
+    input: MemoryEventsInputSchema,
+    output: z.array(MemoryEventSchema),
   },
 
   // Tokens and cost (5.8, Phase 2c) -------------------------------------------

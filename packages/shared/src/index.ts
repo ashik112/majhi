@@ -5,6 +5,7 @@ export * from "./config.ts";
 export * from "./decisions.ts";
 export * from "./host.ts";
 export * from "./media.ts";
+export * from "./memory.ts";
 export * from "./mrs.ts";
 export * from "./paths.ts";
 export * from "./processes.ts";
