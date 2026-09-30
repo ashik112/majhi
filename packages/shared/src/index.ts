@@ -6,6 +6,7 @@ export * from "./decisions.ts";
 export * from "./host.ts";
 export * from "./media.ts";
 export * from "./paths.ts";
+export * from "./processes.ts";
 export * from "./rooms.ts";
 export * from "./secrets-detect.ts";
 export * from "./settings.ts";
