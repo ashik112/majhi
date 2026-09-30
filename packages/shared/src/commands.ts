@@ -59,6 +59,7 @@ import {
   SettingsSchema,
 } from "./settings.ts";
 import {
+  CardActionSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
@@ -103,6 +104,33 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
 }
 
 const Empty = z.object({});
+
+/** A local branch name to merge into. */
+const LocalBranchSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
+  .max(200);
+
+/** What a local merge did in one repo of a task. */
+const MergeResultSchema = z.object({
+  project: IdSchema,
+  into: z.string(),
+  ok: z.boolean(),
+  detail: z.string(),
+});
+
+/** One action on a review card: allowed now, or why not. */
+const ReviewOptionSchema = z.object({ ok: z.boolean(), why: z.string().optional() });
+
+/** `tasks.reviewOptions`: what the review card's buttons may do now. */
+export const ReviewOptionsSchema = z.object({
+  /** The first repo's base: the default merge target. */
+  base: z.string().optional(),
+  merge: ReviewOptionSchema,
+  done: ReviewOptionSchema,
+});
+export type ReviewOptions = z.infer<typeof ReviewOptionsSchema>;
 const ById = z.object({ id: IdSchema });
 
 /** Agent fields a caller sets. `id` comes from the command input, never from here. */
@@ -617,22 +645,22 @@ export const commands = {
     input: z.object({
       id: TaskIdSchema,
       /** The branch to merge into. Default: each repo's base branch. */
-      into: z
-        .string()
-        .trim()
-        .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
-        .max(200)
-        .optional(),
+      into: LocalBranchSchema.optional(),
       /** Only this repo of the task. Default: every repo. */
       project: IdSchema.optional(),
       done: z.boolean().default(false),
     }),
     output: z.object({
-      results: z.array(
-        z.object({ project: IdSchema, into: z.string(), ok: z.boolean(), detail: z.string() }),
-      ),
+      results: z.array(MergeResultSchema),
       task: TaskSchema,
     }),
+  },
+  "tasks.reviewOptions": {
+    risk: "read",
+    summary:
+      "What the owner can do with a task in review now: merge it (a worktree with commits ahead of the base, no agent working) and mark it done (no open subtasks), with the reason when not",
+    input: z.object({ id: TaskIdSchema }),
+    output: ReviewOptionsSchema,
   },
   "tasks.branches": {
     risk: "read",
@@ -802,6 +830,30 @@ export const commands = {
     summary:
       "Answer an agent's secret request. The value is stored in secrets.age; the agent gets only the reference",
     input: z.object({ task: TaskIdSchema, item: z.string(), value: z.string().min(1).max(8192) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.cardAction": {
+    risk: "outbound",
+    summary:
+      "Act on a review or paused card in a task room: merge the task into a local branch and mark it done, mark it done, or resume it. Refused when the card was already answered or the task no longer allows it. Never pushes",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string(),
+      action: CardActionSchema,
+      /** For merge: the local branch to merge into. Default: each repo's base branch. */
+      into: LocalBranchSchema.optional(),
+    }),
+    output: z.object({
+      item: RoomItemSchema,
+      /** For merge: what happened in each repo. */
+      results: z.array(MergeResultSchema).optional(),
+    }),
+  },
+  "room.answerQuestion": {
+    risk: "change",
+    summary:
+      'Answer an agent\'s plain-text question to the owner with one of the choices read from it. The agent gets "Owner chose: <choice>"',
+    input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
     output: z.object({ item: RoomItemSchema }),
   },
   "room.answerAsk": {

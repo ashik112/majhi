@@ -12,6 +12,7 @@ import type { RepoScanner } from "../scan/scanner.ts";
 import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
+import { actorName } from "../tasks/cards.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -194,7 +195,8 @@ export function createHandlers({
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input) => services.tasks.close(input.id),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
-    "tasks.merge": (input) => services.tasks.merge(input),
+    "tasks.merge": (input, ctx) => services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.reviewOptions": (input) => services.tasks.reviewOptions(input.id),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
@@ -255,6 +257,10 @@ export function createHandlers({
     }),
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
+    }),
+    "room.cardAction": (input, ctx) => services.tasks.cardAction({ ...input, by: actorName(ctx.meta.actor) }),
+    "room.answerQuestion": async (input) => ({
+      item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
     }),
     "room.answerAsk": async (input) => ({
       item: await services.tasks.answerAsk(input.task, input.item, input.answers),

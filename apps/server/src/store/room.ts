@@ -104,6 +104,23 @@ export class RoomRepo {
       .map(toItem);
   }
 
+  /** Items of one type in a task whose `state` is pending, oldest first. */
+  pendingOfType(task: string, type: RoomItem["type"]): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(
+        and(
+          eq(roomItems.task, task),
+          eq(roomItems.type, type),
+          sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
+        ),
+      )
+      .orderBy(asc(roomItems.at))
+      .all()
+      .map(toItem);
+  }
+
   /** Approval cards that ran a config change and can be undone through this commit. */
   approvalsByCommit(commit: string): RoomItem[] {
     return this.db
