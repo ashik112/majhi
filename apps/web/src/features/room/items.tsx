@@ -62,6 +62,8 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <ApprovalCard item={item} />;
     case "secret-request":
       return <SecretRequestCard item={item} />;
+    case "ask":
+      return <AskCard item={item} />;
     case "choice":
       return <ChoiceCard item={item} />;
     case "system":
@@ -376,6 +378,103 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
           </Button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function AskCard({ item }: { item: Of<"ask"> }) {
+  const toast = useToast();
+  const [answers, setAnswers] = useState<Record<string, string>>(() => item.answers ?? {});
+
+  const answer = useMutation<unknown, ApiRequestError>({
+    mutationFn: () => cmd("room.answerAsk", { task: item.task, item: item.id, answers }),
+    onError: (error) => toast("Could not answer", { detail: error.message, tone: "error" }),
+  });
+
+  if (item.state !== "pending") {
+    return (
+      <div className="flex flex-col gap-1 pl-[38px]">
+        {item.questions.map((q) => {
+          const answer = item.answers?.[q.id];
+          const option = q.options.find((o) => o.id === answer);
+          const label = option?.label ?? answer;
+          return (
+            <p key={q.id} className="flex items-center gap-2 text-sm text-fg-faint">
+              <ListChecks aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="min-w-0 break-words">
+                {q.question} You {q.options.some((o) => o.id === answer) ? "chose" : "typed"}: {label}.
+              </span>
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const handleAnswer = (questionId: string, value: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  return (
+    <section
+      aria-label="Question"
+      className="flex max-w-[700px] flex-col gap-3 rounded-lg border border-blue-line bg-blue-wash px-3.5 py-3"
+    >
+      {item.questions.map((question) => (
+        <div key={question.id} className="flex flex-col gap-2">
+          <p className="flex items-start gap-2 text-base text-fg">
+            <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
+            <span className="min-w-0 break-words">{question.question}</span>
+          </p>
+          {question.freeText ? (
+            <input
+              type="text"
+              placeholder="Type your answer..."
+              value={answers[question.id] ?? ""}
+              onChange={(e) => handleAnswer(question.id, e.target.value)}
+              disabled={answer.isPending}
+              className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+            />
+          ) : question.options.length <= 4 ? (
+            <div className="flex flex-wrap gap-2">
+              {question.options.map((option) => (
+                <Button
+                  key={option.id}
+                  size="sm"
+                  variant={answers[question.id] === option.id ? "primary" : "secondary"}
+                  disabled={answer.isPending}
+                  onClick={() => handleAnswer(question.id, option.id)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <select
+              value={answers[question.id] ?? question.default ?? ""}
+              onChange={(e) => handleAnswer(question.id, e.target.value)}
+              disabled={answer.isPending}
+              className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg focus:border-blue focus:outline-none disabled:bg-bg-hover"
+            >
+              <option value="">Select an option...</option>
+              {question.options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={answer.isPending || Object.keys(answers).length !== item.questions.length}
+        onClick={() => answer.mutate()}
+        className="self-start"
+      >
+        {answer.isPending ? "Sending..." : "Send"}
+      </Button>
     </section>
   );
 }
