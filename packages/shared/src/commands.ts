@@ -197,7 +197,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -211,6 +211,8 @@ export const commands = {
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
+      /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
+      tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
     }),

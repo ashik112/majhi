@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
+import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -91,6 +92,8 @@ export const OrgConfigSchema = z.looseObject({
   resume: ResumePatchSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
   rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
+  /** Overrides the model and effort tiers of `decisions.tiers` for this org's agents (5.12). */
+  tiers: TiersPatchSchema.optional(),
   /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
   team: z.array(IdSchema).optional(),
 });
@@ -114,9 +117,6 @@ export type AccountConfig = z.infer<typeof AccountConfigSchema>;
 // ---------------------------------------------------------------------------
 // Agent files
 
-export const RoleSchema = z.enum(["Lead", "Builder", "Reviewer", "Tester", "Root"]);
-export type Role = z.infer<typeof RoleSchema>;
-
 export const PermSchema = z.enum(["edit", "shell", "push", "mr", "merge"]);
 export type Perm = z.infer<typeof PermSchema>;
 
@@ -134,6 +134,8 @@ export const AgentFrontmatterSchema = z.strictObject({
   model: z.string().trim().min(1).optional(),
   /** An effort id from the account's ACP effort list, or `auto`. Absent means the ACP default. */
   effort: z.string().trim().min(1).optional(),
+  /** Fallback tiers for this agent when `model` or `effort` is `auto` and there is no confident pick. */
+  tier: TierPatchSchema.optional(),
   /** Allowed model ids when `model` is `auto`. Empty means every model the account offers. */
   models: z.array(z.string().trim().min(1)).optional(),
   /** Org ids the agent may work in, or `[anywhere]`. */
@@ -317,6 +319,8 @@ export const OrgViewSchema = z.object({
   resume: OrgConfigSchema.shape.resume,
   /** This org's own loop guard, when it overrides majhi's. */
   rooms: OrgConfigSchema.shape.rooms,
+  /** This org's own fallback tiers, when it overrides majhi's. */
+  tiers: OrgConfigSchema.shape.tiers,
   /** The default team for new tasks, when set. */
   team: OrgConfigSchema.shape.team,
   accountCount: z.number().int().nonnegative(),
