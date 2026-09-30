@@ -1,5 +1,5 @@
 import type { CommandInput, CommandOutput, Settings, Task } from "@majhi/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -40,6 +40,8 @@ export function useHistory(limit = 8) {
   return useQuery<HistoryEntries, ApiRequestError>({
     queryKey: [...queryKeys.history, limit],
     queryFn: () => cmd("history.list", { limit }),
+    // A longer page keeps the rows it had while it loads.
+    placeholderData: keepPreviousData,
   });
 }
 
