@@ -17,6 +17,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "accounts.hideModel": (i) =>
     `${i.hidden === true ? "Hide" : "Show"} ${str(i.model)} on account ${str(i.id)}`,
   "accounts.login.start": (i) => `Start sign-in for account ${str(i.id)}`,
+  "tasks.terminal.open": (i) => `Open a terminal in the folder of task ${str(i.task)}`,
   "agents.create": (i) => `Create agent ${str(i.id)}`,
   "agents.update": (i) => `Change agent ${str(i.id)}`,
   "agents.duplicate": (i) => `Copy agent ${str(i.id)} as ${str(i.newId)}`,

@@ -20,6 +20,10 @@ export interface TerminalSpec {
   /** The whole environment of the process. Nothing is added from the server's own. */
   env: Record<string, string>;
   cwd: string;
+  /** Kills the command after this long. Default: `MAX_RUNTIME_MS`, or the manager's own cap. */
+  maxRuntimeMs?: number;
+  /** Runs when the terminal is killed, for what killing the pty does not reach (a container). */
+  stop?: () => void;
   /** Runs after the command exits. What it returns is sent in the `exit` message. */
   onExit?: (code: number) => Promise<HealthCheck | undefined>;
 }
@@ -41,6 +45,7 @@ export class Terminal {
   constructor(
     readonly key: string,
     private readonly pty: nodePty.IPty,
+    private readonly stop?: () => void,
   ) {}
 
   get exited(): boolean {
@@ -64,7 +69,9 @@ export class Terminal {
   }
 
   kill(): void {
-    if (!this.exited) this.pty.kill();
+    if (this.exited) return;
+    this.pty.kill();
+    this.stop?.();
   }
 
   /** @internal Called by the manager. */
@@ -102,6 +109,21 @@ export class TerminalManager {
     return this.terminals.get(id);
   }
 
+  /** The terminal with this key that is still running. */
+  running(key: string): Terminal | undefined {
+    for (const terminal of this.terminals.values())
+      if (terminal.key === key && !terminal.exited) return terminal;
+    return undefined;
+  }
+
+  /**
+   * The running terminal with this key, or a new one when there is none (or it has exited). Unlike
+   * `start`, a running terminal is left alone, so a page that reloads reattaches to it.
+   */
+  attach(spec: TerminalSpec): Terminal {
+    return this.running(spec.key) ?? this.start(spec);
+  }
+
   start(spec: TerminalSpec): Terminal {
     for (const old of this.terminals.values()) if (old.key === spec.key) old.kill();
 
@@ -112,10 +134,10 @@ export class TerminalManager {
       cwd: spec.cwd,
       env: { TERM: "xterm-256color", ...spec.env },
     });
-    const terminal = new Terminal(spec.key, pty);
+    const terminal = new Terminal(spec.key, pty, spec.stop);
     this.terminals.set(terminal.id, terminal);
 
-    const limit = setTimeout(() => terminal.kill(), this.maxRuntimeMs);
+    const limit = setTimeout(() => terminal.kill(), spec.maxRuntimeMs ?? this.maxRuntimeMs);
     limit.unref();
     pty.onData((data) => terminal.pushOutput(data));
     pty.onExit(({ exitCode }) => {

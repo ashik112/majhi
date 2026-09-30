@@ -13,7 +13,8 @@ export interface SpawnRequest {
   env: Record<string, string>;
   /** The task folder. */
   cwd: string;
-  account: AccountRuntime;
+  /** The account whose home the run mounts. Absent for a run that has none, like a task terminal. */
+  account?: AccountRuntime | undefined;
   /** More paths the run needs, like each task repo's `.git`. */
   mounts?: RunMount[];
   /** `cwd` is a throwaway folder: a runner uses its own instead of mounting one. */

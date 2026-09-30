@@ -101,6 +101,13 @@ export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
 export const useReopenTask = () => useTaskAction("tasks.reopen");
 
+/** Opens the task's shell, or the one that runs. */
+export function useOpenTaskTerminal() {
+  return useMutation<CommandOutput<"tasks.terminal.open">, ApiRequestError, string>({
+    mutationFn: (task) => cmd("tasks.terminal.open", { task }),
+  });
+}
+
 /** What Ship can do now, read again whenever the task changes. */
 export function useShipOptions(task: Pick<Task, "id" | "updatedAt" | "status">, enabled: boolean) {
   return useQuery<CommandOutput<"tasks.shipOptions">, ApiRequestError>({

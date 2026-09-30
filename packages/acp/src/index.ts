@@ -97,10 +97,12 @@ export { cliVersion, probeAccount } from "./probe.ts";
 export {
   dockerRunArgs,
   dockerSpawner,
+  dockerTty,
   MountRefused,
   type RunnerConfig,
   removeStaleRunners,
   runMounts,
+  type TtyLaunch,
 } from "./runner/docker.ts";
 export {
   type AgentSession,
