@@ -25,7 +25,8 @@ export function AutoDecisions({
       <div className="flex items-baseline gap-2">
         <h2 className="text-md font-semibold">Recent automatic decisions</h2>
         <span className="text-sm text-fg-faint">
-          Above the threshold in Hub setup, curation keeps or drops a fact by itself. Undo puts it back.
+          Curation keeps, drops or merges lessons by itself. Only global lessons and contradictions wait for
+          you. Undo puts any step back.
         </span>
       </div>
       {error && <p className="m-0 text-sm text-red">{describeError(error)}</p>}

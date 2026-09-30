@@ -107,7 +107,9 @@ export function LessonsView({
       {facts.data && (
         <section aria-label={searching ? "Search results" : "Lessons"} className="flex flex-col gap-2">
           {searching && !search.isPending && (
-            <p className="m-0 text-sm text-fg-faint">{plural(rows.length, "match")} among active lessons</p>
+            <p className="m-0 text-sm text-fg-faint">
+              {rows.length} {rows.length === 1 ? "match" : "matches"} among active lessons
+            </p>
           )}
           {rows.length === 0 && !(searching && search.isPending) ? (
             <p className="m-0 text-base text-fg-muted text-pretty">{emptyText(filter, searching)}</p>

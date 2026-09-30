@@ -4,7 +4,6 @@ import { useDeferredValue, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { describeError } from "@/lib/errors";
-import { plural } from "@/lib/format";
 import { useTaskRecords } from "@/lib/memory-queries";
 import { ProjectPicker, useChosenProject } from "./project-picker";
 import { RecordCard } from "./record-card";
@@ -60,7 +59,11 @@ export function RecordsView({
       {records.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
       {records.data !== undefined && (
         <section aria-label={searching ? "Matching tasks" : "Finished tasks"} className="flex flex-col gap-3">
-          {searching && <p className="m-0 text-sm text-fg-faint">{plural(list.length, "match")}</p>}
+          {searching && (
+            <p className="m-0 text-sm text-fg-faint">
+              {list.length} {list.length === 1 ? "match" : "matches"}
+            </p>
+          )}
           {list.length === 0 ? (
             <p className="m-0 text-base text-fg-muted text-pretty">
               {searching
