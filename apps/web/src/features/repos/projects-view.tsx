@@ -454,7 +454,7 @@ function RootProblem({
           </p>
         ))}
       {root.error && (
-        <p className="flex items-start gap-2 font-mono text-sm text-red">
+        <p className="flex items-start gap-2 text-sm text-red">
           <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
           <span className="break-words">{root.error}</span>
         </p>

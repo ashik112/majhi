@@ -91,7 +91,7 @@ function CheckItem({
     <li className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-card px-3.5 py-2">
       <div className="flex items-center gap-3">
         <Dot tone={tone} />
-        <span className="w-[210px] shrink-0 truncate font-mono text-sm">{row.label}</span>
+        <span className="w-[210px] shrink-0 truncate text-sm font-medium">{row.label}</span>
         <span className="min-w-0 flex-1 text-sm text-fg-muted text-pretty">{row.detail}</span>
         {row.fix && failing && (
           <Button size="sm" disabled={locked} aria-label={`${row.fix.label}: ${row.label}`} onClick={onFix}>

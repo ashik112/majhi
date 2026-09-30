@@ -191,8 +191,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             className={cn(FIELD, "h-11 px-3.5 text-md placeholder:text-fg-faint")}
           />
           {parsed?.base && (
-            <p className="font-mono text-xs text-fg-muted">
-              Branches from <span className="text-fg">{parsed.base}</span>
+            <p className="text-xs text-fg-muted">
+              Branches from <span className="font-mono text-fg">{parsed.base}</span>
             </p>
           )}
         </div>

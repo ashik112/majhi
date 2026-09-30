@@ -35,7 +35,7 @@ export function HealthSteps({ health, className }: { health: HealthCheck; classN
                 {stepLabel(step.name)}
                 <span className="sr-only">{step.ok ? ", passed" : ", failed"}</span>
               </span>
-              <span className="block font-mono text-sm break-words text-fg-faint">{step.detail}</span>
+              <span className="block text-sm break-words text-fg-faint">{step.detail}</span>
             </span>
           </li>
         ))}

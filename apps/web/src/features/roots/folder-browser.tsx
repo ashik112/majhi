@@ -229,7 +229,7 @@ export function FolderBrowser({ home, startPath, chosen, counts, onPick, onClose
               <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-red" />
               Cannot open <span className="font-mono">{label}</span>
             </p>
-            <p className="font-mono text-sm break-words text-fg-muted">{listing.error.message}</p>
+            <p className="text-sm break-words text-fg-muted">{listing.error.message}</p>
             {parent !== null && (
               <Button variant="secondary" size="sm" onClick={goUp}>
                 <CornerLeftUp aria-hidden="true" />
