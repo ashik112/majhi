@@ -16,7 +16,7 @@ import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
 import { linkifyPaths } from "@/features/viewer/model";
 import { setPendingPermission } from "@/lib/attention";
-import { useFacts } from "@/lib/memory-queries";
+import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTask, useUpdateTask } from "@/lib/task-queries";
 import { briefBody, briefLabel, firstPendingPermission } from "./model";
@@ -43,6 +43,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const [tab, setTab] = useState<"room" | "changes" | "memory" | "terminal">("room");
   const showChanges = useCallback(() => setTab("changes"), []);
   const facts = useFacts();
+  const record = useTaskRecord(taskId);
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -100,7 +101,7 @@ function TaskView({ taskId }: { taskId: string }) {
 
   const data = task.data;
   const taskFacts = (facts.data ?? []).filter((f) => f.task === data.id);
-  const memoryTab = hasMemoryTab(data, taskFacts);
+  const memoryTab = hasMemoryTab(data, taskFacts, record.data);
   // A tab that is gone (a task with no facts left) falls back to the room.
   const shown = tab === "memory" && !memoryTab ? "room" : tab;
   const brief = briefBody(data.brief, data.title);
@@ -119,7 +120,7 @@ function TaskView({ taskId }: { taskId: string }) {
             segments={[
               { value: "room", label: "Room" },
               ...(data.repos.length > 0 ? [{ value: "changes" as const, label: "Changes" }] : []),
-              ...(memoryTab ? [{ value: "memory" as const, label: "Memory", count: taskFacts.length }] : []),
+              ...(memoryTab ? [{ value: "memory" as const, label: "Memory" }] : []),
               { value: "terminal", label: "Terminal" },
             ]}
             className="w-fit"

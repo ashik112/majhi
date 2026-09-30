@@ -39,6 +39,60 @@ export function useMemoryEvents(input: { task?: string; limit?: number } = {}) {
   });
 }
 
+/** Task records: search results by rank, or newest first when the query is empty. */
+export function useTaskRecords(input: { query?: string; project?: string | undefined; limit?: number } = {}) {
+  const query = input.query?.trim() ?? "";
+  const limit = input.limit ?? 100;
+  return useQuery<CommandOutput<"memory.records">, ApiRequestError>({
+    queryKey: [...queryKeys.memory, "records", query, input.project ?? "all", limit],
+    queryFn: () =>
+      cmd("memory.records", {
+        ...(query === "" ? {} : { query }),
+        ...(input.project === undefined ? {} : { project: input.project }),
+        limit,
+      }),
+  });
+}
+
+/** The record of one task, null before it is written. */
+export function useTaskRecord(task: string) {
+  return useQuery<CommandOutput<"memory.record">, ApiRequestError>({
+    queryKey: [...queryKeys.memory, "record", task],
+    queryFn: () => cmd("memory.record", { task }),
+  });
+}
+
+/** A project's brief and every version of it. Idle without a project. */
+export function useProjectBrief(project: string | undefined) {
+  return useQuery<CommandOutput<"memory.brief">, ApiRequestError>({
+    queryKey: [...queryKeys.memory, "brief", project ?? ""],
+    queryFn: () => cmd("memory.brief", { project: project ?? "" }),
+    enabled: project !== undefined,
+  });
+}
+
+/** Threads by project, task or status. Without a status, open and closed ones both come back. */
+export function useThreads(
+  input: { project?: string | undefined; task?: string; status?: "open" | "closed" } = {},
+) {
+  return useQuery<CommandOutput<"memory.threads">, ApiRequestError>({
+    queryKey: [
+      ...queryKeys.memory,
+      "threads",
+      input.project ?? "all",
+      input.task ?? "all",
+      input.status ?? "any",
+    ],
+    queryFn: () =>
+      cmd("memory.threads", {
+        ...(input.project === undefined ? {} : { project: input.project }),
+        ...(input.task === undefined ? {} : { task: input.task }),
+        ...(input.status === undefined ? {} : { status: input.status }),
+        limit: 500,
+      }),
+  });
+}
+
 function useMemoryMutation<
   N extends
     | "memory.approve"
@@ -47,7 +101,13 @@ function useMemoryMutation<
     | "memory.pin"
     | "memory.undo"
     | "memory.extract"
-    | "memory.promote",
+    | "memory.promote"
+    | "memory.approveAll"
+    | "memory.rejectAll"
+    | "memory.restoreBrief"
+    | "memory.buildBrief"
+    | "memory.closeThread"
+    | "memory.reopenThread",
 >(name: N, reason: string) {
   const client = useQueryClient();
   return useMutation<CommandOutput<N>, ApiRequestError, CommandInput<N>>({
@@ -70,3 +130,12 @@ export const useUndoStep = () => useMemoryMutation("memory.undo", "Owner undid a
 export const useExtractMemory = () =>
   useMemoryMutation("memory.extract", "Owner asked for the room to be read");
 export const usePromoteFact = () => useMemoryMutation("memory.promote", "Owner added a fact to AGENTS.md");
+export const useApproveAllFacts = () =>
+  useMemoryMutation("memory.approveAll", "Owner approved the pending lessons");
+export const useRejectAllFacts = () =>
+  useMemoryMutation("memory.rejectAll", "Owner rejected the pending lessons");
+export const useRestoreBrief = () =>
+  useMemoryMutation("memory.restoreBrief", "Owner restored a brief version");
+export const useBuildBrief = () => useMemoryMutation("memory.buildBrief", "Owner asked for a project brief");
+export const useCloseThread = () => useMemoryMutation("memory.closeThread", "Owner closed a thread");
+export const useReopenThread = () => useMemoryMutation("memory.reopenThread", "Owner reopened a thread");
