@@ -1,7 +1,7 @@
 import type { Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, FolderGit2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
@@ -13,12 +13,27 @@ import { useOrgs } from "@/lib/studio-queries";
 import { useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
 import { CostText } from "../usage/cost";
+import { Brief } from "./brief";
 import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
 
-/** One line with the back link, key, status, project, org and the main action; the title; the links. */
-export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
+/**
+ * One line with the back link, key, status, project, org and the main action; the title; the brief;
+ * then the tab bar along the bottom edge, with the task's links at its right.
+ */
+export function TaskHeader({
+  task,
+  yourTurn,
+  brief,
+  tabs,
+}: {
+  task: Task;
+  yourTurn: boolean;
+  /** What the owner wrote beyond the title. */
+  brief: string;
+  tabs: ReactNode;
+}) {
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
   const org = orgs.find((o) => o.id === task.org);
@@ -26,7 +41,7 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const repos = task.repos.map((r) => r.project);
 
   return (
-    <header className={cn("flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2 pb-2.5", GLASS)}>
+    <header className={cn("flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2", GLASS)}>
       <div className="flex min-h-8 items-center gap-2.5 text-sm">
         <Link
           to="/"
@@ -62,7 +77,13 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
         </div>
       </div>
       <EditableTitle task={task} />
-      <TaskLinks task={task} />
+      {brief !== "" && <Brief key={brief} text={brief} task={task} />}
+      <div className="-mx-5 mt-1.5 flex min-w-0 items-end gap-4 border-t border-line px-3">
+        {tabs}
+        <div className="ml-auto flex min-h-9 min-w-0 items-center py-1">
+          <TaskLinks task={task} />
+        </div>
+      </div>
     </header>
   );
 }

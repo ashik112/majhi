@@ -154,11 +154,6 @@ export function firstPendingPermission(items: readonly RoomItem[]): PendingPromp
   return undefined;
 }
 
-/** The "Task · ..." label above the brief. */
-export function briefLabel(task: Pick<Task, "kind">): string {
-  return task.kind === "chat" ? "Task · chat" : "Task · local";
-}
-
 /** What the owner wrote beyond the title line. The title is the brief's first line, so it is not repeated. */
 export function briefBody(brief: string, title: string): string {
   const lines = brief.trim().split(/\r?\n/);

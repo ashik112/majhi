@@ -232,7 +232,7 @@ test("asking for a file in the repo writes it to the worktree and lists it under
 
   // A changed file opens the Changes view with its diff inline.
   await section.getByRole("button", { name: "Show the diff of HEALTH.md" }).click();
-  await expect(page.getByRole("button", { name: "Changes", pressed: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Changes", selected: true })).toBeVisible();
   await expect(page.getByRole("group").filter({ hasText: "New file" })).toContainText("# Health");
 });
 

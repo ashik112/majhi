@@ -1,6 +1,6 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { type KeyboardEvent, type ReactNode, useCallback, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { Composer } from "./composer";
@@ -8,20 +8,18 @@ import { isBusy, type RoomAction, type RoomState } from "./model";
 import type { OwnerContext } from "./owner-cards";
 import { Timeline } from "./timeline";
 
-/** The main column of a task: what the task says (`top`), the messages, and the composer. */
+/** The main column of a task: the messages and the composer. */
 export function RoomPane({
   task,
   state,
   dispatch,
   loadOlder,
-  top,
   onShowChanges,
 }: {
   task: Task;
   state: RoomState;
   dispatch: (action: RoomAction) => void;
   loadOlder: () => Promise<void>;
-  top?: ReactNode;
   /** Opens the Changes tab. */
   onShowChanges?: (() => void) | undefined;
 }) {
@@ -68,7 +66,6 @@ export function RoomPane({
       onKeyDown={onKeyDown}
       className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 outline-none"
     >
-      {top}
       {state.connection === "reconnecting" && (
         <p
           role="status"
