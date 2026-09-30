@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SpawnRequest } from "../spawn.ts";
-import { dockerRunArgs, dockerSpawner, MountRefused, type RunnerConfig, runMounts } from "./docker.ts";
+import {
+  dockerRunArgs,
+  dockerSpawner,
+  dockerTty,
+  MountRefused,
+  type RunnerConfig,
+  runMounts,
+} from "./docker.ts";
 
 let root: string;
 let home: string;
@@ -182,5 +189,73 @@ if (process.argv[2] === "run") process.stdin.pipe(process.stdout);
       ready: () => Promise.reject(new Error("no subnet")),
     });
     await expect(spawner(request())).rejects.toThrow("no subnet");
+  });
+});
+
+describe("a task terminal in a runner", () => {
+  /** What the terminal asks for: the task folder and its repo, no account, and the fixed environment. */
+  function terminalRequest(extra: Partial<SpawnRequest> = {}): SpawnRequest {
+    const { account: _account, env: _env, ...run } = request();
+    return { ...run, command: { command: "/bin/sh", args: ["-c", "exec bash"] }, env: terminalEnv, ...extra };
+  }
+  const terminalEnv = { PATH: "/usr/bin", HOME: "/tmp", TERM: "xterm-256color", LANG: "C.UTF-8" };
+
+  it("mounts the task's own folders and no account home", () => {
+    const task = join(home, "Work", ".majhi", "ACM-1");
+    const repo = join(home, "Work", "api", ".git");
+    expect(runMounts(terminalRequest(), cfg).map((m) => m.path)).toEqual([
+      task,
+      repo,
+      join(repo, "config"),
+      join(repo, "hooks"),
+    ]);
+  });
+
+  it("still refuses an account home or majhi's config folder as a mount", () => {
+    for (const path of [
+      join(majhiHome, "accounts", "claude-acme"),
+      majhiHome,
+      join(majhiHome, "majhi.yaml"),
+    ]) {
+      expect(() => runMounts(terminalRequest({ mounts: [{ path }] }), cfg)).toThrow(MountRefused);
+    }
+  });
+
+  it("starts with a tty and shows no account, no majhi home and no secret in its arguments", () => {
+    const args = dockerRunArgs(terminalRequest(), cfg, "majhi-term-test", { tty: true });
+    expect(args.slice(0, 2)).toEqual(["run", "-it"]);
+    const joined = args.join(" ");
+    expect(joined).not.toContain(majhiHome);
+    expect(joined).not.toContain("claude-acme");
+    expect(joined).not.toContain("secrets.key");
+    expect(joined).not.toContain("sk-test-value-never-in-argv");
+    const env = args.flatMap((a, i) => (args[i - 1] === "--env" ? [a] : []));
+    expect(env).toEqual(["HOME=/tmp", "LANG", "PATH=/usr/bin", "TERM"]);
+  });
+
+  it("runs the docker CLI in the pty, and removes the container on stop, once", async () => {
+    const log = join(root, "docker.log");
+    const fake = join(root, "docker");
+    await writeFile(
+      fake,
+      `#!/usr/bin/env node\nrequire("node:fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`,
+    );
+    await chmod(fake, 0o755);
+    const launch = await dockerTty({ ...cfg, docker: fake, ready: async () => undefined })(terminalRequest());
+    expect(launch.command).toBe(fake);
+    expect(launch.args.slice(0, 2)).toEqual(["run", "-it"]);
+    // The CLI gets the terminal's own TERM and LANG by value, nothing of the server's environment.
+    expect(launch.env).toMatchObject({ TERM: "xterm-256color", LANG: "C.UTF-8" });
+    launch.stop();
+    launch.stop();
+    for (let i = 0; i < 200 && !(await readFile(log, "utf8").catch(() => "")).includes("rm"); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as string[]);
+    expect(calls).toEqual([["rm", "-f", launch.args[launch.args.indexOf("--name") + 1]]]);
   });
 });

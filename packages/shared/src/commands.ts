@@ -678,6 +678,13 @@ export const commands = {
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },
+  "tasks.terminal.open": {
+    risk: "change",
+    summary:
+      "Open the task's terminal: a shell in the task folder. One per task; opening it again while it runs returns the same terminal",
+    input: z.object({ task: TaskIdSchema }),
+    output: z.object({ terminalId: z.string() }),
+  },
   "tasks.reopen": {
     risk: "change",
     summary: "Open a done task again: back to review when it has a worktree, else the inbox",

@@ -22,6 +22,7 @@ import { useTask, useUpdateTask } from "@/lib/task-queries";
 import { briefBody, briefLabel, firstPendingPermission } from "./model";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
+import { TaskTerminal } from "./task-terminal";
 
 // The viewer and its code view load when a file is first opened.
 const FileViewer = lazy(() =>
@@ -39,7 +40,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
   const { file } = useSearch({ from: "/t/$taskId" });
-  const [tab, setTab] = useState<"room" | "changes" | "memory">("room");
+  const [tab, setTab] = useState<"room" | "changes" | "memory" | "terminal">("room");
   const showChanges = useCallback(() => setTab("changes"), []);
   const facts = useFacts();
 
@@ -100,7 +101,6 @@ function TaskView({ taskId }: { taskId: string }) {
   const data = task.data;
   const taskFacts = (facts.data ?? []).filter((f) => f.task === data.id);
   const memoryTab = hasMemoryTab(data, taskFacts);
-  const tabs = data.repos.length > 0 || memoryTab;
   // A tab that is gone (a task with no facts left) falls back to the room.
   const shown = tab === "memory" && !memoryTab ? "room" : tab;
   const brief = briefBody(data.brief, data.title);
@@ -112,23 +112,20 @@ function TaskView({ taskId }: { taskId: string }) {
       <TaskHeader task={data} yourTurn={yourTurn} />
       <div className="flex min-h-0 flex-1 gap-4 px-5 pt-3 pb-3">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-          {tabs && (
-            <Segmented
-              label="Room, changes or memory"
-              value={shown}
-              onChange={setTab}
-              segments={[
-                { value: "room", label: "Room" },
-                ...(data.repos.length > 0 ? [{ value: "changes" as const, label: "Changes" }] : []),
-                ...(memoryTab
-                  ? [{ value: "memory" as const, label: "Memory", count: taskFacts.length }]
-                  : []),
-              ]}
-              className="w-fit"
-            />
-          )}
-          {/* The room stays mounted while Changes shows, so a draft and the scroll place are kept. */}
-          <div className={shown === "room" || !tabs ? "contents" : "hidden"}>
+          <Segmented
+            label="Room, changes, memory or terminal"
+            value={shown}
+            onChange={setTab}
+            segments={[
+              { value: "room", label: "Room" },
+              ...(data.repos.length > 0 ? [{ value: "changes" as const, label: "Changes" }] : []),
+              ...(memoryTab ? [{ value: "memory" as const, label: "Memory", count: taskFacts.length }] : []),
+              { value: "terminal", label: "Terminal" },
+            ]}
+            className="w-fit"
+          />
+          {/* The room stays mounted while another tab shows, so a draft and the scroll place are kept. */}
+          <div className={shown === "room" ? "contents" : "hidden"}>
             <RoomPane
               task={data}
               state={room.state}
@@ -140,6 +137,7 @@ function TaskView({ taskId }: { taskId: string }) {
           </div>
           {shown === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
           {shown === "memory" && <TaskMemory task={data} />}
+          {shown === "terminal" && <TaskTerminal task={data} />}
         </div>
         <RoomPanel
           task={data}

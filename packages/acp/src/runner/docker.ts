@@ -75,14 +75,14 @@ function realForms(path: string): string[] {
 export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const mounts: RunMount[] = [];
   if (!req.scratch) mounts.push({ path: req.cwd });
-  mounts.push({ path: req.account.home });
+  if (req.account !== undefined) mounts.push({ path: req.account.home });
   for (const m of req.mounts ?? []) mounts.push(m);
 
   // Protected paths in both forms too: a symlink into the config folder resolves to its real path,
   // which only matches when the config folder's own path is resolved the same way.
   const majhiHomes = realForms(cfg.majhiHome);
   const accountsDirs = majhiHomes.map((h) => resolve(h, "accounts"));
-  const ownHomes = realForms(req.account.home);
+  const ownHomes = req.account === undefined ? [] : realForms(req.account.home);
   const protectedPaths = [...majhiHomes, ...cfg.protectedPaths.flatMap(realForms), ...ALWAYS_PROTECTED];
 
   const isOwnHome = (path: string) => ownHomes.includes(path) && accountsDirs.includes(dirname(path));
@@ -120,10 +120,15 @@ const CLI_OWNED = new Set([
 ]);
 
 /** The `docker run` arguments for one run. Environment values are passed by name only. */
-export function dockerRunArgs(req: SpawnRequest, cfg: RunnerConfig, name: string): string[] {
+export function dockerRunArgs(
+  req: SpawnRequest,
+  cfg: RunnerConfig,
+  name: string,
+  options: { tty?: boolean } = {},
+): string[] {
   const args = [
     "run",
-    "-i",
+    options.tty === true ? "-it" : "-i",
     "--rm",
     "--init",
     "--name",
@@ -186,6 +191,44 @@ export function dockerSpawner(cfg: RunnerConfig): Spawner {
         if (removed) return;
         removed = true;
         // Killing the CLI does not stop the container; removing it does.
+        const rm = spawn(docker, ["rm", "-f", name], { env: cfg.cliEnv, stdio: "ignore" });
+        rm.on("error", () => undefined);
+      },
+    };
+  };
+}
+
+/** A shell for a person in a runner container: the command for a pty, and how to stop it. */
+export interface TtyLaunch {
+  command: string;
+  args: string[];
+  /** The environment of the docker CLI in the pty. The container's own comes from the arguments. */
+  env: Record<string, string>;
+  /** Removes the container. Killing the CLI does not stop it. Safe to call twice. */
+  stop(): void;
+}
+
+/**
+ * How a terminal starts in a runner container: the same image, network, user, limits and mount
+ * rules as a run, with a tty. `req.account` is normally absent, so no account home is mounted.
+ */
+export function dockerTty(cfg: RunnerConfig): (req: SpawnRequest) => Promise<TtyLaunch> {
+  const docker = cfg.docker ?? "docker";
+  return async (req) => {
+    await cfg.ready?.();
+    const name = `majhi-term-${randomBytes(6).toString("hex")}`;
+    let removed = false;
+    return {
+      command: docker,
+      args: dockerRunArgs(req, cfg, name, { tty: true }),
+      env: {
+        ...secretValues(req.env),
+        ...cfg.cliEnv,
+        DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker",
+      },
+      stop() {
+        if (removed) return;
+        removed = true;
         const rm = spawn(docker, ["rm", "-f", name], { env: cfg.cliEnv, stdio: "ignore" });
         rm.on("error", () => undefined);
       },

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { localSpawner } from "@majhi/acp";
+import { dockerTty, localSpawner } from "@majhi/acp";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
@@ -21,7 +21,7 @@ import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import type { ServerEnv } from "./env.ts";
-import { errorMessage } from "./errors.ts";
+import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
@@ -43,7 +43,7 @@ import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
-import { processLaunch } from "./runs/launch.ts";
+import { processLaunch, repoMounts } from "./runs/launch.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
@@ -55,6 +55,7 @@ import { CardActions } from "./tasks/card-actions.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
+import { openTaskTerminal } from "./terminal/task-terminal.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -143,6 +144,8 @@ export interface Services {
   /** Stops every agent process and closes the database. */
   close: () => Promise<void>;
   startLogin: (id: string) => Promise<{ terminalId: string; command: string }>;
+  /** The task's shell, started or the one that runs (5.15). */
+  openTaskTerminal: (task: string) => Promise<{ terminalId: string }>;
 }
 
 export function createServices(env: ServerEnv, options: ServiceOptions = {}): Services {
@@ -319,6 +322,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     decisions,
     processes,
+    terminals,
     memory,
     memoryScopes,
     onDone: async (task) => {
@@ -416,6 +420,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     watcher: new HomeWatcher(env.majhiHome, events),
     usageSweeper: new UsageSweeper({ reader: usage, candidates: () => accounts.usageCandidates() }),
+    openTaskTerminal: async (task) => ({
+      terminalId: (
+        await openTaskTerminal(
+          {
+            terminals,
+            task: (id) => tasks.get(id),
+            tasksDir: async () => {
+              const loaded = await config.load();
+              if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+              return loaded.state.config.tasksDir;
+            },
+            base: sessionOptions.base,
+            repoMounts,
+            tty: runner.runner === undefined ? undefined : dockerTty(runner.runner.config),
+          },
+          task,
+        )
+      ).id,
+    }),
     startLogin: (id) =>
       startLogin(
         {

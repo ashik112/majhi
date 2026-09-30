@@ -254,6 +254,7 @@ export function createHandlers({
       services.tasks.get(input.task);
       return { process: await services.processes.stop(input.task, input.id, "owner") };
     },
+    "tasks.terminal.open": (input) => services.openTaskTerminal(input.task),
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),

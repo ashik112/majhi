@@ -6,17 +6,23 @@ import { wsUrl } from "@/lib/events-model";
 import { inputMessage, parseTerminalMessage, resizeMessage, type TerminalEvent } from "./terminal-model";
 
 /**
- * The login terminal: xterm.js connected to `/api/term/<terminalId>`. Output is written as it
+ * A terminal: xterm.js connected to `/api/term/<terminalId>`. Output is written as it
  * arrives, key presses are sent as input, and the size follows the container. `onEvent` gets
  * every parsed message, so the parent can react to the exit.
  * Esc goes to the tool, not to the dialog around the terminal.
  */
-export function LoginTerminal({
+export function TerminalView({
   terminalId,
   onEvent,
+  label,
+  className,
 }: {
   terminalId: string;
   onEvent: (event: TerminalEvent) => void;
+  /** The accessible name of the terminal. */
+  label: string;
+  /** The size: a fixed height, or `min-h-0 flex-1` to fill the pane. */
+  className: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const handler = useRef(onEvent);
@@ -76,8 +82,8 @@ export function LoginTerminal({
   return (
     <section
       ref={host}
-      aria-label="Sign-in terminal"
-      className="h-[260px] overflow-hidden rounded-md border border-line-strong bg-sunken p-2"
+      aria-label={label}
+      className={`overflow-hidden rounded-md border border-line-strong bg-sunken p-2 ${className}`}
     />
   );
 }

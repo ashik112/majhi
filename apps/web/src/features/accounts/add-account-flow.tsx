@@ -7,6 +7,7 @@ import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { type LoginState, nextLoginState, type TerminalEvent } from "@/features/terminal/terminal-model";
 import { describeError } from "@/lib/errors";
 import {
   useAccountHealth,
@@ -19,10 +20,11 @@ import {
 import { HealthSteps } from "./health-steps";
 import { defaultOrgId } from "./model";
 import { NewOrgForm } from "./new-org-form";
-import { type LoginState, nextLoginState, type TerminalEvent } from "./terminal-model";
 
 // xterm is about 300 kB, so it loads only when a sign-in terminal opens.
-const LoginTerminal = lazy(() => import("./terminal").then((m) => ({ default: m.LoginTerminal })));
+const TerminalView = lazy(() =>
+  import("@/features/terminal/terminal-view").then((m) => ({ default: m.TerminalView })),
+);
 
 const NEW_ORG = "__new__";
 
@@ -344,7 +346,13 @@ export function AccountProgress({
       <p className="text-base text-fg-soft text-pretty">{stage.loginHint}</p>
       <CommandLine command={stage.command} />
       <Suspense fallback={<p className="text-sm text-fg-faint">Opening the terminal</p>}>
-        <LoginTerminal key={stage.terminalId} terminalId={stage.terminalId} onEvent={onEvent} />
+        <TerminalView
+          key={stage.terminalId}
+          terminalId={stage.terminalId}
+          onEvent={onEvent}
+          label="Sign-in terminal"
+          className="h-[260px]"
+        />
       </Suspense>
       {stage.state.phase === "running" && (
         <p className="text-sm text-fg-faint">Waiting for the sign-in to finish.</p>

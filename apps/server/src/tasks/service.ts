@@ -59,6 +59,8 @@ import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
 import { commitAll, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
+import type { TerminalManager } from "../terminal/manager.ts";
+import { taskTerminalKey } from "../terminal/task-terminal.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
@@ -91,6 +93,8 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
+  /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
+  terminals?: TerminalManager;
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
@@ -597,6 +601,7 @@ export class TaskService {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    this.deps.terminals?.killKey(taskTerminalKey(id));
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
@@ -945,6 +950,7 @@ export class TaskService {
     }
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     this.cards.settle(id, "review", "Marked done", opts.by ?? "owner");
     this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
@@ -1117,6 +1123,7 @@ export class TaskService {
     await this.deps.onRemoving?.(task).catch(() => undefined);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.processes?.forget(id);
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) await removeWorktree(repo.source, repo.worktree, force);
