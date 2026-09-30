@@ -1,6 +1,6 @@
 import type { RepoDiff, RepoDiffFile, RoomItem, Task, TaskRepo } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
-import { FileDiff, FileMinus, FilePlus, FileSymlink } from "lucide-react";
+import { ChevronRight, FileDiff, FileMinus, FilePlus, FileSymlink } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { repoTotals } from "@/features/changes/model";
@@ -15,7 +15,8 @@ const LIST_UP_TO = 8;
 /**
  * The Changes card. Per repo, what git sees against the base (commits and uncommitted work, as in
  * the Changes tab), so edits made through a shell or by hand count too. Files an agent changed
- * outside the worktrees come from the room, because git does not see them.
+ * outside the worktrees come from the room, because git does not see them: the list for a task
+ * with no repo, a folded line for one with repos.
  */
 export function ChangesPanel({
   task,
@@ -36,7 +37,8 @@ export function ChangesPanel({
   const diff = useTaskDiff(task.id, hasRepos);
   useRefetchOnTouch(diff.refetch, hasRepos ? touched.length : 0);
   const inRepos = (diff.data ?? []).reduce((sum, repo) => sum + repo.files.length + repo.omitted, 0);
-  const total = inRepos + outside.length;
+  // A task with no repo has only what its agents touched; with repos, those files are not its work.
+  const total = hasRepos ? inRepos : outside.length;
 
   return (
     <Card aria-labelledby="changes-heading" className="gap-2 px-3 py-2.5">
@@ -60,18 +62,31 @@ export function ChangesPanel({
           onShowChanges={onShowChanges}
         />
       ))}
-      {outside.length > 0 && (
-        <section
-          aria-label="Changes outside the worktrees"
-          className="flex flex-col gap-1.5 border-t border-line-strong pt-2.5"
-        >
-          <h3 className="font-mono text-xs text-fg-muted">Outside the worktrees</h3>
-          <ul className="flex flex-col gap-0.5">
+      {outside.length > 0 && !hasRepos && (
+        <ul aria-label="Files the agents changed" className="flex flex-col gap-0.5">
+          {outside.map((file) => (
+            <TouchedRow key={file.path} file={file} task={task} />
+          ))}
+        </ul>
+      )}
+      {outside.length > 0 && hasRepos && (
+        // Files an agent edited outside the task's worktrees (scratch files, other checkouts) are
+        // not the task's work, so they stay folded away.
+        <details className="group border-t border-line-strong pt-2">
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-fg-faint hover:text-fg-muted">
+            <ChevronRight
+              aria-hidden="true"
+              className="size-3 transition-transform duration-150 group-open:rotate-90"
+            />
+            Also touched outside the repos
+            <span className="tnum font-mono">{outside.length}</span>
+          </summary>
+          <ul aria-label="Also touched outside the repos" className="mt-1 flex flex-col gap-0.5">
             {outside.map((file) => (
               <TouchedRow key={file.path} file={file} task={task} />
             ))}
           </ul>
-        </section>
+        </details>
       )}
       {!hasRepos && outside.length === 0 && (
         <p className="text-sm text-fg-faint">Files the agent changes show up here.</p>
