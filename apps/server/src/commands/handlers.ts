@@ -191,6 +191,8 @@ export function createHandlers({
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input) => services.tasks.close(input.id),
+    "tasks.merge": (input) => services.tasks.merge(input),
+    "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.remove": async (input) => {
       await services.tasks.remove(input.id, input.force === true);
       return { removed: input.id };

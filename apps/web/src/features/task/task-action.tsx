@@ -1,9 +1,11 @@
 import type { Task } from "@majhi/shared";
-import { Check, OctagonX, Play, RotateCw } from "lucide-react";
+import { Check, GitMerge, OctagonX, Play, RotateCw } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
 import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
+import { MergeDialog } from "./merge-dialog";
 import { actionCopy } from "./model";
 
 /** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
@@ -13,11 +15,24 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const close = useCloseTask();
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
+  const [merging, setMerging] = useState(false);
+  const canMerge = task.repos.length > 0 && task.status !== "running";
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
   return (
     <>
+      {canMerge && (
+        <Button
+          size="sm"
+          title="Merge the task branch into a local branch. Nothing is pushed."
+          onClick={() => setMerging(true)}
+        >
+          <GitMerge aria-hidden="true" />
+          Merge
+        </Button>
+      )}
+      {merging && <MergeDialog task={task} onClose={() => setMerging(false)} />}
       {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-coral">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button

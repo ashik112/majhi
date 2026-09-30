@@ -27,9 +27,10 @@ import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { git, localBranchExists, remoteBranchExists, remoteOf } from "../git/git.ts";
+import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
+import { localBranches, type MergeOutcome, mergeBranch } from "../git/merge.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -774,6 +775,75 @@ export class TaskService {
     this.deps.room.publishTask(closed);
     await this.statusChanged(id);
     return closed;
+  }
+
+  /**
+   * Merges the task branch into a local branch (its base, or `into`) in each repo's checkout.
+   * Refused while an agent of the task works or its worktree has uncommitted changes. Never pushes.
+   */
+  async merge(input: { id: string; into?: string | undefined; project?: string | undefined; done: boolean }) {
+    const task = this.get(input.id);
+    if (this.deps.runs.working(task.id).length > 0) {
+      throw new UserError(
+        `An agent of ${task.id} is working. Wait for its turn to end or stop it, then merge.`,
+        409,
+      );
+    }
+    const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
+    if (repos.length === 0) throw new UserError(`${task.id} has no repo to merge.`);
+    const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
+    const identity = org?.identity ?? DEFAULT_IDENTITY;
+    const results: { project: string; into: string; ok: boolean; detail: string }[] = [];
+    for (const repo of repos) {
+      const into = input.into ?? repo.base;
+      const dirty = repo.worktree === undefined ? [] : await uncommitted(repo.worktree).catch(() => []);
+      if (dirty.some((l) => !l.startsWith("??"))) {
+        results.push({
+          project: repo.project,
+          into,
+          ok: false,
+          detail: `The task's worktree has uncommitted changes. Ask the agent to commit them first.`,
+        });
+        continue;
+      }
+      const outcome = await mergeBranch({
+        source: repo.source,
+        branch: repo.branch,
+        into,
+        identity,
+        message: `Merge ${task.id}: ${task.title}`,
+        scratch: join(task.folder, ".merge", repo.project),
+      }).catch((err: unknown): MergeOutcome => ({ ok: false, reason: errorMessage(err) }));
+      results.push(
+        outcome.ok
+          ? {
+              project: repo.project,
+              into,
+              ok: true,
+              detail:
+                outcome.how === "already merged"
+                  ? `${repo.branch} is already in ${into}.`
+                  : `Merged ${repo.branch} into ${into} (${outcome.how}). Not pushed.`,
+            }
+          : { project: repo.project, into, ok: false, detail: outcome.reason },
+      );
+    }
+    for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
+    const clean = results.every((r) => r.ok);
+    if (clean && input.done) return { results, task: await this.close(task.id) };
+    return { results, task: this.get(task.id) };
+  }
+
+  /** Local branches of each repo of the task, for picking where to merge. */
+  async branches(id: string) {
+    const task = this.get(id);
+    return Promise.all(
+      task.repos.map(async (r) => ({
+        project: r.project,
+        base: r.base,
+        branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
+      })),
+    );
   }
 
   async remove(id: string, force: boolean): Promise<void> {

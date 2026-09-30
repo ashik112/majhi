@@ -163,8 +163,8 @@ describe("Related tasks section", () => {
   it("keeps an agent with merge permission from moving the base branch, and push with the owner", () => {
     const rules = outboundRules(["edit", "shell", "merge"]);
     expect(rules).toContain("- Never push. The owner does that.");
-    expect(rules.some((r) => r.startsWith("- Never merge or move the base branch with git yourself"))).toBe(
-      true,
-    );
+    expect(
+      rules.some((r) => r.startsWith("- When the checks pass, merge with the majhi-tasks merge tool")),
+    ).toBe(true);
   });
 });

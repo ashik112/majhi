@@ -536,6 +536,36 @@ export const commands = {
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },
+  "tasks.merge": {
+    risk: "outbound",
+    summary:
+      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). Never pushes. With done, mark the task done after a clean merge",
+    input: z.object({
+      id: TaskIdSchema,
+      /** The branch to merge into. Default: each repo's base branch. */
+      into: z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
+        .max(200)
+        .optional(),
+      /** Only this repo of the task. Default: every repo. */
+      project: IdSchema.optional(),
+      done: z.boolean().default(false),
+    }),
+    output: z.object({
+      results: z.array(
+        z.object({ project: IdSchema, into: z.string(), ok: z.boolean(), detail: z.string() }),
+      ),
+      task: TaskSchema,
+    }),
+  },
+  "tasks.branches": {
+    risk: "read",
+    summary: "Local branches of each repo of a task, to pick where to merge",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.array(z.object({ project: IdSchema, base: z.string(), branches: z.array(z.string()) })),
+  },
   "tasks.remove": {
     risk: "destructive",
     summary:

@@ -100,6 +100,27 @@ export const useStartTask = () => useTaskAction("tasks.start");
 export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
 
+/** `tasks.merge`: merge the task branch into its base or another local branch. Never pushes. */
+export function useMergeTask() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"tasks.merge">, ApiRequestError, CommandInput<"tasks.merge">>({
+    mutationFn: (input) => cmd("tasks.merge", input),
+    onSuccess: ({ task }) => {
+      setTaskInCache(client, task);
+      return refreshTasks(client);
+    },
+  });
+}
+
+/** Local branches of each repo of a task, for the merge dialog. */
+export function useTaskBranches(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.tasks, "branches", id],
+    queryFn: () => cmd("tasks.branches", { id }),
+    enabled,
+  });
+}
+
 export function useUpdateTask() {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, CommandInput<"tasks.update">>({

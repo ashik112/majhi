@@ -23,7 +23,7 @@ export function outboundRules(perms: readonly string[]): string[] {
   );
   lines.push(
     may("merge")
-      ? "- Never merge or move the base branch with git yourself: your container has the repo's history but not the project's files, so a merge from here leaves the owner's checkout broken. When the checks pass, say in the room that the branch is ready to merge."
+      ? "- When the checks pass, merge with the majhi-tasks merge tool: into the base branch, or the branch the owner names. Never merge or move branches with git yourself: your container has the repo's history but not the project's files, so a git merge from here leaves the owner's checkout behind."
       : "- Never merge. The owner does that.",
   );
   return lines;

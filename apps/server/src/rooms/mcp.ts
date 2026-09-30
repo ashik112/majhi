@@ -92,6 +92,12 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     description: "Change a task's title, description or coordination mode.",
   },
   {
+    name: "merge",
+    command: "tasks.merge",
+    description:
+      "Merge a task's branch into a local branch in the owner's checkout: its base by default, or the branch the owner names (dev, staging). Never pushes. Only for agents with the Merge permission, once the checks pass.",
+  },
+  {
     name: "link",
     command: "tasks.link",
     description: "Make a task wait for another (depends-on), or a subtask of another (parent).",
@@ -251,7 +257,15 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
 
 function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: TASKS_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(TASK_TOOLS, true) }));
+  // The merge tool is offered only to agents with the Merge permission.
+  const mayMerge = async () =>
+    (await frontmatter(deps.agents, caller.agent))?.perms.includes("merge") === true;
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: listed(
+      (await mayMerge()) ? TASK_TOOLS : TASK_TOOLS.filter((t) => t.command !== "tasks.merge"),
+      true,
+    ),
+  }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = TASK_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
@@ -259,6 +273,11 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     try {
       const fm = await frontmatter(deps.agents, caller.agent);
       if (fm === undefined) return fail(`@${caller.agent} is not a valid agent any more.`);
+      if (tool.command === "tasks.merge" && !fm.perms.includes("merge")) {
+        return fail(
+          "You do not have the Merge permission. Say in the room that the branch is ready to merge.",
+        );
+      }
       const refused = await refuseOutsideOrg(deps, fm, tool.command, args);
       if (refused !== undefined) return fail(refused);
       if (tool.command === "tasks.list") {
