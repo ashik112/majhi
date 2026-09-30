@@ -31,6 +31,11 @@ export interface AppSearch {
   peek?: string;
   /** How the board shows tasks. The board is the default. */
   view?: "tree";
+  /** On Memory: the project shown (or `global`), and its tab. */
+  project?: string;
+  tab?: string;
+  /** On Hub setup: the section shown. */
+  section?: string;
 }
 
 function text(value: unknown): string | undefined {
@@ -46,6 +51,9 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
   const view = search.view === "tree" ? "tree" : undefined;
+  const project = text(search.project);
+  const tab = text(search.tab);
+  const section = text(search.section);
   return {
     ...(view ? { view } : {}),
     ...(org ? { org } : {}),
@@ -55,6 +63,9 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(file ? { file } : {}),
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),
+    ...(project ? { project } : {}),
+    ...(tab ? { tab } : {}),
+    ...(section ? { section } : {}),
   };
 }
 

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DetailSection } from "@/components/ui/list-detail";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useCorrectDecision, useRecentDecisions } from "@/lib/decisions-queries";
@@ -42,26 +43,44 @@ export function RecentDecisions() {
   const [offset, setOffset] = useState(0);
   const recent = useRecentDecisions(PAGE, offset);
   const records = recent.data?.records ?? [];
-  if (offset === 0 && recent.data !== undefined && records.length === 0)
-    return <p className="m-0 text-sm text-fg-faint">No decisions yet.</p>;
+  const none = offset === 0 && recent.data !== undefined && records.length === 0;
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <h3 className="flex-1 text-base font-semibold">Recent decisions</h3>
-        <Button size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
-          Newer
-        </Button>
-        <Button size="sm" disabled={recent.data?.more !== true} onClick={() => setOffset(offset + PAGE)}>
-          Older
-        </Button>
-      </div>
+    <DetailSection
+      title="Recent decisions"
+      note="What each pick did. Wrong pick keeps the right answer for learning."
+      actions={
+        !none && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - PAGE))}
+            >
+              Newer
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={recent.data?.more !== true}
+              onClick={() => setOffset(offset + PAGE)}
+            >
+              Older
+            </Button>
+          </>
+        )
+      }
+    >
+      {none && <p className="text-sm text-fg-faint">No decisions yet.</p>}
       {recent.isError && <p className="m-0 text-sm text-red">{describeError(recent.error)}</p>}
-      <ul aria-label="Recent decisions" className="m-0 flex list-none flex-col gap-1 p-0">
-        {records.map((d) => (
-          <DecisionRow key={d.id} d={d} />
-        ))}
-      </ul>
-    </div>
+      {!none && (
+        <ul aria-label="Recent decisions" className="m-0 flex max-w-[860px] list-none flex-col p-0">
+          {records.map((d) => (
+            <DecisionRow key={d.id} d={d} />
+          ))}
+        </ul>
+      )}
+    </DetailSection>
   );
 }
 
@@ -71,7 +90,7 @@ function DecisionRow({ d }: { d: DecisionRecord }) {
   const answers = Object.entries(d.answers);
   const counted = answers.every(([, a]) => a.gate?.accepted !== false);
   return (
-    <li className="flex flex-col gap-1 rounded-md border border-line px-2 py-1.5 text-sm">
+    <li className="flex flex-col gap-1 border-t border-line py-2 text-sm first:border-t-0">
       {/* Line 1: what was decided, by whom, and the actions. Line 2: the answer, full width. */}
       <div className="flex items-center gap-2">
         <span className="min-w-0 truncate text-fg-muted">{USE[d.use]}</span>

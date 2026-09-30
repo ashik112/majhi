@@ -298,8 +298,10 @@ export const BRIEF_SECTIONS = [
   "Known problems",
 ] as const;
 export type BriefSection = (typeof BRIEF_SECTIONS)[number];
-/** A brief is kept under about this many words. */
-export const BRIEF_WORDS = 800;
+/** A brief is kept under about this many words, bullet text only. */
+export const BRIEF_WORDS = 350;
+/** Each brief section is at most this many bullets, one line each. */
+export const BRIEF_BULLETS = 6;
 
 export const BriefSourceSchema = z.enum(["task", "built", "restored"]);
 export type BriefSource = z.infer<typeof BriefSourceSchema>;

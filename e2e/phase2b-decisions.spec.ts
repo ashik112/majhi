@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("Hub setup: the Decisions section shows the providers and answers a question", async ({ page }) => {
-  await page.goto("/setup");
+  await page.goto("/setup?section=decisions");
   const section = page.getByRole("region", { name: "Decisions" });
   await expect(section).toBeVisible();
   const order = section.getByRole("list", { name: "Provider order" });

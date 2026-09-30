@@ -15,11 +15,6 @@ export function useFacts(filter: { status?: FactStatus; task?: string } = {}, en
   });
 }
 
-/** How many facts wait for the owner: the number on the sidebar. */
-export function usePendingFactCount(): number {
-  return useFacts({ status: "pending" }).data?.length ?? 0;
-}
-
 /** Hybrid search over active facts. Idle while the query is empty. */
 export function useMemorySearch(query: string) {
   const text = query.trim();

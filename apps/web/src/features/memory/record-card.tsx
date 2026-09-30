@@ -15,7 +15,7 @@ export function recordDate(iso: string): string {
 }
 
 /** Where one repo landed: merged into its base at a commit, or left on its branch. */
-function Landed({ repo, multi }: { repo: RecordRepo; multi: boolean }) {
+export function Landed({ repo, multi }: { repo: RecordRepo; multi: boolean }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-fg-muted">
       {multi && <span className="font-mono text-fg-soft [overflow-wrap:anywhere]">{repo.project}:</span>}

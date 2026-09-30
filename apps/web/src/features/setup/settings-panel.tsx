@@ -1,237 +1,239 @@
 import type { ApprovalMode, RiskClass, Settings } from "@majhi/shared";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/components/ui/toast";
 import {
   formFromSettings,
   MODE_LABEL,
   POLICY_ROWS,
   patchFromForm,
+  type SettingsErrors,
   type SettingsForm,
 } from "@/features/boss/model";
-import { useSavePolicy, useSaveSettings, useSettings } from "@/lib/boss-queries";
+import { useSavePolicy, useSaveSettings } from "@/lib/boss-queries";
 import { describeError } from "@/lib/errors";
 
 const MODES: readonly ApprovalMode[] = ["auto", "when-asked", "confirm"];
+const IDLE: SaveState = { kind: "idle" };
+const GRID = "grid gap-3 @[480px]:grid-cols-3";
 
-/** Context budget, limits, resume and the approval policy for the boss's commands. */
-export function SettingsPanel() {
-  const settings = useSettings();
-  // Owned here, not in the forms: a save changes the settings, which remounts the forms.
+/**
+ * One section's draft of the settings form: only the fields it owns, over the saved settings, so a
+ * change elsewhere (the boss, an Undo) still shows in the fields it has not touched.
+ */
+function useSettingsDraft(settings: Settings, keys: readonly (keyof SettingsForm)[]) {
   const save = useSaveSettings();
-  const savePolicy = useSavePolicy();
-  return (
-    <section aria-label="Settings" className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2">
-        <h2 className="text-md font-semibold">Settings</h2>
-        <span className="text-sm text-fg-faint">Saved to majhi.yaml, as a change you can undo</span>
-      </div>
-      {settings.isPending && <p className="text-sm text-fg-faint">Loading</p>}
-      {settings.isError && <p className="text-sm text-red">{describeError(settings.error)}</p>}
-      {settings.data && (
-        // Remount on a server change so the fields show the saved values.
-        <SettingsForms
-          key={JSON.stringify(settings.data)}
-          settings={settings.data}
-          save={save}
-          savePolicy={savePolicy}
-        />
-      )}
-    </section>
-  );
+  const [edits, setEdits] = useState<Partial<SettingsForm>>({});
+  const [state, setState] = useState<SaveState>(IDLE);
+  const [showErrors, setShowErrors] = useState(false);
+  const saved = formFromSettings(settings);
+  const form: SettingsForm = { ...saved, ...edits };
+  const { patch, errors } = patchFromForm(settings, form);
+  const mine: SettingsErrors = {};
+  for (const k of keys) if (errors[k] !== undefined) mine[k] = errors[k];
+  const dirty = keys.some((k) => form[k] !== saved[k]);
+  return {
+    form,
+    dirty,
+    state,
+    error: (key: keyof SettingsForm) => (showErrors ? mine[key] : undefined),
+    set: <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) => {
+      if (state.kind !== "saving") setState(IDLE);
+      setEdits((e) => ({ ...e, [key]: value }));
+    },
+    discard: () => {
+      setEdits({});
+      setShowErrors(false);
+      setState(IDLE);
+    },
+    submit: () => {
+      setShowErrors(true);
+      if (Object.keys(mine).length > 0 || !dirty) return;
+      setState({ kind: "saving" });
+      save.mutate(patch, {
+        onSuccess: () => {
+          setEdits({});
+          setShowErrors(false);
+          setState({ kind: "saved" });
+        },
+        onError: (e) => setState({ kind: "error", message: e.message, details: e.details }),
+      });
+    },
+  };
 }
 
-type SaveSettings = ReturnType<typeof useSaveSettings>;
-type SavePolicy = ReturnType<typeof useSavePolicy>;
+type Draft = ReturnType<typeof useSettingsDraft>;
 
-function SettingsForms({
-  settings,
-  save,
-  savePolicy,
+function Section({
+  title,
+  note,
+  draft,
+  first = false,
+  children,
 }: {
-  settings: Settings;
-  save: SaveSettings;
-  savePolicy: SavePolicy;
+  title: string;
+  note: string;
+  draft: Draft;
+  first?: boolean;
+  children: React.ReactNode;
 }) {
-  const toast = useToast();
-  const [form, setForm] = useState<SettingsForm>(() => formFromSettings(settings));
-  const [showErrors, setShowErrors] = useState(false);
-  const { patch, errors } = patchFromForm(settings, form);
-  const changed = Object.keys(patch).length > 0;
-  const set = <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) =>
-    setForm({ ...form, [key]: value });
-  const err = (key: keyof SettingsForm) => (showErrors ? errors[key] : undefined);
-
-  function onSubmit() {
-    setShowErrors(true);
-    if (Object.keys(errors).length > 0 || !changed) return;
-    save.mutate(patch, {
-      onSuccess: () => toast("Settings saved"),
-      onError: (error) => toast("Could not save settings", { detail: describeError(error), tone: "error" }),
-    });
-  }
-
   return (
-    <>
+    <SaveSection
+      title={title}
+      note={note}
+      dirty={draft.dirty}
+      state={draft.state}
+      onSave={draft.submit}
+      onDiscard={draft.discard}
+      {...(first ? { className: "border-t-0" } : {})}
+    >
       <form
-        aria-label="Context and limits"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
+        aria-label={title}
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          draft.submit();
         }}
-        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3"
+        className="flex max-w-[640px] flex-col gap-3"
       >
-        <fieldset className="m-0 grid grid-cols-3 gap-2 border-0 p-0">
-          <legend className="mb-2 p-0 text-sm font-semibold">Context budget</legend>
-          <NumberField
-            label="Compact at %"
-            value={form.compactAt}
-            error={err("compactAt")}
-            onChange={(v) => set("compactAt", v)}
-          />
-          <NumberField
-            label="Target after %"
-            value={form.compactTarget}
-            error={err("compactTarget")}
-            onChange={(v) => set("compactTarget", v)}
-          />
-          <NumberField
-            label="Fresh after turns"
-            value={form.maxTurns}
-            error={err("maxTurns")}
-            onChange={(v) => set("maxTurns", v)}
-          />
-        </fieldset>
-        <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0">
-          <legend className="mb-2 p-0 text-sm font-semibold">Limits</legend>
-          <NumberField
-            label="Agents at once"
-            value={form.agentsMax}
-            error={err("agentsMax")}
-            onChange={(v) => set("agentsMax", v)}
-          />
-          <NumberField
-            label="Per account"
-            value={form.perAccount}
-            error={err("perAccount")}
-            onChange={(v) => set("perAccount", v)}
-          />
-          <NumberField
-            label="Per task"
-            value={form.perTask}
-            error={err("perTask")}
-            onChange={(v) => set("perTask", v)}
-          />
-          <Field label="Stop idle agents after" error={err("idleTimeout")}>
-            {(p) => (
-              <Input
-                {...p}
-                className="font-mono"
-                value={form.idleTimeout}
-                onChange={(e) => set("idleTimeout", e.target.value)}
-              />
-            )}
-          </Field>
-        </fieldset>
-        <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0">
-          <legend className="mb-2 p-0 text-sm font-semibold">Teams</legend>
-          <NumberField
-            label="Handoffs in a row with no changes"
-            value={form.maxAgentTurns}
-            error={err("maxAgentTurns")}
-            onChange={(v) => set("maxAgentTurns", v)}
-          />
-          <NumberField
-            label="Review rounds"
-            value={form.reviewRounds}
-            error={err("reviewRounds")}
-            onChange={(v) => set("reviewRounds", v)}
-          />
-        </fieldset>
-        <Switch
-          label="Resume interrupted runs on their own"
-          checked={form.resumeAuto}
-          onChange={(v) => set("resumeAuto", v)}
-        />
-        <div>
-          <Button type="submit" variant="primary" size="sm" disabled={!changed || save.isPending}>
-            Save settings
-          </Button>
-        </div>
+        {children}
+        <button type="submit" hidden />
       </form>
-      <PolicyForm settings={settings} save={savePolicy} />
-    </>
+    </SaveSection>
   );
 }
 
 function NumberField({
   label,
-  value,
-  error,
-  onChange,
+  hint,
+  name,
+  draft,
 }: {
   label: string;
-  value: string;
-  error: string | undefined;
-  onChange: (value: string) => void;
+  hint?: string;
+  name: Exclude<keyof SettingsForm, "resumeAuto">;
+  draft: Draft;
 }) {
   return (
-    <Field label={label} error={error}>
+    <Field label={label} error={draft.error(name)} {...(hint ? { hint } : {})}>
       {(p) => (
         <Input
           {...p}
           inputMode="numeric"
           className="font-mono"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={draft.form[name]}
+          onChange={(e) => draft.set(name, e.target.value)}
         />
       )}
     </Field>
   );
 }
 
-/** The approval policy. Changing it is destructive, so saving asks first. */
-function PolicyForm({ settings, save }: { settings: Settings; save: SavePolicy }) {
-  const toast = useToast();
-  const [modes, setModes] = useState<Record<RiskClass, ApprovalMode>>({
+/** Context budget, agent limits and resume: three sections, each saved on its own. */
+export function ContextSection({ settings }: { settings: Settings }) {
+  const context = useSettingsDraft(settings, ["compactAt", "compactTarget", "maxTurns"]);
+  const limits = useSettingsDraft(settings, ["agentsMax", "perAccount", "perTask", "idleTimeout"]);
+  const resume = useSettingsDraft(settings, ["resumeAuto"]);
+  return (
+    <>
+      <Section
+        first
+        title="Context budget"
+        note="When an agent's context is compacted, and when it starts fresh"
+        draft={context}
+      >
+        <div className={GRID}>
+          <NumberField label="Compact at %" name="compactAt" draft={context} />
+          <NumberField label="Target after %" name="compactTarget" draft={context} />
+          <NumberField label="Fresh after turns" name="maxTurns" draft={context} />
+        </div>
+      </Section>
+      <Section title="Limits" note="How many agents run at once" draft={limits}>
+        <div className="grid gap-3 @[480px]:grid-cols-2">
+          <NumberField label="Agents at once" name="agentsMax" draft={limits} />
+          <NumberField label="Per account" name="perAccount" draft={limits} />
+          <NumberField label="Per task" name="perTask" draft={limits} />
+          <Field label="Stop idle agents after" hint="Like 10m or 1h" error={limits.error("idleTimeout")}>
+            {(p) => (
+              <Input
+                {...p}
+                className="font-mono"
+                value={limits.form.idleTimeout}
+                onChange={(e) => limits.set("idleTimeout", e.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+      </Section>
+      <Section title="Resume" note="Runs that stopped before they finished" draft={resume}>
+        <Switch
+          label="Resume interrupted runs on their own"
+          checked={resume.form.resumeAuto}
+          onChange={(v) => resume.set("resumeAuto", v)}
+        />
+      </Section>
+    </>
+  );
+}
+
+/** How long a team may hand work around without the owner. */
+export function TeamsSection({ settings }: { settings: Settings }) {
+  const teams = useSettingsDraft(settings, ["maxAgentTurns", "reviewRounds"]);
+  return (
+    <Section first title="Teams" note="How long agents may pass work between them without you" draft={teams}>
+      <div className="grid gap-3 @[480px]:grid-cols-2">
+        <NumberField label="Handoffs in a row with no changes" name="maxAgentTurns" draft={teams} />
+        <NumberField label="Review rounds" name="reviewRounds" draft={teams} />
+      </div>
+    </Section>
+  );
+}
+
+/** The approval policy. Changing it decides what the boss may do alone, so Save asks first. */
+export function ApprovalsSection({ settings }: { settings: Settings }) {
+  const save = useSavePolicy();
+  const saved: Record<RiskClass, ApprovalMode> = {
     read: settings.policy.read,
     change: settings.policy.change,
     destructive: settings.policy.destructive,
     outbound: settings.policy.outbound,
-  });
+  };
+  const [edits, setEdits] = useState<Partial<Record<RiskClass, ApprovalMode>>>({});
+  const [state, setState] = useState<SaveState>(IDLE);
   const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const changed = POLICY_ROWS.some((row) => modes[row.key] !== settings.policy[row.key]);
+  const modes = { ...saved, ...edits };
+  const dirty = POLICY_ROWS.some((row) => modes[row.key] !== saved[row.key]);
   const overrides = Object.keys(settings.policy.commands).length;
 
   return (
-    <>
-      <form
-        aria-label="Approval policy"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (changed) setConfirming(true);
-        }}
-        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3"
-      >
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-sm font-semibold">Approval policy</h3>
-          <p className="text-xs text-fg-faint text-pretty">
-            What the boss may do without a click. Anything not allowed waits for you in the room.
-          </p>
-        </div>
+    <SaveSection
+      title="Approval policy"
+      note="What the boss may do without a click. Anything else waits for you in the room."
+      className="border-t-0"
+      dirty={dirty}
+      state={state}
+      onSave={() => setConfirming(true)}
+      onDiscard={() => {
+        setEdits({});
+        setState(IDLE);
+      }}
+    >
+      <div className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2">
         {POLICY_ROWS.map((row) => (
           <Field key={row.key} label={row.label} hint={row.hint}>
             {(p) => (
               <Select
                 {...p}
                 value={modes[row.key]}
-                onChange={(e) => setModes({ ...modes, [row.key]: e.target.value as ApprovalMode })}
+                onChange={(e) => {
+                  setState(IDLE);
+                  setEdits({ ...edits, [row.key]: e.target.value as ApprovalMode });
+                }}
               >
                 {MODES.map((mode) => (
                   <option key={mode} value={mode}>
@@ -242,17 +244,12 @@ function PolicyForm({ settings, save }: { settings: Settings; save: SavePolicy }
             )}
           </Field>
         ))}
-        {overrides > 0 && (
-          <p className="text-xs text-fg-faint">
-            {overrides} command {overrides === 1 ? "override is" : "overrides are"} set in majhi.yaml.
-          </p>
-        )}
-        <div>
-          <Button type="submit" size="sm" disabled={!changed || save.isPending}>
-            Change policy
-          </Button>
-        </div>
-      </form>
+      </div>
+      {overrides > 0 && (
+        <p className="text-sm text-fg-faint">
+          {overrides} command {overrides === 1 ? "override is" : "overrides are"} set in majhi.yaml.
+        </p>
+      )}
       {confirming && (
         <ConfirmDialog
           title="Change the approval policy?"
@@ -264,17 +261,22 @@ function PolicyForm({ settings, save }: { settings: Settings; save: SavePolicy }
             setConfirming(false);
             setProblem(undefined);
           }}
-          onConfirm={() =>
+          onConfirm={() => {
+            setState({ kind: "saving" });
             save.mutate(modes, {
               onSuccess: () => {
                 setConfirming(false);
-                toast("Approval policy changed");
+                setEdits({});
+                setState({ kind: "saved" });
               },
-              onError: (error) => setProblem(describeError(error)),
-            })
-          }
+              onError: (error) => {
+                setState(IDLE);
+                setProblem(describeError(error));
+              },
+            });
+          }}
         />
       )}
-    </>
+    </SaveSection>
   );
 }

@@ -32,7 +32,6 @@ export function AppearanceButton() {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
-  const appearance = useAppearance();
 
   useEffect(() => {
     if (!open) return;
@@ -80,59 +79,69 @@ export function AppearanceButton() {
             GLASS_STRONG,
           )}
         >
-          <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
-            <legend className="mb-1.5 text-sm font-medium text-fg-soft">Theme</legend>
-            <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line-strong bg-field p-[3px]">
-              {THEME_ROWS.map(({ value, label, icon: Icon }) => {
-                const on = appearance.theme === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setAppearance({ theme: value })}
-                    className={cn(
-                      "flex h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-md text-xs transition-colors duration-150",
-                      on
-                        ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
-                        : "text-fg-muted hover:bg-raised hover:text-fg",
-                    )}
-                  >
-                    <Icon aria-hidden="true" className="size-4" />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </fieldset>
-          <fieldset className="m-0 flex flex-col border-0 p-0">
-            <legend className="mb-2 text-sm font-medium text-fg-soft">Accent</legend>
-            <div className="flex items-center gap-2">
-              {ACCENTS.map((accent) => {
-                const on = appearance.accent === accent;
-                return (
-                  <button
-                    key={accent}
-                    type="button"
-                    aria-pressed={on}
-                    aria-label={ACCENT_LABEL[accent]}
-                    title={ACCENT_LABEL[accent]}
-                    onClick={() => setAppearance({ accent })}
-                    style={{ backgroundColor: SWATCH[accent] }}
-                    className={cn(
-                      "grid size-7 cursor-pointer place-items-center rounded-full text-[#10141b] transition-transform duration-150 hover:scale-110",
-                      on && "ring-2 ring-fg ring-offset-2 ring-offset-[var(--c-glass-strong)]",
-                    )}
-                  >
-                    {on && <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-2.5 text-xs text-fg-faint">Saved in this browser.</p>
-          </fieldset>
+          <AppearanceControls />
         </section>
       )}
+    </div>
+  );
+}
+
+/** The theme segment and the accent swatches, in the sidebar popover and on Hub setup. */
+export function AppearanceControls({ className }: { className?: string }) {
+  const appearance = useAppearance();
+  return (
+    <div className={cn("flex flex-col gap-3", className)}>
+      <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
+        <legend className="mb-1.5 text-sm font-medium text-fg-soft">Theme</legend>
+        <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line-strong bg-field p-[3px]">
+          {THEME_ROWS.map(({ value, label, icon: Icon }) => {
+            const on = appearance.theme === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setAppearance({ theme: value })}
+                className={cn(
+                  "flex h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-md text-xs transition-colors duration-150",
+                  on
+                    ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
+                    : "text-fg-muted hover:bg-raised hover:text-fg",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <fieldset className="m-0 flex flex-col border-0 p-0">
+        <legend className="mb-2 text-sm font-medium text-fg-soft">Accent</legend>
+        <div className="flex items-center gap-2">
+          {ACCENTS.map((accent) => {
+            const on = appearance.accent === accent;
+            return (
+              <button
+                key={accent}
+                type="button"
+                aria-pressed={on}
+                aria-label={ACCENT_LABEL[accent]}
+                title={ACCENT_LABEL[accent]}
+                onClick={() => setAppearance({ accent })}
+                style={{ backgroundColor: SWATCH[accent] }}
+                className={cn(
+                  "grid size-7 cursor-pointer place-items-center rounded-full text-[#10141b] transition-transform duration-150 hover:scale-110",
+                  on && "ring-2 ring-fg ring-offset-2 ring-offset-[var(--c-glass-strong)]",
+                )}
+              >
+                {on && <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2.5 text-xs text-fg-faint">Saved in this browser.</p>
+      </fieldset>
     </div>
   );
 }

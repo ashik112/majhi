@@ -8,10 +8,13 @@ import {
   RoleSchema,
   type Tier,
 } from "@majhi/shared";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { DetailSection } from "@/components/ui/list-detail";
+import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Select, Textarea } from "@/components/ui/select";
 import { Dot } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
@@ -33,28 +36,37 @@ const NAME: Record<ProviderId, string> = {
   rules: "Rules",
 };
 const ALL: readonly ProviderId[] = ["laya", "jev", "acp", "rules"];
+const IDLE: SaveState = { kind: "idle" };
+
+/** The first provider in the order, for the list row: "Laya first". */
+export function firstProvider(status: DecisionsStatus | undefined): string | undefined {
+  const first = status?.settings.order[0];
+  return first === undefined ? undefined : `${NAME[first]} first`;
+}
 
 /** The decision provider: who answers small typed questions, in what order, and a box to try it. */
-export function DecisionsPanel() {
+export function DecisionsSection() {
   const status = useDecisionsStatus();
+  if (status.isPending) return <p className="pt-5 text-sm text-fg-faint">Loading</p>;
+  if (status.isError) return <p className="pt-5 text-sm text-red">{describeError(status.error)}</p>;
   return (
-    <section aria-label="Decisions" className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2">
-        <h2 className="text-md font-semibold">Decisions</h2>
-        <span className="text-sm text-fg-faint">Quick picks for agents, tried in this order</span>
-      </div>
-      {status.isPending && <p className="text-sm text-fg-faint">Loading</p>}
-      {status.isError && <p className="text-sm text-red">{describeError(status.error)}</p>}
-      {status.data && (
-        <div className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3">
-          <Providers status={status.data} />
-          <Picks status={status.data} />
-          <JevKey status={status.data} />
-          <AskBox />
-          <RecentDecisions />
-        </div>
-      )}
-    </section>
+    <>
+      <DetailSection
+        title="Provider order"
+        note="Quick picks for agents, tried in this order"
+        className="border-t-0"
+      >
+        <Providers status={status.data} />
+      </DetailSection>
+      <Picks key={JSON.stringify(status.data.settings)} status={status.data} />
+      <DetailSection title="Jev key">
+        <JevKey status={status.data} />
+      </DetailSection>
+      <DetailSection title="Ask the decision model" note="Try a question against the order above">
+        <AskBox />
+      </DetailSection>
+      <RecentDecisions />
+    </>
   );
 }
 
@@ -80,41 +92,51 @@ function Providers({ status }: { status: DecisionsStatus }) {
   const busy = laya.state === "installing" || laya.state === "downloading";
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <ol aria-label="Provider order" className="m-0 flex list-none flex-col gap-1.5 p-0">
+    <div className="flex max-w-[720px] flex-col gap-2">
+      <ol aria-label="Provider order" className="m-0 flex list-none flex-col p-0">
         {order.map((id, i) => {
           const p = info(id);
           return (
-            <li key={id} className="flex items-center gap-2">
-              <Dot tone={p?.available ? "green" : "neutral"} />
-              <span className="w-[110px] shrink-0 text-base font-semibold">{NAME[id]}</span>
+            <li key={id} className="flex min-h-10 items-center gap-3 border-t border-line first:border-t-0">
+              <span className="tnum w-4 shrink-0 font-mono text-xs text-fg-faint">{i + 1}</span>
+              <span className="flex w-[130px] shrink-0 items-center gap-2">
+                <Dot tone={p?.available ? "green" : "neutral"} size={7} />
+                <span className="text-base font-medium">{NAME[id]}</span>
+              </span>
               <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">
                 {id === "laya" ? layaLine(status) : (p?.detail ?? "")}
               </span>
-              <Button
-                size="sm"
-                aria-label={`Move ${NAME[id]} up`}
-                disabled={i === 0}
-                onClick={() => move(i, -1)}
-              >
-                Up
-              </Button>
-              <Button
-                size="sm"
-                aria-label={`Move ${NAME[id]} down`}
-                disabled={i === order.length - 1}
-                onClick={() => move(i, 1)}
-              >
-                Down
-              </Button>
-              <Button
-                size="sm"
-                aria-label={`Turn ${NAME[id]} off`}
-                disabled={order.length === 1}
-                onClick={() => change(order.filter((o) => o !== id))}
-              >
-                Off
-              </Button>
+              <span className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Move ${NAME[id]} up`}
+                  title="Move up"
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                >
+                  <ArrowUp aria-hidden="true" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Move ${NAME[id]} down`}
+                  title="Move down"
+                  disabled={i === order.length - 1}
+                  onClick={() => move(i, 1)}
+                >
+                  <ArrowDown aria-hidden="true" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Turn ${NAME[id]} off`}
+                  disabled={order.length === 1}
+                  onClick={() => change(order.filter((o) => o !== id))}
+                >
+                  Off
+                </Button>
+              </span>
             </li>
           );
         })}
@@ -166,41 +188,89 @@ const BAR: Record<"min_lift" | "min_margin", { label: string; hint: string }> = 
 
 /** When an answer counts, and what each role falls back to when it does not. */
 function Picks({ status }: { status: DecisionsStatus }) {
-  const toast = useToast();
   const save = useSetDecisions();
   const { settings } = status;
-  const failed = (e: unknown) => toast("Could not save", { detail: describeError(e), tone: "error" });
-  const setBar = (key: "min_lift" | "min_margin", text: string) => {
-    const value = Number(text);
-    if (text.trim() === "" || !Number.isFinite(value) || value < 0 || value > 1) return;
-    if (value !== settings[key]) save.mutate({ [key]: value }, { onError: failed });
+  const [bars, setBars] = useState<Partial<Record<Bar, string>>>({});
+  const [tiers, setTiers] = useState<Partial<Record<Role, Tier>>>({});
+  const [state, setState] = useState<SaveState>(IDLE);
+  const [showErrors, setShowErrors] = useState(false);
+  const text = (key: Bar) => bars[key] ?? String(settings[key]);
+  const value = (key: Bar) => parseBar(text(key));
+  const tierOf = (role: Role) => tiers[role] ?? settings.tiers[role];
+  const changedBars = BARS.filter((k) => text(k) !== String(settings[k]));
+  const changedTiers = RoleSchema.options.filter((r) => {
+    const t = tierOf(r);
+    return t.model !== settings.tiers[r].model || t.effort !== settings.tiers[r].effort;
+  });
+  const dirty = changedBars.length > 0 || changedTiers.length > 0;
+  const touch = () => {
+    if (state.kind !== "saving") setState(IDLE);
   };
-  const setTier = (role: Role, tier: Tier) =>
-    save.mutate({ tiers: { ...settings.tiers, [role]: tier } }, { onError: failed });
+  const discard = () => {
+    setBars({});
+    setTiers({});
+    setShowErrors(false);
+    setState(IDLE);
+  };
+  const submit = () => {
+    setShowErrors(true);
+    if (BARS.some((k) => value(k) === undefined) || !dirty) return;
+    setState({ kind: "saving" });
+    save.mutate(
+      {
+        ...Object.fromEntries(changedBars.map((k) => [k, value(k)])),
+        ...(changedTiers.length > 0
+          ? { tiers: Object.fromEntries(RoleSchema.options.map((r) => [r, tierOf(r)])) }
+          : {}),
+      },
+      {
+        onSuccess: () => {
+          setBars({});
+          setTiers({});
+          setShowErrors(false);
+          setState({ kind: "saved" });
+        },
+        onError: (e) => setState({ kind: "error", message: e.message, details: e.details }),
+      },
+    );
+  };
+  const setTier = (role: Role, tier: Tier) => {
+    touch();
+    setTiers((t) => ({ ...t, [role]: tier }));
+  };
   return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-base font-semibold">When an answer counts</h3>
-      <p className="m-0 text-sm text-fg-faint">
-        An answer that falls short, or says none of the options fits, is not used: the fallback is.
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        {(["min_lift", "min_margin"] as const).map((key) => (
-          <Field key={`${key}-${settings[key]}`} label={BAR[key].label} hint={BAR[key].hint}>
+    <SaveSection
+      title="When an answer counts"
+      note="An answer that falls short, or says none of the options fits, is not used: the fallback is"
+      dirty={dirty}
+      state={state}
+      onSave={submit}
+      onDiscard={discard}
+    >
+      <div className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2">
+        {BARS.map((key) => (
+          <Field
+            key={key}
+            label={BAR[key].label}
+            hint={BAR[key].hint}
+            error={showErrors && value(key) === undefined ? "Use a number from 0 to 1" : undefined}
+          >
             {(p) => (
               <Input
                 {...p}
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                defaultValue={settings[key]}
-                onBlur={(e) => setBar(key, e.target.value)}
+                inputMode="decimal"
+                className="w-28 font-mono"
+                value={text(key)}
+                onChange={(e) => {
+                  touch();
+                  setBars((b) => ({ ...b, [key]: e.target.value }));
+                }}
               />
             )}
           </Field>
         ))}
       </div>
-      <table aria-label="Fallback by role" className="w-full border-collapse text-sm">
+      <table aria-label="Fallback by role" className="w-full max-w-[640px] border-collapse text-sm">
         <thead>
           <tr className="text-left text-fg-faint">
             <th className="py-1 pr-2 font-normal">Role</th>
@@ -210,10 +280,10 @@ function Picks({ status }: { status: DecisionsStatus }) {
         </thead>
         <tbody>
           {RoleSchema.options.map((role) => {
-            const tier = settings.tiers[role];
+            const tier = tierOf(role);
             return (
-              <tr key={role}>
-                <td className="py-1 pr-2 font-semibold">{role}</td>
+              <tr key={role} className="border-t border-line">
+                <td className="py-1.5 pr-2 font-medium">{role}</td>
                 <td className="py-1 pr-2">
                   <Select
                     aria-label={`${role} model fallback`}
@@ -247,13 +317,21 @@ function Picks({ status }: { status: DecisionsStatus }) {
           })}
         </tbody>
       </table>
-      <p className="m-0 text-sm text-fg-faint">
+      <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">
         For an auto agent, the task's size moves its role's tiers one step: down for trivial or small work, up
         for large work. Models rank by the price table, else by the CLI's order. Orgs and agents can override
         a role.
       </p>
-    </div>
+    </SaveSection>
   );
+}
+
+type Bar = "min_lift" | "min_margin";
+const BARS: readonly Bar[] = ["min_lift", "min_margin"];
+
+function parseBar(text: string): number | undefined {
+  const value = Number(text.trim().replace(",", "."));
+  return text.trim() !== "" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
 }
 
 function layaLine({ laya }: DecisionsStatus): string {
@@ -282,7 +360,7 @@ function JevKey({ status }: { status: DecisionsStatus }) {
   return (
     <form
       aria-label="Jev key"
-      className="flex items-end gap-2"
+      className="flex max-w-[640px] items-end gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         if (value === "") return;
@@ -333,7 +411,7 @@ function AskBox() {
   return (
     <form
       aria-label="Ask the decision model"
-      className="flex flex-col gap-2"
+      className="flex max-w-[640px] flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         if (!ready) return;
@@ -343,7 +421,6 @@ function AskBox() {
         );
       }}
     >
-      <h3 className="text-base font-semibold">Ask the decision model</h3>
       <Field label="Text">
         {(p) => <Textarea {...p} rows={3} value={state} onChange={(e) => setState(e.target.value)} />}
       </Field>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useUndoStep } from "@/lib/memory-queries";
@@ -30,6 +31,7 @@ export function EventList({
   label,
   empty,
   showText = true,
+  flat = false,
 }: {
   events: readonly MemoryEvent[];
   facts: ReadonlyMap<number, Fact>;
@@ -37,6 +39,8 @@ export function EventList({
   empty: string;
   /** Leave out the fact's words when the list sits under the fact itself. */
   showText?: boolean;
+  /** Rows divided by hairlines instead of boxed, inside a detail pane. */
+  flat?: boolean;
 }) {
   const now = useNow(30_000);
   const undo = useUndoStep();
@@ -44,14 +48,18 @@ export function EventList({
   const [busy, setBusy] = useState<number>();
   if (events.length === 0) return <p className="m-0 text-sm text-fg-faint">{empty}</p>;
   return (
-    <ul aria-label={label} className="m-0 flex list-none flex-col gap-1.5 p-0">
+    <ul aria-label={label} className={cn("m-0 flex list-none flex-col p-0", !flat && "gap-1.5")}>
       {events.map((event) => {
         const word = actionLabel(event);
         const fact = facts.get(event.fact);
         return (
           <li
             key={event.id}
-            className="flex flex-col gap-1 rounded-lg border border-line-strong bg-card px-3 py-2 text-sm"
+            className={
+              flat
+                ? "flex flex-col gap-1 border-t border-line py-2.5 text-sm first:border-t-0"
+                : "flex flex-col gap-1 rounded-lg border border-line-strong bg-card px-3 py-2 text-sm"
+            }
           >
             <div className="flex items-center gap-2">
               <Badge tone={word in TONE ? TONE[word as keyof typeof TONE] : "neutral"}>{word}</Badge>

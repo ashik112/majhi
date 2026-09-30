@@ -107,7 +107,7 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
   await expect(page.getByRole("region", { name: "Personal" })).toHaveCount(0);
 
   // History on Hub setup lists it, made by the boss.
-  await page.goto("/setup");
+  await page.goto("/setup?section=history");
   const history = page.getByRole("region", { name: "History" });
   await expect(history.getByText("added org globex")).toBeVisible();
   await expect(history.getByText(/@majhi-boss/).first()).toBeVisible();
@@ -144,7 +144,7 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
   );
   await expect(drawer(page).getByText("Applied: Create org Initech", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+j");
-  await page.goto("/setup");
+  await page.goto("/setup?section=history");
   const history = page.getByRole("region", { name: "History" });
   await history.getByRole("button", { name: "Undo: added org initech" }).click();
   await expect
@@ -212,34 +212,36 @@ test("the composer warns about a secret, and sends only a reference", async ({ p
   ).toBe(true);
 });
 
-test("Hub setup: the conversation, history and settings; changing the policy asks first", async ({
-  page,
-  request,
-}) => {
+test("Hub setup: sections save on their own; changing the policy asks first", async ({ page, request }) => {
   await page.goto("/setup");
   await expect(page.getByRole("heading", { name: "Hub setup" })).toBeVisible();
-  const conversation = page.getByRole("region", { name: "Setup conversation" });
-  await expect(conversation.getByRole("textbox", { name: "Message the room" })).toBeVisible();
+  // The boss is not on the page: Ask the boss opens its drawer.
+  await page.getByRole("button", { name: /Ask the boss/ }).click();
+  await expect(composer(page)).toBeVisible();
+  await page.keyboard.press("Meta+j");
+  await expect(drawer(page)).toHaveCount(0);
 
-  const settings = page.getByRole("region", { name: "Settings" });
-  const limits = settings.getByRole("form", { name: "Context and limits" });
+  await page.getByRole("button", { name: /^Context and limits/ }).click();
+  await expect(page).toHaveURL(/section=context/);
+  const limits = page.getByRole("region", { name: "Limits" });
   await limits.getByLabel("Agents at once").fill("4");
-  await limits.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByText("Settings saved")).toBeVisible();
+  await limits.getByRole("button", { name: "Save Limits" }).click();
+  await expect(limits.getByRole("status")).toContainText("Saved");
   expect((await cmd<{ limits: { agents_max: number } }>(request, "settings.get")).limits.agents_max).toBe(4);
 
-  const policy = settings.getByRole("form", { name: "Approval policy" });
+  await page.goto("/setup?section=approvals");
+  const policy = page.getByRole("region", { name: "Approval policy" });
   await policy.getByLabel("Changes").selectOption("confirm");
-  await policy.getByRole("button", { name: "Change policy" }).click();
+  await policy.getByRole("button", { name: "Save Approval policy" }).click();
   const dialog = page.getByRole("dialog", { name: "Change the approval policy?" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   expect((await cmd<{ policy: { change: string } }>(request, "settings.get")).policy.change).toBe(
     "when-asked",
   );
-  await policy.getByRole("button", { name: "Change policy" }).click();
+  await policy.getByRole("button", { name: "Save Approval policy" }).click();
   await dialog.getByRole("button", { name: "Change policy" }).click();
-  await expect(page.getByText("Approval policy changed")).toBeVisible();
+  await expect(policy.getByRole("status")).toContainText("Saved");
   expect((await cmd<{ policy: { change: string } }>(request, "settings.get")).policy.change).toBe("confirm");
 
   // With "confirm", even a call the owner asked for waits.
