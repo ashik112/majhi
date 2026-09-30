@@ -157,11 +157,16 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
         >
           <Users aria-hidden="true" className="size-4" />
           <span className="text-sm font-medium [writing-mode:vertical-rl]">Agents</span>
-          <span className="flex flex-col items-center gap-1.5 font-mono text-xs">
+          {/* Words beside every lamp: the rail reads "0 working", "3 need you" top to bottom. */}
+          <span className="flex flex-col items-center gap-2 text-xs">
             <Lamp state="working" dim={working === 0} size={7} />
-            <span className={cn("tnum", working === 0 && "text-fg-faint")}>{working}</span>
+            <span className={cn("[writing-mode:vertical-rl]", working === 0 && "text-fg-faint")}>
+              <span className="tnum font-mono">{working}</span> working
+            </span>
             <Lamp state="needs" dim={waiting === 0} size={7} className="mt-1" />
-            <span className={cn("tnum", waiting === 0 && "text-fg-faint")}>{waiting}</span>
+            <span className={cn("[writing-mode:vertical-rl]", waiting === 0 && "text-fg-faint")}>
+              <span className="tnum font-mono">{waiting}</span> need you
+            </span>
           </span>
         </button>
         {open && (

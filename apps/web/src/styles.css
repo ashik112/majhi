@@ -27,7 +27,6 @@
   /* A low horizon glow, the radar scope and its sweep: the dark ground the glass frosts over */
   --c-horizon: rgb(34 140 215 / 0.2);
   --c-scope: rgb(40 170 230 / 0.07);
-  --c-sweep: rgb(80 200 240 / 0.1);
   --c-glow-b: color-mix(in oklab, var(--c-accent) 8%, transparent);
   --c-grid: rgb(110 160 215 / 0.06);
   --c-grid-major: rgb(110 170 230 / 0.1);
@@ -169,7 +168,6 @@
   --c-ring: rgb(30 110 160 / 0.09);
   --c-horizon: transparent;
   --c-scope: transparent;
-  --c-sweep: transparent;
 
   --c-glass: rgb(250 252 255 / 0.6);
   --c-glass-strong: rgb(250 252 255 / 0.98);
@@ -505,9 +503,8 @@
   content: "";
   position: absolute;
   inset: 0;
-  /* The scope: rings every 160 px, a faint fill, and a still sweep wedge ending on a bright edge. */
+  /* The scope: rings every 160 px and a faint fill. */
   background:
-    conic-gradient(from 18deg at 72% 58%, transparent 0 290deg, var(--c-sweep) 359.6deg, transparent 360deg),
     repeating-radial-gradient(circle at 72% 58%, transparent 0 159px, var(--c-ring) 159px 160px),
     radial-gradient(circle at 72% 58%, var(--c-scope), transparent 45%);
   -webkit-mask-image: radial-gradient(circle at 72% 58%, black 0, black 26%, transparent 66%);
