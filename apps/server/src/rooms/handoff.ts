@@ -1,8 +1,10 @@
 import type { CoordinationMode, HandoffVia, Role } from "@majhi/shared";
-import { trimMiddle } from "../runs/handoff.ts";
 
-/** The mentioning message is kept whole up to this, then cut in the middle. */
-export const HANDOFF_MESSAGE_MAX = 4000;
+/**
+ * The mentioning message is kept whole up to this, the most `mention` and `post` accept. A longer
+ * final reply is cut at the end, with a marker that says where and how to read the rest.
+ */
+export const HANDOFF_MESSAGE_MAX = 20_000;
 
 export interface HandoffInput {
   task: string;
@@ -12,6 +14,8 @@ export interface HandoffInput {
   mode: CoordinationMode;
   /** The message that handed the work over. */
   text: string;
+  /** The handoff room item, which keeps the whole message for read_recent. */
+  itemId: string;
   /** Recent room lines, newest first, already within budget. */
   room: readonly string[];
   diffStat: string;
@@ -40,7 +44,7 @@ export function handoffPrompt(input: HandoffInput): string {
     `${why} You are @${input.to.id} (${input.to.role}) in task ${input.task}.`,
     "",
     `@${input.from} wrote:`,
-    quote(trimMiddle(input.text.trim(), HANDOFF_MESSAGE_MAX)),
+    ...handoffMessage(input.text.trim(), input.itemId),
     "",
   ];
   if (input.needsBrief)
@@ -58,6 +62,17 @@ export function handoffPrompt(input: HandoffInput): string {
   );
   if (input.to.role === "Reviewer") lines.push(VERDICT_ASK);
   return lines.join("\n");
+}
+
+/** The message quoted whole, or its start and a marker naming where it was cut and how to read on. */
+function handoffMessage(text: string, itemId: string): string[] {
+  if (text.length <= HANDOFF_MESSAGE_MAX) return [quote(text)];
+  return [
+    quote(text.slice(0, HANDOFF_MESSAGE_MAX)),
+    "",
+    `[Message cut here: this is the first ${HANDOFF_MESSAGE_MAX} of ${text.length} characters. ` +
+      `Read the whole message before you start: call majhi-room read_recent with item "${itemId}".]`,
+  ];
 }
 
 function quote(text: string): string {

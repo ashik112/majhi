@@ -16,7 +16,6 @@ import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
 import { git } from "../git/git.ts";
 import type { RoomService } from "../room/service.ts";
-import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -160,7 +159,7 @@ export class RoomCoordinator {
     for (const item of page.items) {
       const line = readLine(item);
       if (line === undefined) continue;
-      lines.push(`[${item.seq}] ${trimMiddle(line, READ_ITEM_MAX)}`);
+      lines.push(`[${item.seq}] ${cutLine(line, item.id)}`);
       oldest = item.seq;
       if (lines.length >= limit) break;
     }
@@ -168,6 +167,17 @@ export class RoomCoordinator {
     const more =
       page.more || lines.length >= limit ? `\n\nOlder: call read_recent with before_seq ${oldest}.` : "";
     return `Room of ${task}, newest first:\n${lines.join("\n")}${more}`;
+  }
+
+  /** majhi-room `read_recent` with `item`: one message whole, a handoff with the text it carried. */
+  readItem(task: string, id: string): string {
+    this.deps.room.flush(task);
+    const item = this.deps.store.room.get(task, id);
+    if (item === undefined) throw new UserError(`The room of ${task} has no item ${id}.`, 404);
+    const line =
+      item.type === "handoff" ? `@${item.from} handed to @${item.to}:\n${item.text}` : readLine(item);
+    if (line === undefined) throw new UserError(`Item ${id} has no message to read.`);
+    return `[${item.seq}] ${line}`;
   }
 
   async postAskCard(
@@ -287,6 +297,14 @@ function members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
 }
 
 /** A message in the room for read_recent, or undefined for items that are not conversation. */
+/** A long read_recent line cut in the middle, with a marker that says how to read it whole. */
+function cutLine(line: string, id: string): string {
+  if (line.length <= READ_ITEM_MAX) return line;
+  const marker = `\n[... cut; read_recent with item "${id}" reads it whole ...]\n`;
+  const head = Math.ceil(READ_ITEM_MAX / 2);
+  return `${line.slice(0, head)}${marker}${line.slice(line.length - (READ_ITEM_MAX - head))}`;
+}
+
 function readLine(item: RoomItem): string | undefined {
   switch (item.type) {
     case "owner":

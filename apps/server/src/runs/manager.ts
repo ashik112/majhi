@@ -808,6 +808,7 @@ export class RunManager {
               via: item.via,
               mode: task.mode,
               text: item.text,
+              itemId: item.id,
               room: roomLines(recent, BUDGET.roomSummary, 300),
               diffStat: await diffStat(checkpointRepos(task)).catch(() => ""),
               needsBrief,

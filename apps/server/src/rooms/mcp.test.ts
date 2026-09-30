@@ -152,6 +152,49 @@ describe("majhi-room", () => {
     expect(self.isError).toBe(true);
   });
 
+  it("hands a long message over whole, and marks a longer one with a way to read the rest", async () => {
+    const { h, servers, prompts, release } = await world();
+    const room = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-room"));
+    const pad = (n: number) => "x".repeat(n);
+    const long = `Problem one: the route.\n${pad(7000)}\nProblem two: the test.\n${pad(7000)}\nProblem three: the docs.`;
+    await room.callTool({ name: "mention", arguments: { agent: "acme-builder", text: long } });
+    release();
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder prompt");
+    const whole = prompts["acme-builder"]?.[0] ?? "";
+    for (const p of ["Problem one: the route.", "Problem two: the test.", "Problem three: the docs."])
+      expect(whole).toContain(`> ${p}`);
+    expect(whole).not.toContain("Message cut here");
+
+    // A final reply may be longer than mention accepts: the prompt says where it was cut.
+    const longer = `${pad(20_000)}\nProblem four: the tail.`;
+    const task = h.majhi.services.store.tasks.get("ACM-1");
+    if (task === undefined) throw new Error("no task");
+    const item = h.majhi.services.runs.handoff(task, {
+      from: "acme-lead",
+      to: "acme-builder",
+      via: "mention",
+      text: longer,
+    });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 2, "second builder prompt");
+    const cut = prompts["acme-builder"]?.[1] ?? "";
+    expect(cut).not.toContain("Problem four");
+    expect(cut).toContain(`first 20000 of ${longer.length} characters`);
+    expect(cut).toContain(`read_recent with item "${item.id}"`);
+
+    const rest = text(await room.callTool({ name: "read_recent", arguments: { item: item.id } }));
+    expect(rest).toContain("@acme-lead handed to @acme-builder:");
+    expect(rest).toContain(longer);
+    // read_recent cuts long lines in its list, and names the item that reads whole.
+    await room.callTool({ name: "post", arguments: { text: `Notes start.\n${pad(3000)}\nNotes end.` } });
+    const list = text(await room.callTool({ name: "read_recent", arguments: { limit: 20 } }));
+    const id = /cut; read_recent with item "([^"]+)" reads it whole/.exec(list)?.[1];
+    expect(id).toBeDefined();
+    const note = text(await room.callTool({ name: "read_recent", arguments: { item: id } }));
+    expect(note).toContain(`Notes start.\n${pad(3000)}\nNotes end.`);
+    const missing = await room.callTool({ name: "read_recent", arguments: { item: "nope" } });
+    expect(missing.isError).toBe(true);
+  });
+
   it("refuses a request without a valid token, and a token after its session ended", async () => {
     const { h, servers, release } = await world();
     const spec = servers["acme-lead"]?.find((s) => s.name === "majhi-room");

@@ -59,10 +59,11 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "read_recent",
     description:
-      "Read the task room: the latest messages, newest first, each cut in the middle when long. Use before_seq to read further back.",
+      "Read the task room: the latest messages, newest first, each cut in the middle when long. Use before_seq to read further back. Pass item (an id from a cut marker) to read that one message whole.",
     input: z.object({
       limit: z.number().int().min(1).max(50).default(20),
       before_seq: z.number().int().positive().optional(),
+      item: z.string().trim().min(1).max(200).optional(),
     }),
   },
   {
@@ -299,6 +300,7 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     try {
       switch (tool.name) {
         case "read_recent":
+          if (typeof args.item === "string") return ok(deps.coordinator.readItem(caller.task, args.item));
           return ok(
             deps.coordinator.readRecent(
               caller.task,
