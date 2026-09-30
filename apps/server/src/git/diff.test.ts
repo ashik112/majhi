@@ -25,6 +25,14 @@ afterEach(async () => {
 });
 
 describe("repoDiff", () => {
+  it("says a branch is gone only once the task has started", async () => {
+    const missing = { project: "acme-api", source: repo, base: "main", branch: "task/not-made-yet" };
+    const before = await repoDiff(missing, { started: false });
+    expect(before).toMatchObject({ files: [], uncommitted: false });
+    expect(before.error).toBeUndefined();
+    expect((await repoDiff(missing)).error).toBe("The branch is gone, so there is nothing to show.");
+  });
+
   it("shows commits and uncommitted changes, and new files as added", async () => {
     await writeFile(join(repo, "a.txt"), "one\nTWO\n");
     await testGit(repo, "commit", "--quiet", "-am", "edit");

@@ -1073,7 +1073,8 @@ export class TaskService {
   /** What each repo of the task changed against its base, as git diffs. */
   async diff(id: string) {
     const task = this.get(id);
-    return Promise.all(task.repos.map((r) => repoDiff(r)));
+    const started = task.status !== "inbox" && task.status !== "ready";
+    return Promise.all(task.repos.map((r) => repoDiff(r, { started })));
   }
 
   /** Local branches of each repo of the task, for picking where to merge. */
