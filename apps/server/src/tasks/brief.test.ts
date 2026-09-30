@@ -160,9 +160,11 @@ describe("Related tasks section", () => {
     expect(md.indexOf("## Related tasks")).toBeLessThan(md.indexOf("## Agent"));
   });
 
-  it("lets an agent with merge permission merge, and keeps push with the owner", () => {
+  it("keeps an agent with merge permission from moving the base branch, and push with the owner", () => {
     const rules = outboundRules(["edit", "shell", "merge"]);
     expect(rules).toContain("- Never push. The owner does that.");
-    expect(rules.some((r) => r.startsWith("- You may merge the task branch"))).toBe(true);
+    expect(rules.some((r) => r.startsWith("- Never merge or move the base branch with git yourself"))).toBe(
+      true,
+    );
   });
 });

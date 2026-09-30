@@ -23,7 +23,7 @@ export function outboundRules(perms: readonly string[]): string[] {
   );
   lines.push(
     may("merge")
-      ? "- You may merge the task branch into its base branch once the checks pass: in the project's checkout, only when it has no uncommitted changes, and without editing files there. Say in the room what you merged."
+      ? "- Never merge or move the base branch with git yourself: your container has the repo's history but not the project's files, so a merge from here leaves the owner's checkout broken. When the checks pass, say in the room that the branch is ready to merge."
       : "- Never merge. The owner does that.",
   );
   return lines;
