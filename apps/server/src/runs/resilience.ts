@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Task, TaskId } from "@majhi/shared";
+import { isBossChat } from "../admin/boss.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -66,7 +67,9 @@ export class Resilience {
     for (const t of store.tasks.list(true)) {
       if (t.status === "done") await tasks.statusChanged(t.id).catch(() => undefined);
     }
+    const handled = new Set<string>();
     for (const { task: id, agent } of store.runs.interrupted()) {
+      handled.add(id);
       const task = store.tasks.get(id);
       // Gone, finished, or stopped by the owner: nothing to continue.
       if (
@@ -92,6 +95,53 @@ export class Resilience {
         this.note(task.id, `Could not resume @${agent} after the restart: ${errorMessage(err)}`);
       }
     }
+    await this.wakeStranded(handled);
+  }
+
+  /**
+   * Background processes live in memory, so a restart ends them without a word. A task left
+   * running with nobody working was waiting on one: its last agent is told and starts it again.
+   */
+  private async wakeStranded(handled: Set<string>): Promise<void> {
+    const { store, runs, tasks } = this.deps;
+    for (const { id } of store.tasks.list(false)) {
+      const task = store.tasks.get(id);
+      if (task === undefined || handled.has(id)) continue;
+      if (task.status !== "running" || isBossChat(task)) continue;
+      if (runs.working(task.id).length > 0) continue;
+      const agent = this.lastAgent(task);
+      if (agent === undefined) continue;
+      try {
+        if (await this.autoResume(task)) {
+          runs.notify(
+            task.id,
+            agent,
+            "majhi restarted, and background processes from before the restart were stopped without reporting back. Start again any you were waiting on, then carry on.",
+          );
+          this.note(
+            task.id,
+            `majhi restarted while @${agent} waited on a background process. Waking @${agent}.`,
+          );
+        } else {
+          await tasks.pausedByRuns(task.id, "error");
+          this.note(
+            task.id,
+            `majhi restarted while @${agent} waited on a background process. Automatic resume is off for this org, so resume the task when you are ready.`,
+          );
+        }
+      } catch (err) {
+        this.note(task.id, `Could not wake @${agent} after the restart: ${errorMessage(err)}`);
+      }
+    }
+  }
+
+  /** The team agent that acted last in the task's room. */
+  private lastAgent(task: Task): string | undefined {
+    for (const item of this.deps.store.room.page(task.id, 50).items) {
+      const agent = "agent" in item ? item.agent : undefined;
+      if (typeof agent === "string" && task.team.includes(agent)) return agent;
+    }
+    return task.team[0];
   }
 
   /** The network went away or came back. */
