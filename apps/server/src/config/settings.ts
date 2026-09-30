@@ -3,6 +3,7 @@ import {
   ContextPatchSchema,
   DecisionPatchSchema,
   LimitsPatchSchema,
+  MemoryPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -22,6 +23,7 @@ export const SettingsPatchSchema = z.object({
   rooms: RoomPatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
+  memory: MemoryPatchSchema.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
@@ -33,6 +35,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     resume: raw.resume ?? {},
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
+    memory: raw.memory ?? {},
   });
 }
 
@@ -60,6 +63,7 @@ export async function readSettings(file: string): Promise<Settings> {
     resume: record.resume,
     rooms: record.rooms,
     policy: record.policy,
+    memory: record.memory,
   });
   if (!parsed.success) {
     throw new ConfigConflictError("majhi.yaml has invalid settings.", formatIssues(parsed.error));

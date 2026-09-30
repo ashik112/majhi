@@ -17,6 +17,7 @@ describe("agents.rename", () => {
     await h.cmd("agents.create", { id: "boss-a", ...draft("root", { role: "Root" }) });
     expect((await h.cmd("boss.set", { id: "boss-a" })).status).toBe(200);
     expect((await h.cmd("decisions.set", { acp_agent: "boss-a" })).status).toBe(200);
+    expect((await h.cmd("settings.set", { memory: { housekeeper: "boss-a" } })).status).toBe(200);
     const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body;
     expect(task.team).toEqual(["acme-builder"]);
 
@@ -44,6 +45,7 @@ describe("agents.rename", () => {
     expect((await h.cmd("agents.rename", { id: "boss-a", newId: "chief" })).status).toBe(200);
     expect((await h.majhi.services.config.sections()).boss).toBe("chief");
     expect((await h.cmd("decisions.status")).body.settings.acp_agent).toBe("chief");
+    expect((await h.cmd("settings.get")).body.memory.housekeeper).toBe("chief");
 
     // Taken and missing ids are refused.
     expect((await h.cmd("agents.rename", { id: "acme-dev", newId: "acme-lead" })).status).toBe(409);

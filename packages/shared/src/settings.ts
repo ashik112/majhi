@@ -80,6 +80,31 @@ export const RoomSettingsSchema = z.strictObject({
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomPatchSchema = z.strictObject(roomFields).partial();
 
+/** Memory curation (5.6). */
+const memoryFields = {
+  /** An answer of the decision provider this sure is acted on without the owner. */
+  auto_threshold: z.number().min(0).max(1),
+  /** Nothing is kept or dropped on its own: every fact waits for the owner. */
+  review_all: z.boolean(),
+  /** The agent that reads the room after a task. Default: the boss. */
+  // Same shape as an agent id; accounts.ts imports this file, so it is not imported here.
+  housekeeper: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "Use an agent id"),
+  /** The model it runs on. Default: the cheapest its account offers. */
+  housekeeper_model: z.string().trim().min(1).max(100),
+};
+export const MemorySettingsSchema = z.strictObject({
+  auto_threshold: memoryFields.auto_threshold.default(0.8),
+  review_all: memoryFields.review_all.default(false),
+  housekeeper: memoryFields.housekeeper.optional(),
+  housekeeper_model: memoryFields.housekeeper_model.optional(),
+});
+export type MemorySettings = z.infer<typeof MemorySettingsSchema>;
+export const MemoryPatchSchema = z.strictObject(memoryFields).partial();
+export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
+
 /** How the boss's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
   /** Runs without asking. */
@@ -119,5 +144,6 @@ export const SettingsSchema = z.object({
   resume: ResumeSettingsSchema,
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
+  memory: MemorySettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

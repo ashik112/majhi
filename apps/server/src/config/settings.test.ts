@@ -20,6 +20,7 @@ describe("mergeSettings", () => {
         outbound: "confirm",
         commands: {},
       },
+      memory: { auto_threshold: 0.8, review_all: false },
     });
   });
 
@@ -44,6 +45,23 @@ describe("settings commands", () => {
     expect(order.body.error).toContain("compact_target must be lower");
     const unknown = await h.cmd("settings.set", { limits: { nope: 1 } });
     expect(unknown.status).toBe(400);
+  });
+
+  it("changes the memory section, keeps the rest of it, and refuses bad values and unknown agents", async () => {
+    h = await harness();
+    const set = await h.cmd("settings.set", { memory: { auto_threshold: 0.9, review_all: true } });
+    expect(set.status).toBe(200);
+    expect(set.body.memory).toEqual({ auto_threshold: 0.9, review_all: true });
+    const again = await h.cmd("settings.set", { memory: { housekeeper_model: "a-small-model" } });
+    expect(again.body.memory).toEqual({
+      auto_threshold: 0.9,
+      review_all: true,
+      housekeeper_model: "a-small-model",
+    });
+    expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("auto_threshold: 0.9");
+    expect((await h.cmd("settings.set", { memory: { auto_threshold: 1.5 } })).status).toBe(400);
+    expect((await h.cmd("settings.set", { memory: { housekeeper: "nobody" } })).status).toBe(404);
+    expect((await h.cmd("settings.set", { memory: { nope: 1 } })).status).toBe(400);
   });
 
   it("reports invalid settings written by hand", async () => {

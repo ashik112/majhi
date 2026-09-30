@@ -90,6 +90,8 @@ export const MemoryEventSchema = z.object({
   actor: z.string(),
   task: TaskIdSchema.optional(),
   reason: z.string().optional(),
+  /** What the fact was before the step, so undo can put it back. Absent when the step changed no fact. */
+  from: FactStatusSchema.optional(),
   /** 0 to 1, for a step curation took by itself. */
   confidence: z.number().min(0).max(1).optional(),
   provider: z.string().optional(),
@@ -134,6 +136,36 @@ export const MemoryAddInputSchema = z.object({
 export const MemoryDecideInputSchema = z.object({
   id: FactIdSchema,
   reason: z.string().trim().max(500).optional(),
+});
+
+export const MemoryUndoInputSchema = z.object({
+  event: z.number().int().positive(),
+});
+
+export const MemoryExtractInputSchema = z.object({
+  task: TaskIdSchema,
+});
+
+export const MemoryExtractOutputSchema = z.object({
+  /** Candidates the Housekeeper wrote. */
+  candidates: z.number().int().min(0),
+  /** Kept pending for the owner, kept or dropped on their own, dropped as duplicates, rejected by the rules. */
+  pending: z.number().int().min(0),
+  kept: z.number().int().min(0),
+  dropped: z.number().int().min(0),
+  duplicates: z.number().int().min(0),
+  rejected: z.number().int().min(0),
+});
+export type MemoryExtractOutput = z.infer<typeof MemoryExtractOutputSchema>;
+
+export const MemoryPromoteInputSchema = z.object({
+  id: FactIdSchema,
+});
+
+export const MemoryPromoteOutputSchema = z.object({
+  fact: FactSchema,
+  /** The task that adds the fact to AGENTS.md. It waits in review. */
+  task: TaskIdSchema,
 });
 
 export const MemoryPinInputSchema = z.object({

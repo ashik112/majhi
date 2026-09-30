@@ -4,6 +4,7 @@ import { DecisionPatchSchema } from "./decisions.ts";
 import {
   ContextPatchSchema,
   LimitsPatchSchema,
+  MemoryPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -31,6 +32,8 @@ export const MajhiConfigSchema = z.strictObject({
   resume: ResumePatchSchema.optional(),
   /** Teams in a room: the loop guard and review rounds (5.3). */
   rooms: RoomPatchSchema.optional(),
+  /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */
+  memory: MemoryPatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),

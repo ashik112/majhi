@@ -22,6 +22,7 @@ const USE: Record<DecisionRecord["use"], string> = {
   routing: "Room",
   tool: "Agent tool",
   owner: "Asked here",
+  memory: "Memory",
 };
 
 /** What the owner can name as right: what the code that asked listed, else the question's options. */

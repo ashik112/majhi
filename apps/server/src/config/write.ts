@@ -85,13 +85,13 @@ export function removeProjectEntry(file: string, id: string): Promise<void> {
 }
 
 /**
- * Sets the given fields of `context`, `limits`, `resume` and `policy`, and nothing else. A policy
+ * Sets the given fields of `context`, `limits`, `resume`, `rooms`, `policy`, `decisions` and `memory`, and nothing else. A policy
  * `commands` map replaces the old one; an empty map removes the key.
  */
 export function writeSettings(
   file: string,
   patch: Partial<
-    Record<"context" | "limits" | "resume" | "rooms" | "policy" | "decisions", object | undefined>
+    Record<"context" | "limits" | "resume" | "rooms" | "policy" | "decisions" | "memory", object | undefined>
   >,
 ): Promise<void> {
   return editConfig(file, (doc) => {
@@ -144,11 +144,12 @@ async function writeAtomically(file: string, content: string): Promise<void> {
   await rename(temp, target);
 }
 
-/** Points `boss` and `decisions.acp_agent` at the new id when they name the old one. */
+/** Points `boss`, `decisions.acp_agent` and `memory.housekeeper` at the new id when they name the old one. */
 export function renameAgentInConfig(file: string, id: string, newId: string): Promise<void> {
   return editConfig(file, (doc) => {
     if (doc.get("boss") === id) doc.set("boss", newId);
     if (doc.getIn(["decisions", "acp_agent"]) === id) doc.setIn(["decisions", "acp_agent"], newId);
+    if (doc.getIn(["memory", "housekeeper"]) === id) doc.setIn(["memory", "housekeeper"], newId);
   });
 }
 

@@ -47,9 +47,14 @@ import {
   MemoryDecideInputSchema,
   MemoryEventSchema,
   MemoryEventsInputSchema,
+  MemoryExtractInputSchema,
+  MemoryExtractOutputSchema,
   MemoryListInputSchema,
   MemoryPinInputSchema,
+  MemoryPromoteInputSchema,
+  MemoryPromoteOutputSchema,
   MemorySearchInputSchema,
+  MemoryUndoInputSchema,
 } from "./memory.ts";
 import {
   MarkMergedResultSchema,
@@ -64,6 +69,7 @@ import { CoordinationModeSchema } from "./rooms.ts";
 import {
   ContextPatchSchema,
   LimitsPatchSchema,
+  MemoryPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -881,19 +887,21 @@ export const commands = {
   // Settings (5.7, 5.13, 5.16, 5.17) ------------------------------------------
   "settings.get": {
     risk: "read",
-    summary: "Context budget, limits, resume, room and approval policy settings, with defaults applied",
+    summary:
+      "Context budget, limits, resume, room, memory and approval policy settings, with defaults applied",
     input: Empty,
     output: SettingsSchema,
   },
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume or room settings (loop guard, review rounds). Policy changes use policy.set",
+      "Change context budget, limits, resume, room or memory settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
+      memory: MemoryPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },
@@ -1078,6 +1086,27 @@ export const commands = {
     summary: "Pin a fact so it comes first in recall, or unpin it",
     input: MemoryPinInputSchema,
     output: FactSchema,
+  },
+  "memory.undo": {
+    risk: "change",
+    summary:
+      "Undo one step of the memory log: an automatic keep, drop, retire or merge, or the owner's approve, reject or forget. Refused when the fact changed again since",
+    input: MemoryUndoInputSchema,
+    output: FactSchema,
+  },
+  "memory.extract": {
+    risk: "change",
+    summary:
+      "Have the Housekeeper read a task's room and write candidate facts, then curate them: duplicates, keep or drop, contradictions. Spends a small model's tokens",
+    input: MemoryExtractInputSchema,
+    output: MemoryExtractOutputSchema,
+  },
+  "memory.promote": {
+    risk: "change",
+    summary:
+      "Add an active project fact to the repo's AGENTS.md: majhi makes a task in that project with the change committed, waiting in review for the owner to merge",
+    input: MemoryPromoteInputSchema,
+    output: MemoryPromoteOutputSchema,
   },
   "memory.events": {
     risk: "read",
