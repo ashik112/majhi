@@ -69,7 +69,8 @@ test("a compaction shows in the room as one quiet line, and Fresh session carrie
   await shot(page, "runs-compacted");
 
   await cmd(request, "settings.set", { context: { compact_at: 0.8, compact_target: 0.4 } });
-  await panel(page).getByRole("button", { name: "Fresh session for @acme-lead" }).click();
+  await panel(page).getByRole("button", { name: "@acme-lead in this task" }).click();
+  await page.getByRole("menuitem", { name: "Fresh session, with a handoff note" }).click();
   const line = messages(page).getByText(/@acme-lead compacted: .* \(fresh\)/);
   await expect(line).toBeVisible({ timeout: 20_000 });
   await messages(page).getByRole("link", { name: "note" }).last().click();

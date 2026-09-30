@@ -1,9 +1,11 @@
 import { type CoordinationMode, canWorkIn, MODE_LABELS, type Task } from "@majhi/shared";
+import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, Ellipsis, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Menu, type MenuItem } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
+import { type ApiRequestError, cmd } from "@/lib/api";
 import { useAccountModels } from "@/lib/studio-queries";
 import { useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 
@@ -97,7 +99,18 @@ export function AddAgent({ task }: { task: Task }) {
  * One team member's actions: make it the lead, swap it for another agent, pick its model and
  * effort for this task only, or take it off the task (not while it works).
  */
-export function MemberMenu({ task, id, busy }: { task: Task; id: string; busy: boolean }) {
+export function MemberMenu({
+  task,
+  id,
+  busy,
+  hasSession,
+}: {
+  task: Task;
+  id: string;
+  busy: boolean;
+  /** The agent has a live session, so it can start a fresh one. */
+  hasSession: boolean;
+}) {
   const index = useAgentIndex();
   const info = index.get(id);
   const models = useAccountModels(info?.account).data;
@@ -109,9 +122,20 @@ export function MemberMenu({ task, id, busy }: { task: Task; id: string; busy: b
   const candidates = useCandidates(task);
   const override = task.overrides[id] ?? {};
   const fail = (what: string) => (e: Error) => toast(what, { detail: e.message, tone: "error" });
-  const pending = addTeam.isPending || swap.isPending || remove.isPending || set.isPending;
+  const fresh = useMutation<unknown, ApiRequestError>({
+    mutationFn: () =>
+      cmd("room.fresh", { task: task.id, agent: id }, { reason: "Owner chose Fresh session" }),
+    onError: fail("Could not start a fresh session"),
+  });
+  const pending = addTeam.isPending || swap.isPending || remove.isPending || set.isPending || fresh.isPending;
 
-  const items: MenuItem[] = [];
+  const items: MenuItem[] = [
+    {
+      label: "Fresh session, with a handoff note",
+      disabled: !hasSession,
+      onSelect: () => fresh.mutate(),
+    },
+  ];
   if (task.team[0] !== id) {
     items.push({
       label: "Make lead",

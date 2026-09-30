@@ -1,6 +1,6 @@
 import type { AccountUsage, AccountView, AgentLive } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, RefreshCcw } from "lucide-react";
+import { RefreshCcw } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ export function AgentRow({
   account,
   now,
   change,
+  showFresh = false,
 }: {
   task: string;
   id: string;
@@ -47,6 +48,8 @@ export function AgentRow({
   now: number;
   /** The Change agent control, on the task's own agent. */
   change?: ReactNode;
+  /** A Fresh session button on the row; team tasks have it in the member menu instead. */
+  showFresh?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -71,7 +74,7 @@ export function AgentRow({
             {/* State first, then what it is doing: the row keeps one height while the agent works. */}
             <span aria-live="polite" className="flex min-w-0 items-baseline gap-1.5 text-xs">
               {info && <span className="shrink-0 text-fg-faint">{info.role} ·</span>}
-              <span className={cn("shrink-0 whitespace-nowrap", STATE_TEXT[state.tone])}>{state.label}</span>
+              <span className={cn("min-w-0 truncate", STATE_TEXT[state.tone])}>{state.label}</span>
               {!idle && (
                 <span title={line} className="min-w-0 truncate text-fg-faint">
                   · {line}
@@ -88,13 +91,9 @@ export function AgentRow({
               )}
             </span>
           </span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn("size-3.5 shrink-0 text-fg-faint transition-transform", open && "rotate-180")}
-          />
         </button>
         {change}
-        {live && <FreshButton task={task} agent={id} />}
+        {showFresh && live && <FreshButton task={task} agent={id} />}
       </div>
       {open && <AgentDetails id={detailsId} agent={id} live={live} info={info} account={account} now={now} />}
     </div>
@@ -210,9 +209,9 @@ function LimitsSummary({ usage }: { usage: AccountUsage }) {
   ].filter((p) => p !== undefined);
   if (parts.length === 0) return null;
   return (
-    <span className="tnum flex shrink-0 gap-1.5 text-xs" title="Account limits used">
+    <span className="tnum flex shrink-0 gap-2 text-xs whitespace-nowrap" title="Account limits used">
       {parts.map((p) => (
-        <span key={p.key}>
+        <span key={p.key} className="whitespace-nowrap">
           <span className="text-fg-faint">{p.key}</span>{" "}
           <span className={toneText(barTone(p.pct))}>{formatPct(p.pct)}</span>
         </span>

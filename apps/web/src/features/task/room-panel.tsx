@@ -75,11 +75,17 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
             state={agentState(live, task.pausedReason)}
             account={accounts?.find((a) => a.id === info?.account)}
             now={now}
+            showFresh={task.kind === "chat"}
             change={
               task.kind === "chat" ? (
                 <ChangeAgent task={task} busy={busy} />
               ) : (
-                <MemberMenu task={task} id={id} busy={live !== undefined && agentsBusy([live])} />
+                <MemberMenu
+                  task={task}
+                  id={id}
+                  busy={live !== undefined && agentsBusy([live])}
+                  hasSession={live !== undefined}
+                />
               )
             }
           />
