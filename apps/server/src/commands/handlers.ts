@@ -284,11 +284,18 @@ export function createHandlers({
       if (compactTarget >= compactAt) {
         throw new UserError("compact_target must be lower than compact_at.", 400);
       }
+      if (input.memory?.housekeeper !== undefined) {
+        const id = input.memory.housekeeper;
+        if ((await services.agentStore.get(id)) === undefined) {
+          throw new UserError(`There is no agent @${id}.`, 404);
+        }
+      }
       const patch = {
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
+        ...(input.memory === undefined ? {} : { memory: input.memory }),
       };
       await config.setSettings(patch, {
         command: ctx.command,
@@ -332,6 +339,9 @@ export function createHandlers({
     "memory.approve": async (input, ctx) => services.memory.approve(input.id, ctx.meta.actor, input.reason),
     "memory.reject": async (input, ctx) => services.memory.reject(input.id, ctx.meta.actor, input.reason),
     "memory.forget": async (input, ctx) => services.memory.forget(input.id, ctx.meta.actor, input.reason),
+    "memory.undo": async (input, ctx) => services.memory.undo(input.event, ctx.meta.actor),
+    "memory.extract": async (input) => services.extraction.extract(input.task),
+    "memory.promote": async (input, ctx) => services.promotion.promote(input.id, ctx.meta.actor),
     "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, ctx.meta.actor),
     "memory.events": async (input) => services.memory.events(input),
     "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),

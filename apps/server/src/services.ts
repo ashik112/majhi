@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { localSpawner } from "@majhi/acp";
 import { AccountCache } from "./accounts/cache.ts";
@@ -6,6 +7,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
+import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
@@ -23,7 +25,11 @@ import { errorMessage } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
+import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
+import { curationTask, Extraction } from "./memory/extraction.ts";
+import { Housekeeper } from "./memory/housekeeper.ts";
+import { Promotion } from "./memory/promote.ts";
 import type { MemoryService } from "./memory/service.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
@@ -117,6 +123,10 @@ export interface Services {
   processes: ProcessManager;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
+  /** After a task: the Housekeeper reads its room and its facts go through curation. */
+  extraction: Extraction;
+  /** Active project facts into the repo's AGENTS.md, through a task in review. */
+  promotion: Promotion;
   /** Which scopes a task's memory covers. */
   memoryScopes: TaskScopes;
   /** Resume after restarts, lost internet and sleep, and the network watch. */
@@ -267,6 +277,33 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   runs.recover();
   const uploads = new UploadStore(env.majhiHome);
   const projects = new ProjectService(config, store.tasks);
+  // Curation: agents' proposals and the Housekeeper's candidates take the same path.
+  const curator = new Curator({
+    memory,
+    decisions,
+    settings: async () => (await config.settings()).memory,
+    task: (id) => {
+      const t = store.tasks.get(id);
+      return t === undefined ? undefined : curationTask(t);
+    },
+    allowed: async (t) => (await memoryScopes.agent(t.id))?.scopes ?? ["global"],
+  });
+  memory.useCurator((fact) => curator.curate(fact));
+  const extraction = new Extraction({
+    housekeeper: new Housekeeper({
+      config,
+      agents: agentStore,
+      secrets,
+      runtime,
+      options: sessionOptions,
+      majhiHome: env.majhiHome,
+      usage: usageRecorder,
+    }),
+    curator,
+    task: (id) => store.tasks.get(id),
+    room: (id) => store.room.page(id, 400).items,
+    say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
+  });
   const tasks = new TaskService({
     store,
     config,
@@ -281,6 +318,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processes,
     memory,
     memoryScopes,
+    onDone: (task) => {
+      if (!isBossChat(task)) extraction.afterClose(task);
+    },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -344,6 +384,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     memory,
+    extraction,
+    promotion: new Promotion({ memory, tasks, projects, config }),
     memoryScopes,
     resilience,
     usage: usageService,

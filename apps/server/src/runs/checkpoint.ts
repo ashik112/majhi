@@ -43,6 +43,12 @@ function quiet(identity: Identity): string[] {
   ];
 }
 
+/** One commit of everything changed in a worktree, for a change majhi makes itself. Not a checkpoint. */
+export async function commitAll(worktree: string, message: string, identity: Identity): Promise<void> {
+  await git(worktree, [...quiet(identity), "add", "--all"]);
+  await git(worktree, [...quiet(identity), "commit", "--quiet", "--no-verify", "--message", message]);
+}
+
 export interface CheckpointResult {
   /** Projects that got a commit. */
   committed: string[];

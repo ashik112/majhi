@@ -107,7 +107,7 @@ export class AcpProvider implements DecisionProvider {
   }
 }
 
-async function ask(session: AgentSession, prompt: string): Promise<string> {
+export async function ask(session: AgentSession, prompt: string): Promise<string> {
   let text = "";
   const stop = session.onEvent((event) => {
     if (event.type === "text") text += event.text;

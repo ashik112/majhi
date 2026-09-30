@@ -53,7 +53,7 @@ import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
 import { firstTurn, type Member } from "../rooms/coordinate.ts";
 import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
-import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
+import { commitAll, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { UploadStore } from "../uploads/store.ts";
@@ -90,6 +90,8 @@ export interface TaskDeps {
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
+  /** A task became done (Phase 5): the Housekeeper reads its room. Must not throw or wait. */
+  onDone?: (task: Task) => void;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -491,6 +493,26 @@ export class TaskService {
         409,
       );
 
+    await this.ensureWorktrees(task);
+    store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
+    store.tasks.setStartWhenReady(id, true);
+    await this.recallMemory(task);
+    const started = this.get(id);
+    this.deps.room.publishTask(started);
+    // The mode says who goes first: the lead, the pipeline's first step, the loop's builder.
+    const agents = await this.frontmatters();
+    const first = firstTurn(started.mode, this.members(started, agents)).agents;
+    first.forEach((agent, i) => {
+      // The first agent gets the task's brief; others that start with it get their own, once.
+      this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
+    });
+    return started;
+  }
+
+  /** Creates the worktrees the task does not have yet, each from its base (or the branch it stacks on). */
+  async ensureWorktrees(task: Task): Promise<void> {
+    const { store } = this.deps;
+    const id = task.id;
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) continue;
       const path = join(task.folder, repo.project);
@@ -517,19 +539,6 @@ export class TaskService {
         throw new UserError(`${repo.project}: ${err instanceof Error ? err.message : String(err)}`, 409);
       }
     }
-    store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
-    store.tasks.setStartWhenReady(id, true);
-    await this.recallMemory(task);
-    const started = this.get(id);
-    this.deps.room.publishTask(started);
-    // The mode says who goes first: the lead, the pipeline's first step, the loop's builder.
-    const agents = await this.frontmatters();
-    const first = firstTurn(started.mode, this.members(started, agents)).agents;
-    first.forEach((agent, i) => {
-      // The first agent gets the task's brief; others that start with it get their own, once.
-      this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
-    });
-    return started;
   }
 
   /**
@@ -922,7 +931,42 @@ export class TaskService {
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
     await this.statusChanged(id);
+    this.deps.onDone?.(closed);
     return closed;
+  }
+
+  /**
+   * A task no agent runs: majhi makes its worktrees, `change` edits them, each changed worktree gets
+   * one commit, and the task waits in review for the owner to merge. Nothing is pushed. A failed
+   * change leaves the task in the inbox, with the reason in its room.
+   */
+  async createChange(input: {
+    text: string;
+    message: string;
+    change: (repo: { project: string; worktree: string }) => Promise<void>;
+  }): Promise<Task> {
+    const created = await this.create({ text: input.text, attachments: [], start: false });
+    const task = this.get(created.id);
+    try {
+      await this.ensureWorktrees(task);
+      const sections = await this.deps.config.sections();
+      const identity = sections.orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+      for (const repo of this.get(task.id).repos) {
+        if (repo.worktree === undefined) continue;
+        await input.change({ project: repo.project, worktree: repo.worktree });
+        await commitAll(repo.worktree, input.message, identity);
+      }
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      this.warn(task.id, `The change was not made: ${why}`);
+      throw err;
+    }
+    this.deps.store.tasks.setStatus(task.id, "review", undefined, this.now().toISOString());
+    this.note(task.id, "majhi made this change itself, with no agent. Merge it to keep it.");
+    const ready = this.get(task.id);
+    this.deps.room.publishTask(ready);
+    await this.statusChanged(task.id);
+    return ready;
   }
 
   /**
