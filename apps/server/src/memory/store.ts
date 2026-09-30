@@ -91,6 +91,11 @@ function vectorBytes(vector: Float32Array): Buffer {
 export class MemoryStore {
   constructor(private readonly db: Database.Database) {}
 
+  /** The database, for the other tables of `memory.db` (records, briefs, threads). */
+  get database(): Database.Database {
+    return this.db;
+  }
+
   insert(fact: NewFact): Fact {
     const row = this.db.transaction(() => {
       const info = this.db
