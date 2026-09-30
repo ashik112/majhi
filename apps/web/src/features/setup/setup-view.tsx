@@ -17,6 +17,7 @@ import { DecisionsPanel } from "./decisions-panel";
 import { HistoryPanel } from "./history-panel";
 import { MemoryPanel } from "./memory-panel";
 import { accountsCard, agentsCard, bossCard, type CardState, readyCount, rootsCard, sshCard } from "./model";
+import { RulesPanel } from "./rules-panel";
 import { SettingsPanel } from "./settings-panel";
 
 /**
@@ -139,6 +140,7 @@ export function SetupView() {
             <DecisionsPanel />
             <MemoryPanel />
             <SettingsPanel />
+            <RulesPanel />
           </div>
         </aside>
       </div>

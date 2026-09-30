@@ -100,6 +100,7 @@ export function useRenameOrg() {
         queryKeys.accounts,
         queryKeys.projects,
         queryKeys.tasks,
+        queryKeys.settings,
       ),
   });
 }
@@ -108,7 +109,15 @@ export function useRenameAgent() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"agents.rename">, ApiRequestError, CommandInput<"agents.rename">>({
     mutationFn: (input) => cmd("agents.rename", input),
-    onSuccess: () => refresh(client, queryKeys.agents, queryKeys.accounts, queryKeys.orgs, queryKeys.tasks),
+    onSuccess: () =>
+      refresh(
+        client,
+        queryKeys.agents,
+        queryKeys.accounts,
+        queryKeys.orgs,
+        queryKeys.tasks,
+        queryKeys.settings,
+      ),
   });
 }
 
@@ -191,7 +200,8 @@ export function useRemoveAgent() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"agents.remove">, ApiRequestError, string>({
     mutationFn: (id) => cmd("agents.remove", { id }),
-    onSuccess: () => refresh(client, queryKeys.agents, queryKeys.accounts, queryKeys.orgs),
+    onSuccess: () =>
+      refresh(client, queryKeys.agents, queryKeys.accounts, queryKeys.orgs, queryKeys.settings),
   });
 }
 

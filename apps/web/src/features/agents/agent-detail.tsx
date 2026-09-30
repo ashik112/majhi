@@ -16,7 +16,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
-import { DetailPane } from "@/components/ui/list-detail";
+import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { Menu } from "@/components/ui/menu";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { PageLink } from "@/components/ui/page-link";
@@ -24,8 +24,10 @@ import { Dot, toneText } from "@/components/ui/status-dot";
 import { statusText } from "@/features/accounts/model";
 import { AccountMeters } from "@/features/accounts/window-meter";
 import type { RosterRow } from "@/features/board/roster";
+import { RulesList } from "@/features/rules/rules-list";
 import { taskLamp, statusInfo as taskStatus } from "@/features/tasks/model";
 import { CostText } from "@/features/usage/cost";
+import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters, formatTokens, plural } from "@/lib/format";
@@ -92,7 +94,20 @@ export function AgentDetail(props: AgentDetailProps) {
         </Block>
       </div>
       <AgentSettings key={id} entry={entry} agents={props.agents} accounts={accounts} orgs={orgs} />
+      <AgentRules id={id} />
     </DetailPane>
+  );
+}
+
+/** The commands this agent may run without a card, from "Always allow" on approval cards. */
+function AgentRules({ id }: { id: string }) {
+  const settings = useSettings();
+  return (
+    <DetailSection title="Always allowed" note="Commands that run without asking you">
+      {settings.isPending && <p className="text-sm text-fg-faint">Loading</p>}
+      {settings.isError && <p className="text-sm text-red">{describeError(settings.error)}</p>}
+      {settings.data && <RulesList settings={settings.data} agent={id} label={`Rules of @${id}`} />}
+    </DetailSection>
   );
 }
 

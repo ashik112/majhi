@@ -1,10 +1,11 @@
-import type { RoomItem } from "@majhi/shared";
+import { isDestructiveCommand, type RoomItem } from "@majhi/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import {
   approvalOutcome,
@@ -14,10 +15,20 @@ import {
   type SecretRequestItem,
 } from "@/features/boss/model";
 import { type ApiRequestError, cmd } from "@/lib/api";
+import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
+import { useTask } from "@/lib/task-queries";
 import { DOCK_ACTIONS } from "./dock";
+
+type Scope = "task" | "org";
+
+/** What a card says when a saved rule ran it without asking. */
+const AUTO_LABEL: Record<Scope, string> = {
+  task: "Auto-allowed for this task",
+  org: "Auto-allowed in the org",
+};
 
 type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -28,8 +39,14 @@ type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const toast = useToast();
   const client = useQueryClient();
-  const decide = useMutation<unknown, ApiRequestError, "approve" | "reject">({
-    mutationFn: (decision) => cmd("room.approve", { task: item.task, item: item.id, decision }),
+  const decide = useMutation<unknown, ApiRequestError, { decision: "approve" | "reject"; always?: Scope }>({
+    mutationFn: ({ decision, always }) =>
+      cmd("room.approve", {
+        task: item.task,
+        item: item.id,
+        decision,
+        ...(always === undefined ? {} : { always: { scope: always } }),
+      }),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.history }),
     onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }),
   });
@@ -41,6 +58,14 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const outcome = approvalOutcome(item);
   const [open, setOpen] = useState(false);
   const [more, setMore] = useState(false);
+  const [always, setAlways] = useState(false);
+  const [scope, setScope] = useState<Scope>("task");
+  const settings = useSettings();
+  const org = useTask(item.task).data?.org;
+  // No checkbox for a destructive command while Hub setup keeps it off. It waits for the settings.
+  const canAlways =
+    settings.data !== undefined &&
+    (!isDestructiveCommand(item.command) || settings.data.policy.allow_destructive_rules);
 
   if (outcome === undefined) {
     return (
@@ -72,14 +97,41 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
             size="sm"
             variant="primary"
             disabled={decide.isPending}
-            onClick={() => decide.mutate("approve")}
+            onClick={() => decide.mutate({ decision: "approve", ...(always ? { always: scope } : {}) })}
           >
             Approve
           </Button>
-          <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate("reject")}>
+          <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ decision: "reject" })}>
             Reject
           </Button>
         </div>
+        {canAlways && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-[34px]">
+            <label className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">
+              <input
+                type="checkbox"
+                checked={always}
+                disabled={decide.isPending}
+                onChange={(event) => setAlways(event.target.checked)}
+              />
+              <span className="min-w-0 break-words">
+                Always allow <span className="font-mono text-fg-soft">{item.command}</span> for @{item.agent}
+              </span>
+            </label>
+            {always && (
+              <Select
+                aria-label="Where to always allow it"
+                value={scope}
+                disabled={decide.isPending}
+                onChange={(event) => setScope(event.target.value as Scope)}
+                className="h-7 w-auto text-sm"
+              >
+                <option value="task">In this task</option>
+                {org !== undefined && <option value="org">Everywhere in {org}</option>}
+              </Select>
+            )}
+          </div>
+        )}
       </section>
     );
   }
@@ -92,7 +144,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
       <div className="flex min-h-6 min-w-0 items-center gap-1.5 text-sm text-fg-faint">
         <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate" title={item.summary}>
-          {outcome}: {short}
+          {item.rule !== undefined && item.state === "applied" ? AUTO_LABEL[item.rule] : outcome}: {short}
         </span>
         <button
           type="button"

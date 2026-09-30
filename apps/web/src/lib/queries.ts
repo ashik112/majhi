@@ -38,6 +38,8 @@ export const queryKeys = {
   settings: ["config", "settings"],
   history: ["config", "history"],
   secrets: ["secrets"],
+  /** The CLI "allow for this task" choices. */
+  allowances: ["allowances"],
   /** Every `usage.*` read: totals, breakdowns, turns and the price table. */
   usage: ["usage"],
   /** Every `memory.*` read: facts, search and the log. */
