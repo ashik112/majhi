@@ -12,7 +12,9 @@ const roomItems = async (id: string) =>
 
 const postAskCard = async (taskId: string, questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string; freeText: boolean }>) => {
   const coordinator = w.h.majhi.services.coordinator;
-  return coordinator.postAskCard(taskId, questions);
+  const card = await coordinator.postAskCard(taskId, questions);
+  if (card.type !== "ask") throw new Error("Expected ask card");
+  return card;
 };
 
 const findAskCard = async (id: string) =>
