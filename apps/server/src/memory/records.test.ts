@@ -1,7 +1,14 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Actor, Fact, MemorySettings, TaskRecord, Thread } from "@majhi/shared";
+import {
+  type Actor,
+  BRIEF_WORDS,
+  type Fact,
+  type MemorySettings,
+  type TaskRecord,
+  type Thread,
+} from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { wordCount } from "./brief-doc.ts";
 import { CLEANUP_KEY, cleanupRepoDocFacts } from "./cleanup.ts";
@@ -74,11 +81,12 @@ describe("project briefs", () => {
     expect(m.brief("globex-web").versions).toEqual([]);
   });
 
-  it("keeps a brief under about 800 words", () => {
+  it("keeps a brief under about 350 words of bullets", () => {
     const m = service().project;
-    const long = "word ".repeat(700);
+    const long = "Word ".repeat(700);
     const brief = m.patchBrief("acme-api", { "What it is": long, Architecture: long }, { task: "ACM-1" });
-    expect(wordCount(brief?.body ?? "")).toBeLessThanOrEqual(830);
+    const bullets = (brief?.body ?? "").split("\n").filter((l) => l.startsWith("- "));
+    expect(wordCount(bullets.join(" "))).toBeLessThanOrEqual(BRIEF_WORDS + 2 * bullets.length);
   });
 });
 
