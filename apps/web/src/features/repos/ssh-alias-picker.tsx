@@ -27,6 +27,7 @@ export function SshAliasPicker({
   const [typed, setTyped] = useState("");
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const listId = useId();
 
   const known = hosts.data ?? [];
@@ -44,7 +45,9 @@ export function SshAliasPicker({
 
   useEffect(() => {
     if (!open) return;
-    root.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+    // The list opens in the flow of the dialog, which scrolls to show all of it.
+    panel.current?.scrollIntoView({ block: "nearest" });
+    root.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
     const onPointer = (event: PointerEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
     };
@@ -97,7 +100,10 @@ export function SshAliasPicker({
         <ChevronDown aria-hidden="true" className="ml-auto size-3.5 shrink-0 text-fg-faint" />
       </button>
       {open && (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 flex flex-col rounded-md border border-line-bright bg-card p-1 shadow-pop">
+        <div
+          ref={panel}
+          className="mt-1 flex flex-col rounded-md border border-line-bright bg-card p-1 shadow-pop"
+        >
           <div
             id={listId}
             role="listbox"

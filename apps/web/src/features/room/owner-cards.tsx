@@ -32,7 +32,7 @@ function byName(by: string): string {
 }
 
 function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 /** A settled card: one quiet line with what happened, who did it and when. */
@@ -119,12 +119,11 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         </Button>
         {lead !== undefined && (
           <Button size="sm" onClick={() => owner.compose(`@${lead} `)}>
-            <MessageSquareReply aria-hidden="true" />
             Ask for changes
           </Button>
         )}
         {owner.showChanges && (
-          <Button size="sm" variant="ghost" onClick={owner.showChanges}>
+          <Button size="sm" variant="ghost" className="px-2" onClick={owner.showChanges}>
             Open changes
           </Button>
         )}
@@ -260,7 +259,7 @@ function resetOf(account: AccountView): string | undefined {
   const today = new Date().toDateString() === date.toDateString();
   return today
     ? `at ${clock(at)}`
-    : date.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    : date.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
 }
 
 /** Under an agent's plain-text question to the owner: Reply, and one button per choice. */

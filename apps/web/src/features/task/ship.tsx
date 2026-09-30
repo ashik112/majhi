@@ -1,6 +1,15 @@
 import type { ShipOption, Task } from "@majhi/shared";
 import { ChevronDown, GitMerge, LoaderCircle } from "lucide-react";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { cmd } from "@/lib/api";
@@ -19,6 +28,28 @@ export interface ShipResult {
 export type RunShip = (action: ShipAction, into: string) => Promise<{ results?: ShipResult[] | undefined }>;
 
 const ACTIONS: readonly ShipAction[] = ["merge", "mergePush", "push", "mr"];
+const PANEL_WIDTH = 400;
+const GAP = 16;
+
+/**
+ * Where the panel goes: fixed to the viewport so a scrolling room never clips it, below the button
+ * when there is room, else above it, and kept inside the window.
+ */
+function placeNear(button: HTMLElement, align: "left" | "right"): CSSProperties {
+  const r = button.getBoundingClientRect();
+  const width = Math.min(PANEL_WIDTH, window.innerWidth - 2 * GAP);
+  const left =
+    align === "left"
+      ? Math.min(r.left, window.innerWidth - width - GAP)
+      : Math.max(GAP, Math.min(r.right - width, window.innerWidth - width - GAP));
+  const below = window.innerHeight - r.bottom - GAP;
+  const above = r.top - GAP;
+  const vertical =
+    below >= 440 || below >= above
+      ? { top: r.bottom + 4, maxHeight: below - 4 }
+      : { bottom: window.innerHeight - r.top + 4, maxHeight: above - 4 };
+  return { position: "fixed", left, width, ...vertical };
+}
 
 /** Ship straight through the task commands (the header). A merge from review marks the task done. */
 export function useDirectShip(task: Task): RunShip {
@@ -67,18 +98,29 @@ export function Ship({
   align?: "left" | "right";
   variant?: "primary" | "secondary";
 }) {
-  const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<CSSProperties>();
+  const open = place !== undefined;
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const setOpen = (next: boolean) =>
+    setPlace(next && trigger.current ? placeNear(trigger.current, align) : undefined);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: set up once per opening
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+      const t = event.target;
+      if (t instanceof Node && !root.current?.contains(t) && !panel.current?.contains(t)) setOpen(false);
     };
+    const onResize = () => setOpen(false);
     document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("resize", onResize);
+    };
   }, [open]);
 
   function onKeyDown(event: KeyboardEvent) {
@@ -100,18 +142,19 @@ export function Ship({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
       >
         <GitMerge aria-hidden="true" />
         Ship
         <ChevronDown aria-hidden="true" />
       </Button>
-      {open && (
+      {place !== undefined && (
         <ShipPanel
           id={id}
           task={task}
           run={run}
-          align={align}
+          place={place}
+          panelRef={panel}
           onClose={() => {
             setOpen(false);
             trigger.current?.focus();
@@ -126,13 +169,15 @@ function ShipPanel({
   id,
   task,
   run,
-  align,
+  place,
+  panelRef,
   onClose,
 }: {
   id: string;
   task: Task;
   run: RunShip;
-  align: "left" | "right";
+  place: CSSProperties;
+  panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const options = useShipOptions(task, true);
@@ -167,7 +212,7 @@ function ShipPanel({
     },
     push: {
       title: "Push the task branch",
-      hint: `${branch}, with no ${request}.`,
+      hint: `Only the push. No ${request} is opened.`,
       confirm: "Push",
       summary: `Push ${branch} to the remote. No ${request} is opened.`,
     },
@@ -203,15 +248,15 @@ function ShipPanel({
     }
   }
 
-  return (
+  // In a portal: a room that scrolls, or content-visibility on a room item, would clip it.
+  return createPortal(
     <section
+      ref={panelRef}
       id={id}
       role="dialog"
       aria-label={`Ship ${task.id}`}
-      className={cn(
-        "absolute top-full z-30 mt-1 flex w-[400px] max-w-[calc(100vw-32px)] flex-col gap-2.5 rounded-lg border border-line-bright bg-card p-3 shadow-pop",
-        align === "right" ? "right-0" : "left-0",
-      )}
+      style={place}
+      className="z-50 flex flex-col gap-2.5 overflow-y-auto rounded-lg border border-line-bright bg-card p-3 shadow-pop"
     >
       <div className="flex items-center gap-2 text-sm">
         <label htmlFor={`${id}-into`} className="shrink-0 text-fg-muted">
@@ -316,6 +361,7 @@ function ShipPanel({
           </Button>
         </div>
       )}
-    </section>
+    </section>,
+    document.body,
   );
 }
