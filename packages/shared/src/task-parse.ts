@@ -96,7 +96,12 @@ export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
 /** First non-empty line, whitespace trimmed, at most 120 characters. */
 function titleOf(text: string): string {
   const first = text.split(/\r?\n/).find((line) => line.trim() !== "") ?? "";
-  return first.trim().slice(0, TITLE_MAX).trimEnd();
+  const line = first.trim();
+  if (line.length <= TITLE_MAX) return line;
+  // Cut at a word, not in the middle of one, and show that it was cut.
+  const cut = line.slice(0, TITLE_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 interface FoundLink {

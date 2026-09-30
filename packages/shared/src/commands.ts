@@ -453,6 +453,8 @@ export const commands = {
     summary: "Create a task from the task box text. With start, create worktrees and start the agent",
     input: z.object({
       text: z.string().trim().min(1).max(20_000),
+      /** A short title. Without it, the first line of `text` is the title and the rest the description. */
+      title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /** Overrides the default agent. */

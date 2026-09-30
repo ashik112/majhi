@@ -52,7 +52,7 @@ describe("readDecisionSettings", () => {
 
 describe("resolveTier", () => {
   it("takes each part from the first layer that sets it", () => {
-    expect(resolveTier("Lead")).toEqual({ model: "most-capable", effort: "highest" });
+    expect(resolveTier("Lead")).toEqual(DEFAULT_TIERS.Lead);
     expect(resolveTier("Lead", { effort: "lowest" }, { model: "cheapest", effort: "middle" })).toEqual({
       model: "cheapest",
       effort: "lowest",

@@ -114,7 +114,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task from task box text (what to do, which repos). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it.",
   },
   {
     name: "split",

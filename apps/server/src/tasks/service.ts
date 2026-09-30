@@ -93,6 +93,8 @@ export interface TaskDeps {
 
 export interface CreateInput {
   text: string;
+  /** A separate short title: it becomes the first line, and `text` the description. */
+  title?: string | undefined;
   kind?: TaskKind | undefined;
   agent?: string | undefined;
   /** The whole team, lead first. */
@@ -187,7 +189,9 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Create
 
-  async create(input: CreateInput): Promise<Task> {
+  async create(given: CreateInput): Promise<Task> {
+    // A separate title becomes the first line, so the parser and the brief see one text as usual.
+    const input = given.title === undefined ? given : { ...given, text: `${given.title}\n\n${given.text}` };
     const { store, config, uploads } = this.deps;
     const loaded = await config.load();
     if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
