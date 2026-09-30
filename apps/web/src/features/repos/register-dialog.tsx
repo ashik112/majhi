@@ -1,4 +1,4 @@
-import { type MrHost, MrHostSchema, type ProjectView, type Repo } from "@majhi/shared";
+import { type MrHost, MrHostSchema, type Repo } from "@majhi/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -12,7 +12,7 @@ import type { ApiRequestError } from "@/lib/api";
 import { HOST_LABEL } from "@/lib/hosts";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
-import { useProjects, useRegisterProject, useUpdateProject } from "@/lib/task-queries";
+import { useProjects, useRegisterProject } from "@/lib/task-queries";
 import {
   aliasClashes,
   buildRemotes,
@@ -25,45 +25,35 @@ import {
 } from "./project-model";
 import { SshAliasPicker } from "./ssh-alias-picker";
 
-/** Registers a repo as a project, or edits a registered one (`project` set). */
-export function RegisterDialog({
-  repo,
-  project,
-  onClose,
-}: {
-  repo: Repo;
-  project?: ProjectView | undefined;
-  onClose: () => void;
-}) {
+/** Registers a repo as a project. A registered project is edited in place on its detail pane. */
+export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => void }) {
   const orgs = useOrgs();
   const { org: orgFilter } = useOrgFilter();
   const projects = useProjects();
   const register = useRegisterProject();
-  const update = useUpdateProject();
   const toast = useToast();
-  const editing = project !== undefined;
   const others = projects.data ?? [];
-  const taken = useMemo(() => others.filter((p) => p.id !== project?.id).map((p) => p.id), [others, project]);
+  const taken = useMemo(() => others.map((p) => p.id), [others]);
 
-  const [org, setOrg] = useState(project?.org ?? "");
-  const [id, setId] = useState(() => project?.id ?? suggestProjectId(repo.name, taken));
-  const [aliases, setAliases] = useState<string[]>(() => project?.aliases ?? []);
-  const [base, setBase] = useState(project?.base ?? "");
-  const [choice, setChoice] = useState<MrRemoteChoice>(() => choiceFromProject(project));
-  const [dependsOn, setDependsOn] = useState<string[]>(() => project?.links.map((l) => l.to) ?? []);
+  const [org, setOrg] = useState("");
+  const [id, setId] = useState(() => suggestProjectId(repo.name, taken));
+  const [aliases, setAliases] = useState<string[]>([]);
+  const [base, setBase] = useState("");
+  const [choice, setChoice] = useState<MrRemoteChoice>(() => choiceFromProject(undefined));
+  const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
 
   const orgList = orgs.data ?? [];
   const chosenOrg = org || (orgList.length === 0 ? "" : defaultOrgId(orgList, orgFilter));
-  const idProblem = editing ? undefined : projectIdError(id, taken);
+  const idProblem = projectIdError(id, taken);
   const clashes = aliasClashes(aliases, others, id);
   const orgProblem = chosenOrg === "" ? "Pick the org this repo belongs to" : undefined;
   const aliasProblem =
     clashes.length > 0
       ? `${clashes.map((c) => `${c.alias} (${c.project})`).join(", ")} already in use`
       : undefined;
-  const busy = register.isPending || update.isPending;
+  const busy = register.isPending;
 
   function submit() {
     setSubmitted(true);
@@ -71,46 +61,28 @@ export function RegisterDialog({
     if (idProblem || orgProblem || aliasProblem) return;
     const trimmedBase = base.trim();
     const done = () => {
-      toast(editing ? "Project updated" : "Project registered", { detail: id });
+      toast("Project registered", { detail: id });
       onClose();
     };
-    const remotes = buildRemotes(project?.remotes, choice);
+    const remotes = buildRemotes(undefined, choice);
     const links = linksOf(dependsOn);
     const fail = (error: ApiRequestError) => setFailure([error.message, ...error.details].join(". "));
-    if (editing) {
-      update.mutate(
-        {
-          id,
-          org: chosenOrg,
-          aliases,
-          ...(trimmedBase ? { base: trimmedBase } : {}),
-          ...(remotes !== undefined && { remotes }),
-          ...(project.links.length > 0 || links.length > 0 ? { links: links.length > 0 ? links : null } : {}),
-        },
-        { onSuccess: done, onError: fail },
-      );
-    } else {
-      register.mutate(
-        {
-          id,
-          org: chosenOrg,
-          path: repo.path,
-          aliases,
-          ...(trimmedBase ? { base: trimmedBase } : {}),
-          ...(remotes ? { remotes } : {}),
-          ...(links.length > 0 ? { links } : {}),
-        },
-        { onSuccess: done, onError: fail },
-      );
-    }
+    register.mutate(
+      {
+        id,
+        org: chosenOrg,
+        path: repo.path,
+        aliases,
+        ...(trimmedBase ? { base: trimmedBase } : {}),
+        ...(remotes ? { remotes } : {}),
+        ...(links.length > 0 ? { links } : {}),
+      },
+      { onSuccess: done, onError: fail },
+    );
   }
 
   return (
-    <Modal
-      label={editing ? `Edit project ${project.id}` : `Register ${repo.name}`}
-      onClose={onClose}
-      className="w-[480px]"
-    >
+    <Modal label={`Register ${repo.name}`} onClose={onClose} className="w-[480px]">
       <form
         className="flex flex-col gap-4 p-5"
         onSubmit={(event) => {
@@ -119,9 +91,7 @@ export function RegisterDialog({
         }}
       >
         <div className="flex flex-col gap-1">
-          <h2 className="text-md font-semibold">
-            {editing ? `Edit ${project.id}` : `Register ${repo.name}`}
-          </h2>
+          <h2 className="text-md font-semibold">Register {repo.name}</h2>
           <p className="truncate font-mono text-sm text-fg-faint" title={repo.path}>
             {repo.path}
           </p>
@@ -148,7 +118,6 @@ export function RegisterDialog({
             <Input
               {...props}
               value={id}
-              disabled={editing}
               onChange={(event) => setId(event.target.value.trim())}
               className="font-mono"
             />
@@ -193,7 +162,7 @@ export function RegisterDialog({
                   value={choice.name}
                   onChange={(event) => setChoice({ ...choice, name: event.target.value })}
                 >
-                  {remoteNames(repo, project).map((name) => (
+                  {remoteNames(repo, undefined).map((name) => (
                     <option key={name} value={name}>
                       {name}
                     </option>
@@ -268,7 +237,7 @@ export function RegisterDialog({
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={busy}>
-            {editing ? "Save" : "Register"}
+            Register
           </Button>
         </div>
       </form>

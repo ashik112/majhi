@@ -37,7 +37,7 @@ import {
 import { CopyPath } from "./project-row";
 import { SshAliasPicker } from "./ssh-alias-picker";
 
-const GRID = "grid gap-3 @[560px]:grid-cols-2";
+const GRID = "grid gap-3 @[460px]:grid-cols-2";
 const IDLE: SaveState = { kind: "idle" };
 
 /** Saves one section through `projects.update`, keeping the fields the section does not own as they are. */
@@ -222,7 +222,7 @@ function NamesSection({
           label="Aliases"
           hint="Other words for it in the task box, like backend or api. Enter adds one."
           error={aliasProblem}
-          className="@[560px]:col-span-2"
+          className="@[460px]:col-span-2"
         >
           {(props) => (
             <ChipsInput
@@ -294,7 +294,7 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
           ))}
         </ul>
       )}
-      <div className="grid gap-3 @[560px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="grid gap-3 @[460px]:grid-cols-2 @[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         <Field label="Open MRs against" hint="Default: origin.">
           {(props) => (
             <Select {...props} value={choice.name} onChange={(e) => set({ name: e.target.value })}>
@@ -325,7 +325,11 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
             </Select>
           )}
         </Field>
-        <Field label="SSH alias" hint="A Host from your SSH config. Pushes go through it.">
+        <Field
+          label="SSH alias"
+          hint="A Host from your SSH config. Pushes go through it."
+          className="@[460px]:col-span-2 @[760px]:col-span-1"
+        >
           {(props) => (
             <SshAliasPicker
               fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
