@@ -132,6 +132,7 @@ function TaskView({ taskId }: { taskId: string }) {
           agents={room.state.agents}
           items={room.state.items}
           processes={room.state.processes}
+          onShowChanges={data.repos.length > 0 ? () => setTab("changes") : undefined}
         />
       </div>
       {file !== undefined && (

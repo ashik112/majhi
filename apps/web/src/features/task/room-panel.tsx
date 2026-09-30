@@ -22,11 +22,14 @@ export function RoomPanel({
   agents,
   items,
   processes,
+  onShowChanges,
 }: {
   task: Task;
   agents: readonly AgentLive[];
   items: readonly RoomItem[];
   processes: readonly ProcessInfo[];
+  /** Opens the Changes tab. */
+  onShowChanges?: (() => void) | undefined;
 }) {
   return (
     <aside
@@ -37,7 +40,7 @@ export function RoomPanel({
       <ProcessesCard task={task} processes={processes} />
       {showsMrCard(task) && <MrCard task={task} />}
       <BranchCard task={task} />
-      <ChangesPanel task={task} items={items} />
+      <ChangesPanel task={task} items={items} onShowChanges={onShowChanges} />
     </aside>
   );
 }
@@ -134,7 +137,9 @@ function BranchCard({ task }: { task: Task }) {
               {shown(repo.worktree)}
             </CopyValue>
           ) : (
-            <span className="text-xs text-fg-faint">No worktree yet. Start makes one.</span>
+            <span className="text-xs text-fg-faint">
+              {task.status === "done" ? "The worktree was removed." : "No worktree yet. Start makes one."}
+            </span>
           )}
         </div>
       ))}
