@@ -944,6 +944,15 @@ export class RunManager {
       let pickLine: string | undefined;
       if (fm.model === "auto" || fm.effort === "auto") {
         const sections = await deps.config.sections();
+        // A price table that does not parse must not stop the start: picks fall back to tiers or the CLI default.
+        const prices = await readPrices(deps.config.file).catch(() => {
+          this.live.system(
+            run,
+            "warn",
+            "The price table in majhi.yaml does not parse, so models are not ranked by price.",
+          );
+          return {};
+        });
         const result = await pickForSession({
           decisions: deps.decisions,
           session,
@@ -951,7 +960,7 @@ export class RunManager {
           instructions: agent.instructions,
           task,
           settings: await readDecisionSettings(deps.config.file),
-          prices: await readPrices(deps.config.file),
+          prices,
           orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });
         for (const line of result.warnings) this.live.system(run, "warn", line);

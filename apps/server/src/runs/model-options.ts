@@ -26,8 +26,8 @@ export interface OfferedModel {
   description?: string;
 }
 
-/** What may end a model id without being part of the version: a date, `-latest`, or a pin (`@...`). */
-const SNAPSHOT = /(-\d{6,8}|-latest|@.+)$/;
+/** What may end a model id without being part of the version: a date (`-20260101` or `-2026-01-01`), `-latest`, or a pin (`@...`). */
+const SNAPSHOT = /(-\d{4}-\d{2}-\d{2}|-\d{6,8}|-latest|@.+)$/;
 const VERSION_TOKEN = /^\d+(\.\d+)*$/;
 
 /** The CLI's sentinel for "whatever you pick": not a model name. */

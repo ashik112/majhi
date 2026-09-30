@@ -70,6 +70,13 @@ describe("normalizeOffered", () => {
     expect(ids(normalizeOffered(opts("claude-opus-5-latest", "claude-opus-5")))).toEqual(["claude-opus-5"]);
   });
 
+  it("reads a dashed date as a date, not as version numbers", () => {
+    const out = normalizeOffered(opts("gpt-5-2026-01-01", "gpt-5.5"));
+    expect(ids(out)).toEqual(["gpt-5.5"]);
+    expect(ids(normalizeOffered(opts("gpt-5-2026-01-01", "gpt-5")))).toEqual(["gpt-5"]);
+    expect(normalizeOffered(opts("gpt-5-2026-01-01"))[0]).toMatchObject({ family: "gpt", version: [5] });
+  });
+
   it("strips a provider prefix", () => {
     expect(ids(normalizeOffered(opts("anthropic/claude-opus-5", "claude-opus-4-8")))).toEqual([
       "anthropic/claude-opus-5",
