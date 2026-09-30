@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
+import { CommitsPatchSchema, ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
 /**
@@ -99,6 +99,8 @@ export const OrgConfigSchema = z.looseObject({
   context: ContextPatchSchema.pick({ compact_at: true }).optional(),
   /** Overrides whether this org's runs resume on their own (5.7). */
   resume: ResumePatchSchema.optional(),
+  /** Overrides whether this org's commits name the agent and the task (5.7). */
+  commits: CommitsPatchSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
   rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
   /** Overrides the model and effort tiers of `decisions.tiers` for this org's agents (5.12). */
@@ -334,6 +336,8 @@ export const OrgViewSchema = z.object({
   context: OrgConfigSchema.shape.context,
   /** This org's own `resume.auto`, when it overrides majhi's. */
   resume: OrgConfigSchema.shape.resume,
+  /** This org's own `commits.attribution`, when it overrides majhi's. */
+  commits: OrgConfigSchema.shape.commits,
   /** This org's own loop guard, when it overrides majhi's. */
   rooms: OrgConfigSchema.shape.rooms,
   /** This org's own fallback tiers, when it overrides majhi's. */

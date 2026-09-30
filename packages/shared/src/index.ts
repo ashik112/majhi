@@ -1,5 +1,6 @@
 export * from "./accounts.ts";
 export * from "./api.ts";
+export * from "./attribution.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
 export * from "./decisions.ts";

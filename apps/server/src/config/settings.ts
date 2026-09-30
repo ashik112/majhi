@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import {
+  CommitsPatchSchema,
   ContextPatchSchema,
   DecisionPatchSchema,
   LimitsPatchSchema,
@@ -20,6 +21,7 @@ export const SettingsPatchSchema = z.object({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  commits: CommitsPatchSchema.optional(),
   rooms: RoomPatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
@@ -33,6 +35,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     context: raw.context ?? {},
     limits: raw.limits ?? {},
     resume: raw.resume ?? {},
+    commits: raw.commits ?? {},
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
     memory: raw.memory ?? {},
@@ -61,6 +64,7 @@ export async function readSettings(file: string): Promise<Settings> {
     context: record.context,
     limits: record.limits,
     resume: record.resume,
+    commits: record.commits,
     rooms: record.rooms,
     policy: record.policy,
     memory: record.memory,

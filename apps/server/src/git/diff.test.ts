@@ -25,6 +25,29 @@ afterEach(async () => {
 });
 
 describe("repoDiff", () => {
+  it("lists the branch's commits with the agent that committed each", async () => {
+    await writeFile(join(repo, "a.txt"), "one\nTWO\n");
+    await testGit(repo, "add", ".");
+    await testGit(
+      repo,
+      "-c",
+      "committer.name=acme-dev via majhi",
+      "-c",
+      "committer.email=majhi@majhi.local",
+      "commit",
+      "--quiet",
+      "-m",
+      "by an agent",
+    );
+    await writeFile(join(repo, "a.txt"), "three\n");
+    await testGit(repo, "commit", "--quiet", "-am", "by hand");
+    const { commits } = await read();
+    expect(commits.map((c) => [c.subject, c.agent])).toEqual([
+      ["by hand", undefined],
+      ["by an agent", "acme-dev"],
+    ]);
+  });
+
   it("shows commits and uncommitted changes, and new files as added", async () => {
     await writeFile(join(repo, "a.txt"), "one\nTWO\n");
     await testGit(repo, "commit", "--quiet", "-am", "edit");

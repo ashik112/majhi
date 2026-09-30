@@ -1,9 +1,11 @@
 import { basename } from "node:path";
+import { agentCommitter, withTaskTrailer } from "@majhi/shared";
 import { git } from "../git/git.ts";
 
 /**
  * Checkpoints (SPEC 5.7): after every turn that changed files, a WIP commit on the task branch
- * in each touched worktree, `wip(<task>): checkpoint N`. Never pushed. Git runs with hooks and
+ * in each touched worktree, `wip(<task>): checkpoint N`, authored as the org and committed by the
+ * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with hooks and
  * signing off, so the owner's setup cannot block or prompt.
  */
 
@@ -18,35 +20,74 @@ export const MAX_NEW_FILES = 2000;
 /** Used when the org has no commit identity. */
 export const DEFAULT_IDENTITY: Identity = { name: "majhi", email: "majhi@majhi.local" };
 
+/**
+ * Who a commit is made as: the org's identity as author, the agent (or majhi itself) as committer,
+ * and the task its message links to.
+ */
+export interface CommitBy {
+  author: Identity;
+  committer: Identity;
+  /** The task the message links to. Absent when attribution is off. */
+  task: string | undefined;
+}
+
+/**
+ * A commit an agent made, or one majhi made itself when there is no agent. With attribution off
+ * the org's identity is both author and committer, and there is no trailer.
+ */
+export function commitBy(author: Identity, task: string, agent?: string, attribute = true): CommitBy {
+  if (!attribute) return unattributed({ author, committer: author, task });
+  return { author, committer: agent === undefined ? DEFAULT_IDENTITY : agentCommitter(agent), task };
+}
+
+/** The same commit made with attribution off. */
+export function unattributed(by: CommitBy): CommitBy {
+  return { author: by.author, committer: by.author, task: undefined };
+}
+
+/** The message with the task trailer, when the commit is attributed. */
+function messageFor(message: string, by: CommitBy): string {
+  return by.task === undefined ? message : withTaskTrailer(message, by.task);
+}
+
 export interface CheckpointRepo {
   project: string;
   worktree: string;
   /** The task branch. A worktree on another branch is left alone. */
   branch: string;
   base: string;
+  /** False: commits here are not attributed to an agent or a task. Default true. */
+  attribution?: boolean;
 }
 
 export function checkpointMessage(task: string, n: number): string {
   return `wip(${task}): checkpoint ${n}`;
 }
 
-function quiet(identity: Identity): string[] {
-  return [
-    "-c",
-    `user.name=${identity.name}`,
-    "-c",
-    `user.email=${identity.email}`,
-    "-c",
-    "commit.gpgsign=false",
-    "-c",
-    "core.hooksPath=/dev/null",
-  ];
+function quiet(): string[] {
+  return ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"];
+}
+
+/** Author and committer by environment, which wins over the server's own `GIT_*` variables and the repo's config. */
+function asEnv(by: CommitBy): { env: Record<string, string> } {
+  return {
+    env: {
+      GIT_AUTHOR_NAME: by.author.name,
+      GIT_AUTHOR_EMAIL: by.author.email,
+      GIT_COMMITTER_NAME: by.committer.name,
+      GIT_COMMITTER_EMAIL: by.committer.email,
+    },
+  };
 }
 
 /** One commit of everything changed in a worktree, for a change majhi makes itself. Not a checkpoint. */
-export async function commitAll(worktree: string, message: string, identity: Identity): Promise<void> {
-  await git(worktree, [...quiet(identity), "add", "--all"]);
-  await git(worktree, [...quiet(identity), "commit", "--quiet", "--no-verify", "--message", message]);
+export async function commitAll(worktree: string, message: string, by: CommitBy): Promise<void> {
+  await git(worktree, [...quiet(), "add", "--all"]);
+  await git(
+    worktree,
+    [...quiet(), "commit", "--quiet", "--no-verify", "--message", messageFor(message, by)],
+    asEnv(by),
+  );
 }
 
 export interface CheckpointResult {
@@ -61,10 +102,11 @@ export async function commitCheckpoint(
   repos: readonly CheckpointRepo[],
   task: string,
   n: number,
-  identity: Identity,
+  by: CommitBy,
 ): Promise<CheckpointResult> {
   const result: CheckpointResult = { committed: [], skipped: [] };
   for (const repo of repos) {
+    const repoBy = repo.attribution === false ? unattributed(by) : by;
     try {
       const status = await git(repo.worktree, ["status", "--porcelain"]);
       if (status.trim() === "") continue;
@@ -77,7 +119,7 @@ export async function commitCheckpoint(
         );
         continue;
       }
-      await git(repo.worktree, [...quiet(identity), "add", "--all"]);
+      await git(repo.worktree, [...quiet(), "add", "--all"]);
       // A cache or build folder that is not ignored (a package store, say) must not land in the
       // branch: thousands of new files in one checkpoint are never the agent's work.
       const added = (await git(repo.worktree, ["diff", "--cached", "--name-only", "--diff-filter=A"]))
@@ -91,14 +133,18 @@ export async function commitCheckpoint(
         );
         continue;
       }
-      await git(repo.worktree, [
-        ...quiet(identity),
-        "commit",
-        "--quiet",
-        "--no-verify",
-        "--message",
-        checkpointMessage(task, n),
-      ]);
+      await git(
+        repo.worktree,
+        [
+          ...quiet(),
+          "commit",
+          "--quiet",
+          "--no-verify",
+          "--message",
+          messageFor(checkpointMessage(task, n), repoBy),
+        ],
+        asEnv(repoBy),
+      );
       result.committed.push(repo.project);
     } catch (err) {
       result.skipped.push(`${repo.project}: ${err instanceof Error ? err.message : String(err)}`);

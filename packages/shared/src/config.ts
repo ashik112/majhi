@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
+  CommitsPatchSchema,
   ContextPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
@@ -30,6 +31,8 @@ export const MajhiConfigSchema = z.strictObject({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  /** Agent attribution in commits (5.7). */
+  commits: CommitsPatchSchema.optional(),
   /** Teams in a room: the loop guard and review rounds (5.3). */
   rooms: RoomPatchSchema.optional(),
   /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */

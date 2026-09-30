@@ -4,8 +4,10 @@ import type { Task } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import { attributionOf } from "./attribution.ts";
 import {
   type CheckpointRepo,
+  commitBy,
   commitCheckpoint,
   DEFAULT_IDENTITY,
   diffStat,
@@ -49,19 +51,21 @@ async function identityFor(
 
 /**
  * Commits the task's changed worktrees as its next checkpoint and records it on the run, with the
- * room position. Says once per task where to set a commit identity. Returns warnings for the room.
+ * room position, committed by `agent`. Says once per task where to set a commit identity. Returns warnings for the room.
  */
 export async function checkpointTurn(
   deps: DurableDeps,
   task: Task,
   runId: number | undefined,
+  agent?: string,
 ): Promise<string[]> {
   const { store, room, config } = deps;
-  const repos = checkpointRepos(task);
+  const on = await attributionOf(config, task);
+  const repos = checkpointRepos(task).map((r) => ({ ...r, attribution: on.repos[r.project] !== false }));
   if (repos.length === 0) return [];
   const identity = await identityFor(config, task);
   const n = store.runs.lastCheckpoint(task.id).checkpoint + 1;
-  const result = await commitCheckpoint(repos, task.id, n, identity.identity);
+  const result = await commitCheckpoint(repos, task.id, n, commitBy(identity.identity, task.id, agent));
   const warnings = result.skipped.map((line) => `Checkpoint: ${line}`);
   if (result.committed.length === 0) return warnings;
   room.flush(task.id);
@@ -71,7 +75,7 @@ export async function checkpointTurn(
     room.post(task.id, IDENTITY_HINT_ID, {
       type: "system",
       level: "info",
-      text: `Checkpoints are committed as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Orgs.`,
+      text: `Commits are authored as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Orgs.`,
     });
   }
   return warnings;

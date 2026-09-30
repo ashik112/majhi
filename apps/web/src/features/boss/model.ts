@@ -94,6 +94,7 @@ export interface SettingsForm {
   perTask: string;
   idleTimeout: string;
   resumeAuto: boolean;
+  commitsAttribution: boolean;
   maxAgentTurns: string;
   reviewRounds: string;
 }
@@ -110,6 +111,7 @@ export function formFromSettings(s: Settings): SettingsForm {
     perTask: String(s.limits.per_task),
     idleTimeout: s.limits.idle_timeout,
     resumeAuto: s.resume.auto,
+    commitsAttribution: s.commits.attribution,
     maxAgentTurns: String(s.rooms.max_agent_turns),
     reviewRounds: String(s.rooms.review_rounds),
   };
@@ -119,6 +121,7 @@ export type SettingsPatch = {
   context?: { compact_at?: number; compact_target?: number; max_turns?: number };
   limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
   resume?: { auto?: boolean };
+  commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };
 };
 
@@ -182,6 +185,8 @@ export function patchFromForm(
   if (Object.keys(context).length > 0) patch.context = context;
   if (Object.keys(limits).length > 0) patch.limits = limits;
   if (form.resumeAuto !== current.resume.auto) patch.resume = { auto: form.resumeAuto };
+  if (form.commitsAttribution !== current.commits.attribution)
+    patch.commits = { attribution: form.commitsAttribution };
   const rooms: NonNullable<SettingsPatch["rooms"]> = {};
   if (agentTurns.value !== undefined && agentTurns.value !== current.rooms.max_agent_turns) {
     rooms.max_agent_turns = agentTurns.value;

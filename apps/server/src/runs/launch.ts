@@ -15,6 +15,7 @@ import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { gitAttribution } from "./attribution.ts";
 
 /** An agent file and the account it runs on, checked. */
 export interface ResolvedAgent {
@@ -60,6 +61,7 @@ export interface LaunchDeps {
   runtime: AcpRuntime;
   options: RuntimeOptions;
   secrets: SecretStore;
+  config: ConfigService;
   majhiHome: string;
   admin?: AdminAccess | undefined;
   decisions?: Decisions | undefined;
@@ -98,6 +100,7 @@ export async function launch(
   const task = deps.store.tasks.get(run.task);
   if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
 
+  const attribution = await gitAttribution(deps, task, run.agent);
   const model = fm.model === "auto" ? undefined : fm.model;
   const effort = fm.effort === "auto" ? undefined : fm.effort;
   const resume = run.freshNext ? undefined : deps.store.runs.lastSessionId(run.task, run.agent);
@@ -118,7 +121,8 @@ export async function launch(
       account: runtimeAccount,
       options: deps.options,
       cwd: task.folder,
-      mounts: await repoMounts(task),
+      git: attribution.git,
+      mounts: [...(await repoMounts(task)), ...hooksMount(attribution.hooks)],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
@@ -141,6 +145,11 @@ export async function launch(
     model,
     effort,
   };
+}
+
+/** majhi's hooks folder, read-only, for a run that has them. */
+function hooksMount(hooks: string | undefined): RunMount[] {
+  return hooks === undefined ? [] : [{ path: hooks, readOnly: true }];
 }
 
 /** The agent's account as the runtime needs it, with its API key when it has one. */
@@ -170,11 +179,12 @@ export async function processLaunch(
   const task = deps.store.tasks.get(taskId);
   if (task === undefined) throw new UserError(`Task ${taskId} does not exist.`);
   const account = await runtimeAccountOf(deps, await resolveAgent(deps, agentId));
+  const attribution = await gitAttribution(deps, task, agentId);
   return {
     folder: task.folder,
-    env: buildEnv(account, deps.options.base),
+    env: buildEnv(account, deps.options.base, attribution.git),
     account,
-    mounts: await repoMounts(task),
+    mounts: [...(await repoMounts(task)), ...hooksMount(attribution.hooks)],
   };
 }
 

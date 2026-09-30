@@ -66,6 +66,18 @@ export const ResumeSettingsSchema = z.strictObject({
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
 export const ResumePatchSchema = z.strictObject({ auto: z.boolean() }).partial();
 
+/**
+ * Who a commit is attributed to (5.7): the agent as committer and a `Majhi-Task` trailer. On unless
+ * turned off here, for an org or for a project; the project wins, then the org, then this.
+ * A change applies to runs launched after it. Checkpoints follow it at once.
+ */
+export const CommitsSettingsSchema = z.strictObject({
+  attribution: z.boolean().default(true),
+});
+export type CommitsSettings = z.infer<typeof CommitsSettingsSchema>;
+export const CommitsPatchSchema = z.strictObject({ attribution: z.boolean() }).partial();
+export type CommitsPatch = z.infer<typeof CommitsPatchSchema>;
+
 /** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
 const roomFields = {
   /** Agent-to-agent turns without an owner message before the task pauses and asks (loop guard). */
@@ -180,6 +192,7 @@ export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
   limits: LimitsSettingsSchema,
   resume: ResumeSettingsSchema,
+  commits: CommitsSettingsSchema,
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { plural } from "@/lib/format";
 import { useTaskDiff } from "@/lib/task-queries";
+import { CommitList } from "./commit-list";
 import { fileNote, repoTotals } from "./model";
 import { PatchView } from "./patch-view";
 
@@ -76,6 +77,7 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
           </a>
         )}
       </div>
+      <CommitList commits={repo.commits} />
       {repo.uncommitted && (
         <p className="text-xs text-amber">
           Some of this is not committed yet. A merge request carries only committed work.

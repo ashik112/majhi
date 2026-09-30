@@ -1,6 +1,6 @@
 import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
-import type { RepoDiff, RepoDiffFile } from "@majhi/shared";
+import { agentOfCommitter, type RepoCommit, type RepoDiff, type RepoDiffFile } from "@majhi/shared";
 import { git, listUntracked, localBranchExists } from "./git.ts";
 
 /** Files listed per repo, and patch text kept per file. Past these the owner reads the diff on the host. */
@@ -31,7 +31,7 @@ type Repo = { project: string; source: string; base: string; branch: string; wor
  */
 export async function repoDiff(repo: Repo): Promise<RepoDiff> {
   const head = { project: repo.project, base: repo.base, branch: repo.branch };
-  const empty = { files: [], omitted: 0, uncommitted: false };
+  const empty = { commits: [], files: [], omitted: 0, uncommitted: false };
   try {
     const cwd = repo.worktree ?? repo.source;
     if (repo.worktree === undefined && !(await localBranchExists(repo.source, repo.branch))) {
@@ -43,6 +43,7 @@ export async function repoDiff(repo: Repo): Promise<RepoDiff> {
     const names = parseRaw(await git(cwd, [...DIFF_ARGS, "--raw", "-z", ...target], READ));
     const patches = splitPatches(await git(cwd, [...DIFF_ARGS, ...target], READ));
     const tracked = names.map((n, i) => fileOf(n, patches[i] ?? ""));
+    const commits = await branchCommits(cwd, mergeBase, tip === "HEAD" ? "HEAD" : repo.branch);
     const files = tracked.slice(0, MAX_DIFF_FILES);
     let omitted = tracked.length - files.length;
     let uncommitted = false;
@@ -56,10 +57,33 @@ export async function repoDiff(repo: Repo): Promise<RepoDiff> {
       uncommitted = (await git(repo.worktree, ["status", "--porcelain"])).trim() !== "";
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
-    return { ...head, files: withinBudget(files), omitted, uncommitted };
+    return { ...head, commits, files: withinBudget(files), omitted, uncommitted };
   } catch (err) {
     return { ...head, ...empty, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+const COMMIT_FIELDS = "%H%x1f%s%x1f%cn%x1f%ce%x1f%cI%x1e";
+/** Commits listed per repo. A branch with more shows its newest. */
+export const MAX_COMMITS = 200;
+
+/** The commits from the merge base to the tip, newest first, each with the agent that committed it. */
+export async function branchCommits(cwd: string, mergeBase: string, tip: string): Promise<RepoCommit[]> {
+  const out = await git(cwd, [
+    "log",
+    `--max-count=${MAX_COMMITS}`,
+    `--format=${COMMIT_FIELDS}`,
+    `${mergeBase}..${tip}`,
+  ]);
+  return out
+    .split("\x1e")
+    .map((record) => record.trim())
+    .filter((record) => record !== "")
+    .map((record) => {
+      const [sha = "", subject = "", name = "", email = "", at = ""] = record.split("\x1f");
+      const agent = agentOfCommitter({ name, email });
+      return { sha, subject, ...(agent === undefined ? {} : { agent }), at };
+    });
 }
 
 /** Keeps patches in order until the repo's total is used up; later files are listed as too large. */

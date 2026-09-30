@@ -7,12 +7,24 @@ import type { ServerEnv } from "../env.ts";
 
 const run = promisify(execFile);
 
+/**
+ * The environment a test's git starts from. A test run by an agent inherits that agent's commit
+ * identity, hooks and task from majhi, so those are dropped: a commit a test makes is nobody's.
+ */
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (/^GIT_(AUTHOR|COMMITTER)_|^GIT_CONFIG_(COUNT|KEY_|VALUE_)|^MAJHI_TASK$/.test(key)) delete env[key];
+  }
+  return env;
+}
+
 /** Git for test setup, isolated from the machine's own git config. */
 export async function git(cwd: string, ...args: string[]): Promise<string> {
   const { stdout } = await run(
     "git",
     ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", ...args],
-    { cwd, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } },
+    { cwd, env: { ...cleanGitEnv(), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } },
   );
   return stdout.trim();
 }

@@ -1,5 +1,12 @@
 import { isAbsolute, relative } from "node:path";
-import type { CommandMeta, ProjectConfig, ProjectLink, ProjectView, RemoteConfig } from "@majhi/shared";
+import type {
+  CommandMeta,
+  CommitsPatch,
+  ProjectConfig,
+  ProjectLink,
+  ProjectView,
+  RemoteConfig,
+} from "@majhi/shared";
 import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { removeProjectEntry, writeProject } from "../config/write.ts";
@@ -30,6 +37,7 @@ export interface UpdateInput {
   /** Absent: keep. null: remove. */
   remotes?: Record<string, RemoteConfig> | null | undefined;
   links?: ProjectLink[] | null | undefined;
+  commits?: CommitsPatch | null | undefined;
 }
 
 /** A registered project with everything a task needs from it. */
@@ -44,6 +52,8 @@ export interface ProjectInfo {
   exists: boolean;
   remotes: Record<string, RemoteConfig>;
   links: ProjectLink[];
+  /** The project's own `commits.attribution`, when it overrides the org's. */
+  commits: CommitsPatch | undefined;
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -82,6 +92,7 @@ export class ProjectService {
           exists,
           remotes: project.remotes ?? {},
           links: project.links ?? [],
+          commits: project.commits,
         };
         return info;
       }),
@@ -158,6 +169,10 @@ export class ProjectService {
         project.links = dedupeLinks(input.links);
       }
     }
+    if (input.commits !== undefined) {
+      if (input.commits === null || Object.keys(input.commits).length === 0) delete project.commits;
+      else project.commits = input.commits;
+    }
     await this.config.change({ command, meta, summary: `updated project ${input.id}` }, () =>
       writeProject(this.config.file, input.id, project),
     );
@@ -196,6 +211,7 @@ function toView(p: ProjectInfo): ProjectView {
     links: p.links,
   };
   if (p.base !== undefined) view.base = p.base;
+  if (p.commits !== undefined) view.commits = p.commits;
   if (Object.keys(p.remotes).length > 0) view.mrRemote = mrRemoteName(p.remotes);
   return view;
 }

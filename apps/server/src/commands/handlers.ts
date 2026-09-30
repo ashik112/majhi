@@ -318,6 +318,7 @@ export function createHandlers({
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
+        ...(input.commits === undefined ? {} : { commits: input.commits }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
       };

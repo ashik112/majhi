@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
 import {
   type CheckpointRepo,
+  commitBy,
   commitCheckpoint,
   DEFAULT_IDENTITY,
   diffStat,
@@ -45,20 +46,42 @@ describe("checkpoints", () => {
     await mkdir(join(a.worktree, ".git", "hooks"), { recursive: true });
     await writeFile(join(a.worktree, ".git", "hooks", "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 
-    const result = await commitCheckpoint([a, b], "ACM-1", 2, { name: "Acme Bot", email: "bot@acme.test" });
+    // The server's own git variables must not take the place of the author and the agent.
+    vi.stubEnv("GIT_AUTHOR_NAME", "Someone Else");
+    vi.stubEnv("GIT_COMMITTER_NAME", "Someone Else");
+    const by = commitBy({ name: "Acme Bot", email: "bot@acme.test" }, "ACM-1", "acme-dev");
+    const result = await commitCheckpoint([a, b], "ACM-1", 2, by);
     expect(result).toEqual({ committed: ["api"], skipped: [] });
-    expect(await git(a.worktree, "log", "-1", "--format=%s|%an|%ae")).toBe(
-      "wip(ACM-1): checkpoint 2|Acme Bot|bot@acme.test",
+    expect(await git(a.worktree, "log", "-1", "--format=%s|%an|%ae|%cn|%ce")).toBe(
+      "wip(ACM-1): checkpoint 2|Acme Bot|bot@acme.test|acme-dev via majhi|majhi@majhi.local",
     );
+    expect(await git(a.worktree, "log", "-1", "--format=%(trailers:key=Majhi-Task,valueonly)")).toBe("ACM-1");
     expect(await git(a.worktree, "status", "--porcelain")).toBe("");
     expect(await git(b.worktree, "log", "-1", "--format=%s")).toBe("init");
+  });
+
+  it("with attribution off for a repo, the org is author and committer and there is no trailer", async () => {
+    const a = await repo("api");
+    const b = await repo("web");
+    await writeFile(join(a.worktree, "a.ts"), "export {};\n");
+    await writeFile(join(b.worktree, "b.ts"), "export {};\n");
+    const by = commitBy({ name: "Acme Bot", email: "bot@acme.test" }, "ACM-1", "acme-dev");
+    const off = { ...a, attribution: false };
+    const result = await commitCheckpoint([off, b], "ACM-1", 1, by);
+    expect(result.committed).toEqual(["api", "web"]);
+    expect(await git(a.worktree, "log", "-1", "--format=%an|%cn|%ce|%B")).toBe(
+      "Acme Bot|Acme Bot|bot@acme.test|wip(ACM-1): checkpoint 1",
+    );
+    // The repo that keeps it is unchanged by the other's setting.
+    expect(await git(b.worktree, "log", "-1", "--format=%cn|%B")).toContain("acme-dev via majhi|");
+    expect(await git(b.worktree, "log", "-1", "--format=%B")).toContain("Majhi-Task: ACM-1");
   });
 
   it("does not commit a worktree that left the task branch", async () => {
     const a = await repo("api");
     await git(a.worktree, "checkout", "--quiet", "main");
     await writeFile(join(a.worktree, "x.txt"), "x");
-    const result = await commitCheckpoint([a], "ACM-1", 1, DEFAULT_IDENTITY);
+    const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
     expect(result.committed).toEqual([]);
     expect(result.skipped[0]).toContain("not on task/acm-1-fix (on main)");
   });
@@ -71,7 +94,7 @@ describe("checkpoints", () => {
         writeFile(join(a.worktree, ".store", `f${i}`), "x"),
       ),
     );
-    const result = await commitCheckpoint([a], "ACM-1", 1, DEFAULT_IDENTITY);
+    const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
     expect(result.committed).toEqual([]);
     expect(result.skipped[0]).toContain(".store");
     expect(await git(a.worktree, "log", "-1", "--format=%s")).toBe("init");
@@ -81,7 +104,7 @@ describe("checkpoints", () => {
   it("reports the diff since the base, committed or not", async () => {
     const a = await repo("api");
     await writeFile(join(a.worktree, "one.ts"), "1\n");
-    await commitCheckpoint([a], "ACM-1", 1, DEFAULT_IDENTITY);
+    await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
     await writeFile(join(a.worktree, "README.md"), "# edited\n");
     const stat = await diffStat([a]);
     expect(stat).toContain("api:");

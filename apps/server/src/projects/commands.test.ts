@@ -69,6 +69,16 @@ describe("project remotes and links", () => {
     ).toBe(200);
   }
 
+  it("overrides attribution for a project, keeps it when other fields change, and null clears it", async () => {
+    await withWeb();
+    const off = await update({ commits: { attribution: false } });
+    expect(off.body.commits).toEqual({ attribution: false });
+    // Not sending it leaves it as it is.
+    expect((await update({ aliases: ["web", "frontend"] })).body.commits).toEqual({ attribution: false });
+    expect((await w.h.cmd("settings.get")).status).toBe(200);
+    expect((await update({ commits: null })).body).not.toHaveProperty("commits");
+  });
+
   it("stores remotes and links, names the MR remote, and keeps them when only aliases change", async () => {
     await withWeb();
     const set = await update({
