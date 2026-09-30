@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema } from "./accounts.ts";
+import { ProcessContainerSchema } from "./containers.ts";
 
 /**
  * Background processes (SPEC 5.15). majhi runs them for an agent through the `majhi-processes`
@@ -38,6 +39,8 @@ export const ProcessInfoSchema = z.object({
   port: z.number().int().positive().optional(),
   /** The last lines of stdout and stderr together. */
   tail: z.array(z.string()),
+  /** Set when majhi runs a container for the agent (a preview build, a preview or a service). */
+  container: ProcessContainerSchema.optional(),
 });
 export type ProcessInfo = z.infer<typeof ProcessInfoSchema>;
 

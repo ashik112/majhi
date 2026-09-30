@@ -101,6 +101,8 @@ RUN set -eu; \
 FROM base AS runtime
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.
 COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
+# The buildx plugin builds agents' previews, each on its own builder (PRV-53).
+COPY --from=docker:29.8.1-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /app

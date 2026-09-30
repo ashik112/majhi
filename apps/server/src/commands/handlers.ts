@@ -320,6 +320,7 @@ export function createHandlers({
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
+        ...(input.containers === undefined ? {} : { containers: input.containers }),
       };
       await config.setSettings(patch, {
         command: ctx.command,

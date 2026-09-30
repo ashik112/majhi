@@ -82,6 +82,7 @@ import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
+  ContainersPatchSchema,
   ContextPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
@@ -1025,13 +1026,14 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room or memory settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model). Policy changes use policy.set",
+      "Change context budget, limits, resume, room, memory or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
+      containers: ContainersPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },

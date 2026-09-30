@@ -249,6 +249,7 @@ export class ProcessManager {
       command: { command: "/bin/sh", args: ["-c", command] },
       env: launch.env,
       cwd,
+      task,
       account: launch.account,
       // The whole task folder, whatever the cwd, as the session sees it.
       mounts: [{ path: launch.folder }, ...launch.mounts],
