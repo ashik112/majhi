@@ -50,7 +50,9 @@ export function PriceTable({ id, models }: { id: string; models: readonly string
     <div id={id} className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3.5">
       <p className="text-sm text-fg-muted text-pretty">
         Dollars per million tokens. New turns use these prices; recorded turns keep their cost.
-        {prices.data && ` Defaults checked ${dayLabel(prices.data.checked, true)}.`}
+        {prices.data &&
+          " A default row links to the page its numbers come from and shows when it was checked."}
+        {" Changing a row makes it yours, and it drops the link."}
       </p>
       {prices.isError ? (
         <p role="alert" className="text-sm text-red">
@@ -93,7 +95,21 @@ export function PriceTable({ id, models }: { id: string; models: readonly string
                   {row.source === "owner" ? (
                     <Badge tone="amber">{row.overridesDefault ? "Yours, replaces default" : "Yours"}</Badge>
                   ) : (
-                    <span className="text-fg-faint">Default</span>
+                    <span className="text-fg-faint">
+                      {row.url === undefined ? (
+                        "Default"
+                      ) : (
+                        <a
+                          href={row.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline decoration-line-strong underline-offset-2"
+                        >
+                          Default
+                        </a>
+                      )}
+                      {row.checked !== undefined && `, checked ${dayLabel(row.checked, true)}`}
+                    </span>
                   )}
                 </td>
                 <td className={`${CELL} text-right whitespace-nowrap`}>

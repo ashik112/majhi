@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import {
+  DEFAULT_PRICE_SOURCES,
   DEFAULT_PRICES,
   DEFAULT_PRICES_CHECKED,
   type PriceRow,
@@ -43,7 +44,15 @@ export function priceRows(owner: PricesConfig): { checked: string; rows: PriceRo
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([model, price]) => ({ model, price, source: "owner", overridesDefault: model in DEFAULT_PRICES }));
   for (const [model, price] of Object.entries(DEFAULT_PRICES)) {
-    if (!(model in owner)) rows.push({ model, price, source: "default", overridesDefault: false });
+    if (model in owner) continue;
+    const from = DEFAULT_PRICE_SOURCES[model];
+    rows.push({
+      model,
+      price,
+      source: "default",
+      overridesDefault: false,
+      ...(from === undefined ? {} : { url: from.url, checked: from.checked }),
+    });
   }
   return { checked: DEFAULT_PRICES_CHECKED, rows };
 }
