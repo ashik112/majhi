@@ -90,7 +90,7 @@ export function Menu({
           role="menu"
           aria-label={label}
           className={cn(
-            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 flex-col overflow-y-auto rounded-md border border-line-bright bg-card p-1 shadow-pop",
+            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 max-w-72 flex-col overflow-y-auto rounded-md border border-line-bright bg-card p-1 shadow-pop",
             align === "right" ? "right-0" : "left-0",
           )}
         >
@@ -102,12 +102,13 @@ export function Menu({
                 ? { role: "menuitem" }
                 : { role: "menuitemradio", "aria-checked": item.checked })}
               disabled={item.disabled}
+              title={item.label}
               onClick={() => {
                 setOpen(false);
                 item.onSelect();
               }}
               className={cn(
-                "flex h-8 items-center gap-2 rounded-sm px-2.5 text-left text-base whitespace-nowrap hover:bg-raised focus-visible:bg-raised focus-visible:outline-none disabled:opacity-45",
+                "flex h-8 min-w-0 shrink-0 items-center gap-2 rounded-sm px-2.5 text-left text-base whitespace-nowrap hover:bg-raised focus-visible:bg-raised focus-visible:outline-none disabled:opacity-45",
                 item.tone === "danger" ? "text-red" : "text-fg",
               )}
             >
@@ -116,7 +117,7 @@ export function Menu({
                   {item.checked ? "✓" : ""}
                 </span>
               )}
-              {item.label}
+              <span className="min-w-0 truncate">{item.label}</span>
             </button>
           ))}
         </div>

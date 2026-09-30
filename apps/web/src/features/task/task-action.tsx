@@ -16,7 +16,9 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
   const [merging, setMerging] = useState(false);
-  const canMerge = task.repos.length > 0 && task.status !== "running";
+  // Only once there is work to merge: a worktree exists and no agent is working.
+  const canMerge =
+    task.repos.some((r) => r.worktree !== undefined) && !["inbox", "ready", "running"].includes(task.status);
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
