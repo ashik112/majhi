@@ -47,7 +47,11 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
         decision,
         ...(always === undefined ? {} : { always: { scope: always } }),
       }),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.history }),
+    onSuccess: async (_, { always }) => {
+      // A saved rule is a settings change: the agent page and Hub setup list it.
+      if (always !== undefined) await client.invalidateQueries({ queryKey: queryKeys.settings });
+      return client.invalidateQueries({ queryKey: queryKeys.history });
+    },
     onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }),
   });
   const undo = useMutation<unknown, ApiRequestError, string>({
