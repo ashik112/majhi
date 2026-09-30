@@ -1,18 +1,22 @@
-import type { RepoDiff, RepoDiffFile, Task } from "@majhi/shared";
+import type { RepoDiff, RepoDiffFile, RoomItem, Task } from "@majhi/shared";
 import { ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { plural } from "@/lib/format";
 import { useTaskDiff } from "@/lib/task-queries";
-import { fileNote, repoTotals } from "./model";
+import { diffAnchors, fileNote, repoTotals } from "./model";
 import { PatchView } from "./patch-view";
+import { ReviewBar } from "./review-bar";
 
 /** Files open by default in a repo up to this many; a bigger change starts folded. */
 const OPEN_UP_TO = 8;
 
 /** The Changes tab: per repo, what the branch changed against its base, as git's own diffs. */
-export function ChangesView({ task }: { task: Task }) {
+export function ChangesView({ task, onSent }: { task: Task; onSent: (item: RoomItem) => void }) {
   const diff = useTaskDiff(task.id, true);
+  // Until the diff is there, no comment counts as gone from it.
+  const anchors = useMemo(() => (diff.data ? diffAnchors(diff.data) : undefined), [diff.data]);
   return (
     <section aria-label="Changes" className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto">
       <div className="flex items-center gap-2">
@@ -42,6 +46,7 @@ export function ChangesView({ task }: { task: Task }) {
       {diff.data?.map((repo) => (
         <RepoSection key={repo.project} repo={repo} task={task} />
       ))}
+      <ReviewBar task={task} anchors={anchors} onSent={onSent} />
     </section>
   );
 }
@@ -86,7 +91,12 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
         <p className="text-sm text-fg-faint">No changes against {repo.base}.</p>
       )}
       {repo.files.map((file) => (
-        <FileDiff key={file.path} file={file} open={repo.files.length <= OPEN_UP_TO} />
+        <FileDiff
+          key={file.path}
+          file={file}
+          open={repo.files.length <= OPEN_UP_TO}
+          review={{ task: task.id, repo: repo.project, path: file.path }}
+        />
       ))}
       {repo.omitted > 0 && (
         <p className="text-xs text-fg-faint">
@@ -97,7 +107,15 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
   );
 }
 
-function FileDiff({ file, open }: { file: RepoDiffFile; open: boolean }) {
+function FileDiff({
+  file,
+  open,
+  review,
+}: {
+  file: RepoDiffFile;
+  open: boolean;
+  review: { task: string; repo: string; path: string };
+}) {
   const note = fileNote(file);
   return (
     <details open={open} className="group overflow-hidden rounded-md border border-line-strong bg-sunken">
@@ -115,7 +133,7 @@ function FileDiff({ file, open }: { file: RepoDiffFile; open: boolean }) {
       </summary>
       {file.patch !== "" && (
         <div className="max-h-[520px] overflow-auto border-t border-line">
-          <PatchView patch={file.patch} />
+          <PatchView patch={file.patch} review={review} />
         </div>
       )}
     </details>
