@@ -76,6 +76,7 @@ test("orgs: edit in place", async ({ page }) => {
 
 test("projects: register", async ({ page }) => {
   await page.goto("/projects");
+  await page.getByRole("button", { name: /^Register a repo/ }).click();
   await page.getByRole("button", { name: "Register delta-app" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await shot(page, "projects-register");

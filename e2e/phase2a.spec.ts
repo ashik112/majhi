@@ -117,7 +117,9 @@ test("register a repo as a project from the Projects page", async ({ page, reque
   await dialog.getByRole("button", { name: "Register", exact: true }).click();
   await expect(dialog).toBeHidden();
 
-  await expect(page.getByRole("button", { name: "Edit project api" })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Projects" }).getByRole("button", { name: "api", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Register alpha-api" })).toHaveCount(0);
   const projects = await cmd<{ id: string; org: string; aliases: string[] }[]>(request, "projects.list", {});
   expect(projects).toMatchObject([{ id: "api", org: "acme", aliases: ["backend"] }]);

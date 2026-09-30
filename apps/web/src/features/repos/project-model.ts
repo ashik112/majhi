@@ -44,6 +44,11 @@ export function aliasClashes(
   return clashes;
 }
 
+/** A repo shaped from a project whose path the scan did not find, so its detail has something to show. */
+export function stubRepo(project: Pick<ProjectView, "id" | "path">): Repo {
+  return { name: project.id, path: project.path, relPath: project.path, remotes: [], registered: true };
+}
+
 /** The registered project whose checkout is this path. */
 export function projectForPath(projects: readonly ProjectView[], path: string): ProjectView | undefined {
   return projects.find((p) => p.path === path);

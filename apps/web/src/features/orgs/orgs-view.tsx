@@ -67,7 +67,7 @@ export function OrgsView() {
               <Button
                 variant="ghost"
                 aria-pressed={adding}
-                className={cn("w-full justify-start", adding && "bg-selected text-fg")}
+                className={cn("w-full justify-start", adding && ROW_SELECTED)}
                 onClick={() => setAdding(true)}
               >
                 <Plus aria-hidden="true" />

@@ -94,7 +94,7 @@ export function AccountsView() {
               <Button
                 variant="ghost"
                 aria-pressed={adding !== undefined}
-                className={cn("w-full justify-start", adding !== undefined && "bg-selected text-fg")}
+                className={cn("w-full justify-start", adding !== undefined && ROW_SELECTED)}
                 onClick={() => openAdd(orgFilter ?? "")}
               >
                 <Plus aria-hidden="true" />
