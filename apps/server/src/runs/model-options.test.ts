@@ -185,6 +185,14 @@ describe("labelModels", () => {
     expect(labelModels(models).map((l) => l.label)).toEqual(["acme-code-5: Best for code", "acme-fast-1"]);
   });
 
+  it("offers the ranking questions the CLI text for every model", () => {
+    const models = normalizeOffered([
+      { id: "acme-a-1", name: "a", description: "Quick" },
+      { id: "acme-b-1", name: "b" },
+    ]);
+    expect(plainOptions(models).map((o) => o.label)).toEqual(["acme-a-1: Quick", "acme-b-1"]);
+  });
+
   it("gives equal prices the same label", () => {
     const rows = { "a-1": price(5), "b-1": price(5), "c-1": price(20) };
     const labels = labelModels(normalizeOffered(opts("a-1", "b-1", "c-1")), rows);

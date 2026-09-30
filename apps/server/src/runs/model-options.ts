@@ -184,9 +184,9 @@ export function rankModels(
   if (h !== -1 && h !== c) dearestFirst.push(...dearestFirst.splice(dearestFirst.indexOf(ids[h] ?? ""), 1));
   const labels = new Map<string, string>();
   if (dearestFirst.length >= 2) {
-    dearestFirst.forEach((id, i) =>
-      labels.set(id, i === 0 ? DEAREST : i === dearestFirst.length - 1 ? CHEAPEST : BALANCED),
-    );
+    for (const [i, id] of dearestFirst.entries()) {
+      labels.set(id, i === 0 ? DEAREST : i === dearestFirst.length - 1 ? CHEAPEST : BALANCED);
+    }
   }
   return { order: dearestFirst.reverse(), estimated: true, labels };
 }
