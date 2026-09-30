@@ -323,6 +323,17 @@ export function createHandlers({
     "decisions.status": () => services.decisions.status(),
     "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
     "decisions.install": () => services.decisions.install(),
+    "memory.search": async (input) => {
+      const scopes = input.scopes ?? services.memory.scopesInUse();
+      return services.memory.search(input.query, { scopes, status: input.status, limit: input.limit });
+    },
+    "memory.list": async (input) => services.memory.list(input),
+    "memory.add": (input, ctx) => services.memory.add(input, ctx.meta.actor),
+    "memory.approve": async (input, ctx) => services.memory.approve(input.id, ctx.meta.actor, input.reason),
+    "memory.reject": async (input, ctx) => services.memory.reject(input.id, ctx.meta.actor, input.reason),
+    "memory.forget": async (input, ctx) => services.memory.forget(input.id, ctx.meta.actor, input.reason),
+    "memory.pin": async (input, ctx) => services.memory.pin(input.id, input.pinned, ctx.meta.actor),
+    "memory.events": async (input) => services.memory.events(input),
     "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),
     "usage.breakdown": async (input) => services.usage.breakdown(input),
     "usage.turns": async (input) => services.usage.turns(input.filters, input.limit),

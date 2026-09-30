@@ -43,6 +43,8 @@ import {
   restack,
   WorktreeProblem,
 } from "../git/worktrees.ts";
+import type { MemoryService } from "../memory/service.ts";
+import type { TaskScopes } from "../memory/wiring.ts";
 import { orgKeys } from "../orgs/keys.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { wakeText } from "../processes/text.ts";
@@ -85,6 +87,9 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
+  /** Facts recalled into TASK.md when a task starts (Phase 5). */
+  memory?: MemoryService;
+  memoryScopes?: TaskScopes;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -445,7 +450,15 @@ export class TaskService {
     related: Related = NO_RELATED,
   ): Promise<void> {
     const team = briefTeam(task, agents);
-    const md = renderTaskMd(task, team[0], orgName, related, team, await this.readFacts(task));
+    const md = renderTaskMd(
+      task,
+      team[0],
+      orgName,
+      related,
+      team,
+      await this.readFacts(task),
+      this.deps.memory?.recalled(task.id),
+    );
     const pointer = renderPointer(task);
     await Promise.all([
       writeFile(join(task.folder, "TASK.md"), md),
@@ -506,6 +519,7 @@ export class TaskService {
     }
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     store.tasks.setStartWhenReady(id, true);
+    await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
     // The mode says who goes first: the lead, the pipeline's first step, the loop's builder.
@@ -516,6 +530,23 @@ export class TaskService {
       this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
     });
     return started;
+  }
+
+  /**
+   * Gives the task the facts memory holds for its org and repos, with the brief as the query, and
+   * writes them into TASK.md (5.6). Memory that cannot answer never stops a task from starting.
+   */
+  private async recallMemory(task: Task): Promise<void> {
+    const { memory, memoryScopes } = this.deps;
+    if (memory === undefined || memoryScopes === undefined) return;
+    try {
+      const scopes = await memoryScopes.recall(task.id);
+      if (scopes === undefined) return;
+      await memory.recall(task, scopes);
+      await this.refreshBriefs([task.id]);
+    } catch (err) {
+      this.warn(task.id, `Memory was not recalled: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** The branch of a `ready` dependency that has the same project, for stacking (5.4a). */
@@ -1345,6 +1376,7 @@ export class TaskService {
         this.relatedOf(task),
         team,
         await this.knownFacts(task),
+        this.deps.memory?.recalled(task.id),
       );
       // The folder can be gone by hand; the links still stand.
       await writeFile(join(task.folder, "TASK.md"), md).catch(() => undefined);

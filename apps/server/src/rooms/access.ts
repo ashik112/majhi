@@ -9,7 +9,10 @@ export const TASKS_PATH = "/mcp/tasks";
 export const PROCESSES_SERVER_NAME = "majhi-processes";
 export const PROCESSES_PATH = "/mcp/processes";
 
-export type ToolServer = "room" | "tasks" | "processes";
+export const MEMORY_SERVER_NAME = "majhi-memory";
+export const MEMORY_PATH = "/mcp/memory";
+
+export type ToolServer = "room" | "tasks" | "processes" | "memory";
 
 /** Who a token belongs to: one agent session in one task. */
 export interface ToolCaller {
@@ -41,16 +44,17 @@ export class ToolTokens {
 }
 
 /**
- * Which sessions get `majhi-room`, `majhi-tasks` and `majhi-processes` (SPEC 5.1, 5.3, 5.4a,
+ * Which sessions get `majhi-room`, `majhi-tasks`, `majhi-processes` and `majhi-memory` (SPEC 5.1, 5.3, 5.4a,
  * 5.15): `majhi-room` for every agent in a team of two or more, for the lead of a lead-mode task
  * even alone (it can bring in agents that could join), or with it in its `tools`;
  * `majhi-tasks` for leads and root agents, or with it in its `tools`. The boss has every command
- * through majhi-admin already. `majhi-processes` for every session.
+ * through majhi-admin already. `majhi-processes` and `majhi-memory` for every session.
  */
 export class RoomAccess {
   readonly room = new ToolTokens();
   readonly tasks = new ToolTokens();
   readonly processes = new ToolTokens();
+  readonly memory = new ToolTokens();
 
   /** `mcpUrl` gives majhi-admin's URL; these servers sit next to it. */
   constructor(private readonly mcpUrl: () => string) {}
@@ -84,6 +88,9 @@ export class RoomAccess {
     const token = this.processes.issue(caller);
     out.tokens.push({ server: "processes", token });
     out.servers.push(spec(PROCESSES_SERVER_NAME, `${base}${PROCESSES_PATH}`, token));
+    const memoryToken = this.memory.issue(caller);
+    out.tokens.push({ server: "memory", token: memoryToken });
+    out.servers.push(spec(MEMORY_SERVER_NAME, `${base}${MEMORY_PATH}`, memoryToken));
     return out;
   }
 

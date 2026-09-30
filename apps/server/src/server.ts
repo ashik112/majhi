@@ -92,6 +92,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       agents: services.agentStore,
       projects: services.projects,
       processes: services.processes,
+      memory: { memory: services.memory, scopeOf: (task) => services.memoryScopes.agent(task) },
     },
     ...(services.runner === undefined
       ? {}

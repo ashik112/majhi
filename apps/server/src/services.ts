@@ -23,6 +23,9 @@ import { errorMessage } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
+import type { Embedder } from "./memory/embedder.ts";
+import type { MemoryService } from "./memory/service.ts";
+import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
@@ -71,6 +74,8 @@ export interface ServiceOptions {
   mrPollMs?: number;
   /** Laya in Docker, so tests can play laya-serve. Default: from `MAJHI_LAYA_URL`. */
   layaDocker?: LayaDocker;
+  /** Replaces the embedding model, so tests never download one. */
+  embedder?: Embedder;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -110,6 +115,10 @@ export interface Services {
   mrPoller: MrPoller;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
+  /** Facts, hybrid search and recall (5.6). */
+  memory: MemoryService;
+  /** Which scopes a task's memory covers. */
+  memoryScopes: TaskScopes;
   /** Resume after restarts, lost internet and sleep, and the network watch. */
   resilience: Resilience;
   /** Tokens and cost: the queries behind `usage.*`. */
@@ -163,6 +172,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (id) => terminals.killKey(`login:${id}`),
   });
   const store = Store.open(env.majhiHome);
+  const memory = createMemory(env.majhiHome, options.embedder);
+  const memoryScopes = new TaskScopes(store, config);
   const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
   const agents = new AgentService(config, agentStore, cache, accounts, Date.now, {
     isWorking: (agent) => runs.isWorking(agent),
@@ -268,6 +279,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     decisions,
     processes,
+    memory,
+    memoryScopes,
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -330,6 +343,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrs,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
+    memory,
+    memoryScopes,
     resilience,
     usage: usageService,
     usageRecorder,
@@ -340,6 +355,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await runs.closeAll();
       await processes.stopAll();
       await usageRecorder.flush();
+      await memory.close();
       store.close();
     },
     orgs: new OrgService(config, agentStore, (id, newId) => {
