@@ -20,7 +20,7 @@ describe("mergeSettings", () => {
         outbound: "confirm",
         commands: {},
       },
-      memory: { auto_threshold: 0.8, review_all: false },
+      memory: { auto_threshold: 0.4, review_all: false },
     });
   });
 
