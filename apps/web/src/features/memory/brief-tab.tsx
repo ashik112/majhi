@@ -15,7 +15,7 @@ import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useBuildBrief, useRestoreBrief } from "@/lib/memory-queries";
 import { useNow } from "@/lib/use-now";
-import { briefSections, emptySection } from "./model";
+import { briefSections, emptySection, proseBrief } from "./model";
 
 /** Where a version came from: "after ACM-12", "built from the repo docs", "restored from v3". */
 function SourceText({ brief }: { brief: ProjectBrief }) {
@@ -38,9 +38,11 @@ function SourceText({ brief }: { brief: ProjectBrief }) {
 export function BriefTab({
   project,
   brief,
+  onRebuild,
 }: {
   project: string;
   brief: UseQueryResult<CommandOutput<"memory.brief">, ApiRequestError>;
+  onRebuild: () => void;
 }) {
   const current = brief.data?.current;
   const older = (brief.data?.versions ?? []).filter((v) => v.version !== current?.version);
@@ -54,11 +56,25 @@ export function BriefTab({
       </div>
     );
   if (current === undefined) return <NoBrief project={project} />;
+  const sections = briefSections(current.body);
+  // Briefs written before they were kept to short bullets read as prose.
+  const prose = proseBrief(current.body);
   return (
     <>
-      <div className="flex flex-col">
-        {briefSections(current.body).map((s) => (
-          <BriefSection key={s.title || "brief"} title={s.title || "Brief"} text={s.text} />
+      {prose && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line-strong bg-raised px-3 py-2">
+          <p className="min-w-0 flex-1 text-sm text-fg-muted text-pretty">
+            This brief is long prose from before briefs were kept short. Rebuild it to get short bullets that
+            point to the docs.
+          </p>
+          <Button size="sm" onClick={onRebuild}>
+            Rebuild brief
+          </Button>
+        </div>
+      )}
+      <div className={cn("flex flex-col", prose && "pt-2")}>
+        {sections.map((s) => (
+          <BriefSection key={s.title || "brief"} title={s.title || "Brief"} text={s.text} folded={prose} />
         ))}
       </div>
       {older.length > 0 && <History project={project} versions={older} />}
@@ -96,9 +112,9 @@ function NoBrief({ project }: { project: string }) {
   );
 }
 
-/** One section of the brief, open until folded. The count is its bullets. */
-function BriefSection({ title, text }: { title: string; text: string }) {
-  const [open, setOpen] = useState(true);
+/** One section of the brief, open until folded; a long prose brief starts folded. The count is its bullets. */
+function BriefSection({ title, text, folded }: { title: string; text: string; folded: boolean }) {
+  const [open, setOpen] = useState(!folded);
   const empty = emptySection(text);
   const bullets = text.split("\n").filter((l) => /^\s*[-*]\s/.test(l)).length;
   return (

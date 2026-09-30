@@ -18,7 +18,7 @@ import { useBuildBrief, useProjectBrief } from "@/lib/memory-queries";
 import { useNow } from "@/lib/use-now";
 import { BriefTab } from "./brief-tab";
 import { LessonsTab } from "./lessons-tab";
-import { countsOf, GLOBAL, type MemoryCounts, type MemoryTab, type ProjectOrgs } from "./model";
+import { countsOf, GLOBAL, type MemoryCounts, type MemoryTab, type ProjectOrgs, proseBrief } from "./model";
 import { TasksTab } from "./tasks-tab";
 import { ThreadsTab } from "./threads-tab";
 
@@ -78,7 +78,7 @@ export function MemoryDetail({
               brief={current}
               briefPending={brief.isPending}
             />
-            {!global && shown === "brief" && current !== undefined && (
+            {!global && shown === "brief" && current !== undefined && !proseBrief(current.body) && (
               <Button size="sm" className="ml-auto shrink-0" onClick={() => setRebuilding(true)}>
                 <RefreshCw aria-hidden="true" />
                 Rebuild brief
@@ -116,7 +116,9 @@ export function MemoryDetail({
       }
     >
       <div role="tabpanel" aria-label={TAB_LABEL[shown]}>
-        {shown === "brief" && project !== undefined && <BriefTab project={project.id} brief={brief} />}
+        {shown === "brief" && project !== undefined && (
+          <BriefTab project={project.id} brief={brief} onRebuild={() => setRebuilding(true)} />
+        )}
         {shown === "tasks" && <TasksTab project={global ? undefined : target} />}
         {shown === "threads" && <ThreadsTab target={target} threads={threads} />}
         {shown === "lessons" && (
@@ -137,7 +139,14 @@ function TabCount({ tab, counts }: { tab: MemoryTab; counts: MemoryCounts }) {
         <span className="sr-only">to review</span>
       </span>
     );
-  const n = tab === "tasks" ? counts.records : tab === "threads" ? counts.open : undefined;
+  const n =
+    tab === "tasks"
+      ? counts.records
+      : tab === "threads"
+        ? counts.open
+        : tab === "lessons"
+          ? counts.lessons
+          : undefined;
   if (n === undefined) return null;
   return <span className="tnum font-mono text-xs text-fg-faint">{n}</span>;
 }

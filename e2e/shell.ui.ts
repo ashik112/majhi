@@ -163,7 +163,9 @@ test("the board shows the task in Inbox; j and Enter open it, n adds a chat task
   await expect(inbox.getByRole("link").first()).toBeFocused();
 });
 
-test("the org filter is remembered, keeps URLs clean, and narrows the board, the count and the dialog", async ({ page }) => {
+test("the org filter is remembered, keeps URLs clean, and narrows the board, the count and the dialog", async ({
+  page,
+}) => {
   await page.goto("/");
   const orgs = page.getByRole("group", { name: "Filter by org" });
   await expect(orgs.getByRole("button", { name: /All orgs/ })).toHaveAttribute("aria-pressed", "true");

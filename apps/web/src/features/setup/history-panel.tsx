@@ -26,7 +26,7 @@ export function HistorySection() {
   return (
     <DetailSection
       title="Changes"
-      note="Every change to majhi.yaml is a commit you can undo"
+      note={history.data ? `Newest first, ${rows.length} shown` : undefined}
       className="border-t-0"
     >
       {history.isPending && <p className="text-sm text-fg-faint">Loading</p>}

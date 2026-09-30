@@ -2,8 +2,7 @@
 export const SETUP_GROUPS = [
   { label: "Setup", sections: ["overview", "roots", "ssh"] },
   { label: "How majhi works", sections: ["decisions", "memory", "context", "teams", "approvals"] },
-  { label: "This browser", sections: ["appearance"] },
-  { label: "Changes", sections: ["history"] },
+  { label: "More", sections: ["appearance", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];

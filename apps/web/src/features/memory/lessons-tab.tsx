@@ -154,7 +154,7 @@ function BulkReview({ ids }: { ids: readonly number[] }) {
       <Button size="sm" variant="ghost" onClick={() => setConfirm("reject")}>
         Reject all
       </Button>
-      <Button size="sm" onClick={() => setConfirm("approve")}>
+      <Button size="sm" variant="primary" onClick={() => setConfirm("approve")}>
         Approve all
       </Button>
       {confirm !== undefined && (

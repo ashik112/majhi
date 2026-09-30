@@ -60,7 +60,6 @@ export function FactRow({
             <>
               <Button
                 size="sm"
-                variant="primary"
                 aria-label={`Approve: ${fact.text}`}
                 disabled={approve.isPending}
                 onClick={() => approve.mutate({ id: fact.id }, { onError: fail("Could not approve") })}
@@ -69,6 +68,7 @@ export function FactRow({
               </Button>
               <Button
                 size="sm"
+                variant="ghost"
                 aria-label={`Reject: ${fact.text}`}
                 disabled={reject.isPending}
                 onClick={() => reject.mutate({ id: fact.id }, { onError: fail("Could not reject") })}

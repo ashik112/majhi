@@ -19,7 +19,7 @@ import { describeError } from "@/lib/errors";
 
 const MODES: readonly ApprovalMode[] = ["auto", "when-asked", "confirm"];
 const IDLE: SaveState = { kind: "idle" };
-const GRID = "grid gap-3 @[520px]:grid-cols-3";
+const GRID = "grid gap-3 @[480px]:grid-cols-3";
 
 /**
  * One section's draft of the settings form: only the fields it owns, over the saved settings, so a
@@ -153,7 +153,7 @@ export function ContextSection({ settings }: { settings: Settings }) {
         </div>
       </Section>
       <Section title="Limits" note="How many agents run at once" draft={limits}>
-        <div className="grid gap-3 @[520px]:grid-cols-2">
+        <div className="grid gap-3 @[480px]:grid-cols-2">
           <NumberField label="Agents at once" name="agentsMax" draft={limits} />
           <NumberField label="Per account" name="perAccount" draft={limits} />
           <NumberField label="Per task" name="perTask" draft={limits} />
@@ -185,7 +185,7 @@ export function TeamsSection({ settings }: { settings: Settings }) {
   const teams = useSettingsDraft(settings, ["maxAgentTurns", "reviewRounds"]);
   return (
     <Section first title="Teams" note="How long agents may pass work between them without you" draft={teams}>
-      <div className="grid gap-3 @[520px]:grid-cols-2">
+      <div className="grid gap-3 @[480px]:grid-cols-2">
         <NumberField label="Handoffs in a row with no changes" name="maxAgentTurns" draft={teams} />
         <NumberField label="Review rounds" name="reviewRounds" draft={teams} />
       </div>
@@ -223,7 +223,7 @@ export function ApprovalsSection({ settings }: { settings: Settings }) {
         setState(IDLE);
       }}
     >
-      <div className="grid max-w-[640px] gap-3 @[520px]:grid-cols-2">
+      <div className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2">
         {POLICY_ROWS.map((row) => (
           <Field key={row.key} label={row.label} hint={row.hint}>
             {(p) => (

@@ -107,10 +107,13 @@ export const MEMORY_TABS: readonly MemoryTab[] = ["brief", "tasks", "threads", "
 export interface MemoryCounts {
   records: number;
   open: number;
+  /** Lessons that wait for the owner. */
   waiting: number;
+  /** Active lessons. */
+  lessons: number;
 }
 
-const ZERO: MemoryCounts = { records: 0, open: 0, waiting: 0 };
+const ZERO: MemoryCounts = { records: 0, open: 0, waiting: 0, lessons: 0 };
 
 /** Which rows a fact belongs to: its project, every project of its org, or the Global row. */
 export function factTargets(fact: Fact, projectOrgs: ProjectOrgs): string[] {
@@ -146,8 +149,9 @@ export function memoryCounts(
   }
   for (const t of threads) if (t.status === "open") bump(t.project ?? GLOBAL, "open");
   for (const f of facts) {
-    if (f.status !== "pending") continue;
-    for (const target of factTargets(f, projectOrgs)) bump(target, "waiting");
+    const field = f.status === "pending" ? "waiting" : f.status === "active" ? "lessons" : undefined;
+    if (field === undefined) continue;
+    for (const target of factTargets(f, projectOrgs)) bump(target, field);
   }
   return out;
 }
@@ -186,6 +190,11 @@ export function briefSections(body: string): { title: string; text: string }[] {
   }
   flush();
   return out;
+}
+
+/** A brief from before briefs were kept to short bullets: some section is prose. */
+export function proseBrief(body: string): boolean {
+  return briefSections(body).some((s) => !emptySection(s.text) && !/^\s*[-*]\s/m.test(s.text));
 }
 
 /** A section with nothing in it: empty, or the brief's "Nothing yet." */

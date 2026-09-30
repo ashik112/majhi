@@ -86,31 +86,34 @@ function RecordRow({ record }: { record: TaskRecord }) {
       aria-label={`Record of ${record.task}`}
       className="flex flex-col border-t border-line first:border-t-0"
     >
-      <div className="flex min-h-10 min-w-0 items-center gap-3">
-        <span className="w-[76px] shrink-0 text-sm">
+      <div className="flex min-h-10 min-w-0 items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`${open ? "Hide" : "Show"} the record of ${record.task}`}
+          onClick={() => setOpen(!open)}
+          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-fg-faint transition-colors duration-150 hover:bg-raised hover:text-fg"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("size-3.5 transition-transform duration-150", open && "rotate-90")}
+          />
+        </button>
+        <span className="w-[72px] shrink-0 text-sm">
           <TaskRef id={record.task} />
         </span>
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 text-left"
+          className="min-w-0 flex-1 cursor-pointer truncate py-2 text-left text-base text-fg hover:text-fg-soft"
         >
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 shrink-0 text-fg-faint transition-transform duration-150 group-hover:text-fg-muted",
-              open && "rotate-90",
-            )}
-          />
-          <span className="min-w-0 flex-1 truncate text-base text-fg group-hover:text-fg">
-            {record.title}
-          </span>
+          {record.title}
         </button>
         {landed && (
           <span
             className={cn(
-              "hidden shrink-0 text-xs @[520px]:inline",
+              "hidden shrink-0 text-xs @[480px]:inline",
               landed.merged ? "text-green" : "text-fg-muted",
             )}
           >
@@ -122,7 +125,7 @@ function RecordRow({ record }: { record: TaskRecord }) {
         </span>
       </div>
       {open && (
-        <div className="flex min-w-0 max-w-[80ch] flex-col gap-3 pb-4 pl-[98px]">
+        <div className="flex min-w-0 max-w-[80ch] flex-col gap-3 pb-4 pl-[112px]">
           {record.repos.length > 0 && (
             <div className="flex flex-col gap-0.5">
               {record.repos.map((r) => (

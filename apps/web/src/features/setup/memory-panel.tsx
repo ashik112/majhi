@@ -112,7 +112,7 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
         }}
         className="flex max-w-[640px] flex-col gap-4"
       >
-        <div className="grid gap-3 @[520px]:grid-cols-2">
+        <div className="grid gap-3 @[480px]:grid-cols-2">
           <Field
             label="Housekeeper"
             hint="Reads each finished task and writes its record, the project brief and any lessons. The only memory step that spends tokens."

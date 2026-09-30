@@ -59,7 +59,7 @@ export function DecisionsSection() {
         <Providers status={status.data} />
       </DetailSection>
       <Picks key={JSON.stringify(status.data.settings)} status={status.data} />
-      <DetailSection title="Jev API key">
+      <DetailSection title="Jev key">
         <JevKey status={status.data} />
       </DetailSection>
       <DetailSection title="Ask the decision model" note="Try a question against the order above">
@@ -247,7 +247,7 @@ function Picks({ status }: { status: DecisionsStatus }) {
       onSave={submit}
       onDiscard={discard}
     >
-      <div className="grid max-w-[640px] gap-3 @[520px]:grid-cols-2">
+      <div className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2">
         {BARS.map((key) => (
           <Field
             key={key}

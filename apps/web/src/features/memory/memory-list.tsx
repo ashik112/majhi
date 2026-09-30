@@ -10,7 +10,13 @@ import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { countsOf, GLOBAL, type MemoryCounts } from "./model";
 
-/** Projects under their org, orgs and projects in name order. */
+/** Where an org sits in the orgs' own order (Private first); unknown orgs last. */
+function orgRank(org: string, orgs: readonly OrgView[]): number {
+  const i = orgs.findIndex((o) => o.id === org);
+  return i === -1 ? orgs.length : i;
+}
+
+/** Projects under their org, orgs in their own order, projects by id. */
 function projectGroups(projects: readonly ProjectView[], orgs: readonly OrgView[]) {
   const groups = new Map<string, ProjectView[]>();
   for (const p of projects) groups.set(p.org, [...(groups.get(p.org) ?? []), p]);
@@ -21,7 +27,7 @@ function projectGroups(projects: readonly ProjectView[], orgs: readonly OrgView[
       key: orgs.find((o) => o.id === org)?.key ?? org,
       projects: list.toSorted((a, b) => a.id.localeCompare(b.id)),
     }))
-    .toSorted((a, b) => a.label.name.localeCompare(b.label.name));
+    .toSorted((a, b) => orgRank(a.org, orgs) - orgRank(b.org, orgs) || a.org.localeCompare(b.org));
 }
 
 /** The Global row first, then each org's projects, each row with what memory holds for it. */
@@ -43,7 +49,6 @@ export function MemoryList({
     <div className="flex flex-col gap-3">
       <Group
         label="Global"
-        count={1}
         badge={
           <span
             aria-hidden="true"
@@ -57,7 +62,7 @@ export function MemoryList({
           name="Global lessons"
           mono={false}
           counts={countsOf(counts, GLOBAL)}
-          lessonsOnly
+          global
           selected={selected === GLOBAL}
           onSelect={() => onSelect(GLOBAL)}
         />
@@ -96,7 +101,7 @@ function Group({
   children,
 }: {
   label: string;
-  count: number;
+  count?: number;
   badge: ReactNode;
   children: ReactNode;
 }) {
@@ -105,32 +110,46 @@ function Group({
       <div className="flex h-8 items-center gap-2 pl-2">
         {badge}
         <h2 className="min-w-0 truncate text-sm font-medium text-fg-soft">{label}</h2>
-        <span className="tnum font-mono text-xs text-fg-faint">{count}</span>
+        {count !== undefined && <span className="tnum font-mono text-xs text-fg-faint">{count}</span>}
       </div>
       <ul className="flex flex-col gap-px">{children}</ul>
     </section>
   );
 }
 
-/** A project's id, then its records, open threads and, lit, the lessons that wait for the owner. */
+/**
+ * A project's id, then its task records and open threads, and, lit, the lessons that wait for the
+ * owner. The Global row counts its lessons, then records and threads only when it has any.
+ */
 function Row({
   name,
   counts,
   selected,
   onSelect,
   mono = true,
-  lessonsOnly = false,
+  global = false,
 }: {
   name: string;
   counts: MemoryCounts;
   selected: boolean;
   onSelect: () => void;
   mono?: boolean;
-  /** The Global row: lessons first, records and threads only when there are any. */
-  lessonsOnly?: boolean;
+  global?: boolean;
 }) {
-  const records = !lessonsOnly || counts.records > 0;
-  const open = !lessonsOnly || counts.open > 0;
+  const parts: { key: string; node: ReactNode }[] = [];
+  if (global) parts.push({ key: "l", node: <Count n={counts.lessons} word="lesson" /> });
+  if (!global || counts.records > 0) parts.push({ key: "r", node: <Count n={counts.records} word="task" /> });
+  if (!global || counts.open > 0) parts.push({ key: "o", node: <Count n={counts.open} word="open" plain /> });
+  if (counts.waiting > 0)
+    parts.push({
+      key: "w",
+      node: (
+        <span className="flex items-center gap-1.5 whitespace-nowrap text-lamp-needs">
+          <Lamp state="needs" size={6} />
+          <span className="tnum font-mono">{counts.waiting}</span> to review
+        </span>
+      ),
+    });
   return (
     <li>
       <button
@@ -153,23 +172,12 @@ function Row({
           {name}
         </span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-faint">
-          {!records && !open && counts.waiting === 0 && <span>Nothing waits</span>}
-          {records && <Count n={counts.records} word="task" />}
-          {open && (
-            <>
-              {records && <Dot />}
-              <Count n={counts.open} word="open" plain />
-            </>
-          )}
-          {counts.waiting > 0 && (
-            <>
-              {(records || open) && <Dot />}
-              <span className="flex items-center gap-1.5 text-lamp-needs">
-                <Lamp state="needs" size={6} />
-                <span className="tnum font-mono">{counts.waiting}</span> to review
-              </span>
-            </>
-          )}
+          {parts.map((p, i) => (
+            <span key={p.key} className="flex items-center gap-1.5">
+              {i > 0 && <span aria-hidden="true">·</span>}
+              {p.node}
+            </span>
+          ))}
         </span>
       </button>
     </li>
@@ -179,11 +187,8 @@ function Row({
 function Count({ n, word, plain = false }: { n: number; word: string; plain?: boolean }) {
   return (
     <span className="whitespace-nowrap">
-      <span className="tnum font-mono text-fg-muted">{n}</span> {plain || n === 1 ? word : `${word}s`}
+      <span className={cn("tnum font-mono", n === 0 ? "text-fg-faint" : "text-fg-muted")}>{n}</span>{" "}
+      {plain || n === 1 ? word : `${word}s`}
     </span>
   );
-}
-
-function Dot() {
-  return <span aria-hidden="true">·</span>;
 }
