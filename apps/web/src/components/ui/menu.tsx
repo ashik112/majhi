@@ -1,5 +1,7 @@
 import { Check } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { GLASS_STRONG } from "@/lib/glass";
@@ -40,16 +42,12 @@ export function Menu({
   const root = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const close = useCallback(() => setOpen(false), []);
+  const { panel, style } = useAnchoredPanel({ open, close, trigger: triggerRef, align });
 
   useEffect(() => {
-    if (!open) return;
-    root.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
-    const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
-  }, [open]);
+    if (open) panel.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
+  }, [open, panel]);
 
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Escape") {
@@ -61,7 +59,7 @@ export function Menu({
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     const nodes = Array.from(
-      root.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? [],
+      panel.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? [],
     );
     const at = nodes.indexOf(document.activeElement as HTMLElement);
     const next = event.key === "ArrowDown" ? at + 1 : at - 1;
@@ -86,45 +84,48 @@ export function Menu({
           {icon}
         </Button>
       )}
-      {open && (
-        <div
-          id={id}
-          role="menu"
-          aria-label={label}
-          className={cn(
-            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 max-w-72 flex-col overflow-y-auto rounded-lg p-1",
-            GLASS_STRONG,
-            align === "right" ? "right-0" : "left-0",
-          )}
-        >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              {...(item.checked === undefined
-                ? { role: "menuitem" }
-                : { role: "menuitemradio", "aria-checked": item.checked })}
-              disabled={item.disabled}
-              title={item.label}
-              onClick={() => {
-                setOpen(false);
-                item.onSelect();
-              }}
-              className={cn(
-                "flex h-8 min-w-0 shrink-0 items-center gap-2 rounded-sm px-2.5 text-left text-base whitespace-nowrap hover:bg-raised focus-visible:bg-raised focus-visible:outline-none disabled:opacity-45",
-                item.tone === "danger" ? "text-red" : "text-fg",
-              )}
-            >
-              {item.checked !== undefined && (
-                <span aria-hidden="true" className="flex w-3 justify-center text-accent-text">
-                  {item.checked && <Check className="size-3.5" strokeWidth={2.5} />}
-                </span>
-              )}
-              <span className="min-w-0 truncate">{item.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            id={id}
+            role="menu"
+            aria-label={label}
+            style={style}
+            className={cn(
+              "z-50 flex min-w-40 max-w-72 flex-col overflow-y-auto rounded-lg p-1",
+              GLASS_STRONG,
+            )}
+          >
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                {...(item.checked === undefined
+                  ? { role: "menuitem" }
+                  : { role: "menuitemradio", "aria-checked": item.checked })}
+                disabled={item.disabled}
+                title={item.label}
+                onClick={() => {
+                  setOpen(false);
+                  item.onSelect();
+                }}
+                className={cn(
+                  "flex h-8 min-w-0 shrink-0 items-center gap-2 rounded-sm px-2.5 text-left text-base whitespace-nowrap hover:bg-raised focus-visible:bg-raised focus-visible:outline-none disabled:opacity-45",
+                  item.tone === "danger" ? "text-red" : "text-fg",
+                )}
+              >
+                {item.checked !== undefined && (
+                  <span aria-hidden="true" className="flex w-3 justify-center text-accent-text">
+                    {item.checked && <Check className="size-3.5" strokeWidth={2.5} />}
+                  </span>
+                )}
+                <span className="min-w-0 truncate">{item.label}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

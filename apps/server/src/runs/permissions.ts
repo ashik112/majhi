@@ -52,6 +52,12 @@ export function decidePermission(ask: PermissionAsk, ctx: DecideContext): Decisi
   // majhi's own MCP tools are gated by majhi's approval policy (cards with Undo), so the CLI's
   // extra "may I call this tool" prompt is only noise. Anything else still follows the rules below.
   if (isMajhiTool(ask.title)) return { action: "allow", option: option.id, via: "perms" };
+  // Background processes run commands, so they need what a shell command needs.
+  if (isProcessTool(ask.title)) {
+    return ctx.perms.includes("shell")
+      ? { action: "allow", option: option.id, via: "perms" }
+      : { action: "ask" };
+  }
   const need = neededPerm(ask);
   if (need === "none") return { action: "allow", option: option.id, via: "perms" };
   if (need !== "unknown" && ctx.perms.includes(need))
@@ -63,7 +69,12 @@ export function decidePermission(ask: PermissionAsk, ctx: DecideContext): Decisi
   return { action: "ask" };
 }
 
+/** A call to majhi's background process server, which runs commands. */
+export function isProcessTool(title: string): boolean {
+  return /^mcp__majhi-processes__[a-z0-9_]+$/.test(title.trim());
+}
+
 /** A call to one of majhi's own MCP servers, as the CLIs name it: `mcp__majhi-admin__<tool>`. */
 export function isMajhiTool(title: string): boolean {
-  return /^mcp__majhi-(admin|decide)__[a-z0-9_]+$/.test(title.trim());
+  return /^mcp__majhi-(admin|decide|room|tasks|memory)__[a-z0-9_]+$/.test(title.trim());
 }

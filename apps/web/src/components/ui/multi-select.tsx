@@ -1,5 +1,7 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useAnchoredPanel } from "@/components/ui/anchored";
 import { cn } from "@/lib/cn";
 import { GLASS_STRONG } from "@/lib/glass";
 
@@ -41,15 +43,12 @@ export function MultiSelect({
   const button = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
+  const close = useCallback(() => setOpen(false), []);
+  const { panel, style } = useAnchoredPanel({ open, close, trigger: button, matchWidth: true });
+
   useEffect(() => {
-    if (!open) return;
-    root.current?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')?.focus();
-    const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    return () => document.removeEventListener("pointerdown", onPointer);
-  }, [open]);
+    if (open) panel.current?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')?.focus();
+  }, [open, panel]);
 
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Escape" && open) {
@@ -60,7 +59,7 @@ export function MultiSelect({
     }
     if (!open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
     event.preventDefault();
-    const rows = Array.from(root.current?.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]') ?? []);
+    const rows = Array.from(panel.current?.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]') ?? []);
     const at = rows.indexOf(document.activeElement as HTMLElement);
     const next = event.key === "ArrowDown" ? at + 1 : at - 1;
     rows[(next + rows.length) % rows.length]?.focus();
@@ -103,55 +102,56 @@ export function MultiSelect({
         </span>
         <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
       </button>
-      {open && (
-        <div
-          id={listId}
-          role="menu"
-          aria-label={label}
-          className={cn(
-            "absolute top-full left-0 z-30 mt-1 flex max-h-72 w-full min-w-56 flex-col overflow-y-auto rounded-lg p-1",
-            GLASS_STRONG,
-          )}
-        >
-          {[...options, ...unknown.map((v) => ({ value: v, label: `${v} (not offered)`, mono: true }))].map(
-            (option) => {
-              const on = value.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={on}
-                  onClick={() => toggle(option.value)}
-                  className="flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base text-fg hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded-xs border",
-                      on ? "border-accent bg-accent text-accent-ink" : "border-line-bright bg-field",
-                    )}
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            id={listId}
+            role="menu"
+            aria-label={label}
+            style={style}
+            className={cn("z-50 flex min-w-56 flex-col overflow-y-auto rounded-lg p-1", GLASS_STRONG)}
+          >
+            {[...options, ...unknown.map((v) => ({ value: v, label: `${v} (not offered)`, mono: true }))].map(
+              (option) => {
+                const on = value.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    onClick={() => toggle(option.value)}
+                    className="flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base text-fg hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
                   >
-                    {on && <Check className="size-3" strokeWidth={3} />}
-                  </span>
-                  <span className={cn("min-w-0 truncate", option.mono && "font-mono text-sm")}>
-                    {option.label}
-                  </span>
-                </button>
-              );
-            },
-          )}
-          {value.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="mt-1 flex h-8 shrink-0 cursor-pointer items-center rounded-sm border-t border-line px-2 text-left text-sm text-fg-muted hover:bg-raised hover:text-fg"
-            >
-              {clearText}
-            </button>
-          )}
-        </div>
-      )}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded-xs border",
+                        on ? "border-accent bg-accent text-accent-ink" : "border-line-bright bg-field",
+                      )}
+                    >
+                      {on && <Check className="size-3" strokeWidth={3} />}
+                    </span>
+                    <span className={cn("min-w-0 truncate", option.mono && "font-mono text-sm")}>
+                      {option.label}
+                    </span>
+                  </button>
+                );
+              },
+            )}
+            {value.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="mt-1 flex h-8 shrink-0 cursor-pointer items-center rounded-sm border-t border-line px-2 text-left text-sm text-fg-muted hover:bg-raised hover:text-fg"
+              >
+                {clearText}
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
