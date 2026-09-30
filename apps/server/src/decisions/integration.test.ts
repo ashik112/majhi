@@ -122,23 +122,21 @@ describe("pickModel", () => {
     role: "Builder" as const,
     context: "Fix a typo",
     models: [
-      { id: "haiku", name: "Haiku" },
-      { id: "opus", name: "Opus" },
+      { id: "haiku-1", label: "haiku-1: cheapest and fastest", rank: "cheapest and fastest" },
+      { id: "opus-1", label: "opus-1: most capable", rank: "most capable" },
     ],
     efforts: [
-      { id: "low", name: "Low" },
-      { id: "high", name: "High" },
+      { id: "low", label: "low" },
+      { id: "high", label: "high" },
     ],
-    pickModel: true,
-    pickEffort: true,
   };
   const answers = (model: number, effort: number) => () => ({
     answers: {
       model: {
         type: "choice",
-        choice: "haiku",
+        choice: "haiku-1: cheapest and fastest",
         confidence: 0,
-        probabilities: { haiku: model, opus: 1 - model },
+        probabilities: { "haiku-1: cheapest and fastest": model, "opus-1: most capable": 1 - model },
       },
       effort: {
         type: "choice",
@@ -151,11 +149,64 @@ describe("pickModel", () => {
     predictMs: 1,
   });
 
-  it("returns the pick when both answers reach the floor, with a room line", async () => {
-    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
+  it("returns each answer as an id with its confidence, low ones too", async () => {
+    const { w } = await world({ status: READY, decide: answers(0.9, 0.3) });
     const pick = await w.h.majhi.services.decisions.pickModel(request);
-    expect(pick).toMatchObject({ model: "haiku", effort: "low", provider: "laya", confidence: 0.8 });
-    expect(pick?.reason).toBe("Laya picked haiku, effort low (0.80)");
+    expect(pick).toMatchObject({
+      model: { id: "haiku-1", confidence: 0.9 },
+      effort: { id: "low", confidence: 0.3 },
+      provider: "laya",
+      by: "Laya",
+    });
+  });
+
+  it("asks only the lists with two options", async () => {
+    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
+    const pick = await w.h.majhi.services.decisions.pickModel({ ...request, efforts: [] });
+    expect(pick?.model?.id).toBe("haiku-1");
+    expect(pick?.effort).toBeUndefined();
+    expect(
+      await w.h.majhi.services.decisions.pickModel({ ...request, models: [], efforts: [] }),
+    ).toBeUndefined();
+  });
+
+  it("asks for the ranking in the same call and maps the two answers back to ids", async () => {
+    const plain = [
+      { id: "haiku-1", label: "haiku-1: Quick" },
+      { id: "opus-1", label: "opus-1: Thorough" },
+    ];
+    const choice = (label: string, other: string) => ({
+      type: "choice",
+      choice: label,
+      confidence: 0,
+      probabilities: { [label]: 0.5, [other]: 0.5 },
+    });
+    const ranking = () => ({
+      answers: {
+        model: choice("haiku-1: Quick", "opus-1: Thorough"),
+        effort: choice("low", "high"),
+        capable: choice("opus-1: Thorough", "haiku-1: Quick"),
+        cheapest: choice("haiku-1: Quick", "opus-1: Thorough"),
+      },
+      loadMs: 0,
+      predictMs: 1,
+    });
+    const { w } = await world({ status: READY, decide: ranking });
+    const pick = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain, rank: plain });
+    expect(pick).toMatchObject({ capable: "opus-1", cheapest: "haiku-1" });
+    const [logged] = w.h.majhi.services.decisions.recent(1);
+    expect(logged?.summary).toContain("capable: Which of these models is the most capable?");
+    expect(logged?.summary).toContain("cheapest: Which of these models is the cheapest and fastest?");
+    // Not asked without `rank`.
+    const none = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain });
+    expect(none?.capable).toBeUndefined();
+  });
+
+  it("puts the role in the question", async () => {
+    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
+    await w.h.majhi.services.decisions.pickModel({ ...request, role: "Lead" });
+    const [logged] = w.h.majhi.services.decisions.recent(1);
+    expect(logged?.summary).toContain("model: Which model fits a Lead who plans and reviews the work?");
   });
 });
 

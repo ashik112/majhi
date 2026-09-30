@@ -197,7 +197,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -211,6 +211,8 @@ export const commands = {
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
+      /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
+      tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
     }),
@@ -288,6 +290,13 @@ export const commands = {
     summary: "Read the account's 5-hour and weekly usage. Null for API-key accounts. Spends no model tokens",
     input: z.object({ id: IdSchema, refresh: z.boolean().optional() }),
     output: AccountUsageSchema.nullable(),
+  },
+  "accounts.hideModel": {
+    risk: "change",
+    summary:
+      "Hide a model of the account from auto picks and fallback tiers, or show it again. An agent that names the model still gets it",
+    input: z.object({ id: IdSchema, model: z.string().trim().min(1), hidden: z.boolean() }),
+    output: AccountViewSchema,
   },
   "accounts.models": {
     risk: "read",

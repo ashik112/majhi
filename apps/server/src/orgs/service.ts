@@ -54,7 +54,7 @@ export class OrgService {
     const next: OrgConfig = { ...current };
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.color !== undefined) next.color = patch.color;
-    for (const field of ["base", "key", "identity", "context", "resume", "rooms", "team"] as const) {
+    for (const field of ["base", "key", "identity", "context", "resume", "rooms", "tiers", "team"] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
       else if (value !== undefined) Object.assign(next, { [field]: value });
@@ -129,6 +129,7 @@ function view(
   if (org.context?.compact_at !== undefined) out.context = { compact_at: org.context.compact_at };
   if (org.resume?.auto !== undefined) out.resume = { auto: org.resume.auto };
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
+  if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   return out;
 }

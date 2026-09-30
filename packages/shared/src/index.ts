@@ -12,4 +12,5 @@ export * from "./secrets-detect.ts";
 export * from "./settings.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";
+export * from "./tiers.ts";
 export * from "./usage.ts";

@@ -142,6 +142,9 @@ export const codex: ToolDef = {
   },
   configHomeVar: "CODEX_HOME",
   apiKeyVar: "CODEX_API_KEY",
+  // Written by codex for a signed-in account: `models[]` with a `slug` and, for a replaced model,
+  // `upgrade: { model }` naming its replacement.
+  modelCatalog: "models_cache.json",
   adapter: { command: "codex-acp", args: [] },
   versionArgs: ["cli", "--version"],
   authStatusArgs: ["cli", "login", "status"],

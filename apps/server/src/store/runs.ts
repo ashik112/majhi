@@ -128,15 +128,15 @@ export class RunRepo {
     return { checkpoint: n, roomSeq: row?.roomSeq ?? 0 };
   }
 
-  /** What the decision provider picked for this run, and the decision's id. */
+  /** What the run was set to: the decision provider's pick (with the decision's id) or a fallback tier's. */
   setPick(
     id: number,
-    pick: { model?: string | undefined; effort?: string | undefined; decisionId: string },
+    pick: { model?: string | undefined; effort?: string | undefined; decisionId?: string | undefined },
   ): void {
     this.db
       .update(runs)
       .set({
-        decisionId: pick.decisionId,
+        ...(pick.decisionId === undefined ? {} : { decisionId: pick.decisionId }),
         ...(pick.model === undefined ? {} : { model: pick.model }),
         ...(pick.effort === undefined ? {} : { effort: pick.effort }),
       })

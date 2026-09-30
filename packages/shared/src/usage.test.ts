@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PRICES, findPrice, normalizeModel, priceTokens, totalTokens } from "./usage.ts";
+import {
+  DEFAULT_PRICE_SOURCES,
+  DEFAULT_PRICES,
+  findPrice,
+  normalizeModel,
+  priceTokens,
+  totalTokens,
+} from "./usage.ts";
 
 describe("findPrice", () => {
   it("matches an exact id, a dated snapshot and a context suffix", () => {
@@ -17,7 +24,8 @@ describe("findPrice", () => {
 
   it("has no row for aliases, unknown models or nothing", () => {
     expect(findPrice("sonnet")).toBeUndefined();
-    expect(findPrice("gpt-5.5")).toBeUndefined();
+    expect(findPrice("gpt-9")).toBeUndefined();
+    expect(findPrice("gpt-6")).toBeUndefined();
     expect(findPrice(undefined)).toBeUndefined();
     expect(findPrice("  ")).toBeUndefined();
   });
@@ -35,6 +43,31 @@ describe("findPrice", () => {
   it("normalizes case, suffixes and provider prefixes", () => {
     expect(normalizeModel(" Claude-Opus-5-5[1M] ")).toBe("claude-opus-5-5");
     expect(normalizeModel("openai/gpt-5.5")).toBe("gpt-5.5");
+  });
+});
+
+describe("default rows", () => {
+  it("prices the Codex models, and each default row has a page and a check date", () => {
+    for (const id of [
+      "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+    ]) {
+      expect(findPrice(id)?.source).toBe("default");
+    }
+    // The family names a model shares with a longer id do not borrow its row.
+    expect(findPrice("gpt-5.5-codex")).toBeUndefined();
+    expect(findPrice("gpt-6-sol-mini")).toBeUndefined();
+    expect(DEFAULT_PRICES["gpt-5.5"]).toEqual({ input: 5, output: 30, cache_read: 0.5, cache_write: 0 });
+    expect(Object.keys(DEFAULT_PRICE_SOURCES).sort()).toEqual(Object.keys(DEFAULT_PRICES).sort());
+    for (const source of Object.values(DEFAULT_PRICE_SOURCES)) {
+      expect(source.url).toMatch(/^https:\/\//);
+      expect(source.checked).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
   });
 });
 

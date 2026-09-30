@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
+import { getTool, type PromptBlock, type RuntimeOptions, type SessionEvent } from "@majhi/acp";
 import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
+import { accountHome } from "../accounts/homes.ts";
+import { readModelCatalog } from "../accounts/model-catalog.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
+import { readDecisionSettings } from "../decisions/settings.ts";
 import { errorMessage } from "../errors.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
@@ -16,6 +19,7 @@ import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
 import { diffStat } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
@@ -941,18 +945,34 @@ export class RunManager {
 
       let pickLine: string | undefined;
       if (fm.model === "auto" || fm.effort === "auto") {
+        const sections = await deps.config.sections();
+        // A price table that does not parse must not stop the start: picks fall back to tiers or the CLI default.
+        const prices = await readPrices(deps.config.file).catch(() => {
+          this.live.system(
+            run,
+            "warn",
+            "The price table in majhi.yaml does not parse, so models are not ranked by price.",
+          );
+          return {};
+        });
         const result = await pickForSession({
           decisions: deps.decisions,
           session,
           fm,
           instructions: agent.instructions,
           task,
+          settings: await readDecisionSettings(deps.config.file),
+          prices,
+          replaced: await readModelCatalog(
+            accountHome(deps.majhiHome, fm.account),
+            getTool(agent.account.tool).modelCatalog,
+          ),
+          tool: agent.account.tool,
+          hidden: agent.account.hidden_models ?? [],
+          orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });
         for (const line of result.warnings) this.live.system(run, "warn", line);
-        if (result.pick !== undefined) {
-          const { model, effort, decisionId } = result.pick;
-          deps.store.runs.setPick(run.runId, { model, effort, decisionId });
-        }
+        if (result.applied !== undefined) deps.store.runs.setPick(run.runId, result.applied);
         pickLine = result.line;
       }
       // What the agent runs after the session applied the options: a refused model keeps the default.

@@ -1,5 +1,13 @@
 import type { AccountView, AgentEntry, HealthCheck, OrgView, Perm } from "@majhi/shared";
-import { AUTO, collapseHome, IdSchema } from "@majhi/shared";
+import {
+  AUTO,
+  collapseHome,
+  EFFORT_TIER_LABEL,
+  EffortTierSchema,
+  IdSchema,
+  MODEL_TIER_LABEL,
+  ModelTierSchema,
+} from "@majhi/shared";
 import { Check, Ellipsis } from "lucide-react";
 import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
@@ -44,6 +52,7 @@ import {
   togglePerm,
   toggleWhere,
   updateInput,
+  withTier,
   worksOutsideScope,
 } from "./model";
 import { UsageStrip } from "./usage-strip";
@@ -340,6 +349,55 @@ export function AgentEditor({
                 </ChoiceChip>
               ))}
             </Group>
+          </div>
+        )}
+
+        {(draft.model === AUTO || draft.effort === AUTO) && (
+          <div className="col-span-2 flex flex-col gap-4">
+            {draft.model === AUTO && (
+              <Group
+                label="Model when there is no confident pick"
+                note="Chosen by price among the models on offer. Role default follows Hub setup and the org."
+              >
+                <ChoiceChip
+                  pressed={draft.tier.model === undefined}
+                  onClick={() => change({ tier: withTier(draft.tier, "model", undefined) })}
+                >
+                  Role default
+                </ChoiceChip>
+                {ModelTierSchema.options.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    pressed={draft.tier.model === t}
+                    onClick={() => change({ tier: withTier(draft.tier, "model", t) })}
+                  >
+                    {MODEL_TIER_LABEL[t]}
+                  </ChoiceChip>
+                ))}
+              </Group>
+            )}
+            {draft.effort === AUTO && (
+              <Group
+                label="Effort when there is no confident pick"
+                note="Chosen by position in the account's effort list, lowest first."
+              >
+                <ChoiceChip
+                  pressed={draft.tier.effort === undefined}
+                  onClick={() => change({ tier: withTier(draft.tier, "effort", undefined) })}
+                >
+                  Role default
+                </ChoiceChip>
+                {EffortTierSchema.options.map((t) => (
+                  <ChoiceChip
+                    key={t}
+                    pressed={draft.tier.effort === t}
+                    onClick={() => change({ tier: withTier(draft.tier, "effort", t) })}
+                  >
+                    {EFFORT_TIER_LABEL[t]}
+                  </ChoiceChip>
+                ))}
+              </Group>
+            )}
           </div>
         )}
 

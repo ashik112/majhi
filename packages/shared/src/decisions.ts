@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { IdSchema } from "./accounts.ts";
 import { TaskIdSchema } from "./tasks.ts";
+import { DEFAULT_TIERS, RoleSchema, resolveTier, type Tiers, TiersPatchSchema } from "./tiers.ts";
 
 /**
  * The decision provider (SPEC 5.12): typed questions answered in one pass,
@@ -115,8 +116,14 @@ const decisionFields = {
   acp_agent: IdSchema,
   /** `secret:<name>` for Jev's API key. Jev is skipped without one. */
   jev_key: z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/),
-  /** Below this, a model pick falls back to the agent's default. */
+  /** Below this, an answer to the other decisions is not used. */
   min_confidence: z.number().min(0).max(1),
+  /** Below this, a model pick falls back to the role's model tier. Laya spreads probability across similar models, so it is lower than `min_confidence`. */
+  model_floor: z.number().min(0).max(1),
+  /** Below this, an effort pick falls back to the role's effort tier. */
+  effort_floor: z.number().min(0).max(1),
+  /** Model and effort tiers per role. Orgs and agents can override them. */
+  tiers: TiersPatchSchema,
   /** Calls to `majhi-decide` allowed per run, to catch loops. */
   per_run_limit: z.number().int().min(1).max(1000),
 };
@@ -125,6 +132,14 @@ export const DecisionSettingsSchema = z.strictObject({
   acp_agent: decisionFields.acp_agent.optional(),
   jev_key: decisionFields.jev_key.optional(),
   min_confidence: decisionFields.min_confidence.default(0.6),
+  model_floor: decisionFields.model_floor.default(0.4),
+  effort_floor: decisionFields.effort_floor.default(0.4),
+  /** Every role, with the defaults filled in for whatever majhi.yaml leaves out. */
+  tiers: decisionFields.tiers.default({}).transform((patch): Tiers => {
+    const tiers = { ...DEFAULT_TIERS };
+    for (const role of RoleSchema.options) tiers[role] = resolveTier(role, patch[role]);
+    return tiers;
+  }),
   per_run_limit: decisionFields.per_run_limit.default(30),
 });
 export type DecisionSettings = z.infer<typeof DecisionSettingsSchema>;

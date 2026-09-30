@@ -30,26 +30,73 @@ export const PriceKeySchema = z
 export const PricesConfigSchema = z.record(PriceKeySchema, PriceSchema);
 export type PricesConfig = z.infer<typeof PricesConfigSchema>;
 
-/** When the default rows were last checked against the providers' price pages. */
-export const DEFAULT_PRICES_CHECKED = "2026-09-25";
+/** Where a group of default rows comes from, and when it was last compared with that page. */
+interface PriceSource {
+  url: string;
+  /** YYYY-MM-DD */
+  checked: string;
+}
+
+const ANTHROPIC: PriceSource = {
+  url: "https://platform.claude.com/docs/en/about-claude/pricing",
+  checked: "2026-09-30",
+};
+const OPENAI: PriceSource = {
+  url: "https://developers.openai.com/api/docs/pricing",
+  checked: "2026-09-30",
+};
 
 /**
- * Anthropic's first-party API prices, with 5-minute cache writes. OpenAI and other providers have no
- * default rows: majhi does not ship prices it could not check. The owner adds them in the table.
+ * Default rows, by the page they come from. Anthropic's are first-party API prices with 5-minute
+ * cache writes. OpenAI's are standard, short-context rates; `gpt-5.5` has no cache-write price on the
+ * page, so its `cache_write` is 0. Both are dollars per million tokens. The owner can change or
+ * replace any row in the table.
  */
-export const DEFAULT_PRICES: Readonly<Record<string, Price>> = {
-  "claude-fable-5-1": { input: 10, output: 50, cache_read: 0.25, cache_write: 12.5 },
-  "claude-fable-5": { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
-  "claude-opus-5-5": { input: 4, output: 20, cache_read: 0.2, cache_write: 5 },
-  "claude-opus-5": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
-  "claude-opus-4-8": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
-  "claude-opus-4-7": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
-  "claude-opus-4-6": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
-  "claude-sonnet-5-5": { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
-  "claude-sonnet-5": { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 },
-  "claude-haiku-4-5": { input: 1, output: 5, cache_read: 0.1, cache_write: 1.25 },
-};
+const DEFAULT_GROUPS: readonly { source: PriceSource; rows: Record<string, Price> }[] = [
+  {
+    source: ANTHROPIC,
+    rows: {
+      "claude-fable-5-1": { input: 10, output: 50, cache_read: 0.25, cache_write: 12.5 },
+      "claude-fable-5": { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
+      "claude-opus-5-5": { input: 4, output: 20, cache_read: 0.2, cache_write: 5 },
+      "claude-opus-5": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      "claude-opus-4-8": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      "claude-opus-4-7": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      "claude-opus-4-6": { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      "claude-sonnet-5-5": { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
+      "claude-sonnet-5": { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
+      "claude-sonnet-4-6": { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 },
+      "claude-haiku-4-5": { input: 1, output: 5, cache_read: 0.1, cache_write: 1.25 },
+    },
+  },
+  {
+    source: OPENAI,
+    rows: {
+      "gpt-6-astra": { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
+      "gpt-6-sol": { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 },
+      "gpt-6-luna": { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 },
+      "gpt-5.6-sol": { input: 4, output: 20, cache_read: 0.4, cache_write: 5 },
+      "gpt-5.6-terra": { input: 2, output: 12, cache_read: 0.2, cache_write: 2.5 },
+      "gpt-5.6-luna": { input: 0.2, output: 1.2, cache_read: 0.02, cache_write: 0.25 },
+      "gpt-5.5": { input: 5, output: 30, cache_read: 0.5, cache_write: 0 },
+    },
+  },
+];
+
+export const DEFAULT_PRICES: Readonly<Record<string, Price>> = Object.fromEntries(
+  DEFAULT_GROUPS.flatMap((g) => Object.entries(g.rows)),
+);
+
+/** The page and check date of each default row, by the same keys as `DEFAULT_PRICES`. */
+export const DEFAULT_PRICE_SOURCES: Readonly<Record<string, PriceSource>> = Object.fromEntries(
+  DEFAULT_GROUPS.flatMap((g) => Object.keys(g.rows).map((key) => [key, g.source])),
+);
+
+/** The latest date any default row was checked. */
+export const DEFAULT_PRICES_CHECKED =
+  DEFAULT_GROUPS.map((g) => g.source.checked)
+    .sort()
+    .at(-1) ?? "";
 
 /**
  * A model id as the price table sees it: lower case, without a context suffix (`[1m]`) or a
@@ -280,5 +327,9 @@ export const PriceRowSchema = z.object({
   source: z.enum(["default", "owner"]),
   /** An owner row with the same key as a default. */
   overridesDefault: z.boolean(),
+  /** The page a default row's numbers come from. An owner's row has none: the numbers are theirs. */
+  url: z.string().optional(),
+  /** When a default row was last compared with that page, YYYY-MM-DD. */
+  checked: z.string().optional(),
 });
 export type PriceRow = z.infer<typeof PriceRowSchema>;

@@ -128,6 +128,19 @@ export function useRemoveAccount() {
   });
 }
 
+/** Hides a model of an account from `auto` picks, or shows it again. */
+export function useHideModel() {
+  const client = useQueryClient();
+  return useMutation<
+    CommandOutput<"accounts.hideModel">,
+    ApiRequestError,
+    { id: string; model: string; hidden: boolean }
+  >({
+    mutationFn: (input) => cmd("accounts.hideModel", input),
+    onSuccess: () => refresh(client, queryKeys.accounts),
+  });
+}
+
 export function useStartLogin() {
   return useMutation<CommandOutput<"accounts.login.start">, ApiRequestError, string>({
     mutationFn: (id) => cmd("accounts.login.start", { id }),

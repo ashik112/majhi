@@ -14,6 +14,8 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.update": (i) => `Edit task ${str(i.id)}`,
   "accounts.create": (i) => `Add ${str(i.tool)} account ${str(i.id)} for ${str(i.org)}`,
   "accounts.remove": (i) => `Remove account ${str(i.id)}`,
+  "accounts.hideModel": (i) =>
+    `${i.hidden === true ? "Hide" : "Show"} ${str(i.model)} on account ${str(i.id)}`,
   "accounts.login.start": (i) => `Start sign-in for account ${str(i.id)}`,
   "agents.create": (i) => `Create agent ${str(i.id)}`,
   "agents.update": (i) => `Change agent ${str(i.id)}`,

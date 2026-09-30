@@ -127,6 +127,23 @@ describe("tokens and cost from real turns", () => {
     });
     expect(priced.status).toBe(200);
     expect(priced.body.rows[0]).toMatchObject({ model: "fake-model-a", source: "owner" });
+    expect(priced.body.rows[0].url).toBeUndefined();
+    // A default row names its page and check date; changing it makes it the owner's, without them.
+    const table = await h.cmd("usage.prices", {});
+    const own = { input: 9, output: 9, cache_read: 9, cache_write: 9 };
+    const stock = table.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol");
+    expect(stock).toMatchObject({
+      source: "default",
+      url: expect.stringMatching(/^https:/),
+      checked: expect.any(String),
+    });
+    const changed = await h.cmd("usage.setPrice", { model: "gpt-6-sol", price: own });
+    expect(changed.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol")).toMatchObject({
+      source: "owner",
+      overridesDefault: true,
+      price: own,
+    });
+    expect(changed.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol").url).toBeUndefined();
     await h.cmd("room.send", { task: "GLX-1", text: "echo: again" });
     await settle();
     const globexNow = await rows({ org: "globex" });

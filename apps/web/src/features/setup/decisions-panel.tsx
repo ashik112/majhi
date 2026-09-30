@@ -1,9 +1,18 @@
-import type { ProviderId } from "@majhi/shared";
+import {
+  EFFORT_TIER_LABEL,
+  EffortTierSchema,
+  MODEL_TIER_LABEL,
+  ModelTierSchema,
+  type ProviderId,
+  type Role,
+  RoleSchema,
+  type Tier,
+} from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/select";
+import { Select, Textarea } from "@/components/ui/select";
 import { Dot } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -39,6 +48,7 @@ export function DecisionsPanel() {
       {status.data && (
         <div className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3">
           <Providers status={status.data} />
+          <Picks status={status.data} />
           <JevKey status={status.data} />
           <AskBox />
           <Recent />
@@ -139,6 +149,98 @@ function Providers({ status }: { status: DecisionsStatus }) {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** When a model or effort pick is not confident enough, and what each role falls back to. */
+function Picks({ status }: { status: DecisionsStatus }) {
+  const toast = useToast();
+  const save = useSetDecisions();
+  const { settings } = status;
+  const failed = (e: unknown) => toast("Could not save", { detail: describeError(e), tone: "error" });
+  const setFloor = (key: "model_floor" | "effort_floor", text: string) => {
+    const value = Number(text);
+    if (text.trim() === "" || !Number.isFinite(value) || value < 0 || value > 1) return;
+    if (value !== settings[key]) save.mutate({ [key]: value }, { onError: failed });
+  };
+  const setTier = (role: Role, tier: Tier) =>
+    save.mutate({ tiers: { ...settings.tiers, [role]: tier } }, { onError: failed });
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-base font-semibold">Model and effort picks</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {(["model_floor", "effort_floor"] as const).map((key) => (
+          <Field
+            key={`${key}-${settings[key]}`}
+            label={key === "model_floor" ? "Model confidence floor" : "Effort confidence floor"}
+            hint="0 to 1. Below it, the role's fallback below is used."
+          >
+            {(p) => (
+              <Input
+                {...p}
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={settings[key]}
+                onBlur={(e) => setFloor(key, e.target.value)}
+              />
+            )}
+          </Field>
+        ))}
+      </div>
+      <table aria-label="Fallback by role" className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="text-left text-fg-faint">
+            <th className="py-1 pr-2 font-normal">Role</th>
+            <th className="py-1 pr-2 font-normal">Model fallback</th>
+            <th className="py-1 font-normal">Effort fallback</th>
+          </tr>
+        </thead>
+        <tbody>
+          {RoleSchema.options.map((role) => {
+            const tier = settings.tiers[role];
+            return (
+              <tr key={role}>
+                <td className="py-1 pr-2 font-semibold">{role}</td>
+                <td className="py-1 pr-2">
+                  <Select
+                    aria-label={`${role} model fallback`}
+                    value={tier.model}
+                    onChange={(e) => setTier(role, { ...tier, model: ModelTierSchema.parse(e.target.value) })}
+                  >
+                    {ModelTierSchema.options.map((t) => (
+                      <option key={t} value={t}>
+                        {MODEL_TIER_LABEL[t]}
+                      </option>
+                    ))}
+                  </Select>
+                </td>
+                <td className="py-1">
+                  <Select
+                    aria-label={`${role} effort fallback`}
+                    value={tier.effort}
+                    onChange={(e) =>
+                      setTier(role, { ...tier, effort: EffortTierSchema.parse(e.target.value) })
+                    }
+                  >
+                    {EffortTierSchema.options.map((t) => (
+                      <option key={t} value={t}>
+                        {EFFORT_TIER_LABEL[t]}
+                      </option>
+                    ))}
+                  </Select>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="m-0 text-sm text-fg-faint">
+        Model fallbacks rank by the price table, so models without a price keep the CLI default. Orgs and
+        agents can override a role.
+      </p>
     </div>
   );
 }
