@@ -1,6 +1,8 @@
 import {
+  type AllowRule,
   type ApprovalMode,
   detectSecrets,
+  isDestructiveCommand,
   type PolicySettings,
   type RiskClass,
   replaceSecrets,
@@ -21,6 +23,30 @@ export function decide(mode: ApprovalMode, ownerAsked: boolean): Decision {
   if (mode === "auto") return "run";
   if (mode === "when-asked" && ownerAsked) return "run";
   return "pending";
+}
+
+/**
+ * The saved rule that lets `agent` run `command` without asking, if there is one. A task rule covers
+ * only its own task, an org rule only tasks in that org (`org` is undefined for a LOCAL task, so none
+ * matches). A destructive command matches nothing unless `allow_destructive_rules` is on. The caller
+ * asks only when the mode says pending: a rule turns that into "run" and never blocks anything.
+ */
+export function matchRule(
+  policy: PolicySettings,
+  call: { agent: string; command: string; task: string; org: string | undefined },
+): AllowRule | undefined {
+  if (isDestructiveCommand(call.command) && !policy.allow_destructive_rules) return undefined;
+  return policy.rules.find(
+    (rule) =>
+      rule.agent === call.agent &&
+      rule.command === call.command &&
+      (rule.task === undefined ? rule.org === call.org && call.org !== undefined : rule.task === call.task),
+  );
+}
+
+/** True when the rule is the one named: same agent, command and scope. */
+export function sameRule(a: AllowRule, b: AllowRule): boolean {
+  return a.agent === b.agent && a.command === b.command && a.task === b.task && a.org === b.org;
 }
 
 const SENSITIVE_KEY = /pass(word|phrase)?|secret|token|api[_-]?key|private|credential|^value$/i;

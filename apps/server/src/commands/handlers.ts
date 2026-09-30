@@ -3,6 +3,7 @@ import type { CommandMeta, CommandName, CommandOutput, commands, Remount, TaskId
 import { RESTART_COMMAND } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat } from "../admin/boss.ts";
+import { sameRule } from "../admin/policy.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
@@ -259,8 +260,18 @@ export function createHandlers({
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
     "room.fresh": async (input) => ({ item: await services.tasks.fresh(input.task, input.agent) }),
-    "room.approve": async (input) => ({
-      item: await services.admin.decide(input.task, input.item, input.decision),
+    "room.approve": async (input, ctx) => ({
+      item: await services.admin.decide(
+        input.task,
+        input.item,
+        input.decision,
+        input.always === undefined
+          ? undefined
+          : {
+              scope: input.always.scope,
+              change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
+            },
+      ),
     }),
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
@@ -330,6 +341,26 @@ export function createHandlers({
         },
       );
       return config.settings();
+    },
+    "policy.removeRule": async (input, ctx) => {
+      await requireConfigFile(config);
+      const { policy } = await config.settings();
+      const rules = policy.rules.filter((r) => !sameRule(r, input));
+      if (rules.length === policy.rules.length) throw new UserError("That rule does not exist.", 404);
+      await config.setSettings(
+        { policy: { rules } },
+        {
+          command: ctx.command,
+          meta: ctx.meta,
+          summary: `removed the rule for @${input.agent} to run ${input.command} for ${input.task ?? `org ${input.org}`}`,
+        },
+      );
+      return config.settings();
+    },
+    "permissions.list": async () => allowances(services),
+    "permissions.revoke": async (input) => {
+      services.store.permissions.revoke(input.task, input.kind);
+      return allowances(services);
     },
     "boss.chat": (input) =>
       openBossChat({ config, store: services.store, tasks: services.tasks }, input.fresh === true),
@@ -423,6 +454,14 @@ function describePatch(patch: Record<string, object | undefined>): string {
     }
   }
   return parts.join(", ") || "nothing";
+}
+
+/** The CLI "allow for this task" choices with each task's title. A deleted task shows its id. */
+function allowances(services: Services) {
+  return services.store.permissions.allowances().map((a) => ({
+    ...a,
+    title: services.store.tasks.get(a.task)?.title ?? a.task,
+  }));
 }
 
 /** Placeholder for a Phase 2b command that is not built yet. */

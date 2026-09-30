@@ -208,6 +208,22 @@ export class PermissionRepo {
     this.db.insert(taskAllowances).values({ task, kind }).onConflictDoNothing().run();
   }
 
+  /** Every "allow for this task" choice, oldest task first. */
+  allowances(): { task: string; kind: string }[] {
+    return this.db
+      .select({ task: taskAllowances.task, kind: taskAllowances.kind })
+      .from(taskAllowances)
+      .orderBy(taskAllowances.task, taskAllowances.kind)
+      .all();
+  }
+
+  revoke(task: string, kind: string): void {
+    this.db
+      .delete(taskAllowances)
+      .where(and(eq(taskAllowances.task, task), eq(taskAllowances.kind, kind)))
+      .run();
+  }
+
   allowed(task: string, kind: string): boolean {
     return (
       this.db

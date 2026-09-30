@@ -19,6 +19,8 @@ describe("mergeSettings", () => {
         destructive: "confirm",
         outbound: "confirm",
         commands: {},
+        rules: [],
+        allow_destructive_rules: false,
       },
       memory: { auto_threshold: 0.4, review_all: false },
     });

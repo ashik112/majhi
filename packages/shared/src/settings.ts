@@ -126,6 +126,28 @@ export const ApprovalModeSchema = z.enum([
 ]);
 export type ApprovalMode = z.infer<typeof ApprovalModeSchema>;
 
+const RULE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/**
+ * "Always allow this agent to run this command", saved when the owner ticks the box on an approval
+ * card. It has exactly one scope: a `task` (only that task) or an `org` (every task in that org).
+ * It only turns a card that would wait into one that runs, and never blocks anything.
+ */
+export const AllowRuleSchema = z
+  .strictObject({
+    agent: z.string().regex(RULE_ID),
+    command: z.string().min(1),
+    task: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/)
+      .optional(),
+    org: z.string().regex(RULE_ID).optional(),
+  })
+  .refine((rule) => (rule.task === undefined) !== (rule.org === undefined), {
+    message: "A rule has exactly one of task or org",
+  });
+export type AllowRule = z.infer<typeof AllowRuleSchema>;
+
 export const PolicySettingsSchema = z.strictObject({
   read: ApprovalModeSchema.default("auto"),
   change: ApprovalModeSchema.default("when-asked"),
@@ -133,9 +155,13 @@ export const PolicySettingsSchema = z.strictObject({
   outbound: ApprovalModeSchema.default("confirm"),
   /** Per-command overrides, by command name. */
   commands: z.record(z.string(), ApprovalModeSchema).default({}),
+  /** Saved "always allow" choices from approval cards. */
+  rules: z.array(AllowRuleSchema).default([]),
+  /** Lets a rule cover a destructive command (remove, delete, forget). Off by default. */
+  allow_destructive_rules: z.boolean().default(false),
 });
 export type PolicySettings = z.infer<typeof PolicySettingsSchema>;
-/** `commands`, when given, replaces the whole map of per-command overrides. */
+/** `commands` and `rules`, when given, replace the whole map or list. */
 export const PolicyPatchSchema = z
   .strictObject({
     read: ApprovalModeSchema,
@@ -143,6 +169,8 @@ export const PolicyPatchSchema = z
     destructive: ApprovalModeSchema,
     outbound: ApprovalModeSchema,
     commands: z.record(z.string(), ApprovalModeSchema),
+    rules: z.array(AllowRuleSchema),
+    allow_destructive_rules: z.boolean(),
   })
   .partial();
 export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;

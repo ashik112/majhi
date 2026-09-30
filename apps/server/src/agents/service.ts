@@ -12,7 +12,7 @@ import type { AccountCache } from "../accounts/cache.ts";
 import type { AccountService } from "../accounts/service.ts";
 import { withBuiltInOrgs } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
-import { renameAgentInConfig, writeBoss } from "../config/write.ts";
+import { removeAgentRules, renameAgentInConfig, writeBoss } from "../config/write.ts";
 import { formatIssues, UserError } from "../errors.ts";
 import type { AgentStore, StoredAgent } from "./store.ts";
 import { agentWarnings } from "./warnings.ts";
@@ -140,7 +140,10 @@ export class AgentService {
     await this.require(id);
     const { boss } = await this.config.sections();
     if (boss === id) throw new UserError(`"${id}" is the boss. Make another root agent the boss first.`, 409);
-    await this.config.change({ command, meta, summary: `removed agent ${id}` }, () => this.store.remove(id));
+    await this.config.change({ command, meta, summary: `removed agent ${id}` }, async () => {
+      await this.store.remove(id);
+      await removeAgentRules(this.config.file, id);
+    });
   }
 
   async setBoss(id: string, command: string, meta: CommandMeta): Promise<void> {

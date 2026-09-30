@@ -439,6 +439,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** Why the agent wants it, in its words. */
     reason: z.string().optional(),
     state: z.enum(["pending", "applied", "rejected", "failed", "undone"]),
+    /** Set when a saved "always allow" rule ran this without asking: the rule's scope. */
+    rule: z.enum(["task", "org"]).optional(),
     /** Config history commit made by the command, for Undo. */
     commit: z.string().optional(),
     /** Result or error, one line. */

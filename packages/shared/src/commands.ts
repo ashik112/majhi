@@ -81,6 +81,7 @@ import {
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
+  AllowRuleSchema,
   ContextPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
@@ -909,8 +910,14 @@ export const commands = {
   },
   "room.approve": {
     risk: "change",
-    summary: "Approve or reject a command an agent proposed",
-    input: z.object({ task: TaskIdSchema, item: z.string(), decision: z.enum(["approve", "reject"]) }),
+    summary:
+      "Approve or reject a command an agent proposed. With always, approving also saves a rule that lets this agent run the same command without asking, for this task or for every task in its org",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string(),
+      decision: z.enum(["approve", "reject"]),
+      always: z.object({ scope: z.enum(["task", "org"]) }).optional(),
+    }),
     output: z.object({ item: RoomItemSchema }),
   },
   "room.secret": {
@@ -1033,6 +1040,27 @@ export const commands = {
     summary: "Change the approval policy for the boss's commands",
     input: PolicyPatchSchema,
     output: SettingsSchema,
+  },
+
+  "policy.removeRule": {
+    risk: "change",
+    summary:
+      "Remove one saved always-allow rule, named by its agent, command and scope (task or org). Its commands ask again",
+    input: AllowRuleSchema,
+    output: SettingsSchema,
+  },
+  "permissions.list": {
+    risk: "read",
+    summary:
+      "The CLI permission prompts remembered as allow for this task, across tasks, with each task's title",
+    input: Empty,
+    output: z.array(z.object({ task: TaskIdSchema, title: z.string(), kind: z.string() })),
+  },
+  "permissions.revoke": {
+    risk: "change",
+    summary: "Forget one remembered CLI permission choice for a task, so the CLI asks again",
+    input: z.object({ task: TaskIdSchema, kind: z.string().min(1) }),
+    output: z.array(z.object({ task: TaskIdSchema, title: z.string(), kind: z.string() })),
   },
 
   // The boss (5.16) ---------------------------------------------------------
@@ -1355,6 +1383,21 @@ export const commands = {
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 
 export type CommandName = keyof typeof commands;
+
+/** Verbs after the dot that remove something, whatever the command's risk class says. */
+const DESTRUCTIVE_VERB = /^(remove|delete|forget)/i;
+
+/**
+ * True for a command that removes or forgets something: its risk is `destructive`, or the word after
+ * the last dot starts with remove, delete or forget. That also catches `team.remove`,
+ * `tasks.removeAgent` and `projects.remove`, which are `change`. Auto-allow rules skip these unless
+ * the owner turned on `allow_destructive_rules`.
+ */
+export function isDestructiveCommand(name: string): boolean {
+  const def = Object.hasOwn(commands, name) ? commands[name as CommandName] : undefined;
+  if (def?.risk === "destructive") return true;
+  return DESTRUCTIVE_VERB.test(name.slice(name.lastIndexOf(".") + 1));
+}
 export type CommandInput<N extends CommandName> = z.input<(typeof commands)[N]["input"]>;
 export type CommandOutput<N extends CommandName> = z.infer<(typeof commands)[N]["output"]>;
 

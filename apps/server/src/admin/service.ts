@@ -1,20 +1,22 @@
 import { randomUUID } from "node:crypto";
 import {
+  type AllowRule,
   type CommandMeta,
   type CommandName,
   commands,
   IdSchema,
+  isDestructiveCommand,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
 import type { Dispatch } from "../commands/dispatch.ts";
-import type { ConfigService } from "../config/service.ts";
+import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { decide as decideMode, modeFor, redact, redactText } from "./policy.ts";
+import { decide as decideMode, matchRule, modeFor, redact, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -96,11 +98,25 @@ export class AdminService {
     const { policy } = await this.deps.config.settings();
     const mode = modeFor(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason);
-    if (decideMode(mode, ask.ownerAsked) === "run") {
+    // A saved rule turns a card that would wait into a run. It is looked up only then.
+    const decision = decideMode(mode, ask.ownerAsked);
+    const rule =
+      decision === "run"
+        ? undefined
+        : matchRule(policy, {
+            agent: caller.agent,
+            command,
+            task: caller.task,
+            org: this.deps.store.tasks.get(caller.task)?.org,
+          });
+    if (decision === "run" || rule !== undefined) {
       const done = await this.execute(command, input, meta);
       if (def.risk !== "read") {
         this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
           ...cardOf(caller.agent, command, input, ask.reason),
+          ...(rule === undefined
+            ? {}
+            : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
           state: done.ok ? "applied" : "failed",
           ...(done.commit === undefined ? {} : { commit: done.commit }),
           result: done.ok ? lineOf(done.output) : done.error,
@@ -139,7 +155,12 @@ export class AdminService {
   // The owner's answers
 
   /** Approve or reject a pending approval card. Rejecting a secret request cancels it. */
-  async decide(taskId: TaskId, itemId: string, decision: "approve" | "reject"): Promise<RoomItem> {
+  async decide(
+    taskId: TaskId,
+    itemId: string,
+    decision: "approve" | "reject",
+    always?: { scope: "task" | "org"; change: ChangeRecord },
+  ): Promise<RoomItem> {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type === "secret-request") return this.cancelSecret(item, decision);
     if (item?.type !== "approval") throw new UserError("That is not something to approve.", 409);
@@ -158,6 +179,7 @@ export class AdminService {
         return rejected;
       }
       const input = this.inputOf(item);
+      if (always !== undefined) await this.saveRule(item, always.scope, always.change);
       const done = await this.execute(
         item.command as CommandName,
         input,
@@ -188,6 +210,35 @@ export class AdminService {
     } finally {
       this.deciding.delete(item.id);
     }
+  }
+
+  /**
+   * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
+   * destructive command while `allow_destructive_rules` is off, and for an org rule on a task with
+   * no org. Runs before the command, so a refusal leaves the card pending.
+   */
+  private async saveRule(item: ApprovalItem, scope: "task" | "org", change: ChangeRecord): Promise<void> {
+    const { policy } = await this.deps.config.settings();
+    if (isDestructiveCommand(item.command) && !policy.allow_destructive_rules) {
+      throw new UserError(
+        "Destructive commands cannot be auto-allowed. Turn on auto-approve for destructive actions in Hub setup first.",
+        409,
+      );
+    }
+    let rule: AllowRule = { agent: item.agent, command: item.command, task: item.task };
+    if (scope === "org") {
+      const org = this.deps.store.tasks.get(item.task)?.org;
+      if (org === undefined) throw new UserError("This task has no org, so it has no org to allow in.", 409);
+      rule = { agent: item.agent, command: item.command, org };
+    }
+    if (policy.rules.some((r) => sameRule(r, rule))) return;
+    await this.deps.config.setSettings(
+      { policy: { rules: [...policy.rules, rule] } },
+      {
+        ...change,
+        summary: `always allow @${rule.agent} to run ${rule.command} for ${rule.task ?? `org ${rule.org}`}`,
+      },
+    );
   }
 
   /** Stores the pasted value under the requested name, marks the card saved and tells the agent. */

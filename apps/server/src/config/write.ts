@@ -1,7 +1,7 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AccountConfig, OrgConfig, Price, ProjectConfig, WorkspacesUpdate } from "@majhi/shared";
-import { type Document, isCollection, isMap, isNode, isScalar, parseDocument } from "yaml";
+import { type Document, isCollection, isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 
 /** majhi.yaml cannot be edited safely, for example because it has YAML syntax errors. */
@@ -148,16 +148,37 @@ async function writeAtomically(file: string, content: string): Promise<void> {
   await rename(temp, target);
 }
 
-/** Points `boss`, `decisions.acp_agent` and `memory.housekeeper` at the new id when they name the old one. */
+/** Changes `agent` (or `org`) of every saved allow rule that names `from`. Drops them when `to` is undefined. */
+function editRules(doc: Document, key: "agent" | "org", from: string, to: string | undefined): void {
+  const rules: unknown = doc.getIn(["policy", "rules"], true);
+  if (!isSeq(rules)) return;
+  const kept = rules.items.filter((rule) => {
+    if (!isMap(rule) || rule.get(key) !== from) return true;
+    if (to === undefined) return false;
+    rule.set(key, to);
+    return true;
+  });
+  if (kept.length === rules.items.length) return;
+  if (kept.length === 0) doc.deleteIn(["policy", "rules"]);
+  else rules.items = kept;
+}
+
+/** Drops the allow rules of a removed agent, so a new agent with the same handle starts with none. */
+export function removeAgentRules(file: string, id: string): Promise<void> {
+  return editConfig(file, (doc) => editRules(doc, "agent", id, undefined));
+}
+
+/** Points `boss`, `decisions.acp_agent`, `memory.housekeeper` and allow rules at the new id when they name the old one. */
 export function renameAgentInConfig(file: string, id: string, newId: string): Promise<void> {
   return editConfig(file, (doc) => {
     if (doc.get("boss") === id) doc.set("boss", newId);
     if (doc.getIn(["decisions", "acp_agent"]) === id) doc.setIn(["decisions", "acp_agent"], newId);
     if (doc.getIn(["memory", "housekeeper"]) === id) doc.setIn(["memory", "housekeeper"], newId);
+    editRules(doc, "agent", id, newId);
   });
 }
 
-/** Renames the `orgs` key and the `org` of every account and project that names it, in place. */
+/** Renames the `orgs` key and the `org` of every account, project and allow rule that names it, in place. */
 export function renameOrgInConfig(file: string, id: string, newId: string): Promise<void> {
   return editConfig(file, (doc) => {
     const orgs: unknown = doc.get("orgs", true);
@@ -173,5 +194,6 @@ export function renameOrgInConfig(file: string, id: string, newId: string): Prom
         if (isMap(pair.value) && pair.value.get("org") === id) pair.value.set("org", newId);
       }
     }
+    editRules(doc, "org", id, newId);
   });
 }
