@@ -21,6 +21,8 @@ export interface AppSearch {
   org?: string;
   agent?: string;
   account?: string;
+  /** On Agents: open the new-agent form in this group (root or an org id). */
+  create?: string;
   /** A file of the open task, shown in the viewer drawer. */
   file?: string;
   /** A task shown in the task drawer, opened from a task id in a message. */
@@ -39,6 +41,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const org = text(search.org);
   const agent = text(search.agent);
   const account = text(search.account);
+  const create = text(search.create);
   const file = text(search.file);
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
@@ -48,6 +51,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(org ? { org } : {}),
     ...(agent ? { agent } : {}),
     ...(account ? { account } : {}),
+    ...(create ? { create } : {}),
     ...(file ? { file } : {}),
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),

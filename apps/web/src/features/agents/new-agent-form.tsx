@@ -1,10 +1,11 @@
 import { IdSchema, type Role } from "@majhi/shared";
 import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PageLink } from "@/components/ui/page-link";
+import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/select";
 import { isUsableStatus, orgLabel, statusInfo } from "@/features/accounts/model";
 import { describeError } from "@/lib/errors";
 import { useAccounts, useAgents, useCreateAgent, useOrgs, useTools } from "@/lib/studio-queries";
@@ -17,7 +18,7 @@ import {
   suggestAgentId,
 } from "./model";
 
-/** Creates an agent with sensible defaults in the scope of the open tab; the editor then opens for the rest. */
+/** Creates an agent with sensible defaults in a group; its settings then open for the rest. */
 export function NewAgentForm({
   scope,
   scopeLabel,
@@ -53,7 +54,7 @@ export function NewAgentForm({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!account) return setProblem("Add an account for this scope first");
+    if (!account) return setProblem("Add an account for this group first");
     const parsed = IdSchema.safeParse(id);
     if (!parsed.success) return setProblem(parsed.error.issues[0]?.message ?? "Invalid id");
     setProblem(undefined);
@@ -64,15 +65,11 @@ export function NewAgentForm({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      aria-label="New agent"
-      className="flex min-w-0 max-w-[560px] flex-1 flex-col gap-5 px-7 pt-[18px] pb-7"
-    >
+    <form onSubmit={submit} aria-label="New agent" className="flex max-w-[560px] flex-col gap-5 pt-5">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">New agent in {scopeLabel}</h2>
+        <h2 className="text-md font-semibold">New agent in {scopeLabel}</h2>
         <p className="text-base text-fg-muted">
-          Pick a role and an account. You tune everything else after it exists.
+          Pick a role and an account. You tune the rest after it exists.
         </p>
       </div>
       <Field label="Agent id">
@@ -86,45 +83,38 @@ export function NewAgentForm({
           />
         )}
       </Field>
-      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className="mb-2 p-0 text-sm text-fg-faint">Role</legend>
-        <div className="flex flex-wrap gap-1.5">
-          {rolesForScope(scope, role).map((r) => (
-            <ChoiceChip key={r} pressed={role === r} onClick={() => setRole(r)} className="h-[34px]">
-              {r}
-            </ChoiceChip>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className="mb-2 p-0 text-sm text-fg-faint">Account</legend>
-        {usable.length === 0 ? (
-          <p role="alert" className="text-base text-red">
-            No account fits this scope.{" "}
-            <PageLink page="accounts" className="underline underline-offset-2 hover:text-fg">
-              Add one in Accounts
-            </PageLink>
-            .
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {usable.map((a) => (
-              <ChoiceChip
-                key={a.id}
-                pressed={account?.id === a.id}
-                aria-label={`${a.id}, ${statusInfo(a.status).label.toLowerCase()}`}
-                className="min-h-11 flex-col items-start gap-px px-2.5 py-1"
-                onClick={() => setAccountPick(a.id)}
-              >
-                <span className="font-mono text-sm">{a.id}</span>
-                <span className="text-[0.625rem] leading-4 font-normal text-fg-faint">
-                  {tools.find((t) => t.id === a.tool)?.name ?? a.tool} · {orgLabel(a.org, orgs).name}
-                </span>
-              </ChoiceChip>
-            ))}
-          </div>
-        )}
-      </fieldset>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-fg-faint">Role</span>
+        <Segmented
+          label="Role"
+          value={role}
+          segments={rolesForScope(scope, role).map((r) => ({ value: r, label: r }))}
+          onChange={setRole}
+          className="self-start"
+        />
+      </div>
+      {usable.length === 0 ? (
+        <p role="alert" className="text-base text-red">
+          No account fits this group.{" "}
+          <PageLink page="accounts" className="underline underline-offset-2 hover:text-fg">
+            Add one in Accounts
+          </PageLink>
+          .
+        </p>
+      ) : (
+        <Field label="Account">
+          {(p) => (
+            <Select {...p} value={account?.id ?? ""} onChange={(e) => setAccountPick(e.target.value)}>
+              {usable.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id} · {tools.find((t) => t.id === a.tool)?.name ?? a.tool} · {orgLabel(a.org, orgs).name}{" "}
+                  · {statusInfo(a.status).label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
       {problem && (
         <p role="alert" className="text-base text-red text-pretty">
           {problem}

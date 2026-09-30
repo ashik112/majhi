@@ -1,0 +1,503 @@
+import {
+  type AccountView,
+  type AgentEntry,
+  AUTO,
+  EFFORT_TIER_LABEL,
+  EffortTierSchema,
+  MODEL_TIER_LABEL,
+  ModelTierSchema,
+  type OrgView,
+} from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
+import { Check } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { DetailSection } from "@/components/ui/list-detail";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { Segmented } from "@/components/ui/segmented";
+import { Select, Textarea } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { orgLabel } from "@/features/accounts/model";
+import { describeError, errorDetails } from "@/lib/errors";
+import { queryKeys } from "@/lib/queries";
+import { useAccountModels, useTools, useUpdateAgent } from "@/lib/studio-queries";
+import {
+  type AgentDraft,
+  accountsForScope,
+  autoFirst,
+  buildOptions,
+  draftFromAgent,
+  entryId,
+  fallbackCandidates,
+  type OkAgent,
+  PERMS,
+  rolesForScope,
+  togglePerm,
+  updateInput,
+  withTier,
+  worksOutsideScope,
+} from "./model";
+
+/** The settings sections and the draft fields each one saves. */
+const SECTIONS = {
+  role: ["role", "account", "where"],
+  model: ["model", "effort", "models", "tier"],
+  perms: ["perms"],
+  fallback: ["fallback"],
+  instructions: ["instructions"],
+} as const satisfies Record<string, readonly (keyof AgentDraft)[]>;
+
+type SectionId = keyof typeof SECTIONS;
+
+type SaveState =
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved" }
+  | { kind: "error"; message: string; details: string[] };
+
+function pick(draft: AgentDraft, section: SectionId): Partial<AgentDraft> {
+  return Object.fromEntries(SECTIONS[section].map((key) => [key, draft[key]]));
+}
+
+function same(a: AgentDraft, b: AgentDraft, section: SectionId): boolean {
+  return JSON.stringify(pick(a, section)) === JSON.stringify(pick(b, section));
+}
+
+/**
+ * The agent's settings in sections. Each section keeps its own unsaved changes and its own Save, and
+ * saves only its fields over the file as it is now, so an edit in one never rides along with another.
+ */
+export function AgentSettings({
+  entry,
+  agents,
+  accounts,
+  orgs,
+}: {
+  entry: OkAgent;
+  agents: readonly AgentEntry[];
+  accounts: readonly AccountView[];
+  orgs: readonly OrgView[];
+}) {
+  const update = useUpdateAgent();
+  const client = useQueryClient();
+  const base = draftFromAgent(entry.agent);
+  const [drafts, setDrafts] = useState<Partial<Record<SectionId, AgentDraft>>>({});
+  const [saves, setSaves] = useState<Partial<Record<SectionId, SaveState>>>({});
+  const [serverWarnings, setServerWarnings] = useState<string[]>();
+
+  /** What each section shows: its own draft, or the file. */
+  const view = (section: SectionId): AgentDraft => drafts[section] ?? base;
+  const dirty = (section: SectionId) => {
+    const draft = drafts[section];
+    return draft !== undefined && !same(draft, base, section);
+  };
+  const change = (section: SectionId, patch: Partial<AgentDraft>) => {
+    setDrafts((prev) => ({ ...prev, [section]: { ...(prev[section] ?? base), ...patch } }));
+    setSaves((prev) => ({ ...prev, [section]: { kind: "idle" } }));
+  };
+  const discard = (section: SectionId) => {
+    setDrafts(({ [section]: _gone, ...rest }) => rest);
+    setSaves((prev) => ({ ...prev, [section]: { kind: "idle" } }));
+  };
+  const save = (section: SectionId) => {
+    const draft = drafts[section];
+    if (!draft) return;
+    setSaves((prev) => ({ ...prev, [section]: { kind: "saving" } }));
+    update.mutate(updateInput(entry.agent, { ...base, ...pick(draft, section) }), {
+      onSuccess: async (result) => {
+        setServerWarnings(result.status === "ok" ? result.warnings : undefined);
+        // Wait for the fresh file, so the section never flashes the old value.
+        await client.invalidateQueries({ queryKey: queryKeys.agents }).catch(() => undefined);
+        setDrafts(({ [section]: _saved, ...rest }) => rest);
+        setSaves((prev) => ({ ...prev, [section]: { kind: "saved" } }));
+      },
+      onError: (error) =>
+        setSaves((prev) => ({
+          ...prev,
+          [section]: { kind: "error", message: describeError(error), details: errorDetails(error) },
+        })),
+    });
+  };
+
+  const sectionProps = (section: SectionId) => ({
+    dirty: dirty(section),
+    state: saves[section] ?? { kind: "idle" as const },
+    onSave: () => save(section),
+    onDiscard: () => discard(section),
+  });
+
+  const warnings = serverWarnings ?? entry.warnings;
+
+  return (
+    <div className="flex flex-col">
+      {warnings.length > 0 && (
+        <ul
+          aria-label="Warnings"
+          className="mb-4 flex flex-col gap-1 rounded-lg border border-amber-line bg-amber-wash px-3 py-2"
+        >
+          {warnings.map((w) => (
+            <li key={w} className="text-base text-amber text-pretty">
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+      <RoleSection
+        draft={view("role")}
+        accounts={accounts}
+        orgs={orgs}
+        onChange={(patch) => change("role", patch)}
+        {...sectionProps("role")}
+      />
+      <ModelSection
+        draft={view("model")}
+        account={view("role").account}
+        onChange={(patch) => change("model", patch)}
+        {...sectionProps("model")}
+      />
+      <PermsSection
+        draft={view("perms")}
+        onChange={(patch) => change("perms", patch)}
+        {...sectionProps("perms")}
+      />
+      <FallbackSection
+        draft={view("fallback")}
+        candidates={fallbackCandidates(agents, entry).map(entryId)}
+        onChange={(patch) => change("fallback", patch)}
+        {...sectionProps("fallback")}
+      />
+      <InstructionsSection
+        draft={view("instructions")}
+        onChange={(patch) => change("instructions", patch)}
+        {...sectionProps("instructions")}
+      />
+    </div>
+  );
+}
+
+interface SectionProps {
+  draft: AgentDraft;
+  onChange: (patch: Partial<AgentDraft>) => void;
+  dirty: boolean;
+  state: SaveState;
+  onSave: () => void;
+  onDiscard: () => void;
+}
+
+/** A settings section with Cancel and Save while it has changes, and what happened to the last save. */
+function SettingsSection({
+  title,
+  note,
+  dirty,
+  state,
+  onSave,
+  onDiscard,
+  children,
+}: Pick<SectionProps, "dirty" | "state" | "onSave" | "onDiscard"> & {
+  title: string;
+  note?: string;
+  children: ReactNode;
+}) {
+  const saving = state.kind === "saving";
+  return (
+    <DetailSection
+      title={title}
+      {...(note ? { note } : {})}
+      actions={
+        <>
+          <span role="status" aria-live="polite" className="flex items-center gap-1 text-sm text-fg-faint">
+            {state.kind === "saved" && !dirty && (
+              <>
+                <Check aria-hidden="true" className="size-3 text-green" />
+                Saved
+              </>
+            )}
+          </span>
+          {(dirty || saving) && (
+            <>
+              <Button size="sm" variant="ghost" disabled={saving} onClick={onDiscard}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={saving}
+                onClick={onSave}
+                aria-label={`Save ${title}`}
+              >
+                {saving ? "Saving" : "Save"}
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
+      {children}
+      {state.kind === "error" && (
+        <div role="alert" className="flex flex-col gap-1 text-sm text-red">
+          <p>Could not save: {state.message}</p>
+          {state.details.map((d) => (
+            <p key={d} className="font-mono">
+              {d}
+            </p>
+          ))}
+        </div>
+      )}
+    </DetailSection>
+  );
+}
+
+const GRID = "grid gap-3 @[560px]:grid-cols-2";
+
+function RoleSection({
+  draft,
+  accounts,
+  orgs,
+  onChange,
+  ...section
+}: SectionProps & { accounts: readonly AccountView[]; orgs: readonly OrgView[] }) {
+  const tools = useTools().data;
+  const scopeAccounts = accountsForScope(accounts, draft.scope);
+  const account = accounts.find((a) => a.id === draft.account);
+  const fits = scopeAccounts.some((a) => a.id === draft.account);
+  const choices = fits ? scopeAccounts : [...scopeAccounts, ...(account ? [account] : [])];
+  const where = draft.where.includes("anywhere") ? [] : draft.where;
+  return (
+    <SettingsSection title="Role and account" {...section}>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-fg-faint">Role</span>
+        <Segmented
+          label="Role"
+          value={draft.role}
+          segments={rolesForScope(draft.scope, draft.role).map((r) => ({ value: r, label: r }))}
+          onChange={(role) => onChange({ role })}
+          className="self-start"
+        />
+      </div>
+      <div className={GRID}>
+        <Field
+          label="Account"
+          error={
+            !account
+              ? `The account ${draft.account} does not exist.`
+              : !fits
+                ? `The account ${draft.account} cannot be used in scope ${draft.scope}.`
+                : undefined
+          }
+        >
+          {(p) => (
+            <Select {...p} value={draft.account} onChange={(e) => onChange({ account: e.target.value })}>
+              {!account && <option value={draft.account}>{draft.account} (not found)</option>}
+              {choices.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id} · {tools?.find((t) => t.id === a.tool)?.name ?? a.tool} ·{" "}
+                  {orgLabel(a.org, orgs).name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-sm text-fg-faint">Where it can work</span>
+          <MultiSelect
+            label="Where it can work"
+            options={orgs.map((o) => ({ value: o.id, label: o.name }))}
+            value={where}
+            onChange={(next) => onChange({ where: next.length === 0 ? ["anywhere"] : next })}
+            emptyText="Anywhere"
+            clearText="Anywhere"
+          />
+          {worksOutsideScope(draft.scope, draft.where) && (
+            <p className="text-sm text-amber text-pretty">
+              This agent will use {draft.account} on other orgs' code. Allowed because you said so.
+            </p>
+          )}
+        </div>
+      </div>
+    </SettingsSection>
+  );
+}
+
+function ModelSection({ draft, account, onChange, ...section }: SectionProps & { account: string }) {
+  const models = useAccountModels(account);
+  const modelChoices = buildOptions("model", models.data?.models, draft.model, models.data?.defaultModel);
+  const effortChoices = buildOptions(
+    "effort",
+    models.data?.efforts,
+    draft.effort,
+    models.data?.defaultEffort,
+  );
+  const autoModel = draft.model === AUTO;
+  const autoEffort = draft.effort === AUTO;
+  return (
+    <SettingsSection title="Model and effort" note="Auto lets majhi pick for each run." {...section}>
+      <div className={GRID}>
+        <Field label="Model" warning={modelChoices.warning}>
+          {(p) => (
+            <Select
+              {...p}
+              value={draft.model ?? ""}
+              onChange={(e) => onChange({ model: e.target.value || undefined })}
+            >
+              {autoFirst(modelChoices).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="Effort" warning={effortChoices.warning}>
+          {(p) => (
+            <Select
+              {...p}
+              value={draft.effort ?? ""}
+              onChange={(e) => onChange({ effort: e.target.value || undefined })}
+            >
+              {autoFirst(effortChoices).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {autoModel && (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-sm text-fg-faint">Allowed for auto</span>
+            <MultiSelect
+              label="Models allowed for auto"
+              options={(models.data?.models ?? []).map((m) => ({ value: m.id, label: m.id, mono: true }))}
+              value={draft.models}
+              onChange={(next) => onChange({ models: next })}
+              emptyText="Every model the account offers"
+              clearText="Allow every model"
+            />
+          </div>
+        )}
+        {autoModel && (
+          <Field
+            label="Model when there is no confident pick"
+            hint="Chosen by price among the models on offer."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.tier.model ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    tier: withTier(draft.tier, "model", ModelTierSchema.safeParse(e.target.value).data),
+                  })
+                }
+              >
+                <option value="">Role default</option>
+                {ModelTierSchema.options.map((t) => (
+                  <option key={t} value={t}>
+                    {MODEL_TIER_LABEL[t]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+        {autoEffort && (
+          <Field
+            label="Effort when there is no confident pick"
+            hint="By position in the account's effort list, lowest first."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.tier.effort ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    tier: withTier(draft.tier, "effort", EffortTierSchema.safeParse(e.target.value).data),
+                  })
+                }
+              >
+                <option value="">Role default</option>
+                {EffortTierSchema.options.map((t) => (
+                  <option key={t} value={t}>
+                    {EFFORT_TIER_LABEL[t]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+      </div>
+      {models.isError && (
+        <p className="text-sm text-fg-faint">
+          Could not read this account's models: {describeError(models.error)}
+        </p>
+      )}
+    </SettingsSection>
+  );
+}
+
+function PermsSection({ draft, onChange, ...section }: SectionProps) {
+  return (
+    <SettingsSection title="Permissions" note="Reading code is always allowed." {...section}>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1 @[560px]:grid-cols-3">
+        {PERMS.map((perm) => (
+          <Switch
+            key={perm.id}
+            label={perm.label}
+            checked={draft.perms.includes(perm.id)}
+            onChange={(on) => onChange({ perms: togglePerm(draft.perms, perm.id, on) })}
+          />
+        ))}
+      </div>
+    </SettingsSection>
+  );
+}
+
+function FallbackSection({
+  draft,
+  candidates,
+  onChange,
+  ...section
+}: SectionProps & { candidates: string[] }) {
+  const missing = draft.fallback !== undefined && !candidates.includes(draft.fallback);
+  return (
+    <SettingsSection title="When usage runs out or the run breaks" {...section}>
+      <Field
+        label="Hand the run to"
+        hint="Another agent takes over, or the run waits for the account to reset."
+      >
+        {(p) => (
+          <Select
+            {...p}
+            className="@[560px]:max-w-[calc(50%-6px)]"
+            value={draft.fallback ?? ""}
+            onChange={(e) => onChange({ fallback: e.target.value || undefined })}
+          >
+            <option value="">No fallback, wait</option>
+            {candidates.map((id) => (
+              <option key={id} value={id}>
+                @{id}
+              </option>
+            ))}
+            {missing && <option value={draft.fallback}>@{draft.fallback} (not found)</option>}
+          </Select>
+        )}
+      </Field>
+    </SettingsSection>
+  );
+}
+
+function InstructionsSection({ draft, onChange, ...section }: SectionProps) {
+  return (
+    <SettingsSection title="Instructions" {...section}>
+      <Textarea
+        aria-label="Instructions"
+        rows={7}
+        value={draft.instructions}
+        placeholder="How this agent should work, in plain words."
+        onChange={(e) => onChange({ instructions: e.target.value })}
+        className="min-h-28 rounded-[10px] border-line-strong bg-sunken px-3.5 py-3 font-sans text-base leading-[1.55] text-fg"
+      />
+    </SettingsSection>
+  );
+}

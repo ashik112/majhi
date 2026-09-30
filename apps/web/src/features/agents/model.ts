@@ -4,7 +4,6 @@ import {
   type AgentFrontmatter,
   type AgentFrontmatterInput,
   AUTO,
-  type HealthCheck,
   type OptionValue,
   type OrgView,
   type Perm,
@@ -13,7 +12,6 @@ import {
   type TaskSummary,
   type TierPatch,
 } from "@majhi/shared";
-import { statusInfo, type Tone } from "../accounts/model";
 
 export type OkAgent = Extract<AgentEntry, { status: "ok" }>;
 export type InvalidAgent = Extract<AgentEntry, { status: "invalid" }>;
@@ -86,24 +84,6 @@ export function accountsForScope(accounts: readonly AccountView[], scope: string
 /** The scope a new agent on an account belongs to: private accounts get root agents. */
 export function scopeForAccount(account: Pick<AccountView, "org">): string {
   return account.org === PRIVATE ? ROOT_SCOPE : account.org;
-}
-
-export interface Dot {
-  tone: Tone;
-  label: string;
-}
-
-/** Status dot for an agent: its last health check when there is one, else its account's status. */
-export function agentDot(entry: AgentEntry, accounts: readonly AccountView[], health?: HealthCheck): Dot {
-  if (entry.status === "invalid") return { tone: "red", label: "File has errors" };
-  if (health)
-    return health.ok
-      ? { tone: "green", label: "Health check passed" }
-      : { tone: "red", label: "Health check failed" };
-  const account = accounts.find((a) => a.id === entry.agent.frontmatter.account);
-  if (!account) return { tone: "red", label: "Account not found" };
-  const info = statusInfo(account.status);
-  return { tone: info.tone, label: `Account ${info.label.toLowerCase()}` };
 }
 
 export interface SelectOption {
@@ -327,35 +307,22 @@ export function worksOutsideScope(scope: string, where: readonly string[]): bool
   return scope !== ROOT_SCOPE && (where.includes("anywhere") || where.some((w) => w !== scope));
 }
 
-/** What an agent is doing, for the list dots and the health grid. `coral` is the paused color. */
-export interface AgentState {
-  kind: "working" | "paused" | "limit" | "error" | "idle";
-  label: string;
-  tone: Tone | "coral";
+/** Model or effort options for a select: Auto first, then the account default, then what the account offers. */
+export function autoFirst(choices: OptionChoices): SelectOption[] {
+  const auto = choices.options.filter((o) => o.value === AUTO);
+  return [...auto, ...choices.options.filter((o) => o.value !== AUTO)];
 }
 
-/**
- * Working on a running task, Paused on a paused one, Limit reached or Error from the account,
- * else Idle. A working agent wins over the account state.
- */
-export function agentState(
-  entry: OkAgent,
-  account: Pick<AccountView, "status"> | undefined,
-  tasks: readonly Pick<TaskSummary, "id" | "status" | "team" | "working">[],
-): AgentState {
-  const id = entry.agent.frontmatter.id;
-  const working = tasks.find((t) => t.working.includes(id));
-  if (working) return { kind: "working", label: `Working on ${working.id}`, tone: "amber" };
-  const paused = tasks.find((t) => t.status === "paused" && t.team.includes(id));
-  if (paused) return { kind: "paused", label: `Paused on ${paused.id}`, tone: "coral" };
-  if (account?.status === "at-limit") return { kind: "limit", label: "Limit reached", tone: "red" };
-  if (account === undefined || account.status === "needs-login" || account.status === "unreachable")
-    return { kind: "error", label: "Error", tone: "red" };
-  return { kind: "idle", label: "Idle", tone: "neutral" };
-}
-
-/** The line under an agent's handle: `Builder · claude-globex · sonnet-5.5`. */
-export function agentSubline(agent: OkAgent["agent"]): string {
-  const f = agent.frontmatter;
-  return [f.role, f.account, f.model ?? "account default"].join(" · ");
+/** The open tasks an agent is on: the ones it works in right now first, then the newest. */
+export function tasksOf<T extends Pick<TaskSummary, "status" | "team" | "working" | "updatedAt">>(
+  id: string,
+  tasks: readonly T[],
+): T[] {
+  return tasks
+    .filter((t) => t.status !== "done" && t.team.includes(id))
+    .toSorted(
+      (a, b) =>
+        Number(b.working.includes(id)) - Number(a.working.includes(id)) ||
+        b.updatedAt.localeCompare(a.updatedAt),
+    );
 }

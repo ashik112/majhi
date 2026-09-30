@@ -1,88 +1,83 @@
 import type { HealthCheck } from "@majhi/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DetailPane, ListDetail, ListPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { type RosterRow, rosterRows } from "@/features/board/roster";
+import { useAgentIndex } from "@/lib/agent-index";
 import { describeError } from "@/lib/errors";
+import { plural } from "@/lib/format";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccounts, useAgents, useOrgs, useRemoveAgent } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
-import { useNow } from "@/lib/use-now";
+import { useUsageBreakdown } from "@/lib/usage-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
-import { AgentEditor } from "./agent-editor";
-import { AgentList } from "./agent-list";
-import {
-  type AgentGroup,
-  type AgentState,
-  agentState,
-  entryId,
-  groupAgents,
-  INVALID_GROUP,
-  type InvalidAgent,
-  type OkAgent,
-  ROOT_SCOPE,
-  scopeForAccount,
-} from "./model";
+import type { AppSearch } from "@/router";
+import { AgentDetail } from "./agent-detail";
+import { AgentGroups } from "./agent-groups";
+import { entryId, groupAgents, type InvalidAgent, ROOT_SCOPE, scopeForAccount } from "./model";
 import { NewAgentForm } from "./new-agent-form";
-import { ScopeTabs } from "./scope-tabs";
 
-/** Agents of every scope: tabs for the scopes, the agents of one on the left, the open agent on the right. */
+/** Every agent, grouped by org on the left; the picked agent on the right, what it does first, then its settings. */
 export function AgentsView() {
   const agents = useAgents();
   const accounts = useAccounts();
   const orgs = useOrgs();
   const tasks = useTasks();
-  const now = useNow(30_000);
+  const index = useAgentIndex();
+  const week = useUsageBreakdown({ by: "agent", range: "week", limit: 500 });
+  const today = useUsageBreakdown({ by: "agent", range: "today", limit: 500 });
   const { org: orgFilter } = useOrgFilter();
-  const [agentParam, setAgentParam] = useSearchParam("agent");
-  const [accountParam, setAccountParam] = useSearchParam("account");
-  const [scopePick, setScopePick] = useState<string>();
-  const [creating, setCreating] = useState<string>();
+  const [agentParam] = useSearchParam("agent");
+  const [accountParam] = useSearchParam("account");
+  const [creating] = useSearchParam("create");
+  const navigate = useNavigate();
+  /** Opens an agent, or the new-agent form of a group, in one step so the URL changes once. */
+  const show = (next: { agent?: string | undefined; create?: string | undefined }) =>
+    void navigate({
+      to: ".",
+      search: (prev: AppSearch): AppSearch => {
+        const { agent: _agent, account: _account, create: _create, ...rest } = prev;
+        return {
+          ...rest,
+          ...(next.agent !== undefined ? { agent: next.agent } : {}),
+          ...(next.create !== undefined ? { create: next.create } : {}),
+        };
+      },
+      replace: true,
+    });
   const [health, setHealth] = useState<ReadonlyMap<string, HealthCheck>>(new Map());
 
   const entries = useMemo(() => agents.data ?? [], [agents.data]);
   const accountList = useMemo(() => accounts.data ?? [], [accounts.data]);
   const groups = useMemo(() => groupAgents(entries, orgs.data ?? []), [entries, orgs.data]);
-  const states = useMemo(() => {
-    const map = new Map<string, AgentState>();
-    for (const entry of entries) {
-      if (entry.status !== "ok") continue;
-      const account = accountList.find((a) => a.id === entry.agent.frontmatter.account);
-      map.set(entryId(entry), agentState(entry, account, tasks.data ?? []));
-    }
-    return map;
-  }, [entries, accountList, tasks.data]);
+  const lamps = useMemo(
+    () =>
+      new Map<string, RosterRow>(
+        rosterRows([...index.values()], tasks.data ?? [], accountList, undefined).map((r) => [r.id, r]),
+      ),
+    [index, tasks.data, accountList],
+  );
 
   const presetAccount = accountParam ? accountList.find((a) => a.id === accountParam) : undefined;
-  const picked = entries.find((e) => entryId(e) === agentParam);
-  const scopeOfPicked = picked
-    ? picked.status === "ok"
-      ? picked.agent.frontmatter.scope
-      : INVALID_GROUP
-    : undefined;
-  const wanted =
-    creating ??
-    (presetAccount ? scopeForAccount(presetAccount) : undefined) ??
-    scopeOfPicked ??
-    scopePick ??
-    orgFilter ??
-    ROOT_SCOPE;
-  const group: AgentGroup = groups.find((g) => g.scope === wanted) ??
-    groups[0] ?? {
-      scope: ROOT_SCOPE,
-      label: "Root",
-      entries: [],
-      canAdd: true,
-    };
-  const newScope = creating ?? (presetAccount ? scopeForAccount(presetAccount) : undefined);
-  const selected = picked && group.entries.includes(picked) ? picked : group.entries[0];
+  // A group from the URL counts only when it exists and takes new agents.
+  const createIn = groups.some((g) => g.scope === creating && g.canAdd) ? creating : undefined;
+  const newScope = createIn ?? (presetAccount ? scopeForAccount(presetAccount) : undefined);
+  const filtered = groups.find((g) => g.scope === orgFilter)?.entries[0];
+  const selected =
+    entries.find((e) => entryId(e) === agentParam) ??
+    filtered ??
+    groups.find((g) => g.entries[0])?.entries[0];
   const selectedId = newScope === undefined && selected ? entryId(selected) : undefined;
+  const working = [...lamps.values()].filter((r) => r.lamp === "working").length;
 
   if (agents.isError) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Agents" subtitle="Setup drafts them, you have the final say on every field." />
+        <PageHeader title="Agents" />
         <p role="alert" className="p-8 text-base text-red">
           Could not load agents: {describeError(agents.error)}
         </p>
@@ -90,112 +85,94 @@ export function AgentsView() {
     );
   }
 
-  function pickScope(scope: string) {
-    setCreating(undefined);
-    setAccountParam(undefined);
-    setScopePick(scope);
-    const first = groups.find((g) => g.scope === scope)?.entries[0];
-    setAgentParam(first ? entryId(first) : undefined);
-  }
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Agents" subtitle="Setup drafts them, you have the final say on every field." bottom>
-        {agents.isPending ? (
-          <Skeleton className="mb-3.5 h-5 w-64" />
-        ) : (
-          <ScopeTabs groups={groups} active={group.scope} onPick={pickScope} />
-        )}
-      </PageHeader>
-      <div className="flex min-h-0 flex-1">
-        {agents.isPending ? (
-          <AgentsSkeleton />
-        ) : (
-          <>
-            <AgentList
-              group={group}
-              accounts={accountList}
-              health={health}
-              states={states}
+      <PageHeader
+        title="Agents"
+        subtitle={
+          agents.isPending
+            ? "Loading agents"
+            : `${plural(index.size, "agent")}, ${working === 0 ? "none" : working} working. Setup drafts them, you have the final say on every field.`
+        }
+      />
+      {agents.isPending ? (
+        <AgentsSkeleton />
+      ) : (
+        <ListDetail>
+          <ListPane label="Agents">
+            <AgentGroups
+              groups={groups}
+              orgs={orgs.data ?? []}
+              lamps={lamps}
               selected={selectedId}
-              onSelect={(id) => {
-                setCreating(undefined);
-                setAccountParam(undefined);
-                setAgentParam(id);
-              }}
-              onNew={(scope) => {
-                setCreating(scope);
-                setAccountParam(undefined);
-              }}
+              creating={newScope}
+              onSelect={(id) => show({ agent: id })}
+              onNew={(scope) => show({ create: scope })}
             />
-            <div className="flex min-w-0 flex-1 flex-col overflow-auto scroll-fade">
-              {newScope !== undefined ? (
-                <NewAgentForm
-                  key={`${newScope}:${accountParam ?? ""}`}
-                  scope={newScope}
-                  scopeLabel={groups.find((g) => g.scope === newScope)?.label ?? newScope}
-                  presetAccount={accountParam}
-                  onCreated={(id) => {
-                    setCreating(undefined);
-                    setAccountParam(undefined);
-                    setAgentParam(id);
-                  }}
-                  onCancel={() => {
-                    setCreating(undefined);
-                    setAccountParam(undefined);
-                  }}
-                />
-              ) : selected?.status === "ok" ? (
-                <AgentEditor
-                  key={entryId(selected)}
-                  entry={selected}
-                  agents={entries}
-                  accounts={accountList}
-                  orgs={orgs.data ?? []}
-                  state={states.get(entryId(selected)) ?? { kind: "idle", label: "Idle", tone: "neutral" }}
-                  now={now}
-                  onHealth={(id, h) => setHealth((prev) => new Map(prev).set(id, h))}
-                  onSelect={(id) => setAgentParam(id)}
-                />
-              ) : selected ? (
-                <InvalidAgentPanel
-                  entry={selected as InvalidAgent}
-                  onRemoved={() => setAgentParam(undefined)}
-                />
-              ) : (
-                <p className="p-8 text-base text-fg-muted">
-                  {group.canAdd
-                    ? `No agents in ${group.label} yet. Use the button on the left to add one.`
-                    : "Pick an agent to edit it."}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+          </ListPane>
+          {newScope !== undefined ? (
+            <DetailPane label="New agent">
+              <NewAgentForm
+                key={`${newScope}:${accountParam ?? ""}`}
+                scope={newScope}
+                scopeLabel={groups.find((g) => g.scope === newScope)?.label ?? newScope}
+                presetAccount={accountParam}
+                onCreated={(id) => show({ agent: id })}
+                onCancel={() => show({ agent: agentParam })}
+              />
+            </DetailPane>
+          ) : selected?.status === "ok" ? (
+            <AgentDetail
+              key={entryId(selected)}
+              entry={selected}
+              agents={entries}
+              accounts={accountList}
+              orgs={orgs.data ?? []}
+              tasks={tasks.data ?? []}
+              lamp={lamps.get(entryId(selected))}
+              week={week.data}
+              today={today.data}
+              health={health.get(entryId(selected))}
+              onHealth={(id, h) => setHealth((prev) => new Map(prev).set(id, h))}
+              onSelect={(id) => show({ agent: id })}
+            />
+          ) : selected ? (
+            <InvalidAgentPanel entry={selected as InvalidAgent} onRemoved={() => show({})} />
+          ) : (
+            <DetailPane label="No agent">
+              <div className="flex flex-col items-start gap-3 pt-6">
+                <p className="text-base text-fg-muted">No agents yet. A root agent can work in every org.</p>
+                <Button variant="primary" onClick={() => show({ create: ROOT_SCOPE })}>
+                  New root agent
+                </Button>
+              </div>
+            </DetailPane>
+          )}
+        </ListDetail>
+      )}
     </div>
   );
 }
 
 function AgentsSkeleton() {
   return (
-    <>
-      <div
-        aria-busy="true"
-        className="flex w-[278px] shrink-0 flex-col gap-2 border-r border-line-strong px-3.5 py-4"
-      >
-        <span className="sr-only">Loading agents</span>
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-12 rounded-lg" />
-        ))}
-      </div>
-      <div aria-hidden="true" className="flex flex-1 flex-col gap-4 px-7 py-5">
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="h-[74px] rounded-lg" />
-        <Skeleton className="h-28 rounded-lg" />
-        <Skeleton className="h-24 rounded-lg" />
-      </div>
-    </>
+    <ListDetail>
+      <ListPane label="Loading agents">
+        <div aria-busy="true" className="flex flex-col gap-2 p-1">
+          <span className="sr-only">Loading agents</span>
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-11 rounded-md" />
+          ))}
+        </div>
+      </ListPane>
+      <DetailPane label="Loading">
+        <div aria-hidden="true" className="flex flex-col gap-4 pt-5">
+          <Skeleton className="h-9 w-72" />
+          <Skeleton className="h-24 rounded-lg" />
+          <Skeleton className="h-40 rounded-lg" />
+        </div>
+      </DetailPane>
+    </ListDetail>
   );
 }
 
@@ -204,27 +181,35 @@ function InvalidAgentPanel({ entry, onRemoved }: { entry: InvalidAgent; onRemove
   const remove = useRemoveAgent();
   const [confirm, setConfirm] = useState(false);
   return (
-    <div className="flex max-w-[720px] flex-col gap-4 px-7 pt-[18px] pb-7">
-      <h2 className="font-mono text-lg font-semibold">@{entry.id}</h2>
-      <div
-        role="alert"
-        className="flex flex-col gap-2 rounded-lg border border-red-line bg-red-wash px-4 py-3"
-      >
-        <p className="text-base font-medium text-red">This file has errors and did not load.</p>
-        <p className="font-mono text-sm break-all text-fg-muted">{entry.file}</p>
-        <ul aria-label="Errors" className="flex flex-col gap-1">
-          {entry.errors.map((error) => (
-            <li key={error} className="font-mono text-sm break-words text-red">
-              {error}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <p className="text-base text-fg-muted text-pretty">
-        Fix the file in an editor. It reloads when you save it.
-      </p>
-      <div>
-        <Button onClick={() => setConfirm(true)}>Remove file</Button>
+    <DetailPane
+      label={`@${entry.id}`}
+      head={
+        <div className="flex items-center gap-3">
+          <h2 className="font-mono text-md font-semibold">@{entry.id}</h2>
+          <Button className="ml-auto" onClick={() => setConfirm(true)}>
+            Remove file
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex max-w-[720px] flex-col gap-4 pt-4">
+        <div
+          role="alert"
+          className="flex flex-col gap-2 rounded-lg border border-red-line bg-red-wash px-4 py-3"
+        >
+          <p className="text-base font-medium text-red">This file has errors and did not load.</p>
+          <p className="font-mono text-sm break-all text-fg-muted">{entry.file}</p>
+          <ul aria-label="Errors" className="flex flex-col gap-1">
+            {entry.errors.map((error) => (
+              <li key={error} className="font-mono text-sm break-words text-red">
+                {error}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-base text-fg-muted text-pretty">
+          Fix the file in an editor. It reloads when you save it.
+        </p>
       </div>
       {confirm && (
         <ConfirmDialog
@@ -244,8 +229,6 @@ function InvalidAgentPanel({ entry, onRemoved }: { entry: InvalidAgent; onRemove
           }
         />
       )}
-    </div>
+    </DetailPane>
   );
 }
-
-export type { OkAgent };
