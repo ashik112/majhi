@@ -116,16 +116,22 @@ describe("curation of a proposal", () => {
     expect(Object.keys(t.calls[0]?.request.questions ?? {})).toEqual(["worth", "private"]);
   });
 
-  it("leaves a fact pending when the answer is under the threshold or does not count", async () => {
+  it("keeps a lesson the provider is not sure about, saying so, since only global lessons and contradictions wait", async () => {
     const t = setup();
     // It counts, but its lift over chance (0.3) is under memory's stricter 0.4.
     t.box.answers = { worth: sure("keep", 0.65), private: sure(false, 0.97) };
-    expect((await t.propose("Builds run with Node 22 in acme-api")).status).toBe("pending");
-    t.box.answers = { worth: unsure("keep", 0.99), private: sure(false, 0.97) };
-    expect((await t.propose("The api listens on port 8080 locally")).status).toBe("pending");
-    // The rules provider only guesses: its answers never count, so everything waits.
+    const first = await t.propose("Builds run with Node 22 in acme-api");
+    expect(first.status).toBe("active");
+    const [event] = t.memory.events({ fact: first.id, limit: 1 });
+    expect(event).toMatchObject({ action: "approved", actor: "curation", from: "pending" });
+    expect(event?.confidence).toBeUndefined();
+    expect(event?.reason).toContain("Undo drops it");
+    // Unsure chatter is not dropped on a guess either.
+    t.box.answers = { worth: unsure("chatter", 0.99), private: sure(false, 0.97) };
+    expect((await t.propose("The api listens on port 8080 locally")).status).toBe("active");
+    // The rules provider only guesses: its answers never count, and the lesson is kept.
     t.box.answers = { worth: unsure("keep", 0.5), private: unsure(false, 0.3) };
-    expect((await t.propose("Migrations live in the db folder of acme-api")).status).toBe("pending");
+    expect((await t.propose("Migrations live in the db folder of acme-api")).status).toBe("active");
   });
 
   it("drops task chatter above the threshold, and keeps the fact as rejected", async () => {
@@ -150,16 +156,18 @@ describe("curation of a proposal", () => {
     expect(t.calls).toHaveLength(0);
   });
 
-  it("never keeps a fact a model suspects of a secret, and drops it when sure", async () => {
+  it("drops a fact a model suspects of a secret, sure or not", async () => {
     const t = setup();
     t.box.answers = { worth: sure("keep", 0.99), private: unsure(true, 0.6) };
-    expect((await t.propose("The staging login is shared by the team")).status).toBe("pending");
+    const suspected = await t.propose("The staging login is shared by the team");
+    expect(suspected.status).toBe("rejected");
+    expect(t.memory.events({ fact: suspected.id, limit: 1 })[0]?.reason).toContain("Undo keeps it");
     t.box.answers = { worth: sure("keep", 0.99), private: sure(true, 0.95) };
     const dropped = await t.propose("The deploy account is the one we all share");
     expect(dropped.status).toBe("rejected");
-    // A model that says not sure whether it is private does not let the fact in either.
+    // Not sure it is private: the rules found nothing, so it is kept.
     t.box.answers = { worth: sure("keep", 0.99), private: unsure(false, 0.6) };
-    expect((await t.propose("Deploys go out on Tuesdays only in acme-api")).status).toBe("pending");
+    expect((await t.propose("Deploys go out on Tuesdays only in acme-api")).status).toBe("active");
   });
 
   it("rejects personal data by the rules, even when every fact is reviewed and the model says keep", async () => {
@@ -197,14 +205,13 @@ describe("contradictions", () => {
   const OLD = "Use pnpm to install packages in acme-api";
   const NEW = "Do not use pnpm to install packages in acme-api";
 
-  it("retires the old fact when a confident contradiction is kept", async () => {
+  it("leaves a confident contradiction for the owner, and the old fact as it is", async () => {
     const t = setup();
     const old = await t.active(OLD);
     t.box.answers = { ...KEEP, relation: sure("contradicts", 0.93) };
     const fact = await t.propose(NEW);
-    expect(fact.status).toBe("active");
-    expect(t.memory.get(old.id)).toMatchObject({ status: "retired", decided_by: "curation" });
-    expect(t.memory.get(old.id)?.valid_to).toBeDefined();
+    expect(fact.status).toBe("pending");
+    expect(t.memory.get(old.id)?.status).toBe("active");
     // The nearest fact went into the state, and the relation was asked.
     expect(t.calls[0]?.request.state).toMatchObject({ candidate: NEW, nearest: OLD });
     expect(Object.keys(t.calls[0]?.request.questions ?? {})).toContain("relation");
@@ -285,10 +292,10 @@ describe("candidates from the Housekeeper", () => {
 });
 
 describe("undo", () => {
-  it("puts back an automatic keep, drop, retire and merge", async () => {
+  it("puts back an automatic keep, drop and merge", async () => {
     const t = setup();
-    const old = await t.active("Use pnpm to install packages in acme-api");
-    t.box.answers = { ...KEEP, relation: sure("contradicts", 0.93) };
+    await t.active("Use pnpm to install packages in acme-api");
+    t.box.answers = { ...KEEP, relation: sure("unrelated", 0.93) };
     const kept = await t.propose("Do not use pnpm to install packages in acme-api");
     expect(kept.status).toBe("active");
     const log = (id: number, action: string) => {
@@ -297,11 +304,6 @@ describe("undo", () => {
       return e;
     };
 
-    // The retire comes off: the old fact is active again, with its own start.
-    const before = t.memory.get(old.id)?.valid_from;
-    expect(t.memory.undo(log(old.id, "retired").id, owner)).toMatchObject({ status: "active" });
-    expect(t.memory.get(old.id)?.valid_to).toBeUndefined();
-    expect(t.memory.get(old.id)?.valid_from).toBe(before);
     // The keep comes off: back to pending, with no start.
     expect(t.memory.undo(log(kept.id, "approved").id, owner)).toMatchObject({ status: "pending" });
     expect(t.memory.get(kept.id)?.valid_from).toBeUndefined();
@@ -319,8 +321,8 @@ describe("undo", () => {
     expect(t.memory.get(twin.id)?.duplicate_of).toBeUndefined();
 
     // Each undo is logged, and the step it undid is marked.
-    expect(t.memory.events({ fact: old.id }).some((e) => e.action === "restored")).toBe(true);
-    expect(log(old.id, "retired").undone).toBe(true);
+    expect(t.memory.events({ fact: kept.id }).some((e) => e.action === "restored")).toBe(true);
+    expect(log(kept.id, "approved").undone).toBe(true);
   });
 
   it("undoes the owner's approve, reject and forget too", async () => {
