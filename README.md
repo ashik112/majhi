@@ -28,7 +28,7 @@ majhi fixes that at the root. Most agent tools give you one agent in one termina
 ### Every client in its own sealed workspace
 Work lives in **orgs**: one per client, per team, per side project, plus **Private** for your own. Each org owns its:
 
-- **AI accounts.** The client's Claude or Codex subscription, or API keys, used only for that client's work. Two agents can share one account; one account can serve several orgs if you allow it.
+- **AI accounts.** The client's Claude or Codex subscription, or API keys, used only for that client's work. Several agents can share one account.
 - **Agents.** A lead, builders and reviewers with their own models, instructions, permissions and fallbacks. An org's agent can never be put on another org's task unless you name that org for it.
 - **Repos and git identity.** Commits carry that client's name and email. Pushes go through that client's SSH host alias, and PRs and MRs use that client's GitHub, GitLab or Bitbucket token.
 - **Secrets and credentials.** Encrypted with [age](https://age-encryption.org), scoped to the org, handed only to that org's runs. An agent process never gets majhi's own environment or another org's credentials.
