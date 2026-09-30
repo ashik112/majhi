@@ -215,29 +215,37 @@ describe("room.answerAsk routing", () => {
     expect(answer.status).toBe(409);
   });
 
-  it("stores the asking agent on the card, not the task lead", async () => {
+  it("routes answered ask to the agent who called it", async () => {
     w = await taskWorld();
     const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
     const taskId = res.body.id;
     const task = w.h.majhi.services.store.tasks.get(taskId);
     if (!task) throw new Error("Task not found");
-    const taskLead = task.team[0];
+    const agent = task.team[0];
 
-    const card = await postAskCard(
-      taskId,
-      [
-        {
-          id: "q1",
-          question: "Pick",
-          options: [{ id: "opt", label: "Option" }],
-          freeText: false,
-        },
-      ],
-      taskLead,
-    );
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "Pick",
+        options: [{ id: "opt", label: "Option" }],
+        freeText: false,
+      },
+    ]);
 
     expect(card.type).toBe("ask");
     if (card.type !== "ask") throw new Error("Not an ask card");
-    expect(card.agent).toBe(taskLead);
+    expect(card.agent).toBe(agent);
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "opt" },
+    });
+
+    expect(answer.status).toBe(200);
+    const items = await roomItems(taskId);
+    const ownerMsg = items.find((i) => i.type === "owner" && i.text.includes("Owner chose"));
+    if (!ownerMsg || ownerMsg.type !== "owner") throw new Error("Owner message not found");
+    expect(ownerMsg.to).toBe(agent);
   });
 });

@@ -384,7 +384,25 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
 
 function AskCard({ item }: { item: Of<"ask"> }) {
   const toast = useToast();
-  const [answers, setAnswers] = useState<Record<string, string>>(() => item.answers ?? {});
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    const initial = item.answers ?? {};
+    for (const q of item.questions) {
+      if (!(q.id in initial) && q.default) {
+        initial[q.id] = q.default;
+      }
+    }
+    return initial;
+  });
+  const [answeredVia, setAnsweredVia] = useState<Record<string, "option" | "text">>(() => {
+    const via: Record<string, "option" | "text"> = {};
+    for (const q of item.questions) {
+      const ans = answers[q.id];
+      if (ans) {
+        via[q.id] = q.options.some((o) => o.id === ans) ? "option" : "text";
+      }
+    }
+    return via;
+  });
 
   const answer = useMutation<unknown, ApiRequestError>({
     mutationFn: () => cmd("room.answerAsk", { task: item.task, item: item.id, answers }),
@@ -411,8 +429,14 @@ function AskCard({ item }: { item: Of<"ask"> }) {
     );
   }
 
-  const handleAnswer = (questionId: string, value: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  const handleOptionClick = (questionId: string, optionId: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
+    setAnsweredVia((prev) => ({ ...prev, [questionId]: "option" }));
+  };
+
+  const handleTextChange = (questionId: string, text: string) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: text }));
+    setAnsweredVia((prev) => ({ ...prev, [questionId]: "text" }));
   };
 
   return (
@@ -431,7 +455,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
               type="text"
               placeholder="Type your answer..."
               value={answers[question.id] ?? ""}
-              onChange={(e) => handleAnswer(question.id, e.target.value)}
+              onChange={(e) => handleTextChange(question.id, e.target.value)}
               disabled={answer.isPending}
               className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
             />
@@ -444,18 +468,18 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                     size="sm"
                     variant={answers[question.id] === option.id ? "primary" : "secondary"}
                     disabled={answer.isPending}
-                    onClick={() => handleAnswer(question.id, option.id)}
+                    onClick={() => handleOptionClick(question.id, option.id)}
                   >
                     {option.label}
                   </Button>
                 ))}
               </div>
-              {question.freeText && (
+              {question.freeText && answeredVia[question.id] !== "option" && (
                 <input
                   type="text"
                   placeholder="Or type your own..."
-                  value={answers[question.id]?.startsWith("opt") ? "" : answers[question.id] ?? ""}
-                  onChange={(e) => handleAnswer(question.id, e.target.value)}
+                  value={answeredVia[question.id] === "text" ? answers[question.id] ?? "" : ""}
+                  onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
                   className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
                 />
@@ -464,8 +488,8 @@ function AskCard({ item }: { item: Of<"ask"> }) {
           ) : (
             <>
               <select
-                value={answers[question.id] ?? question.default ?? ""}
-                onChange={(e) => handleAnswer(question.id, e.target.value)}
+                value={answers[question.id] ?? ""}
+                onChange={(e) => handleOptionClick(question.id, e.target.value)}
                 disabled={answer.isPending}
                 className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg focus:border-blue focus:outline-none disabled:bg-bg-hover"
               >
@@ -476,12 +500,12 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                   </option>
                 ))}
               </select>
-              {question.freeText && (
+              {question.freeText && answeredVia[question.id] !== "option" && (
                 <input
                   type="text"
                   placeholder="Or type your own..."
-                  value={answers[question.id]?.startsWith("opt") ? "" : answers[question.id] ?? ""}
-                  onChange={(e) => handleAnswer(question.id, e.target.value)}
+                  value={answeredVia[question.id] === "text" ? answers[question.id] ?? "" : ""}
+                  onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
                   className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
                 />
@@ -493,7 +517,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
       <Button
         size="sm"
         variant="primary"
-        disabled={answer.isPending || Object.keys(answers).length !== item.questions.length}
+        disabled={answer.isPending || !item.questions.every((q) => q.id in answers)}
         onClick={() => answer.mutate()}
         className="self-start"
       >
