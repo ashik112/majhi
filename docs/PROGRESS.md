@@ -26,6 +26,7 @@ Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c me
 - **Laya in Docker** for Linux and Windows. It is the `laya` compose service (`laya-serve` 0.3.22, PyTorch CPU), which `make up` builds everywhere but Apple silicon Macs. It starts on the first question and stops after 10 idle minutes. The provider tries native Laya first.
 - **Settings.** Hub setup, Settings has a Teams group (agent turns without you, review rounds). `orgs.update` takes `team` and `rooms`.
 - **The boss** has every new command through `majhi-admin` (`team.*`, `tasks.split`, `tasks.update mode`, `settings.set rooms`, `orgs.update team`).
+- **Background processes (PRV-33, 5.15).** Agents start slow or long-running commands through the `majhi-processes` MCP tool (`start`, `list`, `output`, `stop`, `restart`), which every session gets. majhi runs them with `/bin/sh -c` through the session's own spawner, environment and mounts, at most 5 at once per task, and refuses a second copy of a running command. When a `wait` process exits by itself, majhi wakes the agent that started it with the exit code and the last lines, and a task in review runs again. While one runs, the task stays running and the room says "Waiting for p1 `pnpm test`". Each prompt says what already runs. The Processes card in the task view shows each one with its output and a Stop button (`processes.stop`). Stopping, closing or removing the task stops its processes. TASK.md no longer tells agents to run tests in the foreground.
 
 ### How to try it
 
@@ -44,6 +45,7 @@ Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c me
 - Changing the mode starts the new mode's turn order from its first step.
 - The Orgs form does not show the default team or the loop guard yet; the boss and `orgs.update` set them.
 - "Needs you" lines use the decision provider. With the ACP stand-in in the chain, each one costs a small prompt.
+- Background processes live in memory: a restart of majhi ends them. In container mode their ports are not published to the Mac yet, so the card's port link works only in local mode.
 - No new Playwright spec: the done-when runs as integration tests. `sh scripts/ci.sh` and e2e were not run from this task.
 
 ### Goal
