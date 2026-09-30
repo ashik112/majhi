@@ -17,7 +17,7 @@ import type { FactFilter, MemoryStore } from "./store.ts";
 /** An agent may propose this many facts in one task. */
 export const MAX_PROPOSALS_PER_TASK = 20;
 /** How long a query or a new fact waits for the model to load before search goes on with keywords. */
-export const EMBED_WAIT_MS = 10_000;
+export const EMBED_WAIT_MS = 30_000;
 const FILL_BATCH = 32;
 
 /** Called with each fact an agent proposes. Curation (duplicates, decisions) hooks in here. */
