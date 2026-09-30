@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentFrontmatter,
   canWorkIn,
@@ -14,6 +14,7 @@ import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
+import { git } from "../git/git.ts";
 import type { RoomService } from "../room/service.ts";
 import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -80,12 +81,19 @@ export class RoomCoordinator {
     const role = team.find((m) => m.id === turn.agent)?.role;
     const verdict = await this.verdict(task, turn.agent, role, text, mentions);
     const settings = await this.deps.config.settings();
+    // A turn that changed the worktrees is progress, not a loop: the guard counts from zero again.
+    const before = store.tasks.roomState(task.id);
+    const fingerprint = await worktreeFingerprint(task);
+    const state =
+      fingerprint !== undefined && fingerprint !== before.fingerprint
+        ? { ...before, agentTurns: 0, fingerprint }
+        : before;
     const plan = planTurn({
       mode: task.mode,
       team,
       from: turn.agent,
       mentions,
-      state: store.tasks.roomState(task.id),
+      state,
       limits: {
         maxAgentTurns: await this.maxAgentTurns(task),
         reviewRounds: settings.rooms.review_rounds,
@@ -300,4 +308,26 @@ function readLine(item: RoomItem): string | undefined {
 function firstLine(text: string): string {
   const line = text.split("\n").find((l) => l.trim() !== "") ?? text;
   return line.length > 200 ? `${line.slice(0, 199)}...` : line;
+}
+
+/**
+ * Each worktree's HEAD and its uncommitted changes, in one string. It changes whenever an agent
+ * commits or edits files, which is how the loop guard tells work from talk. Undefined without
+ * worktrees or when git cannot be read.
+ */
+async function worktreeFingerprint(task: Task): Promise<string | undefined> {
+  const trees = task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree]));
+  if (trees.length === 0) return undefined;
+  try {
+    const parts = await Promise.all(
+      trees.map(async (t) => {
+        const head = (await git(t, ["rev-parse", "HEAD"])).trim();
+        const changes = await git(t, ["status", "--porcelain"]);
+        return `${head}:${createHash("sha1").update(changes).digest("hex")}`;
+      }),
+    );
+    return parts.join("|");
+  } catch {
+    return undefined;
+  }
 }

@@ -71,7 +71,7 @@ export class RoomRepo {
       .orderBy(desc(roomItems.seq))
       .limit(limit + 1)
       .all();
-    return { items: rows.slice(0, limit).map(toItem), more: rows.length > limit };
+    return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
   /** Owner messages and handoffs waiting for the agent's next turn, in the order they were sent. */
@@ -89,7 +89,7 @@ export class RoomRepo {
       )
       .orderBy(asc(roomItems.at))
       .all()
-      .map(toItem);
+      .flatMap(readable);
   }
 
   /** Permission prompts still marked pending, in any task. */
@@ -101,7 +101,7 @@ export class RoomRepo {
         and(eq(roomItems.type, "permission"), sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`),
       )
       .all()
-      .map(toItem);
+      .flatMap(readable);
   }
 
   /** Items of one type in a task whose `state` is pending, oldest first. */
@@ -118,7 +118,7 @@ export class RoomRepo {
       )
       .orderBy(asc(roomItems.at))
       .all()
-      .map(toItem);
+      .flatMap(readable);
   }
 
   /** Approval cards that ran a config change and can be undone through this commit. */
@@ -130,7 +130,7 @@ export class RoomRepo {
         and(eq(roomItems.type, "approval"), sql`json_extract(${roomItems.payload}, '$.commit') = ${commit}`),
       )
       .all()
-      .map(toItem);
+      .flatMap(readable);
   }
 
   private nextAt(task: string): string {
@@ -149,7 +149,29 @@ export class RoomRepo {
   }
 }
 
-function toItem(row: typeof roomItems.$inferSelect): RoomItem {
-  const payload = PayloadSchema.parse(JSON.parse(row.payload));
-  return RoomItemSchema.parse({ ...payload, id: row.id, task: row.task, seq: row.seq, at: row.at });
+/**
+ * A stored row as a room item, or undefined when the row cannot be read (a damaged payload after
+ * a database recovery, say). One bad row must never take the room, or the server, down.
+ */
+function toItem(row: typeof roomItems.$inferSelect): RoomItem | undefined {
+  try {
+    const payload = PayloadSchema.safeParse(JSON.parse(row.payload));
+    if (!payload.success) return undefined;
+    const item = RoomItemSchema.safeParse({
+      ...payload.data,
+      id: row.id,
+      task: row.task,
+      seq: row.seq,
+      at: row.at,
+    });
+    return item.success ? item.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
+
+/** Readable rows only: unreadable ones are skipped. */
+const readable = (row: typeof roomItems.$inferSelect): RoomItem[] => {
+  const item = toItem(row);
+  return item === undefined ? [] : [item];
+};

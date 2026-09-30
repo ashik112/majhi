@@ -73,7 +73,7 @@ describe("planTurn: the loop guard", () => {
     expect(at.state.agentTurns).toBe(12);
     const over = planTurn(turn({ mentions: ["builder"], state: { agentTurns: 12 } }));
     expect(over.handoffs).toEqual([]);
-    expect(over.pause).toMatch(/12 agent turns without you/);
+    expect(over.pause).toMatch(/12 handoffs in a row changed no files/);
     expect(over.state.agentTurns).toBe(12);
   });
 
