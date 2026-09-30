@@ -146,6 +146,8 @@ switch (verb) {
   case "buildx create":
     withState((s) => void s.builders.push(flagValues(args, "--name")[0]));
     break;
+  case "buildx stop":
+    break;
   case "buildx rm":
     withState((s) => void (s.builders = s.builders.filter((b) => b !== last)));
     break;

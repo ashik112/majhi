@@ -224,6 +224,17 @@ describe("ContainerService", () => {
     });
   });
 
+  describe("a start right after a restart", () => {
+    it("waits for the startup cleanup, so the cleanup does not sweep the new container away", async () => {
+      docker.psDelayMs = 60;
+      const cleaning = service.startup();
+      const started = await service.serviceStart("ACM-1", "acme-builder", db);
+      await cleaning;
+      expect(started.status).toBe("started");
+      expect(docker.containers.has("majhi-acm-1-db")).toBe(true);
+    });
+  });
+
   describe("cleanup", () => {
     async function populate(): Promise<void> {
       docker.images.add("majhi-preview-acm-1");
@@ -235,10 +246,11 @@ describe("ContainerService", () => {
       await until(() => docker.images.has("majhi-preview-acm-1") && docker.builders.size > 0);
     }
 
-    it("tasks.stop removes the containers and the network but keeps the volumes", async () => {
+    it("tasks.stop removes the containers and the network but keeps the volumes, and stops the builder", async () => {
       await populate();
       await processes.stopTask("ACM-1");
       await service.taskStopped("ACM-1");
+      expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
       expect(docker.containers.size).toBe(0);
       expect(docker.networks.size).toBe(0);
       expect(service.taskNetworks("ACM-1")).toEqual([]);
@@ -276,6 +288,8 @@ describe("ContainerService", () => {
       await service.startup();
       expect(docker.containers.size).toBe(0);
       expect(docker.networks.size).toBe(0);
+      // The builder of the open task stops, and starts again on its next build; the others are gone.
+      expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
       // ACM-1 is open; ACM-2 is done and ACM-9 is gone.
       expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x"]);
       expect([...docker.builders]).toEqual(["majhi-preview-acm-1"]);

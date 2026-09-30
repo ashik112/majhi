@@ -73,6 +73,8 @@ export class ContainerService {
   private readonly lookups = new Map<string, Promise<void>>();
   /** One start at a time per task, so the limit and the names are checked on the truth. */
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** The startup cleanup. A start waits for it, so the cleanup cannot sweep away what a start made. */
+  private starting: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
@@ -100,6 +102,7 @@ export class ContainerService {
     const t = this.task(task);
     const names = containerNames(task);
     const settings = await this.deps.settings();
+    await this.starting;
     return this.locked(task, async () => {
       const building = this.all(task).find((p) => p.container?.kind === "build" && p.status === "running");
       if (building !== undefined) {
@@ -141,6 +144,7 @@ export class ContainerService {
     const t = this.task(task);
     const names = containerNames(task);
     const settings = await this.deps.settings();
+    await this.starting;
     return this.locked(task, async () => {
       try {
         await docker.exec(["image", "inspect", names.previewImage]);
@@ -229,6 +233,7 @@ export class ContainerService {
       }
     }
     const names = containerNames(task);
+    await this.starting;
     return this.locked(task, async () => {
       if (this.running(task, "service", input.name) !== undefined) {
         throw new UserError(
@@ -330,6 +335,8 @@ export class ContainerService {
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
     await this.quietly(() => this.removeNetwork(docker, names.network));
+    // A paused task leaves nothing running: the builder stops, and the next build starts it again.
+    await this.stopBuilder(docker, names.builder);
     this.networks.delete(task);
     this.deps.changed?.();
   }
@@ -360,7 +367,14 @@ export class ContainerService {
    * At startup: containers and networks a previous majhi left go, and the volumes, builders and
    * preview images of tasks that are done or gone. Those of open tasks stay.
    */
-  async startup(): Promise<void> {
+  startup(): Promise<void> {
+    const cleaning = this.cleanAtStart();
+    // A failed cleanup is the caller's to report; it must not block the starts that wait for it.
+    this.starting = cleaning.catch(() => undefined);
+    return cleaning;
+  }
+
+  private async cleanAtStart(): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
     const open = new Set(this.deps.openTasks());
@@ -403,6 +417,10 @@ export class ContainerService {
       );
       for (const name of builders.filter(leftover))
         await this.quietly(() => docker.exec(["buildx", "rm", "--force", name]));
+      // The builders of open tasks stop running. The next build starts them again.
+      for (const name of builders.filter((n) => n.startsWith("majhi-preview-") && !leftover(n))) {
+        await this.stopBuilder(docker, name);
+      }
     });
     await this.quietly(async () => {
       const images = await this.lines(docker, [
@@ -602,6 +620,16 @@ export class ContainerService {
       await new Promise((done) => setTimeout(done, PORT_POLL_MS));
     }
     return undefined;
+  }
+
+  /** Stops a builder's container, if the builder exists. Its cache and state stay. */
+  private async stopBuilder(docker: ContainerDocker, builder: string): Promise<void> {
+    try {
+      await docker.exec(["buildx", "inspect", builder]);
+    } catch {
+      return;
+    }
+    await this.quietly(() => docker.exec(["buildx", "stop", builder]));
   }
 
   private async removeNetwork(docker: ContainerDocker, network: string): Promise<void> {

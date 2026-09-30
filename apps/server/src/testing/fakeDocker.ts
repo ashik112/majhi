@@ -19,6 +19,9 @@ export class FakeDocker implements ContainerDocker {
   containers = new Map<string, FakeContainer>();
   runners = ["majhi-run-aaa"];
   connected: string[] = [];
+  stoppedBuilders: string[] = [];
+  /** Makes `ps` answer late, to play a slow daemon. */
+  psDelayMs = 0;
 
   private labelsOf(parts: DockerParts): Record<string, string> {
     const labels: Record<string, string> = {};
@@ -94,6 +97,9 @@ export class FakeDocker implements ContainerDocker {
       case "buildx inspect":
         if (!this.builders.has(last)) throw new Error("no builder");
         return out("");
+      case "buildx stop":
+        this.stoppedBuilders.push(last);
+        return out("");
       case "buildx rm":
         this.builders.delete(last);
         return out("");
@@ -133,6 +139,7 @@ export class FakeDocker implements ContainerDocker {
         for (const name of args.slice(3)) this.volumes.delete(name);
         return out("");
       case "ps": {
+        if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
         const task = filter("label")
           .find((f) => f.startsWith("label=majhi.task="))
           ?.slice("label=majhi.task=".length);

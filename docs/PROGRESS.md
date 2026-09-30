@@ -2,7 +2,7 @@
 
 ## PRV-53: Containers for agents, run by majhi (built, waiting for owner review)
 
-Branch `task/prv-53-containers-for-agents-run-by-majhi`, from `main`. Design: `SPEC.md` 5.15 "Containers for agents" and the `docs/DECISIONS.md` rows of 2026-10-01.
+Branch `task/prv-53-containers-for-agents-run-by-majhi`, from `main`. Design: `SPEC.md` 5.15 "Containers for agents" and the `docs/DECISIONS.md` rows of 2026-09-30.
 
 ### What works
 

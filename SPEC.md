@@ -605,7 +605,7 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 - The Jev decision provider sends task text to a hosted API. It is off by default and must be enabled by the owner.
 - Config changes and folder moves follow the boss's approval policy (5.16). Every change is a commit in `~/.majhi`, and every approval is logged in the audit table.
 - Secrets pasted into a chat are stored in `secrets.age` and replaced with a reference before any agent sees them (5.16)
-- Containers majhi runs for agents (5.15) never get a bind mount, the Docker socket, `~/.majhi`, the secrets key or `~/.ssh`: every docker call is built by majhi from checked values and refused unless each flag is on an allow list..
+- Containers majhi runs for agents (5.15) never get a bind mount, the Docker socket, `~/.majhi`, the secrets key or `~/.ssh`: every docker call is built by majhi from checked values and refused unless each flag is on an allow list.
 
 ---
 
