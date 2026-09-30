@@ -225,7 +225,7 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
       </span>
       <Divider />
       <span className="tnum flex items-center gap-1.5">
-        <Lamp state={counts.working > 0 ? "working" : "idle"} size={7} />
+        <Lamp state="working" dim={counts.working === 0} size={7} />
         <span
           className={cn("font-mono text-md font-medium", counts.working > 0 ? LAMP_TEXT.working : "text-fg")}
         >
@@ -235,7 +235,7 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
       </span>
       <Divider />
       <span className="tnum flex items-center gap-1.5">
-        <Lamp state={counts.needs > 0 ? "needs" : "idle"} size={7} />
+        <Lamp state="needs" dim={counts.needs === 0} size={7} />
         <span className={cn("font-mono text-md font-medium", counts.needs > 0 ? LAMP_TEXT.needs : "text-fg")}>
           {counts.needs}
         </span>
@@ -267,7 +267,7 @@ function ColumnHead({ column, onHide }: { column: Column; onHide?: (() => void) 
   return (
     <div className="flex shrink-0 flex-col gap-2 px-1">
       <div className="flex h-7 items-center gap-2">
-        <Lamp state={lit ? lamp : "idle"} size={8} />
+        <Lamp state={lamp} dim={!lit} size={8} />
         <h2 className="text-base leading-[18px] font-semibold">{column.label}</h2>
         <span
           className={cn(
@@ -330,7 +330,7 @@ function ColumnRail({
   const count = column.tasks.length;
   const inner = (
     <>
-      <Lamp state={count > 0 ? COLUMN_LAMP[column.id] : "idle"} size={7} />
+      <Lamp state={COLUMN_LAMP[column.id]} dim={count === 0} size={7} />
       <h2 className="text-sm font-medium text-fg-soft [writing-mode:vertical-rl]">{column.label}</h2>
       <span className="tnum font-mono text-sm text-fg-muted">{count}</span>
     </>

@@ -233,11 +233,11 @@ function AgentsNow() {
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
     [index, tasks, accounts],
   );
-  const rows: { label: string; count: number; lamp: LampState }[] = [
-    { label: "Working", count: pulse.working, lamp: "working" },
-    { label: "Paused", count: pulse.paused, lamp: "paused" },
-    { label: "Limit reached", count: pulse.limit, lamp: "paused" },
-    { label: "Idle", count: pulse.idle, lamp: "idle" },
+  const rows: { label: string; title: string; count: number; lamp: LampState }[] = [
+    { label: "Working", title: "Working", count: pulse.working, lamp: "working" },
+    { label: "Paused", title: "Paused", count: pulse.paused, lamp: "paused" },
+    { label: "Limit", title: "Limit reached", count: pulse.limit, lamp: "paused" },
+    { label: "Idle", title: "Idle", count: pulse.idle, lamp: "idle" },
   ];
   return (
     <section
@@ -245,16 +245,20 @@ function AgentsNow() {
       className="mt-auto flex shrink-0 flex-col gap-2 border-t border-line pt-3"
     >
       <SectionLabel className="px-1">Agents right now</SectionLabel>
-      <ul className="grid grid-cols-4 gap-1">
+      <ul className="grid grid-cols-2 gap-1">
         {rows.map((row) => (
           <li
             key={row.label}
-            title={`${row.label}: ${row.count}`}
-            className="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md border border-line bg-field"
+            title={`${row.title}: ${row.count}`}
+            className="flex h-7 min-w-0 items-center gap-2 rounded-md border border-line bg-field px-2 text-xs"
           >
-            <Lamp state={row.count > 0 ? row.lamp : "idle"} size={7} />
-            <span className="sr-only">{row.label}</span>
-            <span className={cn("tnum font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}>
+            <Lamp state={row.lamp} dim={row.count === 0} size={7} />
+            <span className={cn("min-w-0 truncate", row.count > 0 ? "text-fg-soft" : "text-fg-faint")}>
+              {row.label}
+            </span>
+            <span
+              className={cn("tnum ml-auto font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}
+            >
               {row.count}
             </span>
           </li>
