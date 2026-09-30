@@ -438,6 +438,40 @@ describe("pickForSession, efforts that change how the agent works", () => {
     expect(set.thought_level).toBe("ultra");
   });
 
+  it("does not trust a weak answer, yes or no, and does not remember it", async () => {
+    // The rules provider answers every yes/no with a no at 0.3.
+    let mode: "rules" | "laya" = "rules";
+    const decide: Decisions["decide"] = async (request) => ({
+      id: "j1",
+      answers: Object.fromEntries(
+        Object.keys(request.questions).map((key, n) => {
+          const ultra = request.state.split("\n")[n]?.includes("delegation") === true;
+          return [
+            key,
+            mode === "rules" ? { value: false, confidence: 0.3 } : { value: ultra, confidence: 0.9 },
+          ];
+        }),
+      ),
+      provider: mode === "rules" ? "rules" : "laya",
+      skipped: [],
+      trimmed: false,
+      estimated: false,
+      durationMs: 1,
+    });
+    const first = session(models, CODEX_EFFORTS);
+    const weak = await run(decisions(() => undefined, decide).d, first.s);
+    expect(weak.line).toContain("Could not check the effort options, so none were left out.");
+    expect(first.set.thought_level).toBe("ultra");
+
+    // Laya is back: the weak "no" was not cached, so ultra is asked about again and flagged.
+    mode = "laya";
+    const second = session(models, CODEX_EFFORTS);
+    const strong = await run(decisions(() => undefined, decide).d, second.s);
+    expect(second.set.thought_level).toBe("max");
+    expect(strong.line).toContain("Left out: ultra (changes how the agent works).");
+    expect(strong.line).not.toContain("Could not check");
+  });
+
   it("leaves nothing out and says so when no provider answers", async () => {
     const { s, set } = session(models, CODEX_EFFORTS);
     const out = await run(undefined, s);

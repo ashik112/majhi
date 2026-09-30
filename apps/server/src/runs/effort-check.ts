@@ -11,7 +11,7 @@ import type { Decisions } from "../decisions/api.ts";
 /** Most questions one call takes. */
 const CHUNK = 8;
 
-/** Answers kept for the life of the server, by tool, effort id and description. Only answered ones. */
+/** Answers kept for the life of the server, by tool, effort id and description. Only confident ones. */
 const answered = new Map<string, boolean>();
 
 const keyOf = (tool: string, o: OptionValue) => `${tool}\0${o.id}\0${o.description?.trim() ?? ""}`;
@@ -23,7 +23,7 @@ export function delegationQuestion(id: string): string {
 export interface EffortCheck {
   /** Ids that change how the agent works: left out of the pick and of every tier. */
   flagged: Set<string>;
-  /** True when an option with a description could not be judged, so it was left in. */
+  /** True when an option with a description could not be judged with enough confidence, so it was left in. */
   unchecked: boolean;
 }
 
@@ -34,8 +34,9 @@ export function clearEffortChecks(): void {
 
 /**
  * Judges the effort options that have a description (an option with none gives nothing to judge, so
- * it stays). An answer of yes at or above `minConfidence` flags the option. Answers are cached, so a
- * session start asks at most once. With no provider or no answer nothing is flagged.
+ * it stays). An answer counts only at or above `minConfidence`, yes or no: a yes flags the option, a no
+ * clears it, and both are cached, so a session start asks at most once. A weaker answer, or none,
+ * leaves the option in, sets `unchecked` and is not cached, so the next start asks again.
  */
 export async function checkEfforts(input: {
   decisions: Decisions | undefined;
@@ -62,11 +63,13 @@ export async function checkEfforts(input: {
       .catch(() => undefined);
     chunk.forEach((o, n) => {
       const a = result?.answers[`e${n}`];
-      if (a === undefined || typeof a.value !== "boolean") {
+      // The rules provider answers every yes/no with a weak "no": a guess is not a check, so an answer
+      // counts, and is kept, only when it reaches the floor, yes or no.
+      if (a === undefined || typeof a.value !== "boolean" || a.confidence < minConfidence) {
         unchecked = true;
         return;
       }
-      answered.set(keyOf(tool, o), a.value && a.confidence >= minConfidence);
+      answered.set(keyOf(tool, o), a.value);
     });
   }
   const flagged = new Set(judged.filter((o) => answered.get(keyOf(tool, o)) === true).map((o) => o.id));
