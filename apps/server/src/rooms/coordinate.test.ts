@@ -8,6 +8,7 @@ import {
   planTurn,
   type TurnEnd,
   verdictOf,
+  waitsOnly,
 } from "./coordinate.ts";
 import { WorktreeLocks } from "./locks.ts";
 
@@ -63,6 +64,19 @@ describe("planTurn: lead delegates", () => {
     const plan = planTurn(turn({ from: "builder", mentions: ["builder", "stranger", "owner"] }));
     expect(plan.handoffs).toEqual([]);
     expect(plan.toOwner).toBe("@builder asked for you.");
+  });
+
+  it("wakes nobody for a message that mentions no one", () => {
+    expect(planTurn(turn({ from: "builder" })).handoffs).toEqual([]);
+    expect(planTurn(turn({ from: "reviewer" })).handoffs).toEqual([]);
+  });
+
+  it("wakes nobody for a waiting reply while the owner has a question pending, mentions or not", () => {
+    const plan = planTurn(turn({ from: "builder", mentions: ["lead"], waiting: true }));
+    expect(plan.handoffs).toEqual([]);
+    expect(plan.state.agentTurns).toBe(0);
+    for (const mode of ["pipeline", "review-loop"] as const)
+      expect(planTurn(turn({ mode, from: "builder", waiting: true })).handoffs).toEqual([]);
   });
 });
 
@@ -173,6 +187,25 @@ describe("asksOwner", () => {
     expect(asksOwner("@acme-builder can you add the missing null check?")).toBe(false);
     expect(asksOwner("Fixed it.\n```\nif (x?.y) return\n```\nThe `a ? b : c` stays.")).toBe(false);
     expect(asksOwner("> Why does it fail?\nIt failed on a missing import; fixed.")).toBe(false);
+  });
+});
+
+describe("waitsOnly", () => {
+  it("reads a reply that only waits or has nothing to do, with or without a bare mention", () => {
+    expect(waitsOnly("Nothing to do for me.")).toBe(true);
+    expect(waitsOnly("Waiting for the owner to answer the question card.")).toBe(true);
+    expect(waitsOnly("@acme-lead nothing for me until the owner answers. Standing by.")).toBe(true);
+    expect(waitsOnly("No action needed from me. @acme-lead")).toBe(true);
+    expect(waitsOnly("Still waiting on @acme-builder to finish the tests.")).toBe(true);
+  });
+
+  it("does not count work, a request to a teammate, or waiting only in code or a quote", () => {
+    expect(waitsOnly("Added the handler and a test.")).toBe(false);
+    expect(waitsOnly("Waiting for the owner. @acme-builder please start on part A.")).toBe(false);
+    expect(waitsOnly("While we wait for the owner, @acme-builder can you write the tests?")).toBe(false);
+    expect(waitsOnly("Standing by. @acme-reviewer the branch is ready for review.")).toBe(false);
+    expect(waitsOnly("> Waiting for you\nFixed the import.")).toBe(false);
+    expect(waitsOnly("Set `waiting: true` in the config.")).toBe(false);
   });
 });
 

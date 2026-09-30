@@ -342,6 +342,92 @@ describe("team editing", () => {
   });
 });
 
+describe("idle messages", () => {
+  /** Nobody works and nothing waits in any queue: no further agent turn is scheduled. */
+  const settled = async (task: string, agents: readonly string[]) => {
+    const { runs, store } = w.h.majhi.services;
+    await runs.idle(task);
+    expect(runs.working(task)).toEqual([]);
+    for (const a of agents) expect(store.room.queuedFor(task, a)).toEqual([]);
+  };
+
+  it("wake no one when two agents post without a mention", async () => {
+    const { h, prompts } = await teamWorld({
+      "acme-lead": [say("@acme-builder and @acme-reviewer, look over the api and say what you find.")],
+      "acme-builder": [say("Nothing to do for me here.")],
+      "acme-reviewer": [say("Nothing to review yet, standing by.")],
+    });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      team: ["acme-lead", "acme-builder", "acme-reviewer"],
+      start: true,
+    });
+    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "reviewer turn");
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder turn");
+    await settled("ACM-1", ["acme-lead", "acme-builder", "acme-reviewer"]);
+    expect(await handoffs("ACM-1")).toEqual([
+      "acme-lead>acme-builder (mention)",
+      "acme-lead>acme-reviewer (mention)",
+    ]);
+    expect(prompts["acme-lead"]).toHaveLength(1);
+  });
+
+  it("do not wake the lead with a waiting reply while the owner has a question pending", async () => {
+    const { h, prompts } = await teamWorld(
+      {
+        "acme-lead": [say("@acme-builder read the api first. @owner which port should /health use?")],
+        "acme-builder": [say("Read it. Nothing for me until the owner answers. Standing by, @acme-lead.")],
+      },
+      { reviewer: false },
+    );
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      team: ["acme-lead", "acme-builder"],
+      start: true,
+    });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder turn");
+    await settled("ACM-1", ["acme-lead", "acme-builder"]);
+    expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
+    expect(prompts["acme-lead"]).toHaveLength(1);
+    // One question card: the waiting reply did not post another.
+    expect((await items("ACM-1")).filter((i) => i.type === "owner-question")).toHaveLength(1);
+
+    // The owner answers: the room runs again.
+    await h.cmd("room.send", { task: "ACM-1", text: "port 8080" });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "lead after the answer");
+  });
+
+  it("do not bring back or wake an agent the owner removed; the owner can add it again", async () => {
+    const { h, prompts } = await teamWorld({
+      "acme-builder": [say("@acme-reviewer please check the api, and @acme-lead too.")],
+    });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      team: ["acme-lead", "acme-builder", "acme-reviewer"],
+      start: false,
+    });
+    expect((await h.cmd("team.remove", { task: "ACM-1", agent: "acme-reviewer" })).status).toBe(200);
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-builder take a look" });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 1, "lead turn");
+    await settled("ACM-1", ["acme-lead", "acme-builder", "acme-reviewer"]);
+    expect((await h.cmd("tasks.get", { id: "ACM-1" })).body.team).toEqual(["acme-lead", "acme-builder"]);
+    expect(await handoffs("ACM-1")).toEqual(["acme-builder>acme-lead (mention)"]);
+    expect(prompts["acme-reviewer"]).toBeUndefined();
+
+    // The mention tool refuses it too.
+    const coordinator = h.majhi.services.coordinator;
+    await expect(
+      coordinator.mention({ task: "ACM-1", agent: "acme-builder" }, "acme-reviewer", "check this"),
+    ).rejects.toThrow(/Only the owner can add it back/);
+    // TASK.md does not offer it.
+    const md = await readFile(join(w.taskDir("ACM-1"), "TASK.md"), "utf8");
+    expect(md).not.toMatch(/Could join[\s\S]*@acme-reviewer/);
+
+    expect((await h.cmd("team.add", { task: "ACM-1", agent: "acme-reviewer" })).status).toBe(200);
+    expect(h.majhi.services.store.tasks.roomState("ACM-1").removed).toEqual([]);
+  });
+});
+
 describe("worktree locks", () => {
   it("make a second editing agent wait for the first to finish in the same worktree", async () => {
     let release: () => void = () => {};

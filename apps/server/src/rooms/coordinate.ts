@@ -27,6 +27,8 @@ export interface TurnEnd {
   limits: { maxAgentTurns: number; reviewRounds: number };
   /** For a reviewer: what it said about the work (always in the review loop, in lead mode when it woke nobody). */
   verdict?: Verdict | undefined;
+  /** The owner has a question pending and this turn changed nothing and only waits: nobody is woken. */
+  waiting?: boolean | undefined;
 }
 
 export interface Plan {
@@ -87,6 +89,8 @@ export function planTurn(input: TurnEnd): Plan {
   const inTeam = new Set(team.map((m) => m.id));
   const mentioned = input.mentions.filter((m) => m !== from && inTeam.has(m));
   const ownerAsked = input.mentions.includes(OWNER_HANDLE);
+  // Waiting on the owner wakes nobody: the owner's answer starts the room again.
+  if (input.waiting === true) return { handoffs: [], state: { ...state } };
   let plan: Plan;
   switch (mode) {
     case "lead":
@@ -202,18 +206,55 @@ export function verdictOf(text: string): "approved" | "changes" | undefined {
   return undefined;
 }
 
+/** A sentence that says the agent has nothing to do but wait. */
+const IDLE =
+  /\b(waiting|wait (for|on|until)|standing by|stand by|on hold|idle|nothing (else |more |left |new |further )?(to do|to add|to report|to hand on|for me)|no (further )?(action|work) (needed|for me|from me|on my side))\b/i;
+/** Words that turn a waiting sentence into a request: "while we wait, @x please ...". */
+const ASKS =
+  /\b(please|can you|could you|would you|go ahead|start|pick up|take over|meanwhile|in the meantime|while)\b/i;
+const AGENT_MENTION = /(^|[^A-Za-z0-9_@/.-])@(?!owner\b)[A-Za-z0-9][A-Za-z0-9-]*/gi;
+
+/**
+ * Whether an agent's message only says it is waiting or has nothing to do ("Nothing for me until
+ * the owner answers. Standing by, @lead."). A sentence that asks a teammate for something, or
+ * mentions one with more to say than a name, makes it more than waiting. Code and quotes are not read.
+ */
+export function waitsOnly(text: string): boolean {
+  const sentences = plainText(text)
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+  let idle = false;
+  for (const s of sentences) {
+    const mentions = s.match(AGENT_MENTION) !== null;
+    if (IDLE.test(s)) {
+      if (mentions && ASKS.test(s)) return false;
+      idle = true;
+      continue;
+    }
+    // A bare mention ("@lead.") names who it waits on; anything more to a teammate is a request.
+    if (mentions && /[A-Za-z0-9]/.test(s.replace(AGENT_MENTION, " "))) return false;
+  }
+  return idle;
+}
+
+/** The text an agent wrote itself: no code, no quoted lines. */
+function plainText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith(">"))
+    .join("\n");
+}
+
 /**
  * Whether an agent's message asks the owner for something, from its words alone: a question that
  * is not addressed to another agent, or a plain request for a decision. Code and quotes are not
  * read. The decision model is not asked: on Laya no wording of this question was reliable.
  */
 export function asksOwner(text: string): boolean {
-  const t = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith(">"))
-    .join("\n");
+  const t = plainText(text);
   if (/(^|\s)@owner\b/i.test(t)) return true;
   if (
     /\b(let me know|please (confirm|decide|approve|advise|choose)|your (call|decision|approval|go-ahead))\b/i.test(
