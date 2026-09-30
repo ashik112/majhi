@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Actor, type Fact, parseScope } from "@majhi/shared";
+import { type Actor, type Fact, parseScope, type Task } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { git, gitOk } from "../git/git.ts";
@@ -66,6 +66,38 @@ export class Promotion {
     });
     return { fact: memory.setPromoted(fact.id, task.id, actor), task: task.id };
   }
+
+  /**
+   * A promotion task was closed or removed. When its branch never reached the base branch the fact
+   * did not get into AGENTS.md, so `promoted` is cleared, with a line in the log, and the owner can
+   * promote it again. Call it before the branch is touched.
+   */
+  async release(task: Task): Promise<void> {
+    const facts = this.deps.memory.promotedBy(task.id);
+    if (facts.length === 0 || (await isMerged(task))) return;
+    for (const fact of facts) {
+      this.deps.memory.clearPromoted(
+        fact.id,
+        `${task.id} was closed without being merged, so the fact is not in AGENTS.md. It can be promoted again.`,
+      );
+    }
+  }
+}
+
+/**
+ * Whether the task's work is in its base branch, here or as the remote has it. A branch that is
+ * gone, or a task without a repo, counts as not merged.
+ */
+async function isMerged(task: Task): Promise<boolean> {
+  if (task.repos.length === 0) return false;
+  for (const repo of task.repos) {
+    let merged = false;
+    for (const ref of [`origin/${repo.base}`, repo.base]) {
+      if (await gitOk(repo.source, ["merge-base", "--is-ancestor", repo.branch, ref])) merged = true;
+    }
+    if (!merged) return false;
+  }
+  return true;
 }
 
 /**

@@ -318,14 +318,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processes,
     memory,
     memoryScopes,
-    onDone: (task) => {
+    onDone: async (task) => {
       if (!isBossChat(task)) extraction.afterClose(task);
+      await promotion.release(task);
     },
+    onRemoving: (task) => promotion.release(task),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  const promotion = new Promotion({ memory, tasks, projects, config });
   const mrs = new MrService({
     store,
     config,
@@ -385,7 +388,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processes,
     memory,
     extraction,
-    promotion: new Promotion({ memory, tasks, projects, config }),
+    promotion,
     memoryScopes,
     resilience,
     usage: usageService,

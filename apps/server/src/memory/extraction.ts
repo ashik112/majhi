@@ -55,9 +55,12 @@ export class Extraction {
 
   /**
    * A task became done. Starts reading its room and returns at once; it never fails the close. A
-   * missing Housekeeper is not said (nobody asked for one); any other problem is said in the room.
+   * room where no agent wrote is skipped. A missing Housekeeper is not said (nobody asked for one);
+   * any other problem is said in the room. `memory.extract` still reads any room.
    */
   afterClose(task: Task): void {
+    // No agent wrote anything (a promotion task, a task closed without a run): nothing to learn, no tokens spent.
+    if (!this.deps.room(task.id).some((item) => item.type === "agent")) return;
     void this.read(task.id).catch((err: unknown) => {
       if (err instanceof NoHousekeeper) return;
       this.say(task.id, "warn", `Memory was not extracted: ${errorMessage(err)}`);

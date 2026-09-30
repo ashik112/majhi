@@ -294,6 +294,19 @@ export class MemoryService {
     return this.mustGet(id);
   }
 
+  /** Facts the promotion task `task` was to add to AGENTS.md. */
+  promotedBy(task: string): Fact[] {
+    return this.store.promotedBy(task);
+  }
+
+  /** The promotion did not happen: the fact can be promoted again. */
+  clearPromoted(id: number, reason: string): Fact {
+    const fact = this.mustGet(id);
+    this.store.setPromoted(id, null);
+    this.log(fact, "unpromoted", "majhi", reason);
+    return this.mustGet(id);
+  }
+
   /**
    * The facts nearest in meaning to a fact or a text, among active and pending facts in `scopes`,
    * nearest first, with cosine. Without a vector (no embedder, or it did not load) nothing is near.

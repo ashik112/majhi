@@ -90,8 +90,10 @@ export interface TaskDeps {
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
-  /** A task became done (Phase 5): the Housekeeper reads its room. Must not throw or wait. */
-  onDone?: (task: Task) => void;
+  /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
+  onDone?: (task: Task) => void | Promise<void>;
+  /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
+  onRemoving?: (task: Task) => Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -931,7 +933,7 @@ export class TaskService {
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
     await this.statusChanged(id);
-    this.deps.onDone?.(closed);
+    await Promise.resolve(this.deps.onDone?.(closed)).catch(() => undefined);
     return closed;
   }
 
@@ -1075,6 +1077,7 @@ export class TaskService {
         dirty.flatMap((d) => d.changes.slice(0, 5).map((c) => `${basename(d.path)}: ${c}`)),
       );
     }
+    await this.deps.onRemoving?.(task).catch(() => undefined);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
     this.deps.processes?.forget(id);

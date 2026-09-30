@@ -206,6 +206,14 @@ export class MemoryStore {
     this.db.prepare("UPDATE facts SET promoted = ? WHERE id = ?").run(task, id);
   }
 
+  /** Facts whose promotion to AGENTS.md is the task `task`. */
+  promotedBy(task: string): Fact[] {
+    const rows = this.db
+      .prepare(`SELECT ${COLUMNS} FROM facts WHERE promoted = ? ORDER BY id`)
+      .all(task) as FactRow[];
+    return rows.map(toFact);
+  }
+
   // -------------------------------------------------------------------------
   // Search
 

@@ -79,6 +79,7 @@ export const MemoryActionSchema = z.enum([
   "unpinned",
   "duplicate",
   "promoted",
+  "unpromoted",
 ]);
 export type MemoryAction = z.infer<typeof MemoryActionSchema>;
 

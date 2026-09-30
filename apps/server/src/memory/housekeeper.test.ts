@@ -212,6 +212,28 @@ describe("when a task is done", () => {
     );
   });
 
+  it("skips a room where no agent wrote, so no tokens are spent, while memory.extract still reads it", async () => {
+    const { h, must, replies, sessions, extract } = await world();
+    replies.push(reply(FACTS[0] ?? { text: "x", scope: "global" }));
+    const quiet = (await must("tasks.create", { text: "fix the health check in api", start: false })) as {
+      id: string;
+    };
+    // Only the owner spoke.
+    h.majhi.services.room.post(quiet.id, "say-1", {
+      type: "owner",
+      text: "Builds need Node 22.",
+      attachments: [],
+      queued: false,
+    });
+    await must("tasks.close", { id: quiet.id });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(sessions).toHaveLength(0);
+    expect(h.majhi.services.memory.list({ task: quiet.id })).toHaveLength(0);
+    // Asked by the owner, it reads the room anyway.
+    expect((await extract(quiet.id)).body).toMatchObject({ candidates: 1 });
+    expect(sessions).toHaveLength(1);
+  });
+
   it("closes the task when the Housekeeper fails, and says so in the room", async () => {
     const { h, must, task } = await world();
     h.runtime.onSession = (session) => {

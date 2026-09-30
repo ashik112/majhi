@@ -124,4 +124,30 @@ describe("memory.promote", () => {
     // Nothing was made for the refused ones: one task from the promotion that worked.
     expect(h.majhi.services.store.tasks.list(true).length).toBe(1);
   });
+
+  it("clears promoted when the promotion task is closed or removed without being merged, and keeps it when it merged", async () => {
+    const { h, fact, promote } = await world();
+    const memory = h.majhi.services.memory;
+    const f = await fact("Builds need Node 22");
+    const first = (await promote(f.id)).body as { task: string };
+    expect(memory.get(f.id)?.promoted).toBe(first.task);
+
+    // Closed by hand, not merged: the fact can be promoted again, and the log says why.
+    expect((await h.cmd("tasks.close", { id: first.task })).status).toBe(200);
+    expect(memory.get(f.id)?.promoted).toBeUndefined();
+    const released = memory.events({ fact: f.id }).find((e) => e.action === "unpromoted");
+    expect(released?.reason).toContain("closed without being merged");
+
+    // Removed without being merged.
+    const second = (await promote(f.id)).body as { task: string };
+    expect(memory.get(f.id)?.promoted).toBe(second.task);
+    expect((await h.cmd("tasks.remove", { id: second.task, force: true })).status).toBe(200);
+    expect(memory.get(f.id)?.promoted).toBeUndefined();
+
+    // Merged: the fact stays promoted, and a merged task closing changes nothing.
+    const third = (await promote(f.id)).body as { task: string };
+    expect((await h.cmd("tasks.merge", { id: third.task, done: true })).status).toBe(200);
+    expect(memory.get(f.id)?.promoted).toBe(third.task);
+    expect(memory.events({ fact: f.id }).filter((e) => e.action === "unpromoted")).toHaveLength(2);
+  });
 });
