@@ -220,7 +220,9 @@ describe("the loop guard", () => {
     const task = (await h.cmd("tasks.get", { id: "ACM-1" })).body;
     expect(task.pausedReason).toBe("owner");
     expect(await handoffs("ACM-1")).toHaveLength(3);
-    expect((await systemTexts("ACM-1")).some((t) => t.startsWith("3 agent turns without you."))).toBe(true);
+    expect(
+      (await systemTexts("ACM-1")).some((t) => t.startsWith("3 handoffs in a row changed no files.")),
+    ).toBe(true);
 
     const sent = await h.cmd("room.send", { task: "ACM-1", text: "carry on" });
     expect(sent.status).toBe(200);

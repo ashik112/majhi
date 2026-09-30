@@ -181,9 +181,11 @@ describe("title", () => {
     );
   });
 
-  it("is cut at 120 characters", () => {
-    const title = parseTaskText("x".repeat(200), ctx).title;
-    expect(title).toBe("x".repeat(TITLE_MAX));
+  it("is cut at 120 characters, at a word, with an ellipsis", () => {
+    expect(parseTaskText("x".repeat(200), ctx).title).toBe(`${"x".repeat(TITLE_MAX - 1)}…`);
+    const words = parseTaskText("word ".repeat(40), ctx).title;
+    expect(words.length).toBeLessThanOrEqual(TITLE_MAX);
+    expect(words.endsWith("word…")).toBe(true);
   });
 
   it("is empty for blank text", () => {

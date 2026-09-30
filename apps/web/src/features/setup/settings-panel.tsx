@@ -141,7 +141,7 @@ function SettingsForms({
         <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm font-semibold">Teams</legend>
           <NumberField
-            label="Agent turns without you"
+            label="Handoffs in a row with no changes"
             value={form.maxAgentTurns}
             error={err("maxAgentTurns")}
             onChange={(v) => set("maxAgentTurns", v)}

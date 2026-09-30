@@ -179,7 +179,7 @@ function guard(plan: Plan, max: number): Plan {
     return {
       handoffs: [],
       state: { ...plan.state },
-      pause: `${plan.state.agentTurns} agent turns without you. Paused so agents do not loop. Reply to continue.`,
+      pause: `${plan.state.agentTurns} handoffs in a row changed no files. Paused so agents do not go in circles. Reply to continue.`,
     };
   }
   return { ...plan, state: { ...plan.state, agentTurns: turns } };

@@ -342,6 +342,25 @@ export const PlanMemberSchema = z.object({
 });
 export type PlanMember = z.infer<typeof PlanMemberSchema>;
 
+/** What happened to an owner card: one line, who did it (`owner`, an agent id or `majhi`), and when. */
+export const CardOutcomeSchema = z.object({
+  text: z.string(),
+  by: z.string(),
+  at: z.string(),
+});
+export type CardOutcome = z.infer<typeof CardOutcomeSchema>;
+
+/**
+ * `pending` waits for the owner. `settled`: `outcome` says what happened. `replaced`: a newer card
+ * of the same kind took its place, so it is not shown.
+ */
+export const CardStateSchema = z.enum(["pending", "settled", "replaced"]);
+export type CardState = z.infer<typeof CardStateSchema>;
+
+/** Actions on a review or paused card (`room.cardAction`). */
+export const CardActionSchema = z.enum(["merge", "mergePush", "push", "mr", "done", "resume"]);
+export type CardAction = z.infer<typeof CardActionSchema>;
+
 export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("owner"),
@@ -476,6 +495,35 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     question: z.string(),
     options: z.array(z.object({ id: z.string(), label: z.string() })).min(2),
     state: z.enum(["pending", "answered", "cancelled"]),
+    chosen: z.string().optional(),
+  }),
+  /**
+   * The task waits for the owner's review (majhi posts it when the agents are done). One per task:
+   * a new one replaces the pending one before it.
+   */
+  RoomItemBase.extend({
+    type: z.literal("review"),
+    /** Whom "Ask for changes" addresses. */
+    lead: IdSchema.optional(),
+    state: CardStateSchema,
+    outcome: CardOutcomeSchema.optional(),
+  }),
+  /** The task paused. Resume, and the fix when majhi knows the cause. One pending per task. */
+  RoomItemBase.extend({
+    type: z.literal("paused"),
+    reason: PausedReasonSchema,
+    state: CardStateSchema,
+    outcome: CardOutcomeSchema.optional(),
+  }),
+  /**
+   * An agent addressed the owner in plain text instead of the ask tool: Reply, and one button per
+   * choice read from its message. `replied`: the owner wrote back instead.
+   */
+  RoomItemBase.extend({
+    type: z.literal("owner-question"),
+    agent: IdSchema,
+    choices: z.array(z.string()).max(6),
+    state: z.enum(["pending", "answered", "replied"]),
     chosen: z.string().optional(),
   }),
   /** The lead's plan (`record_plan`), shown as one line. Not the ACP to-do list, which is `plan`. */

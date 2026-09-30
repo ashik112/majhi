@@ -17,6 +17,7 @@ import {
   parseMentions,
   parseTaskText,
   type RoomItem,
+  type ShipOption,
   type Task,
   type TaskId,
   type TaskKind,
@@ -35,7 +36,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
-import { localBranches, type MergeOutcome, mergeBranch } from "../git/merge.ts";
+import { localBranches, type MergeOutcome, mergeBranch, remoteBranches } from "../git/merge.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -45,6 +46,7 @@ import {
 } from "../git/worktrees.ts";
 import type { MemoryService } from "../memory/service.ts";
 import type { TaskScopes } from "../memory/wiring.ts";
+import { mrRemoteName } from "../mrs/remote.ts";
 import { orgKeys } from "../orgs/keys.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { wakeText } from "../processes/text.ts";
@@ -60,6 +62,7 @@ import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, branchName, renderPointer, renderTaskMd } from "./brief.ts";
+import { OwnerCards } from "./cards.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
@@ -102,6 +105,8 @@ export interface TaskDeps {
 
 export interface CreateInput {
   text: string;
+  /** A separate short title: it becomes the first line, and `text` the description. */
+  title?: string | undefined;
   kind?: TaskKind | undefined;
   agent?: string | undefined;
   /** The whole team, lead first. */
@@ -132,6 +137,8 @@ export class TaskService {
   private readonly wakeSeen = new Map<string, string>();
   /** The last facts read per task, for the team it had then: a status change rewrites TASK.md without new git diffs. */
   private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
+  /** The review and paused cards majhi posts in a task's room. */
+  readonly cards: OwnerCards;
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -140,6 +147,7 @@ export class TaskService {
         (await deps.projects.list()).map((p) => ({ id: p.id, path: p.path })),
       );
     this.now = deps.now ?? (() => new Date());
+    this.cards = new OwnerCards({ store: deps.store, room: deps.room, now: this.now });
     this.planner = new TaskPlanner({
       store: deps.store,
       agents: deps.agents,
@@ -196,7 +204,9 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Create
 
-  async create(input: CreateInput): Promise<Task> {
+  async create(given: CreateInput): Promise<Task> {
+    // A separate title becomes the first line, so the parser and the brief see one text as usual.
+    const input = given.title === undefined ? given : { ...given, text: `${given.title}\n\n${given.text}` };
     const { store, config, uploads } = this.deps;
     const loaded = await config.load();
     if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
@@ -475,7 +485,7 @@ export class TaskService {
   // Start, stop, close, remove
 
   /** Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. */
-  async start(id: string): Promise<Task> {
+  async start(id: string, by = "owner"): Promise<Task> {
     const { store } = this.deps;
     const task = this.get(id);
     if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
@@ -498,6 +508,7 @@ export class TaskService {
     await this.ensureWorktrees(task);
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     store.tasks.setStartWhenReady(id, true);
+    if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -589,6 +600,7 @@ export class TaskService {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
     const stopped = this.get(id);
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, "owner");
     this.deps.room.publishTask(stopped);
     return stopped;
   }
@@ -909,7 +921,10 @@ export class TaskService {
    * Marks a task done. A parent with open subtasks is not done: an explicit close is refused, and a
    * close after a merge (`stay`) keeps it open, says so, and lets it close with its last subtask.
    */
-  async close(id: string, opts: { whenSubtasksOpen?: "refuse" | "stay" } = {}): Promise<Task> {
+  async close(
+    id: string,
+    opts: { whenSubtasksOpen?: "refuse" | "stay"; by?: string | undefined } = {},
+  ): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") return task;
     const open = this.openSubtasks(id);
@@ -930,6 +945,8 @@ export class TaskService {
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
+    this.cards.settle(id, "review", "Marked done", opts.by ?? "owner");
+    this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
     await this.statusChanged(id);
@@ -975,7 +992,15 @@ export class TaskService {
    * Merges the task branch into a local branch (its base, or `into`) in each repo's checkout.
    * Refused while an agent of the task works or its worktree has uncommitted changes. Never pushes.
    */
-  async merge(input: { id: string; into?: string | undefined; project?: string | undefined; done: boolean }) {
+  async merge(input: {
+    id: string;
+    into?: string | undefined;
+    project?: string | undefined;
+    done: boolean;
+    by?: string | undefined;
+    /** False: the caller settles the review card itself (a merge that also pushes). */
+    settle?: boolean | undefined;
+  }) {
     const task = this.get(input.id);
     if (this.deps.runs.working(task.id).length > 0) {
       throw new UserError(
@@ -1024,8 +1049,13 @@ export class TaskService {
     }
     for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
     const clean = results.every((r) => r.ok);
-    if (clean && input.done)
-      return { results, task: await this.close(task.id, { whenSubtasksOpen: "stay" }) };
+    if (!clean) return { results, task: this.get(task.id) };
+    const by = input.by ?? "owner";
+    const closes = input.done && this.openSubtasks(task.id).length === 0;
+    const into = [...new Set(results.map((r) => r.into))].join(", ");
+    if (input.settle !== false)
+      this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
+    if (input.done) return { results, task: await this.close(task.id, { whenSubtasksOpen: "stay", by }) };
     return { results, task: this.get(task.id) };
   }
 
@@ -1039,11 +1069,16 @@ export class TaskService {
   async branches(id: string) {
     const task = this.get(id);
     return Promise.all(
-      task.repos.map(async (r) => ({
-        project: r.project,
-        base: r.base,
-        branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
-      })),
+      task.repos.map(async (r) => {
+        const project = await this.deps.projects.get(r.project).catch(() => undefined);
+        const remote = mrRemoteName(project?.remotes);
+        return {
+          project: r.project,
+          base: r.base,
+          branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
+          remote: (await remoteBranches(r.source, remote).catch(() => [])).filter((b) => b !== r.branch),
+        };
+      }),
     );
   }
 
@@ -1061,6 +1096,7 @@ export class TaskService {
     this.deps.store.tasks.setStatus(id, status, undefined, this.now().toISOString());
     this.note(id, "Reopened.");
     const reopened = this.get(id);
+    if (status === "review") this.cards.review(reopened);
     this.deps.room.publishTask(reopened);
     this.deps.events.emit(["tasks"]);
     return reopened;
@@ -1165,6 +1201,84 @@ export class TaskService {
         throw new Error("The ask card was not stored");
       })()
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owner cards: review, paused, plain-text questions
+
+  /** What the review card's buttons may do now, with the reason when not. */
+  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: ShipOption }> {
+    const task = this.get(id);
+    const base = task.repos[0]?.base;
+    return {
+      ...(base === undefined ? {} : { base }),
+      merge: await this.mergeOption(task),
+      done: this.doneOption(task),
+    };
+  }
+
+  private async mergeOption(task: Task): Promise<{ ok: boolean; why?: string }> {
+    if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
+    if (task.repos.length === 0) return { ok: false, why: "The task has no repo to merge." };
+    const trees = task.repos.filter((r) => r.worktree !== undefined);
+    if (trees.length === 0) return { ok: false, why: "The task has no worktree yet." };
+    if (this.deps.runs.working(task.id).length > 0)
+      return { ok: false, why: "An agent is working. Merge when its turn ends." };
+    let known = true;
+    let ahead = 0;
+    for (const r of trees) {
+      const n = await commitsAhead(r.source, r.base, r.branch);
+      if (n === undefined) known = false;
+      else ahead += n;
+    }
+    if (!known || ahead > 0) return { ok: true };
+    const dirty = await dirtyWorktrees(trees.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree])));
+    return {
+      ok: false,
+      why:
+        dirty.length > 0
+          ? "The changes are not committed yet. Ask the agent to commit them."
+          : `Nothing to merge: no commits ahead of ${trees[0]?.base ?? "the base"}.`,
+    };
+  }
+
+  private doneOption(task: Task): { ok: boolean; why?: string } {
+    if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
+    const open = this.openSubtasks(task.id);
+    if (open.length === 0) return { ok: true };
+    const list = `${open.slice(0, 5).join(", ")}${open.length > 5 ? ", ..." : ""}`;
+    return {
+      ok: false,
+      why: `${open.length} subtask${open.length === 1 ? " is" : "s are"} not done (${list}). It closes by itself when they are.`,
+    };
+  }
+
+  /** One of the choices under an agent's plain-text question: sent to that agent as the owner's answer. */
+  async answerQuestion(task: string, item: string, choice: string): Promise<RoomItem> {
+    const card = this.deps.room.get(task, item);
+    if (card?.type !== "owner-question") throw new UserError("That is not a question card.", 404);
+    if (card.state !== "pending") throw new UserError("This question was already answered.", 409);
+    if (!card.choices.includes(choice)) throw new UserError(`"${choice}" is not one of the choices.`, 409);
+    const current = this.get(task);
+    if (current.status === "done") throw new UserError(`Task ${current.id} is done.`, 409);
+    if (!current.team.includes(card.agent))
+      throw new UserError(`@${card.agent} is not on ${current.id} any more.`, 409);
+    const { id: _id, task: _task, seq: _seq, at: _at, ...fields } = card;
+    // Marked before anything is awaited, so a second click finds it answered.
+    this.deps.room.post(current.id, item, { ...fields, state: "answered", chosen: choice });
+    try {
+      await this.send({
+        task,
+        text: `Owner chose: ${choice}`,
+        attachments: [],
+        mode: "queue",
+        agent: card.agent,
+      });
+    } catch (err) {
+      this.deps.room.post(current.id, item, fields);
+      throw err;
+    }
+    return this.deps.room.get(task, item) ?? card;
   }
 
   /**
@@ -1347,7 +1461,7 @@ export class TaskService {
     const task = store.tasks.get(parent);
     if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
     this.note(parent, this.orchestrator.report(parent));
-    await this.close(parent);
+    await this.close(parent, { by: "majhi" });
   }
 
   /** A task other tasks pointed at is gone: children become top-level, waiting tasks ask the owner. */
@@ -1506,8 +1620,9 @@ export class TaskService {
       return;
     }
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
-    this.note(task.id, "Ready for your review. Reply to continue, or mark it done.");
-    this.deps.room.publishTask(this.get(id));
+    const reviewed = this.get(id);
+    this.cards.review(reviewed);
+    this.deps.room.publishTask(reviewed);
     this.deps.events.emit(["tasks"]);
     await this.statusChanged(id);
   }
@@ -1531,6 +1646,7 @@ export class TaskService {
     if (task.status === "paused" && task.pausedReason === "owner") return;
     if (task.status === "review") {
       this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
+      this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
       this.deps.events.emit(["tasks"]);
       await this.statusChanged(task.id);
@@ -1544,7 +1660,9 @@ export class TaskService {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
-    this.deps.room.publishTask(this.get(id));
+    const paused = this.get(id);
+    this.cards.paused(paused, reason);
+    this.deps.room.publishTask(paused);
     await this.statusChanged(id);
   }
 
@@ -1553,6 +1671,7 @@ export class TaskService {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "paused" || task.pausedReason === "owner") return;
     this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
+    this.cards.settle(id, "paused", "Resumed by itself", "majhi");
     this.deps.room.publishTask(this.get(id));
     await this.statusChanged(id);
   }
@@ -1589,6 +1708,9 @@ export class TaskService {
       this.deps.store.tasks.addAttachments(task.id, attachments);
       this.deps.room.publishTask(this.get(task.id));
     }
+    // The owner wrote back: a review card and plain-text questions stop waiting.
+    this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
+    this.cards.replied(task.id);
     // A task that was never started, or was stopped, starts with the first message.
     let current = task;
     if (task.status !== "running") current = await this.start(task.id);
@@ -1679,4 +1801,14 @@ async function branchExists(source: string, branch: string): Promise<boolean> {
   if (await localBranchExists(source, branch)) return true;
   const remote = await remoteOf(source).catch(() => undefined);
   return remote !== undefined && (await remoteBranchExists(source, remote, branch));
+}
+
+/** Commits on `branch` that `base` does not have, or undefined when git cannot say. */
+async function commitsAhead(source: string, base: string, branch: string): Promise<number | undefined> {
+  try {
+    const n = Number.parseInt((await git(source, ["rev-list", "--count", `${base}..${branch}`])).trim(), 10);
+    return Number.isNaN(n) ? undefined : n;
+  } catch {
+    return undefined;
+  }
 }

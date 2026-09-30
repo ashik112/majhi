@@ -1,0 +1,95 @@
+import { randomUUID } from "node:crypto";
+import type { Actor, CardOutcome, CardState, PausedReason, RoomItem, Task, TaskId } from "@majhi/shared";
+import type { RoomService } from "../room/service.ts";
+import type { RoomPayload, Store } from "../store/index.ts";
+
+type Card = Extract<RoomItem, { type: "review" | "paused" }>;
+type CardType = Card["type"];
+
+/** Who did something to a card, as the room shows it: `owner`, an agent id, or `majhi`. */
+export function actorName(actor: Actor | undefined): string {
+  if (actor === undefined || actor.kind === "owner") return "owner";
+  return actor.id;
+}
+
+/**
+ * The cards majhi itself posts when a task needs the owner (review, paused). A task has at most
+ * one pending card of each kind: a new one replaces the pending one before it, and any change of
+ * the task's state settles it with what happened, by whom and when.
+ */
+export class OwnerCards {
+  constructor(private readonly deps: { store: Store; room: RoomService; now: () => Date }) {}
+
+  /** "Ready for review", with the lead that "Ask for changes" addresses. */
+  review(task: Task): RoomItem {
+    this.replace(task.id, "review");
+    const id = `review:${randomUUID()}`;
+    this.deps.room.post(task.id, id, {
+      type: "review",
+      ...(task.team[0] === undefined ? {} : { lead: task.team[0] }),
+      state: "pending",
+    });
+    return this.must(task.id, id);
+  }
+
+  /** The task paused. A pending review card settles: the task is not waiting for review any more. */
+  paused(task: Task, reason: PausedReason): RoomItem {
+    this.settle(task.id, "review", "Paused before a review", "majhi");
+    this.replace(task.id, "paused");
+    const id = `paused:${randomUUID()}`;
+    this.deps.room.post(task.id, id, { type: "paused", reason, state: "pending" });
+    return this.must(task.id, id);
+  }
+
+  /** The pending card of this kind, if any. */
+  pending(task: string, type: CardType): Card | undefined {
+    this.deps.room.flush(task);
+    const found = this.deps.store.room.pendingOfType(task, type).at(-1);
+    return found?.type === type ? (found as Card) : undefined;
+  }
+
+  /** Settles the task's pending card of this kind. Returns it, or undefined when none was pending. */
+  settle(task: string, type: CardType, text: string, by: string): RoomItem | undefined {
+    const card = this.pending(task, type);
+    if (card === undefined) return undefined;
+    const outcome = { text, by, at: this.deps.now().toISOString() };
+    this.deps.room.post(task as TaskId, card.id, withState(card, "settled", outcome));
+    return this.deps.room.get(task, card.id);
+  }
+
+  /** Pending owner questions of a task stop waiting: the owner wrote back instead. */
+  replied(task: string): void {
+    this.deps.room.flush(task);
+    for (const q of this.deps.store.room.pendingOfType(task, "owner-question")) {
+      if (q.type !== "owner-question") continue;
+      this.deps.room.post(task as TaskId, q.id, {
+        type: "owner-question",
+        agent: q.agent,
+        choices: q.choices,
+        state: "replied",
+      });
+    }
+  }
+
+  private replace(task: TaskId, type: CardType): void {
+    this.deps.room.flush(task);
+    for (const old of this.deps.store.room.pendingOfType(task, type)) {
+      if (old.type !== "review" && old.type !== "paused") continue;
+      this.deps.room.post(task, old.id, withState(old, "replaced"));
+    }
+  }
+
+  private must(task: string, id: string): RoomItem {
+    const item = this.deps.room.get(task, id);
+    if (item === undefined) throw new Error(`The card ${id} was not stored`);
+    return item;
+  }
+}
+
+/** A card written back with a new state, and the outcome when it has one. */
+function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPayload {
+  const end = outcome === undefined ? {} : { outcome };
+  return card.type === "review"
+    ? { type: "review", ...(card.lead === undefined ? {} : { lead: card.lead }), state, ...end }
+    : { type: "paused", reason: card.reason, state, ...end };
+}

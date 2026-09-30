@@ -14,6 +14,7 @@ import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionOptionLabel, permissionSummary, toolLabel } from "./model";
+import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
 import { ToolRow } from "./tool-row";
 
 export function permissionDomId(itemId: string): string {
@@ -30,6 +31,8 @@ export interface ItemContext {
   answering: string | undefined;
   /** The task, so agent text can link to its files. */
   task: TaskFiles;
+  /** The whole task and the room's hooks, for the review, paused and question cards. */
+  owner?: OwnerContext | undefined;
 }
 
 /** One room item. Wrapped so a long room paints only what is on screen. */
@@ -74,6 +77,12 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <HandoffLine item={item} />;
     case "team-plan":
       return <TeamPlanLine item={item} />;
+    case "review":
+      return <ReviewCard item={item} owner={ctx.owner} />;
+    case "paused":
+      return <PausedCard item={item} owner={ctx.owner} />;
+    case "owner-question":
+      return <QuestionActions item={item} owner={ctx.owner} />;
   }
 }
 

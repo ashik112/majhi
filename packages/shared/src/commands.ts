@@ -9,6 +9,7 @@ import {
   HealthCheckSchema,
   IdSchema,
   LEGACY_PERSONAL,
+  MrHostSchema,
   OrgConfigSchema,
   OrgViewSchema,
   PermSchema,
@@ -76,6 +77,7 @@ import {
   SettingsSchema,
 } from "./settings.ts";
 import {
+  CardActionSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
@@ -120,6 +122,45 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
 }
 
 const Empty = z.object({});
+
+/** A branch name to merge into, push, or open a merge request against. */
+const LocalBranchSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
+  .refine((b) => !b.includes(".."), "Not a branch name")
+  .max(200);
+
+/** What a local merge or a push did in one repo of a task. */
+const MergeResultSchema = z.object({
+  project: IdSchema,
+  into: z.string(),
+  ok: z.boolean(),
+  detail: z.string(),
+});
+
+/** One action: allowed now, or why not and where to fix it. */
+export const ShipOptionSchema = z.object({ ok: z.boolean(), why: z.string().optional() });
+export type ShipOption = z.infer<typeof ShipOptionSchema>;
+
+/** `tasks.shipOptions`: what Ship and the review card may do now. */
+export const ShipOptionsSchema = z.object({
+  /** The first repo's base: the default target. */
+  base: z.string().optional(),
+  /** The first repo's MR host, so the UI can say PR or MR. */
+  host: MrHostSchema.optional(),
+  /** Merge into a local branch. Nothing is pushed. */
+  merge: ShipOptionSchema,
+  /** Merge into a local branch, then push that branch. */
+  mergePush: ShipOptionSchema,
+  /** Push the task branch. */
+  push: ShipOptionSchema,
+  /** Push the task branch and open a merge request. */
+  mr: ShipOptionSchema,
+  /** Mark the task done. */
+  done: ShipOptionSchema,
+});
+export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
 
 /** Agent fields a caller sets. `id` comes from the command input, never from here. */
@@ -158,6 +199,20 @@ export const commands = {
     summary: "Show whether the host helper is connected",
     input: Empty,
     output: HostStatusSchema,
+  },
+  "ssh.hosts": {
+    risk: "read",
+    summary:
+      "The Host entries of the owner's ~/.ssh/config (wildcards left out), with their HostName, User and IdentityFile, to pick a project remote's SSH alias",
+    input: Empty,
+    output: z.array(
+      z.object({
+        alias: z.string(),
+        hostName: z.string().optional(),
+        user: z.string().optional(),
+        identityFile: z.string().optional(),
+      }),
+    ),
   },
   "ssh.reload": {
     risk: "change",
@@ -470,6 +525,8 @@ export const commands = {
     summary: "Create a task from the task box text. With start, create worktrees and start the agent",
     input: z.object({
       text: z.string().trim().min(1).max(20_000),
+      /** A short title. Without it, the first line of `text` is the title and the rest the description. */
+      title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /** Overrides the default agent. */
@@ -630,32 +687,50 @@ export const commands = {
   "tasks.merge": {
     risk: "outbound",
     summary:
-      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). Never pushes. With done, mark the task done after a clean merge",
+      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push)",
     input: z.object({
       id: TaskIdSchema,
       /** The branch to merge into. Default: each repo's base branch. */
-      into: z
-        .string()
-        .trim()
-        .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
-        .max(200)
-        .optional(),
+      into: LocalBranchSchema.optional(),
       /** Only this repo of the task. Default: every repo. */
       project: IdSchema.optional(),
       done: z.boolean().default(false),
+      /** Push the merged branch afterwards. */
+      push: z.boolean().default(false),
     }),
     output: z.object({
-      results: z.array(
-        z.object({ project: IdSchema, into: z.string(), ok: z.boolean(), detail: z.string() }),
-      ),
+      results: z.array(MergeResultSchema),
       task: TaskSchema,
     }),
   },
+  "tasks.shipOptions": {
+    risk: "read",
+    summary:
+      "What Ship can do with a task now: merge locally, merge and push, push the task branch, open merge requests, mark it done. Each with the reason and where to fix it when it cannot",
+    input: z.object({ id: TaskIdSchema }),
+    output: ShipOptionsSchema,
+  },
   "tasks.branches": {
     risk: "read",
-    summary: "Local branches of each repo of a task, to pick where to merge",
+    summary:
+      "Local branches of each repo of a task, and the branches its MR remote had at the last fetch, to pick where to merge or open a merge request",
     input: z.object({ id: TaskIdSchema }),
-    output: z.array(z.object({ project: IdSchema, base: z.string(), branches: z.array(z.string()) })),
+    output: z.array(
+      z.object({
+        project: IdSchema,
+        base: z.string(),
+        branches: z.array(z.string()),
+        /** The MR remote's branches as this machine last fetched them. */
+        remote: z.array(z.string()).default([]),
+      }),
+    ),
+  },
+  "tasks.push": {
+    risk: "outbound",
+    summary:
+      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
   },
   // Merge requests (5.5) ------------------------------------------------------
   "tasks.diff": {
@@ -683,7 +758,11 @@ export const commands = {
     risk: "outbound",
     summary:
       "Push each repo's branch to its MR remote (through the project's SSH alias) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
-    input: z.object({ id: TaskIdSchema }),
+    input: z.object({
+      id: TaskIdSchema,
+      /** The branch the merge requests go into. Default: each repo's base branch. */
+      into: LocalBranchSchema.optional(),
+    }),
     output: OpenMrsResultSchema,
   },
   "tasks.refreshMrs": {
@@ -819,6 +898,30 @@ export const commands = {
     summary:
       "Answer an agent's secret request. The value is stored in secrets.age; the agent gets only the reference",
     input: z.object({ task: TaskIdSchema, item: z.string(), value: z.string().min(1).max(8192) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.cardAction": {
+    risk: "outbound",
+    summary:
+      "Act on a review or paused card in a task room: merge the task into a local branch and mark it done, mark it done, or resume it. Refused when the card was already answered or the task no longer allows it. Never pushes",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string(),
+      action: CardActionSchema,
+      /** For merge: the local branch to merge into. Default: each repo's base branch. */
+      into: LocalBranchSchema.optional(),
+    }),
+    output: z.object({
+      item: RoomItemSchema,
+      /** For merge: what happened in each repo. */
+      results: z.array(MergeResultSchema).optional(),
+    }),
+  },
+  "room.answerQuestion": {
+    risk: "change",
+    summary:
+      'Answer an agent\'s plain-text question to the owner with one of the choices read from it. The agent gets "Owner chose: <choice>"',
+    input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
     output: z.object({ item: RoomItemSchema }),
   },
   "room.answerAsk": {

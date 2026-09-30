@@ -6,8 +6,13 @@ import { z } from "zod";
  * and the review loop's round.
  */
 export const RoomStateSchema = z.object({
-  /** Handoffs between agents since the owner's last message. */
+  /**
+   * Handoffs between agents in a row that changed nothing in the worktrees (the loop guard).
+   * The owner's message and any turn that changes files or commits reset it.
+   */
   agentTurns: z.number().int().nonnegative().default(0),
+  /** The worktrees' state after the last turn (HEADs and uncommitted changes), to see progress. */
+  fingerprint: z.string().optional(),
   /** Pipeline: the index of the stage that runs now, in `pipelineStages` order. */
   stage: z.number().int().nonnegative().optional(),
   /** Pipeline: agents of the current stage that have not finished their turn yet. */

@@ -83,7 +83,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "ask",
     description:
-      "Post a question card to the room: one or more questions with preset options (shown as buttons or a dropdown) and optionally a free-text field. The owner's answer goes back to you as your next message.",
+      "Post a question card to the room: one or more questions with preset options (shown as buttons or a dropdown) and optionally a free-text field. The owner's answer goes back to you as your next message. Use it every time you hand work back to the owner or need a decision: end with ask and the options (for example Merge, Ask for changes). A question in plain text is only a fallback.",
     input: z.object({
       questions: z
         .array(
@@ -117,7 +117,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task from task box text (what to do, which repos). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it.",
   },
   {
     name: "split",

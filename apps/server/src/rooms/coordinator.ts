@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentFrontmatter,
   canWorkIn,
@@ -14,11 +14,13 @@ import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
+import { git } from "../git/git.ts";
 import type { RoomService } from "../room/service.ts";
 import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { readChoices } from "./choices.ts";
 import { asksOwner, loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
 
 /** How much of a message the decision provider reads. */
@@ -43,10 +45,14 @@ export interface CoordinatorDeps {
  * so. Asks the decision provider only when the words alone do not say what a reviewer decided.
  */
 export class RoomCoordinator {
+  /** (task, agent) pairs that posted an ask card in the turn now running. */
+  private readonly askedInTurn = new Set<string>();
+
   constructor(private readonly deps: CoordinatorDeps) {}
 
   async turnEnded(turn: { task: string; agent: string; text: string }): Promise<void> {
     const { store, runs } = this.deps;
+    const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return;
     const text = turn.text.trim();
@@ -75,12 +81,19 @@ export class RoomCoordinator {
     const role = team.find((m) => m.id === turn.agent)?.role;
     const verdict = await this.verdict(task, turn.agent, role, text, mentions);
     const settings = await this.deps.config.settings();
+    // A turn that changed the worktrees is progress, not a loop: the guard counts from zero again.
+    const before = store.tasks.roomState(task.id);
+    const fingerprint = await worktreeFingerprint(task);
+    const state =
+      fingerprint !== undefined && fingerprint !== before.fingerprint
+        ? { ...before, agentTurns: 0, fingerprint }
+        : before;
     const plan = planTurn({
       mode: task.mode,
       team,
       from: turn.agent,
       mentions,
-      state: store.tasks.roomState(task.id),
+      state,
       limits: {
         maxAgentTurns: await this.maxAgentTurns(task),
         reviewRounds: settings.rooms.review_rounds,
@@ -95,6 +108,11 @@ export class RoomCoordinator {
       return;
     }
     for (const h of plan.handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    // Addressed to the owner in plain text: majhi puts the buttons under it.
+    const toOwner =
+      mentions.includes(OWNER_HANDLE) || (plan.handoffs.length === 0 && text !== "" && asksOwner(text));
+    const questioned = !asked && toOwner;
+    if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
       this.say(task.id, "info", `${plan.toOwner} Over to you.`);
       return;
@@ -102,7 +120,7 @@ export class RoomCoordinator {
     // Lead delegates: in a team, a message nobody else is woken by may still be for the owner.
     if (task.mode === "lead" && plan.handoffs.length === 0 && task.team.length > 1 && text !== "") {
       const others = runs.working(task.id).filter((a) => a !== turn.agent);
-      if (others.length > 0 && asksOwner(text)) {
+      if (others.length > 0 && !questioned && asksOwner(text)) {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
       }
     }
@@ -167,6 +185,7 @@ export class RoomCoordinator {
     if (!task.team.includes(agent)) {
       throw new UserError(`Agent @${agent} is not on this task.`, 409);
     }
+    this.askedInTurn.add(`${task.id}\u0000${agent}`);
     const itemId = `ask:${randomUUID()}`;
     this.deps.room.post(task.id, itemId, {
       type: "ask",
@@ -177,6 +196,16 @@ export class RoomCoordinator {
     const item = this.deps.room.get(task.id, itemId);
     if (item === undefined) throw new Error("The ask card was not stored");
     return item;
+  }
+
+  /** Reply, and a button per choice read from the message, under an agent's plain-text question. */
+  private postQuestion(task: TaskId, agent: string, text: string): void {
+    this.deps.room.post(task, `question:${randomUUID()}`, {
+      type: "owner-question",
+      agent,
+      choices: readChoices(text),
+      state: "pending",
+    });
   }
 
   private async maxAgentTurns(task: Task): Promise<number> {
@@ -279,4 +308,26 @@ function readLine(item: RoomItem): string | undefined {
 function firstLine(text: string): string {
   const line = text.split("\n").find((l) => l.trim() !== "") ?? text;
   return line.length > 200 ? `${line.slice(0, 199)}...` : line;
+}
+
+/**
+ * Each worktree's HEAD and its uncommitted changes, in one string. It changes whenever an agent
+ * commits or edits files, which is how the loop guard tells work from talk. Undefined without
+ * worktrees or when git cannot be read.
+ */
+async function worktreeFingerprint(task: Task): Promise<string | undefined> {
+  const trees = task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree]));
+  if (trees.length === 0) return undefined;
+  try {
+    const parts = await Promise.all(
+      trees.map(async (t) => {
+        const head = (await git(t, ["rev-parse", "HEAD"])).trim();
+        const changes = await git(t, ["status", "--porcelain"]);
+        return `${head}:${createHash("sha1").update(changes).digest("hex")}`;
+      }),
+    );
+    return parts.join("|");
+  } catch {
+    return undefined;
+  }
 }

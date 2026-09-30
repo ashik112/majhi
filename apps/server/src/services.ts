@@ -51,6 +51,7 @@ import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { Store } from "./store/index.ts";
+import { CardActions } from "./tasks/card-actions.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
@@ -118,6 +119,8 @@ export interface Services {
   tasks: TaskService;
   /** Push, open, watch and merge the merge requests of a task (5.5). */
   mrs: MrService;
+  /** The buttons on review and paused cards. */
+  cardActions: CardActions;
   mrPoller: MrPoller;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
@@ -384,6 +387,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runs,
     tasks,
     mrs,
+    cardActions: new CardActions({ tasks, mrs, room }),
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     memory,

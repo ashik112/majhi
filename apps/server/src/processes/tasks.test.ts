@@ -115,7 +115,8 @@ describe("background processes and the task", () => {
       pausedReason?: string;
     };
     expect(task).toMatchObject({ status: "paused", pausedReason: "owner" });
-    expect((await systems(h)).some((t) => t.startsWith("Ready for your review"))).toBe(false);
+    const items = (await h.cmd("room.items", { task: "ACM-1" })).body.items as { type: string }[];
+    expect(items.some((i) => i.type === "review")).toBe(false);
   });
 
   it("stopping the task stops its processes without a wake", async () => {

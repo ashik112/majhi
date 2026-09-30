@@ -172,10 +172,10 @@ function MrActions({ task, step }: { task: Task; step: MrStep }) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap gap-1.5">
-        {(step === "open" || step === "retry-open") && (
+        {step === "retry-open" && (
           <Button size="sm" variant="primary" onClick={() => setDialog("open")}>
             <GitPullRequest aria-hidden="true" />
-            {step === "open" ? "Push and open MRs" : "Open the missing MRs"}
+            Open the missing MRs
           </Button>
         )}
         {(step === "merge" || step === "watch") && (
