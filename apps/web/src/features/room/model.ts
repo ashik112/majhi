@@ -1,6 +1,7 @@
 import {
   type AgentLive,
   commands,
+  type ProcessInfo,
   type RoomItem,
   type RoomServerMessage,
   RoomServerMessageSchema,
@@ -16,6 +17,8 @@ export interface RoomState {
   /** In the order they happened (by `at`; an update keeps its place). */
   items: RoomItem[];
   agents: AgentLive[];
+  /** The task's background processes (5.15). */
+  processes: ProcessInfo[];
   /** True when older items exist on the server. */
   more: boolean;
   /** False until the first snapshot. */
@@ -26,6 +29,7 @@ export interface RoomState {
 export const emptyRoom: RoomState = {
   items: [],
   agents: [],
+  processes: [],
   more: false,
   loaded: false,
   connection: "connecting",
@@ -92,6 +96,7 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
             ...state,
             items: mergeItems(state.items, message.items),
             agents: message.agents,
+            processes: message.processes,
             more: state.loaded && state.items.length > message.items.length ? state.more : message.more,
             loaded: true,
           };
@@ -99,6 +104,8 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
           return { ...state, items: mergeItems(state.items, [message.item]) };
         case "agent":
           return { ...state, agents: upsertAgent(state.agents, message.agent) };
+        case "processes":
+          return { ...state, processes: message.processes };
         case "task":
           return state;
       }

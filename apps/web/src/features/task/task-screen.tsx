@@ -106,7 +106,12 @@ function TaskView({ taskId }: { taskId: string }) {
           loadOlder={room.loadOlder}
           top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
         />
-        <RoomPanel task={data} agents={room.state.agents} items={room.state.items} />
+        <RoomPanel
+          task={data}
+          agents={room.state.agents}
+          items={room.state.items}
+          processes={room.state.processes}
+        />
       </div>
       {file !== undefined && (
         <Suspense fallback={null}>

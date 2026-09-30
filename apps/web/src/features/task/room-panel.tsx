@@ -1,4 +1,4 @@
-import { type AgentLive, collapseHome, type RoomItem, type Task } from "@majhi/shared";
+import { type AgentLive, collapseHome, type ProcessInfo, type RoomItem, type Task } from "@majhi/shared";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { ChangesPanel } from "../room/changes-panel";
 import { AgentRow } from "./agent-row";
 import { ChangeAgent } from "./change-agent";
 import { agentState, agentsBusy } from "./model";
+import { ProcessesCard } from "./processes-card";
 import { AddAgent, MemberMenu, ModePicker } from "./team-controls";
 
 /** The right column of the task view: who is in the room, the branch, the changes. */
@@ -18,10 +19,12 @@ export function RoomPanel({
   task,
   agents,
   items,
+  processes,
 }: {
   task: Task;
   agents: readonly AgentLive[];
   items: readonly RoomItem[];
+  processes: readonly ProcessInfo[];
 }) {
   return (
     <aside
@@ -29,6 +32,7 @@ export function RoomPanel({
       className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-1"
     >
       <InRoomCard task={task} agents={agents} />
+      <ProcessesCard task={task} processes={processes} />
       <BranchCard task={task} />
       <ChangesPanel task={task} items={items} />
     </aside>
