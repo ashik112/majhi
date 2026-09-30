@@ -18,11 +18,12 @@ import { useNow } from "@/lib/use-now";
 import { type AgentState, agentDot, contextMeter, nowDoingLine } from "./model";
 
 const STATE_TEXT = {
-  amber: "text-amber",
-  violet: "text-violet",
+  working: "text-lamp-working",
+  needs: "text-lamp-needs",
+  paused: "text-lamp-paused",
   red: "text-red",
   muted: "text-fg-muted",
-  faint: "text-fg-dim",
+  faint: "text-fg-faint",
 } as const;
 
 /**

@@ -61,7 +61,7 @@ export function FileViewer({
     <Modal
       label={`File ${parseFileRef(path).path}`}
       onClose={close}
-      className="fixed top-0 right-0 bottom-0 left-auto m-0 h-dvh max-h-none w-[60vw] min-w-[min(560px,100vw)] max-w-none flex-col open:flex rounded-none rounded-l-2xl border-y-0 border-r-0 bg-canvas"
+      className="fixed top-3 right-3 bottom-3 left-auto m-0 h-[calc(100dvh-24px)] max-h-none w-[60vw] min-w-[min(560px,100vw)] max-w-[calc(100vw-24px)] flex-col open:flex rounded-2xl"
     >
       <Resolving taskId={taskId} folder={folder} param={path} items={items} repos={repos} onClose={close} />
     </Modal>

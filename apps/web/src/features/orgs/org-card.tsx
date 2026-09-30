@@ -33,7 +33,7 @@ import {
 } from "./model";
 import { MrSettings } from "./mr-settings";
 
-export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-[18px]";
+export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-card p-[18px]";
 
 /** One org: its accounts, a way into its agents, and its settings, editable in place. */
 export function OrgCard({
@@ -60,7 +60,7 @@ export function OrgCard({
     <section
       aria-label={org.name}
       aria-current={highlighted ? "true" : undefined}
-      className={cn(CARD, highlighted && "border-amber-line")}
+      className={cn(CARD, highlighted && "border-accent-line")}
     >
       <div className="flex items-center gap-3">
         <OrgBadge label={badgeLetters(org.key)} color={org.color} className="size-8 rounded-lg text-xs" />

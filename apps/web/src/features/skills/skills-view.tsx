@@ -26,7 +26,7 @@ export function SkillsView() {
           <button
             type="button"
             disabled
-            className="h-11 cursor-not-allowed rounded-[10px] bg-amber px-[18px] text-[0.875rem] font-semibold text-amber-ink opacity-45"
+            className="h-11 cursor-not-allowed rounded-[10px] bg-accent px-[18px] text-[0.875rem] font-semibold text-accent-ink opacity-45"
           >
             Install
           </button>

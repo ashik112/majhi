@@ -13,7 +13,7 @@ export function AccountStep({ isLast, onComplete, onSkip }: OnboardingStepProps)
           tool's own login, or paste an API key.
         </p>
       </div>
-      <div className="rounded-xl border border-line-strong bg-raised p-5">
+      <div className="rounded-xl border border-line-strong bg-card p-5">
         <AddAccountFlow
           renderDone={() => (
             <div>

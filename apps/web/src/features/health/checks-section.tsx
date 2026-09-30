@@ -88,7 +88,7 @@ function CheckItem({
   const tone = checkTone(row);
   const failing = row.level !== "pass" && (row.level !== undefined || !row.ok);
   return (
-    <li className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-raised px-3.5 py-2">
+    <li className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-card px-3.5 py-2">
       <div className="flex items-center gap-3">
         <Dot tone={tone} />
         <span className="w-[210px] shrink-0 truncate font-mono text-sm">{row.label}</span>

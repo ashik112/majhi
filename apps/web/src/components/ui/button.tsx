@@ -14,11 +14,11 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary: [
-          "bg-amber font-semibold text-amber-ink hover:bg-amber-hover active:bg-amber-press",
-          "[&_kbd]:border-amber-ink/25 [&_kbd]:text-amber-ink/75",
+          "bg-accent font-semibold text-accent-ink shadow-[0_6px_18px_-8px_var(--c-accent)] hover:bg-accent-hover active:bg-accent-press",
+          "[&_kbd]:border-accent-ink/25 [&_kbd]:text-accent-ink/75",
         ],
         secondary:
-          "border border-line-control bg-transparent text-fg hover:border-line-hover hover:bg-raised active:bg-selected",
+          "border border-line-control bg-raised text-fg hover:border-line-hover hover:bg-selected active:bg-selected",
         ghost: "text-fg-muted hover:bg-raised hover:text-fg active:bg-selected",
       },
       size: {

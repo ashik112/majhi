@@ -113,14 +113,16 @@ export function AccountDetails({
                     {group.agents.map((a) => {
                       const f = a.agent.frontmatter;
                       return (
-                        <li key={f.id} className="rounded-lg border border-line-strong bg-raised px-2.5 py-2">
+                        <li key={f.id} className="rounded-lg border border-line-strong bg-card px-2.5 py-2">
                           <PageLink
                             page="agents"
                             search={{ agent: f.id }}
                             className="font-mono text-base text-fg hover:underline"
                           >
                             @{f.id}
-                            {a.isBoss && <span className="ml-2 font-sans text-xs text-amber">Boss</span>}
+                            {a.isBoss && (
+                              <span className="ml-2 font-sans text-xs text-accent-text">Boss</span>
+                            )}
                           </PageLink>
                           <span className="block text-sm text-fg-muted">
                             {f.role}, model {f.model ?? "account default"}, effort{" "}

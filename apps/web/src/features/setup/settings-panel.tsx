@@ -84,7 +84,7 @@ function SettingsForms({
           event.preventDefault();
           onSubmit();
         }}
-        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3"
+        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3"
       >
         <fieldset className="m-0 grid grid-cols-3 gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm font-semibold">Context budget</legend>
@@ -217,7 +217,7 @@ function PolicyForm({ settings, save }: { settings: Settings; save: SavePolicy }
           event.preventDefault();
           if (changed) setConfirming(true);
         }}
-        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3"
+        className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3"
       >
         <div className="flex flex-col gap-0.5">
           <h3 className="text-sm font-semibold">Approval policy</h3>

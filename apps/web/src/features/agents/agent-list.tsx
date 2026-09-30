@@ -85,7 +85,7 @@ function Row({
       onClick={onSelect}
       className={cn(
         "flex min-h-12 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150",
-        selected ? "bg-[#272a31]" : "hover:bg-raised",
+        selected ? "bg-selected" : "hover:bg-raised",
       )}
     >
       {entry.status === "ok" ? (

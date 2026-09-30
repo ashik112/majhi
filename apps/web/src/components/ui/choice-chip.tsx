@@ -24,7 +24,7 @@ export function ChoiceChip({
         "disabled:cursor-not-allowed disabled:opacity-50",
         mono && "font-mono",
         pressed
-          ? "border-blue bg-blue-wash text-fg"
+          ? "border-accent-line bg-accent-wash text-fg"
           : "border-line-strong bg-card text-fg-muted hover:border-line-hover hover:text-fg active:bg-raised",
         className,
       )}

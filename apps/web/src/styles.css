@@ -1,64 +1,349 @@
 @import "tailwindcss";
 
 /*
- * majhi design tokens. Dark only for now. Mirrors the clickable demo in design/Work Hub · clickable demo-html.
+ * majhi design tokens: mission control. Blue-black glass over a faint radar grid (dark, the default)
+ * or pale instrument glass over a cool gray grid (light). `data-theme` and `data-accent` on <html>
+ * pick the palette; index.html sets them before the first paint from the owner's saved choice.
+ *
+ * The palette lives in plain custom properties (--c-*). The Tailwind tokens below point at them, so
+ * every class (bg-card, text-fg-muted, border-line-strong) follows the theme without code changes.
  * Default Tailwind colors, sizes and radii are cleared so every class maps to a token.
+ *
+ * Status lamps are law: one color per state, used for nothing else.
+ *   working  cyan   an agent is working
+ *   needs    red    the task waits for the owner (review, your turn)
+ *   paused   amber  stopped: usage limit, offline, error, or by the owner
+ *   done     green  finished or shipped (MR open, done)
+ *   idle     dim    inbox, ready, nobody on it
  */
-@theme {
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Backdrop: the grid and the glow behind the glass */
+  --c-base: #060a11;
+  --c-glow-a: rgb(56 170 230 / 0.11);
+  --c-glow-b: color-mix(in oklab, var(--c-accent) 8%, transparent);
+  --c-grid: rgb(110 160 215 / 0.05);
+  --c-grid-major: rgb(110 170 230 / 0.085);
+  --c-ring: rgb(90 190 235 / 0.075);
+
+  /* Glass */
+  --c-glass: rgb(12 18 28 / 0.6);
+  --c-glass-strong: rgb(13 19 30 / 0.975);
+  --c-glass-line: rgb(140 190 245 / 0.13);
+  --c-glass-hi: rgb(255 255 255 / 0.05);
+  --c-hair: rgb(90 200 240 / 0.28);
+  --c-shadow-glass:
+    inset 0 1px 0 0 var(--c-glass-hi), 0 14px 34px -16px rgb(0 0 0 / 0.75), 0 3px 8px -4px rgb(0 0 0 / 0.5);
+  --c-shadow-pop:
+    inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -18px rgb(0 0 0 / 0.85), 0 6px 16px -6px rgb(0 0 0 / 0.55);
+  --c-scrim: rgb(2 4 8 / 0.62);
+
+  /* Surfaces */
+  --c-sunken: rgb(3 6 11 / 0.62);
+  --c-canvas: #0a0f17;
+  --c-rail: var(--c-glass);
+  --c-panel: var(--c-glass-strong);
+  --c-card: rgb(18 26 39 / 0.58);
+  --c-field: rgb(5 9 16 / 0.55);
+  --c-raised: rgb(130 175 230 / 0.075);
+  --c-selected: rgb(130 185 245 / 0.14);
+
+  /* Lines */
+  --c-line: rgb(140 185 240 / 0.1);
+  --c-line-strong: rgb(140 185 240 / 0.14);
+  --c-line-control: rgb(150 195 245 / 0.22);
+  --c-line-bright: rgb(150 195 245 / 0.28);
+  --c-line-hover: rgb(165 205 250 / 0.4);
+
+  /* Text */
+  --c-fg: #e7edf5;
+  --c-fg-soft: #c2ccd9;
+  --c-fg-muted: #9da9b9;
+  --c-fg-faint: #828fa1;
+  --c-fg-dim: #5a6778;
+
+  /* Caution: warnings and approvals, not the accent */
+  --c-amber: #f0b455;
+  --c-amber-hover: #f4c273;
+  --c-amber-press: #e0a444;
+  --c-amber-ink: #1a1204;
+  --c-amber-wash: rgb(240 180 85 / 0.1);
+  --c-amber-line: rgb(240 180 85 / 0.32);
+  --c-amber-soft: #f3cd8e;
+
+  /* Identity and messages */
+  --c-blue: #8ab8f5;
+  --c-blue-wash: rgb(138 184 245 / 0.12);
+  --c-blue-line: rgb(138 184 245 / 0.32);
+  --c-blue-soft: #cfe0f8;
+  --c-green: #7fd1b9;
+  --c-green-wash: rgb(127 209 185 / 0.1);
+  --c-green-line: rgb(127 209 185 / 0.32);
+  --c-green-soft: #9fe0cc;
+  --c-red: #f07b6b;
+  --c-red-wash: rgb(240 123 107 / 0.11);
+  --c-red-line: rgb(240 123 107 / 0.34);
+  --c-red-soft: #f5b8a6;
+  --c-coral: #f59c7f;
+  --c-coral-soft: #f5c2b0;
+  --c-pink: #e7a0c8;
+  --c-violet: #c3a6f5;
+
+  /* Status lamps */
+  --c-lamp-working: #3fd4f5;
+  --c-lamp-needs: #ff6868;
+  --c-lamp-paused: #f7a531;
+  --c-lamp-done: #45d99a;
+  --c-lamp-idle: #5f6d80;
+
+  /* The brand mark: amber in every theme and accent */
+  --c-brand: #f0b455;
+  --c-brand-ink: #1a1204;
+
+  /* Accent: amber by default, the brand mark's color */
+  --c-accent: #f0b455;
+  --c-accent-hover: #f5c273;
+  --c-accent-press: #e0a444;
+  --c-accent-ink: #1a1204;
+  --c-accent-wash: rgb(240 180 85 / 0.12);
+  --c-accent-line: rgb(240 180 85 / 0.38);
+  --c-accent-text: #f3c47a;
+}
+
+:root[data-theme="dark"][data-accent="cyan"] {
+  --c-accent: #4cc9e8;
+  --c-accent-hover: #6dd5ee;
+  --c-accent-press: #34b6d6;
+  --c-accent-ink: #03141a;
+  --c-accent-wash: rgb(76 201 232 / 0.12);
+  --c-accent-line: rgb(76 201 232 / 0.38);
+  --c-accent-text: #7fd9ef;
+}
+:root[data-theme="dark"][data-accent="violet"] {
+  --c-accent: #a98bf5;
+  --c-accent-hover: #b9a0f7;
+  --c-accent-press: #9676ec;
+  --c-accent-ink: #150b2b;
+  --c-accent-wash: rgb(169 139 245 / 0.14);
+  --c-accent-line: rgb(169 139 245 / 0.4);
+  --c-accent-text: #c4b0f8;
+}
+:root[data-theme="dark"][data-accent="green"] {
+  --c-accent: #5fd39f;
+  --c-accent-hover: #7bdcb0;
+  --c-accent-press: #48c28b;
+  --c-accent-ink: #04170e;
+  --c-accent-wash: rgb(95 211 159 / 0.12);
+  --c-accent-line: rgb(95 211 159 / 0.38);
+  --c-accent-text: #86e0b8;
+}
+:root[data-theme="dark"][data-accent="rose"] {
+  --c-accent: #f47a9b;
+  --c-accent-hover: #f692ad;
+  --c-accent-press: #e8658a;
+  --c-accent-ink: #22060e;
+  --c-accent-wash: rgb(244 122 155 / 0.13);
+  --c-accent-line: rgb(244 122 155 / 0.4);
+  --c-accent-text: #f7a0b8;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --c-base: #e5eaf0;
+  --c-glow-a: rgb(70 150 215 / 0.16);
+  --c-glow-b: color-mix(in oklab, var(--c-accent) 10%, transparent);
+  --c-grid: rgb(40 75 120 / 0.045);
+  --c-grid-major: rgb(40 75 120 / 0.075);
+  --c-ring: rgb(30 110 160 / 0.09);
+
+  --c-glass: rgb(250 252 255 / 0.6);
+  --c-glass-strong: rgb(250 252 255 / 0.98);
+  --c-glass-line: rgb(30 60 100 / 0.14);
+  --c-glass-hi: rgb(255 255 255 / 0.75);
+  --c-hair: rgb(20 120 170 / 0.3);
+  --c-shadow-glass:
+    inset 0 1px 0 0 var(--c-glass-hi), 0 12px 30px -14px rgb(25 45 75 / 0.28),
+    0 2px 6px -3px rgb(25 45 75 / 0.16);
+  --c-shadow-pop:
+    inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -20px rgb(25 45 75 / 0.38),
+    0 6px 16px -8px rgb(25 45 75 / 0.22);
+  --c-scrim: rgb(160 172 190 / 0.45);
+
+  --c-sunken: rgb(212 220 231 / 0.62);
+  --c-canvas: #eef2f6;
+  --c-card: rgb(255 255 255 / 0.62);
+  --c-field: rgb(255 255 255 / 0.74);
+  --c-raised: rgb(30 65 115 / 0.055);
+  --c-selected: rgb(30 75 140 / 0.1);
+
+  --c-line: rgb(30 60 100 / 0.1);
+  --c-line-strong: rgb(30 60 100 / 0.14);
+  --c-line-control: rgb(30 60 100 / 0.22);
+  --c-line-bright: rgb(30 60 100 / 0.28);
+  --c-line-hover: rgb(30 60 100 / 0.42);
+
+  --c-fg: #0e1726;
+  --c-fg-soft: #273447;
+  --c-fg-muted: #435166;
+  --c-fg-faint: #55637a;
+  --c-fg-dim: #8a96a6;
+
+  --c-amber: #95590a;
+  --c-amber-hover: #a8650d;
+  --c-amber-press: #7e4b07;
+  --c-amber-ink: #fff8ec;
+  --c-amber-wash: rgb(214 140 30 / 0.12);
+  --c-amber-line: rgb(180 110 20 / 0.36);
+  --c-amber-soft: #7a4804;
+
+  --c-blue: #2a64b8;
+  --c-blue-wash: rgb(42 100 184 / 0.09);
+  --c-blue-line: rgb(42 100 184 / 0.3);
+  --c-blue-soft: #1d4a8c;
+  --c-green: #0f7d5c;
+  --c-green-wash: rgb(15 125 92 / 0.09);
+  --c-green-line: rgb(15 125 92 / 0.3);
+  --c-green-soft: #0b5e45;
+  --c-red: #c2352a;
+  --c-red-wash: rgb(194 53 42 / 0.08);
+  --c-red-line: rgb(194 53 42 / 0.3);
+  --c-red-soft: #9c2a20;
+  --c-coral: #b3502d;
+  --c-coral-soft: #8f3d20;
+  --c-pink: #a83c78;
+  --c-violet: #6d4bc4;
+
+  --c-lamp-working: #0a7694;
+  --c-lamp-needs: #cf2a2a;
+  --c-lamp-paused: #9a5c00;
+  --c-lamp-done: #0b8058;
+  --c-lamp-idle: #8d99a9;
+
+  --c-accent: #e39a2b;
+  --c-accent-hover: #eaa640;
+  --c-accent-press: #cf8a1c;
+  --c-accent-ink: #1c1100;
+  --c-accent-wash: rgb(214 140 30 / 0.13);
+  --c-accent-line: rgb(190 120 20 / 0.42);
+  --c-accent-text: #8f5406;
+}
+
+:root[data-theme="light"][data-accent="cyan"] {
+  --c-accent: #0b86a6;
+  --c-accent-hover: #0a93b6;
+  --c-accent-press: #09738f;
+  --c-accent-ink: #ffffff;
+  --c-accent-wash: rgb(11 134 166 / 0.1);
+  --c-accent-line: rgb(11 134 166 / 0.36);
+  --c-accent-text: #075f77;
+}
+:root[data-theme="light"][data-accent="violet"] {
+  --c-accent: #6f4fd6;
+  --c-accent-hover: #7d5fe0;
+  --c-accent-press: #5f40c4;
+  --c-accent-ink: #ffffff;
+  --c-accent-wash: rgb(111 79 214 / 0.1);
+  --c-accent-line: rgb(111 79 214 / 0.36);
+  --c-accent-text: #5a3cc0;
+}
+:root[data-theme="light"][data-accent="green"] {
+  --c-accent: #10885f;
+  --c-accent-hover: #139a6c;
+  --c-accent-press: #0c7550;
+  --c-accent-ink: #ffffff;
+  --c-accent-wash: rgb(16 136 95 / 0.1);
+  --c-accent-line: rgb(16 136 95 / 0.36);
+  --c-accent-text: #0b6a49;
+}
+:root[data-theme="light"][data-accent="rose"] {
+  --c-accent: #d23f6a;
+  --c-accent-hover: #dc5078;
+  --c-accent-press: #bb3159;
+  --c-accent-ink: #ffffff;
+  --c-accent-wash: rgb(210 63 106 / 0.1);
+  --c-accent-line: rgb(210 63 106 / 0.36);
+  --c-accent-text: #ad2c52;
+}
+
+@theme static {
   --color-*: initial;
 
   /* Surfaces, darkest to lightest */
-  --color-sunken: #0e0f11;
-  --color-canvas: #121316;
-  --color-rail: #17181c;
-  --color-panel: #17181c;
-  --color-card: #17181c;
-  --color-field: #1e2025;
-  --color-raised: #1e2025;
-  --color-selected: #272a31;
+  --color-sunken: var(--c-sunken);
+  --color-canvas: var(--c-canvas);
+  --color-rail: var(--c-rail);
+  --color-panel: var(--c-panel);
+  --color-card: var(--c-card);
+  --color-field: var(--c-field);
+  --color-raised: var(--c-raised);
+  --color-selected: var(--c-selected);
+  --color-brand: var(--c-brand);
+  --color-brand-ink: var(--c-brand-ink);
+  --color-glass: var(--c-glass);
+  --color-glass-strong: var(--c-glass-strong);
+  --color-glass-line: var(--c-glass-line);
+  --color-hair: var(--c-hair);
 
   /* Lines */
-  --color-line: #2c2f36;
-  --color-line-strong: #2c2f36;
-  --color-line-control: #3a3e47;
-  --color-line-bright: #3a3e47;
-  --color-line-hover: #4a4e57;
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-line-control: var(--c-line-control);
+  --color-line-bright: var(--c-line-bright);
+  --color-line-hover: var(--c-line-hover);
 
   /* Text */
-  --color-fg: #ecedef;
-  --color-fg-soft: #c9ccd2;
-  --color-fg-muted: #a3a7b0;
-  --color-fg-faint: #8a8f99;
+  --color-fg: var(--c-fg);
+  --color-fg-soft: var(--c-fg-soft);
+  --color-fg-muted: var(--c-fg-muted);
+  --color-fg-faint: var(--c-fg-faint);
+  --color-fg-dim: var(--c-fg-dim);
 
-  /* Accent: primary actions and current selection */
-  --color-amber: #f0b455;
-  --color-amber-hover: #f4c273;
-  --color-amber-press: #e0a444;
-  --color-amber-ink: #1a1204;
-  --color-amber-wash: #2a2218;
-  --color-amber-line: #5c4a2e;
+  /* Accent: primary actions and the current selection. Pickable. */
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-accent-press: var(--c-accent-press);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-wash: var(--c-accent-wash);
+  --color-accent-line: var(--c-accent-line);
+  --color-accent-text: var(--c-accent-text);
 
-  /* Text on the tinted banners and buttons: one step lighter than the status color */
-  --color-amber-soft: #f0c98a;
-  --color-green-soft: #9fe0cc;
-  --color-red-soft: #f5b8a6;
-  --color-coral-soft: #f5c2b0;
-  --color-blue-soft: #cfe0f8;
-  --color-fg-dim: #6b707a;
+  /* Caution */
+  --color-amber: var(--c-amber);
+  --color-amber-hover: var(--c-amber-hover);
+  --color-amber-press: var(--c-amber-press);
+  --color-amber-ink: var(--c-amber-ink);
+  --color-amber-wash: var(--c-amber-wash);
+  --color-amber-line: var(--c-amber-line);
+  --color-amber-soft: var(--c-amber-soft);
 
-  /* Status and identity */
-  --color-blue: #8ab8f5;
-  --color-blue-wash: #23324a;
-  --color-blue-line: #34507a;
-  --color-green: #7fd1b9;
-  --color-green-wash: #1b2b27;
-  --color-green-line: #3e6b5e;
-  --color-red: #f07b6b;
-  --color-red-wash: #2a1a18;
-  --color-red-line: #5c3a2e;
-  --color-coral: #f59c7f;
-  --color-pink: #e7a0c8;
-  --color-violet: #c3a6f5;
+  /* Identity and messages */
+  --color-blue: var(--c-blue);
+  --color-blue-wash: var(--c-blue-wash);
+  --color-blue-line: var(--c-blue-line);
+  --color-blue-soft: var(--c-blue-soft);
+  --color-green: var(--c-green);
+  --color-green-wash: var(--c-green-wash);
+  --color-green-line: var(--c-green-line);
+  --color-green-soft: var(--c-green-soft);
+  --color-red: var(--c-red);
+  --color-red-wash: var(--c-red-wash);
+  --color-red-line: var(--c-red-line);
+  --color-red-soft: var(--c-red-soft);
+  --color-coral: var(--c-coral);
+  --color-coral-soft: var(--c-coral-soft);
+  --color-pink: var(--c-pink);
+  --color-violet: var(--c-violet);
+
+  /* Status lamps: see the table at the top */
+  --color-lamp-working: var(--c-lamp-working);
+  --color-lamp-needs: var(--c-lamp-needs);
+  --color-lamp-paused: var(--c-lamp-paused);
+  --color-lamp-done: var(--c-lamp-done);
+  --color-lamp-idle: var(--c-lamp-idle);
 
   --font-sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -89,15 +374,18 @@
   --radius-2xl: 14px;
 
   --shadow-*: initial;
-  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+  --shadow-pop: var(--c-shadow-pop);
+  --shadow-glass: var(--c-shadow-glass);
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   --animate-shimmer: shimmer 1.6s ease-in-out infinite;
   --animate-scan: scan 1.1s var(--ease-out) infinite;
+  --animate-sweep: sweep 2.4s var(--ease-out) infinite;
   --animate-spin: spin 0.9s linear infinite;
   --animate-fade-in: fade-in 0.2s var(--ease-out) both;
   --animate-rise: rise 0.28s var(--ease-out) both;
+  --animate-lamp: lamp 2.2s ease-in-out infinite;
 
   @keyframes shimmer {
     0%,
@@ -114,6 +402,14 @@
     }
     100% {
       transform: translateX(260%);
+    }
+  }
+  @keyframes sweep {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(330%);
     }
   }
   @keyframes fade-in {
@@ -139,17 +435,74 @@
       transform: rotate(360deg);
     }
   }
+  @keyframes lamp {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 0 color-mix(in oklab, currentColor 45%, transparent),
+        0 0 8px 0 color-mix(in oklab, currentColor 55%, transparent);
+    }
+    50% {
+      box-shadow:
+        0 0 0 4px color-mix(in oklab, currentColor 0%, transparent),
+        0 0 12px 1px color-mix(in oklab, currentColor 70%, transparent);
+    }
+  }
 }
 
 @keyframes dialog-in {
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.985);
+    filter: blur(2px);
   }
   to {
     opacity: 1;
     transform: none;
+    filter: none;
   }
+}
+
+/* Glass surfaces are composed from these tokens in src/lib/glass.ts, so a caller can override any part. */
+
+/* The backdrop behind the whole app: a fine grid, a coarser one every fifth line, radar rings and two soft glows. */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--c-base);
+  background-image:
+    radial-gradient(1100px 720px at 8% -12%, var(--c-glow-a), transparent 62%),
+    radial-gradient(900px 640px at 104% 112%, var(--c-glow-b), transparent 60%),
+    linear-gradient(var(--c-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--c-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-grid) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    100% 100%,
+    160px 160px,
+    160px 160px,
+    32px 32px,
+    32px 32px;
+  background-position: -1px -1px;
+}
+.app-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(circle at 72% 58%, transparent 0 159px, var(--c-ring) 159px 160px);
+  -webkit-mask-image: radial-gradient(circle at 72% 58%, black 0, black 20%, transparent 62%);
+  mask-image: radial-gradient(circle at 72% 58%, black 0, black 20%, transparent 62%);
+}
+.app-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, var(--c-ring), transparent) 72% 58% / 42% 1px no-repeat,
+    linear-gradient(transparent, var(--c-ring), transparent) 72% 58% / 1px 60% no-repeat;
 }
 
 @layer base {
@@ -159,22 +512,23 @@
     height: 100%;
   }
 
+  /* The document never scrolls: the shell is the viewport and every region scrolls inside itself. */
   html,
   body {
+    overflow: hidden;
     overscroll-behavior: none;
   }
 
   html {
-    color-scheme: dark;
-    background: var(--color-canvas);
+    background: var(--c-base);
     -webkit-text-size-adjust: 100%;
-    scrollbar-color: var(--color-line-bright) transparent;
+    scrollbar-color: var(--c-line-bright) transparent;
   }
 
   body {
     margin: 0;
-    background: var(--color-canvas);
-    color: var(--color-fg);
+    background: transparent;
+    color: var(--c-fg);
     font-family: var(--font-sans);
     font-size: var(--text-base);
     line-height: var(--text-base--line-height);
@@ -185,17 +539,17 @@
   }
 
   ::selection {
-    background: rgb(240 180 85 / 0.32);
-    color: var(--color-fg);
+    background: color-mix(in oklab, var(--c-accent) 32%, transparent);
+    color: var(--c-fg);
   }
 
   input,
   textarea {
-    caret-color: var(--color-amber);
+    caret-color: var(--c-accent);
   }
 
   ::placeholder {
-    color: var(--color-fg-faint);
+    color: var(--c-fg-faint);
     opacity: 1;
   }
 
@@ -205,7 +559,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-blue);
+    outline: 2px solid var(--c-accent);
     outline-offset: 2px;
   }
 
@@ -221,25 +575,35 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-line-strong);
-    border: 3px solid var(--color-canvas);
+    background: var(--c-line-bright);
+    background-clip: padding-box;
+    border: 3px solid transparent;
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-line-hover);
+    background: var(--c-line-hover);
+    background-clip: padding-box;
   }
 
   dialog[open] {
-    animation: dialog-in 0.18s var(--ease-out) both;
+    animation: dialog-in 0.2s var(--ease-out) both;
+  }
+  dialog::backdrop {
+    background: var(--c-scrim);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
   }
   dialog[open]::backdrop {
     animation: fade-in 0.18s ease-out both;
   }
 
   mark {
-    background: rgb(240 180 85 / 0.2);
-    color: var(--color-amber-hover);
+    background: color-mix(in oklab, var(--c-accent) 22%, transparent);
+    color: var(--c-fg);
     border-radius: 2px;
   }
 
@@ -423,7 +787,7 @@
 .md .task-list-item input {
   margin: 0;
   flex-shrink: 0;
-  accent-color: var(--color-amber);
+  accent-color: var(--c-accent);
   transform: translateY(0.1em);
 }
 .md .task-list-item > p {
@@ -448,13 +812,13 @@
 .md-link {
   color: var(--color-blue);
   text-decoration: underline;
-  text-decoration-color: rgb(138 184 245 / 0.45);
+  text-decoration-color: color-mix(in oklab, var(--c-blue) 45%, transparent);
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
 }
 .md-mention {
   border-radius: 4px;
-  background: rgb(167 139 250 / 0.14);
+  background: color-mix(in oklab, var(--c-violet) 14%, transparent);
   padding: 0 0.3em;
   color: var(--color-violet);
   font-family: var(--font-mono);
@@ -464,7 +828,7 @@
   cursor: pointer;
 }
 .md-mention:hover {
-  background: rgb(167 139 250 / 0.26);
+  background: color-mix(in oklab, var(--c-violet) 26%, transparent);
   color: var(--color-fg);
 }
 .md-link:hover {
@@ -585,7 +949,7 @@
   border-top: 1px solid var(--color-line-strong);
 }
 .md tbody tr:nth-child(even) td {
-  background: rgb(255 255 255 / 0.02);
+  background: color-mix(in oklab, var(--c-raised) 60%, transparent);
 }
 .md [align="right"] {
   text-align: right;

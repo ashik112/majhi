@@ -225,7 +225,7 @@ export function RootPicker({
               return (
                 <li key={row.id} className="flex flex-col">
                   <div className="flex h-9 items-center gap-2.5">
-                    <FolderCheck aria-hidden="true" className="size-3.5 shrink-0 text-amber" />
+                    <FolderCheck aria-hidden="true" className="size-3.5 shrink-0 text-accent-text" />
                     <span
                       className="min-w-0 truncate font-mono text-base text-fg"
                       title={expandHome(row.value, home)}

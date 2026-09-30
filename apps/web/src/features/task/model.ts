@@ -1,28 +1,29 @@
 import type { AgentLive, RoomItem, Task, TaskStatus, TaskSummary } from "@majhi/shared";
+import type { LampState } from "../../components/ui/lamp";
 import type { DotTone } from "../../components/ui/status-dot";
-import { isYourTurn, type StatusTone } from "../tasks/model";
+import { isYourTurn } from "../tasks/model";
 
 export interface AgentState {
   label: string;
-  tone: "amber" | "violet" | "red" | "muted" | "faint";
+  tone: "working" | "needs" | "paused" | "red" | "muted" | "faint";
 }
 
 /** How an agent shows in the room panel. Without live data the task has not started it. */
 export function agentState(live: AgentLive | undefined, pausedReason?: string | undefined): AgentState {
   if (!live) return { label: "Not started", tone: "faint" };
   if (live.status === "paused" && pausedReason === "offline")
-    return { label: "Paused, offline", tone: "muted" };
+    return { label: "Paused, offline", tone: "paused" };
   switch (live.status) {
     case "working":
-      return { label: "Working", tone: "amber" };
+      return { label: "Working", tone: "working" };
     case "starting":
-      return { label: "Starting", tone: "amber" };
+      return { label: "Starting", tone: "working" };
     case "queued":
       return { label: live.slot ? `Queued, #${live.slot} in line` : "Queued", tone: "faint" };
     case "paused":
-      return { label: "Paused", tone: "muted" };
+      return { label: "Paused", tone: "paused" };
     case "waiting":
-      return { label: "Waiting for you", tone: "violet" };
+      return { label: "Waiting for you", tone: "needs" };
     case "error":
       return { label: "Error", tone: "red" };
     case "stopped":
@@ -37,9 +38,9 @@ export function agentDot(live: AgentLive | undefined): DotTone {
   switch (live?.status) {
     case "working":
     case "starting":
-      return "amber";
+      return "working";
     case "waiting":
-      return "violet";
+      return "needs";
     case "error":
       return "red";
     default:
@@ -66,7 +67,7 @@ export type ActionKind = "start" | "stop" | "resume" | "done" | "none";
 export interface ActionCopy {
   kind: ActionKind;
   text: string;
-  tone: StatusTone | "faint";
+  tone: LampState | "faint";
   /** The card's border: paused tasks get the warm one. */
   warm: boolean;
 }
@@ -101,30 +102,30 @@ export function actionCopy(
         text: yourTurn
           ? "Your turn. Reply in the room, or stop the task."
           : "The agent is working. Nothing is pushed until you approve.",
-        tone: yourTurn ? "violet" : "amber",
+        tone: yourTurn ? "needs" : "working",
         warm: false,
       };
     case "paused":
       return {
         kind: "resume",
         text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused. Resume when you are ready.",
-        tone: "coral",
+        tone: "paused",
         warm: true,
       };
     case "review":
       return {
         kind: "done",
         text: "The agent finished. Reply in the room to continue, or mark it done.",
-        tone: "violet",
+        tone: "needs",
         warm: false,
       };
     case "mr":
-      return { kind: "none", text: "The merge request is open.", tone: "green", warm: false };
+      return { kind: "none", text: "The merge request is open.", tone: "done", warm: false };
     case "done":
       return {
         kind: "none",
         text: "Done. The worktree stays until you remove the task.",
-        tone: "green",
+        tone: "done",
         warm: false,
       };
   }

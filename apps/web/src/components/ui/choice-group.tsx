@@ -41,8 +41,8 @@ export function ChoiceGroup<T extends string>({
             <span
               className={cn(
                 "flex min-h-[34px] flex-col justify-center rounded-md border border-line-strong bg-card px-3 text-sm text-fg-muted",
-                "transition-colors peer-hover:border-line-hover peer-checked:border-blue peer-checked:bg-[#23324a] peer-checked:text-fg",
-                "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue",
+                "transition-colors peer-hover:border-line-hover peer-checked:border-accent-line peer-checked:bg-accent-wash peer-checked:text-fg",
+                "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent",
               )}
             >
               {choice.label}

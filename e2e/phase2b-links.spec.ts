@@ -76,7 +76,7 @@ test("a parent shows its progress and closes when its children are done", async 
 
   await page.goto("/");
   await expect(card(page, parent)).toContainText("0 of 2 done");
-  await expect(card(page, one)).toContainText(`Part of ${parent}`);
+  await expect(card(page, one)).toContainText(`in ${parent}`);
   await page.screenshot({ path: "e2e/screenshots/links-parent.png" });
 
   await page.goto(`/t/${parent}`);

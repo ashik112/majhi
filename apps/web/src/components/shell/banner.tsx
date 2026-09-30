@@ -41,13 +41,24 @@ export function AttentionBanner({ banner, org }: { banner: Banner | null; org: s
           key="banner"
           role="status"
           initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 44, opacity: 1 }}
+          animate={{ height: 56, opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
           transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className={cn("shrink-0 overflow-hidden border-b", TONE[banner.tone].box)}
+          className="shrink-0 overflow-hidden"
         >
-          <div className="flex h-11 items-center gap-3 px-8">
-            <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", TONE[banner.tone].dot)} />
+          <div
+            className={cn(
+              "flex h-11 items-center gap-3 rounded-xl border px-5 backdrop-blur-xl",
+              TONE[banner.tone].box,
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2 shrink-0 rounded-full shadow-[0_0_8px_currentColor]",
+                TONE[banner.tone].dot,
+              )}
+            />
             <span className="min-w-0 truncate text-base">
               {banner.text}
               {banner.more > 0 && <span className="opacity-70"> and {banner.more} more need you.</span>}

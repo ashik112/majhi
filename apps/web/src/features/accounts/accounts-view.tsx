@@ -209,7 +209,7 @@ function AccountRow({
   return (
     <li
       className={cn(
-        "relative grid items-center gap-4 rounded-[10px] border bg-raised px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
+        "relative grid items-center gap-4 rounded-[10px] border bg-card px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
         COLUMNS,
         selected ? "border-line-hover bg-selected" : "border-line-strong hover:border-line-hover",
       )}
@@ -283,7 +283,7 @@ function AccountRow({
                 className="truncate rounded-xs border border-line-strong px-1.5 py-0.5 font-mono text-xs text-fg-soft"
               >
                 @{a.agent.frontmatter.id}
-                {a.isBoss && <span className="ml-1 font-sans text-amber">Boss</span>}
+                {a.isBoss && <span className="ml-1 font-sans text-accent-text">Boss</span>}
               </span>
             ))}
             {chips.more > 0 && <span className="text-xs text-fg-faint">+{chips.more}</span>}

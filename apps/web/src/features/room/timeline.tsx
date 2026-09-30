@@ -2,6 +2,9 @@ import type { RoomItem } from "@majhi/shared";
 import { ArrowDown } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Lamp } from "@/components/ui/lamp";
+import { cn } from "@/lib/cn";
+import { GLASS } from "@/lib/glass";
 import { type ItemContext, PinnedPlan, RoomItemView } from "./items";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
@@ -144,10 +147,16 @@ export function Timeline({
         // so new messages never bury it. Answered, it goes back into the log in its place.
         <section
           aria-label="Needs you"
-          className="flex max-h-[45%] shrink-0 flex-col gap-2 overflow-y-auto border-t border-amber-line pt-2"
+          className={cn(
+            "mt-2 flex max-h-[45%] shrink-0 flex-col gap-2 overflow-y-auto rounded-xl p-2.5",
+            GLASS,
+            "border-lamp-needs/30",
+          )}
         >
-          <span className="text-xs font-medium text-amber">
-            Needs you{waiting.length > 1 ? ` (${waiting.length})` : ""}
+          <span className="flex items-center gap-2 px-0.5 text-sm font-medium text-lamp-needs">
+            <Lamp state="needs" size={7} />
+            Needs you
+            {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
           </span>
           <ol className="m-0 flex flex-col gap-2.5 p-0">
             {waiting.map((item: RoomItem) => (

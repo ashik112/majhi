@@ -452,7 +452,7 @@ export function AgentEditor({
             rows={4}
             value={draft.instructions}
             onChange={(e) => change({ instructions: e.target.value })}
-            className="rounded-[10px] border-line-strong bg-[#0c0d0f] px-3.5 py-3 text-[0.8125rem] leading-[1.55] text-[#e2e4e8]"
+            className="rounded-[10px] border-line-strong bg-sunken px-3.5 py-3 text-[0.8125rem] leading-[1.55] text-fg"
           />
         )}
       </Field>

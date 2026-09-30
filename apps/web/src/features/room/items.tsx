@@ -1,6 +1,14 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Brain, ChevronRight, GitCompareArrows, ListChecks, Paperclip, ShieldQuestion } from "lucide-react";
+import {
+  Brain,
+  Check,
+  ChevronRight,
+  GitCompareArrows,
+  ListChecks,
+  Paperclip,
+  ShieldQuestion,
+} from "lucide-react";
 import { memo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
@@ -216,7 +224,7 @@ function AgentMessage({
           {meta && <span className="text-xs text-fg-faint">{meta}</span>}
         </div>
         {item.text !== "" && (
-          <div className="min-w-0 rounded-lg bg-raised px-3 py-2.5 text-body leading-normal text-[#e2e4e8]">
+          <div className="min-w-0 rounded-lg border border-line bg-card px-3 py-2.5 text-body leading-normal text-fg">
             <Markdown text={task === undefined ? item.text : linkifyPaths(item.text)} task={task} />
           </div>
         )}
@@ -281,11 +289,15 @@ function PlanList({ entries }: { entries: Of<"plan">["entries"] }) {
             className={cn(
               "mt-1 flex size-3.5 shrink-0 items-center justify-center rounded-xs border text-[9px] leading-none",
               entry.status === "completed" && "border-green-line bg-green-wash text-green",
-              entry.status === "in_progress" && "border-amber-line bg-amber-wash text-amber",
+              entry.status === "in_progress" && "border-lamp-working/50 text-lamp-working",
               entry.status === "pending" && "border-line-control",
             )}
           >
-            {entry.status === "completed" ? "✓" : entry.status === "in_progress" ? "•" : ""}
+            {entry.status === "completed" ? (
+              <Check className="size-2.5" strokeWidth={3} />
+            ) : entry.status === "in_progress" ? (
+              <span className="size-1.5 rounded-full bg-current" />
+            ) : null}
           </span>
           <span className={cn(entry.status === "completed" ? "text-fg-faint line-through" : "text-fg-soft")}>
             {entry.content}
@@ -498,7 +510,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
               value={answers[question.id] ?? ""}
               onChange={(e) => handleTextChange(question.id, e.target.value)}
               disabled={answer.isPending}
-              className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+              className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
             />
           ) : question.options.length <= 4 ? (
             <>
@@ -522,7 +534,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                   value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
                   onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
-                  className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+                  className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
                 />
               )}
             </>
@@ -532,7 +544,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                 value={answers[question.id] ?? ""}
                 onChange={(e) => handleOptionClick(question.id, e.target.value)}
                 disabled={answer.isPending}
-                className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg focus:border-blue focus:outline-none disabled:bg-bg-hover"
+                className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none disabled:opacity-50"
               >
                 <option value="">Select an option...</option>
                 {question.options.map((option) => (
@@ -548,7 +560,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                   value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
                   onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
-                  className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
+                  className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
                 />
               )}
             </>

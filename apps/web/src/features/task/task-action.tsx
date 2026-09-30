@@ -25,7 +25,7 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   return (
     <>
       {canShip && <Ship task={task} run={ship} />}
-      {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-coral">{copy.text}</span>}
+      {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-lamp-paused">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button
           variant="primary"

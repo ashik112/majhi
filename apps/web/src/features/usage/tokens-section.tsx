@@ -97,7 +97,7 @@ export function TokensSection() {
             </p>
           )}
           <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
-            <div className="rounded-[10px] border border-line-strong bg-raised px-3.5 pt-3 pb-2.5">
+            <div className="rounded-[10px] border border-line-strong bg-card px-3.5 pt-3 pb-2.5">
               <DailyChart days={data.days} />
             </div>
             <TopTasks tasks={data.topTasks} />
@@ -201,7 +201,7 @@ function TotalTile({ label, totals }: { label: string; totals: UsageTotals }) {
   return (
     <section
       aria-label={label}
-      className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-raised px-3.5 py-2.5"
+      className="flex flex-col gap-1 rounded-[10px] border border-line-strong bg-card px-3.5 py-2.5"
     >
       <SectionLabel>{label}</SectionLabel>
       <CostText totals={totals} proportional className="text-lg leading-[1.25] font-semibold" />
@@ -216,7 +216,7 @@ function TopTasks({ tasks }: { tasks: UsageSummary["topTasks"] }) {
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-[10px] border border-line-strong bg-raised px-3.5 py-3">
+    <div className="flex min-w-0 flex-col gap-2 rounded-[10px] border border-line-strong bg-card px-3.5 py-3">
       <SectionLabel>Top tasks this month</SectionLabel>
       {tasks.length === 0 ? (
         <p className="text-sm text-fg-faint">No tasks used tokens this month.</p>

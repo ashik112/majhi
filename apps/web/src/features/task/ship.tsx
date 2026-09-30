@@ -314,7 +314,7 @@ function ShipPanel({
                 }}
                 className={cn(
                   "flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-1.5 text-left",
-                  chosen === action ? "border-amber-line bg-amber-wash" : "border-transparent",
+                  chosen === action ? "border-accent-line bg-accent-wash" : "border-transparent",
                   disabled ? "cursor-default" : "cursor-pointer hover:bg-raised",
                 )}
               >

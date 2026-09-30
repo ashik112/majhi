@@ -160,7 +160,7 @@ function Card({ title, state, actions }: { title: string; state: CardState; acti
   return (
     <section
       aria-label={title}
-      className="flex items-center gap-3 rounded-[10px] border border-line-strong bg-raised p-3 transition-colors hover:border-line-hover"
+      className="flex items-center gap-3 rounded-[10px] border border-line-strong bg-card p-3 transition-colors hover:border-line-hover"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center gap-2">

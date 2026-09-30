@@ -89,7 +89,7 @@ export function SshAliasPicker({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-[34px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border border-line-control bg-field px-2.5 text-left text-base text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-blue focus-visible:outline-none"
+        className="flex h-[34px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border border-line-control bg-field px-2.5 text-left text-base text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none"
       >
         <span className={cn("min-w-0 truncate", value === "" ? "text-fg-muted" : "font-mono")}>
           {value === "" ? NONE : value}

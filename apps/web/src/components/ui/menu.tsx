@@ -1,6 +1,8 @@
+import { Check } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { GLASS_STRONG } from "@/lib/glass";
 
 export interface MenuItem {
   label: string;
@@ -90,7 +92,8 @@ export function Menu({
           role="menu"
           aria-label={label}
           className={cn(
-            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 max-w-72 flex-col overflow-y-auto rounded-md border border-line-bright bg-card p-1 shadow-pop",
+            "absolute top-full z-30 mt-1 flex max-h-72 min-w-40 max-w-72 flex-col overflow-y-auto rounded-lg p-1",
+            GLASS_STRONG,
             align === "right" ? "right-0" : "left-0",
           )}
         >
@@ -113,8 +116,8 @@ export function Menu({
               )}
             >
               {item.checked !== undefined && (
-                <span aria-hidden="true" className="w-3 text-amber">
-                  {item.checked ? "✓" : ""}
+                <span aria-hidden="true" className="flex w-3 justify-center text-accent-text">
+                  {item.checked && <Check className="size-3.5" strokeWidth={2.5} />}
                 </span>
               )}
               <span className="min-w-0 truncate">{item.label}</span>

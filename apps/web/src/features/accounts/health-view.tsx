@@ -163,7 +163,7 @@ export function HealthView() {
                       <PageLink
                         page="agents"
                         search={{ agent: f.id }}
-                        className="flex items-center gap-2.5 rounded-[10px] border border-line-strong bg-raised px-3 py-2 transition-colors hover:border-line-hover hover:bg-selected"
+                        className="flex items-center gap-2.5 rounded-[10px] border border-line-strong bg-card px-3 py-2 transition-colors hover:border-line-hover hover:bg-selected"
                       >
                         <Dot tone={state.tone} size={10} />
                         <span className="flex min-w-0 flex-col gap-0.5">
@@ -219,7 +219,7 @@ function AccountRow({
   return (
     <li
       className={cn(
-        "relative grid items-center gap-4 rounded-[10px] border bg-raised px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
+        "relative grid items-center gap-4 rounded-[10px] border bg-card px-3.5 py-2 text-sm leading-4 transition-colors duration-150",
         COLUMNS,
         "border-line-strong hover:border-line-hover",
       )}

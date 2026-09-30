@@ -25,13 +25,13 @@ export function Switch({
         aria-hidden="true"
         className={cn(
           "relative h-[18px] w-8 shrink-0 rounded-full border transition-colors",
-          checked ? "border-amber bg-amber" : "border-line-bright bg-field",
+          checked ? "border-accent bg-accent" : "border-line-bright bg-field",
         )}
       >
         <span
           className={cn(
             "absolute top-px size-[14px] rounded-full transition-[left,background-color]",
-            checked ? "left-[15px] bg-amber-ink" : "left-px bg-fg-faint",
+            checked ? "left-[15px] bg-accent-ink" : "left-px bg-fg-faint",
           )}
         />
       </span>

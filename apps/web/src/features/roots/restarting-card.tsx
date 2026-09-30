@@ -101,7 +101,10 @@ export function RestartingCard({
             >
               {state === "done" && <Check aria-hidden="true" className="size-3.5 shrink-0 text-green" />}
               {state === "active" && (
-                <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-amber" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 animate-spin text-accent-text"
+                />
               )}
               {state === "waiting" && (
                 <Circle aria-hidden="true" className="size-3.5 shrink-0 text-line-hover" />
@@ -149,7 +152,7 @@ function Card({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "flex h-fit w-full max-w-[600px] flex-col rounded-xl border bg-raised",
+        "flex h-fit w-full max-w-[600px] flex-col rounded-xl border bg-card",
         tone === "amber" ? "border-amber-line" : "border-line-strong",
       )}
     >

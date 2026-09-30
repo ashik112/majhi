@@ -78,14 +78,14 @@ function TaskView({ taskId }: { taskId: string }) {
         role="status"
         aria-busy="true"
         aria-label={`Loading ${taskId}`}
-        className="flex min-h-0 flex-1 flex-col"
+        className="flex min-h-0 flex-1 flex-col gap-3"
       >
-        <div className="flex flex-col gap-3 border-b border-line px-8 pt-3.5 pb-4">
+        <div className="flex flex-col gap-3 rounded-2xl border border-glass-line bg-glass px-5 pt-3.5 pb-4">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-6 w-56" />
           <Skeleton className="h-7 w-2/3" />
         </div>
-        <div className="flex flex-1 gap-[22px] px-8 pt-[18px] pb-[22px]">
+        <div className="flex flex-1 gap-3">
           <div className="flex flex-1 flex-col gap-3">
             <Skeleton className="h-20 w-full rounded-lg" />
           </div>
@@ -108,9 +108,9 @@ function TaskView({ taskId }: { taskId: string }) {
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <TaskHeader task={data} yourTurn={yourTurn} />
-      <div className="flex min-h-0 flex-1 gap-4 px-5 pt-3 pb-3">
+      <div className="flex min-h-0 flex-1 gap-4 pl-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           <Segmented
             label="Room, changes, memory or terminal"
@@ -202,7 +202,7 @@ function Brief({ label, text, task }: { label: string; text: string; task: Task 
             value={value}
             onChange={(e) => setValue(e.target.value)}
             rows={8}
-            className="max-h-[40vh] w-full resize-y rounded-md border border-line-control bg-field p-2 text-body text-fg focus-visible:border-blue focus-visible:outline-none"
+            className="max-h-[40vh] w-full resize-y rounded-md border border-line-control bg-field p-2 text-body text-fg focus-visible:border-accent focus-visible:outline-none"
           />
           <div className="flex gap-2">
             <Button

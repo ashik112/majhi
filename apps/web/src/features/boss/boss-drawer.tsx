@@ -7,7 +7,9 @@ import { Kbd } from "@/components/ui/kbd";
 import { Menu } from "@/components/ui/menu";
 import { isBossChat } from "@/features/board/model";
 import { useBossChat, useNewBossChat } from "@/lib/boss-queries";
+import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
+import { GLASS_STRONG } from "@/lib/glass";
 import { useTasks } from "@/lib/task-queries";
 import { useBoss } from "./boss-context";
 import { BossConversation } from "./boss-conversation";
@@ -41,7 +43,10 @@ export function BossDrawer() {
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) hide();
       }}
-      className="fixed inset-y-0 right-0 z-40 flex w-[min(480px,100vw)] animate-fade-in flex-col gap-3 border-l border-line-strong bg-canvas p-4 shadow-pop"
+      className={cn(
+        "fixed top-3 right-3 bottom-3 z-40 flex w-[min(480px,calc(100vw-24px))] animate-fade-in flex-col gap-3 rounded-2xl p-4",
+        GLASS_STRONG,
+      )}
     >
       <header className="flex items-center gap-2.5">
         {boss && <AgentAvatar id={boss} size={28} />}

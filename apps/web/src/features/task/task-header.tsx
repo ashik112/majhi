@@ -3,15 +3,15 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, FolderGit2 } from "lucide-react";
 import { useState } from "react";
 import { OrgBadge } from "@/components/ui/org-badge";
-import { TONE_CLASS } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatTokens } from "@/lib/format";
+import { GLASS } from "@/lib/glass";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
-import { statusInfo } from "../tasks/model";
 import { CostText } from "../usage/cost";
 import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
@@ -22,12 +22,11 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
   const org = orgs.find((o) => o.id === task.org);
-  const info = statusInfo(task.status, task.pausedReason, yourTurn);
   const prefix = task.id.slice(0, task.id.lastIndexOf("-"));
   const repos = task.repos.map((r) => r.project);
 
   return (
-    <header className="flex shrink-0 flex-col gap-1 border-b border-line px-5 pt-2 pb-2.5">
+    <header className={cn("flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2 pb-2.5", GLASS)}>
       <div className="flex min-h-8 items-center gap-2.5 text-sm">
         <Link
           to="/"
@@ -39,14 +38,8 @@ export function TaskHeader({ task, yourTurn }: { task: Task; yourTurn: boolean }
           <ArrowLeft aria-hidden="true" className="size-3.5" />
         </Link>
         <span className="font-mono text-fg-muted">{task.id}</span>
-        <span
-          className={cn(
-            "rounded-full border border-line-control px-2 py-px text-xs whitespace-nowrap",
-            TONE_CLASS[info.tone],
-          )}
-        >
-          {info.label}
-        </span>
+        <StatusBadge status={task.status} pausedReason={task.pausedReason} yourTurn={yourTurn} />
+
         {repos.length > 0 ? (
           <span
             title={`Project: ${repos.join(", ")}`}
@@ -131,7 +124,7 @@ function EditableTitle({ task }: { task: Task }) {
         if (e.key === "Enter") save();
         if (e.key === "Escape") setDraft(undefined);
       }}
-      className="h-8 w-full rounded-md border border-line-control bg-field px-2 text-lg font-semibold text-fg focus-visible:border-blue focus-visible:outline-none"
+      className="h-8 w-full rounded-md border border-line-control bg-field px-2 text-lg font-semibold text-fg focus-visible:border-accent focus-visible:outline-none"
     />
   );
 }

@@ -29,7 +29,7 @@ export function HistoryPanel() {
           {rows.map((row) => (
             <li
               key={row.commit}
-              className="flex items-start gap-2 rounded-[10px] border border-line-strong bg-raised px-3 py-2"
+              className="flex items-start gap-2 rounded-[10px] border border-line-strong bg-card px-3 py-2"
             >
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className={cn("text-base text-pretty", row.undone && "text-fg-faint line-through")}>

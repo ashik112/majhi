@@ -1,4 +1,5 @@
 import type { AgentEntry, TaskKind, TaskStatus, TaskSummary } from "@majhi/shared";
+import type { LampState } from "@/components/ui/lamp";
 
 // Status --------------------------------------------------------------------
 
@@ -7,11 +8,9 @@ export function isYourTurn(task: Pick<TaskSummary, "status" | "working">): boole
   return task.status === "running" && task.working.length === 0;
 }
 
-export type StatusTone = "amber" | "blue" | "green" | "violet" | "coral" | "neutral";
-
 export interface StatusInfo {
   label: string;
-  tone: StatusTone;
+  lamp: LampState;
 }
 
 const PAUSE_WORDS: Record<string, string> = {
@@ -21,27 +20,33 @@ const PAUSE_WORDS: Record<string, string> = {
   owner: "stopped by you",
 };
 
+/** A task's status in words, and its lamp. Waiting on the owner (your turn, your review) is the red lamp. */
 export function statusInfo(status: TaskStatus, pausedReason?: string, yourTurn = false): StatusInfo {
-  if (status === "running" && yourTurn) return { label: "Your turn", tone: "violet" };
+  if (status === "running" && yourTurn) return { label: "Your turn", lamp: "needs" };
   switch (status) {
     case "inbox":
-      return { label: "Inbox", tone: "neutral" };
+      return { label: "Inbox", lamp: "idle" };
     case "ready":
-      return { label: "Ready", tone: "blue" };
+      return { label: "Ready", lamp: "idle" };
     case "running":
-      return { label: "Working", tone: "amber" };
+      return { label: "Working", lamp: "working" };
     case "paused":
       return {
         label: pausedReason ? `Paused · ${PAUSE_WORDS[pausedReason] ?? pausedReason}` : "Paused",
-        tone: "coral",
+        lamp: "paused",
       };
     case "review":
-      return { label: "Your review", tone: "violet" };
+      return { label: "Your review", lamp: "needs" };
     case "mr":
-      return { label: "MR open", tone: "green" };
+      return { label: "MR open", lamp: "done" };
     case "done":
-      return { label: "Done", tone: "green" };
+      return { label: "Done", lamp: "done" };
   }
+}
+
+/** The lamp of a task in a list: the status's lamp, with a running task nobody works on as your turn. */
+export function taskLamp(task: Pick<TaskSummary, "status" | "working">): LampState {
+  return statusInfo(task.status, undefined, isYourTurn(task)).lamp;
 }
 
 /** The one main action of a task by status. Review and MR tasks have none in 2a. */

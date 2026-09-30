@@ -96,7 +96,7 @@ function MemoryForm({ saved, save }: { saved: MemorySettings; save: ReturnType<t
         event.preventDefault();
         onSubmit();
       }}
-      className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3"
+      className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3"
     >
       <Field
         label="Keep or drop on its own above"

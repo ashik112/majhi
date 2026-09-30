@@ -57,7 +57,7 @@ export function AgentAvatar({
       {working && (
         <span
           aria-hidden="true"
-          className="absolute -inset-[3px] animate-shimmer rounded-full border-2 border-amber"
+          className="absolute -inset-[3px] animate-shimmer rounded-full border-2 border-lamp-working"
         />
       )}
       {dot && (

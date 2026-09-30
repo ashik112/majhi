@@ -74,7 +74,7 @@ function Running({ startedAt }: { startedAt: string }) {
         aria-labelledby="update-title"
         aria-busy={!failed}
         className={cn(
-          "flex w-full max-w-[600px] flex-col rounded-xl border bg-raised",
+          "flex w-full max-w-[600px] flex-col rounded-xl border bg-card",
           failed ? "border-red-line" : "border-line-strong",
         )}
       >
@@ -96,7 +96,7 @@ function Running({ startedAt }: { startedAt: string }) {
         >
           {lines.length === 0 && (
             <li className="flex h-9 items-center gap-2.5 px-3 text-base text-fg-muted">
-              <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin text-amber" />
+              <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin text-accent-text" />
               Waiting for the host helper
             </li>
           )}
@@ -110,7 +110,10 @@ function Running({ startedAt }: { startedAt: string }) {
                 className="flex min-h-9 items-center gap-2.5 border-line-strong px-3 py-1.5 text-base not-last:border-b"
               >
                 {spinning ? (
-                  <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-amber" />
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 animate-spin text-accent-text"
+                  />
                 ) : last && failed ? (
                   <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-red" />
                 ) : (

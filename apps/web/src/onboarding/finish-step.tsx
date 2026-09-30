@@ -27,7 +27,7 @@ export function FinishStep({ isLast, onComplete, onSkip }: OnboardingStepProps) 
           your approval, and every change can be undone. Open this chat any time with Cmd J.
         </p>
       </div>
-      <div className="flex h-[420px] min-h-0 flex-col rounded-xl border border-line-strong bg-raised p-3">
+      <div className="flex h-[420px] min-h-0 flex-col rounded-xl border border-line-strong bg-card p-3">
         {chat.isPending && <p className="m-auto text-sm text-fg-faint">Opening the boss chat</p>}
         {chat.isError && <p className="m-auto text-sm text-red">{describeError(chat.error)}</p>}
         {chat.data && <FirstConversation key={chat.data.id} task={chat.data} />}

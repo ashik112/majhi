@@ -1,46 +1,44 @@
 import type { TaskSummary } from "@majhi/shared";
+import type { LampState } from "@/components/ui/lamp";
 import { inOrg, isOpen } from "../shell/model";
-import { isYourTurn } from "../tasks/model";
+import { isYourTurn, taskLamp } from "../tasks/model";
 
-export type ColumnId = "inbox" | "ready" | "working" | "review" | "mr" | "done";
+export type ColumnId = "inbox" | "working" | "needs" | "mr" | "done";
 
 export const COLUMN_LABEL: Record<ColumnId, string> = {
   inbox: "Inbox",
-  ready: "Ready",
   working: "Working",
-  review: "Your review",
+  needs: "Needs you",
   mr: "MR open",
   done: "Done",
 };
 
-/** Dot colors of the column headers, as Tailwind background classes. */
-export const COLUMN_DOT: Record<ColumnId, string> = {
-  inbox: "bg-fg-muted",
-  ready: "bg-blue",
-  working: "bg-amber",
-  review: "bg-violet",
-  mr: "bg-green",
-  done: "bg-fg-dim",
+/** The lamp of each column's header: the state its cards share. */
+export const COLUMN_LAMP: Record<ColumnId, LampState> = {
+  inbox: "idle",
+  working: "working",
+  needs: "needs",
+  mr: "done",
+  done: "done",
 };
 
-const OPEN_COLUMNS: readonly ColumnId[] = ["inbox", "ready", "working", "review", "mr"];
+const COLUMNS: readonly ColumnId[] = ["inbox", "working", "needs", "mr", "done"];
 
 /**
- * The column of a task. Paused tasks stay under Working, as in the design, with a note on the card.
- * A running task waiting for the owner ("your turn") stays there too, marked violet: Your review is
- * for tasks whose work is finished and needs a decision.
+ * The column of a task. Inbox holds what nobody works on yet (inbox and ready). Needs you holds every
+ * task that waits for the owner: a finished one to review, a running one whose agents all finished
+ * their turn, and a paused one.
  */
-export function columnOf(task: Pick<TaskSummary, "status">): ColumnId {
+export function columnOf(task: Pick<TaskSummary, "status" | "working">): ColumnId {
   switch (task.status) {
     case "inbox":
-      return "inbox";
     case "ready":
-      return "ready";
+      return "inbox";
     case "running":
+      return isYourTurn(task) ? "needs" : "working";
     case "paused":
-      return "working";
     case "review":
-      return "review";
+      return "needs";
     case "mr":
       return "mr";
     case "done":
@@ -48,18 +46,17 @@ export function columnOf(task: Pick<TaskSummary, "status">): ColumnId {
   }
 }
 
-export type NoteTone = "amber" | "violet" | "coral";
-
-export interface CardNote {
+/** The one live line of a card, in its lamp's color: who works, or why it needs the owner. */
+export interface CardLine {
   text: string;
-  tone: NoteTone;
+  lamp: LampState;
 }
 
 const PAUSE_TEXT: Record<string, string> = {
-  limit: "Paused · usage limit",
-  offline: "Paused · connection lost",
-  error: "Paused · an error stopped it",
-  owner: "Paused · stopped by you",
+  limit: "Paused: the account is at its usage limit",
+  offline: "Paused: the connection was lost",
+  error: "Paused: an error stopped it",
+  owner: "Paused by you",
 };
 
 /** "Waiting on GLX-412", or "Waiting on GLX-412, GLX-413 +1" when there are more than two. */
@@ -69,7 +66,6 @@ export function waitingText(waitingOn: readonly string[]): string {
   return `Waiting on ${shown}${more > 0 ? ` +${more}` : ""}`;
 }
 
-/** The line under a card: why it is paused, that it is your turn, who is working, or what it waits on. */
 /** The boss's chat lives behind Cmd J and on Hub setup, not on the board. */
 export function isBossChat(
   task: Pick<TaskSummary, "kind" | "title" | "team">,
@@ -80,20 +76,34 @@ export function isBossChat(
   );
 }
 
-export function cardNote(task: TaskSummary): CardNote | null {
-  if ((task.status === "inbox" || task.status === "ready") && task.waitingOn.length > 0) {
-    return { text: waitingText(task.waitingOn), tone: "coral" };
+/** "@lead working", "@lead and @builder working", "@lead +2 working". */
+export function workingText(working: readonly string[]): string {
+  const [first, second] = working;
+  if (first === undefined) return "Working";
+  if (second === undefined) return `@${first} working`;
+  if (working.length === 2) return `@${first} and @${second} working`;
+  return `@${first} +${working.length - 1} working`;
+}
+
+export function cardLine(task: TaskSummary): CardLine | null {
+  switch (task.status) {
+    case "inbox":
+    case "ready":
+      if (task.waitingOn.length > 0) return { text: waitingText(task.waitingOn), lamp: "idle" };
+      return task.status === "ready" ? { text: "Ready to start", lamp: "idle" } : null;
+    case "running":
+      return isYourTurn(task)
+        ? { text: "Your turn: reply in the room", lamp: "needs" }
+        : { text: workingText(task.working), lamp: "working" };
+    case "paused":
+      return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", lamp: "paused" };
+    case "review":
+      return { text: "Finished: reply or mark done", lamp: "needs" };
+    case "mr":
+      return { text: "MR open, waiting for the merge", lamp: "done" };
+    case "done":
+      return null;
   }
-  if (task.status === "paused") {
-    return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", tone: "coral" };
-  }
-  if (task.status === "review") return { text: "Finished · reply or mark done", tone: "violet" };
-  if (task.status === "mr") return { text: "MR open · waiting for the merge", tone: "violet" };
-  if (task.status === "running") {
-    const who = task.working[0];
-    return who ? { text: `@${who} working`, tone: "amber" } : { text: "Your turn", tone: "violet" };
-  }
-  return null;
 }
 
 /** Progress of a parent task: "3 of 5 done" and the filled share of the bar. Null without children. */
@@ -108,6 +118,14 @@ export function partOf(task: Pick<TaskSummary, "links">): string | undefined {
   return task.links.find((l) => l.type === "parent")?.task;
 }
 
+/** A title as plain text: the backticks of inline code in markdown titles go. */
+export function plainTitle(title: string): string {
+  return title
+    .replace(/`+([^`]*)`+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Sort key of a task id: prefix, then its number, so LOCAL-10 follows LOCAL-9. */
 function idParts(id: string): [string, number] {
   const at = id.lastIndexOf("-");
@@ -118,13 +136,32 @@ function newestFirst(a: TaskSummary, b: TaskSummary): number {
   return b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id);
 }
 
-/** The order inside Working stays put while agents stream: needs-you first, then by id. */
-function stableWorking(a: TaskSummary, b: TaskSummary): number {
-  const need = (t: TaskSummary) => (t.status === "paused" ? 0 : isYourTurn(t) ? 1 : 2);
+/** Newest id first. Stable while agents stream, since ids never change. */
+function byIdDesc(a: TaskSummary, b: TaskSummary): number {
   const [pa, na] = idParts(a.id);
   const [pb, nb] = idParts(b.id);
-  return need(a) - need(b) || pa.localeCompare(pb) || nb - na;
+  return pa.localeCompare(pb) || nb - na;
 }
+
+/** Ready tasks first: they were planned and can start now. */
+function inboxOrder(a: TaskSummary, b: TaskSummary): number {
+  const rank = (t: TaskSummary) => (t.status === "ready" ? 0 : 1);
+  return rank(a) - rank(b) || newestFirst(a, b);
+}
+
+/** Red lamps first (review, your turn), then paused; each group keeps its place while agents stream. */
+function needsOrder(a: TaskSummary, b: TaskSummary): number {
+  const rank = (t: TaskSummary) => (taskLamp(t) === "needs" ? 0 : 1);
+  return rank(a) - rank(b) || byIdDesc(a, b);
+}
+
+const ORDER: Record<ColumnId, (a: TaskSummary, b: TaskSummary) => number> = {
+  inbox: inboxOrder,
+  working: byIdDesc,
+  needs: needsOrder,
+  mr: newestFirst,
+  done: newestFirst,
+};
 
 export function matchesQuery(task: TaskSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
@@ -145,27 +182,34 @@ export interface Column {
 export interface BoardOptions {
   org: string | undefined;
   query: string;
-  showDone: boolean;
 }
 
-/** The columns in the design's order, with the tasks that pass the org filter and the search. */
+/** Every column in order, Done included, with the tasks that pass the org filter and the search. */
 export function buildColumns(tasks: readonly TaskSummary[], options: BoardOptions): Column[] {
   const visible = tasks.filter((t) => inOrg(t, options.org) && matchesQuery(t, options.query));
-  const ids: readonly ColumnId[] = options.showDone ? [...OPEN_COLUMNS, "done"] : OPEN_COLUMNS;
-  return ids.map((id) => ({
+  return COLUMNS.map((id) => ({
     id,
     label: COLUMN_LABEL[id],
-    tasks: visible.filter((t) => columnOf(t) === id).toSorted(id === "working" ? stableWorking : newestFirst),
+    tasks: visible.filter((t) => columnOf(t) === id).toSorted(ORDER[id]),
   }));
 }
 
-/** "8 open", or "8 open · 3 done" for the org filter's tasks. */
-export function boardCounts(
-  tasks: readonly TaskSummary[],
-  org: string | undefined,
-): { open: number; done: number } {
+export interface BoardCounts {
+  open: number;
+  working: number;
+  needs: number;
+  done: number;
+}
+
+/** The telemetry of the org filter's tasks: open, working now, waiting for the owner, done. */
+export function boardCounts(tasks: readonly TaskSummary[], org: string | undefined): BoardCounts {
   const own = tasks.filter((t) => inOrg(t, org));
-  return { open: own.filter(isOpen).length, done: own.filter((t) => !isOpen(t)).length };
+  return {
+    open: own.filter(isOpen).length,
+    working: own.filter((t) => columnOf(t) === "working").length,
+    needs: own.filter((t) => columnOf(t) === "needs").length,
+    done: own.filter((t) => !isOpen(t)).length,
+  };
 }
 
 export type Direction = "up" | "down" | "left" | "right";

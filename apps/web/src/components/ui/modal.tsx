@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
+import { GLASS_STRONG } from "@/lib/glass";
 
 /**
  * A modal on the native `<dialog>`: the browser traps focus, makes the page behind inert and
@@ -44,8 +45,8 @@ export function Modal({
         if (event.target === event.currentTarget) onClose();
       }}
       className={cn(
-        "m-auto max-h-[calc(100dvh-32px)] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-line-bright bg-panel p-0 text-fg shadow-pop",
-        "backdrop:bg-sunken/70",
+        "m-auto max-h-[calc(100dvh-32px)] max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl p-0 text-fg",
+        GLASS_STRONG,
         className,
       )}
     >
