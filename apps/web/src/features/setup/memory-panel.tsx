@@ -100,7 +100,7 @@ function MemoryForm({ saved, save }: { saved: MemorySettings; save: ReturnType<t
     >
       <Field
         label="Keep or drop on its own above"
-        hint="How far above a random guess the decision provider must be (0 is a guess, 1 is certain) before majhi keeps or drops a fact and logs why. Below it, the fact waits for you. Other decisions use 0.2; memory is stricter because a wrong fact sticks. From 0.2 to 1. Default 0.4."
+        hint="How far above a random guess the decision provider must be (0 is a guess, 1 is certain) before majhi drops a lesson as chatter or merges it into one it has, and logs why. Below it, the lesson is kept, and Undo drops it. Global lessons and contradictions always wait for you. Other decisions use 0.2; memory is stricter because a wrong fact sticks. From 0.2 to 1. Default 0.4."
         error={showErrors ? error : undefined}
       >
         {(p) => (
@@ -121,7 +121,7 @@ function MemoryForm({ saved, save }: { saved: MemorySettings; save: ReturnType<t
       </div>
       <Field
         label="Housekeeper"
-        hint="The agent that reads a finished task's room and writes the facts. This is the only step that spends tokens."
+        hint="The agent that reads each finished task and writes its record, the project brief and any lessons. This is the only step that spends tokens."
       >
         {(p) => (
           <Select

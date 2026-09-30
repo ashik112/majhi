@@ -132,6 +132,33 @@ Left, and known:
 
 Only the owner can check: the Docker image with `sqlite-vec` and onnxruntime on x64 and arm64 (not built here), and a Housekeeper run on a real model.
 
+### Memory rework (2026-09-30)
+
+Branch `task/memory-rework`. The owner's review: memory kept one-line facts, most restating repo rules already in CLAUDE.md or AGENTS.md, and nearly all of them waited for approval. Nothing about what tasks did, decided or left. The store, embeddings, hybrid search, scopes, org isolation, the MCP server, Undo and the log stay; what is stored and how it flows changed.
+
+What works:
+
+- **Task records, automatic.** When a task becomes done (closed, merged, or its MRs merged), the Housekeeper writes one record in plain prose: Asked, Done, Decisions, Outcome, Left. One session per task, tokens under the task. It reads the last three agent messages whole (the hand-back), the rest of the room cut to about 5k tokens, and what git says about each repo: the branch's own commits, the diff stat and the lines added to `docs/PROGRESS.md` and `docs/DECISIONS.md` (`memory/task-git.ts`, which finds the branch's range before a merge, after a merge commit and after a fast-forward). One record per task: a second close does nothing; `memory.extract` (Write again) rewrites it in place. Stored in `task_records` with FTS and vectors, seen only in its org's and projects' scopes, never global.
+- **Project briefs, versioned.** Five sections (What it is, Architecture, Current state, Plans and next steps, Known problems), under about 800 words. After each record the Housekeeper answers a patch (only the sections that change); a patch that changes nothing adds no version. A project with no brief gets all five from its README start and the headings of README, SPEC, AGENTS.md, CLAUDE.md and docs/PROGRESS.md. Every version is kept; `memory.restoreBrief` puts an older one back as the newest. `memory.buildBrief` (Build it now) writes one from the docs and the records.
+- **Open threads.** Each Left item becomes a thread (text, project, source task, follow-up task when one was made from this task). A thread closes when a later record lists it as done (only in that task's own projects), when its follow-up task is done, or by hand; `memory.reopenThread` undoes a close.
+- **Lessons, rare.** At most three per task, each with what actually happened; a lesson without it is dropped. The prompt carries the repo's CLAUDE.md, AGENTS.md and README and says never to restate them, and curation checks every lesson and agent proposal against chunks of those files (cosine 0.8 with the model, or 85% of its words in one chunk). A match is not stored (Housekeeper) or is dropped with Undo (agent). The duplicate check, the secret and personal-data rules, the Laya gate and global-needs-owner stay. Only global lessons and contradictions wait for the owner; everything else is kept or dropped on its own, and an unsure answer keeps the lesson, saying so in the log.
+- **Recall into TASK.md.** One Memory section, at most about 1500 tokens: the project brief (compact), the three task records most like this task's brief, the open threads of its projects (most shared words first), and the lessons, each under its own heading. It is kept per task so a rewrite of TASK.md gives the same text. `majhi-memory` gains `records(query)`, `brief(project)` and `threads(project)`; another org's are refused.
+- **Cleanup of the old facts.** Once at startup, pending facts near-identical to a chunk of their repos' CLAUDE.md, AGENTS.md or README (cosine 0.88, or 85% of the words) are rejected with "Already in the repo docs (<file>)", as curation steps Undo reverses. The rest are left. It runs again at each start until it has run with the embedding model loaded. The review list has Approve all and Reject all.
+- **UI.** The Memory page has four tabs: Brief (per project, with History and Restore this version), Tasks (the records, newest first, and search), Threads (open per project, Close with Undo, the closed ones) and Lessons (the old facts view with scope chips, Needs review with Approve all and Reject all, and the automatic decisions). The task's Memory tab shows its record, the threads it left open and its lessons, with Write the record or Write again.
+
+Tests (fake runtime, hashed embedder, no tokens): `npx vitest run apps/server/src/memory apps/server/src/tasks/brief.test.ts`, 72 tests (with `agents/rename.test.ts` and `rooms/team.test.ts`, 84, all passing). They cover a record written once per task and rewritten in place, brief versions and restore, thread open and close (by a record, a follow-up, by hand), isolation (another org's task and agent never get records, briefs, threads or lessons), the repo-docs rule for lessons and for the cleanup, the 1500-token cap, and git ranges before and after merges.
+
+Screens checked in Chromium at 1440 and 1100 wide against the e2e server with `e2e/memory-seed.ts` (records, a brief with three versions, threads): `pnpm exec playwright test -c playwright.memory.config.ts` with `MEMORY_SHOTS` set.
+
+Left, and known:
+
+- Existing done tasks have no record. Write the record on a task's Memory tab writes one; there is no bulk backfill.
+- The first search after a start waits for the embedding model (up to 30 seconds), as before.
+- `buildBrief` records its tokens under the project's newest task, or under `brief:<project>` when it has none, so those turns show no org in usage.
+- `apps/server/src/config/settings.test.ts` "fills every default" fails on `main` too: it expects `auto_threshold` 0.8, the default is 0.4.
+
+Only the owner can check: a Housekeeper run on a real model, and how well its records and brief patches read.
+
 ### How I will test it
 
 - Unit tests:

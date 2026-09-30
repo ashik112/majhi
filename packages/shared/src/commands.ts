@@ -45,6 +45,10 @@ import {
   FactHitSchema,
   FactSchema,
   MemoryAddInputSchema,
+  MemoryBriefInputSchema,
+  MemoryBriefOutputSchema,
+  MemoryBulkDecideInputSchema,
+  MemoryBulkDecideOutputSchema,
   MemoryDecideInputSchema,
   MemoryEventSchema,
   MemoryEventsInputSchema,
@@ -54,8 +58,17 @@ import {
   MemoryPinInputSchema,
   MemoryPromoteInputSchema,
   MemoryPromoteOutputSchema,
+  MemoryRecordInputSchema,
+  MemoryRecordsInputSchema,
+  MemoryRestoreBriefInputSchema,
   MemorySearchInputSchema,
+  MemoryThreadInputSchema,
+  MemoryThreadsInputSchema,
   MemoryUndoInputSchema,
+  ProjectBriefSchema,
+  TaskRecordHitSchema,
+  TaskRecordSchema,
+  ThreadSchema,
 } from "./memory.ts";
 import {
   MarkMergedResultSchema,
@@ -1223,6 +1236,70 @@ export const commands = {
     summary: "The memory log, newest first: proposals, decisions and undo, for one task or fact, or all",
     input: MemoryEventsInputSchema,
     output: z.array(MemoryEventSchema),
+  },
+  "memory.approveAll": {
+    risk: "change",
+    summary: "Approve every pending fact (or the ones named). Each step is logged and can be undone",
+    input: MemoryBulkDecideInputSchema,
+    output: MemoryBulkDecideOutputSchema,
+  },
+  "memory.rejectAll": {
+    risk: "change",
+    summary:
+      "Reject every pending fact (or the ones named). They are kept as rejected, so each can be undone",
+    input: MemoryBulkDecideInputSchema,
+    output: MemoryBulkDecideOutputSchema,
+  },
+  "memory.records": {
+    risk: "read",
+    summary:
+      "Task records: what each finished task was asked, did, decided, where it landed and what it left. Search by meaning and words, or newest first",
+    input: MemoryRecordsInputSchema,
+    output: z.array(TaskRecordHitSchema),
+  },
+  "memory.record": {
+    risk: "read",
+    summary: "The record of one finished task, or null before it is written",
+    input: MemoryRecordInputSchema,
+    output: TaskRecordSchema.nullable(),
+  },
+  "memory.brief": {
+    risk: "read",
+    summary:
+      "A project's living brief (what it is, architecture, state, plans, known problems) and every earlier version",
+    input: MemoryBriefInputSchema,
+    output: MemoryBriefOutputSchema,
+  },
+  "memory.restoreBrief": {
+    risk: "change",
+    summary: "Put an earlier version of a project brief back. It becomes the newest version; nothing is lost",
+    input: MemoryRestoreBriefInputSchema,
+    output: ProjectBriefSchema,
+  },
+  "memory.buildBrief": {
+    risk: "change",
+    summary:
+      "Have the Housekeeper write a project's brief again from its repo docs and task records. Spends a small model's tokens",
+    input: MemoryBriefInputSchema,
+    output: ProjectBriefSchema,
+  },
+  "memory.threads": {
+    risk: "read",
+    summary: "Open threads: what finished tasks left to do, per project. Open ones unless a status is given",
+    input: MemoryThreadsInputSchema,
+    output: z.array(ThreadSchema),
+  },
+  "memory.closeThread": {
+    risk: "change",
+    summary: "Close an open thread by hand",
+    input: MemoryThreadInputSchema,
+    output: ThreadSchema,
+  },
+  "memory.reopenThread": {
+    risk: "change",
+    summary: "Open a closed thread again",
+    input: MemoryThreadInputSchema,
+    output: ThreadSchema,
   },
 
   // Tokens and cost (5.8, Phase 2c) -------------------------------------------

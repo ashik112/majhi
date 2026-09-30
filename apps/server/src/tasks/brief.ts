@@ -1,6 +1,5 @@
 import { join } from "node:path";
-import { type Attachment, type Fact, MODE_LABELS, type Task } from "@majhi/shared";
-import { memoryLines } from "../memory/recall.ts";
+import { type Attachment, MODE_LABELS, type Task } from "@majhi/shared";
 import { hasRelated, type Related } from "./relations.ts";
 import { type TeamFacts, teamFactsLines } from "./team-facts.ts";
 
@@ -43,8 +42,8 @@ export function renderTaskMd(
   related?: Related,
   team?: readonly BriefAgent[],
   facts?: TeamFacts,
-  /** Facts recalled from memory for this task (5.6), already cut to the cap. */
-  memory: readonly Fact[] = [],
+  /** The Memory section recalled for this task (5.6), already cut to the cap. Empty for none. */
+  memory = "",
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -67,7 +66,7 @@ export function renderTaskMd(
   else lines.push("", "## Agent", "", agent === undefined ? "None yet." : `@${agent.id} (${agent.role})`, "");
   if (facts !== undefined && task.mode === "lead" && task.kind !== "chat")
     lines.push(...teamFactsLines(facts), "");
-  if (memory.length > 0) lines.push("## Memory", "", ...memoryLines(memory), "");
+  if (memory.trim() !== "") lines.push("## Memory", "", memory.trim(), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
   }

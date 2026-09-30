@@ -12,6 +12,7 @@ import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
+import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
@@ -25,11 +26,13 @@ import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
+import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
 import { Housekeeper } from "./memory/housekeeper.ts";
 import { Promotion } from "./memory/promote.ts";
+import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
@@ -283,7 +286,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   runs.recover();
   const uploads = new UploadStore(env.majhiHome);
   const projects = new ProjectService(config, store.tasks);
-  // Curation: agents' proposals and the Housekeeper's candidates take the same path.
+  memory.onChange(() => events.emit(["memory"]));
+  const repoDocs = new RepoDocs({ embed: (texts) => memory.embed(texts) });
+  /** Registered projects with their checkout and org. */
+  const projectList = async () =>
+    Object.entries((await config.sections()).projects).map(([id, p]) => ({
+      id,
+      path: resolvePath(p.path, config.paths.hostHome),
+      org: p.org,
+    }));
+  // Curation: agents' proposals and the Housekeeper's lessons take the same path.
   const curator = new Curator({
     memory,
     decisions,
@@ -293,6 +305,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return t === undefined ? undefined : curationTask(t);
     },
     allowed: async (t) => (await memoryScopes.agent(t.id))?.scopes ?? ["global"],
+    inDocs: async (t, text) => {
+      if (t === undefined) return undefined;
+      const paths = (await projectList()).filter((p) => t.projects.includes(p.id)).map((p) => p.path);
+      const match = await repoDocs.match(text, await repoDocs.chunks(paths), LESSON_DOC_COSINE);
+      return match?.chunk.file;
+    },
   });
   memory.useCurator((fact) => curator.curate(fact));
   const extraction = new Extraction({
@@ -306,8 +324,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       usage: usageRecorder,
     }),
     curator,
+    memory,
+    repoDocs,
     task: (id) => store.tasks.get(id),
     room: (id) => store.room.page(id, 400).items,
+    madeFrom: (id) =>
+      store.tasks
+        .linksTo(id)
+        .filter((l) => l.type === "follow-up" || l.type === "parent")
+        .flatMap((l) => {
+          const t = store.tasks.get(l.task);
+          return t === undefined ? [] : [{ id: t.id, title: t.title, status: t.status }];
+        }),
+    project: async (id) => (await projectList()).find((p) => p.id === id),
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   const tasks = new TaskService({
@@ -336,6 +365,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
   const promotion = new Promotion({ memory, tasks, projects, config });
+  // Once: old pending facts that only repeat the repo docs are rejected (logged, undoable).
+  void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
+    console.error(`Memory cleanup failed: ${errorMessage(err)}`),
+  );
   const mrs = new MrService({
     store,
     config,

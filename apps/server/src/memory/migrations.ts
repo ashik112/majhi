@@ -68,4 +68,79 @@ CREATE TABLE task_recalls (
 ALTER TABLE memory_events ADD COLUMN from_status TEXT;
 `,
   },
+  {
+    id: 3,
+    name: "task records, project briefs, open threads",
+    sql: `
+-- One record per finished task, written by the Housekeeper. Written again only when the owner asks.
+CREATE TABLE task_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  org TEXT,
+  projects TEXT NOT NULL,
+  asked TEXT NOT NULL,
+  done TEXT NOT NULL,
+  decisions TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  left_open TEXT NOT NULL,
+  repos TEXT NOT NULL,
+  agent TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- The scopes a record is seen in: its org and each of its projects. Never global.
+CREATE TABLE record_scopes (
+  record INTEGER NOT NULL REFERENCES task_records (id),
+  scope TEXT NOT NULL,
+  PRIMARY KEY (record, scope)
+);
+CREATE INDEX record_scopes_scope ON record_scopes (scope);
+CREATE VIRTUAL TABLE records_fts USING fts5 (title, body, tokenize = 'porter unicode61');
+CREATE VIRTUAL TABLE records_vec USING vec0 (embedding float[${EMBEDDING_DIMS}]);
+
+-- Every version of each project's brief. The newest is the brief.
+CREATE TABLE project_briefs (
+  project TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  source TEXT NOT NULL,
+  task TEXT,
+  restored_from INTEGER,
+  agent TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project, version)
+);
+
+CREATE TABLE threads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text TEXT NOT NULL,
+  project TEXT,
+  org TEXT,
+  task TEXT NOT NULL,
+  follow_up TEXT,
+  status TEXT NOT NULL,
+  closed_by TEXT,
+  closed_reason TEXT,
+  created_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX threads_project ON threads (project, status);
+CREATE INDEX threads_task ON threads (task);
+CREATE INDEX threads_follow_up ON threads (follow_up);
+
+-- The Memory section a task got in its TASK.md, so a rewrite of TASK.md gives the same text.
+CREATE TABLE task_memory (
+  task TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+
+-- One-time steps and their time.
+CREATE TABLE memory_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`,
+  },
 ];

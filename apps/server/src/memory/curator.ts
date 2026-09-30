@@ -37,6 +37,11 @@ export interface CuratorDeps {
   task: (id: string) => CurationTask | undefined;
   /** The scopes an agent of the task may use: global, its org, and the projects of that org. */
   allowed: (task: CurationTask) => Promise<readonly MemoryScope[]>;
+  /**
+   * The repo doc (CLAUDE.md, AGENTS.md, README) that already says the text, for a task's repos, or
+   * undefined. A lesson that restates the repo docs is not kept.
+   */
+  inDocs?: (task: CurationTask | undefined, text: string) => Promise<string | undefined>;
 }
 
 export const EMPTY_COUNTS: MemoryExtractOutput = {
@@ -46,9 +51,17 @@ export const EMPTY_COUNTS: MemoryExtractOutput = {
   dropped: 0,
   duplicates: 0,
   rejected: 0,
+  in_docs: 0,
+  record: false,
+  threads_opened: 0,
+  threads_closed: 0,
+  briefs: [],
 };
 
-type Outcome = "pending" | "kept" | "dropped" | "duplicate" | "rejected";
+type Outcome = "pending" | "kept" | "dropped" | "duplicate" | "rejected" | "in_docs";
+
+/** The provider of a step taken because the repo docs already say it. */
+export const REPO_DOCS = "repo-docs";
 
 const KEEP = "keep";
 const CHATTER = "chatter";
@@ -66,17 +79,20 @@ function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScop
 }
 
 /**
- * Curation (SPEC 5.6, Phase 5 Part B): what happens to a fact after an agent proposed it or the
- * Housekeeper wrote it. Every step is logged with its reason, confidence and provider, and can be
- * undone; nothing is deleted.
+ * Curation of lessons (SPEC 5.6, reworked): what happens to a lesson after an agent proposed it or
+ * the Housekeeper wrote it. Every step is logged with its reason, confidence and provider, and can
+ * be undone; nothing is deleted. Only global lessons and contradictions wait for the owner.
  *
  * 1. Rules: a secret or personal data is rejected, whatever a model would say.
- * 2. Duplicates, without a model: cosine 0.92 or more with an active or pending fact in the same
+ * 2. Repo docs: a lesson the repo's CLAUDE.md, AGENTS.md or README already says is not kept.
+ * 3. Duplicates, without a model: cosine 0.92 or more with an active or pending fact in the same
  *    or a wider scope. The candidate is the same fact.
- * 3. Decide, one call on the decision provider: lasting fact or chatter; against the nearest fact
+ * 4. `review_all` and a global scope wait for the owner, without a model.
+ * 5. Decide, one call on the decision provider: lasting lesson or chatter; against the nearest fact
  *    (cosine 0.75 to 0.92) the same, contradicting or unrelated; secret or personal data.
- * 4. Apply: an answer that passes the gate with a lift over chance of at least `auto_threshold` is acted on; the rest wait
- *    for the owner. `review_all` and a global scope always wait.
+ * 6. Apply: a suspected secret is dropped; chatter the gate is sure of (a lift over chance of at
+ *    least `auto_threshold`) is dropped; a sure "same" is merged; a contradiction waits for the
+ *    owner; everything else is kept. Undo reverses any of it.
  */
 export class Curator {
   constructor(private readonly deps: CuratorDeps) {}
@@ -90,7 +106,7 @@ export class Curator {
     }
   }
 
-  /** The Housekeeper's candidates for a task, each stored and curated. Resolves what happened to them. */
+  /** The Housekeeper's lessons for a task, each stored and curated. Resolves what happened to them. */
   async curateCandidates(
     task: CurationTask,
     candidates: readonly Candidate[],
@@ -112,6 +128,7 @@ export class Curator {
       else if (outcome === "dropped") counts.dropped += 1;
       else if (outcome === "duplicate") counts.duplicates += 1;
       else if (outcome === "rejected") counts.rejected += 1;
+      else if (outcome === "in_docs") counts.in_docs += 1;
       else counts.pending += 1;
     }
     return counts;
@@ -123,8 +140,9 @@ export class Curator {
     agent: string,
   ): Promise<Outcome> {
     const { memory } = this.deps;
-    // What the rules forbid is not stored at all, not even as a rejected row.
+    // What the rules forbid, or the repo docs already say, is not stored at all.
     if (forbiddenReason(candidate.text) !== undefined) return "rejected";
+    if ((await this.deps.inDocs?.(task, candidate.text)) !== undefined) return "in_docs";
     const near = await memory.neighbours({ text: candidate.text }, coveringScopes(candidate.scope, task.org));
     const same = near[0];
     if (same !== undefined && same.cosine >= DUPLICATE_COSINE) {
@@ -136,12 +154,12 @@ export class Curator {
       return "duplicate";
     }
     const fact = await memory.addCandidate({ ...candidate, task: task.id, agent });
-    return this.run(fact, { checkDuplicate: false, near });
+    return this.run(fact, { checkDuplicate: false, near, docsChecked: true });
   }
 
   private async run(
     fact: Fact,
-    options: { checkDuplicate: boolean; near?: { fact: Fact; cosine: number }[] },
+    options: { checkDuplicate: boolean; near?: { fact: Fact; cosine: number }[]; docsChecked?: boolean },
   ): Promise<Outcome> {
     const { memory } = this.deps;
     const why = forbiddenReason(fact.text);
@@ -153,6 +171,13 @@ export class Curator {
       return "rejected";
     }
     const task = fact.task === undefined ? undefined : this.deps.task(fact.task);
+    if (options.docsChecked !== true) {
+      const file = await this.deps.inDocs?.(task, fact.text);
+      if (file !== undefined) {
+        memory.drop(fact.id, { reason: `Already in the repo docs (${file}).`, provider: REPO_DOCS });
+        return "in_docs";
+      }
+    }
     const near = options.near ?? (await memory.neighbours({ fact }, coveringScopes(fact.scope, task?.org)));
     const top = near[0];
     if (options.checkDuplicate && top !== undefined && top.cosine >= DUPLICATE_COSINE) {
@@ -186,7 +211,13 @@ export class Curator {
         ...(fact.agent === undefined ? {} : { agent: fact.agent }),
       })
       .catch(() => undefined);
-    if (result === undefined) return "pending";
+    if (result === undefined) {
+      memory.keep(fact.id, {
+        reason:
+          "Kept: no provider answered. Only global lessons and contradictions wait for you. Undo drops it.",
+      });
+      return "kept";
+    }
 
     /**
      * The answer's probability when it passes majhi's gate and a stricter lift over chance for
@@ -198,9 +229,9 @@ export class Curator {
       return a.probabilities?.[String(a.value)] ?? a.confidence;
     };
     const { worth, relation, private: secret } = result.answers;
-    const note = (reason: string, confidence: number) => ({
+    const note = (reason: string, confidence: number | undefined) => ({
       reason,
-      confidence,
+      ...(confidence === undefined ? {} : { confidence }),
       provider: result.provider,
     });
     const done = (text: string, outcome: Outcome): Outcome => {
@@ -208,60 +239,47 @@ export class Curator {
       return outcome;
     };
 
-    // A model that suspects a secret or personal data never lets the fact in on its own.
+    // A suspected secret or personal data is never kept on its own, sure or not. Undo keeps it.
     if (secret?.value === true) {
       const p = sure(secret);
-      if (p === undefined)
-        return done("It may hold a secret or personal data, so the owner decides.", "pending");
-      memory.drop(fact.id, note("The provider found a secret or personal data in it.", p));
+      memory.drop(
+        fact.id,
+        note(
+          p === undefined
+            ? "It may hold a secret or personal data. Undo keeps it."
+            : "The provider found a secret or personal data in it.",
+          p ?? secret.confidence,
+        ),
+      );
       return done("Dropped: secret or personal data.", "rejected");
     }
-    const notPrivate = sure(secret);
     const worthP = sure(worth);
-    if (worthP === undefined || worth?.value === undefined) {
-      return done("Not sure enough whether it is worth keeping, so the owner decides.", "pending");
-    }
-    if (worth.value === CHATTER) {
-      memory.drop(fact.id, note("Task chatter, not a lasting fact.", worthP));
+    if (worth?.value === CHATTER && worthP !== undefined) {
+      memory.drop(fact.id, note("Task chatter, not a lasting lesson.", worthP));
       return done("Dropped as task chatter.", "dropped");
     }
-    if (worth.value !== KEEP || notPrivate === undefined) {
-      return done("Not sure enough it holds no secret or personal data, so the owner decides.", "pending");
-    }
-
-    if (related === undefined) {
-      memory.keep(fact.id, note("A lasting fact.", Math.min(worthP, notPrivate)));
-      return done("Kept: a lasting fact.", "kept");
-    }
-    const relationP = sure(relation);
-    const floor = Math.min(worthP, notPrivate, relationP ?? 1);
-    if (relationP === undefined) {
-      return done(`Not sure how it relates to fact ${related.fact.id}, so the owner decides.`, "pending");
-    }
-    switch (relation?.value) {
-      case SAME:
-        memory.merge(fact.id, related.fact.id, {
-          ...note(`Same as fact ${related.fact.id}.`, relationP),
-        });
-        return done(`Merged into fact ${related.fact.id}.`, "duplicate");
-      case UNRELATED:
-        memory.keep(fact.id, note("A lasting fact, apart from the nearest one.", floor));
-        return done("Kept: a lasting fact.", "kept");
-      case CONTRADICTS: {
-        // A narrower fact never retires a wider one, and global facts are the owner's alone.
-        if (related.fact.scope !== fact.scope || fact.scope === "global") {
-          return done(
-            `It contradicts fact ${related.fact.id}, which is wider than it, so the owner decides.`,
-            "pending",
-          );
-        }
-        memory.keep(fact.id, note(`A lasting fact. It replaces fact ${related.fact.id}.`, floor));
-        memory.retire(related.fact.id, note(`Contradicted by fact ${fact.id}.`, relationP));
-        return done(`Kept, and retired fact ${related.fact.id} that it contradicts.`, "kept");
+    if (related !== undefined) {
+      // A contradiction always waits: the owner says which of the two holds.
+      if (relation?.value === CONTRADICTS) {
+        return done(`It may contradict fact ${related.fact.id}, so the owner decides.`, "pending");
       }
-      default:
-        return done("No clear relation to the nearest fact, so the owner decides.", "pending");
+      const relationP = sure(relation);
+      if (relation?.value === SAME && relationP !== undefined) {
+        memory.merge(fact.id, related.fact.id, note(`Same as fact ${related.fact.id}.`, relationP));
+        return done(`Merged into fact ${related.fact.id}.`, "duplicate");
+      }
     }
+    const confident = worth?.value === KEEP && worthP !== undefined;
+    memory.keep(
+      fact.id,
+      note(
+        confident
+          ? "A lasting lesson."
+          : "Kept: not sure it is chatter. Only global lessons and contradictions wait for you. Undo drops it.",
+        confident ? worthP : undefined,
+      ),
+    );
+    return done("Kept: a lasting lesson.", "kept");
   }
 }
 

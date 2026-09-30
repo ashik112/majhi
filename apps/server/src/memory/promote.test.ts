@@ -95,6 +95,8 @@ describe("memory.promote", () => {
   it("refuses a fact that is not active, not in a project, already promoted, or already in AGENTS.md", async () => {
     const { h, w, fact, promote } = await world();
     const memory = h.majhi.services.memory;
+    // Every fact is reviewed, so the proposal stays pending.
+    await h.cmd("settings.set", { memory: { review_all: true } });
     const pending = await memory.propose({
       text: "Tests run in CI only",
       scope: "project:acme-api",

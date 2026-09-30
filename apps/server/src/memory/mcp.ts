@@ -1,17 +1,25 @@
 import {
   GLOBAL_SCOPE,
+  MemoryBriefToolSchema,
   MemoryListRecentToolSchema,
   MemoryProposeToolSchema,
   MemoryRecallToolSchema,
+  MemoryRecordsToolSchema,
   type MemoryScope,
+  MemoryThreadsToolSchema,
   orgScope,
+  parseScope,
+  projectScope,
+  RECORD_SECTION_TITLES,
+  RECORD_SECTIONS,
+  type TaskRecord,
 } from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { MEMORY_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
-import { capFacts, factLine } from "./recall.ts";
+import { capFacts, factLine, TASK_MEMORY_CHARS } from "./recall.ts";
 import type { MemoryService } from "./service.ts";
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
@@ -34,21 +42,39 @@ const TOOLS = [
   {
     name: "recall",
     description:
-      "Search majhi's memory for facts learned in earlier tasks (conventions, commands, decisions). " +
-      "Returns up to about 500 tokens of active facts, best match first. You only see global facts, your task's org and that org's projects.",
+      "Search majhi's lessons from earlier tasks: non-obvious gotchas and how to avoid them. " +
+      "Returns up to about 500 tokens, best match first. You only see global lessons, your task's org and that org's projects.",
     input: MemoryRecallToolSchema,
   },
   {
     name: "propose",
     description:
-      "Propose one short fact worth keeping for later tasks. It stays pending until the owner approves it: you cannot make it active. " +
-      "Only lasting facts (a convention, a command that works, a decision and why). Never task chatter, secrets or personal data.",
+      "Propose a lesson for later tasks: a non-obvious gotcha you actually ran into, what went wrong and how to avoid it. Most tasks have none. " +
+      "Not a rule the repo docs already state, not task progress, never a secret or personal data. majhi curates it; the owner can undo.",
     input: MemoryProposeToolSchema,
   },
   {
     name: "list_recent",
-    description: "The most recently added active facts you may see, newest first.",
+    description: "The most recently kept lessons you may see, newest first.",
     input: MemoryListRecentToolSchema,
+  },
+  {
+    name: "records",
+    description:
+      "Search the records of finished tasks: what each was asked, what it did, the decisions and why, where it landed and what it left. " +
+      "Use it before changing an area another task worked on. Returns the best 3 in full. You only see your org's projects.",
+    input: MemoryRecordsToolSchema,
+  },
+  {
+    name: "brief",
+    description:
+      "A project's living brief: what it is, its architecture (main parts and where they live), current state, plans and known problems.",
+    input: MemoryBriefToolSchema,
+  },
+  {
+    name: "threads",
+    description: "Open threads: what finished tasks left to do, known issues and follow-ups, per project.",
+    input: MemoryThreadsToolSchema,
   },
 ] as const;
 
@@ -94,7 +120,61 @@ export function memoryServer(caller: ToolCaller, deps: MemoryMcpDeps): Server {
             task: caller.task,
             agent: caller.agent,
           });
-          return ok(`Proposed fact ${fact.id} in ${scope}. It is ${fact.status} until the owner decides.`);
+          const outcome: Record<typeof fact.status, string> = {
+            pending: "It is pending until the owner decides.",
+            active: "It was kept. The owner can undo that.",
+            rejected: "It was not kept (a duplicate, already in the repo docs, chatter or private data).",
+            retired: "It is retired.",
+          };
+          return ok(`Proposed fact ${fact.id} in ${scope}. ${outcome[fact.status]}`);
+        }
+        case "records": {
+          const args = MemoryRecordsToolSchema.parse(parsed.data);
+          if (args.project !== undefined && !allowed.scopes.includes(projectScope(args.project)))
+            return fail(refusal(projectScope(args.project), allowed));
+          const hits = await deps.memory.project.records({
+            query: args.query,
+            // Records are never global: the org and its projects only.
+            scopes: allowed.scopes.filter((s) => s !== GLOBAL_SCOPE),
+            project: args.project,
+            limit: 3,
+          });
+          const text = hits.map((h) => recordText(h.record)).join("\n\n");
+          return ok(hits.length === 0 ? "No task records found." : text.slice(0, TASK_MEMORY_CHARS * 2));
+        }
+        case "brief": {
+          const args = MemoryBriefToolSchema.parse(parsed.data);
+          if (!allowed.scopes.includes(projectScope(args.project)))
+            return fail(refusal(projectScope(args.project), allowed));
+          const brief = deps.memory.project.currentBrief(args.project);
+          return ok(
+            brief === undefined
+              ? `${args.project} has no brief yet.`
+              : `# Brief of ${args.project} (version ${brief.version})\n\n${brief.body}`,
+          );
+        }
+        case "threads": {
+          const args = MemoryThreadsToolSchema.parse(parsed.data);
+          if (args.project !== undefined && !allowed.scopes.includes(projectScope(args.project)))
+            return fail(refusal(projectScope(args.project), allowed));
+          const projects =
+            args.project !== undefined
+              ? [args.project]
+              : allowed.scopes.flatMap((s) => {
+                  const p = parseScope(s);
+                  return p?.kind === "project" ? [p.id] : [];
+                });
+          const threads = deps.memory.project.threads({ projects, status: "open", limit: 100 });
+          return ok(
+            threads.length === 0
+              ? "No open threads."
+              : threads
+                  .map(
+                    (t) =>
+                      `- [${t.project ?? "no project"}] ${t.text} (from ${t.task}${t.follow_up === undefined ? "" : `, follow-up ${t.follow_up}`})`,
+                  )
+                  .join("\n"),
+          );
         }
         default: {
           const args = MemoryListRecentToolSchema.parse(parsed.data);
@@ -119,4 +199,20 @@ function pick(allowed: AgentScope, asked: MemoryScope | undefined): readonly Mem
 
 function refusal(scope: MemoryScope, allowed: AgentScope): string {
   return `You cannot use ${scope} in this task. You may use: ${allowed.scopes.join(", ")}.`;
+}
+
+/** A record in full, as an agent reads it. */
+function recordText(r: TaskRecord): string {
+  const where = r.repos
+    .map(
+      (repo) =>
+        `${repo.project}: ${repo.merged ? `merged into ${repo.base}` : "not merged"}${repo.head === undefined ? "" : ` at ${repo.head}`}`,
+    )
+    .join("; ");
+  return [
+    `## ${r.task}: ${r.title} (${r.created_at.slice(0, 10)}${where === "" ? "" : `; ${where}`})`,
+    ...RECORD_SECTIONS.filter((s) => r[s].trim() !== "").map(
+      (s) => `${RECORD_SECTION_TITLES[s]}: ${r[s].trim()}`,
+    ),
+  ].join("\n");
 }
