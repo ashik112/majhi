@@ -280,7 +280,7 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2 rounded-[10px] border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover focus-within:border-blue">
+        <div className="flex items-end gap-2 rounded-[10px] border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover focus-within:border-accent">
           <Button
             variant="ghost"
             size="icon"
