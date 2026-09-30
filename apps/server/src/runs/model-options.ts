@@ -111,34 +111,104 @@ function byPrice(a: Price, b: Price): number {
   return a.output - b.output || a.input - b.input;
 }
 
+/** Who ranks the models when the price table cannot: the decision provider's two answers. */
+export interface RankHint {
+  /** The id it named as the most capable. */
+  capable?: string | undefined;
+  /** The id it named as the cheapest and fastest. */
+  cheapest?: string | undefined;
+}
+
+/** The models from cheapest to dearest, and what to call each. */
+export interface ModelRank {
+  /** Cheapest first. */
+  order: string[];
+  /** True when the order is a guess (a model has no price), not the price table's. */
+  estimated: boolean;
+  /** "cheapest and fastest", "balanced" or "most capable", where there is more than one model to compare. */
+  labels: Map<string, string>;
+}
+
+/** True when a price is missing, so the order can only be estimated. */
+export function needsEstimate(models: readonly OfferedModel[], owner: PricesConfig = {}): boolean {
+  return models.some((m) => findPrice(m.id, owner) === undefined);
+}
+
 /**
- * Prices the models and ranks them: the cheapest is "cheapest and fastest", the dearest is "most
- * capable", the rest are "balanced", and equal prices share a label. One priced model has nothing to
- * rank against, and an unpriced model has no rank, so both keep the CLI's description.
+ * Ranks the models. When every one has a price (`findPrice`: the owner's rows over the defaults), by
+ * output price, then input price: the cheapest is "cheapest and fastest", the dearest is "most
+ * capable", the rest "balanced", and equal prices share a label. When any has none, the ranking is an
+ * estimate from the CLI's order and the provider's answers (`hint`), whatever their confidence:
+ * - The CLI lists most capable first, unless the model named most capable comes after the one named
+ *   cheapest. With fewer answers, most capable first is assumed.
+ * - The model named most capable goes first and the one named cheapest goes last.
+ */
+export function rankModels(
+  models: readonly OfferedModel[],
+  owner: PricesConfig = {},
+  hint: RankHint = {},
+): ModelRank {
+  const ids = models.map((m) => m.id);
+  if (!needsEstimate(models, owner)) {
+    const priced = models
+      .flatMap((m) => {
+        const price = findPrice(m.id, owner)?.price;
+        return price === undefined ? [] : [{ id: m.id, price }];
+      })
+      .sort((a, b) => byPrice(a.price, b.price));
+    const labels = new Map<string, string>();
+    const lo = priced[0]?.price;
+    const hi = priced.at(-1)?.price;
+    if (priced.length >= 2 && lo !== undefined && hi !== undefined) {
+      for (const { id, price } of priced) {
+        labels.set(
+          id,
+          byPrice(lo, hi) === 0
+            ? BALANCED
+            : byPrice(price, lo) === 0
+              ? CHEAPEST
+              : byPrice(price, hi) === 0
+                ? DEAREST
+                : BALANCED,
+        );
+      }
+    }
+    return { order: priced.map((p) => p.id), estimated: false, labels };
+  }
+
+  const at = (id: string | undefined) => (id === undefined ? -1 : ids.indexOf(id));
+  const [c, h] = [at(hint.capable), at(hint.cheapest)];
+  const capableFirst = c === -1 || h === -1 || c === h || c < h;
+  const dearestFirst = capableFirst ? [...ids] : [...ids].reverse();
+  if (c !== -1) dearestFirst.splice(0, 0, ...dearestFirst.splice(dearestFirst.indexOf(ids[c] ?? ""), 1));
+  if (h !== -1 && h !== c) dearestFirst.push(...dearestFirst.splice(dearestFirst.indexOf(ids[h] ?? ""), 1));
+  const labels = new Map<string, string>();
+  if (dearestFirst.length >= 2) {
+    dearestFirst.forEach((id, i) =>
+      labels.set(id, i === 0 ? DEAREST : i === dearestFirst.length - 1 ? CHEAPEST : BALANCED),
+    );
+  }
+  return { order: dearestFirst.reverse(), estimated: true, labels };
+}
+
+/**
+ * The options of the model question. Ranked by price they read `id: most capable`; when the ranking
+ * is only an estimate, or the models are unpriced, they read `id: <the CLI's description>`, because
+ * the estimate comes from the same call.
  */
 export function labelModels(models: readonly OfferedModel[], owner: PricesConfig = {}): PickOption[] {
-  const prices = models.map((m) => findPrice(m.id, owner)?.price);
-  const priced = prices.filter((p): p is Price => p !== undefined);
-  const lo = priced.reduce<Price | undefined>(
-    (a, p) => (a === undefined || byPrice(p, a) < 0 ? p : a),
-    undefined,
-  );
-  const hi = priced.reduce<Price | undefined>(
-    (a, p) => (a === undefined || byPrice(p, a) > 0 ? p : a),
-    undefined,
-  );
+  const rank = rankModels(models, owner);
   const seen = new Set<string>();
-  return models.map((m, i) => {
-    const price = prices[i];
-    let rank: string | undefined;
-    if (price !== undefined && priced.length >= 2 && lo !== undefined && hi !== undefined) {
-      if (byPrice(lo, hi) === 0) rank = BALANCED;
-      else if (byPrice(price, lo) === 0) rank = CHEAPEST;
-      else if (byPrice(price, hi) === 0) rank = DEAREST;
-      else rank = BALANCED;
-    }
-    return option(m.id, rank ?? (price === undefined ? m.description : undefined), seen, rank);
+  return models.map((m) => {
+    const label = rank.estimated ? undefined : rank.labels.get(m.id);
+    return option(m.id, label ?? (rank.estimated ? m.description : undefined), seen, label);
   });
+}
+
+/** The options of the two ranking questions: `id: <the CLI's description>`. */
+export function plainOptions(models: readonly OfferedModel[]): PickOption[] {
+  const seen = new Set<string>();
+  return models.map((m) => option(m.id, m.description, seen));
 }
 
 /** The efforts on offer, without `default` (not an effort), in the CLI's order. */
@@ -176,34 +246,28 @@ export function modelQuestion(role: Role): string {
   return `Which model fits ${rolePhrase(role)}? Use a small, fast model for simple work and a large one for hard, open-ended work.`;
 }
 
+export const CAPABLE_QUESTION = "Which of these models is the most capable?";
+export const CHEAPEST_QUESTION = "Which of these models is the cheapest and fastest?";
+
 export function effortQuestion(role: Role): string {
   return `How much reasoning effort does ${rolePhrase(role)} need for this task?`;
 }
 
 /**
- * The model a tier stands for, by price among the priced models: cheapest is the cheapest, most
- * capable the dearest, balanced the one in the middle (the cheaper of two). Undefined when no model
- * has a price, because then nothing says which is which.
+ * The model a tier stands for, by rank: cheapest is the cheapest, most capable the dearest, balanced
+ * the one in the middle (the cheaper of two). The rank is estimated when a model has no price.
  */
 export function modelForTier(
   models: readonly OfferedModel[],
   tier: ModelTier,
   owner: PricesConfig = {},
+  hint: RankHint = {},
 ): string | undefined {
-  const ranked = models
-    .flatMap((m) => {
-      const price = findPrice(m.id, owner)?.price;
-      return price === undefined ? [] : [{ id: m.id, price }];
-    })
-    .sort((a, b) => byPrice(a.price, b.price));
-  if (ranked.length === 0) return undefined;
+  const { order } = rankModels(models, owner, hint);
+  if (order.length === 0) return undefined;
   const index =
-    tier === "cheapest"
-      ? 0
-      : tier === "most-capable"
-        ? ranked.length - 1
-        : Math.floor((ranked.length - 1) / 2);
-  return ranked[index]?.id;
+    tier === "cheapest" ? 0 : tier === "most-capable" ? order.length - 1 : Math.floor((order.length - 1) / 2);
+  return order[index];
 }
 
 /**

@@ -16,7 +16,10 @@ import {
   effortOptions,
   labelModels,
   modelForTier,
+  needsEstimate,
   normalizeOffered,
+  plainOptions,
+  rankModels,
 } from "./model-options.ts";
 
 export interface PickResult {
@@ -96,9 +99,13 @@ export async function pickForSession(input: {
             context: `${task.brief}\n\n${input.instructions}`.trim(),
             models: askModel ? modelOptions : [],
             efforts: askEffort ? effortList : [],
+            // Without prices the ranking is estimated, and the provider is asked for it in the same call.
+            rank: askModel && needsEstimate(models, input.prices) ? plainOptions(models) : [],
           })
           .catch(() => undefined);
 
+  const hint = { capable: pick?.capable, cheapest: pick?.cheapest };
+  const rank = rankModels(models, input.prices, hint);
   const parts: string[] = [`@${fm.id} (${fm.role}).`];
   const applied: NonNullable<PickResult["applied"]> = {};
   const warnings: string[] = [];
@@ -118,9 +125,19 @@ export async function pickForSession(input: {
       const [only] = modelOptions;
       if (modelOptions.length === 1 && only !== undefined)
         return { id: only.id, text: `Only ${only.id} is offered.` };
-      const rank = (id: string) => modelOptions.find((o) => o.id === id)?.rank;
-      return decided("model", pick, pick?.model, settings.model_floor, tier.model, rank, () =>
-        modelForTier(models, tier.model, input.prices),
+      const label = (id: string) => {
+        const name = rank.labels.get(id);
+        return name === undefined ? undefined : rank.estimated ? `${name}, estimated` : name;
+      };
+      return decided(
+        "model",
+        pick,
+        pick?.model,
+        settings.model_floor,
+        tier.model,
+        label,
+        () => modelForTier(models, tier.model, input.prices, hint),
+        rank.estimated ? "estimated rank" : undefined,
       );
     })();
     parts.push(list, outcome.text);
@@ -165,6 +182,7 @@ function decided(
   tier: ModelTier | EffortTier,
   rank: (id: string) => string | undefined,
   fallback: () => string | undefined,
+  note?: string,
 ): Outcome {
   if (pick !== undefined && answer !== undefined && answer.confidence >= floor) {
     const label = rank(answer.id);
@@ -175,7 +193,7 @@ function decided(
     pick === undefined || answer === undefined
       ? "No provider answered"
       : `${pick.by}'s ${answer.id} was ${below(answer.confidence)}, under the ${floor.toFixed(2)} floor`;
-  return fellBack(what, why, tier, fallback);
+  return fellBack(what, why, tier, fallback, note);
 }
 
 /** The tier's pick, with `why` it was needed; the CLI default when even the tier cannot resolve. */
@@ -184,14 +202,17 @@ function fellBack(
   why: string,
   tier: ModelTier | EffortTier,
   fallback: () => string | undefined,
+  note?: string,
 ): Outcome {
   const tierName = tier.replace("-", " ");
   const id = fallback();
-  if (id !== undefined) return { id, text: `${why}, so it fell back to ${tierName} (${id}).` };
+  if (id !== undefined)
+    return {
+      id,
+      text: `${why}, so it fell back to ${tierName} (${id}${note === undefined ? "" : `, ${note}`}).`,
+    };
   const reason =
-    what === "model"
-      ? "no offered model has a price to rank by, so the tier cannot resolve. Add price rows for these models to use tiers"
-      : "the session offers no effort to choose from";
+    what === "model" ? "there is no model to choose from" : "the session offers no effort to choose from";
   return { text: `${why}, so it fell back to ${tierName}, but ${reason}. It kept the CLI default.` };
 }
 

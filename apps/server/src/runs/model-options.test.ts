@@ -6,7 +6,10 @@ import {
   effortOptions,
   labelModels,
   modelForTier,
+  needsEstimate,
   normalizeOffered,
+  plainOptions,
+  rankModels,
   rolePhrase,
 } from "./model-options.ts";
 
@@ -151,35 +154,35 @@ describe("labelModels", () => {
     expect(byId["claude-sonnet-5-5"]?.rank).toBe("balanced");
   });
 
-  it("uses the owner's rows, and the CLI description for unpriced models", () => {
+  it("uses the owner's rows when every model is priced", () => {
+    const models = normalizeOffered(opts("gpt-5.5-codex", "gpt-5.5-codex-mini"));
+    expect(labelModels(models, OWNER).map((l) => l.label)).toEqual([
+      "gpt-5.5-codex: most capable",
+      "gpt-5.5-codex-mini: cheapest and fastest",
+    ]);
+  });
+
+  it("reads the CLI description for every model when one has no price", () => {
     const models = normalizeOffered([
       { id: "gpt-5.5-codex", name: "a", description: "Marketing text" },
       { id: "gpt-5.5-codex-mini", name: "b" },
       { id: "other-9", name: "c", description: "Unknown to the table" },
     ]);
-    expect(labelModels(models, OWNER).map((l) => l.label)).toEqual([
-      "gpt-5.5-codex: most capable",
-      "gpt-5.5-codex-mini: cheapest and fastest",
+    const labels = labelModels(models, OWNER);
+    expect(labels.map((l) => l.label)).toEqual([
+      "gpt-5.5-codex: Marketing text",
+      "gpt-5.5-codex-mini",
       "other-9: Unknown to the table",
     ]);
-    expect(labelModels(models, OWNER)[2]?.rank).toBeUndefined();
+    expect(labels.every((l) => l.rank === undefined)).toBe(true);
   });
 
-  it("gives Codex models their CLI text when there are no price rows", () => {
+  it("gives a model with no price its CLI text", () => {
     const models = normalizeOffered([
-      { id: "gpt-5.5-codex", name: "a", description: "Best for code" },
-      { id: "gpt-5.5", name: "b" },
+      { id: "acme-code-5", name: "a", description: "Best for code" },
+      { id: "acme-fast-1", name: "b" },
     ]);
-    expect(labelModels(models).map((l) => l.label)).toEqual(["gpt-5.5-codex: Best for code", "gpt-5.5"]);
-  });
-
-  it("ranks nothing when only one model is priced", () => {
-    const models = normalizeOffered([
-      { id: "gpt-5.5-codex", name: "a", description: "Text" },
-      { id: "other-9", name: "b", description: "Other" },
-    ]);
-    const labels = labelModels(models, { "gpt-5.5-codex": price(10) });
-    expect(labels.map((l) => l.label)).toEqual(["gpt-5.5-codex", "other-9: Other"]);
+    expect(labelModels(models).map((l) => l.label)).toEqual(["acme-code-5: Best for code", "acme-fast-1"]);
   });
 
   it("gives equal prices the same label", () => {
@@ -219,18 +222,53 @@ describe("modelForTier", () => {
     expect(modelForTier(three, "balanced", p)).toBe("c-1");
   });
 
-  it("uses one priced model for every tier, and skips unpriced ones", () => {
-    const models = normalizeOffered(opts("a-1", "z-1"));
-    for (const tier of ["cheapest", "balanced", "most-capable"] as const) {
-      expect(modelForTier(models, tier, { "a-1": price(1) })).toBe("a-1");
-    }
+  it("estimates the rank from the CLI order when a model has no price: most capable first", () => {
+    const models = normalizeOffered(opts("a-1", "b-1", "c-1", "d-1"));
+    expect(modelForTier(models, "most-capable")).toBe("a-1");
+    expect(modelForTier(models, "cheapest")).toBe("d-1");
+    expect(modelForTier(models, "balanced")).toBe("c-1");
+    expect(modelForTier(models, "most-capable", { "a-1": price(1) })).toBe("a-1");
+    expect(modelForTier([], "cheapest")).toBeUndefined();
   });
 
-  it("cannot resolve without a price", () => {
-    const codex = normalizeOffered(opts("gpt-5.5-codex", "gpt-5.5"));
-    expect(modelForTier(codex, "balanced")).toBeUndefined();
-    expect(modelForTier(codex, "balanced", OWNER)).toBe("gpt-5.5");
-    expect(modelForTier([], "cheapest")).toBeUndefined();
+  it("follows the CLI's order the other way round when the answers say so", () => {
+    const models = normalizeOffered(opts("a-1", "b-1", "c-1", "d-1"));
+    const hint = { capable: "d-1", cheapest: "a-1" };
+    expect(modelForTier(models, "most-capable", {}, hint)).toBe("d-1");
+    expect(modelForTier(models, "cheapest", {}, hint)).toBe("a-1");
+    expect(rankModels(models, {}, hint).order).toEqual(["a-1", "b-1", "c-1", "d-1"]);
+  });
+
+  it("puts the named model first and last, whatever the CLI's order", () => {
+    const models = normalizeOffered(opts("a-1", "b-1", "c-1", "d-1"));
+    const rank = rankModels(models, {}, { capable: "c-1", cheapest: "b-1" });
+    // c comes after b in the list, so the CLI lists the cheapest first: d, c, b, a from the dearest.
+    // c goes to the front and b to the back.
+    expect(rank.order).toEqual(["b-1", "a-1", "d-1", "c-1"]);
+    expect(rank.estimated).toBe(true);
+    expect([...rank.labels]).toEqual([
+      ["c-1", "most capable"],
+      ["d-1", "balanced"],
+      ["a-1", "balanced"],
+      ["b-1", "cheapest and fastest"],
+    ]);
+  });
+
+  it("uses one answer, and ignores a name that is not offered", () => {
+    const models = normalizeOffered(opts("a-1", "b-1", "c-1"));
+    expect(rankModels(models, {}, { cheapest: "a-1" }).order).toEqual(["a-1", "c-1", "b-1"]);
+    expect(rankModels(models, {}, { capable: "z-9", cheapest: "z-8" }).order).toEqual(["c-1", "b-1", "a-1"]);
+    expect(rankModels(models, {}, { capable: "b-1", cheapest: "b-1" }).order).toEqual(["c-1", "a-1", "b-1"]);
+  });
+
+  it("does not estimate when every model has a price, and the hint does nothing", () => {
+    const models = normalizeOffered(opts("a-1", "b-1"));
+    const p = { "a-1": price(9), "b-1": price(1) };
+    const rank = rankModels(models, p, { capable: "b-1", cheapest: "a-1" });
+    expect(rank.estimated).toBe(false);
+    expect(rank.order).toEqual(["b-1", "a-1"]);
+    expect(needsEstimate(models, p)).toBe(false);
+    expect(needsEstimate(models, { "a-1": price(9) })).toBe(true);
   });
 
   it("resolves the default table for the Claude list", () => {

@@ -164,22 +164,67 @@ describe("pickForSession", () => {
     expect(set).toEqual({ model: "claude-haiku-4-5", thought_level: "low" });
   });
 
-  it("keeps the CLI default when the tier cannot resolve for lack of prices", async () => {
-    const codex = opts("acme-code-5", "acme-code-3", "acme-fast-1");
+  it("estimates the rank when a model has no price: most capable first when nobody answers", async () => {
+    const codex = opts("acme-code-5", "acme-code-3", "acme-fast-1", "acme-mini-1");
     const { s, set } = session(codex, opts("low", "medium", "high"));
     const out = await run(undefined, s);
-    expect(set).toEqual({ thought_level: "high" });
-    expect(out.applied).toEqual({ effort: "high" });
+    // Lead: most capable model, highest effort.
+    expect(set).toEqual({ model: "acme-code-5", thought_level: "high" });
+    expect(out.line).toContain("so it fell back to most capable (acme-code-5, estimated rank).");
+    const cheap = session(codex, opts("low", "medium", "high"));
+    const tester = await run(undefined, cheap.s, { fm: { role: "Tester" } });
+    expect(cheap.set.model).toBe("acme-mini-1");
+    expect(tester.line).toContain("fell back to cheapest (acme-mini-1, estimated rank)");
+  });
+
+  it("asks which model is most capable and which is cheapest, in the same call, and ranks from the answers", async () => {
+    const models: OptionValue[] = [
+      { id: "acme-a-1", name: "a", description: "Quick" },
+      { id: "acme-b-1", name: "b", description: "Thorough" },
+      { id: "acme-c-1", name: "c", description: "Middle" },
+    ];
+    const { s, set } = session(models, opts("low", "high"));
+    const { d, asked } = decisions(() => ({
+      ...pick(["acme-c-1", 0.2]),
+      capable: "acme-b-1",
+      cheapest: "acme-a-1",
+    }));
+    const out = await run(d, s);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.rank?.map((o) => o.label)).toEqual([
+      "acme-a-1: Quick",
+      "acme-b-1: Thorough",
+      "acme-c-1: Middle",
+    ]);
+    // The model question reads the CLI text too: the estimate comes from this call.
+    expect(asked[0]?.models.map((o) => o.label)).toEqual([
+      "acme-a-1: Quick",
+      "acme-b-1: Thorough",
+      "acme-c-1: Middle",
+    ]);
+    // b comes after a in the list, so the CLI lists the cheapest first; b is the most capable.
+    expect(set.model).toBe("acme-b-1");
     expect(out.line).toContain(
-      "so it fell back to most capable, but no offered model has a price to rank by, so the tier cannot resolve. Add price rows for these models to use tiers. It kept the CLI default.",
+      "Laya's acme-c-1 was 0.20, under the 0.40 floor, so it fell back to most capable (acme-b-1, estimated rank).",
     );
-    const rows = {
-      "acme-code-5": { input: 2, output: 12, cache_read: 0, cache_write: 0 },
-      "acme-fast-1": { input: 1, output: 8, cache_read: 0, cache_write: 0 },
-    };
-    const priced = session(codex, opts("low", "medium", "high"));
-    await run(undefined, priced.s, { prices: rows });
-    expect(priced.set.model).toBe("acme-code-5");
+  });
+
+  it("marks an estimated label in the line of a confident pick", async () => {
+    const { s } = session(opts("acme-a-1", "acme-b-1"), opts("low", "high"));
+    const { d } = decisions(() => ({
+      ...pick(["acme-b-1", 0.71]),
+      capable: "acme-a-1",
+      cheapest: "acme-b-1",
+    }));
+    const out = await run(d, s);
+    expect(out.line).toContain("Laya picked acme-b-1 (cheapest and fastest, estimated, 0.71).");
+  });
+
+  it("does not ask for a ranking when every model has a price", async () => {
+    const { s } = session(opts("a-1", "b-1"), opts("low", "high"));
+    const { d, asked } = decisions(() => undefined);
+    await run(d, s, { prices: { "a-1": price(2), "b-1": price(1) } });
+    expect(asked[0]?.rank).toEqual([]);
   });
 
   it("uses a lone option without asking, and asks only for the `auto` parts", async () => {

@@ -15,7 +15,13 @@ import { secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
-import { effortQuestion, modelQuestion, type PickOption } from "../runs/model-options.ts";
+import {
+  CAPABLE_QUESTION,
+  CHEAPEST_QUESTION,
+  effortQuestion,
+  modelQuestion,
+  type PickOption,
+} from "../runs/model-options.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Decisions, ModelPick, ModelPickRequest, PickAnswer } from "./api.ts";
 import { runChain } from "./chain.ts";
@@ -156,6 +162,8 @@ export class DecisionService implements Decisions {
   async pickModel(request: ModelPickRequest): Promise<ModelPick | undefined> {
     const askModel = request.models.length >= 2;
     const askEffort = request.efforts.length >= 2;
+    const rank = request.rank ?? [];
+    const askRank = rank.length >= 2;
     if (!askModel && !askEffort) return undefined;
     const brief = `Role: ${request.role}\nAgent: @${request.agent}\n\n${request.context}`;
     const questions: DecideRequest["questions"] = {
@@ -177,24 +185,47 @@ export class DecisionService implements Decisions {
             },
           }
         : {}),
+      ...(askRank
+        ? {
+            capable: {
+              type: "choice" as const,
+              instructions: CAPABLE_QUESTION,
+              options: rank.map((o) => o.label),
+            },
+            cheapest: {
+              type: "choice" as const,
+              instructions: CHEAPEST_QUESTION,
+              options: rank.map((o) => o.label),
+            },
+          }
+        : {}),
     };
     try {
       const result = await this.decide(
         { state: brief, questions },
         { use: "model-pick", task: request.task, agent: request.agent },
       );
-      const answer = (key: "model" | "effort", options: readonly PickOption[]): PickAnswer | undefined => {
+      const answer = (
+        key: "model" | "effort" | "capable" | "cheapest",
+        options: readonly PickOption[],
+      ): PickAnswer | undefined => {
         const a = result.answers[key];
         if (a === undefined || typeof a.value !== "string") return undefined;
         const id = options.find((o) => o.label === a.value)?.id ?? options.find((o) => o.id === a.value)?.id;
         return id === undefined ? undefined : { id, confidence: a.confidence };
       };
+      const named = (key: "capable" | "cheapest") => (askRank ? answer(key, rank)?.id : undefined);
+      const capable = named("capable");
+      const cheapest = named("cheapest");
       const model = askModel ? answer("model", request.models) : undefined;
       const effort = askEffort ? answer("effort", request.efforts) : undefined;
-      if (model === undefined && effort === undefined) return undefined;
+      if (model === undefined && effort === undefined && capable === undefined && cheapest === undefined)
+        return undefined;
       return {
         ...(model === undefined ? {} : { model }),
         ...(effort === undefined ? {} : { effort }),
+        ...(capable === undefined ? {} : { capable }),
+        ...(cheapest === undefined ? {} : { cheapest }),
         decisionId: result.id,
         provider: result.provider,
         by: NAMES[result.provider],
