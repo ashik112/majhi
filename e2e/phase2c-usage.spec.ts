@@ -121,20 +121,19 @@ test("after runs on two orgs, the totals per org, project, agent and model are t
     }
   }
 
-  // The page shows the same numbers, per org.
-  await page.goto("/usage");
+  // The page shows the same numbers, per org, under the sidebar's org filter.
   const section = page.getByRole("region", { name: "Tokens and cost" });
   for (const [org, list] of [
-    ["Northwind", northwind],
-    ["Acme", acme],
+    ["northwind", northwind],
+    ["acme", acme],
   ] as const) {
-    await section.getByRole("combobox", { name: "Org filter" }).selectOption({ label: org });
+    await page.goto(`/usage?org=${org}`);
     const month = sum(list);
     const tile = section.getByRole("region", { name: "This month" });
     await expect(tile).toContainText(money(month.costUsd));
     await expect(tile).toContainText(`${month.turns} turn`);
   }
-  await section.getByRole("combobox", { name: "Org filter" }).selectOption({ label: "Northwind" });
+  await page.goto("/usage?org=northwind");
   await shot(page, "usage-northwind");
 
   // The task view shows the task's own total.

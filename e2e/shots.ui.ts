@@ -46,10 +46,9 @@ test("skills", async ({ page }) => {
 
 test("agents: errors, new agent", async ({ page }) => {
   await page.goto("/agents");
-  await page.getByRole("tab", { name: /Files with errors/ }).click();
+  await page.getByRole("region", { name: "Files with errors" }).getByRole("button").first().click();
   await expect(page.getByText("This file has errors and did not load.")).toBeVisible();
   await shot(page, "agents-errors");
-  await page.getByRole("tab", { name: /^Acme/ }).click();
   await page.getByRole("button", { name: "New agent in Acme" }).click();
   await expect(page.getByRole("form", { name: "New agent" })).toBeVisible();
   await shot(page, "agents-new");
@@ -70,8 +69,8 @@ test("accounts: account drawer and add account", async ({ page }) => {
 
 test("orgs: edit in place", async ({ page }) => {
   await page.goto("/orgs");
-  await page.getByRole("button", { name: "Edit Acme" }).click();
-  await expect(page.getByRole("form", { name: "Edit Acme" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Orgs" }).getByRole("button", { name: /^Acme/ }).click();
+  await expect(page.getByRole("form", { name: "Settings of Acme" })).toBeVisible();
   await shot(page, "orgs-edit");
 });
 

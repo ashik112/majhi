@@ -33,6 +33,9 @@ test("Health shows the checks, and a Fix creates a missing folder", async ({ pag
   const accountsBox = await accounts.boundingBox();
   expect(checksBox && accountsBox && checksBox.y < accountsBox.y).toBe(true);
 
+  // The checks fold to one line per group; a failing one stays open with its fix.
+  await expect(checks.getByRole("list", { name: "Checks that need you" })).toContainText("Tasks folder");
+  await checks.getByRole("button", { name: /^Show all/ }).click();
   await expect(
     checks.getByRole("list", { name: "majhi" }).getByText("Config", { exact: true }),
   ).toBeVisible();

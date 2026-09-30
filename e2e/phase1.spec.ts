@@ -169,14 +169,11 @@ test("Accounts and Agents: an org, two Claude accounts, three agents, each healt
   await page.getByRole("button", { name: "Add another account" }).click();
   await addClaudeLogin(page, "claude-acme-2", "Acme");
 
-  // Agent 1, through "Create an agent on this account": the Acme tab opens with that account chosen.
+  // Agent 1, through "Create an agent on this account": the form opens in Acme with that account chosen.
   await page.getByRole("link", { name: "Create an agent on this account" }).click();
   const newAgent = page.getByRole("form", { name: "New agent" });
-  await expect(page.getByRole("tab", { name: /^Acme/ })).toHaveAttribute("aria-selected", "true");
-  await expect(newAgent.getByRole("button", { name: /^claude-acme-2/ })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(newAgent.getByRole("heading", { name: "New agent in Acme" })).toBeVisible();
+  await expect(newAgent.getByRole("combobox", { name: "Account" })).toHaveValue("claude-acme-2");
   await newAgent.getByRole("textbox", { name: "Agent id" }).fill("acme-builder");
   await newAgent.getByRole("button", { name: "Builder", exact: true }).click();
   await newAgent.getByRole("button", { name: "Create agent" }).click();
@@ -184,7 +181,7 @@ test("Accounts and Agents: an org, two Claude accounts, three agents, each healt
   await openHealthCheck(page, "Health check: @acme-builder");
 
   // Agents 2 and 3, from the list's "New agent" button.
-  const agentList = page.getByRole("navigation", { name: "Agents in scope" });
+  const agentList = page.getByRole("navigation", { name: "Agents" });
   for (const [id, role, account] of [
     ["acme-lead", "Lead", "claude-acme-1"],
     ["acme-reviewer", "Reviewer", "claude-acme-1"],
@@ -193,14 +190,14 @@ test("Accounts and Agents: an org, two Claude accounts, three agents, each healt
     await expect(newAgent).toBeVisible();
     await newAgent.getByRole("textbox", { name: "Agent id" }).fill(id);
     await newAgent.getByRole("button", { name: role, exact: true }).click();
-    await newAgent.getByRole("button", { name: new RegExp(`^${account}`) }).click();
+    await newAgent.getByRole("combobox", { name: "Account" }).selectOption(account);
     await newAgent.getByRole("button", { name: "Create agent" }).click();
     await expect(page.getByRole("heading", { name: `@${id}` })).toBeVisible();
     await openHealthCheck(page, `Health check: @${id}`);
   }
 
   await expect(agentList.getByRole("button", { name: /^@acme-/ })).toHaveCount(3);
-  await expect(page.getByRole("tab", { name: /^Acme/ })).toContainText("3");
+  await expect(agentList.getByRole("region", { name: "Acme", exact: true })).toContainText("3");
   expect(readAgent("acme-lead")).toContain("account: claude-acme-1");
   expect(readAgent("acme-builder")).toContain("account: claude-acme-2");
   await shot(page, "agents-editor");
@@ -318,20 +315,22 @@ test("Accounts show who uses them, and a file with a missing account appears wit
 test("the agent editor saves model and effort to the file, and follows a hand edit", async ({ page }) => {
   await page.goto("/agents?agent=acme-lead");
   await expect(page.getByRole("heading", { name: "@acme-lead" })).toBeVisible();
-  const model = page.getByRole("group", { name: "Model" });
-  const effort = page.getByRole("group", { name: "Effort" });
-  // Account default and Auto are always there; the account's own models follow once they load.
-  await expect(model.getByRole("button")).not.toHaveCount(2);
+  const section = page.getByRole("region", { name: "Model and effort" });
+  const model = section.getByRole("combobox", { name: "Model", exact: true });
+  const effort = section.getByRole("combobox", { name: "Effort", exact: true });
+  // Auto and Account default are always there; the account's own models follow once they load.
+  await expect(model.locator("option")).not.toHaveCount(2);
 
-  await model.getByRole("button", { name: "fake-model-c" }).click();
-  await effort.getByRole("button", { name: "high", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  await model.selectOption("fake-model-c");
+  await effort.selectOption("high");
+  await section.getByRole("button", { name: "Save Model and effort" }).click();
+  await expect(section.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   await expect.poll(() => readAgent("acme-lead")).toMatch(/^model: fake-model-c$/m);
   expect(readAgent("acme-lead")).toMatch(/^effort: high$/m);
 
   // Reload: what was saved is what comes back.
   await page.reload();
-  await expect(model.getByRole("button", { name: "fake-model-c" })).toHaveAttribute("aria-pressed", "true");
+  await expect(model).toHaveValue("fake-model-c");
 
   // A hand edit shows in the open editor.
   writeFileSync(
@@ -341,28 +340,27 @@ test("the agent editor saves model and effort to the file, and follows a hand ed
       .replace(/^effort: .*$/m, "effort: low")
       .concat("\nEdited by hand.\n"),
   );
-  await expect(model.getByRole("button", { name: "fake-model-b" })).toHaveAttribute("aria-pressed", "true");
-  await expect(effort.getByRole("button", { name: "low", exact: true })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(model).toHaveValue("fake-model-b");
+  await expect(effort).toHaveValue("low");
   await expect(page.getByRole("textbox", { name: "Instructions" })).toHaveValue(/Edited by hand\./);
 });
 
-test("permissions are tiles: Read code is always allowed, the rest toggle and save to the file", async ({
+test("permissions are switches: reading code is always allowed, the rest toggle and save to the file", async ({
   page,
 }) => {
   await page.goto("/agents?agent=acme-reviewer");
   await expect(page.getByRole("heading", { name: "@acme-reviewer" })).toBeVisible();
-  await expect(page.getByText("Read code")).toBeVisible();
-  const push = page.getByRole("button", { name: "Push branches: Off" });
+  const section = page.getByRole("region", { name: "Permissions" });
+  await expect(section.getByText("Reading code is always allowed.")).toBeVisible();
+  const push = section.getByRole("switch", { name: "Push branches" });
+  const save = section.getByRole("button", { name: "Save Permissions" });
+  await expect(push).toHaveAttribute("aria-checked", "false");
   await push.click();
-  await expect(page.getByRole("button", { name: "Push branches: Allowed" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(push).toHaveAttribute("aria-checked", "true");
+  await save.click();
   await expect.poll(() => readAgent("acme-reviewer")).toMatch(/^perms: \[.*push.*\]/m);
-  await page.getByRole("button", { name: "Push branches: Allowed" }).click();
+  await push.click();
+  await save.click();
   await expect.poll(() => readAgent("acme-reviewer")).not.toMatch(/^perms: \[.*push.*\]/m);
 });
 
