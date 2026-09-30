@@ -34,6 +34,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { writeFileAtomic } from "../fs.ts";
 import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
 import { localBranches, type MergeOutcome, mergeBranch, remoteBranches } from "../git/merge.ts";
@@ -475,7 +476,7 @@ export class TaskService {
     );
     const pointer = renderPointer(task);
     await Promise.all([
-      writeFile(join(task.folder, "TASK.md"), md),
+      writeFileAtomic(join(task.folder, "TASK.md"), md),
       writeFile(join(task.folder, "AGENTS.md"), pointer),
       writeFile(join(task.folder, "CLAUDE.md"), pointer),
     ]);
@@ -1540,7 +1541,7 @@ export class TaskService {
         this.deps.memory?.recalled(task.id),
       );
       // The folder can be gone by hand; the links still stand.
-      await writeFile(join(task.folder, "TASK.md"), md).catch(() => undefined);
+      await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);
     }
   }
 
