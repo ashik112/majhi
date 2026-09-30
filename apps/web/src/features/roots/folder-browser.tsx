@@ -219,7 +219,7 @@ export function FolderBrowser({ home, startPath, chosen, counts, onPick, onClose
       <div className="relative h-72 overflow-y-auto px-1.5 pb-1.5">
         {listing.isFetching && (
           <div aria-hidden="true" className="sticky top-0 z-10 -mx-1.5 h-0.5 overflow-hidden">
-            <div className="h-full w-2/5 animate-scan bg-amber" />
+            <div className="h-full w-2/5 animate-scan bg-accent" />
           </div>
         )}
 

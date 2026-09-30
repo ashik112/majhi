@@ -25,7 +25,7 @@ export function Segmented<T extends string>({
     <fieldset
       aria-label={label}
       className={cn(
-        "m-0 flex min-w-0 gap-1 rounded-[9px] border border-line-strong bg-card p-[3px]",
+        "m-0 flex min-w-0 gap-1 rounded-[9px] border border-line-strong bg-field p-[3px]",
         className,
       )}
     >
@@ -39,7 +39,9 @@ export function Segmented<T extends string>({
             onClick={() => onChange(segment.value)}
             className={cn(
               "h-8 cursor-pointer rounded-md px-2.5 text-sm transition-colors duration-150",
-              on ? "bg-line-strong text-fg" : "text-fg-muted hover:bg-raised hover:text-fg",
+              on
+                ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
+                : "text-fg-muted hover:bg-raised hover:text-fg",
             )}
           >
             {segment.label}

@@ -1,7 +1,15 @@
 import * as m from "motion/react-m";
 import { cn } from "@/lib/cn";
 
-const BAR_COLOR = { green: "bg-green", amber: "bg-amber", red: "bg-red" } as const;
+const BAR_COLOR = {
+  green: "bg-green",
+  amber: "bg-amber",
+  red: "bg-red",
+  calm: "bg-blue",
+  working: "bg-lamp-working",
+  needs: "bg-lamp-needs",
+  done: "bg-lamp-done",
+} as const;
 
 /** A usage bar. The number beside it carries the meaning; the fill animates when it changes. */
 export function UsageBar({
@@ -11,7 +19,7 @@ export function UsageBar({
   className,
 }: {
   pct: number;
-  tone: "green" | "amber" | "red";
+  tone: keyof typeof BAR_COLOR;
   height?: number;
   className?: string;
 }) {

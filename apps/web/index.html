@@ -1,12 +1,34 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dark" data-accent="amber">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#15161A" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#060a11" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>majhi</title>
+    <script>
+      // The owner's theme and accent, applied before the first paint so the page never flashes.
+      // Mirrors src/lib/appearance.ts, which saves the choice.
+      (() => {
+        let theme = "dark";
+        let accent = "amber";
+        let saved = {};
+        try {
+          saved = JSON.parse(localStorage.getItem("majhi.appearance") || "{}") || {};
+        } catch {}
+        if (saved.theme === "dark" || saved.theme === "light" || saved.theme === "system") theme = saved.theme;
+        if (["amber", "cyan", "violet", "green", "rose"].includes(saved.accent)) accent = saved.accent;
+        if (theme === "system") {
+          theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        const root = document.documentElement;
+        root.setAttribute("data-theme", theme);
+        root.setAttribute("data-accent", accent);
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", theme === "light" ? "#e5eaf0" : "#060a11");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

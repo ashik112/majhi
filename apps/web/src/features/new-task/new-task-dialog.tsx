@@ -50,7 +50,7 @@ function tryParse(text: string, ctx: Parameters<typeof parseTaskText>[1]): Parse
 }
 
 const FIELD =
-  "w-full rounded-[10px] border border-line-control bg-field text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-blue focus-visible:outline-none";
+  "w-full rounded-[10px] border border-line-control bg-field text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none";
 
 export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const { org: filterOrg } = useOrgFilter();

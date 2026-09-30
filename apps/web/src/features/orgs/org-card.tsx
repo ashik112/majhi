@@ -60,7 +60,7 @@ export function OrgCard({
     <section
       aria-label={org.name}
       aria-current={highlighted ? "true" : undefined}
-      className={cn(CARD, highlighted && "border-amber-line")}
+      className={cn(CARD, highlighted && "border-accent-line")}
     >
       <div className="flex items-center gap-3">
         <OrgBadge label={badgeLetters(org.key)} color={org.color} className="size-8 rounded-lg text-xs" />

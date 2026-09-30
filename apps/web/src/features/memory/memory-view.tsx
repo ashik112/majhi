@@ -90,7 +90,7 @@ export function MemoryView() {
                   <m.span
                     layoutId="memory-scope-underline"
                     aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-px h-0.5 bg-amber"
+                    className="absolute inset-x-0 -bottom-px h-0.5 bg-accent"
                     transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                   />
                 )}

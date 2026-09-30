@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { GLASS } from "@/lib/glass";
 
 /**
- * The top of every page: a 22 px title, a one-line subtitle, actions on the right and a rule below.
- * With `bottom`, the children sit on the bottom edge so tabs can carry their underline over the rule.
+ * The top of every page: a glass bar with a 22 px title, a one-line subtitle and actions on the right.
+ * It sticks to the top of the page's scroll area, so the content scrolls under it and the page never does.
+ * With `bottom`, the children sit on the bottom edge so tabs can carry their underline on the bar's edge.
  */
 export function PageHeader({
   title,
@@ -22,13 +24,14 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "flex shrink-0 gap-6 border-b border-line-strong px-8",
-        bottom ? "items-end pt-5" : "items-center py-[22px]",
+        "sticky top-0 z-20 mb-3 flex shrink-0 gap-6 rounded-2xl px-6",
+        GLASS,
+        bottom ? "items-end pt-4" : "min-h-[76px] items-center py-3.5",
         className,
       )}
     >
       <div className={cn("flex min-w-0 flex-col gap-1", bottom && "pb-3.5")}>
-        <h1 className="text-xl leading-[26px] font-semibold text-fg">{title}</h1>
+        <h1 className="text-xl leading-[26px] font-semibold tracking-[-0.01em] text-fg">{title}</h1>
         {subtitle && <div className="text-base leading-[19px] text-fg-muted">{subtitle}</div>}
       </div>
       {children && (

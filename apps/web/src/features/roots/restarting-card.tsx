@@ -101,7 +101,10 @@ export function RestartingCard({
             >
               {state === "done" && <Check aria-hidden="true" className="size-3.5 shrink-0 text-green" />}
               {state === "active" && (
-                <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-amber" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 animate-spin text-accent-text"
+                />
               )}
               {state === "waiting" && (
                 <Circle aria-hidden="true" className="size-3.5 shrink-0 text-line-hover" />

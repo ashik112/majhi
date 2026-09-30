@@ -22,7 +22,7 @@ export function EditRootsDialog({ onClose }: { onClose: () => void }) {
     <Modal
       label="Workspace roots"
       onClose={onClose}
-      className="max-h-[calc(100dvh-32px)] w-[640px] overflow-auto border-0 bg-transparent shadow-none"
+      className="max-h-[calc(100dvh-32px)] w-[640px] overflow-auto border-0 bg-transparent shadow-none backdrop-blur-none"
     >
       <div className="flex flex-col gap-4 p-1">
         {pending?.remount === "restarting" ? (

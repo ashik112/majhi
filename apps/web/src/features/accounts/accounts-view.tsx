@@ -283,7 +283,7 @@ function AccountRow({
                 className="truncate rounded-xs border border-line-strong px-1.5 py-0.5 font-mono text-xs text-fg-soft"
               >
                 @{a.agent.frontmatter.id}
-                {a.isBoss && <span className="ml-1 font-sans text-amber">Boss</span>}
+                {a.isBoss && <span className="ml-1 font-sans text-accent-text">Boss</span>}
               </span>
             ))}
             {chips.more > 0 && <span className="text-xs text-fg-faint">+{chips.more}</span>}

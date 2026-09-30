@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn";
 
+/** Health tones, plus the status lamps (working, needs, paused, done, idle) for agents and tasks. */
 const DOT_COLOR = {
   green: "bg-green",
   amber: "bg-amber",
@@ -7,6 +8,11 @@ const DOT_COLOR = {
   coral: "bg-coral",
   violet: "bg-violet",
   neutral: "bg-fg-dim",
+  working: "bg-lamp-working",
+  needs: "bg-lamp-needs",
+  paused: "bg-lamp-paused",
+  done: "bg-lamp-done",
+  idle: "bg-lamp-idle",
 } as const;
 export type DotTone = keyof typeof DOT_COLOR;
 
@@ -17,6 +23,11 @@ const TEXT_COLOR = {
   coral: "text-coral",
   violet: "text-violet",
   neutral: "text-fg-muted",
+  working: "text-lamp-working",
+  needs: "text-lamp-needs",
+  paused: "text-lamp-paused",
+  done: "text-lamp-done",
+  idle: "text-fg-faint",
 } as const;
 export const toneText = (tone: DotTone): string => TEXT_COLOR[tone];
 

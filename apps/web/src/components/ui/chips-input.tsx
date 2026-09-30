@@ -45,7 +45,7 @@ export function ChipsInput({
   }
 
   return (
-    <div className="flex min-h-[34px] flex-wrap items-center gap-1.5 rounded-md border border-line-control bg-field px-2 py-1 focus-within:border-blue">
+    <div className="flex min-h-[34px] flex-wrap items-center gap-1.5 rounded-md border border-line-control bg-field px-2 py-1 focus-within:border-accent">
       {value.map((word) => (
         <span
           key={word}

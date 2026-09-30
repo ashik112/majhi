@@ -98,12 +98,12 @@ export function SuggestionList({
                   className={cn(
                     "group flex h-10 w-full cursor-pointer items-center gap-2.5 px-3 text-left transition-colors duration-100",
                     "focus-visible:-outline-offset-2",
-                    added ? "bg-amber-wash hover:bg-amber-wash/70" : "hover:bg-raised",
+                    added ? "bg-accent-wash hover:bg-accent-wash/70" : "hover:bg-raised",
                   )}
                 >
                   <Folder
                     aria-hidden="true"
-                    className={cn("size-3.5 shrink-0", added ? "text-amber" : "text-fg-faint")}
+                    className={cn("size-3.5 shrink-0", added ? "text-accent-text" : "text-fg-faint")}
                   />
                   <span className="min-w-0 truncate font-mono text-base text-fg">{label}</span>
                   <span className="shrink-0 font-mono text-sm text-fg-faint tabular-nums">
@@ -112,7 +112,9 @@ export function SuggestionList({
                   <span
                     className={cn(
                       "ml-auto flex shrink-0 items-center gap-1 text-sm",
-                      added ? "text-amber" : "text-fg-muted group-hover:text-fg group-focus-visible:text-fg",
+                      added
+                        ? "text-accent-text"
+                        : "text-fg-muted group-hover:text-fg group-focus-visible:text-fg",
                     )}
                   >
                     {added ? (
