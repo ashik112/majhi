@@ -23,7 +23,8 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 - **Push.** `tasks.openMrs` pushes each worktree branch to the project's MR remote (the one marked `mr`, else `origin`), through the SSH alias when the remote has one. The server's own ssh runs it, so the forwarded agent supplies the key; no key is read or copied. Never forced.
 - **Hosts.** One interface (`mrs/hosts`): open, update description, read state and CI, merge. GitHub through `gh`, GitLab through `glab`, Bitbucket Cloud through its REST API. Credentials come from a secret reference per org and host, or per remote.
 - **Flow.** `tasks.openMrs` (outbound) checks every repo first, then opens one MR per repo in merge order and rewrites each description to name all of them; the task moves to `mr`. `tasks.mergeMrs` (outbound) merges in order and stops at the first failure with the reason in the room. `tasks.markMerged` is "I merged it". `tasks.refreshMrs` reads the hosts. The poller (`MrPoller`, every 60 seconds) reads open MRs, merges under `auto-if-green`, and notices merges done on the host.
-- **After the merge.** Base fetched, clean worktrees removed (one with uncommitted changes stays, and the room says so), task `done`, waiting tasks start.
+- **After the merge.** Base fetched, clean worktrees removed (one with uncommitted changes stays, and the room says so), task `done`, waiting tasks start. A `merged` dependency is met only when none of the task's MRs is left open or closed; a task closed with one makes its waiting tasks pause with reason `owner`, and the poller tells them when it merges.
+- **Credentials.** Every host needs a token (org `mr_tokens` or the remote's `token`); `tasks.openMrs` refuses before pushing when one is missing.
 - **The boss** has all of it through `majhi-admin`, since every step is a command. `openMrs` and `mergeMrs` are outbound, so they wait for the owner under the approval policy.
 
 ### How to try it (server, without the web)
@@ -35,7 +36,7 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 
 ### Left
 
-- **Real hosts and CLIs.** Nothing ran against a real GitHub, GitLab or Bitbucket, and `gh` and `glab` were not installed where this was built. The CLI flags were written from their documentation and run against fakes. The owner's check: one MR on a throwaway repo per host.
+- **Real hosts.** Nothing ran against a real GitHub, GitLab or Bitbucket. The `gh` and `glab` flags were checked against the real tools' help output (`gh` 2.102.0, `glab` 1.120.0), and the calls run against fakes. The owner's check: one MR on a throwaway repo per host. The image (`gh` and `glab` pinned in the `Dockerfile`) was not built here, since Docker is not available; its install steps were run by hand.
 - **Tracker update and the Housekeeper** (SPEC 5.5, last line) do not exist yet.
 - **GitHub Enterprise and self-hosted GitLab** work only through the host name in the remote's URL (`GH_HOST`, `GITLAB_HOST`), not through an alias, and were not tried. Bitbucket Server / Data Center is not supported (Cloud only).
 - **CI reading** is a summary (none, pending, passing, failing). Required reviews and branch protection are left to the host: a host that refuses the merge stops majhi with the host's message.
