@@ -226,6 +226,10 @@ export function createHandlers({
     "room.permission": async (input) => ({
       item: services.tasks.answerPermission(input.task, input.item, input.option),
     }),
+    "room.choose": async (input) => ({
+      item: await services.tasks.answerChoice(input.task, input.item, input.option),
+    }),
+    "tasks.plan": (input) => services.tasks.plan(input.id),
     "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
     "processes.stop": async (input) => {

@@ -1,10 +1,13 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
-import { Brain, ChevronRight, ListChecks, Paperclip, ShieldQuestion } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { Brain, ChevronRight, GitCompareArrows, ListChecks, Paperclip, ShieldQuestion } from "lucide-react";
 import { memo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { TaskRefText } from "@/features/task-drawer/task-ref";
 import { useAgentIndex } from "@/lib/agent-index";
+import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { Markdown } from "./markdown";
@@ -58,6 +61,8 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <ApprovalCard item={item} />;
     case "secret-request":
       return <SecretRequestCard item={item} />;
+    case "choice":
+      return <ChoiceCard item={item} />;
     case "system":
       return <SystemLine item={item} />;
     case "context":
@@ -323,6 +328,50 @@ function Permission({
             onClick={() => onAnswer(item.id, option.id)}
           >
             {permissionOptionLabel(option)}
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** A real trade-off for the owner, with the choices spelled out. Settled: one quiet line. */
+function ChoiceCard({ item }: { item: Of<"choice"> }) {
+  const toast = useToast();
+  const choose = useMutation<unknown, ApiRequestError, string>({
+    mutationFn: (option) => cmd("room.choose", { task: item.task, item: item.id, option }),
+    onError: (error) => toast("Could not answer", { detail: error.message, tone: "error" }),
+  });
+  if (item.state !== "pending") {
+    const label = item.options.find((o) => o.id === item.chosen)?.label;
+    return (
+      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
+        <GitCompareArrows aria-hidden="true" className="size-3.5 shrink-0" />
+        <span className="min-w-0 break-words">
+          {item.question} {label === undefined ? "Not answered." : `You chose: ${label}.`}
+        </span>
+      </p>
+    );
+  }
+  return (
+    <section
+      aria-label="Choice"
+      className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+    >
+      <p className="flex items-start gap-2 text-base text-fg">
+        <GitCompareArrows aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
+        <span className="min-w-0 break-words">{item.question}</span>
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {item.options.map((option, i) => (
+          <Button
+            key={option.id}
+            size="sm"
+            variant={i === 0 ? "primary" : "secondary"}
+            disabled={choose.isPending}
+            onClick={() => choose.mutate(option.id)}
+          >
+            {option.label}
           </Button>
         ))}
       </div>

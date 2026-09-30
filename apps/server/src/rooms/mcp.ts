@@ -96,6 +96,18 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     description: "Change a task's title, description or coordination mode.",
   },
   {
+    name: "plan",
+    command: "tasks.plan",
+    description:
+      "Check what is safe to start now: for each waiting task (or the subtasks of one parent), whether it overlaps the running tasks' files, and whether its account has room in the 5-hour and weekly windows. Changes nothing.",
+  },
+  {
+    name: "close",
+    command: "tasks.close",
+    description:
+      "Mark a subtask done once you reviewed what it delivered. The tasks waiting for it can then start, and the parent closes when every subtask is done.",
+  },
+  {
     name: "merge",
     command: "tasks.merge",
     description:
@@ -292,6 +304,9 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         return fail(
           "You do not have the Merge permission. Say in the room that the branch is ready to merge.",
         );
+      }
+      if (tool.command === "tasks.plan" && fm.scope !== "root" && args.id === undefined) {
+        return fail("Give the id of the parent or the task to check.");
       }
       const refused = await refuseOutsideOrg(deps, fm, tool.command, args);
       if (refused !== undefined) return fail(refused);

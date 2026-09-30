@@ -7,6 +7,7 @@ export const NOT_TOOLS: ReadonlySet<CommandName> = new Set<CommandName>([
   "room.secret",
   "policy.set",
   "room.permission",
+  "room.choose",
   "room.send",
   "room.cancel",
   "room.fresh",

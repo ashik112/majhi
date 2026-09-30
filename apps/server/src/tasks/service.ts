@@ -54,6 +54,8 @@ import type { UploadStore } from "../uploads/store.ts";
 import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
+import { Orchestrator } from "./orchestrator.ts";
+import { TaskPlanner } from "./planner.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
 
 export interface TaskDeps {
@@ -100,6 +102,9 @@ export class TaskService {
   private readonly now: () => Date;
   /** `wait` processes the room was told the task waits for, so it is said once. */
   private readonly waitNoted = new Set<string>();
+  /** Lead orchestration: the check before a waiting task starts, and the lead's side of a parent. */
+  private readonly orchestrator: Orchestrator;
+  private readonly planner: TaskPlanner;
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -108,6 +113,23 @@ export class TaskService {
         (await deps.projects.list()).map((p) => ({ id: p.id, path: p.path })),
       );
     this.now = deps.now ?? (() => new Date());
+    this.planner = new TaskPlanner({
+      store: deps.store,
+      agents: deps.agents,
+      accounts: deps.accounts,
+      now: this.now,
+    });
+    this.orchestrator = new Orchestrator({
+      store: deps.store,
+      room: deps.room,
+      runs: deps.runs,
+      planner: this.planner,
+      host: {
+        start: (id) => this.start(id),
+        swap: (id, agent, replacement) => this.swapInTeam(id, agent, replacement),
+        linksChanged: (ids) => this.linksChanged(ids),
+      },
+    });
   }
 
   list(includeDone: boolean): TaskSummary[] {
@@ -706,7 +728,7 @@ export class TaskService {
           text: child.text,
           agent: child.agent,
           attachments: [],
-          start: input.start,
+          start: false,
           parent: parent.id,
           dependsOn,
           dependsWhen: child.when,
@@ -714,6 +736,15 @@ export class TaskService {
       );
     }
     this.note(parent.id, `Split into ${made.map((t) => t.id).join(", ")}.`);
+    if (input.start) {
+      // The children start one by one as the plan allows: overlap, links and limits are checked first.
+      for (const t of made) {
+        this.deps.store.tasks.setStartWhenReady(t.id, true);
+        this.deps.store.tasks.setStatus(t.id, "ready", undefined, this.now().toISOString());
+        this.deps.room.publishTask(this.get(t.id));
+      }
+      await this.orchestrator.advance();
+    }
     return made.map((t) => this.get(t.id));
   }
 
@@ -903,6 +934,63 @@ export class TaskService {
   }
 
   // ---------------------------------------------------------------------------
+  // Parallel planning
+
+  /** The owner's answer to a choice card in a room. */
+  async answerChoice(task: string, item: string, option: string) {
+    try {
+      await this.orchestrator.answer(task, item, option);
+    } catch (err) {
+      throw new UserError(errorMessage(err), 409);
+    }
+    const answered = this.deps.room.get(task, item);
+    if (answered === undefined) throw new UserError("The card is gone.", 404);
+    return answered;
+  }
+
+  /**
+   * "What can I start now?": the same check a lead makes before it starts a task, for one task,
+   * for a parent's waiting children, or for every task waiting to start. Changes nothing.
+   */
+  async plan(id: string | undefined) {
+    const { store } = this.deps;
+    const subject = id === undefined ? undefined : this.get(id);
+    const ids =
+      subject === undefined
+        ? store.tasks.list(false).map((t) => t.id)
+        : store.tasks.children(subject.id).length > 0
+          ? store.tasks.children(subject.id)
+          : [subject.id];
+    const entries = [];
+    for (const taskId of ids.reverse()) {
+      const task = store.tasks.get(taskId);
+      if (task === undefined || (task.status !== "inbox" && task.status !== "ready")) continue;
+      const waiting = store.tasks.unmetDependencies(taskId);
+      const plan = await this.planner.plan(task);
+      // A link that only holds the task back does not count as a reason to wait.
+      const blockers = waiting.filter((w) => !plan.redundant.includes(w));
+      const base = { task: task.id, title: task.title };
+      if (blockers.length > 0) {
+        entries.push({ ...base, action: "blocked" as const, because: `waits for ${blockers.join(", ")}` });
+        continue;
+      }
+      const v = plan.verdict;
+      const because =
+        v.action === "start"
+          ? (v.note ?? "no overlap with the running tasks, and the account has room")
+          : v.action === "switch"
+            ? `${v.because}; @${v.agent.agent} on ${v.agent.account} has room`
+            : v.action === "wait"
+              ? `${v.because}`
+              : v.action === "queue"
+                ? v.because
+                : `overlaps ${v.on.join(", ")} in ${v.module}; the owner chooses`;
+      entries.push({ ...base, action: v.action, because });
+    }
+    return { entries };
+  }
+
+  // ---------------------------------------------------------------------------
   // Links (5.4a)
 
   /** Makes `task` a child of `target`, or makes it wait for `target`. Refuses loops and a second parent. */
@@ -944,7 +1032,7 @@ export class TaskService {
     // Removing the last thing a task waited for, or the last unfinished child, can release it.
     await this.linksChanged([input.task, input.target]);
     if (input.type === "depends-on") {
-      await this.startIfReady(input.task, `nothing is left to wait for`);
+      await this.orchestrator.advance();
     } else if (input.type === "parent") {
       await this.finishParentIfDone(input.target);
     }
@@ -962,39 +1050,19 @@ export class TaskService {
     if (task === undefined) return;
     const held = store.tasks.linksTo(id);
     const parent = task.links.find((l) => l.type === "parent")?.task;
-    const what = task.status === "done" ? "done" : "ready for review";
-    for (const l of held) {
-      if (l.type === "depends-on") await this.startIfReady(l.task, `${id} is ${what}`);
-    }
+    this.orchestrator.childReady(task);
+    // Waiting tasks that are free now, and queued ones that a freed slot or account may let in.
+    await this.orchestrator.advance();
     if (parent !== undefined) await this.finishParentIfDone(parent);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
     this.deps.events.emit(["tasks"]);
-  }
-
-  private async startIfReady(id: string, why: string): Promise<void> {
-    const { store } = this.deps;
-    const task = store.tasks.get(id);
-    if (task === undefined || !store.tasks.startWhenReady(id)) return;
-    if (task.status !== "inbox" && task.status !== "ready") return;
-    if (store.tasks.unmetDependencies(id).length > 0) return;
-    this.note(id, `Started: ${why}.`);
-    try {
-      await this.start(id);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.deps.room.post(id, `error:${randomUUID()}`, {
-        type: "system",
-        level: "error",
-        text: `Could not start: ${message}`,
-      });
-    }
   }
 
   private async finishParentIfDone(parent: string): Promise<void> {
     const { store } = this.deps;
     const task = store.tasks.get(parent);
     if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
-    this.note(parent, "Every subtask is done. Task closed.");
+    this.note(parent, this.orchestrator.report(parent));
     await this.close(parent);
   }
 
@@ -1093,6 +1161,8 @@ export class TaskService {
     // The boss chat is an ongoing conversation, never a piece of work to review.
     if (isBossChat(task)) return;
     if (this.deps.runs.working(id).length > 0) return;
+    // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
+    if (this.deps.store.tasks.children(id).length > 0 && !this.deps.store.tasks.childrenDone(id)) return;
     // An agent waits for a background process: it is woken when that ends (5.15).
     const waiting = this.deps.processes?.waiting(id) ?? [];
     if (waiting.length > 0) {

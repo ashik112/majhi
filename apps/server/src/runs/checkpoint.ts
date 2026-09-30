@@ -12,6 +12,9 @@ export interface Identity {
   email: string;
 }
 
+/** More new files than this in one checkpoint is a cache or build folder, not work. */
+export const MAX_NEW_FILES = 2000;
+
 /** Used when the org has no commit identity. */
 export const DEFAULT_IDENTITY: Identity = { name: "majhi", email: "majhi@majhi.local" };
 
@@ -69,6 +72,19 @@ export async function commitCheckpoint(
         continue;
       }
       await git(repo.worktree, [...quiet(identity), "add", "--all"]);
+      // A cache or build folder that is not ignored (a package store, say) must not land in the
+      // branch: thousands of new files in one checkpoint are never the agent's work.
+      const added = (await git(repo.worktree, ["diff", "--cached", "--name-only", "--diff-filter=A"]))
+        .split("\n")
+        .filter((f) => f !== "");
+      if (added.length > MAX_NEW_FILES) {
+        await git(repo.worktree, ["reset", "--quiet"]);
+        const top = [...new Set(added.map((f) => f.split("/")[0]))].slice(0, 3).join(", ");
+        result.skipped.push(
+          `${repo.project}: ${added.length} new files (in ${top}), which looks like a cache or build folder, so no checkpoint was made. Add it to .gitignore`,
+        );
+        continue;
+      }
       await git(repo.worktree, [
         ...quiet(identity),
         "commit",

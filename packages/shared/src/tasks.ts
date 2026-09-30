@@ -346,6 +346,19 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** Path of the handoff note under the task folder, for `handoff`/`rotation`/`fresh`/`recovery`. */
     note: z.string().optional(),
   }),
+  /**
+   * A real trade-off for the owner, with the choices spelled out (lead orchestration): "PRV-18
+   * overlaps PRV-17 in apps/server/src/runs. Start now and merge later, or wait?" `pending`
+   * waits for the owner; the option picked is `chosen`.
+   */
+  RoomItemBase.extend({
+    type: z.literal("choice"),
+    agent: IdSchema.optional(),
+    question: z.string(),
+    options: z.array(z.object({ id: z.string(), label: z.string() })).min(2),
+    state: z.enum(["pending", "answered", "cancelled"]),
+    chosen: z.string().optional(),
+  }),
   RoomItemBase.extend({
     type: z.literal("system"),
     level: z.enum(["info", "warn", "error"]),

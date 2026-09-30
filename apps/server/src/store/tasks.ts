@@ -270,6 +270,13 @@ export class TaskRepo {
     return unmetDependencies(own, (other) => statuses.get(other));
   }
 
+  /** The ids of a parent's children, in the order they were linked. */
+  children(parent: string): string[] {
+    return this.allLinks()
+      .filter((l) => l.type === "parent" && l.other === parent)
+      .map((l) => l.task);
+  }
+
   /** Whether every child of the parent is done. False for a parent without children. */
   childrenDone(parent: string): boolean {
     const statuses = this.statuses();

@@ -71,7 +71,11 @@ describe("parents and children", () => {
 
     await w.h.cmd("tasks.close", { id: "ACM-3" });
     expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("done");
-    expect(await texts("ACM-1")).toContain("Every subtask is done. Task closed.");
+    expect(
+      (await texts("ACM-1")).some((t: string | undefined) =>
+        t?.startsWith("Every subtask is done. Task closed."),
+      ),
+    ).toBe(true);
     expect(await readFile(join(w.taskDir("ACM-1"), "TASK.md"), "utf8")).toContain(
       "- Child ACM-3: part two (done)",
     );

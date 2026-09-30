@@ -2,7 +2,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { type CheckpointRepo, commitCheckpoint, DEFAULT_IDENTITY, diffStat, diffText } from "./checkpoint.ts";
+import {
+  type CheckpointRepo,
+  commitCheckpoint,
+  DEFAULT_IDENTITY,
+  diffStat,
+  diffText,
+  MAX_NEW_FILES,
+} from "./checkpoint.ts";
 
 let dir: string;
 let cleanup: () => Promise<void>;
@@ -54,6 +61,21 @@ describe("checkpoints", () => {
     const result = await commitCheckpoint([a], "ACM-1", 1, DEFAULT_IDENTITY);
     expect(result.committed).toEqual([]);
     expect(result.skipped[0]).toContain("not on task/acm-1-fix (on main)");
+  });
+
+  it("never commits a cache folder of thousands of new files", async () => {
+    const a = await repo("api");
+    await mkdir(join(a.worktree, ".store"), { recursive: true });
+    await Promise.all(
+      Array.from({ length: MAX_NEW_FILES + 1 }, (_, i) =>
+        writeFile(join(a.worktree, ".store", `f${i}`), "x"),
+      ),
+    );
+    const result = await commitCheckpoint([a], "ACM-1", 1, DEFAULT_IDENTITY);
+    expect(result.committed).toEqual([]);
+    expect(result.skipped[0]).toContain(".store");
+    expect(await git(a.worktree, "log", "-1", "--format=%s")).toBe("init");
+    expect(await git(a.worktree, "diff", "--cached", "--name-only")).toBe("");
   });
 
   it("reports the diff since the base, committed or not", async () => {

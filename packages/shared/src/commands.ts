@@ -440,6 +440,23 @@ export const commands = {
     }),
     output: TaskSchema,
   },
+  "tasks.plan": {
+    risk: "read",
+    summary:
+      "Check which waiting tasks are safe to start now next to the running ones: file overlap, links, and the account's 5-hour and weekly windows. For a parent, its children; for no id, every task waiting to start",
+    input: z.object({ id: TaskIdSchema.optional() }),
+    output: z.object({
+      entries: z.array(
+        z.object({
+          task: TaskIdSchema,
+          title: z.string(),
+          action: z.enum(["start", "wait", "switch", "queue", "ask", "blocked"]),
+          /** One plain line: why. */
+          because: z.string(),
+        }),
+      ),
+    }),
+  },
   "tasks.start": {
     risk: "change",
     summary: "Create the worktrees if needed and start the task's agent",
@@ -618,6 +635,12 @@ export const commands = {
   "room.permission": {
     risk: "change",
     summary: "Answer a permission prompt",
+    input: z.object({ task: TaskIdSchema, item: z.string(), option: z.string() }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.choose": {
+    risk: "change",
+    summary: "Answer a choice card in the room",
     input: z.object({ task: TaskIdSchema, item: z.string(), option: z.string() }),
     output: z.object({ item: RoomItemSchema }),
   },

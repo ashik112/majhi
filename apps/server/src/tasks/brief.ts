@@ -124,6 +124,12 @@ function relatedLines(r: Related): string[] {
     }
   }
   for (const c of r.children) out.push(`- Child ${c.id}: ${c.title} (${c.status})`);
+  if (r.children.length > 0) {
+    out.push(
+      "",
+      "You drive the children to the end. majhi starts each one when it is safe next to the running tasks (files and account limits) and tells you when one is ready for review. Review it, then close it with the majhi-tasks close tool. Ask what can start with the plan tool. When every child is done, this task closes with a report.",
+    );
+  }
   return out;
 }
 

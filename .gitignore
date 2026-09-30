@@ -11,3 +11,6 @@ blob-report/
 *.tsbuildinfo
 .DS_Store
 e2e/screenshots/
+
+# pnpm puts its store here when installing inside a worktree.
+.pnpm-store/
