@@ -19,7 +19,15 @@ export function HealthAccountDialog({ account, onClose }: { account: AccountView
   );
 }
 
-export function RemoveAccountDialog({ account, onClose }: { account: AccountView; onClose: () => void }) {
+export function RemoveAccountDialog({
+  account,
+  onClose,
+  onRemoved,
+}: {
+  account: AccountView;
+  onClose: () => void;
+  onRemoved: () => void;
+}) {
   const remove = useRemoveAccount();
   return (
     <ConfirmDialog
@@ -29,7 +37,7 @@ export function RemoveAccountDialog({ account, onClose }: { account: AccountView
       busy={remove.isPending}
       error={remove.isError ? describeError(remove.error) : undefined}
       onCancel={onClose}
-      onConfirm={() => remove.mutate(account.id, { onSuccess: onClose })}
+      onConfirm={() => remove.mutate(account.id, { onSuccess: onRemoved })}
     />
   );
 }

@@ -68,7 +68,7 @@ async function openAccountsPage(page: Page) {
 
 const accountRow = (page: Page, id: string) =>
   page
-    .getByRole("list", { name: "Accounts" })
+    .getByRole("navigation", { name: "Accounts" })
     .getByRole("listitem")
     .filter({
       has: page.getByRole("button", { name: id, exact: true }),
@@ -224,7 +224,6 @@ test("an API-key account passes its health check and the key is never stored in 
   const row = accountRow(page, "codex-key");
   await expect(row).toContainText("API key");
   await expect(row).toContainText("Healthy");
-  await expect(row).toContainText("Tokens and cost show after the first run");
 
   // The account list and the health check ran again after the key was sent; none of it echoes the key.
   await row.getByRole("button", { name: "codex-key", exact: true }).click();
@@ -233,7 +232,7 @@ test("an API-key account passes its health check and the key is never stored in 
     page.getByRole("dialog", { name: "Health check: codex-key" }).getByText("Health check passed"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.getByRole("complementary", { name: "Account details" })).toContainText(
+  await expect(page.getByRole("region", { name: "Account details" })).toContainText(
     "Tokens and cost show after the first run",
   );
 
@@ -254,20 +253,16 @@ test("Accounts show who uses them, and a file with a missing account appears wit
 }) => {
   await openAccountsPage(page);
 
-  await expect(accountRow(page, "claude-acme-1")).toContainText("2 agents");
-  await expect(accountRow(page, "claude-acme-2")).toContainText("1 agent");
-  await expect(accountRow(page, "codex-key")).toContainText("0 agents");
-
   // Usage is read in the background after each sign-in, without spending tokens.
   await expect(accountRow(page, "claude-acme-1")).toContainText("42%");
   await expect(accountRow(page, "claude-acme-1")).toContainText("18%");
-  await expect(accountRow(page, "codex-key")).toContainText("Tokens and cost show after the first run");
+  await expect(accountRow(page, "codex-key")).toContainText("API key");
 
   // The boss shows in its account's details, with a link to its editor.
   await accountRow(page, "claude-personal")
     .getByRole("button", { name: "claude-personal", exact: true })
     .click();
-  const details = page.getByRole("complementary", { name: "Account details" });
+  const details = page.getByRole("region", { name: "Account details" });
   const root = details.getByRole("region", { name: "Used by, Root" });
   await expect(root.getByRole("link")).toHaveCount(1);
   await expect(root).toContainText("Boss");
@@ -278,14 +273,14 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   await expect(acme.getByRole("listitem")).toHaveCount(2);
   await expect(acme).toContainText("@acme-lead");
   await expect(acme).toContainText("@acme-reviewer");
-  await expect(details).toContainText("Plan: max");
-  await expect(details).toContainText("Current window");
+  await expect(details).toContainText("2 agents");
+  await expect(details).toContainText("max plan");
+  await expect(details).toContainText("5 hours");
   await expect(details).toContainText("42%");
   await expect(details).toContainText("Week, Opus");
   await details.getByRole("button", { name: "Refresh" }).click();
   await expect(details).toContainText("Read just now");
   await shot(page, "health-accounts");
-  await page.getByRole("button", { name: "Close account details" }).click();
 
   // Health and usage keeps the checks and the usage overview, and points to Accounts to manage them.
   await page.goto("/usage");
