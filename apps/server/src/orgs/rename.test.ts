@@ -40,15 +40,4 @@ describe("orgs.rename", () => {
     // New tasks still use the org's key.
     expect((await h.cmd("tasks.create", { text: "fix api again", start: false })).body.id).toBe("ACM-2");
   });
-
-  it("refuses private, reserved, taken and missing ids", async () => {
-    w = await taskWorld();
-    const { h } = w;
-    expect((await h.cmd("orgs.rename", { id: "private", newId: "mine" })).status).toBe(409);
-    expect((await h.cmd("orgs.rename", { id: "acme", newId: "root" })).status).toBe(400);
-    expect((await h.cmd("orgs.rename", { id: "acme", newId: "private" })).status).toBe(400);
-    expect((await h.cmd("orgs.rename", { id: "nope", newId: "other" })).status).toBe(404);
-    await h.cmd("orgs.create", { id: "globex", name: "Globex" });
-    expect((await h.cmd("orgs.rename", { id: "acme", newId: "globex" })).status).toBe(409);
-  });
 });

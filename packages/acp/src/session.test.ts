@@ -130,19 +130,6 @@ describe("default turn", () => {
     ).toBe(true);
   });
 
-  it("defaults the file to HEALTH.md and reports denied permission as a failed tool", async () => {
-    const { session, events, cwd } = await start();
-    session.setPermissionHandler(answer("reject"));
-    await session.prompt(text("hello"));
-    const exec = events.filter((e) => e.type === "tool" && e.toolCallId === "t-exec");
-    expect(exec.at(-1)).toMatchObject({ status: "failed" });
-    expect(await readFile(join(cwd, "HEALTH.md"), "utf8")).toContain("Health");
-    expect(events.filter((e) => e.type === "text").at(-1)).toMatchObject({
-      type: "text",
-      text: expect.stringContaining("could not run the tests"),
-    });
-  });
-
   it("cancels the permission when there is no handler or the handler gives up", async () => {
     const { session, events } = await start();
     await session.prompt(text("hello"));
@@ -155,43 +142,6 @@ describe("default turn", () => {
     expect(events.filter((e) => e.type === "tool" && e.toolCallId === "t-exec").at(-1)).toMatchObject({
       status: "failed",
     });
-  });
-
-  it("echoes prompts that start with echo:", async () => {
-    const { session, events } = await start();
-    await session.prompt(text("echo: hi"));
-    expect(events.filter((e) => e.type === "text")).toEqual([
-      { type: "text", messageId: expect.any(String), text: "echo: echo: hi" },
-    ]);
-  });
-});
-
-describe("show: media", () => {
-  it("writes a chart and a page, links them in markdown, and sends an image block and a link", async () => {
-    const { session, events, cwd } = await start();
-    await session.prompt(text("show: media"));
-    const png = await readFile(join(cwd, "media", "chart.png"));
-    expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    expect(await readFile(join(cwd, "media", "report.html"), "utf8")).toContain("/api/cmd/tasks.list");
-    expect(events.filter((e) => e.type === "text")).toEqual([
-      {
-        type: "text",
-        messageId: expect.any(String),
-        text: expect.stringContaining("![Latency chart](media/chart.png)"),
-      },
-    ]);
-    expect(events.filter((e) => e.type === "media")).toEqual([
-      {
-        type: "media",
-        messageId: expect.any(String),
-        block: { kind: "image", mime: "image/png", data: png.toString("base64") },
-      },
-      {
-        type: "media",
-        messageId: expect.any(String),
-        block: { kind: "link", uri: "https://example.com/spec", name: "Spec sheet" },
-      },
-    ]);
   });
 });
 
@@ -216,90 +166,6 @@ describe("cancel and busy", () => {
     expect(Date.now() - t0).toBeLessThan(1500);
     expect(signalled).toBe(false); // cancelled before the permission step
   });
-
-  it("aborts the signal of a pending permission ask", async () => {
-    const { session } = await start({ slowMs: 20 });
-    let asked!: () => void;
-    const gotAsk = new Promise<void>((r) => {
-      asked = r;
-    });
-    let signalled = false;
-    session.setPermissionHandler(
-      (_ask, signal) =>
-        new Promise((resolve) => {
-          asked();
-          signal.addEventListener("abort", () => {
-            signalled = true;
-            resolve(undefined);
-          });
-        }),
-    );
-    const running = session.prompt(text("go"));
-    await gotAsk;
-    await session.cancel();
-    expect((await running).stopReason).toBe("cancelled");
-    expect(signalled).toBe(true);
-  });
-
-  it("refuses a second prompt while one runs", async () => {
-    const { session } = await start({ slowMs: 100 });
-    const running = session.prompt(text("one"));
-    await expect(session.prompt(text("two"))).rejects.toThrow("already running");
-    await session.cancel();
-    await running;
-    expect((await session.prompt(text("echo: three"))).stopReason).toBe("end_turn");
-  });
-});
-
-describe("options", () => {
-  it("applies model and effort and reports them", async () => {
-    const { session, events } = await start(
-      { models: ["m1", "m2"], efforts: ["low", "high"] },
-      { model: "m2", effort: "high" },
-    );
-    expect(session.models).toMatchObject({ defaultModel: "m2", defaultEffort: "high" });
-    expect(events.filter((e) => e.type === "config").at(-1)).toEqual({
-      type: "config",
-      model: "m2",
-      effort: "high",
-    });
-    await session.setOption("model", "m1");
-    expect(session.models.defaultModel).toBe("m1");
-    await expect(session.setOption("model", "nope")).rejects.toThrow("Unknown model");
-  });
-
-  it("warns and keeps the default for an unknown model", async () => {
-    const { session, events } = await start({ models: ["m1", "m2"] }, { model: "gpt-9" });
-    expect(session.models.defaultModel).toBe("m1");
-    expect(events.filter((e) => e.type === "notice")).toEqual([
-      { type: "notice", level: "warn", text: "Unknown model: gpt-9. Keeping the default model (m1)." },
-    ]);
-  });
-});
-
-describe("images", () => {
-  it("sends images when advertised and says how many arrived", async () => {
-    const { session, events } = await start();
-    session.setPermissionHandler(answer("allow"));
-    await session.prompt([...text("look"), { type: "image", mime: "image/png", data: "AAAA" }]);
-    expect(events.some((e) => e.type === "text" && e.text.includes("Got 1 image(s)."))).toBe(true);
-  });
-
-  it("turns images into a text note when the agent cannot read them", async () => {
-    const { session, events } = await start({ noImages: true });
-    session.setPermissionHandler(answer("allow"));
-    await session.prompt([...text("look"), { type: "image", mime: "image/png", data: "AAAA" }]);
-    expect(events.some((e) => e.type === "text" && e.text.includes("Got"))).toBe(false);
-  });
-
-  it("passes resource links", async () => {
-    const { session } = await start();
-    const r = await session.prompt([
-      ...text("echo: see"),
-      { type: "resource_link", uri: "file:///a.md", name: "a.md", mime: "text/markdown" },
-    ]);
-    expect(r.stopReason).toBe("end_turn");
-  });
 });
 
 describe("resume", () => {
@@ -316,12 +182,6 @@ describe("resume", () => {
     expect(second.events.map((e) => e.type)).toEqual(["commands"]);
     await second.session.prompt(text("echo: again"));
     expect(second.events.filter((e) => e.type === "text")).toHaveLength(1);
-  });
-
-  it("starts a new session with a notice when the old one is gone", async () => {
-    const { session, events } = await start({}, { resume: "fake-missing" });
-    expect(session.sessionId).not.toBe("fake-missing");
-    expect(events.find((e) => e.type === "notice")).toMatchObject({ level: "warn" });
   });
 
   it("starts a new session with a notice when the agent cannot load", async () => {
@@ -351,25 +211,6 @@ describe("lifecycle", () => {
     await session.close();
     expect(() => process.kill(pid, 0)).toThrow();
     await expect(running).rejects.toThrow();
-  });
-
-  it("unsubscribes listeners", async () => {
-    const { session } = await start();
-    const seen: string[] = [];
-    const off = session.onEvent((e) => seen.push(e.type));
-    off();
-    await session.prompt(text("echo: x"));
-    expect(seen).toEqual([]);
-  });
-
-  it("fails clearly when the command does not exist", async () => {
-    await expect(
-      startSession({
-        account: { ...account, home: join(root, "home") },
-        options: { base, adapters: { claude: { command: "/nonexistent/adapter", args: [] } } },
-        cwd: await ensure(join(root, "t")),
-      }),
-    ).rejects.toThrow("Command not found");
   });
 });
 

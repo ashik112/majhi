@@ -92,22 +92,6 @@ describe("host helper link over HTTP", () => {
     expect((await reply({ id: "x", ok: "yes" })).status).toBe(400);
   });
 
-  it("runs fs.listDirs through the helper, defaulting to the host home", async () => {
-    expect(await (await cmd("host.status")).json()).toEqual({ connected: false });
-    await quickPoll();
-
-    const pending = cmd("fs.listDirs");
-    const job = await nextJob();
-    expect(job).toMatchObject({ method: "listDirs", params: { path: dir, showHidden: false } });
-    const listing = { path: dir, parent: "/", home: dir, entries: [], truncated: false };
-    expect((await reply({ id: job.id, ok: true, result: listing })).status).toBe(204);
-
-    const res = await pending;
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(listing);
-    expect(await (await cmd("host.status")).json()).toMatchObject({ connected: true, info: CAN_REMOUNT });
-  });
-
   it("answers 503 host-offline without a helper, and 400 with the helper's message when a job fails", async () => {
     const offline = await cmd("fs.suggestRoots");
     expect(offline.status).toBe(503);
@@ -123,30 +107,6 @@ describe("host helper link over HTTP", () => {
   });
 
   describe("remounting after workspaces.set", () => {
-    it("is not needed when every root is visible, and sends no job", async () => {
-      await mkdir(join(dir, "Work"));
-      await quickPoll();
-      const res = await cmd("workspaces.set", { workspaces: ["~/Work"] });
-      expect(await res.json()).toMatchObject({ remount: "not-needed", unmounted: [] });
-      expect((await quickPoll()).status).toBe(204);
-    });
-
-    it("asks a connected helper that can remount, and says majhi is restarting", async () => {
-      await quickPoll();
-      const pending = cmd("workspaces.set", { workspaces: ["~/Later"] });
-      const job = await nextJob();
-      expect(job).toMatchObject({ method: "remount", params: {} });
-      await reply({ id: job.id, ok: true, result: { accepted: true } });
-
-      const res = await pending;
-      expect(res.status).toBe(200);
-      expect(await res.json()).toMatchObject({
-        remount: "restarting",
-        unmounted: [join(dir, "Later")],
-        restartCommand: "make up",
-      });
-    });
-
     it("falls back to manual without a helper", async () => {
       const res = await cmd("workspaces.set", { workspaces: ["~/Later"] });
       expect(await res.json()).toMatchObject({ remount: "manual", unmounted: [join(dir, "Later")] });

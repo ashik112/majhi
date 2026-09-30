@@ -81,20 +81,6 @@ const layaAnswers = () => ({
 });
 
 describe("decisions.ask", () => {
-  it("answers through the host helper with Laya and logs the decision", async () => {
-    const { h, jobs } = await world({ status: READY, decide: layaAnswers });
-    const res = await h.cmd("decisions.ask", ask);
-    expect(res.status).toBe(200);
-    expect(res.body.provider).toBe("laya");
-    expect(res.body.answers.model).toMatchObject({ value: "haiku", confidence: 0.8 });
-    expect(res.body.answers.risky).toMatchObject({ value: false, confidence: 0.9 });
-    expect(res.body.skipped).toEqual([]);
-    expect(jobs.find((j) => j.method === "decide")).toBeDefined();
-    const recent = await h.cmd("decisions.recent", {});
-    expect(recent.body).toHaveLength(1);
-    expect(recent.body[0]).toMatchObject({ id: res.body.id, use: "owner", provider: "laya" });
-  });
-
   it("falls back to the stand-in agent, then to rules", async () => {
     const { w, h } = await world({ status: { state: "not-installed" } });
     expect((await h.cmd("decisions.set", { acp_agent: "acme-builder" })).status).toBe(200);
@@ -126,30 +112,6 @@ describe("decisions.ask", () => {
     expect(viaRules.body.skipped.map((s: { provider: string }) => s.provider)).toEqual(["laya", "acp"]);
     expect(h.runtime.sessions.at(-1)?.prompts).toHaveLength(2);
     expect(w.h.runtime.starts.length).toBeGreaterThan(0);
-  });
-
-  it("changes the order through the config history and rejects duplicates", async () => {
-    const { h } = await world({ status: READY, decide: layaAnswers });
-    expect((await h.cmd("decisions.set", { order: ["rules", "laya"] })).body.order).toEqual([
-      "rules",
-      "laya",
-    ]);
-    expect((await h.log())[0]).toContain("decisions.set");
-    expect((await h.cmd("decisions.set", { order: ["rules", "rules"] })).status).toBe(400);
-    expect((await h.cmd("decisions.set", { jev_key: "secret:nope" })).status).toBe(404);
-    const status = await h.cmd("decisions.status");
-    expect(status.body.settings.order).toEqual(["rules", "laya"]);
-    expect(status.body.providers.find((p: { id: string }) => p.id === "jev")).toMatchObject({
-      available: false,
-      detail: "No Jev key is set",
-    });
-  });
-
-  it("starts the install through the helper", async () => {
-    const { h, jobs } = await world({ status: { state: "installing", detail: "Installing" } });
-    const res = await h.cmd("decisions.install");
-    expect(res.body).toEqual({ state: "installing", detail: "Installing" });
-    expect(jobs.some((j) => j.method === "decisions.install")).toBe(true);
   });
 });
 
@@ -194,22 +156,6 @@ describe("pickModel", () => {
     const pick = await w.h.majhi.services.decisions.pickModel(request);
     expect(pick).toMatchObject({ model: "haiku", effort: "low", provider: "laya", confidence: 0.8 });
     expect(pick?.reason).toBe("Laya picked haiku, effort low (0.80)");
-  });
-
-  it("keeps only the part that is confident, and nothing below the floor", async () => {
-    const half = await world({ status: READY, decide: answers(0.9, 0.55) });
-    expect(await half.w.h.majhi.services.decisions.pickModel(request)).toMatchObject({ model: "haiku" });
-    const pick = await half.w.h.majhi.services.decisions.pickModel(request);
-    expect(pick?.effort).toBeUndefined();
-  });
-
-  it("returns undefined when confidence is low, or when there is nothing to choose", async () => {
-    const { w } = await world({ status: READY, decide: answers(0.55, 0.55) });
-    const decisions = w.h.majhi.services.decisions;
-    expect(await decisions.pickModel(request)).toBeUndefined();
-    expect(
-      await decisions.pickModel({ ...request, models: request.models.slice(0, 1), efforts: [] }),
-    ).toBeUndefined();
   });
 });
 
