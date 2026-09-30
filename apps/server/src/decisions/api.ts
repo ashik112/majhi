@@ -1,5 +1,6 @@
 import type { McpServerSpec } from "@majhi/acp";
-import type { DecideRequest, DecisionRecord, DecisionResult, OptionValue, Role } from "@majhi/shared";
+import type { DecideRequest, DecisionRecord, DecisionResult, ProviderId, Role } from "@majhi/shared";
+import type { PickOption } from "../runs/model-options.ts";
 
 /**
  * What the run manager asks of the decision provider (SPEC 5.12). The decision
@@ -12,34 +13,33 @@ export interface ModelPickRequest {
   role: Role;
   /** The task brief and the agent's instructions, trimmed by the provider. */
   context: string;
-  /** Offered by the account, narrowed to the agent's `models` list when it has one. */
-  models: readonly OptionValue[];
-  efforts: readonly OptionValue[];
-  pickModel: boolean;
-  pickEffort: boolean;
-  /**
-   * Answers below this are dropped. Default: the decision settings' floor. Model picks use 0.4:
-   * Laya spreads probability across similar models, so 0.6 rejects most picks.
-   */
-  minConfidence?: number;
+  /** Models to choose from, merged into families and labelled. Fewer than two: not asked. */
+  models: readonly PickOption[];
+  /** Efforts to choose from, lowest first. Fewer than two: not asked. */
+  efforts: readonly PickOption[];
+}
+
+/** An answer with its confidence, whatever it was. The caller applies the floors. */
+export interface PickAnswer {
+  id: string;
+  confidence: number;
 }
 
 export interface ModelPick {
-  model?: string;
-  effort?: string;
-  /** The decision's id in the log, for the room event and the run record. */
+  model?: PickAnswer;
+  effort?: PickAnswer;
+  /** The decision's id in the log, for the run record. */
   decisionId: string;
-  provider: string;
-  confidence: number;
-  /** One line for the room: "Laya picked sonnet, effort medium (0.82)". */
-  reason: string;
+  provider: ProviderId;
+  /** The provider's name as the room says it: "Laya". */
+  by: string;
 }
 
 export interface Decisions {
   /**
-   * Picks model and/or effort for an `auto` agent at session start. Resolves
-   * undefined when no provider answers or confidence is below the floor; the
-   * caller then keeps the agent's ACP default.
+   * Asks which model and/or effort fits the role and the task. Answers come back with their
+   * confidence, low ones too: the caller applies the floors and the fallback tiers. Resolves
+   * undefined when nothing was asked or no provider answers.
    */
   pickModel(request: ModelPickRequest): Promise<ModelPick | undefined>;
   /**

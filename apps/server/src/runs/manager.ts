@@ -7,6 +7,7 @@ import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
+import { readDecisionSettings } from "../decisions/settings.ts";
 import { errorMessage } from "../errors.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
@@ -16,6 +17,7 @@ import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
 import { diffStat } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
@@ -941,18 +943,19 @@ export class RunManager {
 
       let pickLine: string | undefined;
       if (fm.model === "auto" || fm.effort === "auto") {
+        const sections = await deps.config.sections();
         const result = await pickForSession({
           decisions: deps.decisions,
           session,
           fm,
           instructions: agent.instructions,
           task,
+          settings: await readDecisionSettings(deps.config.file),
+          prices: await readPrices(deps.config.file),
+          orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });
         for (const line of result.warnings) this.live.system(run, "warn", line);
-        if (result.pick !== undefined) {
-          const { model, effort, decisionId } = result.pick;
-          deps.store.runs.setPick(run.runId, { model, effort, decisionId });
-        }
+        if (result.applied !== undefined) deps.store.runs.setPick(run.runId, result.applied);
         pickLine = result.line;
       }
       // What the agent runs after the session applied the options: a refused model keeps the default.

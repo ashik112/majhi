@@ -8,7 +8,6 @@ import type {
   DecisionResult,
   DecisionSettings,
   LayaStatus,
-  OptionValue,
   ProviderId,
 } from "@majhi/shared";
 import type { z } from "zod";
@@ -16,8 +15,9 @@ import { secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
+import { effortQuestion, modelQuestion, type PickOption } from "../runs/model-options.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, ModelPick, ModelPickRequest } from "./api.ts";
+import type { Decisions, ModelPick, ModelPickRequest, PickAnswer } from "./api.ts";
 import { runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
 import type { LayaProvider } from "./layaProvider.ts";
@@ -154,21 +154,17 @@ export class DecisionService implements Decisions {
   }
 
   async pickModel(request: ModelPickRequest): Promise<ModelPick | undefined> {
-    const askModel = request.pickModel && request.models.length >= 2;
-    const askEffort = request.pickEffort && request.efforts.length >= 2;
+    const askModel = request.models.length >= 2;
+    const askEffort = request.efforts.length >= 2;
     if (!askModel && !askEffort) return undefined;
     const brief = `Role: ${request.role}\nAgent: @${request.agent}\n\n${request.context}`;
-    // Descriptions help the provider far more than bare ids; the answer maps back to the id.
-    const modelLabels = optionLabels(request.models);
-    const effortLabels = optionLabels(request.efforts);
     const questions: DecideRequest["questions"] = {
       ...(askModel
         ? {
             model: {
               type: "choice" as const,
-              instructions:
-                "Which model fits this task? Use a small, fast model for simple work and a large one for hard, open-ended work.",
-              options: modelLabels.map((l) => l.label),
+              instructions: modelQuestion(request.role),
+              options: request.models.map((o) => o.label),
             },
           }
         : {}),
@@ -176,41 +172,32 @@ export class DecisionService implements Decisions {
         ? {
             effort: {
               type: "choice" as const,
-              instructions: "How much reasoning effort does this task need?",
-              options: effortLabels.map((l) => l.label),
+              instructions: effortQuestion(request.role),
+              options: request.efforts.map((o) => o.label),
             },
           }
         : {}),
     };
     try {
-      const settings = await this.settings();
       const result = await this.decide(
         { state: brief, questions },
         { use: "model-pick", task: request.task, agent: request.agent },
       );
-      const floor = request.minConfidence ?? settings.min_confidence;
-      const chosen = (key: "model" | "effort") => {
+      const answer = (key: "model" | "effort", options: readonly PickOption[]): PickAnswer | undefined => {
         const a = result.answers[key];
-        if (a === undefined || a.confidence < floor || typeof a.value !== "string") return undefined;
-        const labels = key === "model" ? modelLabels : effortLabels;
-        const id = labels.find((l) => l.label === a.value)?.id ?? labels.find((l) => l.id === a.value)?.id;
-        return id === undefined ? undefined : { ...a, value: id };
+        if (a === undefined || typeof a.value !== "string") return undefined;
+        const id = options.find((o) => o.label === a.value)?.id ?? options.find((o) => o.id === a.value)?.id;
+        return id === undefined ? undefined : { id, confidence: a.confidence };
       };
-      const model = askModel ? chosen("model") : undefined;
-      const effort = askEffort ? chosen("effort") : undefined;
+      const model = askModel ? answer("model", request.models) : undefined;
+      const effort = askEffort ? answer("effort", request.efforts) : undefined;
       if (model === undefined && effort === undefined) return undefined;
-      const confidence = Math.min(model?.confidence ?? 1, effort?.confidence ?? 1);
-      const parts = [
-        ...(model === undefined ? [] : [`${String(model.value)}`]),
-        ...(effort === undefined ? [] : [`effort ${String(effort.value)}`]),
-      ];
       return {
-        ...(model === undefined ? {} : { model: String(model.value) }),
-        ...(effort === undefined ? {} : { effort: String(effort.value) }),
+        ...(model === undefined ? {} : { model }),
+        ...(effort === undefined ? {} : { effort }),
         decisionId: result.id,
         provider: result.provider,
-        confidence,
-        reason: `${NAMES[result.provider]} picked ${parts.join(", ")} (${confidence.toFixed(2)})`,
+        by: NAMES[result.provider],
       };
     } catch {
       return undefined;
@@ -233,18 +220,6 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
-}
-
-/** `sonnet: Fast and capable`, at most 200 characters, unique per list; the bare id without a description. */
-export function optionLabels(options: readonly OptionValue[]): { id: string; label: string }[] {
-  const seen = new Set<string>();
-  return options.map((o) => {
-    const text = o.description?.trim() ? `${o.id}: ${o.description.trim()}` : o.id;
-    let label = text.length > 200 ? `${text.slice(0, 199)}\u2026` : text;
-    if (seen.has(label)) label = o.id;
-    seen.add(label);
-    return { id: o.id, label };
-  });
 }
 
 function layaReason(laya: LayaStatus): string | undefined {
