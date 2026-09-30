@@ -27,11 +27,11 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
       {canMerge && (
         <Button
           size="sm"
-          title="Merge the task branch into a local branch. Nothing is pushed."
+          title="Merge the task branch into a local branch in your checkout. Nothing is pushed. For a merge request, use the Merge requests card."
           onClick={() => setMerging(true)}
         >
           <GitMerge aria-hidden="true" />
-          Merge
+          Merge locally
         </Button>
       )}
       {merging && <MergeDialog task={task} onClose={() => setMerging(false)} />}

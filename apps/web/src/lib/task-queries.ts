@@ -199,3 +199,45 @@ export function useRemoveProject() {
       ]),
   });
 }
+
+// Merge requests (5.5) ------------------------------------------------------
+
+/** What each repo of the task changed against its base, as git diffs. Refetched when the tab opens. */
+export function useTaskDiff(id: string, enabled: boolean) {
+  return useQuery<CommandOutput<"tasks.diff">, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "diff", id],
+    queryFn: () => cmd("tasks.diff", { id }),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+/** The order the task's repos merge in, and whether the owner set it by hand. */
+export function useMergeOrder(id: string, enabled: boolean) {
+  return useQuery<CommandOutput<"tasks.mergeOrder">, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "mergeOrder", id],
+    queryFn: () => cmd("tasks.mergeOrder", { id }),
+    enabled,
+    retry: false,
+  });
+}
+
+type MrCommand =
+  | "tasks.setMergeOrder"
+  | "tasks.openMrs"
+  | "tasks.refreshMrs"
+  | "tasks.mergeMrs"
+  | "tasks.markMerged";
+
+/** Every MR command changes the task's repos, so each one refreshes the task and its lists. */
+export function useMrCommand<N extends MrCommand>(name: N) {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<N>, ApiRequestError, CommandInput<N>>({
+    mutationFn: (input) => cmd(name, input),
+    onSuccess: (out) => {
+      const task = "task" in out ? out.task : out;
+      setTaskInCache(client, task as Task);
+      return refreshTasks(client);
+    },
+  });
+}

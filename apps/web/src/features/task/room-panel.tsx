@@ -7,6 +7,8 @@ import { useConfig } from "@/lib/queries";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useCopy } from "@/lib/use-copy";
 import { useNow } from "@/lib/use-now";
+import { showsMrCard } from "../mrs/model";
+import { MrCard } from "../mrs/mr-card";
 import { ChangesPanel } from "../room/changes-panel";
 import { AgentRow } from "./agent-row";
 import { ChangeAgent } from "./change-agent";
@@ -33,6 +35,7 @@ export function RoomPanel({
     >
       <InRoomCard task={task} agents={agents} />
       <ProcessesCard task={task} processes={processes} />
+      {showsMrCard(task) && <MrCard task={task} />}
       <BranchCard task={task} />
       <ChangesPanel task={task} items={items} />
     </aside>
