@@ -34,7 +34,7 @@ export function RoomPanel({
   return (
     <aside
       aria-label="Task details"
-      className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-1"
+      className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-6 scroll-fade"
     >
       <InRoomCard task={task} agents={agents} />
       <ProcessesCard task={task} processes={processes} />

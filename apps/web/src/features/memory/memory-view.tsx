@@ -91,7 +91,7 @@ export function MemoryView() {
           })}
         </div>
       </PageHeader>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto scroll-fade">
         <div role="tabpanel" className="flex max-w-[920px] flex-col gap-5 px-8 pt-5 pb-8">
           {tab === "brief" && <BriefView projects={projects.data} orgNames={orgNames} />}
           {tab === "tasks" && <RecordsView projects={projects.data} orgNames={orgNames} />}

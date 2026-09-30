@@ -52,7 +52,7 @@ export function AccountDetails({
           <X aria-hidden="true" />
         </Button>
       </div>
-      <dl className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-5 py-4">
+      <dl className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto px-5 pt-4 pb-6 scroll-fade">
         <Row label="Tool">{tool?.name ?? account.tool}</Row>
         <Row label="Org">
           <span className="inline-flex items-center gap-2">

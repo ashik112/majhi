@@ -80,7 +80,9 @@ function Frame() {
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            pinned ? "overflow-hidden" : "overflow-y-auto overscroll-contain rounded-2xl pb-6",
+            pinned
+              ? "overflow-hidden"
+              : "overflow-y-auto overscroll-contain rounded-2xl pb-6 scroll-fade-end",
           )}
         >
           <InShellContext.Provider value={true}>

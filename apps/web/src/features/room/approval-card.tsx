@@ -14,8 +14,10 @@ import {
   type SecretRequestItem,
 } from "@/features/boss/model";
 import { type ApiRequestError, cmd } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
+import { DOCK_ACTIONS } from "./dock";
 
 type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -37,6 +39,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
     onError: (error) => toast("Could not undo", { detail: describeError(error), tone: "error" }),
   });
   const outcome = approvalOutcome(item);
+  const [open, setOpen] = useState(false);
 
   if (outcome === undefined) {
     return (
@@ -54,9 +57,16 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
             {RISK_LABEL[item.risk]}
           </Badge>
         </p>
-        {item.reason && <p className="pl-6 text-sm text-fg-muted text-pretty">{item.reason}</p>}
-        <Details input={item.input} command={item.command} />
-        <div className="flex gap-2 pl-6">
+        {item.reason && (
+          <p
+            title={open ? undefined : item.reason}
+            className={cn("pl-6 text-sm text-fg-muted text-pretty", !open && "line-clamp-2")}
+          >
+            {item.reason}
+          </p>
+        )}
+        <Details input={item.input} command={item.command} onToggle={setOpen} />
+        <div className={cn(DOCK_ACTIONS, "flex gap-2 pl-[38px]")}>
           <Button
             size="sm"
             variant="primary"
@@ -104,9 +114,23 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   );
 }
 
-function Details({ input, command, quiet }: { input: string; command: string; quiet?: boolean }) {
+/** The command's input, folded. Opening it also unclamps the reason above it. */
+function Details({
+  input,
+  command,
+  quiet,
+  onToggle,
+}: {
+  input: string;
+  command: string;
+  quiet?: boolean;
+  onToggle?: (open: boolean) => void;
+}) {
   return (
-    <details className={quiet ? "text-xs text-fg-faint" : "pl-6 text-sm text-fg-muted"}>
+    <details
+      onToggle={(event) => onToggle?.(event.currentTarget.open)}
+      className={quiet ? "text-xs text-fg-faint" : "pl-6 text-sm text-fg-muted"}
+    >
       <summary className="cursor-pointer hover:text-fg">
         Details <span className="font-mono">{command}</span>
       </summary>

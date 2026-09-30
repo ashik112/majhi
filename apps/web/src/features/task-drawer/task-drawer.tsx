@@ -79,7 +79,7 @@ function Details({ id, onClose }: { id: string; onClose: () => void }) {
           <Skeleton className="h-6 w-2/3" />
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-4 pb-6 scroll-fade">
         {task.data ? (
           <Body task={task.data} list={list} />
         ) : task.isError ? (

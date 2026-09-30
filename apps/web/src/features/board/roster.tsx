@@ -138,7 +138,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
         className={cn("hidden w-[248px] shrink-0 flex-col gap-3 rounded-2xl p-3 min-[1320px]:flex", GLASS)}
       >
         <RosterHead count={rows.length} working={working} />
-        <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+        <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2 pb-6 scroll-fade">
           <RosterList rows={rows} org={org} />
         </div>
       </aside>
@@ -158,14 +158,10 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
           <Users aria-hidden="true" className="size-4" />
           <span className="text-sm font-medium [writing-mode:vertical-rl]">Agents</span>
           <span className="flex flex-col items-center gap-1.5 font-mono text-xs">
-            <Lamp state={working > 0 ? "working" : "idle"} size={7} />
-            <span className="tnum">{working}</span>
-            {waiting > 0 && (
-              <>
-                <Lamp state="needs" size={7} />
-                <span className="tnum">{waiting}</span>
-              </>
-            )}
+            <Lamp state="working" dim={working === 0} size={7} />
+            <span className={cn("tnum", working === 0 && "text-fg-faint")}>{working}</span>
+            <Lamp state="needs" dim={waiting === 0} size={7} className="mt-1" />
+            <span className={cn("tnum", waiting === 0 && "text-fg-faint")}>{waiting}</span>
           </span>
         </button>
         {open && (
@@ -187,7 +183,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
                 <X aria-hidden="true" className="size-3.5" />
               </button>
             </div>
-            <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+            <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2 pb-6 scroll-fade">
               <RosterList rows={rows} org={org} />
             </div>
           </aside>

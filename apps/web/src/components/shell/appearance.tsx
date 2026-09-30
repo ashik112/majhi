@@ -20,10 +20,10 @@ const THEME_ROWS: readonly { value: ThemeChoice; label: string; icon: typeof Moo
 /** Swatch colors: the accent as it shows in the dark theme, where the swatches are picked most. */
 const SWATCH: Record<Accent, string> = {
   amber: "#f0b455",
-  cyan: "#4cc9e8",
+  blue: "#7ea6ff",
   violet: "#a98bf5",
-  green: "#5fd39f",
-  rose: "#f47a9b",
+  lime: "#b6dc4e",
+  steel: "#b8c4d6",
 };
 
 /** The sidebar's Appearance button: a popover with the theme and the accent. Saved in this browser. */

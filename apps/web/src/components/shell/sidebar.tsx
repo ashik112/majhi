@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { Layers } from "lucide-react";
 import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Kbd } from "@/components/ui/kbd";
@@ -52,7 +53,7 @@ export function Sidebar() {
     >
       <Brand />
       {/* The middle scrolls when an update notice or many orgs need the room; the lamps stay at the foot. */}
-      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3">
+      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pb-6 scroll-fade">
         <UpdateNotice />
         <MainNav />
         <BossButton />
@@ -212,7 +213,16 @@ function OrgList() {
                 active ? SELECTED : "text-fg-soft",
               )}
             >
-              <OrgBadge label={row.badge} color={row.color} size="sm" />
+              {row.id === undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-line-control bg-raised text-fg-soft"
+                >
+                  <Layers className="size-3" strokeWidth={2.25} />
+                </span>
+              ) : (
+                <OrgBadge label={row.badge} color={row.color} size="sm" />
+              )}
               <span className="min-w-0 truncate">{row.name}</span>
               <span className="tnum ml-auto font-mono text-sm text-fg-faint">{row.open}</span>
             </button>
@@ -233,11 +243,11 @@ function AgentsNow() {
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
     [index, tasks, accounts],
   );
-  const rows: { label: string; count: number; lamp: LampState }[] = [
-    { label: "Working", count: pulse.working, lamp: "working" },
-    { label: "Paused", count: pulse.paused, lamp: "paused" },
-    { label: "Limit reached", count: pulse.limit, lamp: "paused" },
-    { label: "Idle", count: pulse.idle, lamp: "idle" },
+  const rows: { label: string; title: string; count: number; lamp: LampState }[] = [
+    { label: "Working", title: "Working", count: pulse.working, lamp: "working" },
+    { label: "Paused", title: "Paused", count: pulse.paused, lamp: "paused" },
+    { label: "Limit", title: "Limit reached", count: pulse.limit, lamp: "paused" },
+    { label: "Idle", title: "Idle", count: pulse.idle, lamp: "idle" },
   ];
   return (
     <section
@@ -245,16 +255,20 @@ function AgentsNow() {
       className="mt-auto flex shrink-0 flex-col gap-2 border-t border-line pt-3"
     >
       <SectionLabel className="px-1">Agents right now</SectionLabel>
-      <ul className="grid grid-cols-4 gap-1">
+      <ul className="grid grid-cols-2 gap-1">
         {rows.map((row) => (
           <li
             key={row.label}
-            title={`${row.label}: ${row.count}`}
-            className="flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md border border-line bg-field"
+            title={`${row.title}: ${row.count}`}
+            className="flex h-7 min-w-0 items-center gap-2 rounded-md border border-line bg-field px-2 text-xs"
           >
-            <Lamp state={row.count > 0 ? row.lamp : "idle"} size={7} />
-            <span className="sr-only">{row.label}</span>
-            <span className={cn("tnum font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}>
+            <Lamp state={row.lamp} dim={row.count === 0} size={7} />
+            <span className={cn("min-w-0 truncate", row.count > 0 ? "text-fg-soft" : "text-fg-faint")}>
+              {row.label}
+            </span>
+            <span
+              className={cn("tnum ml-auto font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}
+            >
               {row.count}
             </span>
           </li>

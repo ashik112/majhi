@@ -33,15 +33,17 @@ const LAMP_COLOR: Record<LampState, string> = {
 
 /**
  * A round status lamp. Working breathes, needs-you and paused glow steady, done is a plain lit dot,
- * idle is an unlit ring.
+ * idle is an unlit ring. `dim` keeps the state's color but unlit, for a count of zero.
  */
 export function Lamp({
   state,
   size = 8,
+  dim = false,
   className,
 }: {
   state: LampState;
   size?: number;
+  dim?: boolean;
   className?: string;
 }) {
   return (
@@ -52,8 +54,10 @@ export function Lamp({
         "inline-block shrink-0 rounded-full",
         LAMP_COLOR[state],
         state === "idle" ? "border-[1.5px] border-current" : "bg-current",
-        state === "working" && "animate-lamp",
-        (state === "needs" || state === "paused") &&
+        dim && "opacity-35",
+        !dim && state === "working" && "animate-lamp",
+        !dim &&
+          (state === "needs" || state === "paused") &&
           "shadow-[0_0_0_3px_color-mix(in_oklab,currentColor_16%,transparent),0_0_9px_color-mix(in_oklab,currentColor_55%,transparent)]",
         className,
       )}

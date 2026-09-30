@@ -19,6 +19,7 @@ import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
+import { DOCK_ACTIONS } from "./dock";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionOptionLabel, permissionSummary, toolLabel } from "./model";
@@ -374,7 +375,7 @@ function Permission({
           <span className="text-sm">{toolLabel(item.title)}</span>
         </span>
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className={cn(DOCK_ACTIONS, "flex flex-wrap gap-2")}>
         {item.options.map((option) => (
           <Button
             key={option.id}
@@ -418,7 +419,7 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
         <GitCompareArrows aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
         <span className="min-w-0 break-words">{item.question}</span>
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className={cn(DOCK_ACTIONS, "flex flex-wrap gap-2")}>
         {item.options.map((option, i) => (
           <Button
             key={option.id}

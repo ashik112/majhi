@@ -43,7 +43,7 @@ export function AgentDrawer({ id }: { id: string }) {
           <X aria-hidden="true" />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-6 scroll-fade">
         {info ? (
           <AgentDetails
             id={`peek-${id}`}

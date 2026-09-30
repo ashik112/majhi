@@ -36,7 +36,8 @@ export interface OrgRow {
 export function orgRows(orgs: readonly OrgView[], tasks: readonly TaskSummary[]): OrgRow[] {
   const open = tasks.filter(isOpen);
   return [
-    { id: undefined, name: "All orgs", badge: "*", color: undefined, open: open.length },
+    // The All row has no letters: the sidebar draws a layers icon in its tile.
+    { id: undefined, name: "All orgs", badge: "", color: undefined, open: open.length },
     ...orgs.map((org) => ({
       id: org.id,
       name: org.name,

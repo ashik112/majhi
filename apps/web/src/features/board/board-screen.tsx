@@ -96,7 +96,10 @@ export function BoardScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <header
-        className={cn("flex min-h-[68px] shrink-0 items-center gap-5 rounded-2xl py-3 pr-3 pl-5", GLASS)}
+        className={cn(
+          "flex min-h-[68px] shrink-0 items-center gap-4 rounded-2xl min-[1280px]:gap-5 py-3 pr-3 pl-5",
+          GLASS,
+        )}
       >
         <h1 className="text-xl leading-[26px] font-semibold tracking-[-0.01em]">Board</h1>
         <Telemetry counts={counts} org={org} />
@@ -150,7 +153,15 @@ export function BoardScreen() {
               placeholder="Search tasks"
               autoComplete="off"
               spellCheck={false}
-              className="h-10 w-[180px] rounded-md border border-line-strong bg-field pr-3 pl-8 text-base text-fg transition-[border-color,width] duration-200 hover:border-line-hover focus-visible:w-[220px] focus-visible:border-accent focus-visible:outline-none"
+              title="Search tasks"
+              // Below 1280 px the field is an icon until it has focus or text, so the telemetry keeps its room.
+              className={cn(
+                "h-10 cursor-pointer rounded-md border border-line-strong bg-field pr-3 pl-8 text-base text-fg transition-[border-color,width] duration-200 hover:border-line-hover focus:w-[200px] focus:cursor-text focus:border-accent focus:outline-none",
+                "min-[1280px]:w-[180px] min-[1280px]:cursor-text min-[1280px]:focus:w-[220px]",
+                query === ""
+                  ? "w-10 placeholder:text-transparent focus:placeholder:text-fg-faint min-[1280px]:placeholder:text-fg-faint"
+                  : "w-[200px]",
+              )}
             />
           </span>
           <Button
@@ -219,13 +230,13 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
   const usage = useUsageSummary(org ? { org } : {});
   const today = usage.data?.today;
   return (
-    <p className="flex min-w-0 items-center gap-4 text-sm whitespace-nowrap text-fg-muted">
+    <p className="flex min-w-0 items-center gap-3 overflow-hidden text-sm min-[1280px]:gap-4 whitespace-nowrap text-fg-muted">
       <span className="tnum">
         <span className="font-mono text-md font-medium text-fg">{counts.open}</span> open
       </span>
       <Divider />
       <span className="tnum flex items-center gap-1.5">
-        <Lamp state={counts.working > 0 ? "working" : "idle"} size={7} />
+        <Lamp state="working" dim={counts.working === 0} size={7} />
         <span
           className={cn("font-mono text-md font-medium", counts.working > 0 ? LAMP_TEXT.working : "text-fg")}
         >
@@ -235,7 +246,7 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
       </span>
       <Divider />
       <span className="tnum flex items-center gap-1.5">
-        <Lamp state={counts.needs > 0 ? "needs" : "idle"} size={7} />
+        <Lamp state="needs" dim={counts.needs === 0} size={7} />
         <span className={cn("font-mono text-md font-medium", counts.needs > 0 ? LAMP_TEXT.needs : "text-fg")}>
           {counts.needs}
         </span>
@@ -243,11 +254,8 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
       </span>
       {today && (
         <>
-          <Divider className="max-[1180px]:hidden" />
-          <span
-            className="tnum max-[1180px]:hidden"
-            title={`${today.totalTokens.toLocaleString()} tokens today`}
-          >
+          <Divider />
+          <span className="tnum" title={`${today.totalTokens.toLocaleString()} tokens today`}>
             <span className="font-mono text-md font-medium text-fg">{formatTokens(today.totalTokens)}</span>{" "}
             tokens today
           </span>
@@ -267,7 +275,7 @@ function ColumnHead({ column, onHide }: { column: Column; onHide?: (() => void) 
   return (
     <div className="flex shrink-0 flex-col gap-2 px-1">
       <div className="flex h-7 items-center gap-2">
-        <Lamp state={lit ? lamp : "idle"} size={8} />
+        <Lamp state={lamp} dim={!lit} size={8} />
         <h2 className="text-base leading-[18px] font-semibold">{column.label}</h2>
         <span
           className={cn(
@@ -308,7 +316,7 @@ function BoardColumn({
   return (
     <section aria-label={column.label} className="flex min-h-0 min-w-[228px] flex-1 flex-col gap-2.5">
       <ColumnHead column={column} onHide={onHide} />
-      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-0.5 pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-28px),transparent)]">
+      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-0.5 pb-6 scroll-fade">
         {column.tasks.map((task, index) => (
           <BoardCard key={task.id} task={task} orgs={orgs} filterOrg={filterOrg} index={index} />
         ))}
@@ -330,7 +338,7 @@ function ColumnRail({
   const count = column.tasks.length;
   const inner = (
     <>
-      <Lamp state={count > 0 ? COLUMN_LAMP[column.id] : "idle"} size={7} />
+      <Lamp state={COLUMN_LAMP[column.id]} dim={count === 0} size={7} />
       <h2 className="text-sm font-medium text-fg-soft [writing-mode:vertical-rl]">{column.label}</h2>
       <span className="tnum font-mono text-sm text-fg-muted">{count}</span>
     </>

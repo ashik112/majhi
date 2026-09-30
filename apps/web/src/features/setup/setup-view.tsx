@@ -65,7 +65,7 @@ export function SetupView() {
 
         <aside
           aria-label="Setup today"
-          className="flex w-[420px] shrink-0 flex-col gap-2.5 overflow-auto pr-1"
+          className="flex w-[420px] shrink-0 flex-col gap-2.5 overflow-auto pr-1 pb-6 scroll-fade"
         >
           <div className="flex items-baseline gap-2">
             <h2 className="text-md font-semibold">Setup today</h2>
@@ -180,9 +180,7 @@ function Card({ title, state, actions }: { title: string; state: CardState; acti
             {state.pill}
           </span>
         </div>
-        <p className="font-mono text-sm leading-[1.4] break-words whitespace-pre-line text-fg-muted">
-          {state.detail}
-        </p>
+        <p className="text-sm leading-[1.4] break-words whitespace-pre-line text-fg-muted">{state.detail}</p>
       </div>
       {actions && <div className="flex shrink-0 flex-col gap-1.5">{actions}</div>}
     </section>
