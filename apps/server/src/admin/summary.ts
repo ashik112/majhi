@@ -28,12 +28,34 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "projects.remove": (i) => `Unregister project ${str(i.id)}`,
   "tasks.create": (i) => `Create a task: ${firstLine(str(i.text))}`,
   "tasks.remove": (i) => `Delete task ${str(i.id)}`,
+  "tasks.start": (i) => `Start ${str(i.id)}`,
+  "tasks.stop": (i) => `Stop ${str(i.id)}`,
+  "tasks.close": (i) => `Mark ${str(i.id)} done`,
+  "tasks.reopen": (i) => `Reopen ${str(i.id)}`,
+  "tasks.merge": (i) =>
+    `Merge ${str(i.id)} into ${str(i.into) || "its base"}${i.push === true ? " and push" : ""}${
+      i.done === true ? ", then mark it done" : ""
+    }`,
+  "tasks.push": (i) => `Push the branch of ${str(i.id)}`,
+  "tasks.openMrs": (i) => `Open merge requests for ${str(i.id)}`,
+  "tasks.mergeMrs": (i) => `Merge the merge requests of ${str(i.id)}`,
+  "tasks.markMerged": (i) => `Record the merge requests of ${str(i.id)} as merged`,
+  "tasks.split": (i) => `Split ${str(i.task)} into subtasks`,
+  "team.add": (i) => `Add ${str(i.agent)} to ${str(i.task)}`,
+  "team.remove": (i) => `Remove ${str(i.agent)} from ${str(i.task)}`,
+  "processes.stop": (i) => `Stop ${str(i.id)} in ${str(i.task)}`,
   "secrets.remove": (i) => `Delete secret ${str(i.name)}`,
   "secrets.save": (i) => `Save a secret${i.name ? ` as ${str(i.name)}` : ""}`,
   "history.undo": (i) => `Undo change ${str(i.commit).slice(0, 7)}`,
   "workspaces.set": () => "Change the workspace roots",
   "settings.set": () => "Change settings",
 };
+
+/** A command's own summary up to its first full stop: the rest explains, a card only names. */
+function firstSentence(text: string): string {
+  const end = text.indexOf(". ");
+  return end === -1 ? text : text.slice(0, end);
+}
 
 function firstLine(text: string): string {
   const line = text.trim().split("\n", 1)[0] ?? "";
@@ -43,6 +65,6 @@ function firstLine(text: string): string {
 export function summarize(command: CommandName, input: unknown): string {
   const record: Input = typeof input === "object" && input !== null ? (input as Input) : {};
   const template = TEMPLATES[command];
-  const text = template === undefined ? commands[command].summary : template(record);
+  const text = template === undefined ? firstSentence(commands[command].summary) : template(record);
   return redactText(text.trim());
 }

@@ -40,14 +40,14 @@ describe("the boss through the fake adapter", () => {
     await idle();
     expect(await orgIds()).toEqual(["acme", "acme2"]);
 
-    // The boss got the decision as a message in its session and answered it.
+    // The room says it in words; the boss got the decision with the result in its session and answered it.
     items = await w.items();
-    const followUp = items.find((i) => i.type === "owner" && i.text.startsWith("The owner approved:"));
-    expect(followUp).toMatchObject({
-      text: expect.stringContaining("The owner approved: Create org Acme Two. Result:"),
-    });
+    expect(items.filter((i) => i.type === "system").map((i) => i.type === "system" && i.text)).toContain(
+      "You approved: create org Acme Two",
+    );
+    expect(items.some((i) => i.type === "owner" && i.text.includes("Result:"))).toBe(false);
     expect(items.filter((i) => i.type === "agent").at(-1)).toMatchObject({
-      text: expect.stringContaining("echo: The owner approved"),
+      text: expect.stringContaining('echo: The owner approved: Create org Acme Two. Result: {"id":"acme2"'),
     });
 
     // The agent, the same way.

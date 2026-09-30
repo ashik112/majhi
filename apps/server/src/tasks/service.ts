@@ -1737,6 +1737,24 @@ export class TaskService {
   }
 
   /**
+   * The owner answered an agent's request outside the message box (an approval card, a secret).
+   * The agent gets `text`, with whatever detail it needs; the room gets no owner message, so the
+   * caller posts its own plain line. Like a message, it wakes the task.
+   */
+  async tellAgent(input: { task: string; agent: string; text: string; settled: string }): Promise<void> {
+    const task = this.get(input.task);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on this task.`);
+    this.cards.settle(task.id, "review", input.settled, "owner");
+    if (task.status !== "running") await this.start(task.id);
+    const state = this.deps.store.tasks.roomState(task.id);
+    if (state.agentTurns > 0) this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0 });
+    this.deps.runs.notify(task.id, input.agent, input.text);
+    this.deps.store.tasks.touch(task.id, this.now().toISOString());
+    this.deps.events.emit(["tasks"]);
+  }
+
+  /**
    * Who an owner message goes to (5.3): the requested agent; else every @mentioned agent, adding
    * the ones not on the team when they may work in its org; else the lead.
    */

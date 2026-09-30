@@ -150,7 +150,10 @@ export class AdminService {
     try {
       if (decision === "reject") {
         const rejected = this.update(item, { state: "rejected" });
-        await this.notify(item.task, item.agent, `The owner rejected: ${item.summary}.`);
+        await this.notify(item.task, item.agent, {
+          text: `The owner rejected: ${item.summary}.`,
+          shown: `You rejected: ${lowerFirst(item.summary)}`,
+        });
         this.pending.delete(item.id);
         return rejected;
       }
@@ -166,12 +169,20 @@ export class AdminService {
         ...(done.commit === undefined ? {} : { commit: done.commit }),
         result: done.ok ? lineOf(done.output) : done.error,
       });
+      // The agent gets the command's output to work with; the room gets the decision in words.
       await this.notify(
         item.task,
         item.agent,
         done.ok
-          ? `The owner approved: ${item.summary}. Result: ${lineOf(done.output)}`
-          : `The owner approved: ${item.summary}, but it failed: ${done.error}`,
+          ? {
+              text: `The owner approved: ${item.summary}. Result: ${lineOf(done.output)}`,
+              shown: `You approved: ${lowerFirst(item.summary)}`,
+            }
+          : {
+              text: `The owner approved: ${item.summary}, but it failed: ${done.error}`,
+              shown: `You approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
+              level: "warn",
+            },
       );
       return applied;
     } finally {
@@ -187,7 +198,10 @@ export class AdminService {
     }
     await this.deps.secrets.set(item.name, value);
     this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
-    await this.notify(item.task, item.agent, `Saved as secret:${item.name}`);
+    await this.notify(item.task, item.agent, {
+      text: `Saved as secret:${item.name}`,
+      shown: `You gave ${item.label}, kept as secret:${item.name}`,
+    });
     return this.mustGet(item.task, item.id);
   }
 
@@ -195,7 +209,10 @@ export class AdminService {
     if (decision === "approve") throw new UserError("Paste the secret into the field and press Save.", 409);
     if (item.state !== "pending") throw new UserError("That request was already answered.", 409);
     this.deps.room.post(item.task, item.id, secretPayload(item, "cancelled"));
-    await this.notify(item.task, item.agent, `The owner did not provide ${item.name}.`);
+    await this.notify(item.task, item.agent, {
+      text: `The owner did not provide ${item.name}.`,
+      shown: `You did not provide ${item.label}`,
+    });
     return this.mustGet(item.task, item.id);
   }
 
@@ -255,10 +272,22 @@ export class AdminService {
     return item;
   }
 
-  /** A message to the agent in its session: queued when it is busy, and it wakes an idle agent. */
-  private async notify(task: string, agent: string, text: string): Promise<void> {
+  /**
+   * The owner's answer: `shown` as a quiet line in the room, `text` to the agent in its session
+   * (queued when it is busy; it wakes an idle agent).
+   */
+  private async notify(
+    task: string,
+    agent: string,
+    message: { text: string; shown: string; level?: "info" | "warn" },
+  ): Promise<void> {
+    this.deps.room.post(task as TaskId, `info:${randomUUID()}`, {
+      type: "system",
+      level: message.level ?? "info",
+      text: redactText(message.shown),
+    });
     try {
-      await this.deps.tasks.send({ task, text, attachments: [], mode: "queue", agent });
+      await this.deps.tasks.tellAgent({ task, agent, text: message.text, settled: message.shown });
     } catch (err) {
       this.deps.room.post(task as TaskId, `warn:${randomUUID()}`, {
         type: "system",
@@ -299,6 +328,13 @@ function error(text: string): ToolResult {
 function textOf(output: unknown): string {
   const text = JSON.stringify(redact(output), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
+}
+
+/** "Mark PRV-38 done" reads as "mark PRV-38 done" after "You approved:"; "PRV-38 ..." keeps its case. */
+function lowerFirst(text: string): string {
+  const [first, second] = text;
+  if (first === undefined || second === undefined || second !== second.toLowerCase()) return text;
+  return first.toLowerCase() + text.slice(1);
 }
 
 /** One short line for the card. */
