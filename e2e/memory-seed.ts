@@ -68,7 +68,7 @@ const node20 = await from(done.id, "Node 20 is required to build alpha-api", "pr
 memory.approve(node20.id, owner);
 const node22 = await from(done.id, "Node 22 is required to build alpha-api", "project:alpha-api");
 memory.keep(node22.id, {
-  reason: "Lasting, and it contradicts fact " + node20.id + ".",
+  reason: `Lasting, and it contradicts fact ${node20.id}.`,
   confidence: 0.88,
   provider: "laya",
 });
