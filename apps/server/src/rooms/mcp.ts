@@ -74,15 +74,17 @@ const ROOM_TOOLS: Tool[] = [
     description:
       "Post a question card to the room: one or more questions with preset options (shown as buttons or a dropdown) and optionally a free-text field. The owner's answer goes back to you as your next message.",
     input: z.object({
-      questions: z.array(
-        z.object({
-          id: z.string().min(1),
-          question: z.string().min(1).max(500),
-          options: z.array(z.object({ id: z.string(), label: z.string() })),
-          default: z.string().optional(),
-          freeText: z.boolean().default(false),
-        }),
-      ).min(1),
+      questions: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            question: z.string().min(1).max(500),
+            options: z.array(z.object({ id: z.string(), label: z.string() })),
+            default: z.string().optional(),
+            freeText: z.boolean().default(false),
+          }),
+        )
+        .min(1),
     }),
   },
 ];
@@ -290,7 +292,13 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
             ),
           );
         case "ask": {
-          const questions = args.questions as Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string | undefined; freeText: boolean }>;
+          const questions = args.questions as Array<{
+            id: string;
+            question: string;
+            options: Array<{ id: string; label: string }>;
+            default?: string | undefined;
+            freeText: boolean;
+          }>;
           const item = await deps.coordinator.postAskCard(caller.task, caller.agent, questions);
           return ok(JSON.stringify({ item }));
         }

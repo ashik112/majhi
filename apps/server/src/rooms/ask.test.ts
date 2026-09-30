@@ -10,7 +10,17 @@ afterEach(async () => {
 const roomItems = async (id: string) =>
   (await w.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
 
-const postAskCard = async (taskId: string, questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string; freeText: boolean }>, agent?: string) => {
+const postAskCard = async (
+  taskId: string,
+  questions: Array<{
+    id: string;
+    question: string;
+    options: Array<{ id: string; label: string }>;
+    default?: string;
+    freeText: boolean;
+  }>,
+  agent?: string,
+) => {
   const coordinator = w.h.majhi.services.coordinator;
   const task = w.h.majhi.services.store.tasks.get(taskId);
   if (!task) throw new Error(`Task ${taskId} not found`);
@@ -154,9 +164,7 @@ describe("room.answerAsk routing", () => {
       {
         id: "q1",
         question: "Tell us",
-        options: [
-          { id: "predefined", label: "Predefined" },
-        ],
+        options: [{ id: "predefined", label: "Predefined" }],
         freeText: true,
       },
     ]);
@@ -233,14 +241,18 @@ describe("room.answerAsk routing", () => {
     const addRes = await w.h.cmd("team.add", { task: taskId, agent: "acme-reviewer" });
     if (addRes.status !== 200) throw new Error(`team.add failed: ${addRes.status}`);
 
-    const card = await postAskCard(taskId, [
-      {
-        id: "q1",
-        question: "Pick",
-        options: [{ id: "opt", label: "Option" }],
-        freeText: false,
-      },
-    ], "acme-reviewer");
+    const card = await postAskCard(
+      taskId,
+      [
+        {
+          id: "q1",
+          question: "Pick",
+          options: [{ id: "opt", label: "Option" }],
+          freeText: false,
+        },
+      ],
+      "acme-reviewer",
+    );
 
     expect(card.agent).toBe("acme-reviewer");
     expect(card.agent).not.toBe(lead);

@@ -478,7 +478,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                 <input
                   type="text"
                   placeholder="Or type your own..."
-                  value={answeredVia[question.id] === "text" ? answers[question.id] ?? "" : ""}
+                  value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
                   onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
                   className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"
@@ -504,7 +504,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
                 <input
                   type="text"
                   placeholder="Or type your own..."
-                  value={answeredVia[question.id] === "text" ? answers[question.id] ?? "" : ""}
+                  value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
                   onChange={(e) => handleTextChange(question.id, e.target.value)}
                   disabled={answer.isPending}
                   className="rounded border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-blue focus:outline-none disabled:bg-bg-hover"

@@ -155,7 +155,13 @@ export class RoomCoordinator {
   async postAskCard(
     taskId: string,
     agent: string,
-    questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string | undefined; freeText: boolean }>,
+    questions: Array<{
+      id: string;
+      question: string;
+      options: Array<{ id: string; label: string }>;
+      default?: string | undefined;
+      freeText: boolean;
+    }>,
   ): Promise<RoomItem> {
     const task = this.deps.tasks.get(taskId);
     if (!task.team.includes(agent)) {

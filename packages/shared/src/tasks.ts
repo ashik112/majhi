@@ -339,15 +339,17 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("ask"),
     agent: IdSchema,
-    questions: z.array(
-      z.object({
-        id: z.string(),
-        question: z.string(),
-        options: z.array(z.object({ id: z.string(), label: z.string() })),
-        default: z.string().optional(),
-        freeText: z.boolean(),
-      }),
-    ).min(1),
+    questions: z
+      .array(
+        z.object({
+          id: z.string(),
+          question: z.string(),
+          options: z.array(z.object({ id: z.string(), label: z.string() })),
+          default: z.string().optional(),
+          freeText: z.boolean(),
+        }),
+      )
+      .min(1),
     state: z.enum(["pending", "answered", "cancelled"]),
     /** questionId -> the option id chosen, or free text typed. */
     answers: z.record(z.string(), z.string()).optional(),
