@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
-import type {
-  CommandMeta,
-  DecideRequest,
-  DecisionPatchSchema,
-  DecisionRecord,
-  DecisionResult,
-  DecisionSettings,
-  LayaStatus,
-  ProviderId,
+import {
+  type CommandMeta,
+  type DecideRequest,
+  type DecideRequestInput,
+  DecideRequestSchema,
+  type DecisionPatchSchema,
+  type DecisionRecord,
+  type DecisionResult,
+  type DecisionSettings,
+  type LayaStatus,
+  type ProviderId,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { secretName } from "../accounts/homes.ts";
@@ -78,7 +80,8 @@ export class DecisionService implements Decisions {
   }
 
   /** Runs the chain and records the decision. */
-  async decide(request: DecideRequest, use: Use): Promise<DecisionResult> {
+  async decide(input: DecideRequestInput, use: Use): Promise<DecisionResult> {
+    const request = DecideRequestSchema.parse(input);
     const started = performance.now();
     const settings = await this.settings();
     const chain = await runChain(settings.order, this.providers(), request);

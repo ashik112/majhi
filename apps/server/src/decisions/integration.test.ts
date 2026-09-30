@@ -66,16 +66,21 @@ const ask = {
   },
 };
 
-const layaAnswers = () => ({
-  answers: {
-    model: {
-      type: "choice",
-      choice: "haiku",
-      confidence: 0.1,
-      probabilities: { haiku: 0.8, sonnet: 0.15, opus: 0.05 },
-    },
-    risky: { type: "noul", noul: 0.1, confidence: 0.9 },
-  },
+/** Plays Laya: `model` picks haiku; the yes/no, asked as A and B in both orders, says B (false). */
+const layaAnswers = (job: Extract<HostJob, { method: "decide" }>) => ({
+  answers: Object.fromEntries(
+    Object.keys(job.params.questions).map((id) => [
+      id,
+      id === "model"
+        ? {
+            type: "choice",
+            choice: "haiku",
+            confidence: 0.1,
+            probabilities: { haiku: 0.8, sonnet: 0.1, opus: 0.05, none: 0.05 },
+          }
+        : { type: "choice", choice: "B", confidence: 0.4, probabilities: { A: 0.1, B: 0.9 } },
+    ]),
+  ),
   loadMs: 0,
   predictMs: 12,
 });

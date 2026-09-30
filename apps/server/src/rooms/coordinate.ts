@@ -201,3 +201,26 @@ export function verdictOf(text: string): "approved" | "changes" | undefined {
   if (/\b(approved?|lgtm|looks good to me|ship it)\b/i.test(t)) return "approved";
   return undefined;
 }
+
+/**
+ * Whether an agent's message asks the owner for something, from its words alone: a question that
+ * is not addressed to another agent, or a plain request for a decision. Code and quotes are not
+ * read. The decision model is not asked: on Laya no wording of this question was reliable.
+ */
+export function asksOwner(text: string): boolean {
+  const t = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith(">"))
+    .join("\n");
+  if (/(^|\s)@owner\b/i.test(t)) return true;
+  if (
+    /\b(let me know|please (confirm|decide|approve|advise|choose)|your (call|decision|approval|go-ahead))\b/i.test(
+      t,
+    )
+  )
+    return true;
+  const questions = t.match(/[^.!?\n]*\?/g) ?? [];
+  return questions.some((q) => !/(^|\s)@(?!owner\b)[a-z0-9][a-z0-9-]*/i.test(q));
+}

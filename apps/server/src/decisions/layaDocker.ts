@@ -99,7 +99,11 @@ export class LayaDocker {
       throw new Error(`Laya in Docker answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const parsed = ResultSchema.safeParse(await res.json());
     if (!parsed.success) throw new Error("Laya in Docker gave an answer majhi cannot read.");
-    return { answers: fromLayaCall(request, parsed.data.answers), estimated: false, trimmed: call.trimmed };
+    return {
+      answers: fromLayaCall(call, request, parsed.data.answers),
+      estimated: false,
+      trimmed: call.trimmed,
+    };
   }
 
   /** Stops the idle timer. The container is left as it is. */

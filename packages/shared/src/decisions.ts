@@ -26,17 +26,40 @@ export const OptionSchema = z.object({
 });
 export type Option = z.infer<typeof OptionSchema>;
 
+/** The option majhi adds to a choice unless `abstain` is false. An answer naming it never counts. */
+export const ABSTAIN: Readonly<{ key: string; description: string }> = {
+  key: "none",
+  description: "none of these fits",
+};
+
+/**
+ * How a choice is asked, for providers whose answer depends on the order of the options (Laya):
+ * `once`; `reversed`, as given and reversed; `shifted`, in up to 6 cyclic shifts. The probabilities
+ * are averaged over the runs. The abstain option stays last.
+ */
+export const OrderRunsSchema = z.enum(["once", "reversed", "shifted"]);
+export type OrderRuns = z.infer<typeof OrderRunsSchema>;
+
+const Described = z.string().trim().min(1).max(200);
+
 export const QuestionSchema = z.discriminatedUnion("type", [
   /** Pick one of `options`. A plain string is an option with no description, and its own key. */
-  z.object({
-    type: z.literal("choice"),
-    instructions: z.string().trim().min(1).max(500),
-    options: z
-      .array(z.union([z.string().trim().min(1).max(200), OptionSchema]))
-      .min(2)
-      .max(MAX_OPTIONS)
-      .refine((list) => new Set(list.map(optionKey)).size === list.length, "Option keys must be unique"),
-  }),
+  z
+    .object({
+      type: z.literal("choice"),
+      instructions: z.string().trim().min(1).max(500),
+      options: z
+        .array(z.union([z.string().trim().min(1).max(200), OptionSchema]))
+        .min(2)
+        .max(MAX_OPTIONS)
+        .refine((list) => new Set(list.map(optionKey)).size === list.length, "Option keys must be unique"),
+      /** Adds `none: none of these fits`, so the provider can say nothing fits. */
+      abstain: z.boolean().default(true),
+      orders: OrderRunsSchema.default("once"),
+    })
+    .refine((q) => !q.abstain || !q.options.map(optionKey).includes(ABSTAIN.key), {
+      message: `"${ABSTAIN.key}" is the abstain option's key: rename that option or set abstain to false`,
+    }),
   /** Rate on a scale, 1 to 5 unless given. */
   z.object({
     type: z.literal("score"),
@@ -44,14 +67,23 @@ export const QuestionSchema = z.discriminatedUnion("type", [
     min: z.number().int().default(1),
     max: z.number().int().default(5),
   }),
-  /** Is the statement in `instructions` true for the state? */
+  /**
+   * Is the statement in `instructions` true for the state? Laya asks it as a choice between two
+   * neutral options, A and B, described by `criteria`, in both orders.
+   */
   z.object({
     type: z.literal("noul"),
     instructions: z.string().trim().min(1).max(500),
+    criteria: z.object({ true: Described, false: Described }).optional(),
   }),
 ]);
 export type Question = z.infer<typeof QuestionSchema>;
 export type ChoiceQuestion = Extract<Question, { type: "choice" }>;
+
+/** A choice's options as the provider sees them: the given ones, then the abstain option. */
+export function askedOptions(q: ChoiceQuestion): Option[] {
+  return q.abstain ? [...choiceOptions(q), ABSTAIN] : choiceOptions(q);
+}
 
 /** The key of an option as given: a plain string is its own key. */
 export function optionKey(o: string | Option): string {
@@ -94,6 +126,8 @@ export const DecideRequestSchema = z.object({
     .refine((q) => Object.keys(q).length >= 1 && Object.keys(q).length <= 8, "Ask 1 to 8 questions"),
 });
 export type DecideRequest = z.infer<typeof DecideRequestSchema>;
+/** A request as a caller writes it, before defaults are filled in. */
+export type DecideRequestInput = z.input<typeof DecideRequestSchema>;
 
 export const AnswerSchema = z.object({
   /** The option for `choice`, a number for `score`, a boolean for `noul`. */
@@ -101,6 +135,8 @@ export const AnswerSchema = z.object({
   /** Probability per option (choice) or per value (score, noul), when the provider gives them. */
   probabilities: z.record(z.string(), z.number().min(0).max(1)).optional(),
   confidence: z.number().min(0).max(1),
+  /** The probabilities of each order run, when a choice was asked in more than one order. */
+  runs: z.array(z.record(z.string(), z.number().min(0).max(1))).optional(),
 });
 export type Answer = z.infer<typeof AnswerSchema>;
 

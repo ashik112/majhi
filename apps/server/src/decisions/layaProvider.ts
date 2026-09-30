@@ -88,6 +88,6 @@ export class LayaProvider implements DecisionProvider {
       { state: call.text, questions: call.questions },
       DECIDE_TIMEOUT_MS,
     );
-    return { answers: fromLayaCall(request, result.answers), estimated: false, trimmed: call.trimmed };
+    return { answers: fromLayaCall(call, request, result.answers), estimated: false, trimmed: call.trimmed };
   }
 }

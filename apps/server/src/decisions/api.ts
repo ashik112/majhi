@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@majhi/acp";
-import type { DecideRequest, DecisionRecord, DecisionResult, ProviderId } from "@majhi/shared";
+import type { DecideRequestInput, DecisionRecord, DecisionResult, ProviderId } from "@majhi/shared";
 import type { Difficulty, TaskBrief } from "../runs/difficulty.ts";
 
 /**
@@ -48,7 +48,7 @@ export interface Decisions {
    * provider at all.
    */
   decide(
-    request: DecideRequest,
+    request: DecideRequestInput,
     use: { use: DecisionRecord["use"]; task?: string; agent?: string },
   ): Promise<DecisionResult | undefined>;
 }

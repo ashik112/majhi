@@ -1,15 +1,16 @@
 import type { AgentSession } from "@majhi/acp";
 import {
   type AgentFrontmatter,
+  type DecideRequestInput,
   DecisionSettingsSchema,
   type OptionValue,
   type PricesConfig,
   type Task,
 } from "@majhi/shared";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Decisions, RateTaskRequest, TaskRating } from "../decisions/api.ts";
 import type { Difficulty } from "./difficulty.ts";
-import { clearEffortChecks } from "./effort-check.ts";
+
 import { pickForSession } from "./pick.ts";
 
 const opts = (...ids: string[]): OptionValue[] => ids.map((id) => ({ id, name: id }));
@@ -89,7 +90,6 @@ const run = (
     task,
     settings,
     prices: over.prices ?? {},
-    tool: "codex",
     ...(over.replaced === undefined ? {} : { replaced: over.replaced }),
     ...(over.hidden === undefined ? {} : { hidden: over.hidden }),
   });
@@ -170,7 +170,6 @@ describe("pickForSession", () => {
       task,
       settings,
       prices: {},
-      tool: "codex",
       orgTiers: { Builder: { model: "cheapest", effort: "highest" } },
     });
     expect(set).toEqual({ model: "claude-haiku-4-5", thought_level: "low" });
@@ -300,17 +299,15 @@ const CODEX_EFFORTS: OptionValue[] = [
   { id: "ultra", name: "Ultra", description: "Maximum reasoning with automatic task delegation" },
 ];
 
-/** A stand-in for the provider: says yes to the option whose line in the state mentions delegation. */
-function judge(yes: (line: string) => boolean, confidence = 0.9) {
-  const calls: { state: string; keys: string[] }[] = [];
+/** A stand-in for the provider: answers A (delegates) for the option whose description says so. */
+function judge(yes: (description: string) => boolean, confidence = 0.9) {
+  const calls: DecideRequestInput[] = [];
   const decide: Decisions["decide"] = async (request) => {
-    calls.push({ state: String(request.state), keys: Object.keys(request.questions) });
-    const lines = String(request.state).split("\n");
+    calls.push(request);
+    const state = typeof request.state === "string" ? {} : request.state;
     return {
-      id: "j1",
-      answers: Object.fromEntries(
-        Object.keys(request.questions).map((key, n) => [key, { value: yes(lines[n] ?? ""), confidence }]),
-      ),
+      id: `j${calls.length}`,
+      answers: { delegates: { value: yes(state.description ?? "") ? "A" : "B", confidence } },
       provider: "laya",
       skipped: [],
       trimmed: false,
@@ -322,12 +319,11 @@ function judge(yes: (line: string) => boolean, confidence = 0.9) {
 }
 
 describe("pickForSession, efforts that change how the agent works", () => {
-  beforeEach(() => clearEffortChecks());
   const models = opts("claude-opus-5-5", "claude-sonnet-5-5");
 
   it("leaves a flagged effort out of the pick and of every tier: highest is max, not ultra", async () => {
     const { s, set } = session(models, CODEX_EFFORTS);
-    const j = judge((line) => line.includes("delegation"));
+    const j = judge((d) => d.includes("delegation"));
     const { d } = decisions(() => undefined, j.decide);
     const out = await run(d, s);
     expect(set.thought_level).toBe("max");
@@ -335,9 +331,12 @@ describe("pickForSession, efforts that change how the agent works", () => {
       "Efforts offered: low, medium, high, xhigh, max. Left out: ultra (changes how the agent works).",
     );
     expect(out.line).not.toContain("Could not check");
-    // One call, one question per option, the option's own description as the state.
-    expect(j.calls[0]?.keys).toEqual(["e0", "e1", "e2", "e3", "e4", "e5"]);
-    expect(j.calls[0]?.state).toContain("ultra: Maximum reasoning with automatic task delegation");
+    // One question per option, with only that option in the state, as a neutral A/B in both orders.
+    expect(j.calls).toHaveLength(6);
+    expect(j.calls[5]).toMatchObject({
+      state: { option: "ultra", description: "Maximum reasoning with automatic task delegation" },
+      questions: { delegates: { type: "choice", abstain: false, orders: "reversed" } },
+    });
   });
 
   it("keeps ultra when nothing is flagged", async () => {
@@ -348,45 +347,12 @@ describe("pickForSession, efforts that change how the agent works", () => {
     expect(out.line).not.toContain("Left out");
   });
 
-  it("does not flag on a yes under the confidence floor", async () => {
+  it("does not flag on an answer under the confidence floor, and says the check did not work", async () => {
     const { s, set } = session(models, CODEX_EFFORTS);
-    const { d } = decisions(() => undefined, judge((l) => l.includes("delegation"), 0.5).decide);
-    await run(d, s);
+    const { d } = decisions(() => undefined, judge((x) => x.includes("delegation"), 0.5).decide);
+    const out = await run(d, s);
     expect(set.thought_level).toBe("ultra");
-  });
-
-  it("does not trust a weak answer, yes or no, and does not remember it", async () => {
-    // The rules provider answers every yes/no with a no at 0.3.
-    let mode: "rules" | "laya" = "rules";
-    const decide: Decisions["decide"] = async (request) => ({
-      id: "j1",
-      answers: Object.fromEntries(
-        Object.keys(request.questions).map((key, n) => {
-          const ultra = String(request.state).split("\n")[n]?.includes("delegation") === true;
-          return [
-            key,
-            mode === "rules" ? { value: false, confidence: 0.3 } : { value: ultra, confidence: 0.9 },
-          ];
-        }),
-      ),
-      provider: mode === "rules" ? "rules" : "laya",
-      skipped: [],
-      trimmed: false,
-      estimated: false,
-      durationMs: 1,
-    });
-    const first = session(models, CODEX_EFFORTS);
-    const weak = await run(decisions(() => undefined, decide).d, first.s);
-    expect(weak.line).toContain("Could not check the effort options, so none were left out.");
-    expect(first.set.thought_level).toBe("ultra");
-
-    // Laya is back: the weak "no" was not cached, so ultra is asked about again and flagged.
-    mode = "laya";
-    const second = session(models, CODEX_EFFORTS);
-    const strong = await run(decisions(() => undefined, decide).d, second.s);
-    expect(second.set.thought_level).toBe("max");
-    expect(strong.line).toContain("Left out: ultra (changes how the agent works).");
-    expect(strong.line).not.toContain("Could not check");
+    expect(out.line).toContain("Could not check the effort options, so none were left out.");
   });
 
   it("leaves nothing out and says so when no provider answers", async () => {
@@ -405,22 +371,16 @@ describe("pickForSession, efforts that change how the agent works", () => {
     expect(again.line).toContain("Could not check the effort options");
   });
 
-  it("asks once per tool, effort and description", async () => {
-    const j = judge((line) => line.includes("delegation"));
+  it("asks once per option in a session start, and again at the next start", async () => {
+    const j = judge((x) => x.includes("delegation"));
     const first = session(models, CODEX_EFFORTS);
     await run(decisions(() => undefined, j.decide).d, first.s);
+    expect(j.calls).toHaveLength(6);
     const second = session(models, CODEX_EFFORTS);
     await run(decisions(() => undefined, j.decide).d, second.s);
-    expect(j.calls).toHaveLength(1);
+    // Nothing is kept across session starts, so a wrong answer never sticks.
+    expect(j.calls).toHaveLength(12);
     expect(second.set.thought_level).toBe("max");
-    // A changed description is asked again.
-    const changed = session(
-      models,
-      CODEX_EFFORTS.map((o) => (o.id === "ultra" ? { ...o, description: "New text" } : o)),
-    );
-    await run(decisions(() => undefined, j.decide).d, changed.s);
-    expect(j.calls).toHaveLength(2);
-    expect(j.calls[1]?.keys).toEqual(["e0"]);
   });
 
   it("never touches an effort set by hand, and never asks for it", async () => {

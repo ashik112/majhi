@@ -1,4 +1,4 @@
-import type { DecideRequest, EffortTier, ModelTier, Role, TaskKind, Tier } from "@majhi/shared";
+import type { DecideRequestInput, EffortTier, ModelTier, Role, TaskKind, Tier } from "@majhi/shared";
 
 /**
  * How much work a task is, as the decision provider rates it for an `auto` model and effort pick
@@ -50,7 +50,7 @@ export interface TaskBrief {
  * The question: named fields about the task, never the agent's id or its generic instructions,
  * which say nothing about this task and would crowd the brief out of Laya's window.
  */
-export function difficultyQuestion(task: TaskBrief): DecideRequest {
+export function difficultyQuestion(task: TaskBrief): DecideRequestInput {
   const title = task.title.trim();
   const brief = task.brief.trim();
   // The title is the brief's first line: do not spend the window on it twice.
@@ -68,6 +68,9 @@ export function difficultyQuestion(task: TaskBrief): DecideRequest {
         type: "choice",
         instructions: "How much work is the task for the agent in role?",
         options: DIFFICULTY_OPTIONS.map((o) => ({ ...o })),
+        // Laya favours some positions: ask in every shift and average. `none` stays in.
+        abstain: true,
+        orders: "shifted",
       },
     },
   };

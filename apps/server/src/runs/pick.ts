@@ -45,8 +45,6 @@ export async function pickForSession(input: {
   orgTiers?: TiersPatch | undefined;
   /** Models the tool's own catalog marks as replaced, by the model that replaced them. */
   replaced?: ReadonlyMap<string, string>;
-  /** The account's tool. */
-  tool: string;
   /** Models the owner hid on the account. Not used for `auto` picks, unless the agent's `models` names them. */
   hidden?: readonly string[];
 }): Promise<PickResult> {
@@ -72,12 +70,14 @@ export async function pickForSession(input: {
   const models = normalizeOffered(candidates);
   const rank = rankModels(models, input.prices);
   // An effort that changes how the agent works (it hands work to sub-agents) is not for `auto`.
+  // Answers are kept for this session start only, so a wrong one is never kept for long.
+  const known = new Map<string, boolean>();
   const check = async (list: readonly OptionValue[]): Promise<EffortCheck> =>
     fm.effort === "auto" && effortOptions(list).length >= 2
       ? checkEfforts({
           decisions,
-          tool: input.tool,
           options: list,
+          known,
           minConfidence: settings.min_confidence,
           task: task.id,
           agent: fm.id,

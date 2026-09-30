@@ -1,11 +1,4 @@
-import {
-  type Answer,
-  choiceOptions,
-  type DecideRequest,
-  optionKey,
-  type Question,
-  stateText,
-} from "@majhi/shared";
+import { type Answer, askedOptions, type DecideRequest, type Question, stateText } from "@majhi/shared";
 import { z } from "zod";
 
 /** The prompt for the stand-in agent: JSON in, JSON out, the state as data. */
@@ -38,12 +31,16 @@ function describe(q: Question): Record<string, unknown> {
       return {
         type: "choice",
         instructions: q.instructions,
-        options: Object.fromEntries(choiceOptions(q).map((o) => [o.key, o.description ?? o.key])),
+        options: Object.fromEntries(askedOptions(q).map((o) => [o.key, o.description ?? o.key])),
       };
     case "score":
       return { type: "score", instructions: q.instructions, min: q.min, max: q.max };
     case "noul":
-      return { type: "noul", instructions: q.instructions };
+      return {
+        type: "noul",
+        instructions: q.instructions,
+        ...(q.criteria === undefined ? {} : { criteria: q.criteria }),
+      };
   }
 }
 
@@ -53,7 +50,7 @@ export function replySchema(request: DecideRequest): z.ZodType<Record<string, An
   for (const [key, q] of Object.entries(request.questions)) {
     const value =
       q.type === "choice"
-        ? z.enum(q.options.map(optionKey) as [string, ...string[]])
+        ? z.enum(askedOptions(q).map((o) => o.key) as [string, ...string[]])
         : q.type === "score"
           ? z.number().int().min(q.min).max(q.max)
           : z.boolean();

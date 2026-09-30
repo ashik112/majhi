@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   type AgentFrontmatter,
   canWorkIn,
-  type DecisionResult,
   OWNER_HANDLE,
   parseMentions,
   type RoomItem,
@@ -19,9 +18,9 @@ import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
+import { asksOwner, loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
 
-/** Below this a verdict or a "needs the owner" answer from the decision provider is not used. */
+/** Below this a verdict from the decision provider is not used. */
 const DECISION_FLOOR = 0.6;
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
@@ -42,8 +41,7 @@ export interface CoordinatorDeps {
  * Teams in a room (SPEC 5.3). When an agent ends a turn, reads the @mentions in its final message,
  * adds mentioned agents that may join, works out who goes next for the task's mode, and hands the
  * work on with a handoff prompt. Stops the room when the loop guard or the review round cap says
- * so. Asks the decision provider only when the words alone do not say (a reviewer's verdict,
- * whether a message needs the owner).
+ * so. Asks the decision provider only when the words alone do not say what a reviewer decided.
  */
 export class RoomCoordinator {
   constructor(private readonly deps: CoordinatorDeps) {}
@@ -105,7 +103,7 @@ export class RoomCoordinator {
     // Lead delegates: in a team, a message nobody else is woken by may still be for the owner.
     if (task.mode === "lead" && plan.handoffs.length === 0 && task.team.length > 1 && text !== "") {
       const others = runs.working(task.id).filter((a) => a !== turn.agent);
-      if (others.length > 0 && (await this.needsOwner(task, turn.agent, text))) {
+      if (others.length > 0 && asksOwner(text)) {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
       }
     }
@@ -179,45 +177,31 @@ export class RoomCoordinator {
     const said = verdictOf(text);
     if (said !== undefined) return said;
     if (!isLoopReviewer) return undefined;
-    const answer = await this.ask(task, agent, text, {
-      approved: {
-        type: "noul",
-        instructions: "The reviewer approves the work and asks for no more changes.",
-      },
-    });
-    if (answer === undefined) return "unclear";
-    const a = answer.answers.approved;
-    if (a === undefined || a.confidence < DECISION_FLOOR) return "unclear";
-    return a.value === true ? "approved" : "changes";
-  }
-
-  private async needsOwner(task: Task, agent: string, text: string): Promise<boolean> {
-    const answer = await this.ask(task, agent, text, {
-      owner: {
-        type: "noul",
-        instructions: "The message asks the owner a question, or needs the owner to decide or do something.",
-      },
-    });
-    const a = answer?.answers.owner;
-    return a !== undefined && a.value === true && a.confidence >= DECISION_FLOOR;
-  }
-
-  private async ask(
-    task: Task,
-    agent: string,
-    text: string,
-    questions: Parameters<Decisions["decide"]>[0]["questions"],
-  ): Promise<DecisionResult | undefined> {
-    return this.deps.decisions
+    // Two neutral options, described, asked in both orders: on Laya this told approvals from
+    // change requests apart at 0.86 to 0.94.
+    const answer = await this.deps.decisions
       ?.decide(
-        { state: `Message from @${agent}:\n${text.slice(0, STATE_MAX)}`, questions },
         {
-          use: "routing",
-          task: task.id,
-          agent,
+          state: { from: `@${agent}`, message: text.slice(0, STATE_MAX) },
+          questions: {
+            verdict: {
+              type: "choice",
+              instructions: "What is the reviewer's verdict in message?",
+              options: [
+                { key: "A", description: "approves the work as it is, with no more changes asked" },
+                { key: "B", description: "asks for changes, finds problems, or is not done reviewing" },
+              ],
+              abstain: false,
+              orders: "reversed",
+            },
+          },
         },
+        { use: "routing", task: task.id, agent },
       )
       .catch(() => undefined);
+    const a = answer?.answers.verdict;
+    if (a === undefined || a.confidence < DECISION_FLOOR) return "unclear";
+    return a.value === "A" ? "approved" : "changes";
   }
 
   private async frontmatters(): Promise<AgentFrontmatter[]> {
