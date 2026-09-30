@@ -17,7 +17,7 @@ import { UpdateOverlay } from "@/features/update/update-overlay";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { cn } from "@/lib/cn";
-import { useOrgFilter } from "@/lib/org-filter";
+import { useAdoptOrgParam, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
@@ -54,6 +54,7 @@ export function AppShell() {
 function Frame() {
   const newTask = useNewTask();
   const { helpOpen, setHelpOpen } = useShortcuts(newTask.open);
+  useAdoptOrgParam();
   const { org } = useOrgFilter();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;

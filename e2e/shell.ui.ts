@@ -163,14 +163,15 @@ test("the board shows the task in Inbox; j and Enter open it, n adds a chat task
   await expect(inbox.getByRole("link").first()).toBeFocused();
 });
 
-test("the org filter lives in the URL and narrows the board, the count and the dialog", async ({ page }) => {
+test("the org filter is remembered, keeps URLs clean, and narrows the board, the count and the dialog", async ({ page }) => {
   await page.goto("/");
   const orgs = page.getByRole("group", { name: "Filter by org" });
   await expect(orgs.getByRole("button", { name: /All orgs/ })).toHaveAttribute("aria-pressed", "true");
   await expect(orgs.getByRole("button", { name: /Globex/ })).toContainText("1");
 
   await orgs.getByRole("button", { name: /Globex/ }).click();
-  await expect(page).toHaveURL(/\?org=globex$/);
+  await expect(page).not.toHaveURL(/org=/);
+  await expect(orgs.getByRole("button", { name: /Globex/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("link", { name: /fix the login redirect/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Explain how sessions/ })).toHaveCount(0);
   await expect(page.getByText("1 open")).toBeVisible();
@@ -179,7 +180,7 @@ test("the org filter lives in the URL and narrows the board, the count and the d
   await nav(page)
     .getByRole("link", { name: /^Agents/ })
     .click();
-  await expect(page).toHaveURL(/\/agents\?org=globex$/);
+  await expect(page).toHaveURL(/\/agents$/);
   await page.keyboard.press("n");
   const dialog = page.getByRole("dialog", { name: "New task" });
   await expect(dialog.getByRole("button", { name: "alpha-api", exact: true })).toHaveAttribute(
