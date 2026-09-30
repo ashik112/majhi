@@ -230,14 +230,10 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   const section = changes.getByRole("region", { name: "Changes in api" });
   await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
 
-  // A changed file opens in the viewer with its diff, and the full file one click away.
-  await section.getByRole("link", { name: "Show changes in HEALTH.md" }).click();
-  const viewer = page.getByRole("dialog", { name: "File api/HEALTH.md" });
-  await expect(viewer.getByText("# Health")).toBeVisible();
-  await viewer.getByRole("button", { name: "Full file" }).click();
-  await expect(viewer.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(viewer).toBeHidden();
+  // A changed file opens the Changes view with its diff inline.
+  await section.getByRole("button", { name: "Show the diff of HEALTH.md" }).click();
+  await expect(page.getByRole("button", { name: "Changes", pressed: true })).toBeVisible();
+  await expect(page.getByRole("group").filter({ hasText: "New file" })).toContainText("# Health");
 });
 
 test("Esc stops a slow turn, and a queued message waits until the next send", async ({ page, request }) => {

@@ -19,6 +19,7 @@ const status = async (request: APIRequestContext, id: string) =>
   cmd<{ status: string; pausedReason?: string }>(request, "tasks.get", { id });
 
 const messages = (page: Page) => page.getByRole("log", { name: "Room messages" });
+const needsYou = (page: Page) => page.getByRole("region", { name: "Needs you" });
 const panel = (page: Page) => page.getByRole("complementary", { name: "Task details" });
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 
@@ -62,7 +63,7 @@ test("a compaction shows in the room as one quiet line, and Fresh session carrie
     timeout: 20_000,
   });
   await panel(page)
-    .getByRole("button", { name: /@acme-lead/, expanded: false })
+    .getByRole("button", { name: /@acme-lead(?! in this task)/, expanded: false })
     .click();
   const meter = panel(page).getByRole("meter", { name: "Context of @acme-lead" });
   await expect(meter).toHaveAttribute("aria-valuetext", "4k of 200k tokens");
@@ -88,7 +89,7 @@ test("an agent waits in line when its account is at the limit, and starts when a
   // The reviewer's turn stops at a permission prompt, so it keeps its slot.
   const first = await createTask(request, "review on api @acme-reviewer");
   await page.goto(`/t/${first}`);
-  await expect(messages(page).getByText(/acme-reviewer asks to/)).toBeVisible({ timeout: 20_000 });
+  await expect(needsYou(page).getByText(/acme-reviewer asks to/)).toBeVisible({ timeout: 20_000 });
 
   const second = await createTask(request, "lead on api @acme-lead");
   await page.goto(`/t/${second}`);
@@ -108,7 +109,7 @@ test("offline pauses the running task, and it resumes on its own when the connec
 }) => {
   const id = await createTask(request, "offline on api @acme-reviewer");
   await page.goto(`/t/${id}`);
-  await expect(messages(page).getByText(/acme-reviewer asks to/)).toBeVisible({ timeout: 20_000 });
+  await expect(needsYou(page).getByText(/acme-reviewer asks to/)).toBeVisible({ timeout: 20_000 });
 
   writeFileSync(OFFLINE_FILE, "");
   await expect(panel(page).getByText("Paused, offline")).toBeVisible({ timeout: 10_000 });

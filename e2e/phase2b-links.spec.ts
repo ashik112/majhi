@@ -65,7 +65,7 @@ test("a task that depends on another waits, shows it on the board, and starts wh
   await expect.poll(() => status(request, b), { timeout: 20_000 }).toBe("running");
 
   await page.goto(`/t/${b}`);
-  await expect(page.getByText(`Started: ${a} is done.`)).toBeVisible();
+  await expect(page.getByRole("log", { name: "Room messages" }).getByText(`${b} starts.`)).toBeVisible();
   await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
 });
 

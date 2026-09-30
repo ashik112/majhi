@@ -58,6 +58,7 @@ export function TaskChips({
             ref={ref}
             type="button"
             {...props}
+            aria-label={`Choose ${label.toLowerCase()}`}
             className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-line-control px-2.5 text-xs text-fg-muted hover:border-line-hover hover:text-fg"
           >
             <Plus aria-hidden="true" className="size-3.5" />
