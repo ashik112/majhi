@@ -215,13 +215,23 @@ describe("room.answerAsk routing", () => {
     expect(answer.status).toBe(409);
   });
 
-  it("routes answered ask to the agent who called it", async () => {
+  it("routes answered ask to the non-lead agent who called it", async () => {
     w = await taskWorld();
     const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
     const taskId = res.body.id;
     const task = w.h.majhi.services.store.tasks.get(taskId);
     if (!task) throw new Error("Task not found");
-    const agent = task.team[0];
+    const lead = task.team[0];
+
+    const createRes = await w.h.cmd("agents.create", {
+      id: "acme-reviewer",
+      frontmatter: { scope: "acme", role: "Reviewer", account: "claude-acme", perms: ["edit"] },
+      instructions: "Review things.\n",
+    });
+    if (createRes.status !== 200) throw new Error(`agents.create failed: ${createRes.status}`);
+
+    const addRes = await w.h.cmd("team.add", { task: taskId, agent: "acme-reviewer" });
+    if (addRes.status !== 200) throw new Error(`team.add failed: ${addRes.status}`);
 
     const card = await postAskCard(taskId, [
       {
@@ -230,11 +240,10 @@ describe("room.answerAsk routing", () => {
         options: [{ id: "opt", label: "Option" }],
         freeText: false,
       },
-    ]);
+    ], "acme-reviewer");
 
-    expect(card.type).toBe("ask");
-    if (card.type !== "ask") throw new Error("Not an ask card");
-    expect(card.agent).toBe(agent);
+    expect(card.agent).toBe("acme-reviewer");
+    expect(card.agent).not.toBe(lead);
 
     const answer = await w.h.cmd("room.answerAsk", {
       task: taskId,
@@ -246,6 +255,7 @@ describe("room.answerAsk routing", () => {
     const items = await roomItems(taskId);
     const ownerMsg = items.find((i) => i.type === "owner" && i.text.includes("Owner chose"));
     if (!ownerMsg || ownerMsg.type !== "owner") throw new Error("Owner message not found");
-    expect(ownerMsg.to).toBe(agent);
+    expect(ownerMsg.to).toBe("acme-reviewer");
+    expect(ownerMsg.to).not.toBe(lead);
   });
 });
