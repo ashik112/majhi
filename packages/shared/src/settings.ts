@@ -102,7 +102,14 @@ export const MemorySettingsSchema = z.strictObject({
   housekeeper_model: memoryFields.housekeeper_model.optional(),
 });
 export type MemorySettings = z.infer<typeof MemorySettingsSchema>;
-export const MemoryPatchSchema = z.strictObject(memoryFields).partial();
+/** `null` puts the default back: the boss as Housekeeper, the cheapest model. */
+export const MemoryPatchSchema = z
+  .strictObject({
+    ...memoryFields,
+    housekeeper: memoryFields.housekeeper.nullable(),
+    housekeeper_model: memoryFields.housekeeper_model.nullable(),
+  })
+  .partial();
 export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
 
 /** How the boss's commands are approved, per risk class (5.16). */

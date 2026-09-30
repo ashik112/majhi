@@ -98,6 +98,10 @@ export function writeSettings(
     for (const [section, fields] of Object.entries(patch)) {
       for (const [key, value] of Object.entries((fields ?? {}) as Record<string, unknown>)) {
         if (value === undefined) continue;
+        if (value === null) {
+          doc.deleteIn([section, key]);
+          continue;
+        }
         const empty = typeof value === "object" && value !== null && Object.keys(value).length === 0;
         if (empty) doc.deleteIn([section, key]);
         else doc.setIn([section, key], doc.createNode(value));

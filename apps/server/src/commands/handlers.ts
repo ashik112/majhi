@@ -284,7 +284,7 @@ export function createHandlers({
       if (compactTarget >= compactAt) {
         throw new UserError("compact_target must be lower than compact_at.", 400);
       }
-      if (input.memory?.housekeeper !== undefined) {
+      if (typeof input.memory?.housekeeper === "string") {
         const id = input.memory.housekeeper;
         if ((await services.agentStore.get(id)) === undefined) {
           throw new UserError(`There is no agent @${id}.`, 404);

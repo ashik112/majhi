@@ -59,6 +59,10 @@ describe("settings commands", () => {
       housekeeper_model: "a-small-model",
     });
     expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("auto_threshold: 0.9");
+    // null puts a default back: no model set means the cheapest one.
+    const cleared = await h.cmd("settings.set", { memory: { housekeeper_model: null } });
+    expect(cleared.body.memory).toEqual({ auto_threshold: 0.9, review_all: true });
+    expect(await readFile(h.majhi.services.config.file, "utf8")).not.toContain("housekeeper_model");
     expect((await h.cmd("settings.set", { memory: { auto_threshold: 1.5 } })).status).toBe(400);
     expect((await h.cmd("settings.set", { memory: { housekeeper: "nobody" } })).status).toBe(404);
     expect((await h.cmd("settings.set", { memory: { nope: 1 } })).status).toBe(400);
