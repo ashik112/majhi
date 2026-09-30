@@ -4,12 +4,14 @@ import {
   Brain,
   Check,
   ChevronRight,
+  CircleAlert,
   GitCompareArrows,
   ListChecks,
   Paperclip,
   ShieldQuestion,
+  TriangleAlert,
 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -24,7 +26,14 @@ import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionOptionLabel, permissionSummary, toolLabel } from "./model";
 import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
+import { ownerNotice, type Quiet, valueParts } from "./system-lines";
 import { ToolRow } from "./tool-row";
+
+/** The inset of everything that is not a message: it lines up with the text beside the avatars. */
+export const GUTTER = "pl-[34px]";
+
+/** A message's text column: a readable measure. */
+const MEASURE = "max-w-[72ch]";
 
 export function permissionDomId(itemId: string): string {
   return `perm-${itemId}`;
@@ -45,14 +54,159 @@ export interface ItemContext {
 }
 
 /** One room item. Wrapped so a long room paints only what is on screen. */
-export const RoomItemView = memo(function RoomItemView({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
+export const RoomItemView = memo(function RoomItemView({
+  item,
+  ctx,
+  className,
+}: {
+  item: RoomItem;
+  ctx: ItemContext;
+  /** The space above it, from the row before. */
+  className?: string | undefined;
+}) {
   if (item.type === "plan" && ctx.pinned.has(item.id)) return null;
   return (
-    <li className="animate-fade-in list-none [contain-intrinsic-size:auto_64px] [content-visibility:auto]">
+    <li
+      className={cn(
+        "animate-fade-in list-none [contain-intrinsic-size:auto_40px] [content-visibility:auto]",
+        className,
+      )}
+    >
       <ItemBody item={item} ctx={ctx} />
     </li>
   );
 });
+
+/** System notes posted in one moment, as one quiet line. */
+export const NotesRow = memo(function NotesRow({
+  quiet,
+  at,
+  className,
+}: {
+  quiet: Quiet;
+  at: string;
+  className?: string | undefined;
+}) {
+  return (
+    <li className={cn("animate-fade-in list-none", className)}>
+      <QuietLine quiet={quiet} at={at} />
+    </li>
+  );
+});
+
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** When an item was posted: small, and on hover only for quiet lines. */
+function Stamp({ at, hover }: { at: string; hover?: boolean }) {
+  return (
+    <time
+      dateTime={at}
+      title={new Date(at).toLocaleString()}
+      className={cn(
+        "tnum shrink-0 font-mono text-xs text-fg-dim",
+        hover && "opacity-0 transition-opacity duration-150 group-hover/line:opacity-100",
+      )}
+    >
+      {clock(at)}
+    </time>
+  );
+}
+
+/** Text with backticked values in mono, and task ids and @mentions as links. */
+function QuietText({ text }: { text: string }) {
+  return valueParts(text).map((part, i) =>
+    part.value ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one line keep their order
+      <span key={i} className="font-mono text-fg-muted">
+        {part.text}
+      </span>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one line keep their order
+      <TaskRefText key={i} text={part.text} />
+    ),
+  );
+}
+
+const QUIET_TONE = {
+  info: "text-fg-faint",
+  warn: "text-amber",
+  error: "text-red",
+} as const;
+
+/**
+ * One quiet line in the log, left aligned at the gutter: a short sentence, the full text behind a
+ * small expander when there is more, and the time on hover. Warnings and errors wrap instead of
+ * cutting, so the whole of what went wrong shows.
+ */
+export function QuietLine({
+  quiet,
+  at,
+  tone = "info",
+  icon,
+  children,
+}: {
+  quiet: Quiet;
+  at?: string | undefined;
+  tone?: keyof typeof QUIET_TONE;
+  icon?: ReactNode;
+  /** More to show under the line when it is opened, in place of the plain detail text. */
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const more = children !== undefined || quiet.detail !== undefined;
+  const plain = quiet.short.replaceAll("`", "");
+  return (
+    <div className={cn(GUTTER, "group/line flex flex-col")}>
+      <div
+        role={tone === "error" ? "alert" : undefined}
+        className={cn("flex min-h-5 items-start gap-1.5 text-sm", QUIET_TONE[tone])}
+      >
+        <span aria-hidden="true" className="grid h-[18px] w-3.5 shrink-0 place-items-center">
+          {icon ?? <span className="size-1 rounded-full bg-current opacity-70" />}
+        </span>
+        <p
+          title={tone === "info" ? plain : undefined}
+          className={cn("min-w-0", tone === "info" ? "truncate" : "text-pretty break-words")}
+        >
+          <QuietText text={quiet.short} />
+        </p>
+        {more && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? "Hide details" : "Show details"}
+            title={open ? "Hide details" : "Show details"}
+            onClick={() => setOpen((v) => !v)}
+            className="grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-xs text-fg-faint hover:bg-raised hover:text-fg"
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={cn("size-3 transition-transform duration-150", open && "rotate-90")}
+            />
+          </button>
+        )}
+        {at !== undefined && (
+          <span className="ml-auto pl-3">
+            <Stamp at={at} hover />
+          </span>
+        )}
+      </div>
+      {open &&
+        (children ?? (
+          <p
+            className={cn(
+              MEASURE,
+              "mt-1 mb-1 ml-5 rounded-md bg-sunken px-2.5 py-1.5 text-sm leading-[1.6] whitespace-pre-wrap break-words text-fg-muted",
+            )}
+          >
+            <QuietText text={quiet.detail ?? ""} />
+          </p>
+        ))}
+    </div>
+  );
+}
 
 function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
   switch (item.type) {
@@ -102,109 +256,125 @@ const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {
   "review-loop": "passed the work to",
 };
 
-/** One agent woke another (5.3), as a quiet line. The message itself is the agent's above it. */
+/**
+ * One agent woke another (5.3), as a quiet line. A mention's message is the agent's above it; work
+ * handed over by the tool shows its first line, and all of it when opened.
+ */
 function HandoffLine({ item }: { item: Of<"handoff"> }) {
+  const head = `@${item.from} ${HANDOFF_WORDS[item.via]} @${item.to}${item.queued ? ", after its current turn" : ""}`;
+  if (item.via !== "tool" || item.text.trim() === "")
+    return <QuietLine quiet={{ short: head }} at={item.at} />;
+  const first = item.text.trim().split("\n", 1)[0] ?? "";
   return (
-    <div className="flex flex-col items-center gap-1">
-      <span className="font-mono text-xs text-fg-faint">
-        @{item.from} {HANDOFF_WORDS[item.via]} @{item.to}
-        {item.queued ? ", after its current turn" : ""}
-      </span>
-      {item.via === "tool" && (
-        <p className="max-w-[640px] text-sm whitespace-pre-wrap break-words text-fg-muted">
-          <TaskRefText text={item.text.length > 600 ? `${item.text.slice(0, 600)}...` : item.text} />
-        </p>
-      )}
-    </div>
+    <QuietLine quiet={{ short: `${head}: ${first}`, detail: item.text }} at={item.at}>
+      <div
+        className={cn(
+          MEASURE,
+          "mt-1 mb-1 ml-5 rounded-md bg-sunken px-3 py-2 text-base leading-[1.6] text-fg-soft",
+        )}
+      >
+        <Markdown text={item.text} />
+      </div>
+    </QuietLine>
   );
 }
 
-/** The lead's plan (`record_plan`) as one quiet line: the steps, why, and how the work gets done. */
+/** The lead's plan (`record_plan`) as one quiet line; opened, the steps, why, and how the work gets done. */
 function TeamPlanLine({ item }: { item: Of<"team-plan"> }) {
+  const name = item.version > 1 ? `Plan v${item.version}` : "Plan";
+  const steps = item.steps.map((s, i) => `${i + 1}. ${s.who} ${s.what}`).join(" · ");
   return (
-    <div className="flex justify-center">
-      <p className="flex max-w-[720px] flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-fg-muted break-words">
-        <span className="font-mono font-medium text-fg-faint">
-          {item.version > 1 ? `Plan v${item.version}` : "Plan"}
-        </span>
-        <span>
+    <QuietLine
+      quiet={{ short: `${name}: ${steps}`, detail: item.why }}
+      at={item.at}
+      icon={<ListChecks className="size-3.5" />}
+    >
+      <div
+        className={cn(MEASURE, "mt-1 mb-1 ml-5 flex flex-col gap-1.5 rounded-md bg-sunken px-3 py-2 text-sm")}
+      >
+        <ol className="m-0 flex list-none flex-col gap-0.5 p-0 text-fg-soft">
           {item.steps.map((step, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: the steps of one plan keep their order
-            <span key={i}>
-              {i > 0 && " · "}
-              {i + 1}. <TaskRefText text={`${step.who} ${step.what}`} />
-            </span>
+            <li key={i}>
+              <span className="tnum font-mono text-fg-faint">{i + 1}.</span>{" "}
+              <TaskRefText text={`${step.who} ${step.what}`} />
+            </li>
           ))}
-        </span>
-        <span className="text-fg-faint">{item.why}</span>
-        <span className="flex gap-1">
-          {item.how.map((h) => (
-            <span key={h} className="rounded border border-line px-1 font-mono text-[10px] text-fg-faint">
-              {h}
-            </span>
-          ))}
-        </span>
-      </p>
-    </div>
+        </ol>
+        <p className="text-fg-muted text-pretty">{item.why}</p>
+        {item.how.length > 0 && (
+          <p className="flex flex-wrap gap-1">
+            {item.how.map((h) => (
+              <span key={h} className="rounded-xs border border-line px-1 font-mono text-xs text-fg-faint">
+                {h}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </QuietLine>
   );
 }
 
 /** A compaction, as one quiet line, with the handoff note when there is one. */
 function ContextLine({ item }: { item: Of<"context"> }) {
   return (
-    <div className="flex justify-center">
-      <span className="flex max-w-[640px] items-baseline gap-2 font-mono text-xs text-fg-faint">
-        <span className="break-words">{contextLine(item)}</span>
-        {item.note && <TaskFileLink path={item.note} kind="markdown" label="note" />}
-      </span>
-    </div>
-  );
-}
-
-function OwnerMessage({ item }: { item: Of<"owner"> }) {
-  return (
-    <div className="flex justify-end">
-      <div className="flex max-w-[700px] gap-2.5">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-fg text-[11px] font-semibold text-canvas"
-        >
-          Y
-        </span>
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex items-baseline gap-2 font-mono">
-            <span className="text-base font-semibold">you</span>
-            {item.queued && (
-              <span className="text-xs text-fg-faint">Queued, waits for the agent's next turn</span>
-            )}
-          </div>
-          <div
-            className={cn(
-              "rounded-lg bg-blue-wash px-3 py-2.5 text-body leading-normal whitespace-pre-wrap break-words text-fg-soft",
-              item.queued && "opacity-70",
-            )}
-          >
-            <TaskRefText text={item.text} />
-          </div>
-          {item.attachments.length > 0 && (
-            <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
-              {item.attachments.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex h-6 items-center gap-1 rounded-sm border border-line-strong px-1.5 font-mono text-xs text-fg-muted"
-                >
-                  <Paperclip aria-hidden="true" className="size-3" />
-                  {a.name}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+    <div className="flex items-center gap-2">
+      <div className="min-w-0">
+        <QuietLine quiet={{ short: contextLine(item) }} at={item.at} />
       </div>
+      {item.note && <TaskFileLink path={item.note} kind="markdown" label="note" />}
     </div>
   );
 }
 
+/** The owner's side of the conversation: a light bubble in the same column as the agents. */
+function OwnerMessage({ item }: { item: Of<"owner"> }) {
+  // What majhi once wrote as the owner (an approval, a choice) reads as the plain line it is.
+  const notice = ownerNotice(item);
+  if (notice) return <QuietLine quiet={notice} at={item.at} />;
+  return (
+    <article aria-label="You" className="flex gap-2.5">
+      <span
+        aria-hidden="true"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-fg-soft text-[10px] font-semibold text-canvas"
+      >
+        Y
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex h-6 items-center gap-2">
+          <span className="text-base font-semibold text-fg">You</span>
+          <Stamp at={item.at} />
+          {item.queued && <span className="text-sm text-fg-faint">Queued for the agent's next turn</span>}
+        </div>
+        <div
+          className={cn(
+            MEASURE,
+            "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
+            item.queued && "opacity-70",
+          )}
+        >
+          <TaskRefText text={item.text} />
+        </div>
+        {item.attachments.length > 0 && (
+          <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
+            {item.attachments.map((a) => (
+              <li
+                key={a.id}
+                className="flex h-6 items-center gap-1 rounded-sm border border-line-strong px-1.5 font-mono text-xs text-fg-muted"
+              >
+                <Paperclip aria-hidden="true" className="size-3" />
+                {a.name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/** An agent's message: avatar, handle and model, then its text unboxed at a readable measure. */
 function AgentMessage({
   item,
   live,
@@ -217,15 +387,16 @@ function AgentMessage({
   const info = useAgentIndex().get(item.agent);
   const meta = [info?.account, live?.model ?? info?.model].filter(Boolean).join(" · ");
   return (
-    <div className="flex max-w-[700px] gap-2.5">
-      <AgentAvatar id={item.agent} size={28} className="mt-0.5" />
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex items-baseline gap-2 font-mono">
-          <span className="text-base font-semibold">@{item.agent}</span>
-          {meta && <span className="text-xs text-fg-faint">{meta}</span>}
+    <article aria-label={`@${item.agent}`} className="flex gap-2.5">
+      <AgentAvatar id={item.agent} size={24} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex h-6 min-w-0 items-center gap-2">
+          <span className="shrink-0 font-mono text-base font-semibold text-fg">@{item.agent}</span>
+          {meta && <span className="min-w-0 truncate font-mono text-xs text-fg-faint">{meta}</span>}
+          <Stamp at={item.at} />
         </div>
         {item.text !== "" && (
-          <div className="min-w-0 rounded-lg border border-line bg-card px-3 py-2.5 text-body leading-normal text-fg">
+          <div className={cn(MEASURE, "min-w-0 text-body text-fg")}>
             <Markdown text={task === undefined ? item.text : linkifyPaths(item.text)} task={task} />
           </div>
         )}
@@ -239,26 +410,31 @@ function AgentMessage({
           </ul>
         )}
       </div>
-    </div>
+    </article>
   );
 }
 
 function Thought({ item }: { item: Of<"thought"> }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="pl-[38px]">
+    <div className={GUTTER}>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-sm text-fg-faint hover:text-fg-muted"
+        className="-ml-1.5 flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-sm text-fg-faint hover:bg-raised hover:text-fg-muted"
       >
-        <ChevronRight aria-hidden="true" className={cn("size-3 transition-transform", open && "rotate-90")} />
         <Brain aria-hidden="true" className="size-3.5" />
         Thinking
+        <ChevronRight aria-hidden="true" className={cn("size-3 transition-transform", open && "rotate-90")} />
       </button>
       {open && (
-        <p className="mt-1 border-l-2 border-line-strong pl-3 text-base whitespace-pre-wrap break-words text-fg-muted">
+        <p
+          className={cn(
+            MEASURE,
+            "mt-1 mb-1 rounded-md bg-sunken px-3 py-2 text-base whitespace-pre-wrap break-words text-fg-muted",
+          )}
+        >
           <TaskRefText text={item.text} />
         </p>
       )}
@@ -269,7 +445,7 @@ function Thought({ item }: { item: Of<"thought"> }) {
 function PlanSummary({ item }: { item: Of<"plan"> }) {
   const done = item.entries.filter((e) => e.status === "completed").length;
   return (
-    <details className="pl-[38px] text-sm text-fg-faint">
+    <details className={cn(GUTTER, "text-sm text-fg-faint")}>
       <summary className="flex cursor-pointer items-center gap-1.5 hover:text-fg-muted">
         <ListChecks aria-hidden="true" className="size-3.5" />
         Plan, {done} of {item.entries.length} done
@@ -342,10 +518,10 @@ function Permission({
   const summary = permissionSummary(item);
   if (!summary.pending) {
     return (
-      <details className="group pl-[38px] text-sm text-fg-faint">
+      <details className="group pl-[34px] text-sm text-fg-faint">
         <summary
           className={cn(
-            "flex list-none items-center gap-2",
+            "-ml-1.5 flex h-6 list-none items-center gap-1.5 rounded-sm px-1.5",
             summary.full ? "cursor-pointer hover:text-fg-muted" : "pointer-events-none",
           )}
         >
@@ -366,7 +542,7 @@ function Permission({
       id={permissionDomId(item.id)}
       tabIndex={-1}
       aria-label={`Permission: ${item.title}`}
-      className="flex max-w-[700px] outline-none flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+      className="flex max-w-[72ch] outline-none flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
@@ -402,18 +578,20 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
   if (item.state !== "pending") {
     const label = item.options.find((o) => o.id === item.chosen)?.label;
     return (
-      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
-        <GitCompareArrows aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="min-w-0 break-words">
-          {item.question} {label === undefined ? "Not answered." : `You chose: ${label}.`}
-        </span>
-      </p>
+      <QuietLine
+        quiet={{
+          short: label === undefined ? `Not answered: ${item.question}` : `You chose: ${label}`,
+          detail: item.question,
+        }}
+        at={item.at}
+        icon={<GitCompareArrows className="size-3.5" />}
+      />
     );
   }
   return (
     <section
       aria-label="Choice"
-      className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+      className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <GitCompareArrows aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
@@ -465,18 +643,22 @@ function AskCard({ item }: { item: Of<"ask"> }) {
 
   if (item.state !== "pending") {
     return (
-      <div className="flex flex-col gap-1 pl-[38px]">
+      <div className="flex flex-col gap-0.5">
         {item.questions.map((q) => {
           const answer = item.answers?.[q.id];
           const option = q.options.find((o) => o.id === answer);
           const label = option?.label ?? answer;
+          const verb = option === undefined ? "typed" : "chose";
           return (
-            <p key={q.id} className="flex items-center gap-2 text-sm text-fg-faint">
-              <ListChecks aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="min-w-0 break-words">
-                {q.question} You {q.options.some((o) => o.id === answer) ? "chose" : "typed"}: {label}.
-              </span>
-            </p>
+            <QuietLine
+              key={q.id}
+              quiet={{
+                short: label === undefined ? `Not answered: ${q.question}` : `You ${verb}: ${label}`,
+                detail: q.question,
+              }}
+              at={item.at}
+              icon={<ListChecks className="size-3.5" />}
+            />
           );
         })}
       </div>
@@ -496,7 +678,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
   return (
     <section
       aria-label="Question"
-      className="flex max-w-[700px] flex-col gap-3 rounded-lg border border-blue-line bg-blue-wash px-3.5 py-3"
+      className="flex max-w-[72ch] flex-col gap-3 rounded-lg border border-blue-line bg-blue-wash px-3.5 py-3"
     >
       {item.questions.map((question) => (
         <div key={question.id} className="flex flex-col gap-2">
@@ -581,24 +763,19 @@ function AskCard({ item }: { item: Of<"ask"> }) {
   );
 }
 
-const SYSTEM_TONE = {
-  info: "text-fg-faint border-line-strong",
-  warn: "text-amber border-amber-line",
-  error: "text-red border-red-line",
+const SYSTEM_ICON = {
+  warn: <TriangleAlert className="size-3.5" />,
+  error: <CircleAlert className="size-3.5" />,
 };
 
+/** A warning or an error from majhi. Plain notes come grouped as a NotesRow instead. */
 function SystemLine({ item }: { item: Of<"system"> }) {
   return (
-    <div className="flex justify-center">
-      <span
-        role={item.level === "error" ? "alert" : undefined}
-        className={cn(
-          "max-w-[640px] rounded-full border px-2.5 py-0.5 text-center font-mono text-xs break-words",
-          SYSTEM_TONE[item.level],
-        )}
-      >
-        <TaskRefText text={item.text} />
-      </span>
-    </div>
+    <QuietLine
+      quiet={{ short: item.text }}
+      at={item.at}
+      tone={item.level}
+      icon={item.level === "info" ? undefined : SYSTEM_ICON[item.level]}
+    />
   );
 }

@@ -41,7 +41,12 @@ const STATUS_LABEL: Record<ToolItem["status"], string> = {
 export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem; folder: string }) {
   const [open, setOpen] = useState(false);
   if (isQuietTool(item.title)) {
-    return <p className="px-1 text-xs text-fg-faint">{toolLabel(item.title)}</p>;
+    return (
+      <p className="flex h-6 items-center gap-1.5 pl-[34px] text-sm text-fg-faint">
+        <span aria-hidden="true" className="size-3.5 shrink-0" />
+        {toolLabel(item.title)}
+      </p>
+    );
   }
   const Icon = KIND_ICON[item.kind] ?? Wrench;
   const full = toolTarget(item);
@@ -49,16 +54,8 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
   const expandable = hasToolDetail(item);
   const head = (
     <>
-      {expandable ? (
-        <ChevronRight
-          aria-hidden="true"
-          className={cn("size-3 shrink-0 text-fg-faint transition-transform", open && "rotate-90")}
-        />
-      ) : (
-        <span aria-hidden="true" className="size-3 shrink-0" />
-      )}
-      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
-      <span className="min-w-0 shrink truncate text-fg-soft" title={item.title}>
+      <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
+      <span className="min-w-0 shrink truncate text-fg-muted" title={item.title}>
         {oneLine(toolLabel(item.title))}
       </span>
       {target && target !== item.title && (
@@ -66,26 +63,38 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
           {target}
         </span>
       )}
+      {expandable && (
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            "size-3 shrink-0 text-fg-faint opacity-0 transition group-hover/tool:opacity-100",
+            open && "rotate-90 opacity-100",
+          )}
+        />
+      )}
       <StatusMark status={item.status} />
     </>
   );
+  const row =
+    "-ml-1.5 flex h-6 w-[calc(100%+0.375rem)] min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-sm";
 
+  // A compact row at the gutter, like a line in a log; its output opens underneath.
   return (
-    <div className="rounded-md border border-line bg-card/60">
+    <div className="group/tool pl-[34px]">
       {expandable ? (
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-8 w-full items-center gap-2 px-2.5 text-left text-sm hover:bg-card"
+          className={cn(row, "cursor-pointer text-left hover:bg-raised")}
         >
           {head}
         </button>
       ) : (
-        <div className="flex h-8 items-center gap-2 px-2.5 text-sm">{head}</div>
+        <div className={row}>{head}</div>
       )}
       {open && (
-        <div className="flex flex-col gap-2 border-t border-line p-2">
+        <div className="mt-1 mb-1.5 ml-5 flex flex-col gap-2">
           {item.content.map((content, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: content blocks are positional and never reorder
             <ToolContentView key={i} content={content} />
@@ -105,7 +114,7 @@ function StatusMark({ status }: { status: ToolItem["status"] }) {
       {status === "in_progress" ? (
         <Loader2 aria-hidden="true" className={cn(cls, "animate-spin text-amber")} />
       ) : status === "completed" ? (
-        <Check aria-hidden="true" className={cn(cls, "text-green")} />
+        <Check aria-hidden="true" className={cn(cls, "text-fg-dim")} />
       ) : status === "failed" ? (
         <CircleAlert aria-hidden="true" className={cn(cls, "text-red")} />
       ) : (

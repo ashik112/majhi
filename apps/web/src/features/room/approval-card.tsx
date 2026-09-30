@@ -1,6 +1,6 @@
 import type { RoomItem } from "@majhi/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, ShieldCheck, Undo2 } from "lucide-react";
+import { ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,12 +40,13 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   });
   const outcome = approvalOutcome(item);
   const [open, setOpen] = useState(false);
+  const [more, setMore] = useState(false);
 
   if (outcome === undefined) {
     return (
       <section
         aria-label={`Approval: ${item.summary}`}
-        className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+        className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
       >
         <p className="flex items-start gap-2 text-base text-fg">
           <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
@@ -66,7 +67,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
           </p>
         )}
         <Details input={item.input} command={item.command} onToggle={setOpen} />
-        <div className={cn(DOCK_ACTIONS, "flex gap-2 pl-[38px]")}>
+        <div className={cn(DOCK_ACTIONS, "flex gap-2 pl-[34px]")}>
           <Button
             size="sm"
             variant="primary"
@@ -83,19 +84,34 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
     );
   }
 
+  // Older cards carry the command's whole description as their summary; the line names it only.
+  const cut = item.summary.indexOf(". ");
+  const short = cut === -1 ? item.summary : item.summary.slice(0, cut);
   return (
-    <div className="flex max-w-[700px] flex-col gap-1 pl-[38px]">
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-faint">
+    <div className="flex flex-col pl-[34px]">
+      <div className="flex min-h-6 min-w-0 items-center gap-1.5 text-sm text-fg-faint">
         <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
-        <span>
-          {outcome}: {item.summary}
+        <span className="min-w-0 truncate" title={item.summary}>
+          {outcome}: {short}
         </span>
-        {item.state === "applied" && item.result && (
-          <span className="min-w-0 truncate font-mono text-xs" title={item.result}>
+        <button
+          type="button"
+          aria-expanded={more}
+          aria-label={more ? "Hide details" : "Show details"}
+          title={`Details: ${item.command}`}
+          onClick={() => setMore((v) => !v)}
+          className="grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-xs hover:bg-raised hover:text-fg"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("size-3 transition-transform duration-150", more && "rotate-90")}
+          />
+        </button>
+        {item.state === "failed" && item.result && (
+          <span className="min-w-0 truncate text-red" title={item.result}>
             {item.result}
           </span>
         )}
-        {item.state === "failed" && item.result && <span className="text-red">{item.result}</span>}
         {canUndo(item) && (
           <Button
             size="sm"
@@ -108,35 +124,49 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
             Undo
           </Button>
         )}
-      </p>
-      <Details input={item.input} command={item.command} quiet />
+      </div>
+      {more && (
+        <div className="mt-1 mb-1 ml-5 flex max-w-[72ch] flex-col gap-1.5 text-xs text-fg-faint">
+          {short !== item.summary && <p className="text-sm text-fg-muted text-pretty">{item.summary}</p>}
+          {item.reason && <p className="text-sm text-fg-muted text-pretty">{item.reason}</p>}
+          <p>
+            Input <span className="font-mono">{item.command}</span>
+          </p>
+          <pre className={PRE}>{item.input}</pre>
+          {item.result && (
+            <>
+              <p>{item.state === "failed" ? "Error" : "Result"}</p>
+              <pre className={PRE}>{item.result}</pre>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+const PRE =
+  "max-h-48 overflow-auto rounded-md bg-sunken p-2 font-mono text-xs break-words whitespace-pre-wrap text-fg-soft";
 
 /** The command's input, folded. Opening it also unclamps the reason above it. */
 function Details({
   input,
   command,
-  quiet,
   onToggle,
 }: {
   input: string;
   command: string;
-  quiet?: boolean;
   onToggle?: (open: boolean) => void;
 }) {
   return (
     <details
       onToggle={(event) => onToggle?.(event.currentTarget.open)}
-      className={quiet ? "text-xs text-fg-faint" : "pl-6 text-sm text-fg-muted"}
+      className="pl-6 text-sm text-fg-muted"
     >
       <summary className="cursor-pointer hover:text-fg">
         Details <span className="font-mono">{command}</span>
       </summary>
-      <pre className="mt-1.5 max-h-48 overflow-auto rounded-md bg-sunken p-2 font-mono text-xs break-words whitespace-pre-wrap text-fg-soft">
-        {input}
-      </pre>
+      <pre className={cn(PRE, "mt-1.5")}>{input}</pre>
     </details>
   );
 }
@@ -172,7 +202,7 @@ export function SecretRequestCard({ item }: { item: Item<"secret-request"> }) {
         event.preventDefault();
         if (value !== "") save.mutate(value);
       }}
-      className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
+      className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <KeyRound aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
@@ -208,7 +238,7 @@ export function SecretRequestCard({ item }: { item: Item<"secret-request"> }) {
 
 function SecretDone({ item }: { item: SecretRequestItem }) {
   return (
-    <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
+    <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
       <KeyRound aria-hidden="true" className="size-3.5" />
       {item.state === "saved" ? `Saved ${item.label} as secret:${item.name}` : `Cancelled: ${item.label}`}
     </p>

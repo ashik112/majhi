@@ -38,7 +38,7 @@ function clock(iso: string): string {
 /** A settled card: one quiet line with what happened, who did it and when. */
 function Outcome({ icon, outcome }: { icon: React.ReactNode; outcome: CardOutcome }) {
   return (
-    <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
+    <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
       {icon}
       <span className="min-w-0 break-words">
         {outcome.text}
@@ -64,7 +64,7 @@ export function ReviewCard({ item, owner }: { item: Of<"review">; owner: OwnerCo
   }
   if (owner === undefined || owner.task.status !== "review") {
     return (
-      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
+      <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
         <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
         Was ready for review.
       </p>
@@ -277,7 +277,7 @@ export function QuestionActions({
   });
   if (item.state === "answered") {
     return (
-      <p className="flex items-center gap-2 pl-[38px] text-sm text-fg-faint">
+      <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
         <MessageSquareReply aria-hidden="true" className="size-3.5 shrink-0" />
         You chose: {item.chosen}
       </p>
@@ -289,7 +289,7 @@ export function QuestionActions({
   return (
     <fieldset
       aria-label={`Answer @${item.agent}`}
-      className="m-0 flex flex-wrap gap-2 border-0 p-0 pl-[38px]"
+      className="m-0 flex flex-wrap gap-2 border-0 p-0 pl-[34px]"
     >
       {item.choices.map((choice) => (
         <Button key={choice} size="sm" disabled={pick.isPending} onClick={() => pick.mutate(choice)}>

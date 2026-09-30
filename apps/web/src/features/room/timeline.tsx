@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
-import { type ItemContext, PinnedPlan, RoomItemView } from "./items";
+import { type ItemContext, NotesRow, PinnedPlan, RoomItemView } from "./items";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
 import type { OwnerContext } from "./owner-cards";
+import { beatOf, gapAbove, rowsOf } from "./rows";
 
 /**
  * The room's messages. Stays pinned to the bottom while new items arrive, unless the owner scrolled
@@ -35,6 +36,27 @@ export function Timeline({
   const previous = useRef<{ count: number; last: string | undefined; height: number } | null>(null);
 
   const plans = useMemo(() => pinnedPlans(state.items), [state.items]);
+  const list = useRef<HTMLOListElement>(null);
+  // Pinned plans are drawn above the log, not in it.
+  const rows = useMemo(() => {
+    const pinnedIds = new Set(plans.map((p) => p.id));
+    return rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
+  }, [state.items, plans]);
+  const beats = useMemo(() => rows.map(beatOf), [rows]);
+
+  // Rows off screen start at an estimated height and take their real one once drawn, and a
+  // message can grow while it streams. While the view is at the bottom, it stays there, so the last
+  // message is never left half under the composer.
+  useEffect(() => {
+    const el = scroller.current;
+    const content = list.current;
+    if (!el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
   // Images and clips load after the room scrolled to the bottom; keep the view there when it was.
   const onMediaLoad = useCallback(() => {
     const el = scroller.current;
@@ -92,7 +114,7 @@ export function Timeline({
     setUnseen(false);
   }
 
-  const waiting = state.items.filter(waitsForOwner);
+  const waiting = useMemo(() => state.items.filter(waitsForOwner), [state.items]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -120,12 +142,15 @@ export function Timeline({
         {state.loaded && state.items.length === 0 && (
           <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
         )}
-        <ol className="m-0 mt-auto flex flex-col gap-3.5 p-0">
-          {state.items
-            .filter((item: RoomItem) => !waitsForOwner(item))
-            .map((item: RoomItem) => (
-              <RoomItemView key={item.id} item={item} ctx={ctx} />
-            ))}
+        <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
+          {rows.map((row, i) => {
+            const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
+            return row.kind === "notes" ? (
+              <NotesRow key={row.key} quiet={row.quiet} at={row.items[0]?.at ?? ""} className={gap} />
+            ) : (
+              <RoomItemView key={row.key} item={row.item} ctx={ctx} className={gap} />
+            );
+          })}
         </ol>
       </div>
       {/* Anchored to the bottom of the log, so it sits above the dock. */}
