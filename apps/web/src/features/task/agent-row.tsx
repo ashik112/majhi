@@ -97,7 +97,7 @@ export function AgentRow({
 }
 
 /** The open row: the account's limits, then context, model, effort, permissions and fallback. */
-function AgentDetails({
+export function AgentDetails({
   id,
   agent,
   live,

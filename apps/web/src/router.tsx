@@ -25,6 +25,8 @@ export interface AppSearch {
   file?: string;
   /** A task shown in the task drawer, opened from a task id in a message. */
   task?: string;
+  /** An agent shown in the agent drawer, opened from a mention in a message. */
+  peek?: string;
   /** How the board shows tasks. The board is the default. */
   view?: "tree";
 }
@@ -39,6 +41,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const account = text(search.account);
   const file = text(search.file);
   const task = TaskIdSchema.safeParse(search.task).data;
+  const peek = text(search.peek);
   const view = search.view === "tree" ? "tree" : undefined;
   return {
     ...(view ? { view } : {}),
@@ -47,6 +50,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(account ? { account } : {}),
     ...(file ? { file } : {}),
     ...(task ? { task } : {}),
+    ...(peek ? { peek } : {}),
   };
 }
 

@@ -26,6 +26,27 @@ export function splitTaskRefs(text: string, known: ReadonlySet<string>): TextPar
 
 /** The hast property that marks a task id in rendered markdown. */
 export const TASK_REF_PROP = "dataTaskRef";
+/** The hast property that marks an agent mention (`@builder`) in rendered markdown. */
+export const AGENT_REF_PROP = "dataAgentRef";
+
+// `@id`, not part of an email address or a path, and not followed by more of a word.
+const MENTION = /(?<![\w@/.-])@([a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9])(?![\w@/-])/g;
+
+/** Text split around the mentions of known agents in it (and `@owner`). */
+export function splitMentions(text: string, agents: ReadonlySet<string>): (string | { agent: string })[] {
+  if (agents.size === 0) return [text];
+  const parts: (string | { agent: string })[] = [];
+  let last = 0;
+  for (const match of text.matchAll(MENTION)) {
+    const id = match[1] ?? "";
+    if (!agents.has(id) && id !== "owner") continue;
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push({ agent: id });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length === 0 ? [text] : parts;
+}
 
 // mdast nodes are walked structurally; only these fields are read or written.
 interface MdNode {
@@ -43,28 +64,44 @@ function refNode(id: string, child: MdNode): MdNode {
   };
 }
 
-function walk(node: MdNode, known: ReadonlySet<string>): void {
+function agentNode(id: string): MdNode {
+  return {
+    type: "agentRef",
+    children: [{ type: "text", value: `@${id}` }],
+    data: { hName: "span", hProperties: { [AGENT_REF_PROP]: id } },
+  };
+}
+
+function walk(node: MdNode, known: ReadonlySet<string>, agents: ReadonlySet<string>): void {
   if (node.children === undefined || node.type === "link" || node.type === "linkReference") return;
   node.children = node.children.flatMap((child): MdNode[] => {
     if (child.type === "text" && child.value !== undefined) {
-      return splitTaskRefs(child.value, known).map((part) =>
-        typeof part === "string"
-          ? { type: "text", value: part }
-          : refNode(part.id, { type: "text", value: part.id }),
+      return splitMentions(child.value, agents).flatMap((piece): MdNode[] =>
+        typeof piece !== "string"
+          ? [agentNode(piece.agent)]
+          : splitTaskRefs(piece, known).map((part) =>
+              typeof part === "string"
+                ? { type: "text", value: part }
+                : refNode(part.id, { type: "text", value: part.id }),
+            ),
       );
     }
     // `PRV-15` in backticks is still a task id; code with anything else in it stays code.
     if (child.type === "inlineCode" && child.value !== undefined && known.has(child.value)) {
       return [refNode(child.value, child)];
     }
-    walk(child, known);
+    walk(child, known, agents);
     return [child];
   });
 }
 
-/** A remark plugin: known task ids in the text, outside links and code blocks, become task refs. */
-export function remarkTaskRefs(options: { known: ReadonlySet<string> }) {
+/**
+ * A remark plugin: known task ids and agent mentions in the text, outside links and code blocks,
+ * become refs that open their drawer.
+ */
+export function remarkTaskRefs(options: { known: ReadonlySet<string>; agents?: ReadonlySet<string> }) {
+  const agents = options.agents ?? new Set<string>();
   return (tree: MdNode) => {
-    if (options.known.size > 0) walk(tree, options.known);
+    if (options.known.size > 0 || agents.size > 0) walk(tree, options.known, agents);
   };
 }

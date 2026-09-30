@@ -452,6 +452,21 @@
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
 }
+.md-mention {
+  border-radius: 4px;
+  background: rgb(167 139 250 / 0.14);
+  padding: 0 0.3em;
+  color: var(--color-violet);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.md-mention:hover {
+  background: rgb(167 139 250 / 0.26);
+  color: var(--color-fg);
+}
 .md-link:hover {
   color: var(--color-fg);
   text-decoration-color: currentColor;

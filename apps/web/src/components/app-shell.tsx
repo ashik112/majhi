@@ -5,6 +5,7 @@ import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
+import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
 import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
 import { AppGate } from "@/features/home/app-gate";
@@ -53,7 +54,7 @@ function Frame() {
   const accounts = useAccounts().data;
   const agents = useAgentIndex();
   const permission = usePendingPermission();
-  const { task: drawerTask } = useSearch({ from: "__root__" });
+  const { task: drawerTask, peek } = useSearch({ from: "__root__" });
   const now = useNow(60_000);
   const banner = useMemo(
     () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
@@ -85,6 +86,7 @@ function Frame() {
       </main>
       <BossDrawer />
       {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
+      {peek !== undefined && drawerTask === undefined && <AgentDrawer id={peek} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
     </div>
   );

@@ -2,13 +2,15 @@ import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AgentRef } from "@/features/agent-drawer/agent-ref";
 import { TaskRef } from "@/features/task-drawer/task-ref";
+import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { useTaskIds } from "@/lib/task-queries";
 import { useHighlight } from "./highlight";
 import { classifyTarget, presentFileLink, safeHref } from "./links";
 import { TaskFileLink, type TaskFiles, TaskFileView } from "./media";
-import { remarkTaskRefs, TASK_REF_PROP } from "./task-refs";
+import { AGENT_REF_PROP, remarkTaskRefs, TASK_REF_PROP } from "./task-refs";
 
 export type MarkdownSize = "chat" | "document";
 
@@ -172,6 +174,8 @@ function buildComponents({ task, baseDir }: Scope): Components {
     span({ node, children, ...rest }) {
       const id = node?.properties?.[TASK_REF_PROP];
       if (typeof id === "string") return <TaskRef id={id}>{children}</TaskRef>;
+      const agent = node?.properties?.[AGENT_REF_PROP];
+      if (typeof agent === "string") return <AgentRef id={agent} />;
       return <span {...rest}>{children}</span>;
     },
     pre({ node, children }) {
@@ -210,9 +214,11 @@ export function Markdown({
   const highlight = useHighlight();
   const components = useMemo(() => buildComponents({ task, baseDir }), [task, baseDir]);
   const known = useTaskIds();
+  const index = useAgentIndex();
+  const agents = useMemo(() => new Set(index.keys()), [index]);
   const remarkPlugins = useMemo<Options["remarkPlugins"]>(
-    () => [remarkGfm, [remarkTaskRefs, { known }]],
-    [known],
+    () => [remarkGfm, [remarkTaskRefs, { known, agents }]],
+    [known, agents],
   );
   return (
     <div className={cn("md", size === "document" && "md-doc")}>

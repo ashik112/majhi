@@ -6,6 +6,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { TaskRefText } from "@/features/task-drawer/task-ref";
+import { linkifyPaths } from "@/features/viewer/model";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -173,7 +174,7 @@ function AgentMessage({
         </div>
         {item.text !== "" && (
           <div className="min-w-0 rounded-lg bg-raised px-3 py-2.5 text-body leading-normal text-[#e2e4e8]">
-            <Markdown text={item.text} task={task} />
+            <Markdown text={task === undefined ? item.text : linkifyPaths(item.text)} task={task} />
           </div>
         )}
         {item.media !== undefined && item.media.length > 0 && (
