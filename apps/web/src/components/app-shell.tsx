@@ -18,10 +18,14 @@ import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { cn } from "@/lib/cn";
 import { useOrgFilter } from "@/lib/org-filter";
+import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
+
+/** Pages that lay out their own panes to fit the viewport. */
+const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.agents, PAGE_PATH.usage, PAGE_PATH.orgs]);
 
 export function AppShell() {
   useServerEvents();
@@ -65,8 +69,9 @@ function Frame() {
   const section = useRouterState({
     select: (s) => (s.location.pathname.startsWith("/t/") ? "/" : s.location.pathname),
   });
-  // The board and the task view fix their own frame and scroll inside it; other pages scroll here.
-  const pinned = section === "/";
+  // The board, the task view and the list-and-detail pages fix their own frame and scroll inside it;
+  // other pages scroll here.
+  const pinned = section === "/" || PINNED.has(section);
 
   return (
     <div className="flex min-h-0 flex-1 gap-3 p-3">
