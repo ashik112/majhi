@@ -100,6 +100,7 @@ describe("majhi-room", () => {
     const { h, servers, release } = await world();
     expect(servers["acme-lead"]?.map((s) => s.name).sort()).toEqual([
       "majhi-decide",
+      "majhi-memory",
       "majhi-processes",
       "majhi-room",
       "majhi-tasks",
@@ -109,6 +110,7 @@ describe("majhi-room", () => {
     await until(() => servers["acme-builder"] !== undefined, "builder session");
     expect(servers["acme-builder"]?.map((s) => s.name).sort()).toEqual([
       "majhi-decide",
+      "majhi-memory",
       "majhi-processes",
       "majhi-room",
     ]);

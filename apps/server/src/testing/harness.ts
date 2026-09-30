@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { COMMAND_META_HEADER } from "@majhi/shared";
 import type { ServerEnv } from "../env.ts";
 import type { HostLink } from "../host/link.ts";
+import { type Embedder, HashEmbedder } from "../memory/embedder.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import { generateKey } from "../secrets/store.ts";
@@ -39,6 +40,8 @@ export interface HarnessOptions {
   probe?: Probe;
   /** Fake `gh`, `glab` and Bitbucket for merge requests. */
   mrHosts?: MrHostOptions;
+  /** Replaces the deterministic fake embedder. */
+  embedder?: Embedder;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -64,6 +67,8 @@ function build(
   const { links, hostLink, probe, mrHosts } = options;
   const majhi = createMajhi(env, {
     runtime,
+    // Never the real model: it would download.
+    embedder: options.embedder ?? new HashEmbedder(),
     ...(links === undefined ? {} : { links }),
     ...(hostLink === undefined ? {} : { hostLink }),
     ...(probe === undefined ? {} : { probe }),
