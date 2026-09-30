@@ -38,13 +38,13 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export async function git(
   cwd: string,
   args: readonly string[],
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; maxBufferBytes?: number } = {},
 ): Promise<string> {
   try {
     const { stdout } = await run("git", [...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: options.maxBufferBytes ?? 64 * 1024 * 1024,
       env: gitEnv(process.env),
     });
     return stdout;
@@ -52,8 +52,17 @@ export async function git(
     const stderr = errText(err, "stderr");
     const first = stderr.trim().split("\n").slice(0, 3).join(" ").trim();
     const killed = typeof err === "object" && err !== null && "killed" in err && err.killed === true;
+    const tooBig =
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
     throw new GitError(
-      killed ? `git ${args[0] ?? ""} timed out` : first || `git ${args[0] ?? ""} failed`,
+      tooBig
+        ? `git ${args[0] ?? ""} printed too much to read`
+        : killed
+          ? `git ${args[0] ?? ""} timed out`
+          : first || `git ${args[0] ?? ""} failed`,
       args,
       stderr,
     );

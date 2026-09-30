@@ -1,13 +1,27 @@
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, readFile, readlink, realpath } from "node:fs/promises";
+import { join, sep } from "node:path";
 import type { RepoDiff, RepoDiffFile } from "@majhi/shared";
 import { git, listUntracked, localBranchExists } from "./git.ts";
 
 /** Files listed per repo, and patch text kept per file. Past these the owner reads the diff on the host. */
 export const MAX_DIFF_FILES = 300;
 export const MAX_PATCH_BYTES = 200_000;
+/** All patch text of one repo. Past it, files are listed with no patch. */
+export const MAX_TOTAL_PATCH_BYTES = 5_000_000;
+/** What one `git diff` may print before majhi gives up on reading it. */
+const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-const DIFF_ARGS = ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M"];
+/** `--no-ext-diff` and `--no-textconv`: a repo's own config never gets to run a program while majhi reads a diff. */
+const DIFF_ARGS = [
+  "-c",
+  "core.quotePath=false",
+  "diff",
+  "--no-color",
+  "--no-ext-diff",
+  "--no-textconv",
+  "-M",
+];
+const READ = { maxBufferBytes: MAX_GIT_OUTPUT_BYTES };
 
 type Repo = { project: string; source: string; base: string; branch: string; worktree?: string | undefined };
 
@@ -26,26 +40,38 @@ export async function repoDiff(repo: Repo): Promise<RepoDiff> {
     const tip = repo.worktree === undefined ? repo.branch : "HEAD";
     const mergeBase = (await git(cwd, ["merge-base", repo.base, tip])).trim();
     const target = repo.worktree === undefined ? [mergeBase, repo.branch] : [mergeBase];
-    const names = parseRaw(await git(cwd, [...DIFF_ARGS, "--raw", "-z", ...target]));
-    const patches = splitPatches(await git(cwd, [...DIFF_ARGS, ...target]));
-    const files: RepoDiffFile[] = names.map((n, i) => fileOf(n, patches[i] ?? ""));
+    const names = parseRaw(await git(cwd, [...DIFF_ARGS, "--raw", "-z", ...target], READ));
+    const patches = splitPatches(await git(cwd, [...DIFF_ARGS, ...target], READ));
+    const tracked = names.map((n, i) => fileOf(n, patches[i] ?? ""));
+    const files = tracked.slice(0, MAX_DIFF_FILES);
+    let omitted = tracked.length - files.length;
     let uncommitted = false;
     if (repo.worktree !== undefined) {
-      const untracked = await listUntracked(repo.worktree);
-      for (const path of untracked) files.push(await newFile(repo.worktree, path));
-      const dirty = await git(repo.worktree, ["status", "--porcelain"]);
-      uncommitted = dirty.trim() !== "";
+      // Only as many untracked files as the list has room for are opened. The rest are counted.
+      const untracked = (await listUntracked(repo.worktree)).toSorted();
+      const room = Math.max(0, MAX_DIFF_FILES - files.length);
+      const budget = { left: MAX_TOTAL_PATCH_BYTES - files.reduce((sum, f) => sum + f.patch.length, 0) };
+      for (const path of untracked.slice(0, room)) files.push(await newFile(repo.worktree, path, budget));
+      omitted += Math.max(0, untracked.length - room);
+      uncommitted = (await git(repo.worktree, ["status", "--porcelain"])).trim() !== "";
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
-    return {
-      ...head,
-      files: files.slice(0, MAX_DIFF_FILES),
-      omitted: Math.max(0, files.length - MAX_DIFF_FILES),
-      uncommitted,
-    };
+    return { ...head, files: withinBudget(files), omitted, uncommitted };
   } catch (err) {
     return { ...head, ...empty, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** Keeps patches in order until the repo's total is used up; later files are listed as too large. */
+function withinBudget(files: RepoDiffFile[]): RepoDiffFile[] {
+  let left = MAX_TOTAL_PATCH_BYTES;
+  return files.map((f) => {
+    if (f.patch.length <= left) {
+      left -= f.patch.length;
+      return f;
+    }
+    return { ...f, patch: "", truncated: true };
+  });
 }
 
 type Named = { status: RepoDiffFile["status"]; path: string; oldPath?: string };
@@ -101,19 +127,29 @@ export function countLines(hunks: string): { additions: number; deletions: numbe
   return { additions, deletions };
 }
 
-/** A file git does not track yet: shown as all added lines. */
-async function newFile(worktree: string, path: string): Promise<RepoDiffFile> {
-  const base = { path, status: "added" as const, deletions: 0 };
+/**
+ * A file git does not track yet: shown as all added lines. A symbolic link shows where it points,
+ * never what it points at, and nothing outside the worktree is opened.
+ */
+async function newFile(worktree: string, path: string, budget: { left: number }): Promise<RepoDiffFile> {
+  const base = { path, status: "added" as const, deletions: 0, binary: false, truncated: false };
+  const skipped = { ...base, additions: 0, patch: "" };
   const full = join(worktree, path);
-  const info = await stat(full).catch(() => undefined);
-  if (!info?.isFile()) return { ...base, additions: 0, binary: false, patch: "", truncated: false };
-  if (info.size > MAX_PATCH_BYTES)
-    return { ...base, additions: 0, binary: false, patch: "", truncated: true };
+  const info = await lstat(full).catch(() => undefined);
+  if (info?.isSymbolicLink()) {
+    const target = await readlink(full).catch(() => "");
+    return { ...base, additions: 1, patch: `@@ -0,0 +1,1 @@\n+${target}\n` };
+  }
+  if (!info?.isFile()) return skipped;
+  const [root, real] = await Promise.all([realpath(worktree), realpath(full).catch(() => "")]);
+  if (!real.startsWith(root + sep)) return skipped;
+  if (info.size > MAX_PATCH_BYTES || info.size > budget.left) return { ...skipped, truncated: true };
   const buffer = await readFile(full);
-  if (buffer.includes(0)) return { ...base, additions: 0, binary: true, patch: "", truncated: false };
+  if (buffer.includes(0)) return { ...skipped, binary: true };
   const lines = buffer.toString("utf8").split("\n");
   if (lines.at(-1) === "") lines.pop();
   const patch =
     lines.length === 0 ? "" : `@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join("\n")}\n`;
-  return { ...base, additions: lines.length, binary: false, patch, truncated: false };
+  budget.left -= patch.length;
+  return { ...base, additions: lines.length, patch };
 }
