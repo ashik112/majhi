@@ -1,5 +1,47 @@
 # Progress
 
+## Phase 4: Multi-repo and MRs (server built, web and child tasks pending)
+
+Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). Search across rooms (PRV-35), review comments on diffs (PRV-36), open in editor (PRV-37), the terminal (PRV-38) and agent attribution (PRV-43) are their own tasks. The Changes tab with per-repo diffs and the MR screens are the web part, built after the server part.
+
+### Plan (server part)
+
+1. Shared schemas and command shapes: project `remotes` and `links`, org `merge` and `mr_tokens`, MR state on task repos, six `tasks.*` commands.
+2. Store: migration 80, merge order, MR url, number, state, CI state and push time on `task_repos`.
+3. Pure logic: merge order, MR description, merge policy decisions, URL rewriting through SSH aliases.
+4. Push, three host clients, the MR service and the poller.
+5. Tests: unit for the pure parts; integration against local bare repos with fake `gh`, `glab` and a fake Bitbucket server.
+
+### Done when, status
+
+- [x] One task changes two repos on two different hosts and ends with two linked MRs merged in order. `apps/server/src/mrs/flow.test.ts`, first test: `acme-api` on GitHub and `acme-web` on GitLab, web depends on api, the task lists web first; the MRs are opened with each description naming both, merged api then web, the task is done, the worktrees are gone, and a task waiting on it with `merged` starts from the updated base.
+
+### What works (server)
+
+- **Config.** Project `remotes: { <name>: { host, ssh, mr, token } }` and `links: [{ to, type: depends-on }]` (loops refused). Org `merge: never | approve | auto-if-green` (default `never`) and `mr_tokens: { github, gitlab, bitbucket }` (secret references). `projects.register`, `projects.update` and `orgs.update` take them; `projects.list` and `orgs.list` show them.
+- **Merge order.** `mrs/order.ts`: dependencies first, ties keep the task's repo order, loops refused. `tasks.mergeOrder` shows it, `tasks.setMergeOrder` overrides it (or clears the override with `null`).
+- **Push.** `tasks.openMrs` pushes each worktree branch to the project's MR remote (the one marked `mr`, else `origin`), through the SSH alias when the remote has one. The server's own ssh runs it, so the forwarded agent supplies the key; no key is read or copied. Never forced.
+- **Hosts.** One interface (`mrs/hosts`): open, update description, read state and CI, merge. GitHub through `gh`, GitLab through `glab`, Bitbucket Cloud through its REST API. Credentials come from a secret reference per org and host, or per remote.
+- **Flow.** `tasks.openMrs` (outbound) checks every repo first, then opens one MR per repo in merge order and rewrites each description to name all of them; the task moves to `mr`. `tasks.mergeMrs` (outbound) merges in order and stops at the first failure with the reason in the room. `tasks.markMerged` is "I merged it". `tasks.refreshMrs` reads the hosts. The poller (`MrPoller`, every 60 seconds) reads open MRs, merges under `auto-if-green`, and notices merges done on the host.
+- **After the merge.** Base fetched, clean worktrees removed (one with uncommitted changes stays, and the room says so), task `done`, waiting tasks start.
+- **The boss** has all of it through `majhi-admin`, since every step is a command. `openMrs` and `mergeMrs` are outbound, so they wait for the owner under the approval policy.
+
+### How to try it (server, without the web)
+
+1. Save a token: `secrets.save`, then `orgs.update` with `mr_tokens: { github: "secret:<name>" }` and `merge: "approve"`.
+2. `projects.update` for each project: `remotes: { origin: { host: "github" } }` (add `ssh` when the remote uses an alias) and `links` for the dependency.
+3. Let a task with two repos reach review, then `tasks.openMrs`, `tasks.mergeMrs`.
+4. Tests: `pnpm exec vitest run apps/server/src/mrs`.
+
+### Left
+
+- **Real hosts and CLIs.** Nothing ran against a real GitHub, GitLab or Bitbucket, and `gh` and `glab` were not installed where this was built. The CLI flags were written from their documentation and run against fakes. The owner's check: one MR on a throwaway repo per host.
+- **Tracker update and the Housekeeper** (SPEC 5.5, last line) do not exist yet.
+- **GitHub Enterprise and self-hosted GitLab** work only through the host name in the remote's URL (`GH_HOST`, `GITLAB_HOST`), not through an alias, and were not tried. Bitbucket Server / Data Center is not supported (Cloud only).
+- **CI reading** is a summary (none, pending, passing, failing). Required reviews and branch protection are left to the host: a host that refuses the merge stops majhi with the host's message.
+- The poller keeps nothing across a restart, and reads every task in `mr` each pass, so many open tasks mean many host calls a minute.
+- The web part: Changes tab with per-repo diffs, MR status per repo, the buttons for the commands above, project remotes and links and the org policy in Settings.
+
 ## Phase 3: Teams, rooms and decisions (built, waiting for owner review)
 
 Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c merged). Lead orchestration (PRV-32), background processes (PRV-33) and more agents per task from the task box (PRV-45) are their own tasks. Task ids that open a drawer (PRV-34) are done. The plan below is kept for reference; the result comes first.
