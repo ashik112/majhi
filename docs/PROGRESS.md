@@ -79,6 +79,26 @@ Try the tests: `npx vitest run apps/server/src/memory` from the repo root.
 
 Not checked here: the Docker image build and the x64 libraries (no Docker in this environment), and the real model download (the tests use the fake embedder). The `Dockerfile` installs `sqlite-vec` and `@huggingface/transformers` with npm for the image's CPU and loads `sqlite-vec` once as a build check.
 
+### Part B status (built)
+
+Works, checked by tests against the fake runtime and the hashed fake embedder (no tokens, no model):
+
+- **Settings.** `memory:` in `majhi.yaml` (`auto_threshold` 0.8, `review_all` false, `housekeeper`, `housekeeper_model`), in `settings.get` and `settings.set { memory }`. An unknown `housekeeper` is refused, and `agents.rename` follows it. The UI is Part C.
+- **Curation** (`memory/curator.ts`), the same path for an agent's proposal and the Housekeeper's candidates:
+  1. Rules first: a secret, an email or a phone number is rejected, under `review_all` too.
+  2. Duplicates without a model: cosine 0.92 or more with an active or pending fact in the same or a wider scope.
+  3. Decide: one `decide` call per candidate (use `memory`, recorded on the task) with the candidate and its nearest fact as state. The questions are keep or chatter, same, contradicts or unrelated (only for a nearest active fact from 0.75 to 0.92), and a yes/no on secret or personal data.
+  4. Apply: a sure answer (the decision gate accepts it and its probability is at least `auto_threshold`) keeps or drops the fact, and a confident contradiction keeps the new fact and retires the old one. Everything else waits. `review_all` and `global` skip the model and wait.
+  5. Every step is logged with reason, confidence and provider. Nothing is deleted.
+- **Undo.** `memory.undo(event)` reverses an automatic keep, drop, retire or merge and the owner's approve, reject or forget. It refuses a step already undone or one the fact has moved on from.
+- **Housekeeper** (`memory/housekeeper.ts`). One throwaway scratch session reads the brief and the room (cut to about 8k tokens), answers JSON only (up to 8 facts under 200 characters, each with a scope), checked with zod and asked once more if not valid. The model is `housekeeper_model` or the cheapest the account offers. Its tokens are recorded under the task. It never reads a room on an account that may not work in the task's org.
+- **When it runs.** When a task becomes done (`TaskService.close`: the merge, the plain close and the rest all pass there) and on `memory.extract(task)`. The close never waits for it or fails because of it. No Housekeeper is silent; any other problem is a warning in the room; a finished run says what was kept, dropped, known and left waiting.
+- **Promotion.** `memory.promote(fact)` for active project facts: a task with no agent, a worktree, the bullet under `## Facts` in `AGENTS.md`, one commit, the task in `review`, `promoted` set.
+
+Try the tests: `npx vitest run apps/server/src/memory apps/server/src/config apps/server/src/agents/rename.test.ts` from the repo root.
+
+Not checked here: a real Housekeeper session on a real model (the fake runtime answers in tests), Laya's answers on real candidate facts (the tests play the provider; how sure Laya is on these questions is for the owner to watch in the log), and the Docker image (see Part A).
+
 ### How I will test it
 
 - Unit tests:
