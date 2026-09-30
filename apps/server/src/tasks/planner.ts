@@ -44,7 +44,13 @@ export class TaskPlanner {
     for (const repo of task.repos) {
       const changed = repo.worktree === undefined ? [] : await changedFiles(repo.worktree, repo.base);
       const paths = [...new Set([...changed, ...named])];
-      out.push({ task: task.id, project: repo.project, paths, changed: changed.length > 0 });
+      out.push({
+        task: task.id,
+        project: repo.project,
+        paths,
+        changed: changed.length > 0,
+        ...(changed.length > 0 ? { changedPaths: changed } : {}),
+      });
     }
     return out;
   }

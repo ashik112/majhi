@@ -61,6 +61,8 @@ export interface Footprint {
   paths: string[];
   /** True when `paths` come from the worktree diff, false when guessed from the description. */
   changed: boolean;
+  /** The files the worktree diff shows, without the ones the description names. Set when `changed`. */
+  changedPaths?: string[];
 }
 
 export type OverlapLevel = "none" | "little" | "heavy" | "unknown";
