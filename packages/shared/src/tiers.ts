@@ -48,3 +48,15 @@ export function resolveTier(role: Role, ...layers: (TierPatch | undefined)[]): T
     effort: layers.find((l) => l?.effort !== undefined)?.effort ?? base.effort,
   };
 }
+
+export const MODEL_TIER_LABEL: Record<ModelTier, string> = {
+  "most-capable": "Most capable",
+  balanced: "Balanced",
+  cheapest: "Cheapest",
+};
+
+export const EFFORT_TIER_LABEL: Record<EffortTier, string> = {
+  highest: "Highest",
+  middle: "Middle",
+  lowest: "Lowest",
+};

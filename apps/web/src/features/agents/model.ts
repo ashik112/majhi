@@ -11,6 +11,7 @@ import {
   PRIVATE,
   type Role,
   type TaskSummary,
+  type TierPatch,
 } from "@majhi/shared";
 import { statusInfo, type Tone } from "../accounts/model";
 
@@ -172,6 +173,8 @@ export interface AgentDraft {
   model: string | undefined;
   effort: string | undefined;
   models: string[];
+  /** Fallback tiers when `model` or `effort` is `auto` and there is no confident pick. */
+  tier: TierPatch;
   where: string[];
   perms: Perm[];
   fallback: string | undefined;
@@ -187,6 +190,7 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     model: f.model,
     effort: f.effort,
     models: f.models ?? [],
+    tier: f.tier ?? {},
     where: f.where,
     perms: f.perms,
     fallback: f.fallback,
@@ -196,7 +200,15 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
 
 /** The `agents.update` input: the draft laid over the file's other fields (skills, tools, ...), which the editor does not touch. */
 export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
-  const { id: _id, model: _m, effort: _e, models: _ms, fallback: _f, ...rest } = original.frontmatter;
+  const {
+    id: _id,
+    model: _m,
+    effort: _e,
+    models: _ms,
+    tier: _t,
+    fallback: _f,
+    ...rest
+  } = original.frontmatter;
   const frontmatter: Omit<AgentFrontmatterInput, "id"> = {
     ...rest,
     scope: draft.scope,
@@ -208,8 +220,23 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
   if (draft.model) frontmatter.model = draft.model;
   if (draft.effort) frontmatter.effort = draft.effort;
   if (draft.model === AUTO && draft.models.length > 0) frontmatter.models = draft.models;
+  const tier: TierPatch = {
+    ...(draft.model === AUTO && draft.tier.model !== undefined ? { model: draft.tier.model } : {}),
+    ...(draft.effort === AUTO && draft.tier.effort !== undefined ? { effort: draft.tier.effort } : {}),
+  };
+  if (Object.keys(tier).length > 0) frontmatter.tier = tier;
   if (draft.fallback) frontmatter.fallback = draft.fallback;
   return { id: original.frontmatter.id, frontmatter, instructions: draft.instructions };
+}
+
+/** The tier with one part set, or cleared when `value` is undefined. */
+export function withTier<K extends keyof TierPatch>(
+  tier: TierPatch,
+  key: K,
+  value: TierPatch[K] | undefined,
+): TierPatch {
+  const { [key]: _old, ...rest } = tier;
+  return value === undefined ? rest : { ...rest, [key]: value };
 }
 
 /** Clicking `value` in the "can work in" list: `anywhere` alone, or a set of orgs; never empty. */
