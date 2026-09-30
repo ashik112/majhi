@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
+  CleanupPatchSchema,
   ContainersFilePatchSchema,
   ContextPatchSchema,
   LimitsPatchSchema,
@@ -35,6 +36,8 @@ export const MajhiConfigSchema = z.strictObject({
   rooms: RoomPatchSchema.optional(),
   /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */
   memory: MemoryPatchSchema.optional(),
+  /** Cleanup of done tasks: after how many days (PRV-39). */
+  cleanup: CleanupPatchSchema.optional(),
   /** Previews and test services majhi runs for agents (PRV-53): the allowed images and the limits. */
   containers: ContainersFilePatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */

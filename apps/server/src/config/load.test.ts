@@ -61,6 +61,10 @@ describe("parseConfigText", () => {
     });
   });
 
+  it("loads a file with the cleanup section", () => {
+    expect(parse("workspaces: [~/Work]\ncleanup:\n  after_days: 14\n").state.status).toBe("loaded");
+  });
+
   it("rejects an empty workspace list", () => {
     expect(parse("workspaces: []\n").state).toMatchObject({
       status: "invalid",
