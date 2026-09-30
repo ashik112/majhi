@@ -71,26 +71,37 @@ function DecisionRow({ d }: { d: DecisionRecord }) {
   const counted = answers.every(([, a]) => a.gate?.accepted !== false);
   return (
     <li className="flex flex-col gap-1 rounded-md border border-line px-2 py-1.5 text-sm">
+      {/* Line 1: what was decided, by whom, and the actions. Line 2: the answer, full width. */}
       <div className="flex items-center gap-2">
-        <span className="w-[90px] shrink-0 text-fg-muted">{USE[d.use]}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-fg">
-          {answers
-            .map(
-              ([k, a]) =>
-                `${k}=${String(a.value)} ${(a.probabilities?.[String(a.value)] ?? a.confidence).toFixed(2)}`,
-            )
-            .join(" ")}
-        </span>
+        <span className="min-w-0 truncate text-fg-muted">{USE[d.use]}</span>
+        <span className="shrink-0 text-xs text-fg-faint">{NAME[d.provider]}</span>
         {!counted && <Badge tone="amber">Fell back</Badge>}
         {d.correction !== undefined && <Badge tone="blue">Corrected</Badge>}
-        <span className="shrink-0 text-fg-faint">{NAME[d.provider]}</span>
-        <Button size="sm" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="flex-1" />
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="shrink-0 cursor-pointer rounded-xs text-xs text-fg-muted hover:text-fg"
+        >
           {open ? "Hide" : "Details"}
-        </Button>
-        <Button size="sm" onClick={() => setCorrecting(!correcting)}>
+        </button>
+        <button
+          type="button"
+          onClick={() => setCorrecting(!correcting)}
+          className="shrink-0 cursor-pointer rounded-xs text-xs text-fg-muted hover:text-fg"
+        >
           Wrong pick
-        </Button>
+        </button>
       </div>
+      <span className="font-mono text-xs [overflow-wrap:anywhere] text-fg">
+        {answers
+          .map(
+            ([k, a]) =>
+              `${k}=${String(a.value)} ${(a.probabilities?.[String(a.value)] ?? a.confidence).toFixed(2)}`,
+          )
+          .join(" · ")}
+      </span>
       {d.outcome !== undefined && <p className="m-0 text-fg-muted">{d.outcome.text}</p>}
       {d.correction !== undefined && (
         <p className="m-0 text-fg-muted">

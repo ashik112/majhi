@@ -332,7 +332,7 @@ projects:
 - **Models and effort levels are never hardcoded.** majhi reads them from the agent's ACP session config options (categories `model` and `thought_level`, plus `model_config`), caches them per account, and refreshes them when a session starts. If an agent's saved model or effort is no longer offered, majhi warns in Studio and the room and uses the agent's own default until the owner picks again.
 - Working directory: the task folder `<tasks_dir>/<task-id>/`, so the agent sees every repo in the task.
 - majhi is the ACP client: it creates sessions, sends prompts, streams updates to the room, and answers permission requests according to the agent's permissions (auto-allow what is permitted, ask the owner otherwise).
-- Model and effort per run, highest priority first: the owner's override for this task, then the agent's fixed `model` and `effort`, then, for `auto`, the decision provider's pick (5.12): a model from the agent's `models` list (or every model the account offers if the list is empty) and an effort level. If the pick has low confidence or no provider answers, use the agent's ACP default. majhi applies the choice with `session/set_config_option`. The chosen model and effort, and why, are posted as a room event and recorded on the run.
+- Model and effort per run, highest priority first: the owner's override for this task, then the agent's fixed `model` and `effort`, then, for `auto`, the role's model and effort tiers (Hub setup, overridable per org and agent), moved at most one step by how much work the decision provider (5.12) rates the task, resolved against the newest models the account offers (or the agent's `models` list). When the rating does not count (the gate below), the role's tiers apply unchanged. majhi applies the choice with `session/set_config_option`. The chosen model and effort, and why, are posted as a room event and recorded on the run.
 - Attach MCP servers per agent from its `tools` list: `serena`, `majhi-memory`, `majhi-room`, `majhi-tasks`, `majhi-projects`, `majhi-connections`, `majhi-decide` (on by default for every agent, 5.12), `majhi-processes` (on for every agent, 5.15), plus any others the owner adds.
 
 ### 5.2 Accounts, per-agent homes and skills
@@ -479,7 +479,7 @@ Decision models answer typed questions against a state in one pass, with probabi
     - A per-run rate limit catches loops.
     - Jev is only used when the task's org allows hosted decisions. Otherwise the call goes to the next provider in the chain.
   - **The owner, from the palette.** "Ask the decision model" runs the same tool on any text.
-- Every decision records the question, the answer, the confidence and the provider on the task. Below a confidence threshold (per use, configurable), majhi falls back to rules or asks the owner.
+- Every decision records the full request, every answer's probabilities, the provider, the gate result and the outcome on the task. The decision provider is asked about the task, never about models, with described options, an abstain option and several option orders averaged. An answer counts only when it clearly beats chance and the runner-up (lift and margin, configurable in Hub setup); otherwise majhi falls back to rules or the role's tiers. The owner can mark a wrong pick, which builds the labeled set for tuning.
 - Token receipts show which decisions replaced LLM calls, so the savings can be measured.
 
 ### 5.13 Context budget and compaction
