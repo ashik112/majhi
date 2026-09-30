@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { httpProbe, looksLikeNetworkError, NetworkWatch } from "./network.ts";
+import { httpProbe, looksLikeNetworkError, looksLikeOverload, NetworkWatch } from "./network.ts";
 import { wakePlan } from "./wake.ts";
 
 describe("offline detection", () => {
@@ -47,6 +47,18 @@ describe("offline detection", () => {
       throw new TypeError("fetch failed");
     }) as typeof fetch);
     expect(await dead()).toBe(false);
+  });
+
+  it("retries an overloaded API, but not a usage limit", () => {
+    expect(
+      looksLikeOverload(
+        "Internal error: API Error: 529 Overloaded. This is a server-side issue, usually temporary",
+      ),
+    ).toBe(true);
+    expect(looksLikeOverload("API Error: 503 Service Unavailable")).toBe(true);
+    expect(looksLikeOverload("API Error: 429 rate_limit_error")).toBe(false);
+    expect(looksLikeOverload("Claude usage limit reached. Your limit resets at 3pm")).toBe(false);
+    expect(looksLikeOverload("Tool failed: file not found")).toBe(false);
   });
 
   it("tells network failures from agent errors", () => {

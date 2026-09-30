@@ -99,6 +99,10 @@ export class AgentRun {
   /** A resume is under way; failures count toward the limit of two. */
   resuming = false;
   resumeFailures = 0;
+  /** Tries so far after the model's API said it was overloaded, reset by a turn that ends well. */
+  overloadRetries = 0;
+  /** When `activeAt` was last sent, so live state goes out at most every few seconds. */
+  activeSentAt = 0;
   /** The last failure may pass by itself (network, timeout), so a wake retries it. */
   retryable = false;
   /** When the agent last reported anything. */

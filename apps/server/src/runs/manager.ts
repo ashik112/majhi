@@ -38,7 +38,7 @@ import { launch, resolveAgent, withOverride } from "./launch.ts";
 import { Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
-import { looksLikeNetworkError } from "./network.ts";
+import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
 import { PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
@@ -49,6 +49,8 @@ export const BRIEF_ITEM_ID = "brief";
 
 /** How long before a failed resume is tried the second time. */
 const RESUME_RETRY_MS = 1_000;
+/** `activeAt` goes out at most this often while an agent streams. */
+const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 
 export interface RunDeps {
@@ -714,6 +716,10 @@ export class RunManager {
         this.deps.onNetworkError?.();
         return undefined;
       }
+      if (looksLikeOverload(message) && run.overloadRetries < OVERLOAD_BACKOFF_MS.length) {
+        this.retryAfterOverload(run, message);
+        return undefined;
+      }
       if (isContextError(message)) {
         await this.checkpoint(run);
         this.markTurn(run, false, false);
@@ -728,6 +734,7 @@ export class RunManager {
       return undefined;
     }
     run.lastStop = stopReason;
+    run.overloadRetries = 0;
     this.finishTurn(run, stopReason);
     await this.checkpoint(run);
     // A turn cut by majhi (offline, a stall) keeps its in-flight mark, so it continues later.
@@ -1031,6 +1038,11 @@ export class RunManager {
 
   private onEvent(run: AgentRun, event: SessionEvent): void {
     run.lastEventAt = this.now().getTime();
+    // "Thinking for 2m" in the room panel needs to know the agent is still sending.
+    if (run.lastEventAt - run.activeSentAt >= ACTIVE_EVERY_MS) {
+      run.activeSentAt = run.lastEventAt;
+      this.setLive(run, { activeAt: new Date(run.lastEventAt).toISOString() });
+    }
     const internal = run.internal;
     switch (event.type) {
       case "text":
@@ -1217,6 +1229,33 @@ export class RunManager {
     this.deps.onResumed?.(run.task);
     if (run.turning) run.redrive = true;
     else void this.drive(run);
+  }
+
+  /**
+   * The model's API said it is overloaded: keep the session, and continue the turn after a wait
+   * that grows each time. After the last wait, the turn fails as any other error does.
+   */
+  private retryAfterOverload(run: AgentRun, message: string): void {
+    const wait = OVERLOAD_BACKOFF_MS[run.overloadRetries] ?? OVERLOAD_BACKOFF_MS[0];
+    run.overloadRetries++;
+    run.interrupted = true;
+    this.markTurn(run, false, false);
+    const seconds = Math.round(wait / 1000);
+    const when =
+      seconds < 60 ? `${seconds} seconds` : `${Math.round(seconds / 60)} minute${seconds >= 120 ? "s" : ""}`;
+    const first = message.split("\n", 1)[0] ?? message;
+    this.live.system(
+      run,
+      "warn",
+      `The model's API is overloaded (${first.slice(0, 120)}). @${run.agent} tries again in ${when} (${run.overloadRetries} of ${OVERLOAD_BACKOFF_MS.length}).`,
+    );
+    this.setLive(run, { status: "waiting", nowDoing: `API overloaded, retrying in ${when}` });
+    if (run.retryTimer !== undefined) clearTimeout(run.retryTimer);
+    run.retryTimer = setTimeout(() => {
+      run.retryTimer = undefined;
+      this.resumeRun(run, "the API was overloaded");
+    }, wait);
+    run.retryTimer.unref();
   }
 
   /** A resume did not work: try once more, then pause with reason error. */

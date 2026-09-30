@@ -83,9 +83,11 @@ describe("restart and crash", () => {
 
     const second = w.h.runtime.sessions[1];
     expect(w.h.runtime.starts[1]?.resume).toBe(w.h.runtime.sessions[0]?.sessionId);
-    expect(second?.prompts[0]).toEqual([
-      { type: "text", text: "Continue from where you stopped. There is no checkpoint yet." },
-    ]);
+    // The team facts block may follow; the resume line comes first.
+    expect(second?.prompts[0]?.[0]).toEqual({
+      type: "text",
+      text: "Continue from where you stopped. There is no checkpoint yet.",
+    });
     expect(await systems(again)).toContain("Resuming @acme-builder: majhi restarted during its turn.");
     // The work from before the crash is on disk and committed at the end of the resumed turn.
     const wt = join(w.taskDir("ACM-1"), "acme-api");

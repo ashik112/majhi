@@ -33,7 +33,7 @@ export type Tiers = Record<Role, Tier>;
 
 /** Leads plan and review, so they get the most; testers run checks, so they get the least. */
 export const DEFAULT_TIERS: Readonly<Tiers> = {
-  Lead: { model: "most-capable", effort: "highest" },
+  Lead: { model: "most-capable", effort: "middle" },
   Reviewer: { model: "most-capable", effort: "middle" },
   Builder: { model: "balanced", effort: "middle" },
   Tester: { model: "cheapest", effort: "lowest" },

@@ -14,6 +14,7 @@ import type { AgentInfo } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
+import { useNow } from "@/lib/use-now";
 import { type AgentState, agentDot, contextMeter, nowDoingLine } from "./model";
 
 const STATE_TEXT = {
@@ -53,7 +54,9 @@ export function AgentRow({
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
-  const line = nowDoingLine(live);
+  const tick = useNow(live?.status === "working" ? 5_000 : 60_000);
+  const quiet = silentFor(live, tick);
+  const line = quiet === undefined ? nowDoingLine(live) : `Thinking, nothing new for ${quiet}`;
   const idle = line === "Idle";
   return (
     <div className="flex flex-col border-t border-line-strong pt-1">
@@ -98,6 +101,15 @@ export function AgentRow({
       {open && <AgentDetails id={detailsId} agent={id} live={live} info={info} account={account} now={now} />}
     </div>
   );
+}
+
+/** Only while working: how long the agent has sent nothing, once that passes 20 seconds. */
+function silentFor(live: AgentLive | undefined, now: number): string | undefined {
+  if (live?.status !== "working" || live.activeAt === undefined) return undefined;
+  const ms = now - Date.parse(live.activeAt);
+  if (!(ms > 20_000)) return undefined;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 /** The open row: the account's limits, then context, model, effort, permissions and fallback. */

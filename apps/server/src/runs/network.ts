@@ -48,6 +48,20 @@ export function looksLikeNetworkError(message: string): boolean {
   );
 }
 
+/**
+ * API errors the provider says are temporary (overloaded, 5xx). Not usage limits (429 and
+ * "limit reached"): those wait for the window to reset instead.
+ */
+export function looksLikeOverload(message: string): boolean {
+  if (/\b429\b|rate.?limit|usage limit|limit reached/i.test(message)) return false;
+  return /\b(529|500|502|503|504)\b|overloaded|internal server error|service unavailable|bad gateway|gateway timeout|temporarily unavailable/i.test(
+    message,
+  );
+}
+
+/** Waits between tries when the model's API is overloaded: 30 s, 1, 2, 4 and 8 minutes. */
+export const OVERLOAD_BACKOFF_MS = [30_000, 60_000, 120_000, 240_000, 480_000] as const;
+
 export interface WatchDeps {
   probe: Probe;
   /** Called on every change between online and offline. */

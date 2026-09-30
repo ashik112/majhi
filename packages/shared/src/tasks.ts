@@ -460,6 +460,8 @@ export const AgentLiveSchema = z.object({
   turns: z.number().int().nonnegative().optional(),
   /** One line: what it is doing now. */
   nowDoing: z.string().optional(),
+  /** When the agent last sent anything (text, thought, tool call), sent at most every few seconds. */
+  activeAt: z.string().optional(),
   /** Messages waiting for its next turn. */
   queued: z.number().int().nonnegative(),
   usage: z.object({ used: z.number().nonnegative(), size: z.number().positive() }).optional(),

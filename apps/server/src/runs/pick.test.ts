@@ -74,7 +74,8 @@ const task = {
   kind: "code",
   repos: [{ project: "acme-web" }],
 } as Task;
-const settings = DecisionSettingsSchema.parse({});
+// These tests pin the Lead to the highest effort, so they do not follow changes to the defaults.
+const settings = DecisionSettingsSchema.parse({ tiers: { Lead: { effort: "highest" } } });
 
 const run = (
   d: Decisions | undefined,
