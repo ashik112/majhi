@@ -26,7 +26,16 @@ type Confirm = "forget" | "promote";
  * actions that fit its state. A pending fact can be approved or rejected; an active one pinned,
  * added to the repo's AGENTS.md (project facts only) or forgotten.
  */
-export function FactRow({ fact, orgNames }: { fact: Fact; orgNames: ReadonlyMap<string, string> }) {
+export function FactRow({
+  fact,
+  orgNames,
+  ownScope,
+}: {
+  fact: Fact;
+  orgNames: ReadonlyMap<string, string>;
+  /** The scope of the row it is listed under: its badge is left out when the fact has that scope. */
+  ownScope?: string;
+}) {
   const toast = useToast();
   const approve = useApproveFact();
   const reject = useRejectFact();
@@ -41,7 +50,7 @@ export function FactRow({ fact, orgNames }: { fact: Fact; orgNames: ReadonlyMap<
   const fail = (title: string) => (e: unknown) => toast(title, { detail: describeError(e), tone: "error" });
 
   return (
-    <li className="flex flex-col gap-1.5 rounded-xl border border-line-strong bg-card px-4 py-3">
+    <li className="flex flex-col gap-1.5 border-t border-line py-3 first:border-t-0">
       <div className="flex items-start gap-3">
         <p className="m-0 min-w-0 flex-1 text-body text-fg text-pretty [overflow-wrap:anywhere]">
           {fact.text}
@@ -100,10 +109,12 @@ export function FactRow({ fact, orgNames }: { fact: Fact; orgNames: ReadonlyMap<
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-faint">
-        <Badge tone={scopeKind(fact.scope) === "global" ? "blue" : "neutral"}>
-          {scopeText(fact.scope, orgNames)}
-        </Badge>
-        {pending && <Badge tone="amber">Needs review</Badge>}
+        {fact.scope !== ownScope && (
+          <Badge tone={scopeKind(fact.scope) === "global" ? "blue" : "neutral"}>
+            {scopeText(fact.scope, orgNames)}
+          </Badge>
+        )}
+
         {fact.pinned && (
           <Badge tone="amber">
             <Pin aria-hidden="true" />

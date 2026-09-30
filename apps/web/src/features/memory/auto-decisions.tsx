@@ -1,11 +1,12 @@
 import type { Fact, MemoryEvent } from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DetailSection } from "@/components/ui/list-detail";
 import { describeError } from "@/lib/errors";
 import { EventList } from "./event-list";
 import { isAutomatic } from "./model";
 
-const FIRST = 8;
+const FIRST = 6;
 
 /** What curation kept, dropped, retired or merged on its own, with the reason and Undo. */
 export function AutoDecisions({
@@ -21,28 +22,25 @@ export function AutoDecisions({
   const auto = events.filter(isAutomatic);
   const shown = all ? auto : auto.slice(0, FIRST);
   return (
-    <section aria-label="Recent automatic decisions" className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-2">
-        <h2 className="text-md font-semibold">Recent automatic decisions</h2>
-        <span className="text-sm text-fg-faint">
-          Curation keeps, drops or merges lessons by itself. Only global lessons and contradictions wait for
-          you. Undo puts any step back.
-        </span>
-      </div>
-      {error && <p className="m-0 text-sm text-red">{describeError(error)}</p>}
+    <DetailSection
+      title="Automatic decisions"
+      note="Curation keeps, drops or merges lessons by itself. Undo puts any step back."
+      actions={
+        auto.length > FIRST && (
+          <Button size="sm" variant="ghost" onClick={() => setAll(!all)}>
+            {all ? "Show fewer" : `Show all ${auto.length}`}
+          </Button>
+        )
+      }
+    >
+      {error && <p className="text-sm text-red">{describeError(error)}</p>}
       <EventList
+        flat
         events={shown}
         facts={facts}
         label="Automatic decisions"
         empty="Nothing was decided automatically yet."
       />
-      {auto.length > FIRST && (
-        <div>
-          <Button size="sm" onClick={() => setAll(!all)}>
-            {all ? "Show fewer" : `Show all ${auto.length}`}
-          </Button>
-        </div>
-      )}
-    </section>
+    </DetailSection>
   );
 }

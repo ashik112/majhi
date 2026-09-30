@@ -9,19 +9,20 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useBoss } from "@/features/boss/boss-context";
 import { checksNeedingYou } from "@/features/health/model";
+import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText, orgRows } from "@/features/shell/model";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
-import { usePendingFactCount } from "@/lib/memory-queries";
+import { useFacts } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
-import { useTasks } from "@/lib/task-queries";
+import { useProjects, useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 
 const NAV: readonly { page: PageName; label: string }[] = [
@@ -121,13 +122,15 @@ function MainNav() {
   const checks = useHealthChecks().data?.checks;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const needYou = checksNeedingYou(checks);
-  const toReview = usePendingFactCount();
+  const pendingFacts = useFacts({ status: "pending" }).data ?? [];
+  const projects = useProjects().data;
+  const toReview = pendingFacts.length;
+  const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
   const badge: Partial<Record<PageName, { text: string; alert?: boolean; dot?: boolean }>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
   if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
-  if (toReview > 0) badge.memory = { text: `${toReview} to review`, alert: true };
 
   return (
     <nav aria-label="Main" className="flex flex-col gap-px">
@@ -135,6 +138,32 @@ function MainNav() {
         const to = PAGE_PATH[item.page];
         const shown = badge[item.page];
         const active = to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
+        if (item.page === "memory" && toReview > 0 && reviewAt !== undefined)
+          return (
+            <div key={item.page} className="relative flex">
+              <Link
+                to={to}
+                search={orgSearch(org)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  ITEM,
+                  "h-8 flex-1 px-2.5 text-body font-medium",
+                  active ? ROW_SELECTED : "text-fg-muted",
+                )}
+              >
+                <span>{item.label}</span>
+              </Link>
+              {/* Its own link: the lessons that wait, on the Lessons tab of their project. */}
+              <Link
+                to={to}
+                search={{ project: reviewAt, tab: "lessons" }}
+                title="Open the lessons that wait for you"
+                className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-lamp-needs transition-colors duration-150 hover:bg-raised hover:underline"
+              >
+                {toReview} to review
+              </Link>
+            </div>
+          );
         return (
           <Link
             key={item.page}

@@ -1,106 +1,111 @@
-import * as m from "motion/react-m";
-import { useMemo, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect, useMemo } from "react";
+import { ListDetail, ListPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
-import { cn } from "@/lib/cn";
-import { useFacts, useThreads } from "@/lib/memory-queries";
+import { describeError } from "@/lib/errors";
+import { useFacts, useTaskRecords, useThreads } from "@/lib/memory-queries";
 import { useOrgs } from "@/lib/studio-queries";
 import { useProjects } from "@/lib/task-queries";
-import { BriefView } from "./brief-view";
-import { LessonsView } from "./lessons-view";
-import { readStored, writeStored } from "./project-picker";
-import { RecordsView } from "./records-view";
-import { ThreadsView } from "./threads-view";
+import type { AppSearch } from "@/router";
+import { MemoryDetail } from "./memory-detail";
+import { MemoryList } from "./memory-list";
+import { GLOBAL, MEMORY_TABS, type MemoryTab, memoryCounts } from "./model";
+import { readStored, writeStored } from "./storage";
 
-type MemoryTab = "brief" | "tasks" | "threads" | "lessons";
-const TABS: readonly MemoryTab[] = ["brief", "tasks", "threads", "lessons"];
-const TAB_KEY = "majhi.memory.tab";
+const PROJECT_KEY = "majhi.memory.project";
 
-function storedTab(): MemoryTab {
-  const saved = readStored(TAB_KEY);
-  return TABS.find((t) => t === saved) ?? "brief";
-}
+/** Record counts in the list cover the newest this many records: the most `memory.records` gives. */
+const RECORDS = 200;
 
 /**
- * Memory (SPEC 5.6): each project's living brief, the record of every finished task, what those
- * tasks left open, and the few lessons worth carrying. The tab is remembered in this browser.
+ * Memory (SPEC 5.6) as list and detail: every project by org, plus a Global row, each with what
+ * memory holds for it; the picked one on the right with its brief, task records, threads and
+ * lessons. The URL keeps the project and tab (`?project=&tab=`), so a link can open a review.
  */
 export function MemoryView() {
-  const [tab, setTabState] = useState<MemoryTab>(storedTab);
-  const setTab = (value: MemoryTab) => {
-    setTabState(value);
-    writeStored(TAB_KEY, value);
-  };
   const orgs = useOrgs();
   const projects = useProjects();
-  const facts = useFacts({ status: "pending" });
-  const threads = useThreads({ status: "open" });
+  const facts = useFacts();
+  const threads = useThreads();
+  const records = useTaskRecords({ limit: RECORDS });
+  const search: AppSearch = useSearch({ strict: false });
+  const navigate = useNavigate();
 
-  const orgNames = useMemo(() => new Map((orgs.data ?? []).map((o) => [o.id, o.name])), [orgs.data]);
-  const projectOrgs = useMemo(
-    () => new Map((projects.data ?? []).map((p) => [p.id, p.org])),
-    [projects.data],
+  const projectList = projects.data ?? [];
+  const projectOrgs = useMemo(() => new Map(projectList.map((p) => [p.id, p.org])), [projectList]);
+  const counts = useMemo(
+    () =>
+      memoryCounts(
+        records.data?.map((h) => h.record) ?? [],
+        threads.data ?? [],
+        facts.data ?? [],
+        projectOrgs,
+      ),
+    [records.data, threads.data, facts.data, projectOrgs],
   );
-  const pending = facts.data?.length ?? 0;
-  const tabs: { value: MemoryTab; label: string; count?: number; alert?: boolean }[] = [
-    { value: "brief", label: "Brief" },
-    { value: "tasks", label: "Tasks" },
-    { value: "threads", label: "Threads", ...(threads.data ? { count: threads.data.length } : {}) },
-    { value: "lessons", label: "Lessons", ...(pending > 0 ? { count: pending, alert: true } : {}) },
-  ];
 
+  const known = (id: string | undefined): id is string =>
+    id !== undefined && (id === GLOBAL || projectOrgs.has(id));
+  const stored = readStored(PROJECT_KEY);
+  const selected = known(search.project)
+    ? search.project
+    : known(stored)
+      ? stored
+      : (projectList[0]?.id ?? GLOBAL);
+  const tab: MemoryTab =
+    MEMORY_TABS.find((t) => t === search.tab) ?? (selected === GLOBAL ? "lessons" : "brief");
+
+  useEffect(() => {
+    if (projects.data !== undefined) writeStored(PROJECT_KEY, selected);
+  }, [projects.data, selected]);
+
+  // Picking another project keeps the tab when it has one; the Global row starts on Lessons.
+  const go = (next: { project?: string; tab?: MemoryTab }) => {
+    const project = next.project ?? selected;
+    const nextTab = next.tab ?? (project === GLOBAL ? "lessons" : selected === GLOBAL ? "brief" : tab);
+    void navigate({
+      to: ".",
+      search: (prev: AppSearch): AppSearch => ({ ...prev, project, tab: nextTab }),
+      replace: true,
+    });
+  };
+
+  const failed = projects.error ?? orgs.error;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        bottom
         title="Memory"
-        subtitle="What majhi remembers across tasks: each project's brief, what finished tasks did, what they left open, and a few hard-won lessons."
-      >
-        <div role="tablist" aria-label="Memory" className="flex gap-1">
-          {tabs.map((t) => {
-            const selected = t.value === tab;
-            return (
-              <button
-                key={t.value}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setTab(t.value)}
-                className={cn(
-                  "relative flex h-11 cursor-pointer items-center gap-2 px-3 text-base font-medium transition-colors duration-150",
-                  selected ? "text-fg" : "text-fg-muted hover:text-fg",
-                )}
-              >
-                {t.label}
-                {t.count !== undefined && (
-                  <span
-                    className={cn("font-mono text-xs tabular-nums", t.alert ? "text-coral" : "text-fg-faint")}
-                  >
-                    {t.count}
-                  </span>
-                )}
-                {selected && (
-                  <m.span
-                    layoutId="memory-tab-underline"
-                    aria-hidden="true"
-                    className="absolute inset-x-0 -bottom-px h-0.5 bg-accent"
-                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </PageHeader>
-      <div className="min-h-0 flex-1 overflow-auto scroll-fade">
-        <div role="tabpanel" className="flex max-w-[920px] flex-col gap-5 px-8 pt-5 pb-8">
-          {tab === "brief" && <BriefView projects={projects.data} orgNames={orgNames} />}
-          {tab === "tasks" && <RecordsView projects={projects.data} orgNames={orgNames} />}
-          {tab === "threads" && <ThreadsView />}
-          {tab === "lessons" && (
-            <LessonsView orgs={orgs.data ?? []} orgNames={orgNames} projectOrgs={projectOrgs} />
-          )}
-        </div>
-      </div>
+        subtitle="What majhi keeps per project: a short brief, a record of each finished task, what those tasks left open, and lessons."
+      />
+      {failed ? (
+        <p role="alert" className="p-8 text-base text-red">
+          Could not load memory: {describeError(failed)}
+        </p>
+      ) : (
+        <ListDetail>
+          <ListPane label="Projects">
+            <MemoryList
+              projects={projects.data}
+              orgs={orgs.data ?? []}
+              counts={counts}
+              selected={selected}
+              onSelect={(project) => go({ project })}
+            />
+          </ListPane>
+          <MemoryDetail
+            key={selected}
+            target={selected}
+            tab={tab}
+            onTab={(t) => go({ tab: t })}
+            project={projectList.find((p) => p.id === selected)}
+            orgs={orgs.data ?? []}
+            counts={counts}
+            facts={facts}
+            threads={threads}
+            projectOrgs={projectOrgs}
+          />
+        </ListDetail>
+      )}
     </div>
   );
 }

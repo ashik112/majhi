@@ -96,3 +96,99 @@ export function providerLabel(provider: string): string {
 export function percent(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
+
+/** The Memory list's row for lessons that hold everywhere. Not a project id: ids have no uppercase. */
+export const GLOBAL = "Global";
+
+export type MemoryTab = "brief" | "tasks" | "threads" | "lessons";
+export const MEMORY_TABS: readonly MemoryTab[] = ["brief", "tasks", "threads", "lessons"];
+
+/** What memory holds for one row of the list. */
+export interface MemoryCounts {
+  records: number;
+  open: number;
+  waiting: number;
+}
+
+const ZERO: MemoryCounts = { records: 0, open: 0, waiting: 0 };
+
+/** Which rows a fact belongs to: its project, every project of its org, or the Global row. */
+export function factTargets(fact: Fact, projectOrgs: ProjectOrgs): string[] {
+  const scope = parseScope(fact.scope);
+  if (scope === undefined || scope.kind === "global") return [GLOBAL];
+  if (scope.kind === "project") return [scope.id];
+  return [...projectOrgs.entries()].filter(([, org]) => org === scope.id).map(([project]) => project);
+}
+
+/** The facts a row shows: a project's own and its org's, or the global ones. */
+export function factsOf(target: string, facts: readonly Fact[], projectOrgs: ProjectOrgs): Fact[] {
+  return facts.filter((f) => factTargets(f, projectOrgs).includes(target));
+}
+
+/**
+ * Per row of the list: task records, open threads and lessons waiting for the owner. Records and
+ * threads without a project count on the Global row.
+ */
+export function memoryCounts(
+  records: readonly { projects: readonly string[] }[],
+  threads: readonly { project?: string | undefined; status: string }[],
+  facts: readonly Fact[],
+  projectOrgs: ProjectOrgs,
+): ReadonlyMap<string, MemoryCounts> {
+  const out = new Map<string, MemoryCounts>();
+  const bump = (key: string, field: keyof MemoryCounts) => {
+    const now = out.get(key) ?? ZERO;
+    out.set(key, { ...now, [field]: now[field] + 1 });
+  };
+  for (const r of records) {
+    if (r.projects.length === 0) bump(GLOBAL, "records");
+    for (const p of r.projects) bump(p, "records");
+  }
+  for (const t of threads) if (t.status === "open") bump(t.project ?? GLOBAL, "open");
+  for (const f of facts) {
+    if (f.status !== "pending") continue;
+    for (const target of factTargets(f, projectOrgs)) bump(target, "waiting");
+  }
+  return out;
+}
+
+export function countsOf(counts: ReadonlyMap<string, MemoryCounts>, key: string): MemoryCounts {
+  return counts.get(key) ?? ZERO;
+}
+
+/** Where "N to review" leads: the row of the first lesson that waits. */
+export function reviewTarget(pending: readonly Fact[], projectOrgs: ProjectOrgs): string | undefined {
+  for (const f of pending) {
+    const target = factTargets(f, projectOrgs)[0];
+    if (target !== undefined) return target;
+  }
+  return undefined;
+}
+
+/** A brief's `## ` sections in order. Text before the first heading, or a brief without any, is one untitled part. */
+export function briefSections(body: string): { title: string; text: string }[] {
+  const out: { title: string; text: string }[] = [];
+  let title = "";
+  let lines: string[] = [];
+  const flush = () => {
+    const text = lines.join("\n").trim();
+    if (title !== "" || text !== "") out.push({ title, text });
+  };
+  for (const line of body.split("\n")) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading?.[1] === undefined) {
+      lines.push(line);
+      continue;
+    }
+    flush();
+    title = heading[1];
+    lines = [];
+  }
+  flush();
+  return out;
+}
+
+/** A section with nothing in it: empty, or the brief's "Nothing yet." */
+export function emptySection(text: string): boolean {
+  return /^(nothing yet\.?)?$/i.test(text.trim());
+}
