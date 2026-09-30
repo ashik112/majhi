@@ -50,7 +50,7 @@ test("the banner shows what needs the owner, and the sidebar counts it", async (
   await expect(banner).toContainText("claude-legacy needs you to sign in.");
   await banner.getByRole("button", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
-  await expect(page.getByRole("complementary", { name: "Account details" })).toContainText("claude-legacy");
+  await expect(page.getByRole("region", { name: "Account details" })).toContainText("claude-legacy");
   await expect(nav(page).getByRole("link", { name: /^Accounts/ })).toContainText("An account needs you");
 
   const pulse = page.getByRole("region", { name: "Agents right now" });

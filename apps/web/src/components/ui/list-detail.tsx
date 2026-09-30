@@ -98,9 +98,11 @@ export function DetailSection({
   );
 }
 
-/** The selected list row: the selected tint and a lit accent hairline on the left edge, as in the sidebar. */
-export const ROW_SELECTED =
-  "bg-selected text-fg before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:rounded-full before:bg-accent before:shadow-[0_0_6px_var(--c-accent)]";
+/**
+ * The selected row, in lists and in the sidebar: the selected tint, a 1px inset ring all around and
+ * full text, like a pressed segment. Never an edge bar.
+ */
+export const ROW_SELECTED = "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]";
 
 /** A list row at rest: muted until hovered. */
 export const ROW =

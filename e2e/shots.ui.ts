@@ -54,15 +54,15 @@ test("agents: errors, new agent", async ({ page }) => {
   await shot(page, "agents-new");
 });
 
-test("accounts: account drawer and add account", async ({ page }) => {
+test("accounts: account details and add account", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /^Accounts/ }).click();
   await page.getByRole("button", { name: "claude-northwind" }).click();
-  await expect(page.getByRole("complementary", { name: "Account details" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Account details" })).toBeVisible();
   await page.waitForTimeout(500);
   await shot(page, "health-details");
-  await page.getByRole("button", { name: "Add account" }).click();
-  await expect(page.getByRole("complementary", { name: "Add an account" })).toBeVisible();
+  await page.getByRole("button", { name: "Add account", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Add an account" })).toBeVisible();
   await page.waitForTimeout(500);
   await shot(page, "health-add");
 });
@@ -76,6 +76,7 @@ test("orgs: edit in place", async ({ page }) => {
 
 test("projects: register", async ({ page }) => {
   await page.goto("/projects");
+  await page.getByRole("button", { name: /^Register a repo/ }).click();
   await page.getByRole("button", { name: "Register delta-app" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await shot(page, "projects-register");

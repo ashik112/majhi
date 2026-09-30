@@ -218,7 +218,7 @@ The world rejects the flat gray card stack with "Nothing here" boxes: an empty c
 A blue-black instrument ground with cool neutral text, five reserved lamp colours for state, and one pickable accent for action.
 
 ### Primary
-- **Brand Amber accent** (`accent`): primary buttons, the current-selection hairline in the sidebar, focus outlines, text caret, selection highlight and pressed choice chips. It is the default of five accents; the owner can switch to Radar Blue (#7ea6ff), Plotter Violet (#a98bf5), Signal Lime (#b6dc4e) or Instrument Steel (#b8c4d6). Each accent ships a full set (hover, press, ink, wash, line, text) per theme. Accent-text is the variant used for type on glass; accent-ink is the text on a filled accent.
+- **Brand Amber accent** (`accent`): primary buttons, focus outlines, text caret, text selection highlight and pressed choice chips. It never marks the selected row; that is the selected tint (see Navigation). It is the default of five accents; the owner can switch to Radar Blue (#7ea6ff), Plotter Violet (#a98bf5), Signal Lime (#b6dc4e) or Instrument Steel (#b8c4d6). Each accent ships a full set (hover, press, ink, wash, line, text) per theme. Accent-text is the variant used for type on glass; accent-ink is the text on a filled accent.
 - **Mark Amber** (`brand`): the `mj` mark only. It stays amber in every theme and accent.
 
 ### Secondary: Status Lamps
@@ -302,7 +302,7 @@ Depth is glass over a backdrop, not stacked paper. The backdrop is layered: base
 - **Glass rest** (`inset 0 1px 0 0 var(--c-glass-hi), 0 14px 34px -16px rgb(0 0 0 / 0.75), 0 3px 8px -4px rgb(0 0 0 / 0.5)`): every resting glass surface and task card.
 - **Pop** (`inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -18px rgb(0 0 0 / 0.85), 0 6px 16px -6px rgb(0 0 0 / 0.55)`): floating glass, and a task card on hover.
 - **Lamp glow** (`0 0 0 3px` of 16% lamp colour plus `0 0 9px` of 55%): needs-you and paused lamps. Working breathes between 8px and 12px glow.
-- **Accent halo** (`0 6px 18px -8px var(--c-accent)`): under the primary button only. The selected nav hairline and the mark carry a matching small glow.
+- **Accent halo** (`0 6px 18px -8px var(--c-accent)`): under the primary button only. The mark carries a matching small glow.
 
 ### Named Rules
 **The Two Glass Rule.** Resting surfaces use translucent glass; anything that floats over content (menus, dialogs, drawers, popovers) uses the near-opaque floating glass, because a popover inside a panel cannot blur what lies outside that panel.
@@ -311,7 +311,10 @@ Depth is glass over a backdrop, not stacked paper. The backdrop is layered: base
 
 ## Shapes
 
-Soft instrument corners, nested so the outer frame is always the roundest: shell panels and rails 14px, cards and dialogs 12px, panels 10px, controls, inputs and nav rows 8px, badges 6px, inline code and small links 4px. Lamps and avatars are full circles. Borders are 1px hairlines throughout; the only dashed border is the collapsed column rail. The column head closes with a 1px hairline that fades out to the right.
+Soft instrument corners, nested so the outer frame is always the roundest: shell panels and rails 14px, cards and dialogs 12px, panels 10px, controls, inputs and nav rows 8px, badges 6px, inline code and small links 4px. Lamps and avatars are full circles. Borders are 1px hairlines throughout and go all the way round; the only dashed border is the collapsed column rail. The column head closes with a 1px hairline that fades out to the right.
+
+### Named Rules
+**The No Edge Bars Rule.** Selection and state are never marked by a bar, stripe or coloured border on one edge of a row, card, callout or panel. Selection is a filled tint with a ring all round; state is a lamp with its word, or a tinted frame on every side (the Lit Frame Rule).
 
 ## Components
 
@@ -340,8 +343,13 @@ A 3px-inset track (9px corners, field fill, `line-strong` border) holding 32px s
 - **Focus:** the border turns accent; no ring on top.
 - **Error / Disabled:** red border (also on focus); disabled at 50% opacity.
 
-### Navigation
-The sidebar navigation is a stack of 32px rows (14px, medium), muted at rest, raised tint on hover. The selected row gets the selected tint, full text, and a 1px accent hairline with a 6px glow on its left edge, like a selected channel. Counts sit right-aligned in mono. Group labels head the org list and the lamp grid.
+### Navigation and selection
+The sidebar navigation is a stack of 32px rows (14px, medium), muted at rest, raised tint on hover. Counts sit right-aligned in mono. Group labels head the org list and the lamp grid.
+
+One selection treatment everywhere (sidebar pages, the sidebar org filter, the rows of every list-and-detail page, pressed segments): the `selected` tint, a 1px inset `line-control` ring all round, and full `fg` text, medium weight where the row's text is otherwise regular. It is `ROW_SELECTED` in `components/ui/list-detail.tsx`. The accent does not mark selection, and nothing marks it on one edge only.
+
+### List and detail
+Agents, Accounts, Health and usage, Projects and links and Orgs share one frame (`components/ui/list-detail.tsx`): a glass list on the left (264px, 296px from 1320px) and the picked item on the right, both as tall as the page and each scrolling inside itself with edge fades. The list groups rows by org under a small head (org badge, name, count, and a ghost + button when the group takes new items); a row is two lines, the name first and a status line under it, with its lamp or dot and word. A pinned footer holds the list's one action (New org, Add account, Register a repo). The detail has a fixed head (name, key facts, actions) over sections divided by hairlines, never boxed; each editable section keeps its own draft with Cancel and Save showing only while something changed.
 
 ### Status Lamp (signature)
 A round lamp, 8px by default (7px in rails and docks, 6px in the connection indicator). Working: filled and breathing. Needs you and paused: filled with a steady glow ring. Done: filled, no glow. Idle: an unlit 1.5px ring. A dim lamp (35% opacity) keeps its colour but unlit, for a count of zero.
@@ -365,6 +373,7 @@ A popover of floating glass: a three-way theme segment (Dark, Light, System) and
 - **Do** collapse empty columns to 44px dashed rails with a vertical name and a mono count.
 - **Do** tune new tokens for both themes and all five accents in `styles.css`; components use only the Tailwind tokens mapped to `--c-*`, whose default palette, sizes and radii are cleared.
 - **Do** nest corners: 14px shell panels over 12px cards over 8px controls.
+- **Do** mark the selected row with `ROW_SELECTED`: selected tint, inset ring all round, full text.
 
 ### Don't:
 - **Don't** let the document scroll, or add a page-level scroll container.
@@ -376,3 +385,4 @@ A popover of floating glass: a three-way theme segment (Dark, Light, System) and
 - **Don't** draw an empty column as an empty box with "Nothing here".
 - **Don't** use hard offset shadows, flat gray cards, or blur-dependent popovers.
 - **Don't** recolour the `mj` mark with the accent; it stays amber.
+- **Don't** mark selection or state with an edge bar: no coloured `border-left` or `border-right`, no one-edge `::before` stripe, no absolutely placed bar on a row's side. Use the selected tint and ring, a lamp with its word, or a frame tinted on every side.
