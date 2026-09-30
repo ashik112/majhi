@@ -8,15 +8,15 @@ import { z } from "zod";
 export const THEMES = ["dark", "light", "system"] as const;
 export type ThemeChoice = (typeof THEMES)[number];
 
-export const ACCENTS = ["amber", "cyan", "violet", "green", "rose"] as const;
+export const ACCENTS = ["amber", "blue", "violet", "lime", "steel"] as const;
 export type Accent = (typeof ACCENTS)[number];
 
 export const ACCENT_LABEL: Record<Accent, string> = {
   amber: "Amber",
-  cyan: "Cyan",
+  blue: "Blue",
   violet: "Violet",
-  green: "Green",
-  rose: "Rose",
+  lime: "Lime",
+  steel: "Steel",
 };
 
 const KEY = "majhi.appearance";

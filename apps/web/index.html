@@ -18,7 +18,7 @@
           saved = JSON.parse(localStorage.getItem("majhi.appearance") || "{}") || {};
         } catch {}
         if (saved.theme === "dark" || saved.theme === "light" || saved.theme === "system") theme = saved.theme;
-        if (["amber", "cyan", "violet", "green", "rose"].includes(saved.accent)) accent = saved.accent;
+        if (["amber", "blue", "violet", "lime", "steel"].includes(saved.accent)) accent = saved.accent;
         if (theme === "system") {
           theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         }

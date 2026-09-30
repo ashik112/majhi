@@ -12,7 +12,7 @@
  * Status lamps are law: one color per state, used for nothing else.
  *   working  cyan   an agent is working
  *   needs    red    the task waits for the owner (review, your turn)
- *   paused   amber  stopped: usage limit, offline, error, or by the owner
+ *   paused   magenta  stopped: usage limit, offline, error, or by the owner
  *   done     green  finished or shipped (MR open, done)
  *   idle     dim    inbox, ready, nobody on it
  */
@@ -95,7 +95,7 @@
   /* Status lamps */
   --c-lamp-working: #3fd4f5;
   --c-lamp-needs: #ff6868;
-  --c-lamp-paused: #f7a531;
+  --c-lamp-paused: #ee72dc;
   --c-lamp-done: #45d99a;
   --c-lamp-idle: #5f6d80;
 
@@ -113,14 +113,18 @@
   --c-accent-text: #f3c47a;
 }
 
-:root[data-theme="dark"][data-accent="cyan"] {
-  --c-accent: #4cc9e8;
-  --c-accent-hover: #6dd5ee;
-  --c-accent-press: #34b6d6;
-  --c-accent-ink: #03141a;
-  --c-accent-wash: rgb(76 201 232 / 0.12);
-  --c-accent-line: rgb(76 201 232 / 0.38);
-  --c-accent-text: #7fd9ef;
+/*
+ * The accents sit between the lamps on the color wheel, never on one: amber (the brand), blue,
+ * violet, lime and steel, against the lamps' red, cyan, green and magenta.
+ */
+:root[data-theme="dark"][data-accent="blue"] {
+  --c-accent: #7ea6ff;
+  --c-accent-hover: #97b8ff;
+  --c-accent-press: #6690f2;
+  --c-accent-ink: #07112a;
+  --c-accent-wash: rgb(126 166 255 / 0.14);
+  --c-accent-line: rgb(126 166 255 / 0.4);
+  --c-accent-text: #a6c1ff;
 }
 :root[data-theme="dark"][data-accent="violet"] {
   --c-accent: #a98bf5;
@@ -131,23 +135,23 @@
   --c-accent-line: rgb(169 139 245 / 0.4);
   --c-accent-text: #c4b0f8;
 }
-:root[data-theme="dark"][data-accent="green"] {
-  --c-accent: #5fd39f;
-  --c-accent-hover: #7bdcb0;
-  --c-accent-press: #48c28b;
-  --c-accent-ink: #04170e;
-  --c-accent-wash: rgb(95 211 159 / 0.12);
-  --c-accent-line: rgb(95 211 159 / 0.38);
-  --c-accent-text: #86e0b8;
+:root[data-theme="dark"][data-accent="lime"] {
+  --c-accent: #b6dc4e;
+  --c-accent-hover: #c3e46a;
+  --c-accent-press: #a2c93a;
+  --c-accent-ink: #141c02;
+  --c-accent-wash: rgb(182 220 78 / 0.13);
+  --c-accent-line: rgb(182 220 78 / 0.4);
+  --c-accent-text: #c6e57a;
 }
-:root[data-theme="dark"][data-accent="rose"] {
-  --c-accent: #f47a9b;
-  --c-accent-hover: #f692ad;
-  --c-accent-press: #e8658a;
-  --c-accent-ink: #22060e;
-  --c-accent-wash: rgb(244 122 155 / 0.13);
-  --c-accent-line: rgb(244 122 155 / 0.4);
-  --c-accent-text: #f7a0b8;
+:root[data-theme="dark"][data-accent="steel"] {
+  --c-accent: #b8c4d6;
+  --c-accent-hover: #c8d2e1;
+  --c-accent-press: #a5b2c6;
+  --c-accent-ink: #0b111b;
+  --c-accent-wash: rgb(184 196 214 / 0.12);
+  --c-accent-line: rgb(184 196 214 / 0.38);
+  --c-accent-text: #cdd6e3;
 }
 
 :root[data-theme="light"] {
@@ -219,7 +223,7 @@
 
   --c-lamp-working: #0a7694;
   --c-lamp-needs: #cf2a2a;
-  --c-lamp-paused: #9a5c00;
+  --c-lamp-paused: #a52a93;
   --c-lamp-done: #0b8058;
   --c-lamp-idle: #8d99a9;
 
@@ -232,14 +236,14 @@
   --c-accent-text: #8f5406;
 }
 
-:root[data-theme="light"][data-accent="cyan"] {
-  --c-accent: #0b86a6;
-  --c-accent-hover: #0a93b6;
-  --c-accent-press: #09738f;
+:root[data-theme="light"][data-accent="blue"] {
+  --c-accent: #2f5fd6;
+  --c-accent-hover: #3d6ce0;
+  --c-accent-press: #264fb8;
   --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(11 134 166 / 0.1);
-  --c-accent-line: rgb(11 134 166 / 0.36);
-  --c-accent-text: #075f77;
+  --c-accent-wash: rgb(47 95 214 / 0.1);
+  --c-accent-line: rgb(47 95 214 / 0.36);
+  --c-accent-text: #244db3;
 }
 :root[data-theme="light"][data-accent="violet"] {
   --c-accent: #6f4fd6;
@@ -250,23 +254,23 @@
   --c-accent-line: rgb(111 79 214 / 0.36);
   --c-accent-text: #5a3cc0;
 }
-:root[data-theme="light"][data-accent="green"] {
-  --c-accent: #10885f;
-  --c-accent-hover: #139a6c;
-  --c-accent-press: #0c7550;
-  --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(16 136 95 / 0.1);
-  --c-accent-line: rgb(16 136 95 / 0.36);
-  --c-accent-text: #0b6a49;
+:root[data-theme="light"][data-accent="lime"] {
+  --c-accent: #9cc12b;
+  --c-accent-hover: #a9cc3c;
+  --c-accent-press: #88aa1f;
+  --c-accent-ink: #141c02;
+  --c-accent-wash: rgb(125 160 23 / 0.12);
+  --c-accent-line: rgb(110 140 20 / 0.4);
+  --c-accent-text: #4d6608;
 }
-:root[data-theme="light"][data-accent="rose"] {
-  --c-accent: #d23f6a;
-  --c-accent-hover: #dc5078;
-  --c-accent-press: #bb3159;
+:root[data-theme="light"][data-accent="steel"] {
+  --c-accent: #475569;
+  --c-accent-hover: #52627a;
+  --c-accent-press: #3b4757;
   --c-accent-ink: #ffffff;
-  --c-accent-wash: rgb(210 63 106 / 0.1);
-  --c-accent-line: rgb(210 63 106 / 0.36);
-  --c-accent-text: #ad2c52;
+  --c-accent-wash: rgb(71 85 105 / 0.1);
+  --c-accent-line: rgb(71 85 105 / 0.34);
+  --c-accent-text: #3b4757;
 }
 
 @theme static {
