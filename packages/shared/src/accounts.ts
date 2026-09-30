@@ -107,6 +107,8 @@ export const AccountConfigSchema = z
     auth: AuthModeSchema,
     /** Required for `api-key` accounts, absent for `login`. */
     key: SecretRefSchema.optional(),
+    /** Model ids the owner hid: left out of `auto` picks and fallback tiers. An agent that names one still gets it. */
+    hidden_models: z.array(z.string().trim().min(1)).optional(),
   })
   .refine((a) => (a.auth === "api-key") === (a.key !== undefined), {
     message: "API-key accounts need `key: secret:<name>`; login accounts must not have one",
@@ -296,6 +298,8 @@ export const AccountViewSchema = z.object({
   auth: AuthModeSchema,
   /** Absolute path of the account's config home. */
   home: z.string(),
+  /** Models hidden from `auto` picks. */
+  hiddenModels: z.array(z.string()).default([]),
   agentCount: z.number().int().nonnegative(),
   status: AccountStatusSchema,
   /** From the last health check, like the signed-in email. */

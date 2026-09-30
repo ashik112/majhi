@@ -64,7 +64,12 @@ const settings = DecisionSettingsSchema.parse({});
 const run = (
   d: Decisions | undefined,
   s: AgentSession,
-  over: { fm?: Partial<AgentFrontmatter>; prices?: PricesConfig } = {},
+  over: {
+    fm?: Partial<AgentFrontmatter>;
+    prices?: PricesConfig;
+    replaced?: Map<string, string>;
+    hidden?: string[];
+  } = {},
 ) =>
   pickForSession({
     decisions: d,
@@ -74,8 +79,11 @@ const run = (
     task,
     settings,
     prices: over.prices ?? {},
+    ...(over.replaced === undefined ? {} : { replaced: over.replaced }),
+    ...(over.hidden === undefined ? {} : { hidden: over.hidden }),
   });
 
+const price = (output: number) => ({ input: 1, output, cache_read: 0, cache_write: 0 });
 const pick = (model?: [string, number], effort?: [string, number]): ModelPick => ({
   decisionId: "d1",
   provider: "laya",
@@ -157,7 +165,7 @@ describe("pickForSession", () => {
   });
 
   it("keeps the CLI default when the tier cannot resolve for lack of prices", async () => {
-    const codex = opts("gpt-5.5-codex", "gpt-5.3-codex", "gpt-5.5");
+    const codex = opts("acme-code-5", "acme-code-3", "acme-fast-1");
     const { s, set } = session(codex, opts("low", "medium", "high"));
     const out = await run(undefined, s);
     expect(set).toEqual({ thought_level: "high" });
@@ -166,12 +174,12 @@ describe("pickForSession", () => {
       "so it fell back to most capable, but no offered model has a price to rank by, so the tier cannot resolve. Add price rows for these models to use tiers. It kept the CLI default.",
     );
     const rows = {
-      "gpt-5.5-codex": { input: 2, output: 12, cache_read: 0, cache_write: 0 },
-      "gpt-5.5": { input: 1, output: 8, cache_read: 0, cache_write: 0 },
+      "acme-code-5": { input: 2, output: 12, cache_read: 0, cache_write: 0 },
+      "acme-fast-1": { input: 1, output: 8, cache_read: 0, cache_write: 0 },
     };
     const priced = session(codex, opts("low", "medium", "high"));
     await run(undefined, priced.s, { prices: rows });
-    expect(priced.set.model).toBe("gpt-5.5-codex");
+    expect(priced.set.model).toBe("acme-code-5");
   });
 
   it("uses a lone option without asking, and asks only for the `auto` parts", async () => {
@@ -267,5 +275,47 @@ describe("pickForSession", () => {
       expect(set).toEqual({ model: "gpt-6-sol", thought_level: "ultra" });
       expect(out.line).toContain("Laya picked ultra (0.70).");
     });
+  });
+
+  it("leaves out a model the catalog marks as replaced, when its replacement is offered", async () => {
+    const codex = opts("gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5");
+    const { s } = session(codex, opts("low", "high"));
+    const { d, asked } = decisions(() => undefined);
+    const out = await run(d, s, {
+      replaced: new Map([
+        ["gpt-5.6-sol", "gpt-6-sol"],
+        ["gpt-5.5", "gpt-6-sol"],
+      ]),
+    });
+    expect(asked[0]?.models.map((o) => o.id)).toEqual(["gpt-6-sol", "gpt-6-luna"]);
+    expect(out.line).toContain(
+      "Left out: gpt-5.6-sol (replaced by gpt-6-sol), gpt-5.5 (replaced by gpt-6-sol).",
+    );
+  });
+
+  it("keeps a replaced model whose replacement is not offered", async () => {
+    const { s } = session(opts("gpt-5.6-sol", "gpt-6-luna"), opts("low", "high"));
+    const { d, asked } = decisions(() => undefined);
+    const out = await run(d, s, { replaced: new Map([["gpt-5.6-sol", "gpt-6-sol"]]) });
+    expect(asked[0]?.models.map((o) => o.id)).toEqual(["gpt-5.6-sol", "gpt-6-luna"]);
+    expect(out.line).not.toContain("Left out");
+  });
+
+  it("does not use a hidden model for the pick or the tiers", async () => {
+    const rows = { "a-1": price(30), "b-1": price(20), "c-1": price(10) };
+    const { s, set } = session(opts("a-1", "b-1", "c-1"), opts("low", "high"));
+    const { d, asked } = decisions(() => undefined);
+    const out = await run(d, s, { prices: rows, hidden: ["a-1"] });
+    expect(asked[0]?.models.map((o) => o.id)).toEqual(["b-1", "c-1"]);
+    // Lead falls back to the most capable one that is left.
+    expect(set.model).toBe("b-1");
+    expect(out.line).toContain("Left out: a-1 (hidden).");
+  });
+
+  it("lets an agent that names a hidden model in `models` have it", async () => {
+    const { s } = session(opts("a-1", "b-1", "c-1"), opts("low", "high"));
+    const { d, asked } = decisions(() => undefined);
+    await run(d, s, { hidden: ["a-1"], fm: { models: ["a-1", "b-1"] } });
+    expect(asked[0]?.models.map((o) => o.id)).toEqual(["a-1", "b-1"]);
   });
 });

@@ -130,6 +130,27 @@ export class AccountService {
     await cache.remove(id);
   }
 
+  /** Hides a model from `auto` picks, or shows it again. The list stays in the order it was hidden. */
+  async hideModel(
+    id: string,
+    model: string,
+    hidden: boolean,
+    command: string,
+    meta: CommandMeta,
+  ): Promise<AccountView> {
+    const config = await this.require(id);
+    const current = config.hidden_models ?? [];
+    if (current.includes(model) === hidden) return this.view(id, config);
+    const list = hidden ? [...current, model] : current.filter((m) => m !== model);
+    const { hidden_models: _old, ...rest } = config;
+    const next: AccountConfig = list.length === 0 ? rest : { ...rest, hidden_models: list };
+    await this.deps.config.change(
+      { command, meta, summary: `${hidden ? "hid" : "showed"} ${model} on account ${id}` },
+      () => writeAccount(this.deps.config.file, id, next),
+    );
+    return this.view(id, next);
+  }
+
   async health(id: string, force = false): Promise<{ account: AccountView; health: HealthCheck }> {
     const config = await this.require(id);
     const health = await this.deps.probes.check(id, config, force);
@@ -172,6 +193,7 @@ export class AccountService {
       org: config.org,
       auth: config.auth,
       home: accountHome(this.deps.majhiHome, id),
+      hiddenModels: config.hidden_models ?? [],
       agentCount: users.length,
       status: statusFromHealthAndUsage(cached.health, cached.usage),
     };

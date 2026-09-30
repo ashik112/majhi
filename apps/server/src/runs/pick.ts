@@ -54,12 +54,30 @@ export async function pickForSession(input: {
   prices: PricesConfig;
   /** The task's org's own tiers. */
   orgTiers?: TiersPatch | undefined;
+  /** Models the tool's own catalog marks as replaced, by the model that replaced them. */
+  replaced?: ReadonlyMap<string, string>;
+  /** Models the owner hid on the account. Not used for `auto` picks, unless the agent's `models` names them. */
+  hidden?: readonly string[];
 }): Promise<PickResult> {
   const { decisions, session, fm, task, settings } = input;
   const offered = session.models;
   const allowed = fm.models ?? [];
-  const candidates =
-    allowed.length === 0 ? offered.models : offered.models.filter((m) => allowed.includes(m.id));
+  const hidden = input.hidden ?? [];
+  // An agent that names a model in `models` gets it, hidden or not.
+  const listed =
+    allowed.length === 0
+      ? offered.models.filter((m) => !hidden.includes(m.id))
+      : offered.models.filter((m) => allowed.includes(m.id));
+  // A replaced model is left out only when the model that replaced it can be picked instead.
+  const left: string[] = offered.models
+    .filter((m) => allowed.length === 0 && hidden.includes(m.id))
+    .map((m) => `${m.id} (hidden)`);
+  const candidates = listed.filter((m) => {
+    const by = input.replaced?.get(m.id);
+    if (by === undefined || !listed.some((o) => o.id === by)) return true;
+    left.push(`${m.id} (replaced by ${by})`);
+    return false;
+  });
   const models = normalizeOffered(candidates);
   const modelOptions = labelModels(models, input.prices);
   const effortList = effortOptions(offered.efforts);
@@ -95,7 +113,7 @@ export async function pickForSession(input: {
   };
 
   if (fm.model === "auto" && modelOptions.length > 0) {
-    const list = `Models offered: ${modelOptions.map((o) => o.id).join(", ")}.`;
+    const list = `Models offered: ${modelOptions.map((o) => o.id).join(", ")}.${left.length === 0 ? "" : ` Left out: ${left.join(", ")}.`}`;
     const outcome: Outcome = (() => {
       const [only] = modelOptions;
       if (modelOptions.length === 1 && only !== undefined)

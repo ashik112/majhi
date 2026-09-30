@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
+import { getTool, type PromptBlock, type RuntimeOptions, type SessionEvent } from "@majhi/acp";
 import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
+import { accountHome } from "../accounts/homes.ts";
+import { readModelCatalog } from "../accounts/model-catalog.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
@@ -961,6 +963,11 @@ export class RunManager {
           task,
           settings: await readDecisionSettings(deps.config.file),
           prices,
+          replaced: await readModelCatalog(
+            accountHome(deps.majhiHome, fm.account),
+            getTool(agent.account.tool).modelCatalog,
+          ),
+          hidden: agent.account.hidden_models ?? [],
           orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });
         for (const line of result.warnings) this.live.system(run, "warn", line);

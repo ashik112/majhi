@@ -291,6 +291,13 @@ export const commands = {
     input: z.object({ id: IdSchema, refresh: z.boolean().optional() }),
     output: AccountUsageSchema.nullable(),
   },
+  "accounts.hideModel": {
+    risk: "change",
+    summary:
+      "Hide a model of the account from auto picks and fallback tiers, or show it again. An agent that names the model still gets it",
+    input: z.object({ id: IdSchema, model: z.string().trim().min(1), hidden: z.boolean() }),
+    output: AccountViewSchema,
+  },
   "accounts.models": {
     risk: "read",
     summary: "List the models and effort levels the account offers, read over ACP",

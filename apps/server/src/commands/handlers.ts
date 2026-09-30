@@ -151,6 +151,8 @@ export function createHandlers({
     "accounts.login.start": (input) => services.startLogin(input.id),
     "accounts.health": (input) => accounts.health(input.id),
     "accounts.usage": (input) => accounts.usage(input.id, input.refresh === true),
+    "accounts.hideModel": (input, ctx) =>
+      accounts.hideModel(input.id, input.model, input.hidden, ctx.command, ctx.meta),
     "accounts.models": (input) => accounts.models(input.id, input.refresh === true),
 
     "agents.list": () => agents.list(),

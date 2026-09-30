@@ -4,8 +4,11 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { Dot, toneText } from "@/components/ui/status-dot";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
+import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { useAccountModels, useHideModel } from "@/lib/studio-queries";
 import { HealthSteps } from "./health-steps";
 import { orgLabel, statusText } from "./model";
 import { UsageDetails } from "./usage-view";
@@ -81,6 +84,9 @@ export function AccountDetails({
           ) : (
             <span className="text-fg-faint">Not checked yet</span>
           )}
+        </Row>
+        <Row label="Models">
+          <ModelSwitches account={account} />
         </Row>
         <Row label="Used by">
           {groups.length === 0 ? (
@@ -160,6 +166,37 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     <div className="flex flex-col gap-1">
       <dt className="text-sm text-fg-faint">{label}</dt>
       <dd className="m-0 text-base text-fg-soft">{children}</dd>
+    </div>
+  );
+}
+
+/** The models the account offers, each with a Hide switch: a hidden model is left out of `auto` picks. */
+function ModelSwitches({ account }: { account: AccountView }) {
+  const models = useAccountModels(account.id);
+  const hide = useHideModel();
+  if (models.isPending) return <span className="text-fg-faint">Loading</span>;
+  if (models.isError)
+    return <span className="text-fg-faint">Could not read the models: {describeError(models.error)}</span>;
+  const list = models.data.models.filter((m) => m.id !== "default");
+  if (list.length === 0) return <span className="text-fg-faint">The account offers no models</span>;
+  return (
+    <div className="flex flex-col gap-1">
+      <ul className="m-0 flex list-none flex-col p-0">
+        {list.map((m) => (
+          <li key={m.id}>
+            <Switch
+              label={`Hide ${m.id}`}
+              checked={account.hiddenModels.includes(m.id)}
+              disabled={hide.isPending}
+              onChange={(hidden) => hide.mutate({ id: account.id, model: m.id, hidden })}
+            />
+          </li>
+        ))}
+      </ul>
+      <span className="text-sm text-fg-faint text-pretty">
+        A hidden model is left out of auto picks and fallback tiers. An agent set to that model still gets it.
+      </span>
+      {hide.isError && <span className="text-sm text-red">{describeError(hide.error)}</span>}
     </div>
   );
 }

@@ -67,6 +67,11 @@ export interface ToolSpec {
   configHomeVar: string;
   /** `ANTHROPIC_API_KEY` or `CODEX_API_KEY`. */
   apiKeyVar: string;
+  /**
+   * File under the config home where the CLI caches the model list it got from its server, with
+   * the models it has replaced. Absent when the tool has none (Claude).
+   */
+  modelCatalog?: string;
   /** Default adapter command, for example `claude-agent-acp`. */
   adapter: Command;
 }

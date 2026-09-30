@@ -85,3 +85,39 @@ describe("accounts.remove", () => {
     expect((await h.cmd("accounts.list")).body[0].agentCount).toBe(1);
   });
 });
+
+describe("accounts.hideModel", () => {
+  it("hides and shows a model, keeps the rest of the account, and does nothing twice", async () => {
+    await withOrg();
+    await h.cmd("accounts.create", { id: "codex-acme", tool: "codex", org: "acme", auth: "login" });
+    const yaml = () => readFile(join(h.env.majhiHome, "majhi.yaml"), "utf8");
+
+    const hid = await h.cmd("accounts.hideModel", { id: "codex-acme", model: "gpt-6-luna", hidden: true });
+    expect(hid.status).toBe(200);
+    expect(hid.body.hiddenModels).toEqual(["gpt-6-luna"]);
+    expect(await yaml()).toContain("hidden_models");
+
+    await h.cmd("accounts.hideModel", { id: "codex-acme", model: "gpt-6-astra", hidden: true });
+    const again = await h.cmd("accounts.hideModel", { id: "codex-acme", model: "gpt-6-astra", hidden: true });
+    expect(again.body.hiddenModels).toEqual(["gpt-6-luna", "gpt-6-astra"]);
+
+    const listed = (await h.cmd("accounts.list")).body[0];
+    expect(listed).toMatchObject({ tool: "codex", hiddenModels: ["gpt-6-luna", "gpt-6-astra"] });
+
+    await h.cmd("accounts.hideModel", { id: "codex-acme", model: "gpt-6-luna", hidden: false });
+    const shown = await h.cmd("accounts.hideModel", {
+      id: "codex-acme",
+      model: "gpt-6-astra",
+      hidden: false,
+    });
+    expect(shown.body.hiddenModels).toEqual([]);
+    expect(await yaml()).not.toContain("hidden_models");
+    expect(await yaml()).toContain("codex-acme");
+  });
+
+  it("refuses an account that does not exist", async () => {
+    await withOrg();
+    const res = await h.cmd("accounts.hideModel", { id: "nope", model: "x", hidden: true });
+    expect(res.status).toBe(404);
+  });
+});
