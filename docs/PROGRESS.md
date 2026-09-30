@@ -1,8 +1,8 @@
 # Progress
 
-## Phase 4: Multi-repo and MRs (server built, web and child tasks pending)
+## Phase 4: Multi-repo and MRs (server and web built, child tasks pending)
 
-Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). Search across rooms (PRV-35), review comments on diffs (PRV-36), open in editor (PRV-37), the terminal (PRV-38) and agent attribution (PRV-43) are their own tasks. The Changes tab with per-repo diffs and the MR screens are the web part, built after the server part.
+Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). Search across rooms (PRV-35), review comments on diffs (PRV-36), open in editor (PRV-37), the terminal (PRV-38) and agent attribution (PRV-43) are their own tasks. The Changes tab and the MR screens are the web part, built after the server part.
 
 ### Plan (server part)
 
@@ -41,7 +41,15 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 - **GitHub Enterprise and self-hosted GitLab** work only through the host name in the remote's URL (`GH_HOST`, `GITLAB_HOST`), not through an alias, and were not tried. Bitbucket Server / Data Center is not supported (Cloud only).
 - **CI reading** is a summary (none, pending, passing, failing). Required reviews and branch protection are left to the host: a host that refuses the merge stops majhi with the host's message.
 - The poller keeps nothing across a restart, and reads every task in `mr` each pass, so many open tasks mean many host calls a minute.
-- The web part: Changes tab with per-repo diffs, MR status per repo, the buttons for the commands above, project remotes and links and the org policy in Settings.
+
+### What works (web)
+
+- **Changes tab.** The task view has a Room / Changes switch when the task has a repo. Changes shows, per repo, each file's git diff against the base branch (commits and uncommitted work together, new files included), folded when a repo has more than 8 files. `tasks.diff` (read) runs `git diff` from the merge base in the worktree, or in the source checkout once the worktree is gone. Patches over 200 KB and repos past 300 files are cut with a note. The old Changes card in the right column stays: it lists what the agent touched and opens the file viewer.
+- **Merge requests card** (right column, for tasks in review or mr, or with an MR). One row per repo in merge order, each with its MR number and link, state and CI. Arrows change the order (`tasks.setMergeOrder`); "Use the order from links" clears the override. The next step follows the org policy: "Push and open MRs" (or "Open the missing MRs" after a partial failure), "Merge in order" under `approve`, "Merge now" and a note under `auto-if-green`, "I merged it" under `never` (asks again with "Record as merged anyway" when the host still shows an MR as open). Refresh reads the hosts. Every outbound step asks first in a dialog. The header's local merge is now "Merge locally".
+- **Org settings.** Merge policy, and per host (GitHub, GitLab, Bitbucket) the token: pick a saved secret or paste a new one, which is saved as a secret and only its reference goes to the org. The org card lists the policy and the hosts that have a token.
+- **Repos screen.** The project dialog has the remote MRs go to, its host (or auto), the SSH alias, and the projects it depends on. The project row shows what it depends on, and marks the MR remote when there are several.
+- **Needs you.** `mr` tasks were already in the Needs you group; their board card now says "MR open, waiting for the merge".
+- Checked with a typecheck only (no web tests, per CLAUDE.md). The diff reader was tried by hand on a temporary repo.
 
 ## Phase 3: Teams, rooms and decisions (built, waiting for owner review)
 
