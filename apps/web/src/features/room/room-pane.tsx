@@ -1,10 +1,11 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { type KeyboardEvent, type ReactNode, useCallback } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { Composer } from "./composer";
 import { isBusy, type RoomAction, type RoomState } from "./model";
+import type { OwnerContext } from "./owner-cards";
 import { Timeline } from "./timeline";
 
 /** The main column of a task: what the task says (`top`), the messages, and the composer. */
@@ -14,14 +15,24 @@ export function RoomPane({
   dispatch,
   loadOlder,
   top,
+  onShowChanges,
 }: {
   task: Task;
   state: RoomState;
   dispatch: (action: RoomAction) => void;
   loadOlder: () => Promise<void>;
   top?: ReactNode;
+  /** Opens the Changes tab. */
+  onShowChanges?: (() => void) | undefined;
 }) {
   const toast = useToast();
+  // Text a card button puts in the composer; `n` changes on every click.
+  const [draft, setDraft] = useState<{ text: string; n: number }>();
+  const compose = useCallback((text: string) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 })), []);
+  const owner = useMemo<OwnerContext>(
+    () => ({ task, compose, showChanges: onShowChanges }),
+    [task, compose, onShowChanges],
+  );
   const busy = isBusy(state.agents);
 
   const cancel = useMutation<{ cancelled: string[] }, ApiRequestError, void>({
@@ -72,6 +83,7 @@ export function RoomPane({
         onPermission={onPermission}
         answering={answer.isPending ? answer.variables?.item : undefined}
         task={{ id: task.id, folder: task.folder }}
+        owner={owner}
       />
       <Composer
         taskId={task.id}
@@ -79,6 +91,7 @@ export function RoomPane({
         onSent={(item) => dispatch({ type: "local", item })}
         onCancel={() => cancel.mutate()}
         cancelling={cancel.isPending}
+        draft={draft}
       />
     </section>
   );

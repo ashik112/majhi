@@ -1,7 +1,7 @@
 import type { Task } from "@majhi/shared";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Segmented } from "@/components/ui/segmented";
@@ -38,6 +38,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const { org } = useOrgFilter();
   const { file } = useSearch({ from: "/t/$taskId" });
   const [tab, setTab] = useState<"room" | "changes">("room");
+  const showChanges = useCallback(() => setTab("changes"), []);
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -123,6 +124,7 @@ function TaskView({ taskId }: { taskId: string }) {
               dispatch={room.dispatch}
               loadOlder={room.loadOlder}
               top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
+              onShowChanges={showChanges}
             />
           </div>
           {tab === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
@@ -132,7 +134,7 @@ function TaskView({ taskId }: { taskId: string }) {
           agents={room.state.agents}
           items={room.state.items}
           processes={room.state.processes}
-          onShowChanges={data.repos.length > 0 ? () => setTab("changes") : undefined}
+          onShowChanges={data.repos.length > 0 ? showChanges : undefined}
         />
       </div>
       {file !== undefined && (
