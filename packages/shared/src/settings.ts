@@ -82,7 +82,10 @@ export const RoomPatchSchema = z.strictObject(roomFields).partial();
 
 /** Memory curation (5.6). */
 const memoryFields = {
-  /** An answer of the decision provider this sure is acted on without the owner. */
+  /**
+   * The lift over chance ((n*p-1)/(n-1), 0 a guess, 1 certain) an answer needs, on top of the
+   * decisions gate, before a fact is kept or dropped without the owner. Stricter than the gate.
+   */
   auto_threshold: z.number().min(0).max(1),
   /** Nothing is kept or dropped on its own: every fact waits for the owner. */
   review_all: z.boolean(),
@@ -96,7 +99,7 @@ const memoryFields = {
   housekeeper_model: z.string().trim().min(1).max(100),
 };
 export const MemorySettingsSchema = z.strictObject({
-  auto_threshold: memoryFields.auto_threshold.default(0.8),
+  auto_threshold: memoryFields.auto_threshold.default(0.4),
   review_all: memoryFields.review_all.default(false),
   housekeeper: memoryFields.housekeeper.optional(),
   housekeeper_model: memoryFields.housekeeper_model.optional(),

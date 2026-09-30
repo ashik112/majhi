@@ -75,7 +75,7 @@ function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScop
  *    or a wider scope. The candidate is the same fact.
  * 3. Decide, one call on the decision provider: lasting fact or chatter; against the nearest fact
  *    (cosine 0.75 to 0.92) the same, contradicting or unrelated; secret or personal data.
- * 4. Apply: an answer that counts and is at least `auto_threshold` sure is acted on; the rest wait
+ * 4. Apply: an answer that passes the gate with a lift over chance of at least `auto_threshold` is acted on; the rest wait
  *    for the owner. `review_all` and a global scope always wait.
  */
 export class Curator {
@@ -188,11 +188,14 @@ export class Curator {
       .catch(() => undefined);
     if (result === undefined) return "pending";
 
-    /** The answer's probability when it counts and reaches the threshold, else undefined. */
+    /**
+     * The answer's probability when it passes majhi's gate and a stricter lift over chance for
+     * memory (a wrong fact persists), else undefined. Lift, unlike a raw probability, means the same
+     * for two and three options.
+     */
     const sure = (a: Answer | undefined): number | undefined => {
-      if (a === undefined || a.gate?.accepted !== true) return undefined;
-      const p = a.probabilities?.[String(a.value)] ?? a.confidence;
-      return p >= threshold ? p : undefined;
+      if (a === undefined || a.gate?.accepted !== true || a.gate.lift < threshold) return undefined;
+      return a.probabilities?.[String(a.value)] ?? a.confidence;
     };
     const { worth, relation, private: secret } = result.answers;
     const note = (reason: string, confidence: number) => ({

@@ -10,9 +10,9 @@ import { useSaveSettings, useSettings } from "@/lib/boss-queries";
 import { describeError } from "@/lib/errors";
 import { useAccountModels, useAgents } from "@/lib/studio-queries";
 
-export const THRESHOLD_MIN = 0.5;
+export const THRESHOLD_MIN = 0.2;
 
-/** The threshold field's text as a number from 0.5 to 1, or undefined when it is not one. */
+/** The threshold field's text as a number from 0.2 to 1, or undefined when it is not one. */
 export function parseThreshold(text: string): number | undefined {
   const value = Number(text.trim().replace(",", "."));
   return text.trim() !== "" && Number.isFinite(value) && value >= THRESHOLD_MIN && value <= 1
@@ -99,8 +99,8 @@ function MemoryForm({ saved, save }: { saved: MemorySettings; save: ReturnType<t
       className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-raised p-3"
     >
       <Field
-        label="Keep or drop on its own at"
-        hint="When the decision provider is at least this sure a fact is worth keeping (or not), majhi keeps or drops it and logs why. Below it, the fact waits for you. From 0.5 to 1; higher means more reviews. Default 0.8."
+        label="Keep or drop on its own above"
+        hint="How far above a random guess the decision provider must be (0 is a guess, 1 is certain) before majhi keeps or drops a fact and logs why. Below it, the fact waits for you. Other decisions use 0.2; memory is stricter because a wrong fact sticks. From 0.2 to 1. Default 0.4."
         error={showErrors ? error : undefined}
       >
         {(p) => (

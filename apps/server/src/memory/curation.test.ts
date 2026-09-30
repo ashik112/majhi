@@ -21,13 +21,13 @@ const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
 const TASK: CurationTask = { id: "ACM-1", org: "acme", projects: ["acme-api"] };
 const SCOPES = ["global", "org:acme", "project:acme-api"];
 
-/** An answer that counts, with its probability. */
+/** An answer that counts, with its probability; its lift is as for two options. */
 function sure(value: string | boolean, p: number): Answer {
   return {
     value,
     confidence: p,
     probabilities: { [String(value)]: p },
-    gate: { accepted: true, reason: "test", lift: 1, margin: 1 },
+    gate: { accepted: true, reason: "test", lift: 2 * p - 1, margin: 1 },
   };
 }
 /** An answer the decision service would not let count. */
@@ -53,7 +53,7 @@ function setup(initial: Partial<MemorySettings> = {}) {
   const box = {
     answers: {} as Record<string, Answer>,
     provider: "laya" as ProviderId,
-    settings: { auto_threshold: 0.8, review_all: false, ...initial } as MemorySettings,
+    settings: { auto_threshold: 0.4, review_all: false, ...initial } as MemorySettings,
   };
   const curator = new Curator({
     memory,
@@ -118,7 +118,8 @@ describe("curation of a proposal", () => {
 
   it("leaves a fact pending when the answer is under the threshold or does not count", async () => {
     const t = setup();
-    t.box.answers = { worth: sure("keep", 0.7), private: sure(false, 0.97) };
+    // It counts, but its lift over chance (0.3) is under memory's stricter 0.4.
+    t.box.answers = { worth: sure("keep", 0.65), private: sure(false, 0.97) };
     expect((await t.propose("Builds run with Node 22 in acme-api")).status).toBe("pending");
     t.box.answers = { worth: unsure("keep", 0.99), private: sure(false, 0.97) };
     expect((await t.propose("The api listens on port 8080 locally")).status).toBe("pending");
