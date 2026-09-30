@@ -23,6 +23,9 @@ import { errorMessage } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
+import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
+import { MrPoller } from "./mrs/poller.ts";
+import { MrService } from "./mrs/service.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { ProjectService } from "./projects/service.ts";
@@ -62,6 +65,10 @@ export interface ServiceOptions {
   probe?: Probe;
   /** Replaces `docker network inspect` for the runner network. */
   runnerInspect?: Inspect;
+  /** Replaces the `gh` and `glab` programs, the Bitbucket API and the process runner, so tests never reach a real host. */
+  mrHosts?: MrHostOptions;
+  /** Seconds between checks of open merge requests. Default 60. */
+  mrPollMs?: number;
   /** Laya in Docker, so tests can play laya-serve. Default: from `MAJHI_LAYA_URL`. */
   layaDocker?: LayaDocker;
 }
@@ -98,6 +105,9 @@ export interface Services {
   room: RoomService;
   runs: RunManager;
   tasks: TaskService;
+  /** Push, open, watch and merge the merge requests of a task (5.5). */
+  mrs: MrService;
+  mrPoller: MrPoller;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
   /** Resume after restarts, lost internet and sleep, and the network watch. */
@@ -263,6 +273,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  const mrs = new MrService({
+    store,
+    config,
+    projects,
+    secrets,
+    room,
+    events,
+    tasks,
+    working: (id) => runs.working(id).length > 0,
+    hosts: createMrHosts(options.mrHosts),
+    ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
+  });
   const coordinator = new RoomCoordinator({
     store,
     room,
@@ -305,6 +327,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     runs,
     tasks,
+    mrs,
+    mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     resilience,
     usage: usageService,

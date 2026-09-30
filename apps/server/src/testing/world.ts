@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { vi } from "vitest";
 import type { HostLink } from "../host/link.ts";
+import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import type { LinkOptions } from "../tasks/links.ts";
 import { git } from "./fixtures.ts";
@@ -28,6 +29,7 @@ export interface WorldOptions {
   links?: LinkOptions;
   hostLink?: HostLink;
   probe?: Probe;
+  mrHosts?: MrHostOptions;
 }
 
 /**
@@ -42,6 +44,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.hostLink === undefined ? {} : { hostLink: options.hostLink }),
     ...(options.probe === undefined ? {} : { probe: options.probe }),
+    ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
   });
   const world: World = {
     h,
