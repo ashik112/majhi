@@ -492,6 +492,109 @@ describe("opening MRs", () => {
   });
 });
 
+describe("credentials", () => {
+  it("refuses before anything is pushed when a host has no token, for GitHub and GitLab too", async () => {
+    const id = await reviewed();
+    must(await cmd("orgs.update", { id: "acme", mr_tokens: { gitlab: "secret:gl-acme" } }));
+    const res = await cmd("tasks.openMrs", { id });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("No github token is set for acme-api");
+    expect((await fake.state()).calls).toEqual([]);
+    expect(await git(w.remote("api"), "branch", "--list", "task/*")).toBe("");
+    expect(await git(w.remote("web"), "branch", "--list", "task/*")).toBe("");
+
+    must(await cmd("orgs.update", { id: "acme", mr_tokens: { github: "secret:gh-acme" } }));
+    const gitlab = await cmd("tasks.openMrs", { id });
+    expect(gitlab.body.error).toContain("No gitlab token is set for acme-web");
+  });
+
+  it("takes a remote's own token over the org's", async () => {
+    const id = await reviewed();
+    must(await secret("gh-other", "gh-token-remote"));
+    must(
+      await cmd("projects.update", {
+        id: "acme-api",
+        org: "acme",
+        aliases: ["api"],
+        remotes: { origin: { host: "github", token: "secret:gh-other" } },
+      }),
+    );
+    must(await cmd("tasks.openMrs", { id }));
+    expect((await fake.state()).calls.find((c) => c.bin === "gh")?.env).toEqual({
+      GH_TOKEN: "gh-token-remote",
+    });
+  });
+});
+
+describe("a task closed with merge requests not merged", () => {
+  it("keeps what waits on it waiting, pauses it with a reason, and says when the merge happened", async () => {
+    const id = await reviewed({ policy: "never" });
+    const waiting = must(
+      await cmd("tasks.create", { text: "tweak invoices in api", start: false, dependsOn: [id] }),
+    ) as Task;
+    must(await cmd("tasks.openMrs", { id }));
+
+    // The owner closes the task while both MRs are open.
+    must(await cmd("tasks.close", { id }));
+    expect((await get(id)).status).toBe("done");
+    const paused = await get(waiting.id);
+    expect(paused).toMatchObject({ status: "paused", pausedReason: "owner" });
+    expect(
+      (await notes(waiting.id)).some((n) =>
+        n.includes(`${id} was closed, but its merge requests are not merged`),
+      ),
+    ).toBe(true);
+    const listed = (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === waiting.id);
+    expect(listed.waitingOn).toEqual([id]);
+    expect((await cmd("tasks.start", { id: waiting.id })).status).toBe(409);
+
+    // One merged on the host is not enough.
+    const hostMerge = async (slug: string) => {
+      const state = await fake.state();
+      const bare = state.repos[slug] as string;
+      const pr = state.prs[slug]?.[0];
+      if (pr === undefined) throw new Error("no PR");
+      await git(
+        bare,
+        "update-ref",
+        `refs/heads/${pr.base}`,
+        await git(bare, "rev-parse", `refs/heads/${pr.head}`),
+      );
+      await fake.update((s) => {
+        const p = s.prs[slug]?.[0];
+        if (p) p.state = "MERGED";
+      });
+    };
+    await hostMerge("remotes/api");
+    await w.h.majhi.services.mrPoller.tick();
+    expect(
+      (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === waiting.id).waitingOn,
+    ).toEqual([id]);
+
+    // Both merged: the dependency is met, the owner is told, and the task can start.
+    await hostMerge("remotes/web");
+    await w.h.majhi.services.mrPoller.tick();
+    expect(
+      (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === waiting.id).waitingOn,
+    ).toEqual([]);
+    expect(
+      (await notes(waiting.id)).some((n) => n.includes(`Every merge request of ${id} is merged now`)),
+    ).toBe(true);
+    expect((await cmd("tasks.start", { id: waiting.id })).status).toBe(200);
+  });
+
+  it("a task with no merge request still counts as merged once it is done", async () => {
+    w = await taskWorld();
+    const first = must(await cmd("tasks.create", { text: "change api", start: false })) as Task;
+    const second = must(
+      await cmd("tasks.create", { text: "change api again", start: false, dependsOn: [first.id] }),
+    ) as Task;
+    must(await cmd("tasks.close", { id: first.id }));
+    const listed = (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === second.id);
+    expect(listed.waitingOn).toEqual([]);
+  });
+});
+
 describe("after the merge", () => {
   it("keeps a worktree with uncommitted changes and still finishes the task", async () => {
     const id = await reviewed({ policy: "approve" });

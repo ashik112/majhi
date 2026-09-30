@@ -359,15 +359,17 @@ export class MrService {
           dirty.slice(0, 5),
         );
       }
-      const token = await this.token(ctx.project, ctx.target.host, ctx.remoteConfig);
-      if (token === undefined && ctx.target.host === "bitbucket") {
-        throw new UserError(
-          `No Bitbucket credentials are set for ${project}. Save a token and set it in the org's mr_tokens or the remote's token.`,
-        );
-      }
       if (repo.mr?.state === "merged") {
         plans.push({ ctx, skip: "Its merge request is already merged." });
         continue;
+      }
+      // Every host needs a token from an org or remote setting: majhi never falls back to a login
+      // that happens to be on the machine, which could belong to another org.
+      const token = await this.token(ctx.project, ctx.target.host, ctx.remoteConfig);
+      if (token === undefined) {
+        throw new UserError(
+          `No ${ctx.target.host} token is set for ${project}. Save one (secrets.save) and set it as mr_tokens.${ctx.target.host} on the org ${ctx.project.org}, or as token on the remote ${ctx.remote} of the project.`,
+        );
       }
       const ahead = await commitsAhead(repo.source, repo.base, ctx.remote, repo.branch).catch(() => 0);
       const hasMr = repo.mr !== undefined;
@@ -390,8 +392,10 @@ export class MrService {
   async refresh(id: string): Promise<RefreshMrsResult> {
     const task = this.deps.tasks.get(id);
     return this.exclusive(id, async () => {
+      const waited = this.deps.store.tasks.unmergedMrs().has(id);
       await this.readStates(task);
       await this.finishIfMerged(id);
+      if (waited) await this.mergedLate(id);
       return { task: this.deps.tasks.get(id), policy: await this.policy(task) };
     });
   }
@@ -648,6 +652,35 @@ export class MrService {
         this.problem(id, "poll", `Could not check the merge requests (${errorMessage(err)}).`);
       }
     }
+    // A task closed before its MRs were merged: tasks that wait on it are waiting for the merge.
+    for (const id of this.deps.store.tasks.doneWithOpenMrs()) {
+      if (this.busy.has(id)) continue;
+      try {
+        await this.refresh(id);
+      } catch (err) {
+        this.problem(id, "poll", `Could not check the merge requests (${errorMessage(err)}).`);
+      }
+    }
+  }
+
+  /**
+   * A closed task's last MR got merged, so tasks that wait on it with `merged` can go on. Those
+   * that were paused for it are told; the owner starts them.
+   */
+  private async mergedLate(id: string): Promise<void> {
+    const { store } = this.deps;
+    if (store.tasks.unmergedMrs().has(id) || store.tasks.get(id)?.status !== "done") return;
+    for (const link of store.tasks.linksTo(id)) {
+      const holder =
+        link.type === "depends-on" && link.when !== "ready" ? store.tasks.get(link.task) : undefined;
+      if (holder?.status === "paused" && holder.pausedReason === "owner") {
+        this.note(
+          holder.id,
+          `Every merge request of ${id} is merged now. Start ${holder.id} when you are ready.`,
+        );
+      }
+    }
+    await this.deps.tasks.statusChanged(id);
   }
 
   /** One command at a time per task, so the timer and a click never merge the same MR twice. */

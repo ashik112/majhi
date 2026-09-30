@@ -14,7 +14,7 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
@@ -179,6 +179,7 @@ export class TaskRepo {
     }
     const linkRows = this.allLinks();
     const statuses = this.statuses();
+    const unmerged = this.unmergedMrs();
     const linksBy = new Map<string, LinkRow[]>();
     const childStatuses = new Map<string, TaskStatus[]>();
     for (const l of linkRows) {
@@ -205,7 +206,11 @@ export class TaskRepo {
         updatedAt: row.updatedAt,
         repos: byTask.get(row.id) ?? [],
         links: own.map(toLink),
-        waitingOn: unmetDependencies(own, (id) => statuses.get(id)),
+        waitingOn: unmetDependencies(
+          own,
+          (id) => statuses.get(id),
+          (id) => unmerged.has(id),
+        ),
       };
       if (kids !== undefined)
         summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
@@ -279,7 +284,39 @@ export class TaskRepo {
   unmetDependencies(id: string): TaskId[] {
     const own = this.allLinks().filter((l) => l.task === id);
     const statuses = this.statuses();
-    return unmetDependencies(own, (other) => statuses.get(other));
+    const unmerged = this.unmergedMrs();
+    return unmetDependencies(
+      own,
+      (other) => statuses.get(other),
+      (other) => unmerged.has(other),
+    );
+  }
+
+  /** Tasks with a merge request that is not merged: open, or closed without merging. */
+  unmergedMrs(): Set<string> {
+    return new Set(
+      this.db
+        .selectDistinct({ task: taskRepos.task })
+        .from(taskRepos)
+        .where(and(isNotNull(taskRepos.mrState), ne(taskRepos.mrState, "merged")))
+        .all()
+        .map((r) => r.task),
+    );
+  }
+
+  /** Done tasks that still have an open merge request, so their merge can be noticed. */
+  doneWithOpenMrs(): string[] {
+    return [
+      ...new Set(
+        this.db
+          .select({ task: taskRepos.task })
+          .from(taskRepos)
+          .innerJoin(tasks, eq(tasks.id, taskRepos.task))
+          .where(and(eq(tasks.status, "done"), eq(taskRepos.mrState, "open")))
+          .all()
+          .map((r) => r.task),
+      ),
+    ];
   }
 
   /** The ids of a parent's children, in the order they were linked. */

@@ -88,10 +88,10 @@ if (KIND === "gh" && a === "pr") {
   else fail("unknown gh command");
 } else if (KIND === "glab" && a === "mr") {
   if (b === "create") {
-    const pr = { number: list.length + 1, head: flag("--source-branch"), base: flag("--target-branch"), title: flag("--title"), body: flag("--description"), state: "OPEN" };
+    const pr = { number: list.length + 1, head: flag("--source-branch"), base: flag("--target-branch"), title: flag("--title"), body: stdin, state: "OPEN" };
     list.push(pr); save();
     process.stdout.write("Creating merge request for " + pr.head + " into " + pr.base + "\n\nhttps://gitlab.com/" + slug + "/-/merge_requests/" + pr.number + "\n");
-  } else if (b === "update") { find(n).body = flag("--description"); save(); }
+  } else if (b === "update") { find(n).body = stdin; save(); }
   else if (b === "view") {
     const pr = find(n); save();
     const p = pipeline();

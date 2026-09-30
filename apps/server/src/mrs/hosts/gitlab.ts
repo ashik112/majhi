@@ -11,21 +11,27 @@ export class GitLabHost implements MrHostClient {
   ) {}
 
   async open(t: MrTarget, mr: { head: string; base: string; title: string; body: string }) {
-    const out = await this.glab(t, [
-      "mr",
-      "create",
-      "--repo",
-      t.slug,
-      "--source-branch",
-      mr.head,
-      "--target-branch",
-      mr.base,
-      "--title",
-      mr.title,
-      "--description",
+    // The description goes in on stdin: `--description -` would open an editor, and a long one
+    // does not belong on the command line.
+    const out = await this.glab(
+      t,
+      [
+        "mr",
+        "create",
+        "--repo",
+        t.slug,
+        "--source-branch",
+        mr.head,
+        "--target-branch",
+        mr.base,
+        "--title",
+        mr.title,
+        "--description-file",
+        "-",
+        "--yes",
+      ],
       mr.body,
-      "--yes",
-    ]);
+    );
     const url = out
       .split("\n")
       .reverse()
@@ -39,7 +45,11 @@ export class GitLabHost implements MrHostClient {
   }
 
   async updateDescription(t: MrTarget, number: number, mr: { title: string; body: string }) {
-    await this.glab(t, ["mr", "update", String(number), "--repo", t.slug, "--description", mr.body]);
+    await this.glab(
+      t,
+      ["mr", "update", String(number), "--repo", t.slug, "--description-file", "-"],
+      mr.body,
+    );
   }
 
   async status(t: MrTarget, number: number): Promise<MrStatus> {
@@ -60,14 +70,16 @@ export class GitLabHost implements MrHostClient {
   }
 
   async merge(t: MrTarget, number: number) {
-    await this.glab(t, ["mr", "merge", String(number), "--repo", t.slug, "--yes"]);
+    // glab turns on auto-merge by default while a pipeline runs. majhi decides when to merge, so it
+    // asks for the merge now.
+    await this.glab(t, ["mr", "merge", String(number), "--repo", t.slug, "--yes", "--auto-merge=false"]);
   }
 
-  private async glab(t: MrTarget, args: string[]): Promise<string> {
+  private async glab(t: MrTarget, args: string[], input?: string): Promise<string> {
     const env: Record<string, string> = { NO_PROMPT: "1", NO_COLOR: "1" };
     if (t.token !== undefined) env.GITLAB_TOKEN = t.token;
     if (t.hostName !== undefined && t.hostName !== "gitlab.com") env.GITLAB_HOST = t.hostName;
-    const res = await this.exec(this.bin, args, { env });
+    const res = await this.exec(this.bin, args, { env, input });
     if (res.code !== 0) {
       throw new MrHostError(
         `glab ${args.slice(0, 2).join(" ")} failed: ${scrub(firstLines(res.stderr || res.stdout), t.token)}`,

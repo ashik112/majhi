@@ -13,8 +13,9 @@ export interface PushRequest {
   remote: string;
   branch: string;
   /**
-   * Where to push instead of the remote's own URL: the same repo through the project's SSH alias.
-   * Only this push uses it, and the git config is not changed.
+   * Where to push instead of the remote: the same repo through the project's SSH alias. git pushes
+   * straight to it, so a `pushurl` the remote already has cannot add a second destination. The git
+   * config is not changed.
    */
   url?: string | undefined;
   /** Asks the host helper to load the owner's keys again; resolves true when it did. */
@@ -39,10 +40,9 @@ export async function remoteUrl(repo: string, remote: string): Promise<string> {
  */
 export async function pushBranch(req: PushRequest): Promise<void> {
   const args = [
-    ...(req.url === undefined ? [] : ["-c", `remote.${req.remote}.pushurl=${req.url}`]),
     "push",
     "--quiet",
-    req.remote,
+    req.url ?? req.remote,
     `refs/heads/${req.branch}:refs/heads/${req.branch}`,
   ];
   try {

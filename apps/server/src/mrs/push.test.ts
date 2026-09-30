@@ -41,6 +41,17 @@ describe("pushBranch", () => {
     expect(await readFile(join(work, ".git", "config"), "utf8")).not.toContain("pushurl");
   });
 
+  it("sends the branch only to the URL it is given, not also to a pushurl the remote already has", async () => {
+    const { dir, work, bare } = await repo();
+    const other = join(dir, "other.git");
+    await git(dir, "init", "--bare", "--quiet", "--initial-branch=main", other);
+    await git(work, "remote", "add", "origin", join(dir, "unreachable.git"));
+    await git(work, "config", "remote.origin.pushurl", other);
+    await pushBranch({ worktree: work, remote: "origin", branch: "task/x", url: bare });
+    expect(await git(bare, "rev-parse", "refs/heads/task/x")).toBe(await git(work, "rev-parse", "HEAD"));
+    await expect(git(other, "rev-parse", "--verify", "refs/heads/task/x")).rejects.toThrow();
+  });
+
   it("never forces: a diverged branch is refused", async () => {
     const { work, bare } = await repo();
     await git(work, "remote", "add", "origin", bare);
