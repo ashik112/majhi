@@ -19,7 +19,8 @@ COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps apps
 RUN pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm --filter @majhi/host build
-# esbuild cannot bundle a .node file, so the server build leaves node-pty and better-sqlite3 external.
+# esbuild cannot bundle a .node file, so the server build leaves node-pty, better-sqlite3, sqlite-vec and
+# @huggingface/transformers (onnxruntime-node) external.
 # Keep the compiled node-pty for the runtime image. better-sqlite3 ships Linux prebuilds, so only its
 # JavaScript and the prebuilds for this image are needed: not the SQLite sources.
 RUN mkdir /pty && cp -rL apps/server/node_modules/node-pty /pty/node-pty
@@ -103,9 +104,24 @@ COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /app
+# Memory (5.6): sqlite-vec (a prebuilt vec0 library per CPU, from its sqlite-vec-linux-<arch> package) and
+# transformers.js with onnxruntime-node. npm installs the build for this image's CPU, so amd64 and arm64
+# both work. Keep the versions in step with apps/server/package.json. onnxruntime-node ships every
+# platform's binary: keep only this CPU's. The model itself is downloaded on first use into
+# ~/.majhi/cache/models, so the image stays small.
+RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit --no-fund \
+      sqlite-vec@0.1.9 @huggingface/transformers@4.3.0 \
+  && ARCH="$(node -p process.arch)" \
+  && for d in /app/node_modules/onnxruntime-node/bin/napi-v*; do \
+       rm -rf "$d/darwin" "$d/win32"; \
+       for a in "$d"/linux/*; do [ "$(basename "$a")" = "$ARCH" ] || rm -rf "$a"; done; \
+     done \
+  && npm cache clean --force
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /pty/node-pty ./node_modules/node-pty
 COPY --from=build /sqlite/better-sqlite3 ./node_modules/better-sqlite3
+# The memory store needs both native libraries to load in this image.
+RUN node -e "const D=require('/app/node_modules/better-sqlite3'),v=require('/app/node_modules/sqlite-vec');const db=new D(':memory:');v.load(db);console.log('sqlite-vec',db.prepare('select vec_version() v').get().v)"
 COPY --from=build /src/apps/web/dist ./web
 # The host helper runs on the owner's machine, not here. `make up` copies it out of the image.
 COPY --from=build /src/apps/host/dist/majhi-host.mjs ./host/majhi-host.mjs
