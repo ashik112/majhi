@@ -89,6 +89,8 @@ export function Timeline({
     setUnseen(false);
   }
 
+  const waiting = state.items.filter(waitsForOwner);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {plans.length > 0 && (
@@ -116,22 +118,60 @@ export function Timeline({
           <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
         )}
         <ol className="m-0 mt-auto flex flex-col gap-3.5 p-0">
-          {state.items.map((item: RoomItem) => (
-            <RoomItemView key={item.id} item={item} ctx={ctx} />
-          ))}
+          {state.items
+            .filter((item: RoomItem) => !waitsForOwner(item))
+            .map((item: RoomItem) => (
+              <RoomItemView key={item.id} item={item} ctx={ctx} />
+            ))}
         </ol>
       </div>
-      {unseen && (
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={toBottom}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-card shadow-pop"
+      {/* Anchored to the bottom of the log, so it sits above the dock. */}
+      <div className="relative h-0">
+        {unseen && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={toBottom}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-card shadow-pop"
+          >
+            <ArrowDown aria-hidden="true" />
+            New messages
+          </Button>
+        )}
+      </div>
+      {waiting.length > 0 && (
+        // Whatever waits for the owner stays here, above the message box, until it is answered,
+        // so new messages never bury it. Answered, it goes back into the log in its place.
+        <section
+          aria-label="Needs you"
+          className="flex max-h-[45%] shrink-0 flex-col gap-2 overflow-y-auto border-t border-amber-line pt-2"
         >
-          <ArrowDown aria-hidden="true" />
-          New messages
-        </Button>
+          <span className="text-xs font-medium text-amber">
+            Needs you{waiting.length > 1 ? ` (${waiting.length})` : ""}
+          </span>
+          <ol className="m-0 flex flex-col gap-2.5 p-0">
+            {waiting.map((item: RoomItem) => (
+              <RoomItemView key={item.id} item={item} ctx={ctx} />
+            ))}
+          </ol>
+        </section>
       )}
     </div>
   );
+}
+
+/** Items that wait for the owner's answer: shown in the "Needs you" dock, not in the log. */
+function waitsForOwner(item: RoomItem): boolean {
+  switch (item.type) {
+    case "permission":
+    case "approval":
+    case "ask":
+    case "choice":
+    case "review":
+    case "paused":
+    case "owner-question":
+      return item.state === "pending";
+    default:
+      return false;
+  }
 }
