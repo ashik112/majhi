@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Kbd } from "@/components/ui/kbd";
 import { Lamp, type LampState } from "@/components/ui/lamp";
+import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useBoss } from "@/features/boss/boss-context";
@@ -37,10 +38,6 @@ const NAV: readonly { page: PageName; label: string }[] = [
 
 const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
-
-/** The selected row: a lit hairline on the left edge of the glass, like a selected channel. */
-const SELECTED =
-  "bg-selected text-fg before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:rounded-full before:bg-accent before:shadow-[0_0_6px_var(--c-accent)]";
 
 export function Sidebar() {
   return (
@@ -144,7 +141,7 @@ function MainNav() {
             to={to}
             search={orgSearch(org)}
             aria-current={active ? "page" : undefined}
-            className={cn(ITEM, "h-8 px-2.5 text-body font-medium", active ? SELECTED : "text-fg-muted")}
+            className={cn(ITEM, "h-8 px-2.5 text-body font-medium", active ? ROW_SELECTED : "text-fg-muted")}
           >
             <span>{item.label}</span>
             {shown && (
@@ -210,7 +207,7 @@ function OrgList() {
               className={cn(
                 ITEM,
                 "h-8 shrink-0 gap-2.5 px-2.5 text-base",
-                active ? SELECTED : "text-fg-soft",
+                active ? cn(ROW_SELECTED, "font-medium") : "text-fg-soft",
               )}
             >
               {row.id === undefined ? (
