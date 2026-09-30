@@ -1,5 +1,81 @@
 # Progress
 
+## Phase 5: Memory (in progress)
+
+Branch `task/prv-20-phase-5-memory`, from `main` (Phase 4 merged).
+
+### Done when
+
+- [ ] A fact learned in one task is approved and then recalled in a later task in the same repo.
+
+### Plan
+
+Built in three parts, one after the other in this worktree.
+
+**Part A: store, embeddings, recall, MCP server, commands**
+
+1. Shared schemas (`packages/shared/src/memory.ts`): fact, scope, status, memory event, command inputs and outputs, MCP tool inputs.
+2. Store: `~/.majhi/memory/memory.db`, its own better-sqlite3 file with its own migrations. `facts` (text, scope, source task, source agent, status, pinned, promoted, use count, created, valid from, valid to, duplicate of, decided by), `facts_fts` (FTS5), `facts_vec` (`sqlite-vec`, 384 floats), `memory_events` (fact, action, actor, reason, confidence, provider, time, undone).
+   - Scope is `global`, `org:<org>` or `project:<project>`.
+   - Status is `pending`, `active`, `retired` or `rejected`. `rejected` is added to the spec's three so a dropped fact can be undone.
+3. Embeddings: an `Embedder` interface. The real one is transformers.js (`@huggingface/transformers`) with `Xenova/all-MiniLM-L6-v2` (384 dims, quantized). The model is downloaded once into `~/.majhi/cache/models`, then used offline. It loads on first use and unloads when idle. Tests use a deterministic hashed bag-of-words embedder. When the model cannot load, keyword search keeps working, and vectors are filled in later.
+4. Hybrid search: FTS5 (bm25) top 20 and vector top 20, merged by reciprocal rank fusion. Only active facts in the allowed scopes are searched, and pinned facts come first.
+5. Recall into TASK.md: at task start, the top facts for `global`, the task's org and each of its projects, searched with the brief as the query. A "Memory" section is capped at about 500 tokens (4 characters per token). Each recalled fact's use count goes up.
+6. `majhi-memory` MCP server for every agent, like `majhi-decide`, with one token per session:
+   - `recall(query, scope?)`, `propose(text, scope)` and `list_recent(scope?)`.
+   - An agent sees and proposes only in `global`, its task's org and that org's projects. It never sees another org's facts.
+   - `propose` makes a pending fact and hands it to curation (Part B).
+7. Commands (5.16), so the boss and the UI share them: `memory.search`, `memory.list` (scope, status, task), `memory.add` (the owner adds an active fact), `memory.approve`, `memory.reject`, `memory.forget` (retire, sets valid to), `memory.pin`, `memory.events` (the log, per task or all).
+
+**Part B: curation, Housekeeper, promotion, settings**
+
+1. Settings: a `memory:` section in `majhi.yaml`, shown in Hub setup under Memory.
+   - `auto_threshold`: default 0.8.
+   - `review_all`: "Review every fact", default false.
+   - `housekeeper`: the agent that extracts facts. The default is the boss.
+   - `housekeeper_model`: the cheapest model its account offers when not set, for example Haiku.
+2. Extract (the only step that spends tokens): when a task becomes `done` (after a merge, or closed as done), and on `memory.extract(task)`.
+   - One throwaway ACP session, like the ACP decision provider, reads the room (trimmed to about 8k tokens) and answers JSON only: up to 8 short facts (under 200 characters), each with a scope.
+   - The answer is checked with zod and retried once. Its tokens are recorded under the task.
+3. Duplicates, without a model: embed the candidate. Cosine 0.92 or more with an active or pending fact in the same or a wider scope marks it as the same fact (`duplicate_of`, logged). No row is added.
+4. Decide, with the decision provider chain (Laya first). Each candidate gets one `decide` call on a small state (the candidate and its nearest existing fact) with three questions:
+   - Keep, or task chatter.
+   - Against the nearest fact (cosine 0.75 to 0.92): same fact, contradicts it, or unrelated.
+   - `noul`: it contains a secret or personal data.
+
+   A rules check (token and key patterns, emails, the existing secret patterns) runs first. A fact it flags is always rejected, whatever the model says.
+5. Apply:
+   - Above `auto_threshold`, keep (active) or drop (rejected) happens on its own. It is logged with the reason, confidence and provider.
+   - A confident "contradicts" retires the old fact (valid to now).
+   - Everything else stays pending for the owner, and so does everything when `review_all` is on.
+   - Facts in `global` scope always wait for the owner, so one org's task cannot write facts every org sees.
+   - `memory.undo(event)` reverses any logged step.
+6. Promotion to AGENTS.md: `memory.promote(fact)`, for active project facts. majhi makes a task in that project and adds the fact as a bullet under `## Facts` in the repo's `AGENTS.md` in the task's worktree, with a commit and no agent. The task goes to review, and the owner merges it through the usual card. `promoted` holds the task id.
+
+**Part C: web**
+
+1. Studio Memory tab (3.3):
+   - Search, and scope filters: All, Global, each org, Needs review.
+   - Rows with text, scope, source (task and agent) and use count.
+   - Actions: Pin, To AGENTS.md, Forget, plus Approve and Reject for pending facts.
+   - The auto decisions log, with reason, confidence and Undo.
+2. The task's Memory tab, next to Room and Changes: what this task proposed and what was decided, with Approve, Reject and Undo.
+3. Hub setup, Memory section: threshold, "Review every fact", and the Housekeeper agent and model.
+4. Checked in Chromium against the e2e server, with screenshots.
+
+### How I will test it
+
+- Unit tests:
+  - Store migrations and status changes.
+  - FTS plus vector ranking.
+  - The scope filter, so another org's facts never leak.
+  - The recall token cap.
+  - The secret rules.
+  - The curation state machine: duplicate, threshold, `review_all`, a global fact waits, contradiction retires, undo.
+- MCP scope checks.
+- Promotion against a local repo.
+- Done when test: task one in `acme-api`. The fake Housekeeper proposes a fact, the rules provider leaves it pending, and `memory.approve` makes it active. Task two in `acme-api` has it in its TASK.md; a task in another org does not.
+
 ## Phase 4: Multi-repo and MRs (server and web built, child tasks pending)
 
 Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). Search across rooms (PRV-35), review comments on diffs (PRV-36), open in editor (PRV-37), the terminal (PRV-38) and agent attribution (PRV-43) are their own tasks. The Changes tab and the MR screens are the web part, built after the server part.
