@@ -127,6 +127,8 @@ Left, and known:
 - Promotion adds one bullet per task. Several facts mean several tasks.
 - The "Needs you" count on Health and usage is not changed: pending facts have their own "N to review" on the Memory item, since they are not an account or a check.
 - The decision provider's calibration on real candidate facts is for the owner to watch in the decisions log.
+- TASK.md is now written through a temp file and a rename. Recall added a rewrite at task start, and a reader could catch the file empty mid-write (`rooms/team.test.ts` did).
+- Full CI at the end of the phase, after merging `main` in: lint and typecheck are clean, and every unit test passes. `tsc -p e2e` fails on `main` in two old specs, so `scripts/ci.sh` stops there; that is PRV-58. Playwright: 28 passed, 3 failed, 4 skipped and 9 did not run, and `main` gives the same result. The three are older Phase 2a and 2b specs, filed as their own task.
 
 Only the owner can check: the Docker image with `sqlite-vec` and onnxruntime on x64 and arm64 (not built here), and a Housekeeper run on a real model.
 
