@@ -108,21 +108,24 @@ export async function pickForSession(input: {
     parts.push(list, outcome.text);
     await apply("model", outcome.id);
   }
-  if (fm.effort === "auto" && effortList.length > 0) {
-    const list = `Efforts offered: ${effortList.map((o) => o.id).join(", ")}.`;
+  // Efforts belong to the model: an adapter may offer another list once the model changed (Codex
+  // does), so the effort is resolved against what the session offers now.
+  const efforts = session.models.efforts;
+  const effortsNow = effortOptions(efforts);
+  if (fm.effort === "auto" && effortsNow.length > 0) {
+    const list = `Efforts offered: ${effortsNow.map((o) => o.id).join(", ")}.`;
+    const answer = pick?.effort;
     const outcome: Outcome = (() => {
-      const [only] = effortList;
-      if (effortList.length === 1 && only !== undefined)
+      const [only] = effortsNow;
+      if (effortsNow.length === 1 && only !== undefined)
         return { id: only.id, text: `Only ${only.id} is offered.` };
-      return decided(
-        "effort",
-        pick,
-        pick?.effort,
-        settings.effort_floor,
-        tier.effort,
-        () => undefined,
-        () => effortForTier(offered.efforts, tier.effort),
-      );
+      const fallback = () => effortForTier(efforts, tier.effort);
+      if (pick !== undefined && answer !== undefined && !effortsNow.some((o) => o.id === answer.id)) {
+        const model = session.models.defaultModel;
+        const why = `${pick.by}'s ${answer.id} is not offered${model === undefined ? "" : ` with ${model}`}`;
+        return fellBack("effort", why, tier.effort, fallback);
+      }
+      return decided("effort", pick, answer, settings.effort_floor, tier.effort, () => undefined, fallback);
     })();
     parts.push(list, outcome.text);
     await apply("thought_level", outcome.id);
@@ -145,7 +148,6 @@ function decided(
   rank: (id: string) => string | undefined,
   fallback: () => string | undefined,
 ): Outcome {
-  const tierName = tier.replace("-", " ");
   if (pick !== undefined && answer !== undefined && answer.confidence >= floor) {
     const label = rank(answer.id);
     const detail = `${label === undefined ? "" : `${label}, `}${answer.confidence.toFixed(2)}`;
@@ -155,6 +157,17 @@ function decided(
     pick === undefined || answer === undefined
       ? "No provider answered"
       : `${pick.by}'s ${answer.id} was ${below(answer.confidence)}, under the ${floor.toFixed(2)} floor`;
+  return fellBack(what, why, tier, fallback);
+}
+
+/** The tier's pick, with `why` it was needed; the CLI default when even the tier cannot resolve. */
+function fellBack(
+  what: "model" | "effort",
+  why: string,
+  tier: ModelTier | EffortTier,
+  fallback: () => string | undefined,
+): Outcome {
+  const tierName = tier.replace("-", " ");
   const id = fallback();
   if (id !== undefined) return { id, text: `${why}, so it fell back to ${tierName} (${id}).` };
   const reason =

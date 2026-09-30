@@ -102,6 +102,18 @@ describe("normalizeOffered", () => {
     expect(normalizeOffered([])).toEqual([]);
   });
 
+  it("merges the list codex-cli 0.158.0 offers", () => {
+    const ids = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"];
+    const out = normalizeOffered(ids.map((id) => ({ id, name: id })));
+    expect(out.map((m) => [m.id, m.family])).toEqual([
+      ["gpt-6-astra", "gpt-astra"],
+      ["gpt-6-sol", "gpt-sol"],
+      ["gpt-6-luna", "gpt-luna"],
+      ["gpt-5.6-terra", "gpt-terra"],
+      ["gpt-5.5", "gpt"],
+    ]);
+  });
+
   it("keeps the CLI description for unpriced models", () => {
     const out = normalizeOffered([{ id: "gpt-5.5", name: "x", description: "  Fast  " }]);
     expect(out[0]?.description).toBe("Fast");

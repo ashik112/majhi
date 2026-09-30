@@ -217,4 +217,55 @@ describe("pickForSession", () => {
     const out = await run(d, s);
     expect(out.line).toContain("No provider answered, so it fell back to most capable");
   });
+
+  describe("with efforts that belong to the model (Codex)", () => {
+    // codex-cli 0.158.0 through codex-acp 2.0.0: setting the model swaps in that model's efforts.
+    const CODEX = opts("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5");
+    const FULL = opts("low", "medium", "high", "xhigh", "max", "ultra");
+    const SHORT = opts("low", "medium", "high", "xhigh", "max");
+    const effortsOf = (model: string) => (model.endsWith("luna") ? SHORT : FULL);
+
+    function codexSession(start = "gpt-6-astra") {
+      let model = start;
+      const set: Record<string, string> = {};
+      const s = {
+        get models() {
+          return { models: CODEX, efforts: effortsOf(model), defaultModel: model };
+        },
+        setOption: async (category: string, value: string) => {
+          if (category === "model") model = value;
+          else if (!effortsOf(model).some((e) => e.id === value)) throw new Error("invalid params");
+          set[category] = value;
+        },
+      } as unknown as AgentSession;
+      return { s, set };
+    }
+
+    it("falls back on the new model's list when the picked effort is not offered with it", async () => {
+      const { s, set } = codexSession();
+      const { d } = decisions(() => pick(["gpt-6-luna", 0.8], ["ultra", 0.9]));
+      const out = await run(d, s);
+      expect(set).toEqual({ model: "gpt-6-luna", thought_level: "max" });
+      expect(out.warnings).toEqual([]);
+      expect(out.line).toContain("Efforts offered: low, medium, high, xhigh, max.");
+      expect(out.line).toContain(
+        "Laya's ultra is not offered with gpt-6-luna, so it fell back to highest (max).",
+      );
+    });
+
+    it("resolves the effort tier on the new model's list", async () => {
+      const { s, set } = codexSession();
+      const { d } = decisions(() => pick(["gpt-6-luna", 0.8]));
+      await run(d, s);
+      expect(set).toEqual({ model: "gpt-6-luna", thought_level: "max" });
+    });
+
+    it("keeps a picked effort the new model offers", async () => {
+      const { s, set } = codexSession("gpt-6-luna");
+      const { d } = decisions(() => pick(["gpt-6-sol", 0.8], ["ultra", 0.7]));
+      const out = await run(d, s);
+      expect(set).toEqual({ model: "gpt-6-sol", thought_level: "ultra" });
+      expect(out.line).toContain("Laya picked ultra (0.70).");
+    });
+  });
 });
