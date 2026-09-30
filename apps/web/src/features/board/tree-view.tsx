@@ -95,7 +95,7 @@ export function TreeView({
                 ))}
                 <span className="w-40 shrink-0 truncate text-right text-sm text-fg-muted">
                   {waiting ? (
-                    <span className="text-coral">{waitingText(task.waitingOn)}</span>
+                    <span className="text-fg-faint">{waitingText(task.waitingOn)}</span>
                   ) : (
                     progress?.text
                   )}
