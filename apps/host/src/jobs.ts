@@ -1,5 +1,6 @@
 import type {
   DirListing,
+  EditorApp,
   HostJob,
   HostReply,
   LayaDecideResult,
@@ -26,6 +27,8 @@ export interface JobHandlers {
   layaStatus(): LayaStatus;
   /** Starts the install if needed and returns the state at once. */
   layaInstall(): LayaStatus;
+  /** Throws an error whose message is safe to show when the editor cannot open the path. */
+  editorOpen(params: { app: EditorApp; path: string; line?: number | undefined }): Promise<void>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
 }
 
@@ -81,6 +84,10 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         return;
       case "decide":
         await reply({ id: job.id, ok: true, result: await handlers.layaDecide(job.params) });
+        return;
+      case "editor.open":
+        await handlers.editorOpen(job.params);
+        await reply({ id: job.id, ok: true, result: { opened: true } });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

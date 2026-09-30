@@ -9,6 +9,7 @@ import {
 import { CircleAlert } from "lucide-react";
 import { useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -118,6 +119,7 @@ export function ProjectDetail({
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <OpenInEditor path={project.path} name={project.id} size="icon-sm" variant="ghost" />
             <CopyPath name={project.id} path={project.path} home={home} />
             <Button size="sm" variant="ghost" aria-label={`Remove project ${project.id}`} onClick={onRemove}>
               Remove

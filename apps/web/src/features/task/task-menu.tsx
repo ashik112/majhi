@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
+import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
 import { useCloseTask, useRemoveTask, useReopenTask } from "@/lib/task-queries";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
@@ -13,6 +14,8 @@ export function TaskMenu({ task }: { task: Task }) {
   const [confirm, setConfirm] = useState<"close" | "remove" | null>(null);
   const reopen = useReopenTask();
   const toast = useToast();
+  const open = useOpenInEditor();
+  const editor = useEditorLabel();
   return (
     <>
       <Menu
@@ -28,6 +31,17 @@ export function TaskMenu({ task }: { task: Task }) {
                   }),
               }
             : { label: "Close task", onSelect: () => setConfirm("close") },
+          {
+            label: `Open folder in ${editor}`,
+            onSelect: () =>
+              open.mutate(
+                { path: task.folder },
+                {
+                  onSuccess: (done) => toast(`Opened in ${editor}`, { detail: done.path }),
+                  onError: (e) => toast(`Could not open in ${editor}`, { detail: e.message, tone: "error" }),
+                },
+              ),
+          },
           { label: "Remove task", onSelect: () => setConfirm("remove"), tone: "danger" },
         ]}
       />

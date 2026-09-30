@@ -3,6 +3,7 @@ import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
   ContextPatchSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -34,6 +35,8 @@ export const MajhiConfigSchema = z.strictObject({
   rooms: RoomPatchSchema.optional(),
   /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */
   memory: MemoryPatchSchema.optional(),
+  /** Which editor "Open in editor" uses: VS Code or Cursor. */
+  editor: EditorPatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),

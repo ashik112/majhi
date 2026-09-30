@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import {
   ContextPatchSchema,
   DecisionPatchSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -24,6 +25,7 @@ export const SettingsPatchSchema = z.object({
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
   memory: MemoryPatchSchema.optional(),
+  editor: EditorPatchSchema.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
@@ -36,6 +38,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
     memory: raw.memory ?? {},
+    editor: raw.editor ?? {},
   });
 }
 
@@ -64,6 +67,7 @@ export async function readSettings(file: string): Promise<Settings> {
     rooms: record.rooms,
     policy: record.policy,
     memory: record.memory,
+    editor: record.editor,
   });
   if (!parsed.success) {
     throw new ConfigConflictError("majhi.yaml has invalid settings.", formatIssues(parsed.error));

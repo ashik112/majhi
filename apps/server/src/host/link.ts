@@ -31,6 +31,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   remount: (value) => HostResultSchemas.remount.safeParse(value),
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
+  "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
   "version.changes": (value) => HostResultSchemas["version.changes"].safeParse(value),
   update: (value) => HostResultSchemas.update.safeParse(value),
   restart: (value) => HostResultSchemas.restart.safeParse(value),

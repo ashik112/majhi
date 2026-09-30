@@ -115,6 +115,16 @@ export const MemoryPatchSchema = z
   .partial();
 export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
 
+/** The owner's editor (SPEC 11). The host helper opens files and folders in it. */
+export const EditorAppSchema = z.enum(["vscode", "cursor"]);
+export type EditorApp = z.infer<typeof EditorAppSchema>;
+export const EDITOR_LABEL: Record<EditorApp, string> = { vscode: "VS Code", cursor: "Cursor" };
+
+const editorFields = { app: EditorAppSchema };
+export const EditorSettingsSchema = z.strictObject({ app: editorFields.app.default("vscode") });
+export type EditorSettings = z.infer<typeof EditorSettingsSchema>;
+export const EditorPatchSchema = z.strictObject(editorFields).partial();
+
 /** How the boss's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
   /** Runs without asking. */
@@ -183,5 +193,6 @@ export const SettingsSchema = z.object({
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
+  editor: EditorSettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;
