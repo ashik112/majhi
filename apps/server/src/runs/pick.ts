@@ -4,6 +4,7 @@ import {
   type DecisionSettings,
   type EffortTier,
   type ModelTier,
+  type OptionValue,
   type PricesConfig,
   resolveTier,
   type Task,
@@ -11,6 +12,7 @@ import {
 } from "@majhi/shared";
 import type { Decisions, ModelPick, PickAnswer } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
+import { checkEfforts, type EffortCheck } from "./effort-check.ts";
 import {
   effortForTier,
   effortOptions,
@@ -59,6 +61,8 @@ export async function pickForSession(input: {
   orgTiers?: TiersPatch | undefined;
   /** Models the tool's own catalog marks as replaced, by the model that replaced them. */
   replaced?: ReadonlyMap<string, string>;
+  /** The account's tool, for remembering which efforts change how the agent works. */
+  tool: string;
   /** Models the owner hid on the account. Not used for `auto` picks, unless the agent's `models` names them. */
   hidden?: readonly string[];
 }): Promise<PickResult> {
@@ -83,7 +87,21 @@ export async function pickForSession(input: {
   });
   const models = normalizeOffered(candidates);
   const modelOptions = labelModels(models, input.prices);
-  const effortList = effortOptions(offered.efforts);
+  // An effort that changes how the agent works (it hands work to sub-agents) is not for `auto`.
+  const check = async (list: readonly OptionValue[]): Promise<EffortCheck> =>
+    fm.effort === "auto" && effortOptions(list).length >= 2
+      ? checkEfforts({
+          decisions,
+          tool: input.tool,
+          options: list,
+          minConfidence: settings.min_confidence,
+          task: task.id,
+          agent: fm.id,
+        })
+      : { flagged: new Set(), unchecked: false };
+  const without = (list: readonly OptionValue[], c: EffortCheck) => list.filter((o) => !c.flagged.has(o.id));
+  const before = await check(offered.efforts);
+  const effortList = effortOptions(without(offered.efforts, before));
   const askModel = fm.model === "auto" && modelOptions.length >= 2;
   const askEffort = fm.effort === "auto" && effortList.length >= 2;
   const tier = resolveTier(fm.role, fm.tier, input.orgTiers?.[fm.role], settings.tiers[fm.role]);
@@ -145,10 +163,16 @@ export async function pickForSession(input: {
   }
   // Efforts belong to the model: an adapter may offer another list once the model changed (Codex
   // does), so the effort is resolved against what the session offers now.
-  const efforts = session.models.efforts;
+  const after = await check(session.models.efforts);
+  const efforts = without(session.models.efforts, after);
   const effortsNow = effortOptions(efforts);
   if (fm.effort === "auto" && effortsNow.length > 0) {
-    const list = `Efforts offered: ${effortsNow.map((o) => o.id).join(", ")}.`;
+    const skipped = [...new Set([...before.flagged, ...after.flagged])].filter((id) =>
+      session.models.efforts.some((o) => o.id === id),
+    );
+    const list = `Efforts offered: ${effortsNow.map((o) => o.id).join(", ")}.${
+      skipped.length === 0 ? "" : ` Left out: ${skipped.join(", ")} (changes how the agent works).`
+    }${before.unchecked || after.unchecked ? " Could not check the effort options, so none were left out." : ""}`;
     const answer = pick?.effort;
     const outcome: Outcome = (() => {
       const [only] = effortsNow;

@@ -967,6 +967,7 @@ export class RunManager {
             accountHome(deps.majhiHome, fm.account),
             getTool(agent.account.tool).modelCatalog,
           ),
+          tool: agent.account.tool,
           hidden: agent.account.hidden_models ?? [],
           orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });

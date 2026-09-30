@@ -6,8 +6,9 @@ import {
   type PricesConfig,
   type Task,
 } from "@majhi/shared";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Decisions, ModelPick, ModelPickRequest } from "../decisions/api.ts";
+import { clearEffortChecks } from "./effort-check.ts";
 import { pickForSession } from "./pick.ts";
 
 const opts = (...ids: string[]): OptionValue[] => ids.map((id) => ({ id, name: id }));
@@ -34,7 +35,10 @@ function session(models: OptionValue[], efforts: OptionValue[], refuse?: string)
   return { s, set };
 }
 
-function decisions(answer: (r: ModelPickRequest) => ModelPick | undefined) {
+function decisions(
+  answer: (r: ModelPickRequest) => ModelPick | undefined,
+  decide: Decisions["decide"] = async () => undefined,
+) {
   const asked: ModelPickRequest[] = [];
   const d: Decisions = {
     pickModel: async (r) => {
@@ -43,7 +47,7 @@ function decisions(answer: (r: ModelPickRequest) => ModelPick | undefined) {
     },
     attachTool: () => undefined,
     revoke: () => {},
-    decide: async () => undefined,
+    decide,
   };
   return { d, asked };
 }
@@ -79,6 +83,7 @@ const run = (
     task,
     settings,
     prices: over.prices ?? {},
+    tool: "codex",
     ...(over.replaced === undefined ? {} : { replaced: over.replaced }),
     ...(over.hidden === undefined ? {} : { hidden: over.hidden }),
   });
@@ -135,6 +140,7 @@ describe("pickForSession", () => {
       task,
       settings: strict,
       prices: {},
+      tool: "codex",
     });
     expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "high" });
     expect(out.line).toContain("under the 0.50 floor, so it fell back to most capable (claude-opus-5-5)");
@@ -159,6 +165,7 @@ describe("pickForSession", () => {
       task,
       settings,
       prices: {},
+      tool: "codex",
       orgTiers: { Builder: { model: "cheapest", effort: "highest" } },
     });
     expect(set).toEqual({ model: "claude-haiku-4-5", thought_level: "low" });
@@ -362,5 +369,124 @@ describe("pickForSession", () => {
     const { d, asked } = decisions(() => undefined);
     await run(d, s, { hidden: ["a-1"], fm: { models: ["a-1", "b-1"] } });
     expect(asked[0]?.models.map((o) => o.id)).toEqual(["a-1", "b-1"]);
+  });
+});
+
+/** The efforts codex-cli 0.158.0 offers, with the description that matters. */
+const CODEX_EFFORTS: OptionValue[] = [
+  { id: "low", name: "Low", description: "Fast responses with lighter reasoning" },
+  { id: "medium", name: "Medium", description: "Balances speed and reasoning depth" },
+  { id: "high", name: "High", description: "Greater reasoning depth for complex problems" },
+  { id: "xhigh", name: "Xhigh", description: "Extra high reasoning depth for complex problems" },
+  { id: "max", name: "Max", description: "Maximum reasoning depth" },
+  { id: "ultra", name: "Ultra", description: "Maximum reasoning with automatic task delegation" },
+];
+
+/** A stand-in for the provider: says yes to the option whose line in the state mentions delegation. */
+function judge(yes: (line: string) => boolean, confidence = 0.9) {
+  const calls: { state: string; keys: string[] }[] = [];
+  const decide: Decisions["decide"] = async (request) => {
+    calls.push({ state: request.state, keys: Object.keys(request.questions) });
+    const lines = request.state.split("\n");
+    return {
+      id: "j1",
+      answers: Object.fromEntries(
+        Object.keys(request.questions).map((key, n) => [key, { value: yes(lines[n] ?? ""), confidence }]),
+      ),
+      provider: "laya",
+      skipped: [],
+      trimmed: false,
+      estimated: false,
+      durationMs: 1,
+    };
+  };
+  return { decide, calls };
+}
+
+describe("pickForSession, efforts that change how the agent works", () => {
+  beforeEach(() => clearEffortChecks());
+  const models = opts("claude-opus-5-5", "claude-sonnet-5-5");
+
+  it("leaves a flagged effort out of the pick and of every tier: highest is max, not ultra", async () => {
+    const { s, set } = session(models, CODEX_EFFORTS);
+    const j = judge((line) => line.includes("delegation"));
+    const { d, asked } = decisions(() => undefined, j.decide);
+    const out = await run(d, s);
+    expect(asked[0]?.efforts.map((o) => o.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(set.thought_level).toBe("max");
+    expect(out.line).toContain(
+      "Efforts offered: low, medium, high, xhigh, max. Left out: ultra (changes how the agent works).",
+    );
+    expect(out.line).not.toContain("Could not check");
+    // One call, one question per option, the option's own description as the state.
+    expect(j.calls[0]?.keys).toEqual(["e0", "e1", "e2", "e3", "e4", "e5"]);
+    expect(j.calls[0]?.state).toContain("ultra: Maximum reasoning with automatic task delegation");
+  });
+
+  it("keeps ultra when nothing is flagged", async () => {
+    const { s, set } = session(models, CODEX_EFFORTS);
+    const { d } = decisions(() => undefined, judge(() => false).decide);
+    const out = await run(d, s);
+    expect(set.thought_level).toBe("ultra");
+    expect(out.line).not.toContain("Left out");
+  });
+
+  it("does not flag on a yes under the confidence floor", async () => {
+    const { s, set } = session(models, CODEX_EFFORTS);
+    const { d } = decisions(() => undefined, judge((l) => l.includes("delegation"), 0.5).decide);
+    await run(d, s);
+    expect(set.thought_level).toBe("ultra");
+  });
+
+  it("leaves nothing out and says so when no provider answers", async () => {
+    const { s, set } = session(models, CODEX_EFFORTS);
+    const out = await run(undefined, s);
+    expect(set.thought_level).toBe("ultra");
+    expect(out.line).toContain("Could not check the effort options, so none were left out.");
+    const broken = session(models, CODEX_EFFORTS);
+    const { d } = decisions(
+      () => undefined,
+      async () => {
+        throw new Error("down");
+      },
+    );
+    const again = await run(d, broken.s);
+    expect(again.line).toContain("Could not check the effort options");
+  });
+
+  it("asks once per tool, effort and description", async () => {
+    const j = judge((line) => line.includes("delegation"));
+    const first = session(models, CODEX_EFFORTS);
+    await run(decisions(() => undefined, j.decide).d, first.s);
+    const second = session(models, CODEX_EFFORTS);
+    await run(decisions(() => undefined, j.decide).d, second.s);
+    expect(j.calls).toHaveLength(1);
+    expect(second.set.thought_level).toBe("max");
+    // A changed description is asked again.
+    const changed = session(
+      models,
+      CODEX_EFFORTS.map((o) => (o.id === "ultra" ? { ...o, description: "New text" } : o)),
+    );
+    await run(decisions(() => undefined, j.decide).d, changed.s);
+    expect(j.calls).toHaveLength(2);
+    expect(j.calls[1]?.keys).toEqual(["e0"]);
+  });
+
+  it("never touches an effort set by hand, and never asks for it", async () => {
+    const { s, set } = session(models, CODEX_EFFORTS);
+    const j = judge(() => true);
+    const { d } = decisions(() => undefined, j.decide);
+    await run(d, s, { fm: { effort: "ultra" } });
+    expect(j.calls).toHaveLength(0);
+    expect(set.thought_level).toBeUndefined();
+  });
+
+  it("does not ask about options that have no description", async () => {
+    const { s } = session(models, EFFORTS);
+    const j = judge(() => true);
+    const { d } = decisions(() => undefined, j.decide);
+    const out = await run(d, s);
+    expect(j.calls).toHaveLength(0);
+    expect(out.line).not.toContain("Could not check");
   });
 });
