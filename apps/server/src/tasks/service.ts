@@ -57,6 +57,8 @@ import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
+import { type TeamFacts, wakeFacts } from "./team-facts.ts";
+import { TeamFactsSource } from "./team-facts-source.ts";
 
 export interface TaskDeps {
   store: Store;
@@ -105,6 +107,9 @@ export class TaskService {
   /** Lead orchestration: the check before a waiting task starts, and the lead's side of a parent. */
   private readonly orchestrator: Orchestrator;
   private readonly planner: TaskPlanner;
+  private readonly teamFacts: TeamFactsSource;
+  /** The facts block each (task, agent) got last, so a wake prompt only repeats them when they changed. */
+  private readonly wakeSeen = new Map<string, string>();
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -117,6 +122,14 @@ export class TaskService {
       store: deps.store,
       agents: deps.agents,
       accounts: deps.accounts,
+      now: this.now,
+    });
+    this.teamFacts = new TeamFactsSource({
+      store: deps.store,
+      agents: deps.agents,
+      accounts: deps.accounts,
+      config: deps.config,
+      planner: this.planner,
       now: this.now,
     });
     this.orchestrator = new Orchestrator({
@@ -411,7 +424,7 @@ export class TaskService {
     related: Related = NO_RELATED,
   ): Promise<void> {
     const team = briefTeam(task, agents);
-    const md = renderTaskMd(task, team[0], orgName, related, team);
+    const md = renderTaskMd(task, team[0], orgName, related, team, await this.teamFacts.facts(task));
     const pointer = renderPointer(task);
     await Promise.all([
       writeFile(join(task.folder, "TASK.md"), md),
@@ -1168,8 +1181,14 @@ export class TaskService {
     this.deps.events.emit(["tasks"]);
   }
 
-  /** Rewrites TASK.md of each task so its Related tasks section is current. */
-  private async refreshBriefs(ids: readonly string[]): Promise<void> {
+  /**
+   * Rewrites TASK.md of each task so its Related tasks and Team facts sections are current. `known`
+   * gives the facts of one task that were just read.
+   */
+  private async refreshBriefs(
+    ids: readonly string[],
+    known?: { task: string; facts: TeamFacts },
+  ): Promise<void> {
     const sections = await this.deps.config.sections();
     const stored = await this.deps.agents.list();
     const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
@@ -1177,9 +1196,40 @@ export class TaskService {
       const task = this.deps.store.tasks.get(id);
       if (task === undefined) continue;
       const team = briefTeam(task, agents);
-      const md = renderTaskMd(task, team[0], sections.orgs[task.org ?? ""]?.name, this.relatedOf(task), team);
+      const facts = known?.task === id ? known.facts : await this.teamFacts.facts(task);
+      const md = renderTaskMd(
+        task,
+        team[0],
+        sections.orgs[task.org ?? ""]?.name,
+        this.relatedOf(task),
+        team,
+        facts,
+      );
       // The folder can be gone by hand; the links still stand.
       await writeFile(join(task.folder, "TASK.md"), md).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Before a prompt goes to the lead of a task the facts apply to: rewrites TASK.md with fresh
+   * team facts and returns a short block for the prompt when they changed since the last one this
+   * agent got. A `brief` prompt makes the agent read TASK.md, so it only records the block.
+   */
+  async beforePrompt(turn: { task: string; agent: string; brief: boolean }): Promise<string | undefined> {
+    try {
+      const task = this.deps.store.tasks.get(turn.task);
+      if (task === undefined || task.team[0] !== turn.agent) return undefined;
+      const facts = await this.teamFacts.facts(task);
+      if (facts === undefined) return undefined;
+      await this.refreshBriefs([task.id], { task: task.id, facts });
+      const block = wakeFacts(facts);
+      const key = `${turn.task}:${turn.agent}`;
+      const same = this.wakeSeen.get(key) === block;
+      this.wakeSeen.set(key, block);
+      return turn.brief || same ? undefined : block;
+    } catch {
+      // Facts never stop a turn.
+      return undefined;
     }
   }
 

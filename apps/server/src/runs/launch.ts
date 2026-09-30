@@ -4,6 +4,7 @@ import { type AgentSession, buildEnv, type RunMount, type RuntimeOptions } from 
 import type { AccountConfig, AgentFrontmatter, Task, TeamOverride } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
+import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
@@ -106,6 +107,7 @@ export async function launch(
   const rooms = deps.rooms?.attach({ task: run.task, agent: run.agent }, fm, {
     teamSize: task.team.length,
     boss,
+    soloLead: task.mode === "lead" && task.kind !== "chat" && task.team[0] === run.agent && !isBossChat(task),
   });
   const mcpServers = [admin?.server, decide?.server, ...(rooms?.servers ?? [])].flatMap((s) =>
     s === undefined ? [] : [s],

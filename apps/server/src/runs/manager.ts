@@ -77,6 +77,12 @@ export interface RunDeps {
    * routes its @mentions (5.3) before the task can count as idle, so this is awaited.
    */
   onTurnEnd?: (turn: { task: string; agent: string; text: string }) => Promise<void>;
+  /**
+   * Called right before a prompt is sent, not for slash commands. A returned text is added after
+   * the prompt. `brief` is true when the agent reads TASK.md with this prompt: the first prompt,
+   * or a fresh session's first prompt that carries it.
+   */
+  beforePrompt?: (turn: { task: string; agent: string; brief: boolean }) => Promise<string | undefined>;
   /** After every checkpoint of a task: branches stacked on it may need a rebase. */
   onCheckpoint?: (task: string) => void;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
@@ -578,7 +584,11 @@ export class RunManager {
         continue;
       }
       if (entry.kind !== "continue") run.compactions = 0;
-      const raw = this.withProcesses(run, await this.blocksFor(run, entry));
+      const raw = await this.withFacts(
+        run,
+        entry.kind === "brief" || run.carry !== undefined,
+        this.withProcesses(run, await this.blocksFor(run, entry)),
+      );
       if (raw === undefined) continue;
 
       // One read of the settings per turn: before the prompt and after it.
@@ -817,6 +827,21 @@ export class RunManager {
     if (blocks === undefined || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
     const line = runningLine(this.deps.processes?.running(run.task) ?? []);
     return line === undefined ? blocks : [...blocks, { type: "text", text: line }];
+  }
+
+  /** Adds what `beforePrompt` returns after the prompt. Not to slash commands. A failing hook adds nothing. */
+  private async withFacts(
+    run: AgentRun,
+    brief: boolean,
+    blocks: PromptBlock[] | undefined,
+  ): Promise<PromptBlock[] | undefined> {
+    const first = blocks?.[0];
+    if (blocks === undefined || this.deps.beforePrompt === undefined) return blocks;
+    if (first?.type === "text" && first.text.startsWith("/")) return blocks;
+    const text = await this.deps
+      .beforePrompt({ task: run.task, agent: run.agent, brief })
+      .catch(() => undefined);
+    return text === undefined ? blocks : [...blocks, { type: "text", text }];
   }
 
   /** Puts the admin preamble before a session's first prompt. Slash commands stay whole and keep it waiting. */

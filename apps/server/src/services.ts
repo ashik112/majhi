@@ -236,6 +236,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),
+    beforePrompt: (turn) => tasks.beforePrompt(turn),
     onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
     onTurnEnd: (turn) => coordinator.turnEnded(turn),

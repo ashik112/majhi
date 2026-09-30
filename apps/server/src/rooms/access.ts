@@ -42,7 +42,8 @@ export class ToolTokens {
 
 /**
  * Which sessions get `majhi-room`, `majhi-tasks` and `majhi-processes` (SPEC 5.1, 5.3, 5.4a,
- * 5.15): `majhi-room` for every agent in a team of two or more, or with it in its `tools`;
+ * 5.15): `majhi-room` for every agent in a team of two or more, for the lead of a lead-mode task
+ * even alone (it can bring in agents that could join), or with it in its `tools`;
  * `majhi-tasks` for leads and root agents, or with it in its `tools`. The boss has every command
  * through majhi-admin already. `majhi-processes` for every session.
  */
@@ -57,14 +58,19 @@ export class RoomAccess {
   attach(
     caller: ToolCaller,
     agent: Pick<AgentFrontmatter, "id" | "role" | "scope" | "tools">,
-    context: { teamSize: number; boss: string | undefined },
+    context: {
+      teamSize: number;
+      boss: string | undefined;
+      /** The agent is the first of a lead-mode task that is not a chat. */
+      soloLead?: boolean;
+    },
   ): { tokens: { server: ToolServer; token: string }[]; servers: McpServerSpec[] } {
     const out: { tokens: { server: ToolServer; token: string }[]; servers: McpServerSpec[] } = {
       tokens: [],
       servers: [],
     };
     const base = this.mcpUrl().replace(/\/mcp$/, "");
-    if (context.teamSize > 1 || agent.tools.includes(ROOM_SERVER_NAME)) {
+    if (context.teamSize > 1 || context.soloLead === true || agent.tools.includes(ROOM_SERVER_NAME)) {
       const token = this.room.issue(caller);
       out.tokens.push({ server: "room", token });
       out.servers.push(spec(ROOM_SERVER_NAME, `${base}${ROOM_PATH}`, token));
