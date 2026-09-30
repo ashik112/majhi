@@ -118,6 +118,7 @@ export async function launch(
       account: runtimeAccount,
       options: deps.options,
       cwd: task.folder,
+      task: task.id,
       mounts: await repoMounts(task),
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),

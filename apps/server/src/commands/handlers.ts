@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CommandMeta, CommandName, CommandOutput, commands, Remount, TaskId } from "@majhi/shared";
-import { RESTART_COMMAND } from "@majhi/shared";
+import { RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat } from "../admin/boss.ts";
 import { sameRule } from "../admin/policy.ts";
@@ -257,6 +257,64 @@ export function createHandlers({
       return { process: await services.processes.stop(input.task, input.id, "owner") };
     },
     "tasks.terminal.open": (input) => services.openTaskTerminal(input.task),
+    "containers.list": async (input) => {
+      if (input.task !== undefined) services.tasks.get(input.task);
+      const reason = services.containers.reason();
+      return {
+        available: services.containers.available(),
+        ...(reason === undefined ? {} : { reason }),
+        containers: services.containers.list(input.task),
+      };
+    },
+    "containers.images.allow": async (input, ctx) => {
+      await requireConfigFile(config);
+      const { images } = (await config.settings()).containers;
+      if (images.some((image) => sameImage(image, input.image))) return { images };
+      const next = [...images, input.image];
+      await config.setSettings(
+        { containers: { images: next } },
+        {
+          command: ctx.command,
+          meta: ctx.meta,
+          summary: `allowed the image ${input.image} for service containers`,
+        },
+      );
+      return { images: next };
+    },
+    "containers.images.remove": async (input, ctx) => {
+      await requireConfigFile(config);
+      const { images } = (await config.settings()).containers;
+      const next = images.filter((image) => !sameImage(image, input.image));
+      if (next.length === images.length)
+        throw new UserError(`${input.image} is not in the allowed images.`, 404);
+      await config.setSettings(
+        { containers: { images: next } },
+        {
+          command: ctx.command,
+          meta: ctx.meta,
+          summary: `stopped allowing the image ${input.image} for service containers`,
+        },
+      );
+      return { images: next };
+    },
+    "containers.preview.build": async ({ task, ...rest }, ctx) => ({
+      process: await services.containers.previewBuild(task, actingAgent(services, task, ctx), rest),
+    }),
+    "containers.preview.run": async ({ task, ...rest }, ctx) => ({
+      container: await services.containers.previewRun(task, actingAgent(services, task, ctx), rest),
+    }),
+    "containers.services.start": async ({ task, ...rest }, ctx) => {
+      const result = await services.containers.serviceStart(task, actingAgent(services, task, ctx), rest);
+      if (result.status !== "started") throw new UserError("The service did not start.");
+      return { container: result.container };
+    },
+    "containers.stop": async (input, ctx) => ({
+      container: await services.containers.stop(
+        input.task,
+        input.name,
+        ctx.meta.actor.kind === "owner" ? "owner" : "agent",
+      ),
+    }),
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
@@ -321,6 +379,8 @@ export function createHandlers({
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
+        ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
+        ...(input.containers === undefined ? {} : { containers: input.containers }),
       };
       await config.setSettings(patch, {
         command: ctx.command,
@@ -365,6 +425,14 @@ export function createHandlers({
     },
     "boss.chat": (input) =>
       openBossChat({ config, store: services.store, tasks: services.tasks }, input.fresh === true),
+    "cleanup.preview": async (input) =>
+      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
+    "cleanup.run": async (input, ctx) =>
+      services.cleanup.run(
+        input.tasks,
+        input.days ?? (await config.settings()).cleanup.after_days,
+        actorName(ctx.meta.actor),
+      ),
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),
@@ -442,6 +510,16 @@ function noteSecrets(services: Services, task: string, saved: readonly string[])
 }
 
 /** Settings are written into majhi.yaml, which starts with the workspace roots. */
+/**
+ * The agent a container process belongs to: the one that called the command, else the task's lead,
+ * so the agent that is woken when a build ends is one of the team.
+ */
+function actingAgent(services: Services, task: string, ctx: CommandContext): string {
+  if (ctx.meta.actor.kind === "agent") return ctx.meta.actor.id;
+  // A task with nobody on it: the process belongs to majhi, and no agent is woken when it ends.
+  return services.tasks.get(task).team[0] ?? "majhi";
+}
+
 async function requireConfigFile(config: ConfigService): Promise<void> {
   if (!(await config.sections()).exists) throw new UserError("Pick workspace roots first.", 409);
 }

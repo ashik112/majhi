@@ -94,6 +94,8 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
+  /** Previews and services (PRV-53): their containers go with the task, and their volumes when it is done or removed. */
+  containers?: { taskStopped(id: string): Promise<void>; taskEnded(id: string): Promise<void> };
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
   terminals?: TerminalManager;
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
@@ -602,6 +604,7 @@ export class TaskService {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
@@ -951,6 +954,7 @@ export class TaskService {
     }
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     this.cards.settle(id, "review", "Marked done", opts.by ?? "owner");
@@ -1124,6 +1128,7 @@ export class TaskService {
     await this.deps.onRemoving?.(task).catch(() => undefined);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
+    await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.processes?.forget(id);
     for (const repo of task.repos) {

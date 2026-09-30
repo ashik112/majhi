@@ -36,6 +36,11 @@ export interface RunnerConfig {
    * owner's, so no runner starts that could reach majhi's API.
    */
   ready?: (() => Promise<void>) | undefined;
+  /**
+   * Extra networks a run of this task joins when it starts, like the one its service containers
+   * run on. Needs Docker Engine 25 (API 1.44), which accepts `--network` more than once.
+   */
+  taskNetworks?: ((task: string) => string[]) | undefined;
 }
 
 /** Folders that no run may see, whatever the config says. */
@@ -135,8 +140,10 @@ export function dockerRunArgs(
     name,
     "--label",
     "majhi.runner=1",
+    ...(req.task === undefined ? [] : ["--label", `majhi.task=${req.task}`]),
     "--network",
     cfg.network,
+    ...(req.task === undefined ? [] : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => ["--network", n])),
     "--cap-drop",
     "ALL",
     "--security-opt",

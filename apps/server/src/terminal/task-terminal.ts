@@ -76,6 +76,7 @@ export async function openTaskTerminal(deps: TaskTerminalDeps, taskId: string): 
       command: { command: "/bin/sh", args: ["-c", SHELL_SCRIPT] },
       env,
       cwd,
+      task: taskId,
       mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
     });
     spec = {

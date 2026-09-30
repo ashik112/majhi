@@ -17,6 +17,8 @@ export interface Runner {
 export function runnerSetup(
   env: ServerEnv,
   inspect: Inspect | undefined,
+  /** The networks a run of a task joins besides the runner network. Bound late by the caller. */
+  taskNetworks?: (task: string) => string[],
 ): { sessionOptions: RuntimeOptions; runner: Runner | undefined } {
   const r = env.runner;
   if (r.mode !== "container") return { sessionOptions: env.runtime, runner: undefined };
@@ -31,6 +33,7 @@ export function runnerSetup(
     cliEnv: r.cliEnv,
     majhiHome: env.majhiHome,
     protectedPaths: [env.secretsKeyFile],
+    taskNetworks,
     ready: async () => {
       await cleaned;
       await network.ensure();

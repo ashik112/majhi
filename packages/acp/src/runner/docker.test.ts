@@ -101,6 +101,28 @@ describe("runner mounts", () => {
     expect(args.slice(-2)).toEqual(["majhi-runner:dev", "claude-agent-acp"]);
   });
 
+  it("labels a run with its task and joins the task's networks, after the runner network", () => {
+    const pairs = (args: string[], flag: string) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
+    const withNetworks: RunnerConfig = {
+      ...cfg,
+      taskNetworks: (task) => (task === "ACM-1" ? ["majhi-acm-1"] : []),
+    };
+    const args = dockerRunArgs(request({ task: "ACM-1" }), withNetworks, "majhi-run-test");
+    expect(pairs(args, "--network")).toEqual(["majhi-runners", "majhi-acm-1"]);
+    expect(pairs(args, "--label")).toEqual(["majhi.runner=1", "majhi.task=ACM-1"]);
+    // Another task, or a run without a task, joins the runner network only.
+    expect(pairs(dockerRunArgs(request({ task: "ACM-2" }), withNetworks, "n"), "--network")).toEqual([
+      "majhi-runners",
+    ]);
+    const plain = dockerRunArgs(request(), withNetworks, "n");
+    expect(pairs(plain, "--network")).toEqual(["majhi-runners"]);
+    expect(pairs(plain, "--label")).toEqual(["majhi.runner=1"]);
+    // The task terminal uses the same arguments.
+    expect(
+      pairs(dockerRunArgs(request({ task: "ACM-1" }), withNetworks, "n", { tty: true }), "--network"),
+    ).toEqual(["majhi-runners", "majhi-acm-1"]);
+  });
+
   it("gives a scratch run its own /tmp instead of a mount", () => {
     const args = dockerRunArgs(request({ scratch: true, mounts: [] }), cfg, "majhi-run-test");
     expect(mountArgs(args)).toHaveLength(1);

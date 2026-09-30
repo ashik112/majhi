@@ -14,7 +14,7 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
@@ -317,6 +317,16 @@ export class TaskRepo {
           .map((r) => r.task),
       ),
     ];
+  }
+
+  /** Done tasks last updated before `before` (an ISO time), oldest first, with the time. */
+  doneBefore(before: string): { id: string; doneAt: string }[] {
+    return this.db
+      .select({ id: tasks.id, doneAt: tasks.updatedAt })
+      .from(tasks)
+      .where(and(eq(tasks.status, "done"), lt(tasks.updatedAt, before)))
+      .orderBy(asc(tasks.updatedAt))
+      .all();
   }
 
   /** The ids of a parent's children, in the order they were linked. */

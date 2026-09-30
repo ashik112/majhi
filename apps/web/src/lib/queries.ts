@@ -44,6 +44,8 @@ export const queryKeys = {
   usage: ["usage"],
   /** Every `memory.*` read: facts, search and the log. */
   memory: ["memory"],
+  /** Every `containers.*` read: running previews and services across tasks. */
+  containers: ["containers"],
 } as const;
 
 export function useConfig() {
