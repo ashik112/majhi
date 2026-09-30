@@ -100,13 +100,18 @@ describe("majhi-room", () => {
     const { h, servers, release } = await world();
     expect(servers["acme-lead"]?.map((s) => s.name).sort()).toEqual([
       "majhi-decide",
+      "majhi-processes",
       "majhi-room",
       "majhi-tasks",
     ]);
     release();
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-builder hello" });
     await until(() => servers["acme-builder"] !== undefined, "builder session");
-    expect(servers["acme-builder"]?.map((s) => s.name).sort()).toEqual(["majhi-decide", "majhi-room"]);
+    expect(servers["acme-builder"]?.map((s) => s.name).sort()).toEqual([
+      "majhi-decide",
+      "majhi-processes",
+      "majhi-room",
+    ]);
   });
 
   it("reads the room, posts, and hands work to a teammate at once", async () => {
@@ -159,6 +164,43 @@ describe("majhi-room", () => {
     await h.cmd("tasks.stop", { id: "ACM-1" });
     expect(h.majhi.services.roomAccess.room.size).toBe(0);
     expect(h.majhi.services.roomAccess.tasks.size).toBe(0);
+    expect(h.majhi.services.roomAccess.processes.size).toBe(0);
+  });
+});
+
+describe("majhi-processes", () => {
+  it("starts, lists and stops processes of the caller's own task only", async () => {
+    const { h, servers, release } = await world();
+    const tool = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-processes"));
+    expect((await tool.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "list",
+      "output",
+      "restart",
+      "start",
+      "stop",
+    ]);
+    const outside = await tool.callTool({ name: "start", arguments: { command: "true", cwd: "/tmp" } });
+    expect(outside.isError).toBe(true);
+    expect(text(outside)).toContain("outside the task folder");
+
+    const started = await tool.callTool({ name: "start", arguments: { command: "sleep 30", wait: false } });
+    expect(text(started)).toMatch(/^Started p1 `sleep 30` in .*ACM-1: running/);
+    expect(h.majhi.services.processes.running("ACM-1").map((p) => p.agent)).toEqual(["acme-lead"]);
+    expect(text(await tool.callTool({ name: "list", arguments: {} }))).toContain("p1 `sleep 30`");
+    // Another task's processes are out of reach: ids are per task.
+    expect((await h.cmd("tasks.create", { text: "tidy api", start: false })).status).toBe(200);
+    await h.majhi.services.processes.start({
+      task: "ACM-2",
+      agent: "acme-lead",
+      command: "sleep 31",
+      wait: false,
+    });
+    expect(text(await tool.callTool({ name: "list", arguments: {} }))).not.toContain("sleep 31");
+    expect(text(await tool.callTool({ name: "stop", arguments: { id: "p1" } }))).toContain(
+      "stopped by the agent",
+    );
+    expect(h.majhi.services.processes.running("ACM-2")).toHaveLength(1);
+    release();
   });
 });
 

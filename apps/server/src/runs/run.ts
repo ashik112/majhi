@@ -1,5 +1,6 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
 import type { AgentLive, AuthMode, Perm, Task, ToolId } from "@majhi/shared";
+import type { ToolServer } from "../rooms/access.ts";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
 
@@ -16,7 +17,9 @@ export type QueueEntry =
   /** Continue after a recovery compaction, in the same turn. */
   | { kind: "continue" }
   /** The owner asked for a fresh session. */
-  | { kind: "fresh" };
+  | { kind: "fresh" }
+  /** majhi tells the agent something, like a background process that ended (5.15). */
+  | { kind: "notice"; text: string };
 
 /** What a fresh session gets before its first prompt (SPEC 5.13). */
 export interface Carry {
@@ -57,7 +60,7 @@ export class AgentRun {
   /** The majhi-decide token of this session, revoked when it ends. */
   decideToken: string | undefined;
   /** majhi-room and majhi-tasks tokens of this session, revoked when it ends. */
-  roomTokens: { server: "room" | "tasks"; token: string }[] | undefined;
+  roomTokens: { server: ToolServer; token: string }[] | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
   preambleDue = false;
   drive: Promise<void> | undefined;

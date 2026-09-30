@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AgentLive, RoomItem, RoomServerMessage, Task, TaskId } from "@majhi/shared";
+import type { AgentLive, ProcessInfo, RoomItem, RoomServerMessage, Task, TaskId } from "@majhi/shared";
 import { z } from "zod";
 import type { RoomPayload, Store } from "../store/index.ts";
 
@@ -26,6 +26,8 @@ const CommandsFileSchema = z.record(
 export class RoomService {
   private readonly listeners = new Map<string, Set<RoomListener>>();
   private readonly live = new Map<string, Map<string, AgentLive>>();
+  /** Each task's background processes, as the process manager last reported them. */
+  private readonly processes = new Map<string, ProcessInfo[]>();
   private readonly deferred = new Map<string, Map<string, RoomPayload>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
 
@@ -127,6 +129,12 @@ export class RoomService {
     return [...(this.live.get(task)?.values() ?? [])];
   }
 
+  /** The task's processes changed (5.15). */
+  setProcesses(task: string, processes: ProcessInfo[]): void {
+    this.processes.set(task, processes);
+    this.send(task, { type: "processes", processes });
+  }
+
   /** Tells the sockets watching the task that the task itself changed. */
   publishTask(task: Task): void {
     this.send(task.id, { type: "task", task });
@@ -146,7 +154,7 @@ export class RoomService {
           commands: this.knownCommands(id),
         },
     );
-    return { type: "snapshot", items, agents, more: page.more };
+    return { type: "snapshot", items, agents, more: page.more, processes: this.processes.get(task.id) ?? [] };
   }
 
   subscribe(task: string, listener: RoomListener): () => void {
@@ -166,6 +174,7 @@ export class RoomService {
     this.timers.delete(task);
     this.deferred.delete(task);
     this.live.delete(task);
+    this.processes.delete(task);
   }
 
   private send(task: string, message: RoomServerMessage): void {

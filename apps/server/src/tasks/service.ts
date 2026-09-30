@@ -11,6 +11,7 @@ import {
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
+  type ProcessInfo,
   parseMentions,
   parseTaskText,
   type RoomItem,
@@ -39,6 +40,8 @@ import {
   WorktreeProblem,
 } from "../git/worktrees.ts";
 import { orgKeys } from "../orgs/keys.ts";
+import type { ProcessManager } from "../processes/manager.ts";
+import { wakeText } from "../processes/text.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
@@ -70,6 +73,8 @@ export interface TaskDeps {
   reloadKeys?: () => Promise<boolean>;
   /** Picks the default team of a new task (Phase 3). Absent: the rules' single agent. */
   decisions?: Decisions;
+  /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
+  processes?: ProcessManager;
 }
 
 export interface CreateInput {
@@ -93,6 +98,8 @@ export interface CreateInput {
 export class TaskService {
   private readonly files: FileIndex;
   private readonly now: () => Date;
+  /** `wait` processes the room was told the task waits for, so it is said once. */
+  private readonly waitNoted = new Set<string>();
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -473,6 +480,7 @@ export class TaskService {
   async stop(id: string): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
+    await this.deps.processes?.stopTask(id);
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
@@ -544,6 +552,7 @@ export class TaskService {
     if (this.deps.runs.working(id).includes(agent))
       throw new UserError(`@${agent} is working on ${id}. Stop it first.`, 409);
     await this.deps.runs.remove(id, agent);
+    await this.deps.processes?.stopAgent(id, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
@@ -563,6 +572,7 @@ export class TaskService {
     if (task.team.includes(replacement)) throw new UserError(`@${replacement} is already on ${id}.`, 409);
     const fm = await this.checkMember(task, replacement);
     await this.deps.runs.remove(id, agent);
+    await this.deps.processes?.stopAgent(id, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
@@ -772,6 +782,7 @@ export class TaskService {
     const task = this.get(id);
     if (task.status === "done") return task;
     await this.deps.runs.stop(id);
+    await this.deps.processes?.stopTask(id);
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
@@ -860,6 +871,8 @@ export class TaskService {
       );
     }
     await this.deps.runs.stop(id);
+    await this.deps.processes?.stopTask(id);
+    this.deps.processes?.forget(id);
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) await removeWorktree(repo.source, repo.worktree, force);
     }
@@ -1066,11 +1079,47 @@ export class TaskService {
     // The boss chat is an ongoing conversation, never a piece of work to review.
     if (isBossChat(task)) return;
     if (this.deps.runs.working(id).length > 0) return;
+    // An agent waits for a background process: it is woken when that ends (5.15).
+    const waiting = this.deps.processes?.waiting(id) ?? [];
+    if (waiting.length > 0) {
+      const fresh = waiting.filter((p) => !this.waitNoted.has(`${id} ${p.id} ${p.startedAt}`));
+      for (const p of fresh) this.waitNoted.add(`${id} ${p.id} ${p.startedAt}`);
+      if (fresh.length > 0) {
+        this.note(id, `Waiting for ${waiting.map((p) => `${p.id} \`${p.name}\``).join(", ")}.`);
+      }
+      return;
+    }
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
     this.note(task.id, "Ready for your review. Reply to continue, or mark it done.");
     this.deps.room.publishTask(this.get(id));
     this.deps.events.emit(["tasks"]);
     await this.statusChanged(id);
+  }
+
+  /**
+   * A background process ended (5.15). A `wait` process that exited by itself wakes the agent that
+   * started it, and a task in review runs again. Any other end of a `wait` process may leave
+   * nobody working: the task may be ready for review.
+   */
+  async processEnded(p: ProcessInfo, wakes: boolean): Promise<void> {
+    this.waitNoted.delete(`${p.task} ${p.id} ${p.startedAt}`);
+    const task = this.deps.store.tasks.get(p.task);
+    if (task === undefined) return;
+    if (!wakes) {
+      if (p.wait) await this.agentsIdle(p.task);
+      return;
+    }
+    if (!task.team.includes(p.agent)) return;
+    if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
+    if (task.status === "paused" && task.pausedReason === "owner") return;
+    if (task.status === "review") {
+      this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
+      this.deps.room.publishTask(this.get(task.id));
+      this.deps.events.emit(["tasks"]);
+      await this.statusChanged(task.id);
+    }
+    this.note(task.id, `${p.id} \`${p.name}\` ended. Waking @${p.agent}.`);
+    this.deps.runs.notify(task.id, p.agent, wakeText(p));
   }
 
   /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */

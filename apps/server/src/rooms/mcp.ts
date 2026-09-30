@@ -10,11 +10,15 @@ import { toolName } from "../admin/tools.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
+import type { ProcessManager } from "../processes/manager.ts";
+import { processesServer } from "../processes/mcp.ts";
 import type { ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  PROCESSES_PATH,
+  PROCESSES_SERVER_NAME,
   ROOM_PATH,
   ROOM_SERVER_NAME,
   type RoomAccess,
@@ -149,10 +153,11 @@ export interface RoomMcpDeps {
   store: Store;
   agents: AgentStore;
   projects: ProjectService;
+  processes: ProcessManager;
 }
 
 /**
- * `/mcp/room` and `/mcp/tasks`: stateless streamable HTTP like `/mcp`, one bearer token per agent
+ * `/mcp/room`, `/mcp/tasks` and `/mcp/processes`: stateless streamable HTTP like `/mcp`, one bearer token per agent
  * session. `majhi-tasks` runs its commands through the boss's approval policy, and an org agent
  * only sees and changes tasks of the orgs it may work in.
  */
@@ -176,6 +181,16 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       deps.access.tasks,
       TASKS_SERVER_NAME,
       (caller) => tasksServer(caller, deps),
+    ),
+  );
+  app.all(PROCESSES_PATH, (c) =>
+    serve(
+      c.req.raw,
+      c.req.header("origin"),
+      c.req.header("authorization"),
+      deps.access.processes,
+      PROCESSES_SERVER_NAME,
+      (caller) => processesServer(caller, deps.processes),
     ),
   );
   return app;

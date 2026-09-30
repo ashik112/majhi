@@ -228,6 +228,10 @@ export function createHandlers({
     }),
     "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
+    "processes.stop": async (input) => {
+      services.tasks.get(input.task);
+      return { process: await services.processes.stop(input.task, input.id, "owner") };
+    },
     // Phase 2b commands, filled in by the 2b work. Each answers 501 until then.
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),

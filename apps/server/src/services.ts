@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { localSpawner } from "@majhi/acp";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
@@ -23,12 +24,14 @@ import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import type { HostLink } from "./host/link.ts";
 import { OrgService } from "./orgs/service.ts";
+import { ProcessManager } from "./processes/manager.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
+import { processLaunch } from "./runs/launch.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
@@ -95,6 +98,8 @@ export interface Services {
   room: RoomService;
   runs: RunManager;
   tasks: TaskService;
+  /** Background processes agents start through majhi-processes (5.15). */
+  processes: ProcessManager;
   /** Resume after restarts, lost internet and sleep, and the network watch. */
   resilience: Resilience;
   /** Tokens and cost: the queries behind `usage.*`. */
@@ -202,9 +207,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     adminMcpUrl: () => adminTokens.mcpUrl,
   });
   const roomAccess = new RoomAccess(() => adminTokens.mcpUrl);
+  const processes = new ProcessManager({
+    spawner: sessionOptions.spawner ?? localSpawner,
+    launch: (task, agent) =>
+      processLaunch(
+        { store, options: sessionOptions, secrets, majhiHome: env.majhiHome, agents: agentStore, config },
+        task,
+        agent,
+      ),
+    onChange: (task, list) => room.setProcesses(task, list),
+    // Bound below, like the run manager's callbacks.
+    onEnded: (p, wakes) => void tasks.processEnded(p, wakes).catch(() => undefined),
+  });
   const runs = new RunManager({
     store,
     rooms: roomAccess,
+    processes,
     usage: usageRecorder,
     room,
     runtime,
@@ -238,6 +256,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     events,
     decisions,
+    processes,
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
@@ -283,6 +302,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     runs,
     tasks,
+    processes,
     resilience,
     usage: usageService,
     usageRecorder,
@@ -291,6 +311,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       resilience.stop();
       layaDocker?.close();
       await runs.closeAll();
+      await processes.stopAll();
       await usageRecorder.flush();
       store.close();
     },

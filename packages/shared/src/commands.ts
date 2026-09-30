@@ -40,6 +40,7 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   ContextPatchSchema,
@@ -635,6 +636,12 @@ export const commands = {
     summary: "Files in the task's worktrees matching a query, for @file mentions",
     input: z.object({ task: TaskIdSchema, query: z.string().max(200) }),
     output: z.array(z.object({ path: z.string(), repo: IdSchema })),
+  },
+  "processes.stop": {
+    risk: "change",
+    summary: "Stop a background process of a task (the Stop button in the Processes card)",
+    input: z.object({ task: TaskIdSchema, id: ProcessIdSchema }),
+    output: z.object({ process: ProcessInfoSchema }),
   },
 
   // Task links (5.4a) ---------------------------------------------------------

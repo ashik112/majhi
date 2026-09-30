@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PromptBlock, RuntimeOptions, SessionEvent } from "@majhi/acp";
-import type { Attachment, HandoffVia, RoomItem, Task } from "@majhi/shared";
+import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
@@ -8,6 +8,7 @@ import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
+import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomAccess } from "../rooms/access.ts";
 import { handoffPrompt } from "../rooms/handoff.ts";
@@ -63,6 +64,8 @@ export interface RunDeps {
   rooms?: RoomAccess;
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
+  /** Background processes (5.15): each prompt says what already runs. */
+  processes?: { running(task: string): ProcessInfo[] };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /**
@@ -223,6 +226,18 @@ export class RunManager {
       void this.drive(extra);
     }
     return item;
+  }
+
+  /**
+   * Wakes an agent with a message from majhi, like a background process that ended (5.15): sent
+   * now when it is idle, else on its next turn. Starts its session if needed.
+   */
+  notify(task: string, agent: string, text: string): void {
+    const run = this.runFor(task, agent);
+    run.queue.push({ kind: "notice", text });
+    run.held = false;
+    this.live.refreshQueued(run);
+    if (run.paused === undefined) void this.drive(run);
   }
 
   /** The owner changed an agent's model or effort for this task: a live session switches now (5.15). */
@@ -559,7 +574,7 @@ export class RunManager {
         continue;
       }
       if (entry.kind !== "continue") run.compactions = 0;
-      const raw = await this.blocksFor(run, entry);
+      const raw = this.withProcesses(run, await this.blocksFor(run, entry));
       if (raw === undefined) continue;
 
       // One read of the settings per turn: before the prompt and after it.
@@ -745,6 +760,8 @@ export class RunManager {
         return [{ type: "text", text: CONTINUE_TEXT }];
       case "fresh":
         return undefined;
+      case "notice":
+        return [{ type: "text", text: entry.text }];
       case "handoff": {
         const item = this.deps.room.get(run.task, entry.itemId);
         if (item === undefined || item.type !== "handoff") return undefined;
@@ -788,6 +805,14 @@ export class RunManager {
         return built.blocks;
       }
     }
+  }
+
+  /** Adds a line about the task's running processes, so the agent does not start a second copy. Not to slash commands. */
+  private withProcesses(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
+    const first = blocks?.[0];
+    if (blocks === undefined || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
+    const line = runningLine(this.deps.processes?.running(run.task) ?? []);
+    return line === undefined ? blocks : [...blocks, { type: "text", text: line }];
   }
 
   /** Puts the admin preamble before a session's first prompt. Slash commands stay whole and keep it waiting. */

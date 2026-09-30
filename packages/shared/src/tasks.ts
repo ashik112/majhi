@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema, OrgIdSchema } from "./accounts.ts";
+import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 
 /**
@@ -390,10 +391,14 @@ export const RoomServerMessageSchema = z.discriminatedUnion("type", [
     agents: z.array(AgentLiveSchema),
     /** True when older items exist. */
     more: z.boolean(),
+    /** The task's background processes (5.15), running and ended. */
+    processes: z.array(ProcessInfoSchema).default([]),
   }),
   z.object({ type: z.literal("item"), item: RoomItemSchema }),
   z.object({ type: z.literal("agent"), agent: AgentLiveSchema }),
   z.object({ type: z.literal("task"), task: TaskSchema }),
+  /** Every process of the task, sent when any changed (output at most every 500 ms). */
+  z.object({ type: z.literal("processes"), processes: z.array(ProcessInfoSchema) }),
 ]);
 export type RoomServerMessage = z.infer<typeof RoomServerMessageSchema>;
 

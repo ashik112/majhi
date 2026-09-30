@@ -91,6 +91,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       store: services.store,
       agents: services.agentStore,
       projects: services.projects,
+      processes: services.processes,
     },
     ...(services.runner === undefined
       ? {}

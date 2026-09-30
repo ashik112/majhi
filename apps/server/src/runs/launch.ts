@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSession, RunMount, RuntimeOptions } from "@majhi/acp";
+import { type AgentSession, buildEnv, type RunMount, type RuntimeOptions } from "@majhi/acp";
 import type { AccountConfig, AgentFrontmatter, Task, TeamOverride } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
@@ -9,7 +9,8 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
-import type { RoomAccess } from "../rooms/access.ts";
+import type { ProcessLaunch } from "../processes/manager.ts";
+import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
@@ -74,7 +75,7 @@ export interface Launched {
   ranBefore: boolean;
   adminToken?: string | undefined;
   decideToken?: string | undefined;
-  roomTokens?: { server: "room" | "tasks"; token: string }[] | undefined;
+  roomTokens?: { server: ToolServer; token: string }[] | undefined;
   /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
   model?: string | undefined;
   effort?: string | undefined;
@@ -90,14 +91,8 @@ export async function launch(
   run: { task: string; agent: string; freshNext: boolean },
   agent: ResolvedAgent,
 ): Promise<Launched> {
-  const { fm, account, boss } = agent;
-  let apiKey: string | undefined;
-  if (account.auth === "api-key" && account.key !== undefined) {
-    apiKey = await deps.secrets.get(secretName(account.key));
-    if (apiKey === undefined)
-      throw new UserError(`The API key of ${fm.account} is missing. Add the account again.`);
-  }
-  const runtimeAccount = accountRuntime(deps.majhiHome, fm.account, account, apiKey);
+  const { fm, boss } = agent;
+  const runtimeAccount = await runtimeAccountOf(deps, agent);
   await deps.runtime.prepareHome(runtimeAccount);
   const task = deps.store.tasks.get(run.task);
   if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`);
@@ -143,6 +138,41 @@ export async function launch(
     roomTokens: rooms?.tokens,
     model,
     effort,
+  };
+}
+
+/** The agent's account as the runtime needs it, with its API key when it has one. */
+async function runtimeAccountOf(deps: Pick<LaunchDeps, "secrets" | "majhiHome">, agent: ResolvedAgent) {
+  const { fm, account } = agent;
+  let apiKey: string | undefined;
+  if (account.auth === "api-key" && account.key !== undefined) {
+    apiKey = await deps.secrets.get(secretName(account.key));
+    if (apiKey === undefined)
+      throw new UserError(`The API key of ${fm.account} is missing. Add the account again.`);
+  }
+  return accountRuntime(deps.majhiHome, fm.account, account, apiKey);
+}
+
+/**
+ * What a background process of the agent runs with (5.15): the same account, environment and
+ * mounts as its session, so a command behaves the same in the agent's shell and in majhi's.
+ */
+export async function processLaunch(
+  deps: Pick<LaunchDeps, "store" | "options" | "secrets" | "majhiHome"> & {
+    agents: AgentStore;
+    config: ConfigService;
+  },
+  taskId: string,
+  agentId: string,
+): Promise<ProcessLaunch> {
+  const task = deps.store.tasks.get(taskId);
+  if (task === undefined) throw new UserError(`Task ${taskId} does not exist.`);
+  const account = await runtimeAccountOf(deps, await resolveAgent(deps, agentId));
+  return {
+    folder: task.folder,
+    env: buildEnv(account, deps.options.base),
+    account,
+    mounts: await repoMounts(task),
   };
 }
 
