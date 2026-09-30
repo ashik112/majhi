@@ -20,6 +20,7 @@ import { useMountNow } from "@/features/roots/use-mount-now";
 import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
 import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
+import { useContainers } from "@/lib/container-queries";
 import { useDecisionsStatus } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
@@ -27,6 +28,7 @@ import { useConfig, useHostStatus, useRepos } from "@/lib/queries";
 import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { useSearchParam } from "@/pages/parts/url-state";
+import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
 import { HistorySection } from "./history-panel";
 import { MemorySection } from "./memory-panel";
@@ -58,6 +60,7 @@ export function SetupView() {
   const agentHealth = useAgentHealth();
   const settings = useSettings();
   const decisions = useDecisionsStatus();
+  const containers = useContainers();
   const appearance = useAppearance();
   const boss = useBoss();
   const [param, setParam] = useSearchParam("section");
@@ -163,6 +166,7 @@ export function SetupView() {
     approvals:
       s &&
       `Changes: ${s.policy.change === "auto" ? "run alone" : s.policy.change === "confirm" ? "always ask" : "when asked"}`,
+    containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
     history: "Undo any change",
   };
@@ -244,6 +248,7 @@ export function SetupView() {
               <RulesPanel />
             </>
           )}
+          {section === "containers" && <ContainersSection />}
           {section === "appearance" && (
             <DetailSection
               title="Theme and accent"
@@ -268,6 +273,13 @@ export function SetupView() {
       )}
     </div>
   );
+}
+
+function containersStatus(data: ReturnType<typeof useContainers>["data"]): string | undefined {
+  if (data === undefined) return undefined;
+  if (!data.available) return "Off";
+  const n = data.containers.filter((c) => c.status === "running").length;
+  return n === 0 ? "Nothing running" : `${n} running`;
 }
 
 function WithSettings({

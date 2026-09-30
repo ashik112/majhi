@@ -1,5 +1,6 @@
-import type { ProcessInfo, Task } from "@majhi/shared";
+import type { ProcessContainer, ProcessInfo, Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,10 +65,14 @@ function ProcessRow({ task, process: p, now }: { task: string; process: ProcessI
           <EndChip process={p} />
         )}
       </div>
-      {p.name !== p.command && (
-        <span className="truncate font-mono text-xs text-fg-muted" title={p.command}>
-          {p.command}
-        </span>
+      {p.container ? (
+        <ContainerLine container={p.container} />
+      ) : (
+        p.name !== p.command && (
+          <span className="truncate font-mono text-xs text-fg-muted" title={p.command}>
+            {p.command}
+          </span>
+        )
       )}
       <span className="text-xs text-fg-faint">
         {p.id} · @{p.agent} · {running ? "running" : "ran"} {took}
@@ -104,6 +109,34 @@ function ProcessRow({ task, process: p, now }: { task: string; process: ProcessI
         </button>
       )}
     </li>
+  );
+}
+
+/** What a container process is: its kind and image, where runners reach it, and the preview's link. */
+function ContainerLine({ container: c }: { container: ProcessContainer }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-muted">
+      <Badge tone={c.kind === "preview" ? "blue" : "neutral"}>{c.kind}</Badge>
+      <span className="truncate font-mono" title={c.image}>
+        {c.image}
+      </span>
+      {c.url && (
+        <span className="font-mono" title="Where this task's runners reach it">
+          {c.url}
+        </span>
+      )}
+      {c.hostUrl && (
+        <a
+          className="inline-flex items-center gap-1 text-blue hover:underline"
+          href={c.hostUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open preview
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      )}
+    </span>
   );
 }
 
