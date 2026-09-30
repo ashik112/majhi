@@ -552,7 +552,7 @@ export class TaskService {
     if (this.deps.runs.working(id).includes(agent))
       throw new UserError(`@${agent} is working on ${id}. Stop it first.`, 409);
     await this.deps.runs.remove(id, agent);
-    await this.deps.processes?.stopAgent(id, agent);
+    const held = await this.stopProcessesOf(id, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
@@ -562,7 +562,7 @@ export class TaskService {
     const { [agent]: _gone, ...overrides } = task.overrides;
     this.deps.store.tasks.setOverrides(id, overrides, at);
     this.note(id, `Removed @${agent} from the team.`);
-    return this.teamChanged(id);
+    return this.afterProcessesOf(id, held, await this.teamChanged(id));
   }
 
   /** Puts another agent in an agent's place in the team. The old session closes. */
@@ -572,7 +572,7 @@ export class TaskService {
     if (task.team.includes(replacement)) throw new UserError(`@${replacement} is already on ${id}.`, 409);
     const fm = await this.checkMember(task, replacement);
     await this.deps.runs.remove(id, agent);
-    await this.deps.processes?.stopAgent(id, agent);
+    const held = await this.stopProcessesOf(id, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
@@ -582,7 +582,21 @@ export class TaskService {
     const { [agent]: _gone, ...overrides } = task.overrides;
     this.deps.store.tasks.setOverrides(id, overrides, at);
     this.note(id, `@${replacement} (${fm.role}) took @${agent}'s place.`);
-    return this.teamChanged(id);
+    return this.afterProcessesOf(id, held, await this.teamChanged(id));
+  }
+
+  /** Stops the processes of an agent leaving the team. True when one of them held the task running. */
+  private async stopProcessesOf(id: string, agent: string): Promise<boolean> {
+    const held = (this.deps.processes?.waiting(id) ?? []).some((p) => p.agent === agent);
+    await this.deps.processes?.stopAgent(id, agent);
+    return held;
+  }
+
+  /** A stop by the task never checks for review itself (5.15), so a team change that ended a hold does. */
+  private async afterProcessesOf(id: string, held: boolean, task: Task): Promise<Task> {
+    if (!held) return task;
+    await this.agentsIdle(id);
+    return this.get(id);
   }
 
   /** The owner's model, effort and repos for one agent in this task. null clears one. */
@@ -1106,7 +1120,8 @@ export class TaskService {
     const task = this.deps.store.tasks.get(p.task);
     if (task === undefined) return;
     if (!wakes) {
-      if (p.wait) await this.agentsIdle(p.task);
+      // The task itself stopped it (stop, close, remove, a team change): the caller sets the status.
+      if (p.wait && p.stoppedBy !== "task") await this.agentsIdle(p.task);
       return;
     }
     if (!task.team.includes(p.agent)) return;

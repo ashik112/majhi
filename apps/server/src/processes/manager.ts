@@ -56,6 +56,8 @@ interface Proc {
   spawned: Spawned | undefined;
   /** Resolves when the current child has closed. */
   closed: Promise<void>;
+  /** Set while the spawner is starting the child (a runner container can take a while). */
+  spawning?: Promise<void> | undefined;
 }
 
 /**
@@ -142,7 +144,7 @@ export class ProcessManager {
     this.tasks.set(input.task, procs);
     this.prune(input.task);
     try {
-      await this.spawn(proc, launch);
+      await this.spawnTracked(proc, launch);
     } catch (err) {
       procs.delete(proc.info.id);
       this.changed(input.task, true);
@@ -175,7 +177,7 @@ export class ProcessManager {
       port: undefined,
     };
     try {
-      await this.spawn(proc, launch);
+      await this.spawnTracked(proc, launch);
     } catch (err) {
       const message = `majhi could not start it: ${errorMessage(err)}`;
       proc.tail.note(message);
@@ -229,6 +231,17 @@ export class ProcessManager {
     return { ...proc.info, tail: proc.tail.last() };
   }
 
+  /** `spawn`, with the start visible to a stop that arrives meanwhile. */
+  private async spawnTracked(proc: Proc, launch: ProcessLaunch): Promise<void> {
+    const spawning = this.spawn(proc, launch);
+    proc.spawning = spawning;
+    try {
+      await spawning;
+    } finally {
+      if (proc.spawning === spawning) proc.spawning = undefined;
+    }
+  }
+
   /** Starts the child. Rejects when the spawner cannot start it (a runner that is not ready). */
   private async spawn(proc: Proc, launch: ProcessLaunch): Promise<void> {
     const { task, command, cwd } = proc.info;
@@ -275,6 +288,8 @@ export class ProcessManager {
 
   /** Kills the current child with `by` as the reason, and waits for it to close. */
   private async halt(proc: Proc, by: StoppedBy): Promise<void> {
+    // A stop while it is still starting waits for the start, then stops it.
+    if (proc.spawning !== undefined) await proc.spawning.catch(() => undefined);
     const spawned = proc.spawned;
     if (spawned === undefined || proc.info.status !== "running") return;
     proc.info = { ...proc.info, stoppedBy: by };

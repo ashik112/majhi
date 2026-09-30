@@ -117,6 +117,32 @@ describe("ProcessManager", () => {
     expect(ended.map((e) => [e.process.stoppedBy, e.wakes])).toEqual([["agent", false]]);
   });
 
+  it("stops a process whose start was still under way", async () => {
+    let go: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      go = r;
+    });
+    const slow = new ProcessManager({
+      spawner: async (req) => {
+        await gate;
+        return localSpawner(req);
+      },
+      launch: async () => ({
+        folder,
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+        account: { tool: "claude", home: dir },
+        mounts: [],
+      }),
+    });
+    const starting = slow.start({ task: "ACM-1", agent: "acme-builder", command: "sleep 30", wait: true });
+    await new Promise((r) => setTimeout(r, 20));
+    const stopping = slow.stop("ACM-1", "p1", "owner");
+    go();
+    await starting;
+    expect(await stopping).toMatchObject({ status: "stopped", stoppedBy: "owner" });
+    expect(slow.running("ACM-1")).toEqual([]);
+  });
+
   it("stops every process on close", async () => {
     await start("sleep 30");
     await start("sleep 31", { wait: false });
