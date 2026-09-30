@@ -83,7 +83,7 @@ export function useCreateTask() {
   });
 }
 
-type TaskAction = "tasks.start" | "tasks.stop" | "tasks.close";
+type TaskAction = "tasks.start" | "tasks.stop" | "tasks.close" | "tasks.reopen";
 
 function useTaskAction(name: TaskAction) {
   const client = useQueryClient();
@@ -99,6 +99,7 @@ function useTaskAction(name: TaskAction) {
 export const useStartTask = () => useTaskAction("tasks.start");
 export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
+export const useReopenTask = () => useTaskAction("tasks.reopen");
 
 /** `tasks.merge`: merge the task branch into its base or another local branch. Never pushes. */
 export function useMergeTask() {

@@ -6,18 +6,28 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
-import { useCloseTask, useRemoveTask } from "@/lib/task-queries";
+import { useCloseTask, useRemoveTask, useReopenTask } from "@/lib/task-queries";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
 export function TaskMenu({ task }: { task: Task }) {
   const [confirm, setConfirm] = useState<"close" | "remove" | null>(null);
+  const reopen = useReopenTask();
+  const toast = useToast();
   return (
     <>
       <Menu
         label="Task menu"
         icon={<EllipsisVertical aria-hidden="true" />}
         items={[
-          { label: "Close task", onSelect: () => setConfirm("close"), disabled: task.status === "done" },
+          task.status === "done"
+            ? {
+                label: "Reopen task",
+                onSelect: () =>
+                  reopen.mutate(task.id, {
+                    onError: (e) => toast("Could not reopen", { detail: e.message, tone: "error" }),
+                  }),
+              }
+            : { label: "Close task", onSelect: () => setConfirm("close") },
           { label: "Remove task", onSelect: () => setConfirm("remove"), tone: "danger" },
         ]}
       />

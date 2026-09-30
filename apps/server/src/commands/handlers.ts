@@ -193,6 +193,7 @@ export function createHandlers({
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input) => services.tasks.close(input.id),
+    "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": (input) => services.tasks.merge(input),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),

@@ -604,6 +604,12 @@ export const commands = {
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },
+  "tasks.reopen": {
+    risk: "change",
+    summary: "Open a done task again: back to review when it has a worktree, else the inbox",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskSchema,
+  },
   "tasks.merge": {
     risk: "outbound",
     summary:

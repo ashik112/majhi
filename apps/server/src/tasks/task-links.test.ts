@@ -58,6 +58,21 @@ describe("waiting tasks", () => {
 });
 
 describe("parents and children", () => {
+  it("never closes a parent with open subtasks, and reopens a done task", async () => {
+    w = await taskWorld();
+    await create("plan the work on api");
+    await create("part one", { parent: "ACM-1" });
+    const refused = await w.h.cmd("tasks.close", { id: "ACM-1" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain("ACM-2");
+    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).not.toBe("done");
+
+    await w.h.cmd("tasks.close", { id: "ACM-2" });
+    expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("done");
+    const reopened = await w.h.cmd("tasks.reopen", { id: "ACM-1" });
+    expect(reopened.body.status).toBe("inbox");
+  });
+
   it("closes the parent when every child is done, and posts an item", async () => {
     w = await taskWorld();
     await create("plan the work on api");

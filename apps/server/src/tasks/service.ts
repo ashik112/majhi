@@ -863,9 +863,28 @@ export class TaskService {
     this.note(task.id, `The task moved from @${task.team[0] ?? "nobody"} to @${agent}.`);
   }
 
-  async close(id: string): Promise<Task> {
+  /**
+   * Marks a task done. A parent with open subtasks is not done: an explicit close is refused, and a
+   * close after a merge (`stay`) keeps it open, says so, and lets it close with its last subtask.
+   */
+  async close(id: string, opts: { whenSubtasksOpen?: "refuse" | "stay" } = {}): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") return task;
+    const open = this.openSubtasks(id);
+    if (open.length > 0) {
+      const list = `${open.slice(0, 5).join(", ")}${open.length > 5 ? ", ..." : ""}`;
+      if (opts.whenSubtasksOpen === "stay") {
+        this.note(
+          id,
+          `${id} stays open: ${open.length} subtask${open.length === 1 ? "" : "s"} not done yet (${list}). It closes when the last one is done.`,
+        );
+        return task;
+      }
+      throw new UserError(
+        `${id} has ${open.length} open subtask${open.length === 1 ? "" : "s"} (${list}). It closes by itself when they are done.`,
+        409,
+      );
+    }
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
@@ -928,7 +947,8 @@ export class TaskService {
     }
     for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
     const clean = results.every((r) => r.ok);
-    if (clean && input.done) return { results, task: await this.close(task.id) };
+    if (clean && input.done)
+      return { results, task: await this.close(task.id, { whenSubtasksOpen: "stay" }) };
     return { results, task: this.get(task.id) };
   }
 
@@ -948,6 +968,25 @@ export class TaskService {
         branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
       })),
     );
+  }
+
+  /** Subtasks of a task that are not done, in link order. */
+  private openSubtasks(id: string): string[] {
+    const { store } = this.deps;
+    return store.tasks.children(id).filter((c) => store.tasks.get(c)?.status !== "done");
+  }
+
+  /** Opens a done task again: back to review when it has a worktree, else the inbox. */
+  async reopen(id: string): Promise<Task> {
+    const task = this.get(id);
+    if (task.status !== "done") return task;
+    const status = task.repos.some((r) => r.worktree !== undefined) ? "review" : "inbox";
+    this.deps.store.tasks.setStatus(id, status, undefined, this.now().toISOString());
+    this.note(id, "Reopened.");
+    const reopened = this.get(id);
+    this.deps.room.publishTask(reopened);
+    this.deps.events.emit(["tasks"]);
+    return reopened;
   }
 
   async remove(id: string, force: boolean): Promise<void> {

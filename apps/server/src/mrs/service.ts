@@ -618,7 +618,7 @@ export class MrService {
       }
     }
     this.note(task.id, "Every merge request is merged. The task is done.");
-    await this.deps.tasks.close(task.id);
+    await this.deps.tasks.close(task.id, { whenSubtasksOpen: "stay" });
   }
 
   private async fetchBase(source: string, remote: string, base: string): Promise<string | undefined> {
