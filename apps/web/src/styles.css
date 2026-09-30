@@ -31,7 +31,7 @@
 
   /* Glass */
   --c-glass: rgb(12 18 28 / 0.6);
-  --c-glass-strong: rgb(13 19 30 / 0.88);
+  --c-glass-strong: rgb(13 19 30 / 0.975);
   --c-glass-line: rgb(140 190 245 / 0.13);
   --c-glass-hi: rgb(255 255 255 / 0.05);
   --c-hair: rgb(90 200 240 / 0.28);
@@ -161,7 +161,7 @@
   --c-ring: rgb(30 110 160 / 0.09);
 
   --c-glass: rgb(250 252 255 / 0.6);
-  --c-glass-strong: rgb(250 252 255 / 0.92);
+  --c-glass-strong: rgb(250 252 255 / 0.98);
   --c-glass-line: rgb(30 60 100 / 0.14);
   --c-glass-hi: rgb(255 255 255 / 0.75);
   --c-hair: rgb(20 120 170 / 0.3);
