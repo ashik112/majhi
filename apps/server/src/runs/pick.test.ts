@@ -7,7 +7,8 @@ import {
   type Task,
 } from "@majhi/shared";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Decisions, ModelPick, ModelPickRequest } from "../decisions/api.ts";
+import type { Decisions, RateTaskRequest, TaskRating } from "../decisions/api.ts";
+import type { Difficulty } from "./difficulty.ts";
 import { clearEffortChecks } from "./effort-check.ts";
 import { pickForSession } from "./pick.ts";
 
@@ -36,12 +37,12 @@ function session(models: OptionValue[], efforts: OptionValue[], refuse?: string)
 }
 
 function decisions(
-  answer: (r: ModelPickRequest) => ModelPick | undefined,
+  answer: (r: RateTaskRequest) => TaskRating | undefined,
   decide: Decisions["decide"] = async () => undefined,
 ) {
-  const asked: ModelPickRequest[] = [];
+  const asked: RateTaskRequest[] = [];
   const d: Decisions = {
-    pickModel: async (r) => {
+    rateTask: async (r) => {
       asked.push(r);
       return answer(r);
     },
@@ -62,7 +63,13 @@ const fm = (over: Partial<AgentFrontmatter> = {}) =>
     effort: "auto",
     ...over,
   }) as AgentFrontmatter;
-const task = { id: "ACM-1", brief: "Plan the release" } as Task;
+const task = {
+  id: "ACM-1",
+  title: "Plan the release",
+  brief: "Plan the release\nCut the branch and write the notes.",
+  kind: "code",
+  repos: [{ project: "acme-web" }],
+} as Task;
 const settings = DecisionSettingsSchema.parse({});
 
 const run = (
@@ -79,7 +86,6 @@ const run = (
     decisions: d,
     session: s,
     fm: fm(over.fm),
-    instructions: "Plan and review.",
     task,
     settings,
     prices: over.prices ?? {},
@@ -89,70 +95,70 @@ const run = (
   });
 
 const price = (output: number) => ({ input: 1, output, cache_read: 0, cache_write: 0 });
-const pick = (model?: [string, number], effort?: [string, number]): ModelPick => ({
+const rated = (level: Difficulty | undefined, confidence: number, counted = true): TaskRating => ({
+  ...(level === undefined ? {} : { level }),
+  confidence,
+  counted,
+  why: counted ? "" : `${confidence.toFixed(2)}, under the 0.40 floor`,
   decisionId: "d1",
   provider: "laya",
   by: "Laya",
-  ...(model === undefined ? {} : { model: { id: model[0], confidence: model[1] } }),
-  ...(effort === undefined ? {} : { effort: { id: effort[0], confidence: effort[1] } }),
 });
 
 describe("pickForSession", () => {
-  it("asks about the merged families with the role, and says what was picked", async () => {
+  it("asks about the task, maps the level onto the role's tiers, and says so", async () => {
     const { s, set } = session(CLAUDE, EFFORTS);
-    const { d, asked } = decisions(() => pick(["claude-opus-5-5", 0.71], ["high", 0.6]));
+    const { d, asked } = decisions(() => rated("medium", 0.48));
     const out = await run(d, s);
-    expect(asked[0]?.models.map((o) => o.id)).toEqual([
-      "claude-opus-5-5",
-      "claude-sonnet-5-5",
-      "claude-haiku-4-5",
-    ]);
-    expect(asked[0]?.efforts.map((o) => o.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    expect(asked[0]?.models[0]?.label).toBe("claude-opus-5-5: most capable");
-    expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "high" });
-    expect(out.applied).toEqual({ model: "claude-opus-5-5", effort: "high", decisionId: "d1" });
-    expect(out.line).toBe(
-      "@acme-lead (Lead). Models offered: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5. Laya picked claude-opus-5-5 (most capable, 0.71). Efforts offered: low, medium, high, xhigh, max. Laya picked high (0.60).",
-    );
-  });
-
-  it("falls back to the tier when an answer is under its floor, and says so", async () => {
-    const { s, set } = session(CLAUDE, EFFORTS);
-    const { d } = decisions(() => pick(["claude-sonnet-5-5", 0.49], ["high", 0.3997]));
-    const out = await run(d, s);
-    // Lead: most capable model, highest effort. The model answer reached its floor, the effort did not.
-    expect(set).toEqual({ model: "claude-sonnet-5-5", thought_level: "max" });
-    expect(out.line).toContain("Laya picked claude-sonnet-5-5 (balanced, 0.49).");
-    expect(out.line).toContain(
-      "Laya's high was 0.39, under the 0.40 floor, so it fell back to highest (max).",
-    );
-  });
-
-  it("uses the separate floors from the settings", async () => {
-    const { s, set } = session(CLAUDE, EFFORTS);
-    const { d } = decisions(() => pick(["claude-sonnet-5-5", 0.45], ["high", 0.45]));
-    const strict = DecisionSettingsSchema.parse({ model_floor: 0.5, effort_floor: 0.4 });
-    const out = await pickForSession({
-      decisions: d,
-      session: s,
-      fm: fm(),
-      instructions: "",
-      task,
-      settings: strict,
-      prices: {},
-      tool: "codex",
+    expect(asked[0]).toEqual({
+      task: "ACM-1",
+      agent: "acme-lead",
+      title: "Plan the release",
+      brief: "Plan the release\nCut the branch and write the notes.",
+      kind: "code",
+      repos: ["acme-web"],
+      role: "Lead",
     });
-    expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "high" });
-    expect(out.line).toContain("under the 0.50 floor, so it fell back to most capable (claude-opus-5-5)");
+    expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "max" });
+    expect(out.applied).toEqual({ model: "claude-opus-5-5", effort: "max", decisionId: "d1" });
+    expect(out.line).toBe(
+      "@acme-lead (Lead). Laya rated the task medium (0.48): most capable model, highest effort. Models offered: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5. Picked claude-opus-5-5 (most capable). Efforts offered: low, medium, high, xhigh, max. Picked max (highest).",
+    );
   });
 
-  it("falls back to the tier when no provider answers", async () => {
+  it("moves a Builder one step down for little work and one up for a lot", async () => {
+    const cases: [Difficulty, { model: string; thought_level: string }][] = [
+      ["trivial", { model: "claude-haiku-4-5", thought_level: "low" }],
+      ["small", { model: "claude-sonnet-5-5", thought_level: "low" }],
+      ["medium", { model: "claude-sonnet-5-5", thought_level: "high" }],
+      ["large", { model: "claude-opus-5-5", thought_level: "max" }],
+    ];
+    for (const [level, want] of cases) {
+      const { s, set } = session(CLAUDE, EFFORTS);
+      await run(decisions(() => rated(level, 0.6)).d, s, { fm: { role: "Builder" } });
+      expect(set).toEqual(want);
+    }
+  });
+
+  it("keeps the role's tiers when the rating does not count, and says why", async () => {
+    const { s, set } = session(CLAUDE, EFFORTS);
+    const { d } = decisions(() => rated("large", 0.3, false));
+    const out = await run(d, s, { fm: { role: "Builder" } });
+    expect(set).toEqual({ model: "claude-sonnet-5-5", thought_level: "high" });
+    expect(out.line).toContain(
+      "Laya rated the task large, but that does not count (0.30, under the 0.40 floor), so the Builder tiers: balanced model, middle effort.",
+    );
+  });
+
+  it("keeps the role's tiers when no provider answers", async () => {
     const { s, set } = session(CLAUDE, EFFORTS);
     const out = await run(undefined, s, { fm: { role: "Tester" } });
     expect(set).toEqual({ model: "claude-haiku-4-5", thought_level: "low" });
     expect(out.applied).toEqual({ model: "claude-haiku-4-5", effort: "low" });
-    expect(out.line).toContain("No provider answered, so it fell back to cheapest (claude-haiku-4-5).");
-    expect(out.line).toContain("No provider answered, so it fell back to lowest (low).");
+    expect(out.line).toContain(
+      "No provider rated the task, so the Tester tiers: cheapest model, lowest effort.",
+    );
+    expect(out.line).toContain("Picked claude-haiku-4-5 (cheapest).");
   });
 
   it("layers the agent tier over the org tier over majhi's", async () => {
@@ -161,7 +167,6 @@ describe("pickForSession", () => {
       decisions: undefined,
       session: s,
       fm: fm({ role: "Builder", tier: { effort: "lowest" } }),
-      instructions: "",
       task,
       settings,
       prices: {},
@@ -171,68 +176,39 @@ describe("pickForSession", () => {
     expect(set).toEqual({ model: "claude-haiku-4-5", thought_level: "low" });
   });
 
-  it("estimates the rank when a model has no price: most capable first when nobody answers", async () => {
+  it("estimates the rank from the CLI's order when a model has no price", async () => {
     const codex = opts("acme-code-5", "acme-code-3", "acme-fast-1", "acme-mini-1");
     const { s, set } = session(codex, opts("low", "medium", "high"));
     const out = await run(undefined, s);
-    // Lead: most capable model, highest effort.
     expect(set).toEqual({ model: "acme-code-5", thought_level: "high" });
-    expect(out.line).toContain("so it fell back to most capable (acme-code-5, estimated rank).");
+    expect(out.line).toContain("Picked acme-code-5 (most capable, estimated rank).");
     const cheap = session(codex, opts("low", "medium", "high"));
-    const tester = await run(undefined, cheap.s, { fm: { role: "Tester" } });
+    await run(undefined, cheap.s, { fm: { role: "Tester" } });
     expect(cheap.set.model).toBe("acme-mini-1");
-    expect(tester.line).toContain("fell back to cheapest (acme-mini-1, estimated rank)");
-  });
-
-  it("never lets a weak answer move the estimated rank: the tier follows the CLI's order", async () => {
-    const models: OptionValue[] = [
-      { id: "acme-a-1", name: "a", description: "Quick" },
-      { id: "acme-b-1", name: "b", description: "Thorough" },
-      { id: "acme-c-1", name: "c", description: "Middle" },
-    ];
-    const { s, set } = session(models, opts("low", "high"));
-    const { d, asked } = decisions(() => pick(["acme-c-1", 0.2]));
-    const out = await run(d, s);
-    expect(asked).toHaveLength(1);
-    expect(asked[0]?.models.map((o) => o.label)).toEqual([
-      "acme-a-1: Quick",
-      "acme-b-1: Thorough",
-      "acme-c-1: Middle",
-    ]);
-    expect(set.model).toBe("acme-a-1");
-    expect(out.line).toContain(
-      "Laya's acme-c-1 was 0.20, under the 0.40 floor, so it fell back to most capable (acme-a-1, estimated rank).",
-    );
-  });
-
-  it("marks an estimated label in the line of a confident pick", async () => {
-    const { s } = session(opts("acme-a-1", "acme-b-1"), opts("low", "high"));
-    const { d } = decisions(() => pick(["acme-b-1", 0.71]));
-    const out = await run(d, s);
-    expect(out.line).toContain("Laya picked acme-b-1 (cheapest and fastest, estimated, 0.71).");
   });
 
   it("uses a lone option without asking, and asks only for the `auto` parts", async () => {
     const { s, set } = session(opts("default", "claude-opus-5-5"), EFFORTS);
-    const { d, asked } = decisions(() => pick(undefined, ["medium", 0.9]));
+    const { d, asked } = decisions(() => rated("small", 0.9));
     const out = await run(d, s);
-    expect(asked[0]?.models).toEqual([]);
-    expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "medium" });
+    expect(asked).toHaveLength(1);
+    // Lead, small: most capable model and middle effort.
+    expect(set).toEqual({ model: "claude-opus-5-5", thought_level: "high" });
     expect(out.line).toContain("Only claude-opus-5-5 is offered.");
+    expect(out.line).toContain("Laya rated the task small (0.90): middle effort.");
 
     const fixed = session(CLAUDE, EFFORTS);
-    const again = decisions(() => pick(undefined, ["medium", 0.9]));
-    const only = await run(again.d, fixed.s, { fm: { model: "claude-opus-5-5" } });
-    expect(again.asked[0]?.models).toEqual([]);
-    expect(fixed.set).toEqual({ thought_level: "medium" });
-    expect(only.line).not.toContain("Models offered");
+    const again = decisions(() => rated("small", 0.9));
+    const only = await run(again.d, fixed.s, { fm: { model: "claude-opus-5-5", effort: "low" } });
+    expect(again.asked).toHaveLength(0);
+    expect(fixed.set).toEqual({});
+    expect(only.line).toBe("@acme-lead (Lead). Nothing to pick: the session offers no choice.");
   });
 
   it("narrows to the agent's models list before merging", async () => {
     const { s } = session(CLAUDE, EFFORTS);
-    const { d, asked } = decisions(() => undefined);
-    await run(d, s, { fm: { models: ["claude-sonnet-5-5", "claude-haiku-4-5"] } });
-    expect(asked[0]?.models.map((o) => o.id)).toEqual(["claude-sonnet-5-5", "claude-haiku-4-5"]);
+    const out = await run(undefined, s, { fm: { models: ["claude-sonnet-5-5", "claude-haiku-4-5"] } });
+    expect(out.line).toContain("Models offered: claude-sonnet-5-5, claude-haiku-4-5.");
   });
 
   it("reports an option the session refuses", async () => {
@@ -242,10 +218,10 @@ describe("pickForSession", () => {
     expect(out.applied).toEqual({ effort: "low" });
   });
 
-  it("falls back when the provider throws", async () => {
+  it("keeps the role's tiers when the provider throws", async () => {
     const { s } = session(CLAUDE, EFFORTS);
     const d: Decisions = {
-      pickModel: async () => {
+      rateTask: async () => {
         throw new Error("down");
       },
       attachTool: () => undefined,
@@ -253,100 +229,64 @@ describe("pickForSession", () => {
       decide: async () => undefined,
     };
     const out = await run(d, s);
-    expect(out.line).toContain("No provider answered, so it fell back to most capable");
+    expect(out.line).toContain("No provider rated the task, so the Lead tiers");
   });
 
-  describe("with efforts that belong to the model (Codex)", () => {
+  it("resolves the effort tier on the list the new model offers (Codex)", async () => {
     // codex-cli 0.158.0 through codex-acp 2.0.0: setting the model swaps in that model's efforts.
-    const CODEX = opts("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.5");
+    const CODEX = opts("gpt-6-astra", "gpt-6-sol", "gpt-6-luna");
     const FULL = opts("low", "medium", "high", "xhigh", "max", "ultra");
     const SHORT = opts("low", "medium", "high", "xhigh", "max");
-    const effortsOf = (model: string) => (model.endsWith("luna") ? SHORT : FULL);
-
-    function codexSession(start = "gpt-6-astra") {
-      let model = start;
-      const set: Record<string, string> = {};
-      const s = {
-        get models() {
-          return { models: CODEX, efforts: effortsOf(model), defaultModel: model };
-        },
-        setOption: async (category: string, value: string) => {
-          if (category === "model") model = value;
-          else if (!effortsOf(model).some((e) => e.id === value)) throw new Error("invalid params");
-          set[category] = value;
-        },
-      } as unknown as AgentSession;
-      return { s, set };
-    }
-
-    it("falls back on the new model's list when the picked effort is not offered with it", async () => {
-      const { s, set } = codexSession();
-      const { d } = decisions(() => pick(["gpt-6-luna", 0.8], ["ultra", 0.9]));
-      const out = await run(d, s);
-      expect(set).toEqual({ model: "gpt-6-luna", thought_level: "max" });
-      expect(out.warnings).toEqual([]);
-      expect(out.line).toContain("Efforts offered: low, medium, high, xhigh, max.");
-      expect(out.line).toContain(
-        "Laya's ultra is not offered with gpt-6-luna, so it fell back to highest (max).",
-      );
-    });
-
-    it("resolves the effort tier on the new model's list", async () => {
-      const { s, set } = codexSession();
-      const { d } = decisions(() => pick(["gpt-6-luna", 0.8]));
-      await run(d, s);
-      expect(set).toEqual({ model: "gpt-6-luna", thought_level: "max" });
-    });
-
-    it("keeps a picked effort the new model offers", async () => {
-      const { s, set } = codexSession("gpt-6-luna");
-      const { d } = decisions(() => pick(["gpt-6-sol", 0.8], ["ultra", 0.7]));
-      const out = await run(d, s);
-      expect(set).toEqual({ model: "gpt-6-sol", thought_level: "ultra" });
-      expect(out.line).toContain("Laya picked ultra (0.70).");
-    });
+    let model = "gpt-6-astra";
+    const set: Record<string, string> = {};
+    const s = {
+      get models() {
+        return { models: CODEX, efforts: model.endsWith("luna") ? SHORT : FULL, defaultModel: model };
+      },
+      setOption: async (category: string, value: string) => {
+        if (category === "model") model = value;
+        set[category] = value;
+      },
+    } as unknown as AgentSession;
+    const out = await run(undefined, s, { fm: { role: "Tester" } });
+    expect(set).toEqual({ model: "gpt-6-luna", thought_level: "low" });
+    expect(out.line).toContain("Efforts offered: low, medium, high, xhigh, max.");
   });
 
   it("leaves out a model the catalog marks as replaced, when its replacement is offered", async () => {
     const codex = opts("gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5");
     const { s } = session(codex, opts("low", "high"));
-    const { d, asked } = decisions(() => undefined);
-    const out = await run(d, s, {
+    const out = await run(undefined, s, {
       replaced: new Map([
         ["gpt-5.6-sol", "gpt-6-sol"],
         ["gpt-5.5", "gpt-6-sol"],
       ]),
     });
-    expect(asked[0]?.models.map((o) => o.id)).toEqual(["gpt-6-sol", "gpt-6-luna"]);
     expect(out.line).toContain(
-      "Left out: gpt-5.6-sol (replaced by gpt-6-sol), gpt-5.5 (replaced by gpt-6-sol).",
+      "Models offered: gpt-6-sol, gpt-6-luna. Left out: gpt-5.6-sol (replaced by gpt-6-sol), gpt-5.5 (replaced by gpt-6-sol).",
     );
   });
 
   it("keeps a replaced model whose replacement is not offered", async () => {
     const { s } = session(opts("gpt-5.6-sol", "gpt-6-luna"), opts("low", "high"));
-    const { d, asked } = decisions(() => undefined);
-    const out = await run(d, s, { replaced: new Map([["gpt-5.6-sol", "gpt-6-sol"]]) });
-    expect(asked[0]?.models.map((o) => o.id)).toEqual(["gpt-5.6-sol", "gpt-6-luna"]);
+    const out = await run(undefined, s, { replaced: new Map([["gpt-5.6-sol", "gpt-6-sol"]]) });
+    expect(out.line).toContain("Models offered: gpt-5.6-sol, gpt-6-luna.");
     expect(out.line).not.toContain("Left out");
   });
 
   it("does not use a hidden model for the pick or the tiers", async () => {
     const rows = { "a-1": price(30), "b-1": price(20), "c-1": price(10) };
     const { s, set } = session(opts("a-1", "b-1", "c-1"), opts("low", "high"));
-    const { d, asked } = decisions(() => undefined);
-    const out = await run(d, s, { prices: rows, hidden: ["a-1"] });
-    expect(asked[0]?.models.map((o) => o.id)).toEqual(["b-1", "c-1"]);
+    const out = await run(undefined, s, { prices: rows, hidden: ["a-1"] });
     // Lead falls back to the most capable one that is left.
     expect(set.model).toBe("b-1");
-    expect(out.line).toContain("Left out: a-1 (hidden).");
+    expect(out.line).toContain("Models offered: b-1, c-1. Left out: a-1 (hidden).");
   });
 
   it("lets an agent that names a hidden model in `models` have it", async () => {
     const { s } = session(opts("a-1", "b-1", "c-1"), opts("low", "high"));
-    const { d, asked } = decisions(() => undefined);
-    await run(d, s, { hidden: ["a-1"], fm: { models: ["a-1", "b-1"] } });
-    expect(asked[0]?.models.map((o) => o.id)).toEqual(["a-1", "b-1"]);
+    const out = await run(undefined, s, { hidden: ["a-1"], fm: { models: ["a-1", "b-1"] } });
+    expect(out.line).toContain("Models offered: a-1, b-1.");
   });
 });
 
@@ -364,8 +304,8 @@ const CODEX_EFFORTS: OptionValue[] = [
 function judge(yes: (line: string) => boolean, confidence = 0.9) {
   const calls: { state: string; keys: string[] }[] = [];
   const decide: Decisions["decide"] = async (request) => {
-    calls.push({ state: request.state, keys: Object.keys(request.questions) });
-    const lines = request.state.split("\n");
+    calls.push({ state: String(request.state), keys: Object.keys(request.questions) });
+    const lines = String(request.state).split("\n");
     return {
       id: "j1",
       answers: Object.fromEntries(
@@ -388,9 +328,8 @@ describe("pickForSession, efforts that change how the agent works", () => {
   it("leaves a flagged effort out of the pick and of every tier: highest is max, not ultra", async () => {
     const { s, set } = session(models, CODEX_EFFORTS);
     const j = judge((line) => line.includes("delegation"));
-    const { d, asked } = decisions(() => undefined, j.decide);
+    const { d } = decisions(() => undefined, j.decide);
     const out = await run(d, s);
-    expect(asked[0]?.efforts.map((o) => o.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(set.thought_level).toBe("max");
     expect(out.line).toContain(
       "Efforts offered: low, medium, high, xhigh, max. Left out: ultra (changes how the agent works).",
@@ -423,7 +362,7 @@ describe("pickForSession, efforts that change how the agent works", () => {
       id: "j1",
       answers: Object.fromEntries(
         Object.keys(request.questions).map((key, n) => {
-          const ultra = request.state.split("\n")[n]?.includes("delegation") === true;
+          const ultra = String(request.state).split("\n")[n]?.includes("delegation") === true;
           return [
             key,
             mode === "rules" ? { value: false, confidence: 0.3 } : { value: ultra, confidence: 0.9 },

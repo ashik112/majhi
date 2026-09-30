@@ -959,7 +959,6 @@ export class RunManager {
           decisions: deps.decisions,
           session,
           fm,
-          instructions: agent.instructions,
           task,
           settings: await readDecisionSettings(deps.config.file),
           prices,

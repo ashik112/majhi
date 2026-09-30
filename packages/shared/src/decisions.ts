@@ -15,12 +15,27 @@ export type ProviderId = z.infer<typeof ProviderIdSchema>;
 /** At most 20 options per question (Laya gets worse past that). */
 export const MAX_OPTIONS = 20;
 
+/**
+ * One option of a choice: the key the answer names, and what it means. Laya reads it as
+ * `key: description`. Use meaningful keys (`small`, `large`) or neutral ones (`A`, `B`) with a
+ * description, never yes or no words.
+ */
+export const OptionSchema = z.object({
+  key: z.string().trim().min(1).max(60),
+  description: z.string().trim().min(1).max(200).optional(),
+});
+export type Option = z.infer<typeof OptionSchema>;
+
 export const QuestionSchema = z.discriminatedUnion("type", [
-  /** Pick one of `options`. */
+  /** Pick one of `options`. A plain string is an option with no description, and its own key. */
   z.object({
     type: z.literal("choice"),
     instructions: z.string().trim().min(1).max(500),
-    options: z.array(z.string().trim().min(1).max(200)).min(2).max(MAX_OPTIONS),
+    options: z
+      .array(z.union([z.string().trim().min(1).max(200), OptionSchema]))
+      .min(2)
+      .max(MAX_OPTIONS)
+      .refine((list) => new Set(list.map(optionKey)).size === list.length, "Option keys must be unique"),
   }),
   /** Rate on a scale, 1 to 5 unless given. */
   z.object({
@@ -36,13 +51,46 @@ export const QuestionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type Question = z.infer<typeof QuestionSchema>;
+export type ChoiceQuestion = Extract<Question, { type: "choice" }>;
+
+/** The key of an option as given: a plain string is its own key. */
+export function optionKey(o: string | Option): string {
+  return typeof o === "string" ? o : o.key;
+}
+
+/** A choice's options, each as `{ key, description? }`. */
+export function choiceOptions(q: ChoiceQuestion): Option[] {
+  return q.options.map((o) => (typeof o === "string" ? { key: o } : o));
+}
+
+const FIELD = /^[a-z][a-z0-9_]{0,39}$/;
+
+/**
+ * What the questions are about: text, or named fields the questions refer to by name
+ * (`{ task, description, role }`). Trimmed to the provider's window (about 512 tokens for Laya).
+ */
+export const DecideStateSchema = z.union([
+  z.string().min(1).max(20_000),
+  z
+    .record(z.string().regex(FIELD), z.string().max(20_000))
+    .refine((s) => Object.keys(s).length >= 1 && Object.keys(s).length <= 12, "Give 1 to 12 fields")
+    .refine((s) => Object.values(s).join("").length <= 20_000, "The fields are too long together"),
+]);
+export type DecideState = z.infer<typeof DecideStateSchema>;
+
+/** The state as text, for providers that read text: a field per line, `name: value`. */
+export function stateText(state: DecideState): string {
+  if (typeof state === "string") return state;
+  return Object.entries(state)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+}
 
 export const DecideRequestSchema = z.object({
-  /** What the questions are about. Trimmed to the provider's window (about 512 tokens for Laya); the result says so. */
-  state: z.string().min(1).max(20_000),
+  state: DecideStateSchema,
   /** Question key to question, 1 to 8 questions. */
   questions: z
-    .record(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), QuestionSchema)
+    .record(z.string().regex(FIELD), QuestionSchema)
     .refine((q) => Object.keys(q).length >= 1 && Object.keys(q).length <= 8, "Ask 1 to 8 questions"),
 });
 export type DecideRequest = z.infer<typeof DecideRequestSchema>;

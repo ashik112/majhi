@@ -3,9 +3,8 @@ import { promisify } from "node:util";
 import { type DecideRequest, LayaAnswerSchema, type LayaStatus } from "@majhi/shared";
 import { z } from "zod";
 import { errorMessage } from "../errors.ts";
-import { fromLayaAnswer, toLayaQuestion } from "./layaMap.ts";
+import { fromLayaCall, toLayaCall } from "./layaMap.ts";
 import type { ProviderOutcome } from "./providers.ts";
-import { trimState } from "./trim.ts";
 
 const run = promisify(execFile);
 
@@ -88,14 +87,11 @@ export class LayaDocker {
   async decide(request: DecideRequest): Promise<ProviderOutcome> {
     await this.ensureRunning();
     this.touch();
-    const { text, trimmed } = trimState(request.state);
-    const questions = Object.fromEntries(
-      Object.entries(request.questions).map(([key, q]) => [key, toLayaQuestion(q)]),
-    );
+    const call = toLayaCall(request);
     const res = await this.fetch(`${this.options.url}/v1/systemone`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ state: text, questions, model: "english" }),
+      body: JSON.stringify({ state: call.text, questions: call.questions, model: "english" }),
       signal: AbortSignal.timeout(DECIDE_TIMEOUT_MS),
     });
     this.touch();
@@ -103,14 +99,7 @@ export class LayaDocker {
       throw new Error(`Laya in Docker answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const parsed = ResultSchema.safeParse(await res.json());
     if (!parsed.success) throw new Error("Laya in Docker gave an answer majhi cannot read.");
-    const answers = Object.fromEntries(
-      Object.entries(request.questions).map(([key, q]) => {
-        const raw = parsed.data.answers[key];
-        if (raw === undefined) throw new Error(`Laya gave no answer for "${key}".`);
-        return [key, fromLayaAnswer(q, raw)];
-      }),
-    );
-    return { answers, estimated: false, trimmed };
+    return { answers: fromLayaCall(request, parsed.data.answers), estimated: false, trimmed: call.trimmed };
   }
 
   /** Stops the idle timer. The container is left as it is. */

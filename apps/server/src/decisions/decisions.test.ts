@@ -2,10 +2,10 @@ import type { DecideRequest, DecisionResult, Question } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { buildPrompt, parseReply } from "./acpParse.ts";
 import { runChain } from "./chain.ts";
-import { fromLayaAnswer, toLayaQuestion } from "./layaMap.ts";
+import { fromLayaAnswer, toLayaCall, toLayaQuestion } from "./layaMap.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { ruleAnswer, rulesProvider } from "./rules.ts";
-import { trimState } from "./trim.ts";
+import { estimateTokens, stateBudget } from "./trim.ts";
 
 const choice: Question = {
   type: "choice",
@@ -69,13 +69,43 @@ describe("chain", () => {
   });
 });
 
-describe("trimState", () => {
-  it("keeps short text and cuts long text to about 512 tokens", () => {
-    expect(trimState("short")).toEqual({ text: "short", trimmed: false });
-    const long = trimState("x".repeat(5000));
-    expect(long.trimmed).toBe(true);
-    expect(long.text.length).toBe(2048);
-    expect(long.text.endsWith("…")).toBe(true);
+describe("Laya's window", () => {
+  it("never counts fewer tokens than Laya's tokenizer did on these samples", () => {
+    // Counts from laya-mlx 0.2.0's tokenizer on 2026-09-30.
+    const real: [string, number][] = [
+      ["How much work is the task for the agent in role?", 12],
+      ["trivial: a one-line fix, a typo or a version bump", 15],
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a code sample, not a template
+      ["const x = await fetch(`${base}/v1/items?id=0x3fa9c1&limit=200`); // TODO: retry on 429", 35],
+      ["acme-opus-5-5 acme-5.5-codex-mini 2026-09-30T12:00:00Z /Users/owner/Work/acme-web/src/index.ts", 49],
+      ["Überprüfe die Änderungen: naïve café résumé — 日本語のテキスト 🚀🚀", 32],
+      ["sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", 29],
+      ["lock lock lock lock lock lock lock lock lock lock", 10],
+    ];
+    for (const [text, tokens] of real) expect(estimateTokens(text)).toBeGreaterThanOrEqual(tokens);
+  });
+
+  it("fits the state into what the question leaves, cutting the longest field first", () => {
+    const long: DecideRequest = {
+      state: { task: "Scheduler deadlock", description: "lock ".repeat(2000), role: "Builder" },
+      questions: { size: { type: "choice", instructions: "How much work?", options: ["small", "large"] } },
+    };
+    const call = toLayaCall(long);
+    expect(call.trimmed).toBe(true);
+    expect(call.state).toMatchObject({ task: "Scheduler deadlock", role: "Builder" });
+    expect(estimateTokens(call.text)).toBeLessThanOrEqual(stateBudget(Object.values(call.questions)));
+    expect(estimateTokens(call.text)).toBeGreaterThan(stateBudget(Object.values(call.questions)) - 10);
+
+    const short = toLayaCall({ ...long, state: "Fix a typo" });
+    expect(short).toMatchObject({ text: "Fix a typo", trimmed: false });
+  });
+
+  it("says trimmed when Laya would cut an option", () => {
+    const wordy = toLayaCall({
+      state: "x",
+      questions: { q: { type: "choice", instructions: "Which?", options: ["a ".repeat(90), "b"] } },
+    });
+    expect(wordy.trimmed).toBe(true);
   });
 });
 

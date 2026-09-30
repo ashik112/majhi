@@ -15,9 +15,9 @@ import { secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
-import { effortQuestion, modelQuestion, type PickOption } from "../runs/model-options.ts";
+import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, ModelPick, ModelPickRequest, PickAnswer } from "./api.ts";
+import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
 import type { LayaProvider } from "./layaProvider.ts";
@@ -153,48 +153,23 @@ export class DecisionService implements Decisions {
     return this.deps.laya.install();
   }
 
-  async pickModel(request: ModelPickRequest): Promise<ModelPick | undefined> {
-    const askModel = request.models.length >= 2;
-    const askEffort = request.efforts.length >= 2;
-    if (!askModel && !askEffort) return undefined;
-    const brief = `Role: ${request.role}\nAgent: @${request.agent}\n\n${request.context}`;
-    const questions: DecideRequest["questions"] = {
-      ...(askModel
-        ? {
-            model: {
-              type: "choice" as const,
-              instructions: modelQuestion(request.role),
-              options: request.models.map((o) => o.label),
-            },
-          }
-        : {}),
-      ...(askEffort
-        ? {
-            effort: {
-              type: "choice" as const,
-              instructions: effortQuestion(request.role),
-              options: request.efforts.map((o) => o.label),
-            },
-          }
-        : {}),
-    };
+  async rateTask(request: RateTaskRequest): Promise<TaskRating | undefined> {
     try {
-      const result = await this.decide(
-        { state: brief, questions },
-        { use: "model-pick", task: request.task, agent: request.agent },
-      );
-      const answer = (key: "model" | "effort", options: readonly PickOption[]): PickAnswer | undefined => {
-        const a = result.answers[key];
-        if (a === undefined || typeof a.value !== "string") return undefined;
-        const id = options.find((o) => o.label === a.value)?.id ?? options.find((o) => o.id === a.value)?.id;
-        return id === undefined ? undefined : { id, confidence: a.confidence };
-      };
-      const model = askModel ? answer("model", request.models) : undefined;
-      const effort = askEffort ? answer("effort", request.efforts) : undefined;
-      if (model === undefined && effort === undefined) return undefined;
+      const floor = (await this.settings()).model_floor;
+      const result = await this.decide(difficultyQuestion(request), {
+        use: "model-pick",
+        task: request.task,
+        agent: request.agent,
+      });
+      const a = result.answers.difficulty;
+      if (a === undefined) return undefined;
+      const level = isDifficulty(a.value) ? a.value : undefined;
+      const counted = level !== undefined && a.confidence >= floor;
       return {
-        ...(model === undefined ? {} : { model }),
-        ...(effort === undefined ? {} : { effort }),
+        ...(level === undefined ? {} : { level }),
+        confidence: a.confidence,
+        counted,
+        why: counted ? "" : `${cutTo2(a.confidence)}, under the ${floor.toFixed(2)} floor`,
         decisionId: result.id,
         provider: result.provider,
         by: NAMES[result.provider],
@@ -220,6 +195,11 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
+}
+
+/** Two decimals, cut instead of rounded: a 0.3997 must not read as 0.40 under a 0.40 floor. */
+function cutTo2(n: number): string {
+  return (Math.floor(n * 100 + 1e-9) / 100).toFixed(2);
 }
 
 function layaReason(laya: LayaStatus): string | undefined {

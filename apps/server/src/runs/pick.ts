@@ -2,28 +2,22 @@ import type { AgentSession } from "@majhi/acp";
 import {
   type AgentFrontmatter,
   type DecisionSettings,
-  type EffortTier,
-  type ModelTier,
   type OptionValue,
   type PricesConfig,
+  type Role,
   resolveTier,
   type Task,
+  type Tier,
   type TiersPatch,
 } from "@majhi/shared";
-import type { Decisions, ModelPick, PickAnswer } from "../decisions/api.ts";
+import type { Decisions, TaskRating } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
+import { tierForDifficulty } from "./difficulty.ts";
 import { checkEfforts, type EffortCheck } from "./effort-check.ts";
-import {
-  effortForTier,
-  effortOptions,
-  labelModels,
-  modelForTier,
-  normalizeOffered,
-  rankModels,
-} from "./model-options.ts";
+import { effortForTier, effortOptions, modelForTier, normalizeOffered, rankModels } from "./model-options.ts";
 
 export interface PickResult {
-  /** One line for the room: what was offered, what was picked and why. */
+  /** One line for the room: how hard the task is, what was offered, what was picked and why. */
   line: string;
   /** What was applied, for the run record. `decisionId` is set when a provider was asked. */
   applied?: { model?: string; effort?: string; decisionId?: string };
@@ -31,26 +25,18 @@ export interface PickResult {
   warnings: string[];
 }
 
-/** How a part of the pick turned out. */
-interface Outcome {
-  /** The id to apply, or undefined to keep the CLI default. */
-  id?: string;
-  /** The sentence for the room. */
-  text: string;
-}
-
 /**
- * Model and effort for an `auto` agent at session start (SPEC 5.1, 5.12). Each list is made fit for a
- * question first: models merged into families and labelled by price, efforts without `default`. The
- * decision provider picks from what is left, with the role in the question. An answer under its floor,
- * or no answer, falls back to the role's tier (agent, then org, then majhi). The pick is applied with
- * `setOption`. When even the tier cannot resolve, the CLI default stays and the line says why.
+ * Model and effort for an `auto` agent at session start (SPEC 5.1, 5.12). The decision provider
+ * rates how much work the task is for the agent's role; the level moves the role's tiers (agent,
+ * then org, then Hub setup) at most one step, and the tiers resolve over what the CLI offers:
+ * models merged into families and ranked by price (else the CLI's order), efforts in the CLI's
+ * order without `default` and without efforts that change how the agent works. A rating that does
+ * not count, or none, keeps the role's tiers. The pick is applied with `setOption`.
  */
 export async function pickForSession(input: {
   decisions: Decisions | undefined;
   session: AgentSession;
   fm: AgentFrontmatter;
-  instructions: string;
   task: Task;
   settings: DecisionSettings;
   /** The owner's rows of the price table. */
@@ -59,7 +45,7 @@ export async function pickForSession(input: {
   orgTiers?: TiersPatch | undefined;
   /** Models the tool's own catalog marks as replaced, by the model that replaced them. */
   replaced?: ReadonlyMap<string, string>;
-  /** The account's tool, for remembering which efforts change how the agent works. */
+  /** The account's tool. */
   tool: string;
   /** Models the owner hid on the account. Not used for `auto` picks, unless the agent's `models` names them. */
   hidden?: readonly string[];
@@ -84,7 +70,7 @@ export async function pickForSession(input: {
     return false;
   });
   const models = normalizeOffered(candidates);
-  const modelOptions = labelModels(models, input.prices);
+  const rank = rankModels(models, input.prices);
   // An effort that changes how the agent works (it hands work to sub-agents) is not for `auto`.
   const check = async (list: readonly OptionValue[]): Promise<EffortCheck> =>
     fm.effort === "auto" && effortOptions(list).length >= 2
@@ -99,27 +85,29 @@ export async function pickForSession(input: {
       : { flagged: new Set(), unchecked: false };
   const without = (list: readonly OptionValue[], c: EffortCheck) => list.filter((o) => !c.flagged.has(o.id));
   const before = await check(offered.efforts);
-  const effortList = effortOptions(without(offered.efforts, before));
-  const askModel = fm.model === "auto" && modelOptions.length >= 2;
-  const askEffort = fm.effort === "auto" && effortList.length >= 2;
-  const tier = resolveTier(fm.role, fm.tier, input.orgTiers?.[fm.role], settings.tiers[fm.role]);
+  const wantModel = fm.model === "auto" && models.length >= 2;
+  const wantEffort = fm.effort === "auto" && effortOptions(without(offered.efforts, before)).length >= 2;
+  const base = resolveTier(fm.role, fm.tier, input.orgTiers?.[fm.role], settings.tiers[fm.role]);
 
-  const pick: ModelPick | undefined =
-    decisions === undefined || (!askModel && !askEffort)
+  const rating =
+    decisions === undefined || (!wantModel && !wantEffort)
       ? undefined
       : await decisions
-          .pickModel({
+          .rateTask({
             task: task.id,
             agent: fm.id,
+            title: task.title,
+            brief: task.brief,
+            kind: task.kind,
+            repos: task.repos.map((r) => r.project),
             role: fm.role,
-            context: `${task.brief}\n\n${input.instructions}`.trim(),
-            models: askModel ? modelOptions : [],
-            efforts: askEffort ? effortList : [],
           })
           .catch(() => undefined);
+  const counted = rating?.counted === true && rating.level !== undefined ? rating.level : undefined;
+  const tier = counted === undefined ? base : tierForDifficulty(base, counted);
 
-  const rank = rankModels(models, input.prices);
   const parts: string[] = [`@${fm.id} (${fm.role}).`];
+  if (wantModel || wantEffort) parts.push(ratingLine(rating, fm.role, tier, wantModel, wantEffort));
   const applied: NonNullable<PickResult["applied"]> = {};
   const warnings: string[] = [];
   const apply = async (category: "model" | "thought_level", id: string | undefined) => {
@@ -132,29 +120,24 @@ export async function pickForSession(input: {
     }
   };
 
-  if (fm.model === "auto" && modelOptions.length > 0) {
-    const list = `Models offered: ${modelOptions.map((o) => o.id).join(", ")}.${left.length === 0 ? "" : ` Left out: ${left.join(", ")}.`}`;
-    const outcome: Outcome = (() => {
-      const [only] = modelOptions;
-      if (modelOptions.length === 1 && only !== undefined)
-        return { id: only.id, text: `Only ${only.id} is offered.` };
-      const label = (id: string) => {
-        const name = rank.labels.get(id);
-        return name === undefined ? undefined : rank.estimated ? `${name}, estimated` : name;
-      };
-      return decided(
-        "model",
-        pick,
-        pick?.model,
-        settings.model_floor,
-        tier.model,
-        label,
-        () => modelForTier(models, tier.model, input.prices),
-        rank.estimated ? "estimated rank" : undefined,
+  if (fm.model === "auto" && models.length > 0) {
+    parts.push(
+      `Models offered: ${models.map((m) => m.id).join(", ")}.${left.length === 0 ? "" : ` Left out: ${left.join(", ")}.`}`,
+    );
+    const [only] = models;
+    if (models.length === 1 && only !== undefined) {
+      parts.push(`Only ${only.id} is offered.`);
+      await apply("model", only.id);
+    } else {
+      const id = modelForTier(models, tier.model, input.prices);
+      const name = tier.model.replace("-", " ");
+      parts.push(
+        id === undefined
+          ? "There is no model to choose from, so it kept the CLI default."
+          : `Picked ${id} (${name}${rank.estimated ? ", estimated rank" : ""}).`,
       );
-    })();
-    parts.push(list, outcome.text);
-    await apply("model", outcome.id);
+      await apply("model", id);
+    }
   }
   // Efforts belong to the model: an adapter may offer another list once the model changed (Codex
   // does), so the effort is resolved against what the session offers now.
@@ -165,77 +148,45 @@ export async function pickForSession(input: {
     const skipped = [...new Set([...before.flagged, ...after.flagged])].filter((id) =>
       session.models.efforts.some((o) => o.id === id),
     );
-    const list = `Efforts offered: ${effortsNow.map((o) => o.id).join(", ")}.${
-      skipped.length === 0 ? "" : ` Left out: ${skipped.join(", ")} (changes how the agent works).`
-    }${before.unchecked || after.unchecked ? " Could not check the effort options, so none were left out." : ""}`;
-    const answer = pick?.effort;
-    const outcome: Outcome = (() => {
-      const [only] = effortsNow;
-      if (effortsNow.length === 1 && only !== undefined)
-        return { id: only.id, text: `Only ${only.id} is offered.` };
-      const fallback = () => effortForTier(efforts, tier.effort);
-      if (pick !== undefined && answer !== undefined && !effortsNow.some((o) => o.id === answer.id)) {
-        const model = session.models.defaultModel;
-        const why = `${pick.by}'s ${answer.id} is not offered${model === undefined ? "" : ` with ${model}`}`;
-        return fellBack("effort", why, tier.effort, fallback);
-      }
-      return decided("effort", pick, answer, settings.effort_floor, tier.effort, () => undefined, fallback);
-    })();
-    parts.push(list, outcome.text);
-    await apply("thought_level", outcome.id);
+    parts.push(
+      `Efforts offered: ${effortsNow.map((o) => o.id).join(", ")}.${
+        skipped.length === 0 ? "" : ` Left out: ${skipped.join(", ")} (changes how the agent works).`
+      }${before.unchecked || after.unchecked ? " Could not check the effort options, so none were left out." : ""}`,
+    );
+    const [only] = effortsNow;
+    if (effortsNow.length === 1 && only !== undefined) {
+      parts.push(`Only ${only.id} is offered.`);
+      await apply("thought_level", only.id);
+    } else {
+      const id = effortForTier(efforts, tier.effort);
+      parts.push(`Picked ${id} (${tier.effort}).`);
+      await apply("thought_level", id);
+    }
   }
   if (parts.length === 1) parts.push("Nothing to pick: the session offers no choice.");
   if (applied.model !== undefined || applied.effort !== undefined) {
-    if (pick !== undefined && (askModel || askEffort)) applied.decisionId = pick.decisionId;
+    if (rating !== undefined) applied.decisionId = rating.decisionId;
     return { line: parts.join(" "), applied, warnings };
   }
   return { line: parts.join(" "), warnings };
 }
 
-/** The pick if it reaches the floor; else the tier, with the sentence that says so. */
-function decided(
-  what: "model" | "effort",
-  pick: ModelPick | undefined,
-  answer: PickAnswer | undefined,
-  floor: number,
-  tier: ModelTier | EffortTier,
-  rank: (id: string) => string | undefined,
-  fallback: () => string | undefined,
-  note?: string,
-): Outcome {
-  if (pick !== undefined && answer !== undefined && answer.confidence >= floor) {
-    const label = rank(answer.id);
-    const detail = `${label === undefined ? "" : `${label}, `}${answer.confidence.toFixed(2)}`;
-    return { id: answer.id, text: `${pick.by} picked ${answer.id} (${detail}).` };
-  }
-  const why =
-    pick === undefined || answer === undefined
-      ? "No provider answered"
-      : `${pick.by}'s ${answer.id} was ${below(answer.confidence)}, under the ${floor.toFixed(2)} floor`;
-  return fellBack(what, why, tier, fallback, note);
-}
-
-/** The tier's pick, with `why` it was needed; the CLI default when even the tier cannot resolve. */
-function fellBack(
-  what: "model" | "effort",
-  why: string,
-  tier: ModelTier | EffortTier,
-  fallback: () => string | undefined,
-  note?: string,
-): Outcome {
-  const tierName = tier.replace("-", " ");
-  const id = fallback();
-  if (id !== undefined)
-    return {
-      id,
-      text: `${why}, so it fell back to ${tierName} (${id}${note === undefined ? "" : `, ${note}`}).`,
-    };
-  const reason =
-    what === "model" ? "there is no model to choose from" : "the session offers no effort to choose from";
-  return { text: `${why}, so it fell back to ${tierName}, but ${reason}. It kept the CLI default.` };
-}
-
-/** Two decimals, cut instead of rounded: a 0.3997 must not read as 0.40 under a 0.40 floor. */
-function below(confidence: number): string {
-  return (Math.floor(confidence * 100 + 1e-9) / 100).toFixed(2);
+/** The sentence on the rating: the level, its confidence and the tiers it gave, or why the role's tiers were kept. */
+function ratingLine(
+  rating: TaskRating | undefined,
+  role: Role,
+  tier: Tier,
+  model: boolean,
+  effort: boolean,
+): string {
+  const tiers = [
+    ...(model ? [`${tier.model.replace("-", " ")} model`] : []),
+    ...(effort ? [`${tier.effort} effort`] : []),
+  ].join(", ");
+  if (rating === undefined) return `No provider rated the task, so the ${role} tiers: ${tiers}.`;
+  if (rating.level === undefined)
+    return `${rating.by} said no level fits the task, so the ${role} tiers: ${tiers}.`;
+  if (!rating.counted)
+    return `${rating.by} rated the task ${rating.level}, but that does not count (${rating.why}), so the ${role} tiers: ${tiers}.`;
+  return `${rating.by} rated the task ${rating.level} (${rating.confidence.toFixed(2)}): ${tiers}.`;
 }

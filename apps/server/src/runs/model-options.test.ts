@@ -1,15 +1,13 @@
-import type { OptionValue, PricesConfig } from "@majhi/shared";
+import type { OptionValue } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
   compareVersions,
   effortForTier,
   effortOptions,
-  labelModels,
   modelForTier,
   needsEstimate,
   normalizeOffered,
   rankModels,
-  rolePhrase,
 } from "./model-options.ts";
 
 const opts = (...ids: string[]): OptionValue[] => ids.map((id) => ({ id, name: id }));
@@ -130,85 +128,7 @@ describe("normalizeOffered", () => {
   });
 });
 
-const OWNER: PricesConfig = {
-  "gpt-5.5-codex": { input: 2, output: 12, cache_read: 0.2, cache_write: 0 },
-  "gpt-5.5": { input: 1, output: 8, cache_read: 0.1, cache_write: 0 },
-  "gpt-5.5-codex-mini": { input: 0.3, output: 2, cache_read: 0.03, cache_write: 0 },
-};
 const price = (output: number, input = 1) => ({ input, output, cache_read: 0, cache_write: 0 });
-
-describe("labelModels", () => {
-  it("labels by price rank from the default table", () => {
-    const labels = labelModels(normalizeOffered(CLAUDE));
-    const byId = Object.fromEntries(labels.map((l) => [l.id, l]));
-    expect(byId["claude-fable-5-1"]).toMatchObject({
-      rank: "most capable",
-      label: "claude-fable-5-1: most capable",
-    });
-    expect(byId["claude-haiku-4-5"]).toMatchObject({
-      rank: "cheapest and fastest",
-      label: "claude-haiku-4-5: cheapest and fastest",
-    });
-    expect(byId["claude-opus-5-5"]?.rank).toBe("balanced");
-    expect(byId["claude-sonnet-5-5"]?.rank).toBe("balanced");
-  });
-
-  it("uses the owner's rows when every model is priced", () => {
-    const models = normalizeOffered(opts("gpt-5.5-codex", "gpt-5.5-codex-mini"));
-    expect(labelModels(models, OWNER).map((l) => l.label)).toEqual([
-      "gpt-5.5-codex: most capable",
-      "gpt-5.5-codex-mini: cheapest and fastest",
-    ]);
-  });
-
-  it("reads the CLI description for every model when one has no price", () => {
-    const models = normalizeOffered([
-      { id: "gpt-5.5-codex", name: "a", description: "Marketing text" },
-      { id: "gpt-5.5-codex-mini", name: "b" },
-      { id: "other-9", name: "c", description: "Unknown to the table" },
-    ]);
-    const labels = labelModels(models, OWNER);
-    expect(labels.map((l) => l.label)).toEqual([
-      "gpt-5.5-codex: Marketing text",
-      "gpt-5.5-codex-mini",
-      "other-9: Unknown to the table",
-    ]);
-    expect(labels.every((l) => l.rank === undefined)).toBe(true);
-  });
-
-  it("gives a model with no price its CLI text", () => {
-    const models = normalizeOffered([
-      { id: "acme-code-5", name: "a", description: "Best for code" },
-      { id: "acme-fast-1", name: "b" },
-    ]);
-    expect(labelModels(models).map((l) => l.label)).toEqual(["acme-code-5: Best for code", "acme-fast-1"]);
-  });
-
-  it("gives equal prices the same label", () => {
-    const rows = { "a-1": price(5), "b-1": price(5), "c-1": price(20) };
-    const labels = labelModels(normalizeOffered(opts("a-1", "b-1", "c-1")), rows);
-    expect(labels.map((l) => l.rank)).toEqual([
-      "cheapest and fastest",
-      "cheapest and fastest",
-      "most capable",
-    ]);
-    const same = labelModels(normalizeOffered(opts("a-1", "b-1")), { "a-1": price(5), "b-1": price(5) });
-    expect(same.map((l) => l.rank)).toEqual(["balanced", "balanced"]);
-  });
-
-  it("breaks an output price tie on the input price", () => {
-    const rows = { "a-1": price(5, 1), "b-1": price(5, 3) };
-    expect(labelModels(normalizeOffered(opts("a-1", "b-1")), rows).map((l) => l.rank)).toEqual([
-      "cheapest and fastest",
-      "most capable",
-    ]);
-  });
-
-  it("cuts a long description to 200 characters", () => {
-    const [only] = labelModels(normalizeOffered([{ id: "x-1", name: "x", description: "d".repeat(400) }]));
-    expect(only?.label).toHaveLength(200);
-  });
-});
 
 describe("modelForTier", () => {
   it("picks by price rank: first, last, and the lower middle", () => {
@@ -285,11 +205,5 @@ describe("effortForTier", () => {
 
   it("does not depend on effort names", () => {
     expect(effortForTier(efforts("minimal", "balanced", "deep"), "highest")).toBe("deep");
-  });
-});
-
-describe("rolePhrase", () => {
-  it("says what the role does", () => {
-    expect(rolePhrase("Lead")).toBe("a Lead who plans and reviews the work");
   });
 });

@@ -1,4 +1,11 @@
-import type { Answer, DecideRequest, Question } from "@majhi/shared";
+import {
+  type Answer,
+  type DecideRequest,
+  type DecideState,
+  optionKey,
+  type Question,
+  stateText,
+} from "@majhi/shared";
 import type { DecisionProvider } from "./providers.ts";
 
 const FALLBACK_CONFIDENCE = 0.3;
@@ -8,7 +15,7 @@ function words(text: string): Set<string> {
   return new Set(text.toLowerCase().match(/[a-z0-9][a-z0-9_.-]*/g) ?? []);
 }
 
-/** For `choice`: the one option named in the state, else the first option. */
+/** For `choice`: the one option key named in the state, else the first option. */
 function pickChoice(state: string, options: readonly string[]): Answer {
   const present = words(state);
   const named = options.filter((o) => present.has(o.toLowerCase()));
@@ -17,10 +24,10 @@ function pickChoice(state: string, options: readonly string[]): Answer {
   return { value: options[0] ?? "", confidence: FALLBACK_CONFIDENCE };
 }
 
-export function ruleAnswer(state: string, question: Question): Answer {
+export function ruleAnswer(state: DecideState, question: Question): Answer {
   switch (question.type) {
     case "choice":
-      return pickChoice(state, question.options);
+      return pickChoice(stateText(state), question.options.map(optionKey));
     case "score":
       return { value: Math.round((question.min + question.max) / 2), confidence: FALLBACK_CONFIDENCE };
     case "noul":

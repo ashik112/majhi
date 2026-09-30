@@ -6,7 +6,6 @@ import {
   type OptionValue,
   type Price,
   type PricesConfig,
-  type Role,
 } from "@majhi/shared";
 
 /**
@@ -94,14 +93,6 @@ export function normalizeOffered(options: readonly OptionValue[]): OfferedModel[
     }));
 }
 
-/** One option of a question: the id the session takes, and the text Laya reads. */
-export interface PickOption {
-  id: string;
-  label: string;
-  /** Set when the price table ranks the model against the others: "balanced". Not the CLI's text. */
-  rank?: string;
-}
-
 const CHEAPEST = "cheapest and fastest";
 const BALANCED = "balanced";
 const DEAREST = "most capable";
@@ -173,56 +164,9 @@ export function rankModels(models: readonly OfferedModel[], owner: PricesConfig 
   return { order: dearestFirst.reverse(), estimated: true, labels };
 }
 
-/**
- * The options of the model question. Ranked by price they read `id: most capable`; when the ranking
- * is only an estimate, or the models are unpriced, they read `id: <the CLI's description>`.
- */
-export function labelModels(models: readonly OfferedModel[], owner: PricesConfig = {}): PickOption[] {
-  const rank = rankModels(models, owner);
-  const seen = new Set<string>();
-  return models.map((m) => {
-    const label = rank.estimated ? undefined : rank.labels.get(m.id);
-    return option(m.id, label ?? (rank.estimated ? m.description : undefined), seen, label);
-  });
-}
-
 /** The efforts on offer, without `default` (not an effort), in the CLI's order. */
-export function effortOptions(options: readonly OptionValue[]): PickOption[] {
-  const seen = new Set<string>();
-  return options.filter((o) => o.id !== SENTINEL).map((o) => option(o.id, o.description?.trim(), seen));
-}
-
-/** `id: note`, at most 200 characters, and unique in the list (the bare id when it would repeat). */
-function option(id: string, note: string | undefined, seen: Set<string>, rank?: string): PickOption {
-  const text = note ? `${id}: ${note}` : id;
-  let label = text.length > 200 ? `${text.slice(0, 199)}…` : text;
-  if (seen.has(label)) label = id;
-  seen.add(label);
-  return { id, label, ...(rank === undefined ? {} : { rank }) };
-}
-
-/** How a role reads in the question. */
-export function rolePhrase(role: Role): string {
-  switch (role) {
-    case "Lead":
-      return "a Lead who plans and reviews the work";
-    case "Builder":
-      return "a Builder who writes the code";
-    case "Reviewer":
-      return "a Reviewer who checks the work of others";
-    case "Tester":
-      return "a Tester who runs and checks the results";
-    case "Root":
-      return "a Root agent who organizes projects and tasks";
-  }
-}
-
-export function modelQuestion(role: Role): string {
-  return `Which model fits ${rolePhrase(role)}? Use a small, fast model for simple work and a large one for hard, open-ended work.`;
-}
-
-export function effortQuestion(role: Role): string {
-  return `How much reasoning effort does ${rolePhrase(role)} need for this task?`;
+export function effortOptions(options: readonly OptionValue[]): OptionValue[] {
+  return options.filter((o) => o.id !== SENTINEL);
 }
 
 /**

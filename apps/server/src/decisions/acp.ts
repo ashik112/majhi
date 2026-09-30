@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentSession, RuntimeOptions } from "@majhi/acp";
-import { DECISIONS_TASK, type DecideRequest } from "@majhi/shared";
+import { DECISIONS_TASK, type DecideRequest, stateText } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -10,7 +10,7 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
 import { buildPrompt, parseReply } from "./acpParse.ts";
 import type { DecisionProvider, ProviderOutcome } from "./providers.ts";
-import { trimState } from "./trim.ts";
+import { trimText } from "./trim.ts";
 
 const TURN_TIMEOUT_MS = 90_000;
 /** A stand-in has a real window; still, keep its cost down. */
@@ -66,7 +66,7 @@ export class AcpProvider implements DecisionProvider {
     const cwd = join(deps.majhiHome, "decisions");
     await mkdir(cwd, { recursive: true });
 
-    const { text: state, trimmed } = trimState(request.state, ACP_TOKENS);
+    const { text: state, trimmed } = trimText(stateText(request.state), ACP_TOKENS);
     const prompt = buildPrompt({ ...request, state });
     const model = fm.model === "auto" ? undefined : fm.model;
     const effort = fm.effort === "auto" ? undefined : fm.effort;
