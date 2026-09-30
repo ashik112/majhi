@@ -155,6 +155,25 @@ export class RoomCoordinator {
     return `Room of ${task}, newest first:\n${lines.join("\n")}${more}`;
   }
 
+  async postAskCard(
+    taskId: string,
+    questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string | undefined; freeText: boolean }>,
+  ): Promise<RoomItem> {
+    const task = this.deps.tasks.get(taskId);
+    const agent = task.team[0];
+    if (agent === undefined) throw new UserError(`Task ${taskId} has no agent.`, 409);
+    const itemId = `ask:${randomUUID()}`;
+    this.deps.room.post(task.id, itemId, {
+      type: "ask",
+      agent,
+      questions,
+      state: "pending",
+    });
+    const item = this.deps.room.get(task.id, itemId);
+    if (item === undefined) throw new Error("The ask card was not stored");
+    return item;
+  }
+
   private async maxAgentTurns(task: Task): Promise<number> {
     const settings = await this.deps.config.settings();
     const org = task.org === undefined ? undefined : (await this.deps.config.sections()).orgs[task.org];

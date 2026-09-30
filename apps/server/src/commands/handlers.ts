@@ -248,6 +248,9 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
+    "room.answerAsk": async (input) => ({
+      item: await services.tasks.answerAsk(input.task, input.item, input.answers),
+    }),
     "secrets.list": () => services.secretService.list(),
     "secrets.save": (input) => services.secretService.save(input),
     "secrets.remove": async (input) => {

@@ -1,0 +1,211 @@
+import type { RoomItem } from "@majhi/shared";
+import { afterEach, describe, expect, it } from "vitest";
+import { taskWorld, type World } from "../testing/world.ts";
+
+let w: World;
+afterEach(async () => {
+  await w?.cleanup();
+});
+
+const roomItems = async (id: string) =>
+  (await w.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
+
+const postAskCard = async (taskId: string, questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string; freeText: boolean }>) => {
+  const coordinator = w.h.majhi.services.coordinator;
+  return coordinator.postAskCard(taskId, questions);
+};
+
+const findAskCard = async (id: string) =>
+  (await roomItems(id)).find((i) => i.type === "ask") as (RoomItem & { type: "ask" }) | undefined;
+
+describe("room.answerAsk routing", () => {
+  it("answering a single-question card marks it answered with the chosen option", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "Pick one",
+        options: [
+          { id: "opt1", label: "Option A" },
+          { id: "opt2", label: "Option B" },
+        ],
+        freeText: false,
+      },
+    ]);
+
+    expect(card.type).toBe("ask");
+    expect(card.state).toBe("pending");
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "opt1" },
+    });
+
+    expect(answer.status).toBe(200);
+    const updated = await findAskCard(taskId);
+    expect(updated?.state).toBe("answered");
+    expect(updated?.answers).toEqual({ q1: "opt1" });
+  });
+
+  it("answering a multi-question card marks all answers", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "First",
+        options: [{ id: "a", label: "Answer A" }],
+        freeText: false,
+      },
+      {
+        id: "q2",
+        question: "Second",
+        options: [{ id: "b", label: "Answer B" }],
+        freeText: false,
+      },
+    ]);
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "a", q2: "b" },
+    });
+
+    expect(answer.status).toBe(200);
+    const updated = await findAskCard(taskId);
+    expect(updated?.answers).toEqual({ q1: "a", q2: "b" });
+  });
+
+  it("rejects answering twice on the same card", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "Pick",
+        options: [{ id: "opt", label: "Option" }],
+        freeText: false,
+      },
+    ]);
+
+    const first = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "opt" },
+    });
+
+    expect(first.status).toBe(200);
+
+    const second = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "opt" },
+    });
+
+    expect(second.status).toBe(409);
+  });
+
+  it("rejects answers not in the options when freeText is false", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "Pick from list",
+        options: [
+          { id: "a", label: "A" },
+          { id: "b", label: "B" },
+        ],
+        freeText: false,
+      },
+    ]);
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "invalid" },
+    });
+
+    expect(answer.status).toBe(409);
+  });
+
+  it("accepts free-text answers when freeText is true", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "Tell us",
+        options: [
+          { id: "predefined", label: "Predefined" },
+        ],
+        freeText: true,
+      },
+    ]);
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "some custom text" },
+    });
+
+    expect(answer.status).toBe(200);
+    const updated = await findAskCard(taskId);
+    expect(updated?.answers?.q1).toBe("some custom text");
+  });
+
+  it("rejects answers for non-existent items", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: "nonexistent",
+      answers: { q1: "opt" },
+    });
+
+    expect(answer.status).toBe(409);
+  });
+
+  it("rejects missing answers for required questions", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+
+    const card = await postAskCard(taskId, [
+      {
+        id: "q1",
+        question: "First",
+        options: [{ id: "a", label: "A" }],
+        freeText: false,
+      },
+      {
+        id: "q2",
+        question: "Second",
+        options: [{ id: "b", label: "B" }],
+        freeText: false,
+      },
+    ]);
+
+    const answer = await w.h.cmd("room.answerAsk", {
+      task: taskId,
+      item: card.id,
+      answers: { q1: "a" },
+    });
+
+    expect(answer.status).toBe(409);
+  });
+});

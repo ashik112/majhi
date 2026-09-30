@@ -948,6 +948,54 @@ export class TaskService {
     return answered;
   }
 
+  async answerAsk(task: string, item: string, answers: Record<string, string>) {
+    const card = this.deps.room.get(task, item);
+    if (card?.type !== "ask" || card.state !== "pending") {
+      throw new UserError("That is not a pending ask card.", 409);
+    }
+    const agent = card.agent;
+    const questions = card.questions;
+    const validated: Record<string, string> = {};
+
+    for (const q of questions) {
+      const answer = answers[q.id];
+      if (answer === undefined) {
+        throw new UserError(`Missing answer for question: ${q.question}`, 409);
+      }
+      const matchingOption = q.options.find((o) => o.id === answer);
+      if (matchingOption !== undefined) {
+        validated[q.id] = answer;
+      } else if (q.freeText) {
+        validated[q.id] = answer;
+      } else {
+        throw new UserError(
+          `"${answer}" is not a valid option for: ${q.question}`,
+          409,
+        );
+      }
+    }
+
+    const message = questions
+      .map((q) => {
+        const answer = validated[q.id];
+        const option = q.options.find((o) => o.id === answer);
+        return `${q.question}: ${option?.label ?? answer}`;
+      })
+      .join("\n");
+
+    this.deps.room.post(task as TaskId, item, {
+      type: "ask",
+      agent: card.agent,
+      questions: card.questions,
+      state: "answered",
+      answers: validated,
+    });
+    await this.send({ task, text: `Owner answered:\n${message}`, attachments: [], mode: "queue", agent });
+    return this.deps.room.get(task, item) ?? (() => {
+      throw new Error("The ask card was not stored");
+    })();
+  }
+
   /**
    * "What can I start now?": the same check a lead makes before it starts a task, for one task,
    * for a parent's waiting children, or for every task waiting to start. Changes nothing.

@@ -721,6 +721,17 @@ export const commands = {
     input: z.object({ task: TaskIdSchema, item: z.string(), value: z.string().min(1).max(8192) }),
     output: z.object({ item: RoomItemSchema }),
   },
+  "room.answerAsk": {
+    risk: "change",
+    summary: "Answer one or more questions on an ask card and send the answers to the agent",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string(),
+      /** questionId -> the option id chosen, or free text typed. */
+      answers: z.record(z.string(), z.string()),
+    }),
+    output: z.object({ item: RoomItemSchema }),
+  },
 
   // Secrets (5.16) ------------------------------------------------------------
   "secrets.list": {
