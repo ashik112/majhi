@@ -2,6 +2,7 @@ import type { Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { branchName, outboundRules, renderPointer, renderTaskMd, slugify } from "./brief.ts";
 import type { Related } from "./relations.ts";
+import type { TeamFacts } from "./team-facts.ts";
 
 const task: Task = {
   id: "ACM-7",
@@ -168,5 +169,34 @@ describe("Related tasks section", () => {
     expect(
       rules.some((r) => r.startsWith("- When the checks pass, merge with the majhi-tasks merge tool")),
     ).toBe(true);
+  });
+});
+
+describe("Team facts section", () => {
+  const facts: TeamFacts = {
+    at: "2026-09-30T11:05:00.000Z",
+    lead: "lead",
+    members: [],
+    joinable: [],
+    running: [],
+  };
+  const team = [
+    { id: "lead", role: "Lead", model: undefined, effort: undefined },
+    { id: "builder", role: "Builder", model: undefined, effort: undefined },
+  ];
+  const render = (t: Task, f?: TeamFacts) => renderTaskMd(t, team[0], "Acme", undefined, team, f);
+
+  it("follows the Team section in lead mode, with how the lead plans", () => {
+    const md = render(task, facts);
+    expect(md).toContain("## Team facts");
+    expect(md).toContain("## How the lead plans");
+    expect(md.indexOf("## Team\n")).toBeLessThan(md.indexOf("## Team facts"));
+    expect(md.indexOf("## How the lead plans")).toBeLessThan(md.indexOf("## Rules"));
+  });
+
+  it("is left out without facts, in pipeline mode and for a chat task", () => {
+    expect(render(task)).not.toContain("## Team facts");
+    expect(render({ ...task, mode: "pipeline" }, facts)).not.toContain("## Team facts");
+    expect(render({ ...task, kind: "chat" }, facts)).not.toContain("## Team facts");
   });
 });

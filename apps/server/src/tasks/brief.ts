@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { type Attachment, MODE_LABELS, type Task } from "@majhi/shared";
 import { hasRelated, type Related } from "./relations.ts";
+import { type TeamFacts, teamFactsLines } from "./team-facts.ts";
 
 export interface BriefAgent {
   id: string;
@@ -31,7 +32,8 @@ export function outboundRules(perms: readonly string[]): string[] {
 
 /**
  * `TASK.md`: short on purpose. The agent reads it first. `agent` is the lead; with a `team` of
- * more than one, a Team section says who is in it and how they hand work to each other.
+ * more than one, a Team section says who is in it and how they hand work to each other. `facts`
+ * (a lead-mode task only) adds what the lead needs to staff the work, and how it plans.
  */
 export function renderTaskMd(
   task: Task,
@@ -39,6 +41,7 @@ export function renderTaskMd(
   orgName: string | undefined,
   related?: Related,
   team?: readonly BriefAgent[],
+  facts?: TeamFacts,
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -59,6 +62,8 @@ export function renderTaskMd(
   if (related !== undefined && hasRelated(related)) lines.push("", ...relatedLines(related));
   if (multi) lines.push("", ...teamLines(task, members), "");
   else lines.push("", "## Agent", "", agent === undefined ? "None yet." : `@${agent.id} (${agent.role})`, "");
+  if (facts !== undefined && task.mode === "lead" && task.kind !== "chat")
+    lines.push(...teamFactsLines(facts), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
   }
