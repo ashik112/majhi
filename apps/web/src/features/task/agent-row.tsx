@@ -80,9 +80,14 @@ export function AgentRow({
               {live && live.queued > 0 && (
                 <span className="tnum shrink-0 whitespace-nowrap text-fg-faint">· {live.queued} queued</span>
               )}
+              {/* Limits sit on this line, so the name above keeps the full width. */}
+              {account?.usage && (
+                <span className="ml-auto pl-1.5">
+                  <LimitsSummary usage={account.usage} />
+                </span>
+              )}
             </span>
           </span>
-          {account?.usage && <LimitsSummary usage={account.usage} />}
           <ChevronDown
             aria-hidden="true"
             className={cn("size-3.5 shrink-0 text-fg-faint transition-transform", open && "rotate-180")}
