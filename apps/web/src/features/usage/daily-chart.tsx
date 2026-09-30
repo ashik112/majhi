@@ -259,7 +259,7 @@ function DayTooltip({
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute bottom-full z-10 mb-2 flex min-w-[150px] flex-col gap-1 rounded-md border border-line-control bg-field px-2.5 py-2 text-xs shadow-pop"
+      className="pointer-events-none absolute bottom-full z-10 mb-2 flex min-w-[150px] flex-col gap-1 rounded-md border border-line-control bg-glass-strong px-2.5 py-2 text-xs shadow-pop"
       style={{ left: `${center}%`, transform: `translateX(${shift})` }}
     >
       <span className="flex items-baseline gap-2">

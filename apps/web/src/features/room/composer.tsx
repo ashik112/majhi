@@ -254,7 +254,7 @@ export function Composer({
             id={listId}
             role="listbox"
             aria-label={popupTrigger.kind === "slash" ? "Slash commands" : "Files"}
-            className="absolute right-0 bottom-full left-0 z-20 mb-1.5 max-h-56 overflow-auto rounded-lg border border-line-bright bg-card p-1 shadow-pop"
+            className="absolute right-0 bottom-full left-0 z-20 mb-1.5 max-h-56 overflow-auto rounded-lg border border-line-bright bg-glass-strong p-1 shadow-pop"
           >
             {options.length === 0 && <p className="px-2.5 py-1.5 text-sm text-fg-faint">{emptyNote}</p>}
             {options.map((option, i) => (

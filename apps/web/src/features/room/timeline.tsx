@@ -135,7 +135,7 @@ export function Timeline({
             variant="secondary"
             size="sm"
             onClick={toBottom}
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-card shadow-pop"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-glass-strong shadow-pop"
           >
             <ArrowDown aria-hidden="true" />
             New messages

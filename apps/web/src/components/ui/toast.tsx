@@ -53,7 +53,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, transition: { duration: 0.12 } }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="flex max-w-[min(560px,100%)] items-center gap-2.5 rounded-lg border border-line-bright bg-card py-2 pr-3.5 pl-2.5 shadow-pop"
+              className="flex max-w-[min(560px,100%)] items-center gap-2.5 rounded-lg border border-line-bright bg-glass-strong py-2 pr-3.5 pl-2.5 shadow-pop"
             >
               <span
                 className={cn(

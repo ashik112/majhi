@@ -256,7 +256,7 @@ function ShipPanel({
       role="dialog"
       aria-label={`Ship ${task.id}`}
       style={place}
-      className="z-50 flex flex-col gap-2.5 overflow-y-auto rounded-lg border border-line-bright bg-card p-3 shadow-pop"
+      className="z-50 flex flex-col gap-2.5 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
     >
       <div className="flex items-center gap-2 text-sm">
         <label htmlFor={`${id}-into`} className="shrink-0 text-fg-muted">

@@ -102,7 +102,7 @@ export function SshAliasPicker({
       {open && (
         <div
           ref={panel}
-          className="mt-1 flex flex-col rounded-md border border-line-bright bg-card p-1 shadow-pop"
+          className="mt-1 flex flex-col rounded-md border border-line-bright bg-glass-strong p-1 shadow-pop"
         >
           <div
             id={listId}

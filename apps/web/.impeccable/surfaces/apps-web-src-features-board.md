@@ -13,7 +13,7 @@ Scope: the whole app's visual world, first surface the Board. Mode: operate. The
 
 THESIS: majhi is a flight director's console for agent work: one situation board you read at a glance, not a page you scroll. Refuses the flat gray card stack with Nothing here boxes.
 
-OWN-WORLD: blue-black glass panels over a faint radar grid, cyan hairlines, round status lamps (cyan working, red needs you, amber paused, green done), mono telemetry numbers. Light theme: pale instrument glass on cool gray grid. Accent is pickable.
+OWN-WORLD: blue-black glass panels over a faint radar grid, cyan hairlines, round status lamps (cyan working, red needs you, magenta paused, green done), mono telemetry numbers. Light theme: pale instrument glass on cool gray grid. Accent is pickable.
 
 STORY: the owner sees at once what runs, what needs them, what waits; clicks a lamp-lit card to act.
 

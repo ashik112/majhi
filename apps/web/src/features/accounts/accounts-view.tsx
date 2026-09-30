@@ -136,7 +136,7 @@ export function AccountsView() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 24, opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute inset-y-0 right-0 z-10 w-[400px] max-w-full border-l border-line-strong bg-rail shadow-pop"
+              className="absolute inset-y-0 right-0 z-10 w-[400px] max-w-full border-l border-line-strong bg-glass-strong shadow-pop"
             >
               {adding ? (
                 <AddAccountPanel
