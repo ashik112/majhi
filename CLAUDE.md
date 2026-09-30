@@ -8,9 +8,9 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 
 ## How to work
 
-- Build one phase at a time, in the order in SPEC.md section 7. Do not start the next phase until the owner has reviewed the current one.
+- Build one phase at a time, in the order in SPEC.md section 7. A phase is finished when its branch is merged into `main`.
 - At the start of a phase, write a short plan in `docs/PROGRESS.md`: what you will build, in which order, and how you will test it. Then build.
-- At the end of a phase, update `docs/PROGRESS.md` with what works, how to try it, what is left, and any known issues. Then stop and ask the owner to review.
+- At the end of a phase, update `docs/PROGRESS.md` with what works, how to try it, what is left, and any known issues. Check it yourself first, including any UI in a browser (see the task rules). Turn problems you find outside the phase into tasks. Then merge through majhi's merge tool, which asks the owner for approval with one click, and list in one line only what the owner alone can check (real accounts, hosts, hardware).
 - When the spec does not cover something, make the smallest reasonable choice and record it in `docs/DECISIONS.md` (date, decision, reason, alternatives). If the choice is expensive to undo, ask first.
 - If the spec looks wrong, say so and propose a fix. Do not silently diverge.
 - Verify package names and versions before installing. The ACP adapters, Agent Skills tooling and agent CLIs changed often in 2026.
