@@ -1,4 +1,5 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
+import { canWorkIn, type Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { KeyRound, Paperclip, Square } from "lucide-react";
 import {
@@ -16,9 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeSecret, SECRET_WARNING } from "@/features/boss/model";
+import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
+import { useTask } from "@/lib/task-queries";
 import { attachmentIds, filesFromClipboard, useAttachments } from "@/lib/use-attachments";
 import {
   applyCompletion,
@@ -39,7 +42,24 @@ interface PopupOption {
 
 const MAX_HEIGHT = 8 * 20 + 16;
 
-/** The message box: Enter sends, `/` lists the agent's commands, `@` finds files, Esc stops the agent. */
+/** Agents a mention can name: the team first, then the org's agents who may join. Boss excluded. */
+function agentMatches(
+  task: Pick<Task, "org" | "team">,
+  index: ReadonlyMap<string, AgentInfo>,
+  query: string,
+): { info: AgentInfo; onTeam: boolean }[] {
+  const q = query.toLowerCase();
+  const team = task.team.flatMap((id) => {
+    const info = index.get(id);
+    return info ? [{ info, onTeam: true }] : [];
+  });
+  const others = [...index.values()]
+    .filter((a) => !a.isBoss && !task.team.includes(a.id) && canWorkIn(a, task.org))
+    .map((info) => ({ info, onTeam: false }));
+  return [...team, ...others].filter((a) => a.info.id.includes(q)).slice(0, 8);
+}
+
+/** The message box: Enter sends, `/` lists the agent's commands, `@` agents and files, Esc stops the agent. */
 export function Composer({
   taskId,
   agents,
@@ -70,6 +90,10 @@ export function Composer({
   const trigger = detectTrigger(text, caret);
   const popupTrigger = trigger && trigger.start !== dismissed ? trigger : null;
   const files = useFileSearch(taskId, popupTrigger?.kind === "mention" ? popupTrigger.query : null);
+  const task = useTask(taskId).data;
+  const index = useAgentIndex();
+  const mentionable =
+    popupTrigger?.kind === "mention" && task ? agentMatches(task, index, popupTrigger.query) : [];
 
   const options: PopupOption[] =
     popupTrigger?.kind === "slash"
@@ -80,12 +104,21 @@ export function Composer({
           note: c.description,
         }))
       : popupTrigger?.kind === "mention"
-        ? files.map((f) => ({
-            key: `${f.repo}:${f.path}`,
-            insert: f.path,
-            label: f.path,
-            note: f.repo === "task" ? "task folder" : f.repo === "project" ? "project" : f.repo,
-          }))
+        ? [
+            // Agents first: the task's team, then the org's other agents, who join when mentioned.
+            ...mentionable.map((a) => ({
+              key: `agent:${a.info.id}`,
+              insert: a.info.id,
+              label: `@${a.info.id}`,
+              note: `${a.info.role} · ${a.info.account}${a.onTeam ? "" : " · joins the task"}`,
+            })),
+            ...files.map((f) => ({
+              key: `${f.repo}:${f.path}`,
+              insert: f.path,
+              label: f.path,
+              note: f.repo === "task" ? "task folder" : f.repo === "project" ? "project" : f.repo,
+            })),
+          ]
         : [];
   const popupOpen = popupTrigger !== null;
   const emptyNote =
@@ -93,7 +126,7 @@ export function Composer({
       ? commands.length === 0
         ? "No commands yet. They show once the agent has started."
         : "No command matches."
-      : "No files match.";
+      : "No agents or files match.";
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
 
   const send = useMutation<{ item: RoomItem }, ApiRequestError, "queue" | "interrupt">({
@@ -259,7 +292,7 @@ export function Composer({
             aria-autocomplete={popupOpen ? "list" : undefined}
             aria-controls={popupOpen ? listId : undefined}
             aria-activedescendant={popupOpen ? `${listId}-${activeIndex}` : undefined}
-            placeholder="Talk to the room. / for commands, @ for files."
+            placeholder="Talk to the room. @ for agents and files, / for commands."
             spellCheck={false}
             onChange={(event) => {
               setText(event.target.value);
