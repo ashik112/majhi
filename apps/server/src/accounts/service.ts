@@ -161,6 +161,11 @@ export class AccountService {
     return this.deps.probes.models(id, await this.require(id), refresh);
   }
 
+  /** The model list the last probe cached, without probing the account. Undefined when there is none. */
+  async cachedModels(id: string): Promise<AccountModels | undefined> {
+    return (await this.deps.probes.cached(id)).models;
+  }
+
   /** The account's usage windows, or null for API-key accounts. Reads when there is none cached or `refresh` is set. */
   async usage(id: string, refresh: boolean): Promise<AccountUsage | null> {
     return this.deps.usage.get(id, await this.require(id), refresh);
