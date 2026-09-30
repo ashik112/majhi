@@ -53,7 +53,7 @@ export function Sidebar() {
     >
       <Brand />
       {/* The middle scrolls when an update notice or many orgs need the room; the lamps stay at the foot. */}
-      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3">
+      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pb-6 scroll-fade">
         <UpdateNotice />
         <MainNav />
         <BossButton />

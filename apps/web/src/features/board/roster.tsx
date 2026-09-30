@@ -138,7 +138,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
         className={cn("hidden w-[248px] shrink-0 flex-col gap-3 rounded-2xl p-3 min-[1320px]:flex", GLASS)}
       >
         <RosterHead count={rows.length} working={working} />
-        <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+        <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2 pb-6 scroll-fade">
           <RosterList rows={rows} org={org} />
         </div>
       </aside>
@@ -183,7 +183,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
                 <X aria-hidden="true" className="size-3.5" />
               </button>
             </div>
-            <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+            <div className="-mr-2 min-h-0 flex-1 overflow-y-auto pr-2 pb-6 scroll-fade">
               <RosterList rows={rows} org={org} />
             </div>
           </aside>

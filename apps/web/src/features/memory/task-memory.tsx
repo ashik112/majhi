@@ -47,7 +47,7 @@ export function TaskMemory({ task }: { task: Task }) {
   return (
     <section
       aria-label="Memory of this task"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto pr-1"
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto pr-1 pb-6 scroll-fade"
     >
       <div className="flex items-center gap-3">
         <p className="m-0 min-w-0 flex-1 text-base text-fg-muted text-pretty">

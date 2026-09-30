@@ -99,7 +99,7 @@ export function MemoryView() {
           })}
         </div>
       </PageHeader>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto scroll-fade">
         <div className="flex max-w-[920px] flex-col gap-5 px-8 pt-5 pb-8">
           <div className="relative">
             <Search

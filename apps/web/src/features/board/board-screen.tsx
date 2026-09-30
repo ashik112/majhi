@@ -316,7 +316,7 @@ function BoardColumn({
   return (
     <section aria-label={column.label} className="flex min-h-0 min-w-[228px] flex-1 flex-col gap-2.5">
       <ColumnHead column={column} onHide={onHide} />
-      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-0.5 pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-28px),transparent)]">
+      <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-0.5 pb-6 scroll-fade">
         {column.tasks.map((task, index) => (
           <BoardCard key={task.id} task={task} orgs={orgs} filterOrg={filterOrg} index={index} />
         ))}

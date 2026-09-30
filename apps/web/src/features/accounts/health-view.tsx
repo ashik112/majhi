@@ -76,7 +76,7 @@ export function HealthView() {
       </PageHeader>
 
       <div className="relative flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col gap-[22px] overflow-auto px-8 pt-5 pb-7">
+        <div className="flex min-w-0 flex-1 flex-col gap-[22px] overflow-auto px-8 pt-5 pb-7 scroll-fade">
           <span role="status" className="sr-only">
             {check.finished ? "Health check finished" : ""}
           </span>

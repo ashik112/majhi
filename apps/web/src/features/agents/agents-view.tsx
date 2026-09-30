@@ -128,7 +128,7 @@ export function AgentsView() {
                 setAccountParam(undefined);
               }}
             />
-            <div className="flex min-w-0 flex-1 flex-col overflow-auto">
+            <div className="flex min-w-0 flex-1 flex-col overflow-auto scroll-fade">
               {newScope !== undefined ? (
                 <NewAgentForm
                   key={`${newScope}:${accountParam ?? ""}`}

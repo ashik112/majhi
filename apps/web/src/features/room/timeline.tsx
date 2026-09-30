@@ -111,7 +111,7 @@ export function Timeline({
         aria-live="off"
         // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus so the keyboard can scroll it
         tabIndex={0}
-        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 py-1 focus-visible:outline-none"
+        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 scroll-fade focus-visible:outline-none"
       >
         {state.more && <p className="text-center text-xs text-fg-faint">Loading earlier messages</p>}
         {!state.loaded && state.items.length === 0 && (
@@ -148,7 +148,7 @@ export function Timeline({
         <section
           aria-label="Needs you"
           className={cn(
-            "mt-2 flex max-h-[45%] shrink-0 flex-col gap-2 overflow-y-auto rounded-xl p-2.5",
+            "mt-2 flex max-h-[55%] shrink-0 flex-col gap-2 overflow-y-auto rounded-xl p-2.5",
             GLASS,
             "border-lamp-needs/30",
           )}

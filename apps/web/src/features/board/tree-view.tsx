@@ -49,7 +49,7 @@ export function TreeView({
   }
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the arrow keys move between the rows inside
-    <div onKeyDown={onKeyDown} className="min-h-0 flex-1 overflow-y-auto px-8 py-4">
+    <div onKeyDown={onKeyDown} className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-6 scroll-fade">
       <ul aria-label="Tasks" className="mx-auto flex max-w-[1100px] flex-col">
         {rows.map(({ task, depth, hasChildren }) => {
           const tile = orgTile(task, orgs);
