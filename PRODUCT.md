@@ -30,9 +30,9 @@ Owned core, reused parts: majhi orchestrates existing agents over ACP rather tha
 
 - Speed, clarity and reliability matter more than feature count.
 - Keyboard-first. Dense where it helps, calm everywhere else.
-- Dark theme first. IBM Plex Sans and IBM Plex Mono.
+- Dark and light themes with pickable accents; dark is the default. IBM Plex Sans and IBM Plex Mono.
 - The product is always named majhi (config `majhi.yaml`, folder `~/.majhi`).
-- Visual reference: `design/ui-demo.dc.html`.
+- Visual reference: `DESIGN.md` (the Mission control system).
 
 ## Brand Commitments
 

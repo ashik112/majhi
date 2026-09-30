@@ -3,7 +3,7 @@
 You are building majhi, a local, dockerized workspace for running AI coding agents, with work kept apart per org (your own projects, clients, teams). Read these first, in this order:
 
 1. `SPEC.md` for what to build and why. It is the source of truth.
-2. `design/Work Hub · clickable demo-html/Main.dc.html` for the intended UI, with rendered screens in its `reference/` folder (1440x900). It is a prototype in a canvas component format: read the markup for layout and exact values (colors, sizes, spacing, radii) and the script for behavior and sample data. Rebuild it properly in React, matching it closely; do not copy its format. It uses old names: "Work Hub" is majhi, `~/.work` is `~/.majhi`, Kimi is Codex. `design/ui-demo.dc.html` and `design/Work Hub · daily workspace-html/` are an earlier three-column design, kept only for reference.
+2. `DESIGN.md` for the visual system (Mission control: glass over a radar grid, dark and light themes, pickable accents, status lamps, a fixed shell that never scrolls). Follow its rules for every screen. `design/` holds earlier prototypes, kept only for page layouts and sample data; where they disagree with DESIGN.md, DESIGN.md wins.
 3. `docs/PROGRESS.md` and `docs/DECISIONS.md` to see where the build stands.
 
 ## How to work

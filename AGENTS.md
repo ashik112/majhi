@@ -3,14 +3,14 @@
 You are building majhi, a local, dockerized workspace for running AI coding agents, with work kept apart per org (your own projects, clients, teams). Read these first, in this order:
 
 1. `SPEC.md` for what to build and why. It is the source of truth.
-2. `design/ui-demo.dc.html` for the intended UI. It is a prototype in a canvas component format: read the markup for layout and the `renderVals()` script for behavior and sample data. Rebuild it properly in React. Do not copy its format.
+2. `DESIGN.md` for the visual system (Mission control: glass over a radar grid, dark and light themes, pickable accents, status lamps, a fixed shell that never scrolls). Follow its rules for every screen. `design/` holds earlier prototypes, kept only for page layouts and sample data; where they disagree with DESIGN.md, DESIGN.md wins.
 3. `docs/PROGRESS.md` and `docs/DECISIONS.md` to see where the build stands.
 
 ## How to work
 
-- Build one phase at a time, in the order in SPEC.md section 7. Do not start the next phase until the owner has reviewed the current one.
+- Build one phase at a time, in the order in SPEC.md section 7. A phase is finished when its branch is merged into `main`.
 - At the start of a phase, write a short plan in `docs/PROGRESS.md`: what you will build, in which order, and how you will test it. Then build.
-- At the end of a phase, update `docs/PROGRESS.md` with what works, how to try it, what is left, and any known issues. Then stop and ask the owner to review.
+- At the end of a phase, update `docs/PROGRESS.md` with what works, how to try it, what is left, and any known issues. Check it yourself first, including any UI in a browser (see the task rules). Turn problems you find outside the phase into tasks. Then merge through majhi's merge tool, which asks the owner for approval with one click, and list in one line only what the owner alone can check (real accounts, hosts, hardware).
 - When the spec does not cover something, make the smallest reasonable choice and record it in `docs/DECISIONS.md` (date, decision, reason, alternatives). If the choice is expensive to undo, ask first.
 - If the spec looks wrong, say so and propose a fix. Do not silently diverge.
 - Verify package names and versions before installing. The ACP adapters, Agent Skills tooling and agent CLIs changed often in 2026.
@@ -20,9 +20,12 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 - TypeScript strict, no `any` without a comment explaining why.
 - zod schemas at every boundary (HTTP, WebSocket, files on disk, ACP messages, MCP tools). Shared schemas live in `packages/shared`.
 - Small modules with clear names. No framework magic that hides control flow.
-- Every feature ships with tests: unit tests for logic (parsers, routing, merge order, limit detection), integration tests for ACP and git flows using fake agents, and at least one Playwright test per user-facing flow.
+- Tests only for crucial logic: security (secrets, auth, sandboxing, path containment), anything that can lose or corrupt data (git, worktrees, migrations, config writes), money and limits, and core state machines (task status, runs, approvals). No tests for UI layout, copy, styling or simple wiring. Keep the fake ACP agent in `packages/acp/testing` so tests never spend tokens.
+- While working, run typecheck and only the tests of the files you touched. Never run `sh scripts/ci.sh` or the whole e2e suite from a task: they run once, at the end of a phase. Web changes get typecheck only; there are no web unit tests. Copy, text and styling changes need nothing beyond typecheck.
+- Examples, test data, fixtures and docs use only generic sample names (Acme, Globex, Northwind, `/Users/owner`). Never write the owner's real companies, clients, projects, repos or paths into the repo.
 - Build a fake ACP agent in `packages/acp/testing` early. Use it for tests so they never spend real tokens.
 - Git: small commits, messages like `feat(rooms): route @mentions to agents`. One branch per phase.
+- Commit messages and PR descriptions never mention Claude or any AI assistant: no `Co-Authored-By` trailers, no "generated with" lines. Describe the change only.
 - No secrets in the repo, logs or test fixtures.
 
 ## Things that must never happen
@@ -37,3 +40,4 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 
 - Plain, direct writing in UI copy and docs. No em dashes. No filler.
 - Speed and clarity over feature count. If a screen feels busy, simplify it.
+- The owner never does manual work outside majhi unless majhi explicitly asks for it, in the UI, with the exact step. If a feature needs a terminal command, a hand edit or another app, build it into majhi instead (UI, boss or host helper). Terminal commands are fallbacks only.

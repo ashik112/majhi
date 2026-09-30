@@ -14,3 +14,8 @@ e2e/screenshots/
 
 # pnpm puts its store here when installing inside a worktree.
 .pnpm-store/
+
+# Design working files; only .impeccable/design.json is kept.
+.impeccable/*
+!.impeccable/design.json
+apps/web/.impeccable/

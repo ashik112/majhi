@@ -1,0 +1,1127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-30T16:51:15.096Z",
+  "title": "Design System: majhi",
+  "extensions": {
+    "colorMeta": {
+      "base": {
+        "role": "neutral",
+        "displayName": "Radar Ground",
+        "canonical": "oklch(14.4% 0.022 258.2)",
+        "source": "#050a13",
+        "light": "#e5eaf0",
+        "tonalRamp": [
+          "oklch(15% 0.022 258.2)",
+          "oklch(26% 0.022 258.2)",
+          "oklch(37% 0.022 258.2)",
+          "oklch(48% 0.022 258.2)",
+          "oklch(59% 0.022 258.2)",
+          "oklch(70% 0.022 258.2)",
+          "oklch(82% 0.022 258.2)",
+          "oklch(95% 0.022 258.2)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Console Canvas",
+        "canonical": "oklch(16.7% 0.019 259.7)",
+        "source": "#0a0f17",
+        "light": "#eef2f6",
+        "tonalRamp": [
+          "oklch(15% 0.019 259.7)",
+          "oklch(26% 0.019 259.7)",
+          "oklch(37% 0.019 259.7)",
+          "oklch(48% 0.019 259.7)",
+          "oklch(59% 0.019 259.7)",
+          "oklch(70% 0.019 259.7)",
+          "oklch(82% 0.019 259.7)",
+          "oklch(95% 0.019 259.7)"
+        ]
+      },
+      "glass": {
+        "role": "neutral",
+        "displayName": "Console Glass",
+        "canonical": "oklch(18.1% 0.023 260.4 / 0.6)",
+        "source": "rgb(12 18 28 / 0.6)",
+        "light": "rgb(250 252 255 / 0.6)",
+        "tonalRamp": [
+          "oklch(15% 0.023 260.4)",
+          "oklch(26% 0.023 260.4)",
+          "oklch(37% 0.023 260.4)",
+          "oklch(48% 0.023 260.4)",
+          "oklch(59% 0.023 260.4)",
+          "oklch(70% 0.023 260.4)",
+          "oklch(82% 0.023 260.4)",
+          "oklch(95% 0.023 260.4)"
+        ]
+      },
+      "glass-strong": {
+        "role": "neutral",
+        "displayName": "Floating Glass",
+        "canonical": "oklch(18.6% 0.024 262.2 / 0.975)",
+        "source": "rgb(13 19 30 / 0.975)",
+        "light": "rgb(250 252 255 / 0.98)",
+        "tonalRamp": [
+          "oklch(15% 0.024 262.2)",
+          "oklch(26% 0.024 262.2)",
+          "oklch(37% 0.024 262.2)",
+          "oklch(48% 0.024 262.2)",
+          "oklch(59% 0.024 262.2)",
+          "oklch(70% 0.024 262.2)",
+          "oklch(82% 0.024 262.2)",
+          "oklch(95% 0.024 262.2)"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card Glass",
+        "canonical": "oklch(21.7% 0.028 259.9 / 0.58)",
+        "source": "rgb(18 26 39 / 0.58)",
+        "light": "rgb(255 255 255 / 0.62)",
+        "tonalRamp": [
+          "oklch(15% 0.028 259.9)",
+          "oklch(26% 0.028 259.9)",
+          "oklch(37% 0.028 259.9)",
+          "oklch(48% 0.028 259.9)",
+          "oklch(59% 0.028 259.9)",
+          "oklch(70% 0.028 259.9)",
+          "oklch(82% 0.028 259.9)",
+          "oklch(95% 0.028 259.9)"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field Well",
+        "canonical": "oklch(13.8% 0.018 257.0 / 0.55)",
+        "source": "rgb(5 9 16 / 0.55)",
+        "light": "rgb(255 255 255 / 0.74)",
+        "tonalRamp": [
+          "oklch(15% 0.018 257.0)",
+          "oklch(26% 0.018 257.0)",
+          "oklch(37% 0.018 257.0)",
+          "oklch(48% 0.018 257.0)",
+          "oklch(59% 0.018 257.0)",
+          "oklch(70% 0.018 257.0)",
+          "oklch(82% 0.018 257.0)",
+          "oklch(95% 0.018 257.0)"
+        ]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Sunken Well",
+        "canonical": "oklch(12.0% 0.015 252.5 / 0.62)",
+        "source": "rgb(3 6 11 / 0.62)",
+        "light": "rgb(212 220 231 / 0.62)",
+        "tonalRamp": [
+          "oklch(15% 0.015 252.5)",
+          "oklch(26% 0.015 252.5)",
+          "oklch(37% 0.015 252.5)",
+          "oklch(48% 0.015 252.5)",
+          "oklch(59% 0.015 252.5)",
+          "oklch(70% 0.015 252.5)",
+          "oklch(82% 0.015 252.5)",
+          "oklch(95% 0.015 252.5)"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Tint",
+        "canonical": "oklch(74.3% 0.094 253.9 / 0.075)",
+        "source": "rgb(130 175 230 / 0.075)",
+        "light": "rgb(30 65 115 / 0.055)",
+        "tonalRamp": [
+          "oklch(15% 0.094 253.9)",
+          "oklch(26% 0.094 253.9)",
+          "oklch(37% 0.094 253.9)",
+          "oklch(48% 0.094 253.9)",
+          "oklch(59% 0.094 253.9)",
+          "oklch(70% 0.094 253.9)",
+          "oklch(82% 0.094 253.9)",
+          "oklch(95% 0.094 253.9)"
+        ]
+      },
+      "selected": {
+        "role": "neutral",
+        "displayName": "Selected Tint",
+        "canonical": "oklch(77.1% 0.104 251.4 / 0.14)",
+        "source": "rgb(130 185 245 / 0.14)",
+        "light": "rgb(30 75 140 / 0.1)",
+        "tonalRamp": [
+          "oklch(15% 0.104 251.4)",
+          "oklch(26% 0.104 251.4)",
+          "oklch(37% 0.104 251.4)",
+          "oklch(48% 0.104 251.4)",
+          "oklch(59% 0.104 251.4)",
+          "oklch(70% 0.104 251.4)",
+          "oklch(82% 0.104 251.4)",
+          "oklch(95% 0.104 251.4)"
+        ]
+      },
+      "glass-line": {
+        "role": "neutral",
+        "displayName": "Glass Edge",
+        "canonical": "oklch(75.6% 0.118 228.5 / 0.2)",
+        "source": "rgb(80 190 235 / 0.2)",
+        "light": "rgb(30 60 100 / 0.14)",
+        "tonalRamp": [
+          "oklch(15% 0.118 228.5)",
+          "oklch(26% 0.118 228.5)",
+          "oklch(37% 0.118 228.5)",
+          "oklch(48% 0.118 228.5)",
+          "oklch(59% 0.118 228.5)",
+          "oklch(70% 0.118 228.5)",
+          "oklch(82% 0.118 228.5)",
+          "oklch(95% 0.118 228.5)"
+        ]
+      },
+      "hair": {
+        "role": "neutral",
+        "displayName": "Cyan Hairline",
+        "canonical": "oklch(78.4% 0.115 225.1 / 0.28)",
+        "source": "rgb(90 200 240 / 0.28)",
+        "light": "rgb(20 120 170 / 0.3)",
+        "tonalRamp": [
+          "oklch(15% 0.115 225.1)",
+          "oklch(26% 0.115 225.1)",
+          "oklch(37% 0.115 225.1)",
+          "oklch(48% 0.115 225.1)",
+          "oklch(59% 0.115 225.1)",
+          "oklch(70% 0.115 225.1)",
+          "oklch(82% 0.115 225.1)",
+          "oklch(95% 0.115 225.1)"
+        ]
+      },
+      "grid": {
+        "role": "neutral",
+        "displayName": "Radar Grid",
+        "canonical": "oklch(69.2% 0.098 251.6 / 0.06)",
+        "source": "rgb(110 160 215 / 0.06)",
+        "light": "rgb(40 75 120 / 0.045)",
+        "tonalRamp": [
+          "oklch(15% 0.098 251.6)",
+          "oklch(26% 0.098 251.6)",
+          "oklch(37% 0.098 251.6)",
+          "oklch(48% 0.098 251.6)",
+          "oklch(59% 0.098 251.6)",
+          "oklch(70% 0.098 251.6)",
+          "oklch(82% 0.098 251.6)",
+          "oklch(95% 0.098 251.6)"
+        ]
+      },
+      "grid-major": {
+        "role": "neutral",
+        "displayName": "Radar Grid Major",
+        "canonical": "oklch(72.1% 0.108 249.5 / 0.1)",
+        "source": "rgb(110 170 230 / 0.1)",
+        "light": "rgb(40 75 120 / 0.075)",
+        "tonalRamp": [
+          "oklch(15% 0.108 249.5)",
+          "oklch(26% 0.108 249.5)",
+          "oklch(37% 0.108 249.5)",
+          "oklch(48% 0.108 249.5)",
+          "oklch(59% 0.108 249.5)",
+          "oklch(70% 0.108 249.5)",
+          "oklch(82% 0.108 249.5)",
+          "oklch(95% 0.108 249.5)"
+        ]
+      },
+      "ring": {
+        "role": "neutral",
+        "displayName": "Radar Ring",
+        "canonical": "oklch(77.3% 0.116 229.1 / 0.15)",
+        "source": "rgb(90 195 240 / 0.15)",
+        "light": "rgb(30 110 160 / 0.09)",
+        "tonalRamp": [
+          "oklch(15% 0.116 229.1)",
+          "oklch(26% 0.116 229.1)",
+          "oklch(37% 0.116 229.1)",
+          "oklch(48% 0.116 229.1)",
+          "oklch(59% 0.116 229.1)",
+          "oklch(70% 0.116 229.1)",
+          "oklch(82% 0.116 229.1)",
+          "oklch(95% 0.116 229.1)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "oklch(77.4% 0.093 253.9 / 0.1)",
+        "source": "rgb(140 185 240 / 0.1)",
+        "light": "rgb(30 60 100 / 0.1)",
+        "tonalRamp": [
+          "oklch(15% 0.093 253.9)",
+          "oklch(26% 0.093 253.9)",
+          "oklch(37% 0.093 253.9)",
+          "oklch(48% 0.093 253.9)",
+          "oklch(59% 0.093 253.9)",
+          "oklch(70% 0.093 253.9)",
+          "oklch(82% 0.093 253.9)",
+          "oklch(95% 0.093 253.9)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Line Strong",
+        "canonical": "oklch(77.4% 0.093 253.9 / 0.14)",
+        "source": "rgb(140 185 240 / 0.14)",
+        "light": "rgb(30 60 100 / 0.14)",
+        "tonalRamp": [
+          "oklch(15% 0.093 253.9)",
+          "oklch(26% 0.093 253.9)",
+          "oklch(37% 0.093 253.9)",
+          "oklch(48% 0.093 253.9)",
+          "oklch(59% 0.093 253.9)",
+          "oklch(70% 0.093 253.9)",
+          "oklch(82% 0.093 253.9)",
+          "oklch(95% 0.093 253.9)"
+        ]
+      },
+      "line-control": {
+        "role": "neutral",
+        "displayName": "Control Line",
+        "canonical": "oklch(80.3% 0.086 251.5 / 0.22)",
+        "source": "rgb(150 195 245 / 0.22)",
+        "light": "rgb(30 60 100 / 0.22)",
+        "tonalRamp": [
+          "oklch(15% 0.086 251.5)",
+          "oklch(26% 0.086 251.5)",
+          "oklch(37% 0.086 251.5)",
+          "oklch(48% 0.086 251.5)",
+          "oklch(59% 0.086 251.5)",
+          "oklch(70% 0.086 251.5)",
+          "oklch(82% 0.086 251.5)",
+          "oklch(95% 0.086 251.5)"
+        ]
+      },
+      "line-bright": {
+        "role": "neutral",
+        "displayName": "Bright Line",
+        "canonical": "oklch(80.3% 0.086 251.5 / 0.28)",
+        "source": "rgb(150 195 245 / 0.28)",
+        "light": "rgb(30 60 100 / 0.28)",
+        "tonalRamp": [
+          "oklch(15% 0.086 251.5)",
+          "oklch(26% 0.086 251.5)",
+          "oklch(37% 0.086 251.5)",
+          "oklch(48% 0.086 251.5)",
+          "oklch(59% 0.086 251.5)",
+          "oklch(70% 0.086 251.5)",
+          "oklch(82% 0.086 251.5)",
+          "oklch(95% 0.086 251.5)"
+        ]
+      },
+      "line-hover": {
+        "role": "neutral",
+        "displayName": "Hover Line",
+        "canonical": "oklch(83.5% 0.076 251.7 / 0.4)",
+        "source": "rgb(165 205 250 / 0.4)",
+        "light": "rgb(30 60 100 / 0.42)",
+        "tonalRamp": [
+          "oklch(15% 0.076 251.7)",
+          "oklch(26% 0.076 251.7)",
+          "oklch(37% 0.076 251.7)",
+          "oklch(48% 0.076 251.7)",
+          "oklch(59% 0.076 251.7)",
+          "oklch(70% 0.076 251.7)",
+          "oklch(82% 0.076 251.7)",
+          "oklch(95% 0.076 251.7)"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Readout White",
+        "canonical": "oklch(94.4% 0.013 255.5)",
+        "source": "#e7edf5",
+        "light": "#0e1726",
+        "tonalRamp": [
+          "oklch(15% 0.013 255.5)",
+          "oklch(26% 0.013 255.5)",
+          "oklch(37% 0.013 255.5)",
+          "oklch(48% 0.013 255.5)",
+          "oklch(59% 0.013 255.5)",
+          "oklch(70% 0.013 255.5)",
+          "oklch(82% 0.013 255.5)",
+          "oklch(95% 0.013 255.5)"
+        ]
+      },
+      "fg-soft": {
+        "role": "neutral",
+        "displayName": "Soft Text",
+        "canonical": "oklch(84.1% 0.021 254.9)",
+        "source": "#c2ccd9",
+        "light": "#273447",
+        "tonalRamp": [
+          "oklch(15% 0.021 254.9)",
+          "oklch(26% 0.021 254.9)",
+          "oklch(37% 0.021 254.9)",
+          "oklch(48% 0.021 254.9)",
+          "oklch(59% 0.021 254.9)",
+          "oklch(70% 0.021 254.9)",
+          "oklch(82% 0.021 254.9)",
+          "oklch(95% 0.021 254.9)"
+        ]
+      },
+      "fg-muted": {
+        "role": "neutral",
+        "displayName": "Muted Text",
+        "canonical": "oklch(73.1% 0.027 255.6)",
+        "source": "#9da9b9",
+        "light": "#435166",
+        "tonalRamp": [
+          "oklch(15% 0.027 255.6)",
+          "oklch(26% 0.027 255.6)",
+          "oklch(37% 0.027 255.6)",
+          "oklch(48% 0.027 255.6)",
+          "oklch(59% 0.027 255.6)",
+          "oklch(70% 0.027 255.6)",
+          "oklch(82% 0.027 255.6)",
+          "oklch(95% 0.027 255.6)"
+        ]
+      },
+      "fg-faint": {
+        "role": "neutral",
+        "displayName": "Faint Text",
+        "canonical": "oklch(64.6% 0.031 256.5)",
+        "source": "#828fa1",
+        "light": "#55637a",
+        "tonalRamp": [
+          "oklch(15% 0.031 256.5)",
+          "oklch(26% 0.031 256.5)",
+          "oklch(37% 0.031 256.5)",
+          "oklch(48% 0.031 256.5)",
+          "oklch(59% 0.031 256.5)",
+          "oklch(70% 0.031 256.5)",
+          "oklch(82% 0.031 256.5)",
+          "oklch(95% 0.031 256.5)"
+        ]
+      },
+      "fg-dim": {
+        "role": "neutral",
+        "displayName": "Dim Text",
+        "canonical": "oklch(50.9% 0.031 255.2)",
+        "source": "#5a6778",
+        "light": "#8a96a6",
+        "tonalRamp": [
+          "oklch(15% 0.031 255.2)",
+          "oklch(26% 0.031 255.2)",
+          "oklch(37% 0.031 255.2)",
+          "oklch(48% 0.031 255.2)",
+          "oklch(59% 0.031 255.2)",
+          "oklch(70% 0.031 255.2)",
+          "oklch(82% 0.031 255.2)",
+          "oklch(95% 0.031 255.2)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Brand Amber (default accent)",
+        "canonical": "oklch(80.8% 0.131 76.4)",
+        "source": "#f0b455",
+        "light": "#e39a2b",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Accent Hover",
+        "canonical": "oklch(84.3% 0.113 77.2)",
+        "source": "#f5c273",
+        "light": "#eaa640",
+        "tonalRamp": [
+          "oklch(15% 0.113 77.2)",
+          "oklch(26% 0.113 77.2)",
+          "oklch(37% 0.113 77.2)",
+          "oklch(48% 0.113 77.2)",
+          "oklch(59% 0.113 77.2)",
+          "oklch(70% 0.113 77.2)",
+          "oklch(82% 0.113 77.2)",
+          "oklch(95% 0.113 77.2)"
+        ]
+      },
+      "accent-press": {
+        "role": "primary",
+        "displayName": "Accent Press",
+        "canonical": "oklch(75.9% 0.131 75.9)",
+        "source": "#e0a444",
+        "light": "#cf8a1c",
+        "tonalRamp": [
+          "oklch(15% 0.131 75.9)",
+          "oklch(26% 0.131 75.9)",
+          "oklch(37% 0.131 75.9)",
+          "oklch(48% 0.131 75.9)",
+          "oklch(59% 0.131 75.9)",
+          "oklch(70% 0.131 75.9)",
+          "oklch(82% 0.131 75.9)",
+          "oklch(95% 0.131 75.9)"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent Ink",
+        "canonical": "oklch(18.8% 0.030 81.9)",
+        "source": "#1a1204",
+        "light": "#1c1100",
+        "tonalRamp": [
+          "oklch(15% 0.030 81.9)",
+          "oklch(26% 0.030 81.9)",
+          "oklch(37% 0.030 81.9)",
+          "oklch(48% 0.030 81.9)",
+          "oklch(59% 0.030 81.9)",
+          "oklch(70% 0.030 81.9)",
+          "oklch(82% 0.030 81.9)",
+          "oklch(95% 0.030 81.9)"
+        ]
+      },
+      "accent-wash": {
+        "role": "primary",
+        "displayName": "Accent Wash",
+        "canonical": "oklch(80.8% 0.131 76.4 / 0.12)",
+        "source": "rgb(240 180 85 / 0.12)",
+        "light": "rgb(214 140 30 / 0.13)",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "accent-line": {
+        "role": "primary",
+        "displayName": "Accent Line",
+        "canonical": "oklch(80.8% 0.131 76.4 / 0.38)",
+        "source": "rgb(240 180 85 / 0.38)",
+        "light": "rgb(190 120 20 / 0.42)",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "Accent Text",
+        "canonical": "oklch(84.6% 0.107 77.9)",
+        "source": "#f3c47a",
+        "light": "#8f5406",
+        "tonalRamp": [
+          "oklch(15% 0.107 77.9)",
+          "oklch(26% 0.107 77.9)",
+          "oklch(37% 0.107 77.9)",
+          "oklch(48% 0.107 77.9)",
+          "oklch(59% 0.107 77.9)",
+          "oklch(70% 0.107 77.9)",
+          "oklch(82% 0.107 77.9)",
+          "oklch(95% 0.107 77.9)"
+        ]
+      },
+      "brand": {
+        "role": "primary",
+        "displayName": "Mark Amber",
+        "canonical": "oklch(80.8% 0.131 76.4)",
+        "source": "#f0b455",
+        "light": "#f0b455",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "brand-ink": {
+        "role": "primary",
+        "displayName": "Mark Ink",
+        "canonical": "oklch(18.8% 0.030 81.9)",
+        "source": "#1a1204",
+        "light": "#1a1204",
+        "tonalRamp": [
+          "oklch(15% 0.030 81.9)",
+          "oklch(26% 0.030 81.9)",
+          "oklch(37% 0.030 81.9)",
+          "oklch(48% 0.030 81.9)",
+          "oklch(59% 0.030 81.9)",
+          "oklch(70% 0.030 81.9)",
+          "oklch(82% 0.030 81.9)",
+          "oklch(95% 0.030 81.9)"
+        ]
+      },
+      "caution": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "oklch(80.8% 0.131 76.4)",
+        "source": "#f0b455",
+        "light": "#95590a",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "caution-wash": {
+        "role": "tertiary",
+        "displayName": "Caution Wash",
+        "canonical": "oklch(80.8% 0.131 76.4 / 0.1)",
+        "source": "rgb(240 180 85 / 0.1)",
+        "light": "rgb(214 140 30 / 0.12)",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "caution-line": {
+        "role": "tertiary",
+        "displayName": "Caution Line",
+        "canonical": "oklch(80.8% 0.131 76.4 / 0.32)",
+        "source": "rgb(240 180 85 / 0.32)",
+        "light": "rgb(180 110 20 / 0.36)",
+        "tonalRamp": [
+          "oklch(15% 0.131 76.4)",
+          "oklch(26% 0.131 76.4)",
+          "oklch(37% 0.131 76.4)",
+          "oklch(48% 0.131 76.4)",
+          "oklch(59% 0.131 76.4)",
+          "oklch(70% 0.131 76.4)",
+          "oklch(82% 0.131 76.4)",
+          "oklch(95% 0.131 76.4)"
+        ]
+      },
+      "blue": {
+        "role": "tertiary",
+        "displayName": "Message Blue",
+        "canonical": "oklch(77.3% 0.101 255.7)",
+        "source": "#8ab8f5",
+        "light": "#2a64b8",
+        "tonalRamp": [
+          "oklch(15% 0.101 255.7)",
+          "oklch(26% 0.101 255.7)",
+          "oklch(37% 0.101 255.7)",
+          "oklch(48% 0.101 255.7)",
+          "oklch(59% 0.101 255.7)",
+          "oklch(70% 0.101 255.7)",
+          "oklch(82% 0.101 255.7)",
+          "oklch(95% 0.101 255.7)"
+        ]
+      },
+      "green": {
+        "role": "tertiary",
+        "displayName": "Message Green",
+        "canonical": "oklch(80.1% 0.088 173.3)",
+        "source": "#7fd1b9",
+        "light": "#0f7d5c",
+        "tonalRamp": [
+          "oklch(15% 0.088 173.3)",
+          "oklch(26% 0.088 173.3)",
+          "oklch(37% 0.088 173.3)",
+          "oklch(48% 0.088 173.3)",
+          "oklch(59% 0.088 173.3)",
+          "oklch(70% 0.088 173.3)",
+          "oklch(82% 0.088 173.3)",
+          "oklch(95% 0.088 173.3)"
+        ]
+      },
+      "red": {
+        "role": "tertiary",
+        "displayName": "Message Red",
+        "canonical": "oklch(71.3% 0.147 29.3)",
+        "source": "#f07b6b",
+        "light": "#c2352a",
+        "tonalRamp": [
+          "oklch(15% 0.147 29.3)",
+          "oklch(26% 0.147 29.3)",
+          "oklch(37% 0.147 29.3)",
+          "oklch(48% 0.147 29.3)",
+          "oklch(59% 0.147 29.3)",
+          "oklch(70% 0.147 29.3)",
+          "oklch(82% 0.147 29.3)",
+          "oklch(95% 0.147 29.3)"
+        ]
+      },
+      "violet": {
+        "role": "tertiary",
+        "displayName": "Mention Violet",
+        "canonical": "oklch(77.9% 0.114 300.6)",
+        "source": "#c3a6f5",
+        "light": "#6d4bc4",
+        "tonalRamp": [
+          "oklch(15% 0.114 300.6)",
+          "oklch(26% 0.114 300.6)",
+          "oklch(37% 0.114 300.6)",
+          "oklch(48% 0.114 300.6)",
+          "oklch(59% 0.114 300.6)",
+          "oklch(70% 0.114 300.6)",
+          "oklch(82% 0.114 300.6)",
+          "oklch(95% 0.114 300.6)"
+        ]
+      },
+      "lamp-working": {
+        "role": "secondary",
+        "displayName": "Working Cyan",
+        "canonical": "oklch(80.7% 0.129 216.3)",
+        "source": "#3fd4f5",
+        "light": "#0a7694",
+        "tonalRamp": [
+          "oklch(15% 0.129 216.3)",
+          "oklch(26% 0.129 216.3)",
+          "oklch(37% 0.129 216.3)",
+          "oklch(48% 0.129 216.3)",
+          "oklch(59% 0.129 216.3)",
+          "oklch(70% 0.129 216.3)",
+          "oklch(82% 0.129 216.3)",
+          "oklch(95% 0.129 216.3)"
+        ]
+      },
+      "lamp-needs": {
+        "role": "secondary",
+        "displayName": "Needs-You Red",
+        "canonical": "oklch(70.7% 0.185 23.0)",
+        "source": "#ff6868",
+        "light": "#cf2a2a",
+        "tonalRamp": [
+          "oklch(15% 0.185 23.0)",
+          "oklch(26% 0.185 23.0)",
+          "oklch(37% 0.185 23.0)",
+          "oklch(48% 0.185 23.0)",
+          "oklch(59% 0.185 23.0)",
+          "oklch(70% 0.185 23.0)",
+          "oklch(82% 0.185 23.0)",
+          "oklch(95% 0.185 23.0)"
+        ]
+      },
+      "lamp-paused": {
+        "role": "secondary",
+        "displayName": "Paused Magenta",
+        "canonical": "oklch(73.2% 0.196 333.2)",
+        "source": "#ee72dc",
+        "light": "#a52a93",
+        "tonalRamp": [
+          "oklch(15% 0.196 333.2)",
+          "oklch(26% 0.196 333.2)",
+          "oklch(37% 0.196 333.2)",
+          "oklch(48% 0.196 333.2)",
+          "oklch(59% 0.196 333.2)",
+          "oklch(70% 0.196 333.2)",
+          "oklch(82% 0.196 333.2)",
+          "oklch(95% 0.196 333.2)"
+        ]
+      },
+      "lamp-done": {
+        "role": "secondary",
+        "displayName": "Done Green",
+        "canonical": "oklch(79.2% 0.154 160.9)",
+        "source": "#45d99a",
+        "light": "#0b8058",
+        "tonalRamp": [
+          "oklch(15% 0.154 160.9)",
+          "oklch(26% 0.154 160.9)",
+          "oklch(37% 0.154 160.9)",
+          "oklch(48% 0.154 160.9)",
+          "oklch(59% 0.154 160.9)",
+          "oklch(70% 0.154 160.9)",
+          "oklch(82% 0.154 160.9)",
+          "oklch(95% 0.154 160.9)"
+        ]
+      },
+      "lamp-idle": {
+        "role": "secondary",
+        "displayName": "Idle Slate",
+        "canonical": "oklch(53.0% 0.034 256.1)",
+        "source": "#5f6d80",
+        "light": "#8d99a9",
+        "tonalRamp": [
+          "oklch(15% 0.034 256.1)",
+          "oklch(26% 0.034 256.1)",
+          "oklch(37% 0.034 256.1)",
+          "oklch(48% 0.034 256.1)",
+          "oklch(59% 0.034 256.1)",
+          "oklch(70% 0.034 256.1)",
+          "oklch(82% 0.034 256.1)",
+          "oklch(95% 0.034 256.1)"
+        ]
+      }
+    },
+    "themes": {
+      "note": "Frontmatter values are the dark theme (the default). colorMeta.<token>.light holds the light value. Themes switch on html[data-theme], accents on html[data-accent]; index.html sets both before first paint from localStorage key majhi.appearance.",
+      "accents": {
+        "amber": {
+          "dark": {
+            "accent": "#f0b455",
+            "text": "#f3c47a",
+            "ink": "#1a1204"
+          },
+          "light": {
+            "accent": "#e39a2b",
+            "text": "#8f5406",
+            "ink": "#1c1100"
+          }
+        },
+        "blue": {
+          "dark": {
+            "accent": "#7ea6ff",
+            "text": "#a6c1ff",
+            "ink": "#07112a"
+          },
+          "light": {
+            "accent": "#2f5fd6",
+            "text": "#244db3",
+            "ink": "#ffffff"
+          }
+        },
+        "violet": {
+          "dark": {
+            "accent": "#a98bf5",
+            "text": "#c4b0f8",
+            "ink": "#150b2b"
+          },
+          "light": {
+            "accent": "#6f4fd6",
+            "text": "#5a3cc0",
+            "ink": "#ffffff"
+          }
+        },
+        "lime": {
+          "dark": {
+            "accent": "#b6dc4e",
+            "text": "#c6e57a",
+            "ink": "#141c02"
+          },
+          "light": {
+            "accent": "#9cc12b",
+            "text": "#4d6608",
+            "ink": "#141c02"
+          }
+        },
+        "steel": {
+          "dark": {
+            "accent": "#b8c4d6",
+            "text": "#cdd6e3",
+            "ink": "#0b111b"
+          },
+          "light": {
+            "accent": "#475569",
+            "text": "#3b4757",
+            "ink": "#ffffff"
+          }
+        }
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The page title in the top bar. One per page."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card, dialog and empty-state headings; column heads at 13px."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "Task titles on cards (three lines max) and sidebar navigation."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "The 13px default for text and controls."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Secondary lines, chips, segments, lamp status lines."
+      },
+      "group-label": {
+        "displayName": "Group label",
+        "purpose": "Uppercase heading of a group or table columns. Never above a title."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Ids, handles, counts, paths, percentages; mono with tabular figures."
+      },
+      "telemetry": {
+        "displayName": "Telemetry",
+        "purpose": "Big counts in the top telemetry strip, with the word in Sans beside."
+      }
+    },
+    "shadows": [
+      {
+        "name": "glass",
+        "value": "inset 0 1px 0 0 var(--c-glass-hi), 0 14px 34px -16px rgb(0 0 0 / 0.75), 0 3px 8px -4px rgb(0 0 0 / 0.5)",
+        "purpose": "Resting glass surfaces and task cards (dark; light uses rgb(25 45 75) at 0.28 and 0.16)."
+      },
+      {
+        "name": "pop",
+        "value": "inset 0 1px 0 0 var(--c-glass-hi), 0 24px 56px -18px rgb(0 0 0 / 0.85), 0 6px 16px -6px rgb(0 0 0 / 0.55)",
+        "purpose": "Floating glass and hovered task cards."
+      },
+      {
+        "name": "lamp-glow",
+        "value": "0 0 0 3px color-mix(in oklab, currentColor 16%, transparent), 0 0 9px color-mix(in oklab, currentColor 55%, transparent)",
+        "purpose": "Needs-you and paused lamps."
+      },
+      {
+        "name": "accent-halo",
+        "value": "0 6px 18px -8px var(--c-accent)",
+        "purpose": "Under the primary button only."
+      }
+    ],
+    "materials": [
+      {
+        "name": "glass",
+        "value": "background var(--c-glass); border 1px var(--c-glass-line); backdrop-filter blur(18px) saturate(1.35); shadow glass",
+        "purpose": "Resting surfaces: sidebar, top bars, panels, docks."
+      },
+      {
+        "name": "glass-strong",
+        "value": "background var(--c-glass-strong); border 1px var(--c-glass-line); backdrop-filter blur(24px) saturate(1.4); shadow pop",
+        "purpose": "Menus, dialogs, drawers, popovers."
+      },
+      {
+        "name": "backdrop",
+        "value": "base + horizon glow + two radial glows + 32px grid + 160px major grid + 160px rings at 72% 58% + crosshairs",
+        "purpose": "The radar ground behind the whole app (.app-backdrop)."
+      },
+      {
+        "name": "scroll-fade",
+        "value": "mask-image linear-gradient with 22px edge fades, driven by scroll(self) over a 32px range",
+        "purpose": "Every scroll area; scroll-fade-end fades only the bottom."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Default easing for entrances and state transitions."
+      },
+      {
+        "name": "state",
+        "value": "150ms",
+        "purpose": "Colour, border and lift transitions on controls and cards."
+      },
+      {
+        "name": "rise",
+        "value": "0.28s ease-out, 6px, 30ms stagger capped at 8",
+        "purpose": "Cards entering the board."
+      },
+      {
+        "name": "lamp",
+        "value": "2.2s ease-in-out infinite",
+        "purpose": "The working lamp's breathing glow."
+      },
+      {
+        "name": "sweep",
+        "value": "2.4s ease-out infinite",
+        "purpose": "The cyan sweep on a working card's track."
+      },
+      {
+        "name": "dialog-in",
+        "value": "0.2s ease-out, 6px rise, 0.985 scale, 2px blur clearing",
+        "purpose": "Dialogs opening."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all durations 0.01ms",
+        "purpose": "prefers-reduced-motion kills non-essential motion everywhere."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "telemetry-wide",
+        "value": "1280px"
+      },
+      {
+        "name": "checked-narrow",
+        "value": "1100px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The filled action, in the pickable accent with a soft halo.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>New task</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:0;border-radius:8px;background:var(--c-accent);color:var(--c-accent-ink);font:600 13px/20px \"IBM Plex Sans\",system-ui,sans-serif;box-shadow:0 6px 18px -8px var(--c-accent);cursor:pointer;transition:background-color .15s}.ds-btn-primary:hover{background:var(--c-accent-hover)}.ds-btn-primary:active{background:var(--c-accent-press)}.ds-btn-primary:focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The default button: raised tint with a control hairline.",
+      "html": "<button class=\"ds-btn-secondary\">Open room</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;height:34px;padding:0 12px;border:1px solid var(--c-line-control);border-radius:8px;background:var(--c-raised);color:var(--c-fg);font:500 13px/20px \"IBM Plex Sans\",system-ui,sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s}.ds-btn-secondary:hover{border-color:var(--c-line-hover);background:var(--c-selected)}.ds-btn-secondary:focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-emphasis actions in bars and headers.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;height:34px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--c-fg-muted);font:500 13px/20px \"IBM Plex Sans\",system-ui,sans-serif;cursor:pointer;transition:background-color .15s,color .15s}.ds-btn-ghost:hover{background:var(--c-raised);color:var(--c-fg)}.ds-btn-ghost:focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Field well with a control hairline; focus turns the border accent.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search tasks\" />",
+      "css": ".ds-input{height:34px;width:240px;padding:0 12px;border:1px solid var(--c-line-control);border-radius:8px;background:var(--c-field);color:var(--c-fg);caret-color:var(--c-accent);font:400 13px/20px \"IBM Plex Sans\",system-ui,sans-serif;transition:border-color .15s}.ds-input::placeholder{color:var(--c-fg-faint)}.ds-input:hover{border-color:var(--c-line-hover)}.ds-input:focus-visible{outline:none;border-color:var(--c-accent)}"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item-selected",
+      "description": "32px rows; the selected row carries a lit accent hairline on its left edge.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-on\" href=\"#\">Board</a><a class=\"ds-nav-item\" href=\"#\">Agents<span class=\"ds-count\">9</span></a><a class=\"ds-nav-item\" href=\"#\">Accounts<span class=\"ds-count\">6</span></a></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;gap:1px;width:204px}.ds-nav-item{position:relative;display:flex;align-items:center;height:32px;padding:0 10px;border-radius:8px;color:var(--c-fg-muted);font:500 14px/22px \"IBM Plex Sans\",system-ui,sans-serif;text-decoration:none;transition:background-color .15s,color .15s}.ds-nav-item:hover{background:var(--c-raised);color:var(--c-fg)}.ds-nav-item:focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}.ds-nav-item.ds-on{background:var(--c-selected);color:var(--c-fg)}.ds-nav-item.ds-on::before{content:\"\";position:absolute;top:8px;bottom:8px;left:0;width:1px;border-radius:9999px;background:var(--c-accent);box-shadow:0 0 6px var(--c-accent)}.ds-count{margin-left:auto;font:400 12px \"IBM Plex Mono\",monospace;font-variant-numeric:tabular-nums;color:var(--c-fg-faint)}"
+    },
+    {
+      "name": "Choice Chip",
+      "kind": "chip",
+      "refersTo": "choice-chip-pressed",
+      "description": "Form choices as toggle chips; pressed takes the accent wash.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">Acme</button><button class=\"ds-chip\" aria-pressed=\"false\">Globex</button></div>",
+      "css": ".ds-chips{display:flex;gap:6px}.ds-chip{min-height:34px;padding:0 12px;border:1px solid var(--c-line-strong);border-radius:8px;background:var(--c-card);color:var(--c-fg-muted);font:400 12px/18px \"IBM Plex Sans\",system-ui,sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s}.ds-chip:hover{border-color:var(--c-line-hover);color:var(--c-fg)}.ds-chip[aria-pressed=\"true\"]{border-color:var(--c-accent-line);background:var(--c-accent-wash);color:var(--c-fg)}.ds-chip:focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}"
+    },
+    {
+      "name": "Status Lamp",
+      "kind": "custom",
+      "refersTo": "lamp",
+      "description": "Five states, one colour each, always with the word beside it.",
+      "html": "<div class=\"ds-lamps\"><span><i class=\"ds-lamp ds-working\"></i>Working</span><span><i class=\"ds-lamp ds-needs\"></i>Needs you</span><span><i class=\"ds-lamp ds-paused\"></i>Paused</span><span><i class=\"ds-lamp ds-done\"></i>Done</span><span><i class=\"ds-lamp ds-idle\"></i>Idle</span></div>",
+      "css": ".ds-lamps{display:flex;gap:16px;font:400 12px/18px \"IBM Plex Sans\",system-ui,sans-serif;color:var(--c-fg-soft)}.ds-lamps span{display:inline-flex;align-items:center;gap:6px}.ds-lamp{display:inline-block;width:8px;height:8px;border-radius:9999px;background:currentColor}.ds-working{color:var(--c-lamp-working);animation:ds-lamp 2.2s ease-in-out infinite}.ds-needs{color:var(--c-lamp-needs);box-shadow:0 0 0 3px color-mix(in oklab,currentColor 16%,transparent),0 0 9px color-mix(in oklab,currentColor 55%,transparent)}.ds-paused{color:var(--c-lamp-paused);box-shadow:0 0 0 3px color-mix(in oklab,currentColor 16%,transparent),0 0 9px color-mix(in oklab,currentColor 55%,transparent)}.ds-done{color:var(--c-lamp-done)}.ds-idle{color:var(--c-lamp-idle);background:transparent;border:1.5px solid currentColor;box-sizing:border-box}@keyframes ds-lamp{0%,100%{box-shadow:0 0 0 0 color-mix(in oklab,currentColor 45%,transparent),0 0 8px 0 color-mix(in oklab,currentColor 55%,transparent)}50%{box-shadow:0 0 0 4px transparent,0 0 12px 1px color-mix(in oklab,currentColor 70%,transparent)}}"
+    },
+    {
+      "name": "Task Card",
+      "kind": "card",
+      "refersTo": "task-card",
+      "description": "A task on the board; lit states carry the lamp in the frame.",
+      "html": "<article class=\"ds-card ds-lit-needs\"><div class=\"ds-card-top\"><i class=\"ds-card-lamp\"></i><span class=\"ds-id\">ACME-19</span></div><a class=\"ds-card-title\" href=\"#\">Split the importer into two steps</a><span class=\"ds-card-line\">Your turn: reply in the room</span><span class=\"ds-bar\"><span style=\"width:20%\"></span></span></article>",
+      "css": ".ds-card{display:flex;flex-direction:column;gap:8px;width:320px;padding:12px;border:1px solid var(--c-glass-line);border-radius:12px;background:var(--c-card);color:var(--c-fg);box-shadow:var(--c-shadow-glass);backdrop-filter:blur(12px);font-family:\"IBM Plex Sans\",system-ui,sans-serif;transition:transform .15s,border-color .15s,box-shadow .15s}.ds-card:hover{transform:translateY(-1px);border-color:var(--c-line-hover);box-shadow:var(--c-shadow-pop)}.ds-card:focus-within{outline:2px solid var(--c-accent);outline-offset:2px}.ds-lit-needs{border-color:color-mix(in oklab,var(--c-lamp-needs) 35%,transparent);background-image:linear-gradient(180deg,color-mix(in oklab,var(--c-lamp-needs) 8%,transparent),transparent 60%)}.ds-card-top{display:flex;align-items:center;gap:8px;height:20px}.ds-card-lamp{width:8px;height:8px;border-radius:9999px;background:var(--c-lamp-needs);box-shadow:0 0 0 3px color-mix(in oklab,var(--c-lamp-needs) 16%,transparent),0 0 9px color-mix(in oklab,var(--c-lamp-needs) 55%,transparent)}.ds-id{font:400 11px/16px \"IBM Plex Mono\",monospace;color:var(--c-fg-muted)}.ds-card-title{font:500 14px/1.35 \"IBM Plex Sans\",system-ui,sans-serif;color:var(--c-fg);text-decoration:none;outline:none}.ds-card-line{font-size:12px;line-height:18px;color:var(--c-lamp-needs)}.ds-bar{display:block;height:3px;border-radius:9999px;background:var(--c-line-strong);overflow:hidden}.ds-bar span{display:block;height:100%;border-radius:9999px;background:var(--c-blue)}"
+    },
+    {
+      "name": "Column Rail",
+      "kind": "custom",
+      "refersTo": "glass-panel",
+      "description": "An empty column collapsed to a dashed rail with lamp, vertical name and count.",
+      "html": "<section class=\"ds-rail\"><i></i><h2>Working</h2><span>0</span></section>",
+      "css": ".ds-rail{display:flex;flex-direction:column;align-items:center;gap:12px;width:44px;height:240px;padding:14px 0;border:1px dashed var(--c-line-control);border-radius:14px;box-sizing:border-box}.ds-rail i{width:7px;height:7px;border-radius:9999px;background:var(--c-lamp-working);opacity:.35}.ds-rail h2{margin:0;writing-mode:vertical-rl;font:500 12px/18px \"IBM Plex Sans\",system-ui,sans-serif;color:var(--c-fg-soft)}.ds-rail span{font:400 12px \"IBM Plex Mono\",monospace;font-variant-numeric:tabular-nums;color:var(--c-fg-muted)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Flight Director's Console",
+    "overview": "majhi is a console, not a document. The owner runs agent teams across orgs all day on a desktop, and the whole app is one fixed instrument panel: blue-black glass panels frosted over a faint radar grid, cyan hairlines where one region meets another, and round status lamps that say what runs, what needs the owner, and what waits. The viewport is the console. The document never scrolls; every list scrolls inside its own panel and fades at its edges, so a row meets the glass softly instead of being cut mid-line.\n\nDensity is instrument-grade: a 13px base, a five-step type ramp that tops out at 22px, and numbers set in IBM Plex Mono with tabular figures so counts line up and never jitter. The palette is a dark blue-black ground with near-neutral cool text; colour is spent almost entirely on signal. Five lamp colours carry state and nothing else, and one pickable accent (amber by default, matching the brand mark) carries action and current selection. Dark is the default theme; light is pale instrument glass on a cool gray grid, with every token re-tuned rather than inverted. A System choice follows the operating system.\n\nThe world rejects the flat gray card stack with \"Nothing here\" boxes: an empty column is not a box, it is a slim rail with its name and count.",
+    "keyCharacteristics": [
+      "Fixed-viewport shell: glass sidebar (228px), glass top telemetry strip, status columns and a roster, 12px gaps and 12px outer padding.",
+      "Two glass weights: translucent resting glass, near-opaque floating glass.",
+      "Round status lamps in five fixed colours, always with a word beside them.",
+      "Mono only for numbers, ids, handles, paths and data.",
+      "Pickable accent (amber, blue, violet, lime, steel) that never sits on a lamp hue.",
+      "Theme and accent applied before first paint from the saved choice."
+    ],
+    "rules": [
+      {
+        "name": "The Lamp Law Rule",
+        "body": "One colour per state, the same on the board, in rooms and in the sidebar, and the saturated lamp values are used for nothing else. Status text in a lamp colour, a lit card frame, a count beside a lit column: all state. Buttons, links, badges and charts use the accent or the message palette.",
+        "section": "colors"
+      },
+      {
+        "name": "The Between-the-Lamps Rule",
+        "body": "Accents sit between the lamps on the colour wheel, never on one. A new accent must not be read as cyan, red, magenta or green.",
+        "section": "colors"
+      },
+      {
+        "name": "The Word Beside the Lamp Rule",
+        "body": "A lamp colour never carries meaning alone. Every lamp has its state word, label or count beside it; lamps themselves are `aria-hidden`.",
+        "section": "colors"
+      },
+      {
+        "name": "The Material Cyan Rule",
+        "body": "The glass world's own cyan (hairlines, panel edges, grid, rings) is material, not signal: it stays low-alpha (0.06 to 0.3). Only the full-strength `lamp-working` means \"working\".",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Is Data Rule",
+        "body": "Mono is only for numbers, ids, handles, paths, code and data. Prose, labels and titles are always Sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Count Rule",
+        "body": "Every count, time and percentage that can change is tabular (`tnum`), so it lines up and does not jitter while it ticks.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Console Rule",
+        "body": "The document never scrolls. Every region that can overflow scrolls inside itself with `overscroll-behavior: contain` and edge fades.",
+        "section": "layout"
+      },
+      {
+        "name": "The Edge Fade Rule",
+        "body": "Scroll areas fade 22px at an edge only while there is more to scroll that way (scroll-driven; static fades where unsupported). Areas with a sticky header fade only the bottom.",
+        "section": "layout"
+      },
+      {
+        "name": "The Rail Rule",
+        "body": "An empty column is never an empty box. It collapses to a slim dashed rail with its lamp, vertical name and count.",
+        "section": "layout"
+      },
+      {
+        "name": "The Two Glass Rule",
+        "body": "Resting surfaces use translucent glass; anything that floats over content (menus, dialogs, drawers, popovers) uses the near-opaque floating glass, because a popover inside a panel cannot blur what lies outside that panel.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Lit Frame Rule",
+        "body": "A card in a lit state (working, needs you, paused) carries its lamp in the frame: the border tinted to 30 to 35% of the lamp colour and a 7 to 8% wash fading from the top edge. Done and idle cards stay plain.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the shell fixed at the viewport and scroll lists inside their panels with `scroll-fade` (or `scroll-fade-end` under a sticky header).",
+      "Do pair every lamp colour with its word, label or count, and keep lamps `aria-hidden`.",
+      "Do use resting glass for surfaces and floating glass (97.5% fill) for anything over content.",
+      "Do set every number, id, handle and path in IBM Plex Mono with tabular figures, and everything else in IBM Plex Sans.",
+      "Do collapse empty columns to 44px dashed rails with a vertical name and a mono count.",
+      "Do tune new tokens for both themes and all five accents in `styles.css`; components use only the Tailwind tokens mapped to `--c-*`, whose default palette, sizes and radii are cleared.",
+      "Do nest corners: 14px shell panels over 12px cards over 8px controls."
+    ],
+    "donts": [
+      "Don't let the document scroll, or add a page-level scroll container.",
+      "Don't use a lamp colour for an accent, a button, a chart series or decoration, and don't add an accent that lands on a lamp hue.",
+      "Don't let colour alone carry a state.",
+      "Don't raise the world's material cyan (hairlines, grid, rings) to lamp strength; full-strength cyan means working.",
+      "Don't set prose, labels or titles in mono.",
+      "Don't use the uppercase group label as a kicker or eyebrow above a title; it heads groups and table columns only.",
+      "Don't draw an empty column as an empty box with \"Nothing here\".",
+      "Don't use hard offset shadows, flat gray cards, or blur-dependent popovers.",
+      "Don't recolour the `mj` mark with the accent; it stays amber."
+    ]
+  }
+}
