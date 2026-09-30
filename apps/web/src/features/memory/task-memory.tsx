@@ -120,7 +120,13 @@ export function TaskMemory({ task }: { task: Task }) {
                 {fact.agent !== undefined && <span>by @{fact.agent}</span>}
               </div>
               {own.length > 0 && (
-                <EventList events={own} facts={byId} label={`Steps for: ${fact.text}`} empty="" />
+                <EventList
+                  events={own}
+                  facts={byId}
+                  label={`Steps for: ${fact.text}`}
+                  empty=""
+                  showText={false}
+                />
               )}
             </li>
           );

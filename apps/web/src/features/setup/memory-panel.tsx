@@ -23,6 +23,9 @@ export function parseThreshold(text: string): number | undefined {
 /** Memory curation: how sure it must be to act alone, reviewing everything, and who reads a finished task's room. */
 export function MemoryPanel() {
   const settings = useSettings();
+  // Owned here, not in the form: a save changes the settings, which remounts the form, and a
+  // remounted form no longer gets the result of the save it started.
+  const save = useSaveSettings();
   return (
     <section aria-label="Memory" className="flex flex-col gap-2">
       <div className="flex items-baseline gap-2">
@@ -33,15 +36,14 @@ export function MemoryPanel() {
       {settings.isError && <p className="text-sm text-red">{describeError(settings.error)}</p>}
       {/* Remount on a server change so the fields show the saved values. */}
       {settings.data && (
-        <MemoryForm key={JSON.stringify(settings.data.memory)} saved={settings.data.memory} />
+        <MemoryForm key={JSON.stringify(settings.data.memory)} saved={settings.data.memory} save={save} />
       )}
     </section>
   );
 }
 
-function MemoryForm({ saved }: { saved: MemorySettings }) {
+function MemoryForm({ saved, save }: { saved: MemorySettings; save: ReturnType<typeof useSaveSettings> }) {
   const toast = useToast();
-  const save = useSaveSettings();
   const agents = useAgents();
   const [threshold, setThreshold] = useState(String(saved.auto_threshold));
   const [reviewAll, setReviewAll] = useState(saved.review_all);

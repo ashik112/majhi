@@ -29,11 +29,14 @@ export function EventList({
   facts,
   label,
   empty,
+  showText = true,
 }: {
   events: readonly MemoryEvent[];
   facts: ReadonlyMap<number, Fact>;
   label: string;
   empty: string;
+  /** Leave out the fact's words when the list sits under the fact itself. */
+  showText?: boolean;
 }) {
   const now = useNow(30_000);
   const undo = useUndoStep();
@@ -52,9 +55,18 @@ export function EventList({
           >
             <div className="flex items-center gap-2">
               <Badge tone={word in TONE ? TONE[word as keyof typeof TONE] : "neutral"}>{word}</Badge>
-              <span className="min-w-0 flex-1 truncate text-fg" title={fact?.text}>
-                {fact?.text ?? `Fact ${event.fact}`}
-              </span>
+              {showText ? (
+                <span className="min-w-0 flex-1 truncate text-fg" title={fact?.text}>
+                  {fact?.text ?? `Fact ${event.fact}`}
+                </span>
+              ) : (
+                <span className="min-w-0 flex-1 text-xs text-fg-faint">
+                  {actorLabel(event)}
+                  {event.confidence !== undefined && ` · ${percent(event.confidence)} sure`}
+                  {" · "}
+                  {formatAgo(event.at, now)}
+                </span>
+              )}
               {event.undone && <Badge tone="neutral">Undone</Badge>}
               {canUndo(event) && (
                 <Button
@@ -77,12 +89,14 @@ export function EventList({
                 </Button>
               )}
             </div>
-            <p className="m-0 text-xs text-fg-faint">
-              {actorLabel(event)}
-              {event.confidence !== undefined && ` · ${percent(event.confidence)} sure`}
-              {" · "}
-              {formatAgo(event.at, now)}
-            </p>
+            {showText && (
+              <p className="m-0 text-xs text-fg-faint">
+                {actorLabel(event)}
+                {event.confidence !== undefined && ` · ${percent(event.confidence)} sure`}
+                {" · "}
+                {formatAgo(event.at, now)}
+              </p>
+            )}
             {event.reason !== undefined && <p className="m-0 text-fg-muted text-pretty">{event.reason}</p>}
           </li>
         );
