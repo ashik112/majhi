@@ -9,25 +9,27 @@ export interface LinkRow {
 }
 
 /**
- * Whether a dependency counts as met (5.4a). `merged` means the target is done: merge requests
- * come in Phase 5, until then closing a task counts as merging it. `ready` means the target is
- * ready for review or further along.
+ * Whether a dependency counts as met (5.4a). `merged` means the target is done and every merge
+ * request it opened is merged: a task closed with an MR still open or closed did not put its work
+ * in the base. A task that never opened an MR (merged locally) counts once it is done. `ready`
+ * means the target is ready for review or further along.
  */
-export function isMet(when: TaskLink["when"], status: TaskStatus): boolean {
+export function isMet(when: TaskLink["when"], status: TaskStatus, hasUnmergedMr = false): boolean {
   if (when === "ready") return status === "review" || status === "mr" || status === "done";
-  return status === "done";
+  return status === "done" && !hasUnmergedMr;
 }
 
 /** The dependencies of a task that are not met yet. A target that no longer exists is skipped. */
 export function unmetDependencies(
   links: readonly Pick<LinkRow, "type" | "other" | "when">[],
   statusOf: (id: string) => TaskStatus | undefined,
+  hasUnmergedMr: (id: string) => boolean = () => false,
 ): TaskId[] {
   const out: TaskId[] = [];
   for (const l of links) {
     if (l.type !== "depends-on") continue;
     const status = statusOf(l.other);
-    if (status !== undefined && !isMet(l.when, status)) out.push(l.other as TaskId);
+    if (status !== undefined && !isMet(l.when, status, hasUnmergedMr(l.other))) out.push(l.other as TaskId);
   }
   return out;
 }

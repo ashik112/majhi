@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { COMMAND_META_HEADER } from "@majhi/shared";
 import type { ServerEnv } from "../env.ts";
 import type { HostLink } from "../host/link.ts";
+import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import { generateKey } from "../secrets/store.ts";
 import type { Majhi } from "../server.ts";
@@ -36,6 +37,8 @@ export interface HarnessOptions {
   hostLink?: HostLink;
   /** The network probe, so a test can go offline. */
   probe?: Probe;
+  /** Fake `gh`, `glab` and Bitbucket for merge requests. */
+  mrHosts?: MrHostOptions;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -58,12 +61,13 @@ function build(
   cleanup: () => Promise<void>,
   options: HarnessOptions,
 ): Harness {
-  const { links, hostLink, probe } = options;
+  const { links, hostLink, probe, mrHosts } = options;
   const majhi = createMajhi(env, {
     runtime,
     ...(links === undefined ? {} : { links }),
     ...(hostLink === undefined ? {} : { hostLink }),
     ...(probe === undefined ? {} : { probe }),
+    ...(mrHosts === undefined ? {} : { mrHosts }),
   });
   const h: Harness = {
     dir,

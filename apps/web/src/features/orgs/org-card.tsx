@@ -20,8 +20,18 @@ import { CostText } from "@/features/usage/cost";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters, plural } from "@/lib/format";
-import { useRenameOrg, useUpdateOrg } from "@/lib/studio-queries";
-import { checkOrgDraft, draftFromOrg, identityLabel, type OrgDraft, type OrgErrors } from "./model";
+import { HOST_LABEL } from "@/lib/hosts";
+import { useRenameOrg, useSaveSecret, useUpdateOrg } from "@/lib/studio-queries";
+import {
+  checkOrgDraft,
+  draftFromOrg,
+  identityLabel,
+  MERGE_LABEL,
+  MR_HOSTS,
+  type OrgDraft,
+  type OrgErrors,
+} from "./model";
+import { MrSettings } from "./mr-settings";
 
 export const CARD = "flex flex-col gap-4 rounded-xl border border-line-strong bg-raised p-[18px]";
 
@@ -141,6 +151,7 @@ function AccountList({
 
 function OrgFacts({ org, onEdit }: { org: OrgView; onEdit: () => void }) {
   const identity = identityLabel(org);
+  const mrHosts = MR_HOSTS.filter((h) => org.mrTokens?.[h] !== undefined);
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center">
@@ -176,6 +187,14 @@ function OrgFacts({ org, onEdit }: { org: OrgView; onEdit: () => void }) {
             <span className="font-mono text-fg-muted">{org.color ?? "none"}</span>
           </span>
         </Fact>
+        <Fact label="Merge requests">
+          <span>{MERGE_LABEL[org.merge]}</span>
+          {mrHosts.length > 0 && (
+            <span className="block text-xs text-fg-faint">
+              Tokens set: {mrHosts.map((h) => HOST_LABEL[h]).join(", ")}
+            </span>
+          )}
+        </Fact>
         <Fact label="Commits as">
           {identity ? (
             <span className="break-words">{identity}</span>
@@ -200,14 +219,32 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
   const update = useUpdateOrg();
   const rename = useRenameOrg();
+  const saveSecret = useSaveSecret();
   const [orgId, setOrgId] = useState(org.id);
   const [draft, setDraft] = useState<OrgDraft>(() => draftFromOrg(org));
   const [errors, setErrors] = useState<OrgErrors>({});
   const [failure, setFailure] = useState<string>();
   const set = (patch: Partial<OrgDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  function submit() {
-    const check = checkOrgDraft(org, draft);
+  async function submit() {
+    setFailure(undefined);
+    // A token typed for a host becomes a secret first; the org keeps only its reference.
+    let mrTokens = draft.mrTokens;
+    try {
+      for (const host of MR_HOSTS) {
+        const value = draft.newTokens[host].trim();
+        if (value === "") continue;
+        const saved = await saveSecret.mutateAsync({ value, label: `${org.name} ${HOST_LABEL[host]} token` });
+        mrTokens = { ...mrTokens, [host]: saved.ref };
+      }
+    } catch (e) {
+      setFailure(describeError(e));
+      return;
+    }
+    // The typed values are spent: a retry after a failed save must not save them again.
+    const next = { ...draft, mrTokens, newTokens: { github: "", gitlab: "", bitbucket: "" } };
+    setDraft(next);
+    const check = checkOrgDraft(org, next);
     if (!check.ok) return setErrors(check.errors);
     const nextId = orgId.trim();
     if (nextId !== org.id && !IdSchema.safeParse(nextId).success) {
@@ -215,7 +252,6 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
       return;
     }
     setErrors({});
-    setFailure(undefined);
     const save = (id: string) => {
       if (!check.input) return onDone();
       update.mutate(
@@ -239,7 +275,7 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
-        submit();
+        void submit();
       }}
       className="flex flex-col gap-3 rounded-lg border border-line-bright bg-card p-3"
     >
@@ -347,14 +383,19 @@ function OrgForm({ org, onDone }: { org: OrgView; onDone: () => void }) {
           </Select>
         )}
       </Field>
+      <MrSettings draft={draft} error={errors.mrTokens} onChange={set} />
       {failure && (
         <p role="alert" className="text-sm text-red text-pretty">
           {failure}
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" variant="primary" disabled={update.isPending || rename.isPending}>
-          {update.isPending || rename.isPending ? "Saving" : "Save"}
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={update.isPending || rename.isPending || saveSecret.isPending}
+        >
+          {update.isPending || rename.isPending || saveSecret.isPending ? "Saving" : "Save"}
         </Button>
         <Button onClick={onDone}>Cancel</Button>
       </div>

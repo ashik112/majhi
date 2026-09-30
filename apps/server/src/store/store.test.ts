@@ -2,7 +2,7 @@ import type { Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { type RoomPayload, Store } from "./index.ts";
-import { type Migration, migrate } from "./migrations.ts";
+import { MIGRATIONS, type Migration, migrate } from "./migrations.ts";
 
 function task(id: string, patch: Partial<Task> = {}): Task {
   return {
@@ -251,5 +251,57 @@ describe("runs and permissions", () => {
     store.permissions.allow("ACME-2", "execute");
     store.permissions.allow("ACME-2", "execute");
     expect(store.permissions.allowed("ACME-2", "execute")).toBe(true);
+  });
+});
+
+describe("merge request state on task repos", () => {
+  it("adds its columns to a database made before migration 80 and reads them back", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "majhi-db-"));
+    const file = join(dir, "majhi.db");
+    const old = new Database(file);
+    migrate(
+      old,
+      MIGRATIONS.filter((m) => m.id < 80),
+    );
+    old
+      .prepare(
+        "INSERT INTO tasks (id, title, brief, kind, status, folder, team, created_at, updated_at) VALUES ('ACME-1','t','b','code','review','/t/ACME-1','[]','x','x')",
+      )
+      .run();
+    old
+      .prepare(
+        "INSERT INTO task_repos (task, project, source, base, branch, created_branch, pos) VALUES ('ACME-1','acme-api','/w/api','main','task/x',1,0)",
+      )
+      .run();
+    old.close();
+
+    const store = new Store(file);
+    try {
+      const before = store.tasks.get("ACME-1");
+      expect(before?.repos[0]?.mr).toBeUndefined();
+      expect(before?.repos[0]?.mergeOrder).toBeUndefined();
+
+      store.tasks.setPushed("ACME-1", "acme-api", "2026-01-02T00:00:00.000Z");
+      store.tasks.setMr("ACME-1", "acme-api", {
+        url: "https://h/x/1",
+        number: 1,
+        state: "open",
+        ci: "pending",
+      });
+      store.tasks.setMergeOrder("ACME-1", ["acme-api"]);
+      expect(store.tasks.get("ACME-1")?.repos[0]).toMatchObject({
+        pushedAt: "2026-01-02T00:00:00.000Z",
+        mergeOrder: 0,
+        mr: { url: "https://h/x/1", number: 1, state: "open", ci: "pending" },
+      });
+      store.tasks.setMergeOrder("ACME-1", null);
+      expect(store.tasks.get("ACME-1")?.repos[0]?.mergeOrder).toBeUndefined();
+    } finally {
+      store.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,5 +1,5 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
-import { LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
+import { DEFAULT_MERGE_POLICY, LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { renameOrgInConfig, writeOrg } from "../config/write.ts";
@@ -54,7 +54,18 @@ export class OrgService {
     const next: OrgConfig = { ...current };
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.color !== undefined) next.color = patch.color;
-    for (const field of ["base", "key", "identity", "context", "resume", "rooms", "tiers", "team"] as const) {
+    for (const field of [
+      "base",
+      "key",
+      "identity",
+      "context",
+      "resume",
+      "rooms",
+      "tiers",
+      "team",
+      "merge",
+      "mr_tokens",
+    ] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
       else if (value !== undefined) Object.assign(next, { [field]: value });
@@ -122,6 +133,7 @@ function view(
     key,
     accountCount: accounts.filter((a) => a.org === id).length,
     agentCount: agentScopes.filter((s) => s === id).length,
+    merge: org.merge ?? DEFAULT_MERGE_POLICY,
   };
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
@@ -131,5 +143,6 @@ function view(
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
   if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
+  if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;
   return out;
 }

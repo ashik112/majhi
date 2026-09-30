@@ -40,6 +40,14 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import {
+  MarkMergedResultSchema,
+  MergeMrsResultSchema,
+  MergeOrderSchema,
+  OpenMrsResultSchema,
+  RefreshMrsResultSchema,
+  RepoDiffSchema,
+} from "./mrs.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
@@ -215,6 +223,8 @@ export const commands = {
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
+      merge: OrgConfigSchema.shape.merge.nullable().optional(),
+      mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
     }),
     output: OrgViewSchema,
   },
@@ -393,17 +403,29 @@ export const commands = {
   "projects.register": {
     risk: "change",
     summary: "Register a repo as a project of an org, with aliases for the task box",
-    input: z
-      .object({ id: IdSchema })
-      .extend(ProjectConfigSchema.pick({ org: true, path: true, aliases: true, base: true }).shape),
+    input: z.object({ id: IdSchema }).extend(
+      ProjectConfigSchema.pick({
+        org: true,
+        path: true,
+        aliases: true,
+        base: true,
+        remotes: true,
+        links: true,
+      }).shape,
+    ),
     output: ProjectViewSchema,
   },
   "projects.update": {
     risk: "change",
-    summary: "Change a project's org, aliases or base branch",
+    summary:
+      "Change a project's org, aliases or base branch, and (when given) its remotes and links to other projects. null removes remotes or links",
     input: z
       .object({ id: IdSchema })
-      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape),
+      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape)
+      .extend({
+        remotes: ProjectConfigSchema.shape.remotes.nullable().optional(),
+        links: ProjectConfigSchema.shape.links.nullable().optional(),
+      }),
     output: ProjectViewSchema,
   },
   "projects.remove": {
@@ -611,6 +633,61 @@ export const commands = {
     summary: "Local branches of each repo of a task, to pick where to merge",
     input: z.object({ id: TaskIdSchema }),
     output: z.array(z.object({ project: IdSchema, base: z.string(), branches: z.array(z.string()) })),
+  },
+  // Merge requests (5.5) ------------------------------------------------------
+  "tasks.diff": {
+    risk: "read",
+    summary:
+      "Show what each repo of a task changed against its base branch, as git diffs per file, commits and uncommitted work together",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.array(RepoDiffSchema),
+  },
+  "tasks.mergeOrder": {
+    risk: "read",
+    summary:
+      "Show the order the task's repos merge in: repos others depend on first, else the task's own order, else the owner's override. Refused when the project links form a loop",
+    input: z.object({ id: TaskIdSchema }),
+    output: MergeOrderSchema,
+  },
+  "tasks.setMergeOrder": {
+    risk: "change",
+    summary:
+      "Set the merge order of a task's repos by hand: every project of the task once, first to merge first. null goes back to the order from project links",
+    input: z.object({ id: TaskIdSchema, order: z.array(IdSchema).min(1).nullable() }),
+    output: TaskSchema,
+  },
+  "tasks.openMrs": {
+    risk: "outbound",
+    summary:
+      "Push each repo's branch to its MR remote (through the project's SSH alias) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
+    input: z.object({ id: TaskIdSchema }),
+    output: OpenMrsResultSchema,
+  },
+  "tasks.refreshMrs": {
+    risk: "change",
+    summary:
+      "Read each MR's state and CI from its host and store it. When every MR is merged, the task is done, its worktrees are removed and the tasks waiting on it start",
+    input: z.object({ id: TaskIdSchema }),
+    output: RefreshMrsResultSchema,
+  },
+  "tasks.mergeMrs": {
+    risk: "outbound",
+    summary:
+      "Merge the task's MRs on their hosts, in merge order, stopping at the first that fails or has failing CI, and say why. Not for the never policy: merge on the host, then use markMerged",
+    input: z.object({ id: TaskIdSchema }),
+    output: MergeMrsResultSchema,
+  },
+  "tasks.markMerged": {
+    risk: "change",
+    summary:
+      "The owner merged the MRs on the host (the never policy). Checks each with its host; force records them as merged without that check. When every MR is merged, the task is done",
+    input: z.object({
+      id: TaskIdSchema,
+      /** Only this repo. Default: every repo with an MR. */
+      project: IdSchema.optional(),
+      force: z.boolean().default(false),
+    }),
+    output: MarkMergedResultSchema,
   },
   "tasks.remove": {
     risk: "destructive",

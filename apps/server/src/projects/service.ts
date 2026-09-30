@@ -1,10 +1,12 @@
 import { isAbsolute, relative } from "node:path";
-import type { CommandMeta, ProjectConfig, ProjectView } from "@majhi/shared";
+import type { CommandMeta, ProjectConfig, ProjectLink, ProjectView, RemoteConfig } from "@majhi/shared";
 import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { removeProjectEntry, writeProject } from "../config/write.ts";
 import { UserError } from "../errors.ts";
 import { defaultBranch, isGitRepo } from "../git/git.ts";
+import { MergeOrderCycle, type ProjectGraph, pathBetween } from "../mrs/order.ts";
+import { mrRemoteName } from "../mrs/remote.ts";
 import type { TaskRepo } from "../store/tasks.ts";
 
 /** How long a repo's default branch is reused. */
@@ -16,6 +18,8 @@ export interface RegisterInput {
   path: string;
   aliases: string[];
   base?: string | undefined;
+  remotes?: Record<string, RemoteConfig> | undefined;
+  links?: ProjectLink[] | undefined;
 }
 
 export interface UpdateInput {
@@ -23,6 +27,9 @@ export interface UpdateInput {
   org: string;
   aliases: string[];
   base?: string | undefined;
+  /** Absent: keep. null: remove. */
+  remotes?: Record<string, RemoteConfig> | null | undefined;
+  links?: ProjectLink[] | null | undefined;
 }
 
 /** A registered project with everything a task needs from it. */
@@ -35,6 +42,8 @@ export interface ProjectInfo {
   /** Project base, else the org's, else the repo's default branch. */
   base: string | undefined;
   exists: boolean;
+  remotes: Record<string, RemoteConfig>;
+  links: ProjectLink[];
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -64,7 +73,16 @@ export class ProjectService {
           project.base ??
           sections.orgs[project.org]?.base ??
           (exists ? await this.repoDefault(path) : undefined);
-        const info: ProjectInfo = { id, org: project.org, path, aliases: project.aliases, base, exists };
+        const info: ProjectInfo = {
+          id,
+          org: project.org,
+          path,
+          aliases: project.aliases,
+          base,
+          exists,
+          remotes: project.remotes ?? {},
+          links: project.links ?? [],
+        };
         return info;
       }),
     );
@@ -101,9 +119,13 @@ export class ProjectService {
     );
     if (same !== undefined) throw new UserError(`${path} is already registered as "${same[0]}".`, 409);
     checkNames(input.id, input.aliases, sections.projects);
+    if (input.remotes !== undefined) checkRemotes(input.remotes);
+    if (input.links !== undefined) checkLinks(input.id, input.links, sections.projects);
 
     const project: ProjectConfig = { org: input.org, path: input.path, aliases: dedupe(input.aliases) };
     if (input.base !== undefined) project.base = input.base;
+    if (input.remotes !== undefined && Object.keys(input.remotes).length > 0) project.remotes = input.remotes;
+    if (input.links !== undefined && input.links.length > 0) project.links = dedupeLinks(input.links);
     await this.config.change(
       { command, meta, summary: `registered project ${input.id} (${input.org})` },
       () => writeProject(this.config.file, input.id, project),
@@ -122,6 +144,20 @@ export class ProjectService {
     const project: ProjectConfig = { ...current, org: input.org, aliases: dedupe(input.aliases) };
     if (input.base === undefined) delete project.base;
     else project.base = input.base;
+    if (input.remotes !== undefined) {
+      if (input.remotes === null || Object.keys(input.remotes).length === 0) delete project.remotes;
+      else {
+        checkRemotes(input.remotes);
+        project.remotes = input.remotes;
+      }
+    }
+    if (input.links !== undefined) {
+      if (input.links === null || input.links.length === 0) delete project.links;
+      else {
+        checkLinks(input.id, input.links, sections.projects);
+        project.links = dedupeLinks(input.links);
+      }
+    }
     await this.config.change({ command, meta, summary: `updated project ${input.id}` }, () =>
       writeProject(this.config.file, input.id, project),
     );
@@ -150,9 +186,50 @@ export class ProjectService {
 }
 
 function toView(p: ProjectInfo): ProjectView {
-  const view: ProjectView = { id: p.id, org: p.org, path: p.path, aliases: p.aliases, exists: p.exists };
+  const view: ProjectView = {
+    id: p.id,
+    org: p.org,
+    path: p.path,
+    aliases: p.aliases,
+    exists: p.exists,
+    remotes: p.remotes,
+    links: p.links,
+  };
   if (p.base !== undefined) view.base = p.base;
+  if (Object.keys(p.remotes).length > 0) view.mrRemote = mrRemoteName(p.remotes);
   return view;
+}
+
+function dedupeLinks(links: readonly ProjectLink[]): ProjectLink[] {
+  return [...new Map(links.map((l) => [l.to, l])).values()];
+}
+
+/** At most one remote takes MRs. */
+function checkRemotes(remotes: Readonly<Record<string, RemoteConfig>>): void {
+  const marked = Object.entries(remotes).filter(([, r]) => r.mr === true);
+  if (marked.length > 1) {
+    throw new UserError(
+      `Only one remote can take MRs, but ${marked.map(([n]) => n).join(" and ")} are marked.`,
+    );
+  }
+}
+
+/** Links point at other registered projects and never close a loop (5.5). */
+function checkLinks(
+  id: string,
+  links: readonly ProjectLink[],
+  projects: Record<string, ProjectConfig>,
+): void {
+  for (const link of links) {
+    if (link.to === id) throw new UserError(`Project "${id}" cannot depend on itself.`);
+    if (projects[link.to] === undefined) throw new UserError(`Project "${link.to}" does not exist.`);
+  }
+  const graph: ProjectGraph = new Map([
+    ...Object.entries(projects).map(([p, c]) => [p, (c.links ?? []).map((l) => l.to)] as const),
+    [id, links.map((l) => l.to)],
+  ]);
+  const loop = pathBetween(graph, id, id);
+  if (loop !== undefined) throw new UserError(new MergeOrderCycle(loop).message, 409);
 }
 
 function dedupe(items: readonly string[]): string[] {

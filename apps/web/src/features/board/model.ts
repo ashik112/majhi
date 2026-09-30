@@ -88,6 +88,7 @@ export function cardNote(task: TaskSummary): CardNote | null {
     return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", tone: "coral" };
   }
   if (task.status === "review") return { text: "Finished · reply or mark done", tone: "violet" };
+  if (task.status === "mr") return { text: "MR open · waiting for the merge", tone: "violet" };
   if (task.status === "running") {
     const who = task.working[0];
     return who ? { text: `@${who} working`, tone: "amber" } : { text: "Your turn", tone: "violet" };

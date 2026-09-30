@@ -233,6 +233,20 @@ CREATE INDEX task_plans_task_version ON task_plans (task, version);
 CREATE INDEX task_plans_org_at ON task_plans (org, at);
 `,
   },
+  {
+    // Multi-repo merge requests (Phase 4, SPEC 5.5): where each task repo stands in the merge
+    // order, and its MR, CI and push state. Every column is empty until the owner opens MRs.
+    id: 80,
+    name: "merge order, MR and CI state on task repos",
+    sql: `
+ALTER TABLE task_repos ADD COLUMN merge_order INTEGER;
+ALTER TABLE task_repos ADD COLUMN mr_url TEXT;
+ALTER TABLE task_repos ADD COLUMN mr_number INTEGER;
+ALTER TABLE task_repos ADD COLUMN mr_state TEXT;
+ALTER TABLE task_repos ADD COLUMN ci_state TEXT;
+ALTER TABLE task_repos ADD COLUMN pushed_at TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -80,3 +80,20 @@ describe("parentIsComplete", () => {
     expect(parentIsComplete(["done", "done"])).toBe(true);
   });
 });
+
+describe("a merged dependency with merge requests", () => {
+  it("is met only when the task is done and no merge request is left open or closed", () => {
+    expect(isMet("merged", "done", false)).toBe(true);
+    expect(isMet("merged", "done", true)).toBe(false);
+    expect(isMet("merged", "mr", false)).toBe(false);
+    // `ready` does not look at merge requests.
+    expect(isMet("ready", "review", true)).toBe(true);
+  });
+
+  it("keeps a waiting task waiting for a closed task whose MRs are not merged", () => {
+    const links = [dep("A-2", "A-1", "merged"), dep("A-2", "A-3", "merged")];
+    const status = (id: string) => (id === "A-1" || id === "A-3" ? ("done" as const) : undefined);
+    expect(unmetDependencies(links, status, (id) => id === "A-1")).toEqual(["A-1"]);
+    expect(unmetDependencies(links, status, () => false)).toEqual([]);
+  });
+});

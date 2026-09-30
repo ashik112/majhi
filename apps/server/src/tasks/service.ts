@@ -33,6 +33,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
 import { localBranches, type MergeOutcome, mergeBranch } from "../git/merge.ts";
 import {
@@ -931,6 +932,12 @@ export class TaskService {
     return { results, task: this.get(task.id) };
   }
 
+  /** What each repo of the task changed against its base, as git diffs. */
+  async diff(id: string) {
+    const task = this.get(id);
+    return Promise.all(task.repos.map((r) => repoDiff(r)));
+  }
+
   /** Local branches of each repo of the task, for picking where to merge. */
   async branches(id: string) {
     const task = this.get(id);
@@ -1145,6 +1152,7 @@ export class TaskService {
     if (task === undefined) return;
     const held = store.tasks.linksTo(id);
     const parent = task.links.find((l) => l.type === "parent")?.task;
+    this.pauseForUnmerged(task, held);
     this.orchestrator.childReady(task);
     // Waiting tasks that are free now, and queued ones that a freed slot or account may let in.
     await this.orchestrator.advance();
@@ -1152,6 +1160,34 @@ export class TaskService {
     await this.plans.settle(task).catch(() => undefined);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
     this.deps.events.emit(["tasks"]);
+  }
+
+  /**
+   * A task was closed with a merge request that is not merged (5.4a, 5.5). Tasks that wait for it
+   * with `merged` do not start on a base without its work: they pause with reason `owner` and say
+   * what to do. They stay unmet, and the merge poller keeps watching the open merge requests.
+   */
+  private pauseForUnmerged(
+    task: Task,
+    held: readonly { task: string; type: TaskLink["type"]; when?: TaskLink["when"] | undefined }[],
+  ): void {
+    const { store } = this.deps;
+    if (task.status !== "done") return;
+    const open = task.repos.filter((r) => r.mr !== undefined && r.mr.state !== "merged");
+    if (open.length === 0) return;
+    for (const link of held) {
+      if (link.type !== "depends-on" || link.when === "ready") continue;
+      const waiting = store.tasks.get(link.task);
+      if (waiting?.status !== "inbox" && waiting?.status !== "ready") continue;
+      store.tasks.setStartWhenReady(waiting.id, false);
+      store.tasks.setStatus(waiting.id, "paused", "owner", this.now().toISOString());
+      this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
+        type: "system",
+        level: "error",
+        text: `${task.id} was closed, but its merge request${open.length === 1 ? " is" : "s are"} not merged (${open.map((r) => `${r.project} is ${r.mr?.state}`).join(", ")}). This task waits for the merge. Merge ${open.length === 1 ? "it" : "them"}, or remove the link to ${task.id} and start this task.`,
+      });
+      this.deps.room.publishTask(this.get(waiting.id));
+    }
   }
 
   /** The lead records its plan (majhi-room `record_plan`). */

@@ -3,6 +3,7 @@ import {
   type CoordinationMode,
   CoordinationModeSchema,
   type PausedReason,
+  type RepoMr,
   type Task,
   type TaskId,
   TaskIdSchema,
@@ -13,7 +14,7 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
@@ -80,6 +81,12 @@ export class TaskRepo {
             stackTask: r.stack?.task ?? null,
             stackBranch: r.stack?.branch ?? null,
             stackCommit: r.stack?.commit ?? null,
+            mergeOrder: r.mergeOrder ?? null,
+            mrUrl: r.mr?.url ?? null,
+            mrNumber: r.mr?.number ?? null,
+            mrState: r.mr?.state ?? null,
+            ciState: r.mr?.ci ?? null,
+            pushedAt: r.pushedAt ?? null,
           })
           .run();
       });
@@ -131,6 +138,11 @@ export class TaskRepo {
         ...(r.stackTask === null || r.stackBranch === null || r.stackCommit === null
           ? {}
           : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
+        ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
+        ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
+        ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
+          ? {}
+          : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
       })),
       team: TeamSchema.parse(JSON.parse(row.team)),
       mode: CoordinationModeSchema.catch("lead").parse(row.mode),
@@ -167,6 +179,7 @@ export class TaskRepo {
     }
     const linkRows = this.allLinks();
     const statuses = this.statuses();
+    const unmerged = this.unmergedMrs();
     const linksBy = new Map<string, LinkRow[]>();
     const childStatuses = new Map<string, TaskStatus[]>();
     for (const l of linkRows) {
@@ -193,7 +206,11 @@ export class TaskRepo {
         updatedAt: row.updatedAt,
         repos: byTask.get(row.id) ?? [],
         links: own.map(toLink),
-        waitingOn: unmetDependencies(own, (id) => statuses.get(id)),
+        waitingOn: unmetDependencies(
+          own,
+          (id) => statuses.get(id),
+          (id) => unmerged.has(id),
+        ),
       };
       if (kids !== undefined)
         summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
@@ -267,7 +284,39 @@ export class TaskRepo {
   unmetDependencies(id: string): TaskId[] {
     const own = this.allLinks().filter((l) => l.task === id);
     const statuses = this.statuses();
-    return unmetDependencies(own, (other) => statuses.get(other));
+    const unmerged = this.unmergedMrs();
+    return unmetDependencies(
+      own,
+      (other) => statuses.get(other),
+      (other) => unmerged.has(other),
+    );
+  }
+
+  /** Tasks with a merge request that is not merged: open, or closed without merging. */
+  unmergedMrs(): Set<string> {
+    return new Set(
+      this.db
+        .selectDistinct({ task: taskRepos.task })
+        .from(taskRepos)
+        .where(and(isNotNull(taskRepos.mrState), ne(taskRepos.mrState, "merged")))
+        .all()
+        .map((r) => r.task),
+    );
+  }
+
+  /** Done tasks that still have an open merge request, so their merge can be noticed. */
+  doneWithOpenMrs(): string[] {
+    return [
+      ...new Set(
+        this.db
+          .select({ task: taskRepos.task })
+          .from(taskRepos)
+          .innerJoin(tasks, eq(tasks.id, taskRepos.task))
+          .where(and(eq(tasks.status, "done"), eq(taskRepos.mrState, "open")))
+          .all()
+          .map((r) => r.task),
+      ),
+    ];
   }
 
   /** The ids of a parent's children, in the order they were linked. */
@@ -410,6 +459,57 @@ export class TaskRepo {
       .set({ worktree, createdBranch })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
+  }
+
+  /** Forgets a worktree that was removed after the merge. The branch and the task stay. */
+  clearWorktree(task: string, project: string): void {
+    this.db
+      .update(taskRepos)
+      .set({ worktree: null })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** The owner's merge order: `order` lists every project of the task once. null goes back to project links. */
+  setMergeOrder(task: string, order: readonly string[] | null): void {
+    this.db.transaction((tx) => {
+      tx.update(taskRepos).set({ mergeOrder: null }).where(eq(taskRepos.task, task)).run();
+      order?.forEach((project, position) => {
+        tx.update(taskRepos)
+          .set({ mergeOrder: position })
+          .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+          .run();
+      });
+    });
+  }
+
+  /** The branch reached the MR remote. */
+  setPushed(task: string, project: string, at: string): void {
+    this.db
+      .update(taskRepos)
+      .set({ pushedAt: at })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** The repo's MR as its host reports it. */
+  setMr(task: string, project: string, mr: RepoMr): void {
+    this.db
+      .update(taskRepos)
+      .set({ mrUrl: mr.url, mrNumber: mr.number, mrState: mr.state, ciState: mr.ci })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** Task ids in one of these statuses, oldest first. */
+  idsWithStatus(status: TaskStatus): string[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(eq(tasks.status, status))
+      .orderBy(asc(tasks.updatedAt))
+      .all()
+      .map((r) => r.id);
   }
 
   addAttachments(task: string, added: readonly Attachment[]): void {

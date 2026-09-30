@@ -4,8 +4,10 @@ import { SearchX } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { ChangesView } from "@/features/changes/changes-view";
 import { permissionDomId } from "@/features/room/items";
 import { Markdown } from "@/features/room/markdown";
 import { isWorking } from "@/features/room/model";
@@ -35,6 +37,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
   const { file } = useSearch({ from: "/t/$taskId" });
+  const [tab, setTab] = useState<"room" | "changes">("room");
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -99,18 +102,37 @@ function TaskView({ taskId }: { taskId: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <TaskHeader task={data} yourTurn={yourTurn} />
       <div className="flex min-h-0 flex-1 gap-4 px-5 pt-3 pb-3">
-        <RoomPane
-          task={data}
-          state={room.state}
-          dispatch={room.dispatch}
-          loadOlder={room.loadOlder}
-          top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
-        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+          {data.repos.length > 0 && (
+            <Segmented
+              label="Room or changes"
+              value={tab}
+              onChange={setTab}
+              segments={[
+                { value: "room", label: "Room" },
+                { value: "changes", label: "Changes" },
+              ]}
+              className="w-fit"
+            />
+          )}
+          {/* The room stays mounted while Changes shows, so a draft and the scroll place are kept. */}
+          <div className={tab === "room" || data.repos.length === 0 ? "contents" : "hidden"}>
+            <RoomPane
+              task={data}
+              state={room.state}
+              dispatch={room.dispatch}
+              loadOlder={room.loadOlder}
+              top={brief ? <Brief label={briefLabel(data)} text={brief} task={data} /> : undefined}
+            />
+          </div>
+          {tab === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
+        </div>
         <RoomPanel
           task={data}
           agents={room.state.agents}
           items={room.state.items}
           processes={room.state.processes}
+          onShowChanges={data.repos.length > 0 ? () => setTab("changes") : undefined}
         />
       </div>
       {file !== undefined && (

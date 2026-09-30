@@ -43,6 +43,15 @@ export const taskRepos = sqliteTable(
     stackTask: text("stack_task"),
     stackBranch: text("stack_branch"),
     stackCommit: text("stack_commit"),
+    /** The owner's place in the merge order; null on every repo of a task means "from project links". */
+    mergeOrder: integer("merge_order"),
+    mrUrl: text("mr_url"),
+    mrNumber: integer("mr_number"),
+    /** `open`, `merged` or `closed`. */
+    mrState: text("mr_state"),
+    /** `none`, `pending`, `passing` or `failing`. */
+    ciState: text("ci_state"),
+    pushedAt: text("pushed_at"),
   },
   (t) => [primaryKey({ columns: [t.task, t.project] })],
 );

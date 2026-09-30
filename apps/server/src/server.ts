@@ -105,6 +105,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     attach(server) {
       services.watcher.start();
       services.usageSweeper.start();
+      services.mrPoller.start();
       services.resilience.start();
       sockets = attachSockets(server, {
         events: services.events,
@@ -121,6 +122,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     close() {
       services.watcher.stop();
       services.usageSweeper.stop();
+      services.mrPoller.stop();
       system.close();
       services.terminals.closeAll();
       sockets?.close();
