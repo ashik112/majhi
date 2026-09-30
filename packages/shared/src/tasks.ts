@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdSchema, OrgIdSchema } from "./accounts.ts";
+import { IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 
@@ -15,6 +15,26 @@ import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./
 // ---------------------------------------------------------------------------
 // Projects (majhi.yaml)
 
+/** One git remote of a project, as majhi.yaml describes it (5.5). */
+export const RemoteConfigSchema = z.looseObject({
+  /** Which host this remote is. Default: read from the remote's URL. */
+  host: MrHostSchema.optional(),
+  /** A `Host` in ~/.ssh/config. Pushes go through it, whatever host name the remote URL holds. */
+  ssh: z.string().trim().min(1).optional(),
+  /** True on the remote MRs are opened against. Default: `origin`. */
+  mr: z.boolean().optional(),
+  /** Credentials for this remote's host: overrides the org's `mr_tokens`. */
+  token: SecretRefSchema.optional(),
+});
+export type RemoteConfig = z.infer<typeof RemoteConfigSchema>;
+
+/** `depends-on`: the other project merges first when a task changes both (5.5). */
+export const ProjectLinkSchema = z.object({
+  to: IdSchema,
+  type: z.literal("depends-on"),
+});
+export type ProjectLink = z.infer<typeof ProjectLinkSchema>;
+
 export const ProjectConfigSchema = z.looseObject({
   /** An org id from `orgs`, or `private`. */
   org: OrgIdSchema,
@@ -24,6 +44,10 @@ export const ProjectConfigSchema = z.looseObject({
   aliases: z.array(z.string().trim().toLowerCase().min(1)).default([]),
   /** Base branch for tasks. Default: the org's `base`, then the repo's default branch. */
   base: z.string().trim().min(1).optional(),
+  /** Git remotes by name, with the host, SSH alias and which one takes MRs. */
+  remotes: z.record(z.string().trim().min(1), RemoteConfigSchema).optional(),
+  /** Other projects this one depends on. Sets the merge order of a multi-repo task. */
+  links: z.array(ProjectLinkSchema).optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -37,6 +61,10 @@ export const ProjectViewSchema = z.object({
   base: z.string().optional(),
   /** False when the path is not a git repo the server can see. */
   exists: z.boolean(),
+  remotes: z.record(z.string(), RemoteConfigSchema).default({}),
+  links: z.array(ProjectLinkSchema).default([]),
+  /** The remote MRs are opened against: the one marked `mr`, else `origin`. */
+  mrRemote: z.string().optional(),
 });
 export type ProjectView = z.infer<typeof ProjectViewSchema>;
 
@@ -61,6 +89,22 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner"]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
+export const MrStateSchema = z.enum(["open", "merged", "closed"]);
+export type MrState = z.infer<typeof MrStateSchema>;
+
+/** `none`: the host reports no checks, which is not the same as passing (5.5). */
+export const CiStateSchema = z.enum(["none", "pending", "passing", "failing"]);
+export type CiState = z.infer<typeof CiStateSchema>;
+
+/** The merge request of one task repo. */
+export const RepoMrSchema = z.object({
+  url: z.string(),
+  number: z.number().int().positive(),
+  state: MrStateSchema,
+  ci: CiStateSchema,
+});
+export type RepoMr = z.infer<typeof RepoMrSchema>;
+
 export const TaskRepoSchema = z.object({
   project: IdSchema,
   /** The project's own checkout, where the worktree is added from. */
@@ -76,6 +120,12 @@ export const TaskRepoSchema = z.object({
    * its branch, and the commit of it this branch sits on now. majhi rebases when it moves.
    */
   stack: z.object({ task: TaskIdSchema, branch: z.string(), commit: z.string() }).optional(),
+  /** The owner's place for this repo in the merge order (0 first). All repos carry one, or none. */
+  mergeOrder: z.number().int().nonnegative().optional(),
+  /** When the branch was last pushed for an MR. */
+  pushedAt: z.string().optional(),
+  /** Set once the MR is open. */
+  mr: RepoMrSchema.optional(),
 });
 export type TaskRepo = z.infer<typeof TaskRepoSchema>;
 

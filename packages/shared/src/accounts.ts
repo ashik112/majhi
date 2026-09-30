@@ -54,6 +54,15 @@ export const OrgIdSchema = z
 export const SecretRefSchema = z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/, "Use secret:<name>");
 export type SecretRef = z.infer<typeof SecretRefSchema>;
 
+/** Git hosts majhi can open and merge MRs on (5.5). Other hosts get a push and no MR. */
+export const MrHostSchema = z.enum(["github", "gitlab", "bitbucket"]);
+export type MrHost = z.infer<typeof MrHostSchema>;
+
+/** When majhi merges an org's MRs (5.5). */
+export const MergePolicySchema = z.enum(["never", "approve", "auto-if-green"]);
+export type MergePolicy = z.infer<typeof MergePolicySchema>;
+export const DEFAULT_MERGE_POLICY: MergePolicy = "never";
+
 /** Agent CLIs majhi drives over ACP. Adding a tool is one entry here plus one in `packages/acp` tools. */
 export const ToolIdSchema = z.enum(["claude", "codex"]);
 export type ToolId = z.infer<typeof ToolIdSchema>;
@@ -96,6 +105,10 @@ export const OrgConfigSchema = z.looseObject({
   tiers: TiersPatchSchema.optional(),
   /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
   team: z.array(IdSchema).optional(),
+  /** When majhi merges the org's MRs (5.5). Absent: `never`. */
+  merge: MergePolicySchema.optional(),
+  /** Credentials for opening and merging MRs, one secret per host. A project remote's own `token` wins. */
+  mr_tokens: z.partialRecord(MrHostSchema, SecretRefSchema).optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -327,6 +340,10 @@ export const OrgViewSchema = z.object({
   tiers: OrgConfigSchema.shape.tiers,
   /** The default team for new tasks, when set. */
   team: OrgConfigSchema.shape.team,
+  /** The merge policy in force: the org's `merge`, else `never`. */
+  merge: MergePolicySchema,
+  /** Secret references (never values) for the MR hosts, when set. */
+  mrTokens: OrgConfigSchema.shape.mr_tokens,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });

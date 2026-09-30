@@ -24,3 +24,33 @@ describe("orgs.update", () => {
     expect(listed).not.toHaveProperty("identity");
   });
 });
+
+describe("orgs.update merge policy and MR tokens", () => {
+  it("sets the policy and the secret per host, shows them, and defaults to never", async () => {
+    await withOrgs();
+    const shown = () => h.cmd("orgs.list").then((r) => r.body.find((o: { id: string }) => o.id === "acme"));
+    expect((await shown()).merge).toBe("never");
+
+    const set = await h.cmd("orgs.update", {
+      id: "acme",
+      merge: "auto-if-green",
+      mr_tokens: { github: "secret:gh-acme", gitlab: "secret:gl-acme" },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body).toMatchObject({
+      merge: "auto-if-green",
+      mrTokens: { github: "secret:gh-acme", gitlab: "secret:gl-acme" },
+    });
+
+    const cleared = await h.cmd("orgs.update", { id: "acme", merge: null, mr_tokens: null });
+    expect(cleared.body.merge).toBe("never");
+    expect(cleared.body.mrTokens).toBeUndefined();
+  });
+
+  it("rejects an unknown policy and a token that is not a secret reference", async () => {
+    await withOrgs();
+    expect((await h.cmd("orgs.update", { id: "acme", merge: "always" })).status).toBe(400);
+    expect((await h.cmd("orgs.update", { id: "acme", mr_tokens: { github: "ghp_abc" } })).status).toBe(400);
+    expect((await h.cmd("orgs.update", { id: "acme", mr_tokens: { svn: "secret:x" } })).status).toBe(400);
+  });
+});
