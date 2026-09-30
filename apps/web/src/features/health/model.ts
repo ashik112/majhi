@@ -54,13 +54,21 @@ export function needYouText(count: number): string | undefined {
   return count > 0 ? `${count} need you` : undefined;
 }
 
-/** The line above the checks, like "2 failed, 1 warning" or "All checks passed". */
-export function checksSummary(checks: readonly CheckRow[]): string {
-  const failed = checks.filter((c) => levelOf(c) === "fail").length;
-  const warned = checks.filter((c) => levelOf(c) === "warn").length;
-  if (failed + warned === 0) return "All checks passed";
-  const parts = [];
-  if (failed > 0) parts.push(`${failed} failed`);
-  if (warned > 0) parts.push(`${warned} ${warned === 1 ? "warning" : "warnings"}`);
-  return parts.join(", ");
+/** The page's status line: "All 22 checks passed", "1 check needs you" or "2 checks need you". */
+export function checksHeadline(checks: readonly CheckRow[]): string {
+  const open = checks.filter((c) => levelOf(c) !== "pass").length;
+  if (open === 0) return `All ${checks.length} checks passed`;
+  return open === 1 ? "1 check needs you" : `${open} checks need you`;
+}
+
+/** The checks that are not passing, failures first: always shown open, with their fixes. */
+export function openChecks(checks: readonly CheckRow[]): CheckRow[] {
+  const rank = { fail: 0, warn: 1, pass: 2 } as const;
+  return checks.filter((c) => levelOf(c) !== "pass").toSorted((a, b) => rank[levelOf(a)] - rank[levelOf(b)]);
+}
+
+/** The worst level in a group, for the dot beside its name in the folded summary. */
+export function groupLevel(group: Pick<CheckGroup, "rows">): "pass" | "warn" | "fail" {
+  const levels = group.rows.map(levelOf);
+  return levels.includes("fail") ? "fail" : levels.includes("warn") ? "warn" : "pass";
 }
