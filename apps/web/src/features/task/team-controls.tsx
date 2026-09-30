@@ -1,5 +1,5 @@
 import { type CoordinationMode, canWorkIn, MODE_LABELS, type Task } from "@majhi/shared";
-import { ChevronDown, Ellipsis, UserPlus } from "lucide-react";
+import { ChevronDown, Ellipsis, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Menu, type MenuItem } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
@@ -13,7 +13,7 @@ const MODES: CoordinationMode[] = ["lead", "pipeline", "review-loop"];
 function useCandidates(task: Task) {
   const index = useAgentIndex();
   return [...index.values()]
-    .filter((a) => canWorkIn(a, task.org) && !task.team.includes(a.id))
+    .filter((a) => !a.isBoss && canWorkIn(a, task.org) && !task.team.includes(a.id))
     .toSorted(
       (a, b) => Number(b.scope === task.org) - Number(a.scope === task.org) || a.id.localeCompare(b.id),
     );
@@ -63,7 +63,7 @@ export function AddAgent({ task }: { task: Task }) {
   const toast = useToast();
   const candidates = useCandidates(task);
   const items: MenuItem[] = candidates.map((a) => ({
-    label: `@${a.id} · ${a.role}`,
+    label: `@${a.id} · ${a.role} · ${a.account}`,
     onSelect: () =>
       add.mutate(
         { task: task.id, agent: a.id },
@@ -80,14 +80,13 @@ export function AddAgent({ task }: { task: Task }) {
         <Button
           ref={ref}
           variant="ghost"
-          size="icon-sm"
-          className="size-7"
+          size="sm"
+          className="-mr-1.5 h-6 gap-1 px-1.5 text-xs text-fg-muted"
           {...props}
-          aria-label="Add agent"
-          title="Add agent"
           disabled={add.isPending}
         >
-          <UserPlus aria-hidden="true" />
+          <Plus aria-hidden="true" className="size-3" />
+          Add agent
         </Button>
       )}
     />
@@ -96,9 +95,9 @@ export function AddAgent({ task }: { task: Task }) {
 
 /**
  * One team member's actions: make it the lead, swap it for another agent, pick its model and
- * effort for this task only, or take it off the task.
+ * effort for this task only, or take it off the task (not while it works).
  */
-export function MemberMenu({ task, id }: { task: Task; id: string }) {
+export function MemberMenu({ task, id, busy }: { task: Task; id: string; busy: boolean }) {
   const index = useAgentIndex();
   const info = index.get(id);
   const models = useAccountModels(info?.account).data;
@@ -155,9 +154,9 @@ export function MemberMenu({ task, id }: { task: Task; id: string }) {
     });
   }
   items.push({
-    label: "Remove from task",
+    label: busy ? "Remove from task (stop it first)" : "Remove from task",
     tone: "danger",
-    disabled: task.team.length < 2,
+    disabled: task.team.length < 2 || busy,
     onSelect: () =>
       remove.mutate({ task: task.id, agent: id }, { onError: fail("Could not remove the agent") }),
   });

@@ -75,7 +75,7 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
               task.kind === "chat" ? (
                 <ChangeAgent task={task} busy={busy} />
               ) : (
-                <MemberMenu task={task} id={id} />
+                <MemberMenu task={task} id={id} busy={live !== undefined && agentsBusy([live])} />
               )
             }
           />

@@ -206,6 +206,9 @@ export function createHandlers({
     "team.add": (input) =>
       services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
     "team.remove": (input) => services.tasks.removeFromTeam(input.task, input.agent),
+    "tasks.addAgent": (input) =>
+      services.tasks.addToTeam(input.id, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
+    "tasks.removeAgent": (input) => services.tasks.removeFromTeam(input.id, input.agent),
     "team.swap": (input) => services.tasks.swapInTeam(input.task, input.agent, input.with),
     "team.set": (input) => services.tasks.setOverride(input),
 
