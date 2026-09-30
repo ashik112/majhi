@@ -26,10 +26,11 @@ import { useServerEvents } from "@/lib/use-server-events";
 export function AppShell() {
   useServerEvents();
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+    <div className="relative isolate flex h-dvh min-h-0 flex-col overflow-hidden">
+      <div aria-hidden="true" className="app-backdrop" />
       <a
         href="#main"
-        className="sr-only z-50 rounded-md bg-amber px-3 py-2 font-semibold text-amber-ink focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+        className="sr-only z-50 rounded-md bg-accent px-3 py-2 font-semibold text-accent-ink focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
       >
         Skip to content
       </a>
@@ -68,7 +69,7 @@ function Frame() {
   const pinned = section === "/";
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <AttentionBanner banner={banner} org={org} />
@@ -77,7 +78,10 @@ function Frame() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className={cn("flex min-h-0 flex-1 flex-col", pinned ? "overflow-hidden" : "overflow-y-auto")}
+          className={cn(
+            "flex min-h-0 flex-1 flex-col",
+            pinned ? "overflow-hidden" : "overflow-y-auto overscroll-contain rounded-2xl pb-6",
+          )}
         >
           <InShellContext.Provider value={true}>
             <Outlet />

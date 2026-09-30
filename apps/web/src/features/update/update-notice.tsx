@@ -77,7 +77,7 @@ export function UpdateNotice() {
           ))}
         </ul>
       )}
-      {notice.dirty && (
+      {open && notice.dirty && (
         <p className="text-xs text-fg-muted text-pretty">
           The majhi folder has changes you have not committed. The update includes them.
         </p>
@@ -92,6 +92,7 @@ export function UpdateNotice() {
         </>
       ) : (
         <UpdateButtons
+          note={open}
           working={notice.working}
           waiting={notice.waiting || scheduledAt !== undefined}
           pending={start.isPending}
@@ -112,11 +113,14 @@ export function UpdateNotice() {
  * offers to wait for them; their turns resume on their own after the restart either way.
  */
 function UpdateButtons({
+  note,
   working,
   waiting,
   pending,
   onUpdate,
 }: {
+  /** The sentence about the working agents; folded away with the change list. */
+  note: boolean;
   working: number;
   waiting: boolean;
   pending: boolean;
@@ -132,11 +136,13 @@ function UpdateButtons({
   }
   return (
     <>
-      <p className="text-xs text-fg-muted text-pretty">
-        {waiting
-          ? "majhi updates as soon as the agents finish their turns."
-          : `${workingText(working)} Their turns continue on their own after the update.`}
-      </p>
+      {(note || waiting) && (
+        <p className="text-xs text-fg-muted text-pretty">
+          {waiting
+            ? "majhi updates as soon as the agents finish their turns."
+            : `${workingText(working)} Their turns continue on their own after the update.`}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         {!waiting && (
           <Button variant="primary" size="sm" disabled={pending} onClick={() => onUpdate("idle")}>
