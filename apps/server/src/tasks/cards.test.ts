@@ -136,21 +136,21 @@ describe("the review card", () => {
 describe("owner questions in plain text", () => {
   it("puts the choices under the message, and sends the one picked back to the agent once", async () => {
     w = await taskWorld();
-    await reviewTask("The branch is ready. Should I merge now or wait for review?");
+    await reviewTask("The branch is ready. Should I use SQLite or Postgres?");
     const [q] = await ofType("owner-question");
     expect(q).toMatchObject({
       agent: "acme-builder",
-      choices: ["Merge now", "Wait for review"],
+      choices: ["Use SQLite", "Postgres"],
       state: "pending",
     });
     const pick = (choice: string) => w.h.cmd("room.answerQuestion", { task: "ACM-1", item: q?.id, choice });
-    expect((await pick("Ship it")).status).toBe(409);
-    const res = await pick("Wait for review");
+    expect((await pick("MySQL")).status).toBe(409);
+    const res = await pick("Postgres");
     expect(res.status).toBe(200);
-    expect(res.body.item).toMatchObject({ state: "answered", chosen: "Wait for review" });
-    expect((await pick("Merge now")).status).toBe(409);
+    expect(res.body.item).toMatchObject({ state: "answered", chosen: "Postgres" });
+    expect((await pick("Use SQLite")).status).toBe(409);
     const owner = (await items()).filter((i) => i.type === "owner").at(-1);
-    expect(owner).toMatchObject({ text: "Owner chose: Wait for review", to: "acme-builder" });
+    expect(owner).toMatchObject({ text: "Owner chose: Postgres", to: "acme-builder" });
   });
 
   it("gets no buttons when the message is not for the owner", async () => {

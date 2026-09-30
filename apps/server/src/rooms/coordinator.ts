@@ -203,7 +203,8 @@ export class RoomCoordinator {
     this.deps.room.post(task, `question:${randomUUID()}`, {
       type: "owner-question",
       agent,
-      choices: readChoices(text),
+      // Merging, shipping and asking for changes live on the review card; no second set of buttons.
+      choices: readChoices(text).filter((c) => !REVIEW_CARD_CHOICE.test(c)),
       state: "pending",
     });
   }
@@ -331,3 +332,7 @@ async function worktreeFingerprint(task: Task): Promise<string | undefined> {
     return undefined;
   }
 }
+
+/** Choices the review card already offers (Ship, Mark done, Ask for changes). */
+const REVIEW_CARD_CHOICE =
+  /\b(merge|ship|push|mark (it |the task )?done|ask for changes|request changes|review)\b/i;

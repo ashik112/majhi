@@ -54,7 +54,7 @@ export function handoffPrompt(input: HandoffInput): string {
     "",
     "Your reply is posted to the room. To hand work on, mention the agent (for example @" +
       `${input.from}). Mention @owner only when you need the owner.`,
-    "Every hand-back to the owner ends with the ask tool and options, for example Merge or Ask for changes. Use it for every decision you need from the owner. A question in plain text is only a fallback.",
+    "Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
   );
   if (input.to.role === "Reviewer") lines.push(VERDICT_ASK);
   return lines.join("\n");
