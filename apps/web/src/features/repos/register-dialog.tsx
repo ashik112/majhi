@@ -1,4 +1,4 @@
-import type { ProjectView, Repo } from "@majhi/shared";
+import { type MrHost, MrHostSchema, type ProjectView, type Repo } from "@majhi/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -9,10 +9,20 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { defaultOrgId } from "@/features/accounts/model";
 import type { ApiRequestError } from "@/lib/api";
+import { HOST_LABEL } from "@/lib/hosts";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useProjects, useRegisterProject, useUpdateProject } from "@/lib/task-queries";
-import { aliasClashes, projectIdError, suggestProjectId } from "./project-model";
+import {
+  aliasClashes,
+  buildRemotes,
+  choiceFromProject,
+  linksOf,
+  type MrRemoteChoice,
+  projectIdError,
+  remoteNames,
+  suggestProjectId,
+} from "./project-model";
 
 /** Registers a repo as a project, or edits a registered one (`project` set). */
 export function RegisterDialog({
@@ -38,6 +48,8 @@ export function RegisterDialog({
   const [id, setId] = useState(() => project?.id ?? suggestProjectId(repo.name, taken));
   const [aliases, setAliases] = useState<string[]>(() => project?.aliases ?? []);
   const [base, setBase] = useState(project?.base ?? "");
+  const [choice, setChoice] = useState<MrRemoteChoice>(() => choiceFromProject(project));
+  const [dependsOn, setDependsOn] = useState<string[]>(() => project?.links.map((l) => l.to) ?? []);
   const [submitted, setSubmitted] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
 
@@ -61,15 +73,32 @@ export function RegisterDialog({
       toast(editing ? "Project updated" : "Project registered", { detail: id });
       onClose();
     };
+    const remotes = buildRemotes(project?.remotes, choice);
+    const links = linksOf(dependsOn);
     const fail = (error: ApiRequestError) => setFailure([error.message, ...error.details].join(". "));
     if (editing) {
       update.mutate(
-        { id, org: chosenOrg, aliases, ...(trimmedBase ? { base: trimmedBase } : {}) },
+        {
+          id,
+          org: chosenOrg,
+          aliases,
+          ...(trimmedBase ? { base: trimmedBase } : {}),
+          ...(remotes !== undefined && { remotes }),
+          ...(project.links.length > 0 || links.length > 0 ? { links: links.length > 0 ? links : null } : {}),
+        },
         { onSuccess: done, onError: fail },
       );
     } else {
       register.mutate(
-        { id, org: chosenOrg, path: repo.path, aliases, ...(trimmedBase ? { base: trimmedBase } : {}) },
+        {
+          id,
+          org: chosenOrg,
+          path: repo.path,
+          aliases,
+          ...(trimmedBase ? { base: trimmedBase } : {}),
+          ...(remotes ? { remotes } : {}),
+          ...(links.length > 0 ? { links } : {}),
+        },
         { onSuccess: done, onError: fail },
       );
     }
@@ -152,6 +181,90 @@ export function RegisterDialog({
             />
           )}
         </Field>
+
+        <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+          <legend className="mb-1.5 p-0 text-sm text-fg-faint">Merge requests</legend>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Open MRs against" hint="Default: origin.">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={choice.name}
+                  onChange={(event) => setChoice({ ...choice, name: event.target.value })}
+                >
+                  {remoteNames(repo, project).map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Host" hint="Auto reads it from the remote's URL.">
+              {(props) => (
+                <Select
+                  {...props}
+                  value={choice.host}
+                  onChange={(event) => {
+                    const parsed = MrHostSchema.safeParse(event.target.value);
+                    setChoice({ ...choice, host: parsed.success ? parsed.data : "" });
+                  }}
+                >
+                  <option value="">Auto</option>
+                  {MrHostSchema.options.map((host: MrHost) => (
+                    <option key={host} value={host}>
+                      {HOST_LABEL[host]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </div>
+          <Field
+            label="SSH alias"
+            hint="A Host from your SSH config. Pushes go through it. Blank: the URL as it is."
+          >
+            {(props) => (
+              <Input
+                {...props}
+                list={`ssh-aliases-${id}`}
+                value={choice.ssh}
+                onChange={(event) => setChoice({ ...choice, ssh: event.target.value.trim() })}
+                placeholder="github-acme"
+                className="font-mono"
+              />
+            )}
+          </Field>
+          <datalist id={`ssh-aliases-${id}`}>
+            {[...new Set(repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : [])))].map((alias) => (
+              <option key={alias} value={alias} />
+            ))}
+          </datalist>
+          {others.filter((p) => p.id !== id).length > 0 && (
+            <fieldset className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
+              <legend className="mb-1 p-0 text-sm text-fg-faint">Depends on</legend>
+              {others
+                .filter((p) => p.id !== id)
+                .map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={dependsOn.includes(p.id)}
+                      onChange={(event) =>
+                        setDependsOn(
+                          event.target.checked ? [...dependsOn, p.id] : dependsOn.filter((d) => d !== p.id),
+                        )
+                      }
+                    />
+                    <span className="font-mono">{p.id}</span>
+                  </label>
+                ))}
+              <span className="text-xs text-fg-faint">
+                When a task changes both, the one it depends on merges first.
+              </span>
+            </fieldset>
+          )}
+        </fieldset>
 
         {failure && (
           <p

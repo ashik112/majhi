@@ -1,4 +1,11 @@
-import { IdSchema, type ProjectView, type Repo } from "@majhi/shared";
+import {
+  IdSchema,
+  type MrHost,
+  type ProjectLink,
+  type ProjectView,
+  type RemoteConfig,
+  type Repo,
+} from "@majhi/shared";
 import { repoMatches } from "./filter";
 
 /** A project id from a folder name: `Globex API` becomes `globex-api`. Empty when nothing usable is left. */
@@ -66,4 +73,65 @@ export function groupByOrg<T extends { org: string }>(
   const known = orgIds.filter((id) => items.some((i) => i.org === id));
   const strays = [...new Set(items.map((i) => i.org))].filter((id) => !orgIds.includes(id)).sort();
   return [...known, ...strays].map((org) => ({ org, items: items.filter((i) => i.org === org) }));
+}
+
+// Merge request remote and links (5.5) ----------------------------------------
+
+/** What the owner picks in the project dialog for the remote merge requests go to. */
+export interface MrRemoteChoice {
+  /** The remote's name in git, like `origin`. */
+  name: string;
+  /** `""`: read the host from the remote's URL. */
+  host: MrHost | "";
+  /** A `Host` from ~/.ssh/config; `""` for none. */
+  ssh: string;
+}
+
+/** The remote MRs go to and its saved host and alias, from the project's config. */
+export function choiceFromProject(project: ProjectView | undefined): MrRemoteChoice {
+  const name = project?.mrRemote ?? "origin";
+  const saved = project?.remotes[name];
+  return { name, host: saved?.host ?? "", ssh: saved?.ssh ?? "" };
+}
+
+/** Remote names to pick from: the ones git has, the ones the config names, and always `origin`. */
+export function remoteNames(repo: Repo, project: ProjectView | undefined): string[] {
+  return [...new Set(["origin", ...repo.remotes.map((r) => r.name), ...Object.keys(project?.remotes ?? {})])];
+}
+
+/**
+ * The `remotes` value for `projects.update`/`register`: the saved remotes with the chosen one
+ * marked. `undefined` leaves the config alone (nothing to say); `null` removes every remote entry.
+ */
+export function buildRemotes(
+  existing: Readonly<Record<string, RemoteConfig>> | undefined,
+  choice: MrRemoteChoice,
+): Record<string, RemoteConfig> | null | undefined {
+  const current = existing ?? {};
+  const flagged = Object.entries(current).some(([, r]) => r.mr === true);
+  const next: Record<string, RemoteConfig> = {};
+  for (const [name, remote] of Object.entries(current)) {
+    const { mr: _mr, ...rest } = remote;
+    next[name] = rest;
+  }
+  const { mr: _cleared, ...kept } = next[choice.name] ?? {};
+  const entry: RemoteConfig = { ...kept };
+  if (choice.host === "") delete entry.host;
+  else entry.host = choice.host;
+  const ssh = choice.ssh.trim();
+  if (ssh === "") delete entry.ssh;
+  else entry.ssh = ssh;
+  // `origin` is the default: it needs the flag only to take it back from another remote.
+  if (choice.name !== "origin" || flagged) entry.mr = true;
+  next[choice.name] = entry;
+  for (const [name, remote] of Object.entries(next)) {
+    if (Object.keys(remote).length === 0) delete next[name];
+  }
+  if (Object.keys(next).length === 0) return Object.keys(current).length === 0 ? undefined : null;
+  return next;
+}
+
+/** `links` for the command: the chosen projects as `depends-on`. */
+export function linksOf(dependsOn: readonly string[]): ProjectLink[] {
+  return dependsOn.map((to) => ({ to, type: "depends-on" }));
 }

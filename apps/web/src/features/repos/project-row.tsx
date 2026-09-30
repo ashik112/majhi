@@ -16,7 +16,7 @@ const CHIP =
   "inline-flex h-[22px] max-w-full items-center gap-1.5 rounded-[5px] bg-[#272a31] px-2 text-xs text-fg-soft";
 
 /** Every remote of a repo as a small chip: host, and the SSH alias it goes through. */
-function Remotes({ repo }: { repo: Repo | undefined }) {
+function Remotes({ repo, mrRemote }: { repo: Repo | undefined; mrRemote?: string | undefined }) {
   if (!repo || repo.remotes.length === 0) {
     return <span className="text-sm text-fg-faint">{repo ? "No remote" : "Unknown"}</span>;
   }
@@ -30,6 +30,7 @@ function Remotes({ repo }: { repo: Repo | undefined }) {
           {repo.remotes.length > 1 && remote.name !== "origin" && (
             <span className="text-fg-faint">{remote.name}</span>
           )}
+          {repo.remotes.length > 1 && remote.name === mrRemote && <span className="text-fg-faint">MRs</span>}
         </li>
       ))}
     </ul>
@@ -63,7 +64,7 @@ export function ProjectRow({
         </span>
         {!project.exists && <span className="block text-xs text-red">Repo not found at this path</span>}
       </span>
-      <Remotes repo={repo} />
+      <Remotes repo={repo} mrRemote={project.mrRemote} />
       <span className="truncate font-mono text-sm text-fg-soft" title={project.path}>
         <Highlight text={collapseHome(project.path, home)} terms={terms} />
       </span>
@@ -79,6 +80,14 @@ export function ProjectRow({
           <GitBranch aria-hidden="true" className="size-3" />
           <span className="truncate font-mono">{project.base ?? "default branch"}</span>
         </span>
+        {project.links.length > 0 && (
+          <span
+            className="truncate text-xs text-fg-faint"
+            title={`Merges after ${project.links.map((l) => l.to).join(", ")}`}
+          >
+            Depends on <span className="font-mono">{project.links.map((l) => l.to).join(", ")}</span>
+          </span>
+        )}
       </span>
       <span className="flex justify-end gap-0.5">
         <CopyPath name={project.id} path={project.path} home={home} />
