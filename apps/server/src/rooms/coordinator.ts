@@ -20,7 +20,15 @@ import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { readChoices } from "./choices.ts";
-import { asksOwner, loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
+import {
+  asksOwner,
+  loopPair,
+  type Member,
+  planTurn,
+  type Verdict,
+  verdictOf,
+  waitsOnly,
+} from "./coordinate.ts";
 
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
@@ -54,16 +62,20 @@ export class RoomCoordinator {
     const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return;
+    // Taken off the team: what it still says is posted, but it hands nothing on.
+    if (!task.team.includes(turn.agent)) return;
     const text = turn.text.trim();
     const agents = await this.frontmatters();
     const mentions = parseMentions(
       text,
       agents.map((a) => a.id),
     ).filter((m) => m !== turn.agent);
+    const removed = store.tasks.roomState(task.id).removed ?? [];
 
-    // An agent mentioned from outside the team joins when it may work in the org.
+    // An agent mentioned from outside the team joins when it may work in the org. One the owner
+    // removed stays out: only the owner brings it back.
     for (const m of mentions) {
-      if (m === OWNER_HANDLE || task.team.includes(m)) continue;
+      if (m === OWNER_HANDLE || task.team.includes(m) || removed.includes(m)) continue;
       const fm = agents.find((a) => a.id === m);
       if (fm !== undefined && canWorkIn(fm, task.org)) {
         task = await this.deps.tasks.addToTeam(task.id, m, { by: turn.agent });
@@ -83,10 +95,10 @@ export class RoomCoordinator {
     // A turn that changed the worktrees is progress, not a loop: the guard counts from zero again.
     const before = store.tasks.roomState(task.id);
     const fingerprint = await worktreeFingerprint(task);
-    const state =
-      fingerprint !== undefined && fingerprint !== before.fingerprint
-        ? { ...before, agentTurns: 0, fingerprint }
-        : before;
+    const changed = fingerprint !== undefined && fingerprint !== before.fingerprint;
+    const state = changed ? { ...before, agentTurns: 0, fingerprint } : before;
+    // The owner has yet to answer and this turn only waits: nobody else needs to wake for it.
+    const waiting = !changed && this.ownerQuestionPending(task.id) && waitsOnly(text);
     const plan = planTurn({
       mode: task.mode,
       team,
@@ -98,8 +110,14 @@ export class RoomCoordinator {
         reviewRounds: settings.rooms.review_rounds,
       },
       verdict,
+      waiting,
     });
-    store.tasks.setRoomState(task.id, plan.state);
+    // Read again: the owner may have removed an agent while this turn was being planned.
+    const { removed: removedNow } = store.tasks.roomState(task.id);
+    store.tasks.setRoomState(task.id, {
+      ...plan.state,
+      ...(removedNow === undefined ? {} : { removed: removedNow }),
+    });
 
     if (plan.pause !== undefined) {
       // Not awaited: stopping waits for this agent's loop, which is waiting for this call.
@@ -110,7 +128,7 @@ export class RoomCoordinator {
     // Addressed to the owner in plain text: majhi puts the buttons under it.
     const toOwner =
       mentions.includes(OWNER_HANDLE) || (plan.handoffs.length === 0 && text !== "" && asksOwner(text));
-    const questioned = !asked && toOwner;
+    const questioned = !asked && !waiting && toOwner;
     if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
       this.say(task.id, "info", `${plan.toOwner} Over to you.`);
@@ -136,6 +154,11 @@ export class RoomCoordinator {
     if (to === caller.agent) throw new UserError("You cannot hand work to yourself.");
     if (to === OWNER_HANDLE)
       throw new UserError("To reach the owner, say so in your reply and mention @owner.");
+    if (this.ownerQuestionPending(task.id) && waitsOnly(text))
+      throw new UserError(
+        "The owner has a question pending. Waiting needs no handoff: end your turn, and the owner's answer starts the room again.",
+        409,
+      );
     if (!task.team.includes(to)) task = await this.deps.tasks.addToTeam(task.id, to, { by: caller.agent });
     const state = this.deps.store.tasks.roomState(task.id);
     const max = await this.maxAgentTurns(task);
@@ -217,6 +240,15 @@ export class RoomCoordinator {
       choices: readChoices(text).filter((c) => !REVIEW_CARD_CHOICE.test(c)),
       state: "pending",
     });
+  }
+
+  /** An ask card or a plain-text question to the owner still waits for an answer. */
+  private ownerQuestionPending(task: string): boolean {
+    this.deps.room.flush(task);
+    const rooms = this.deps.store.room;
+    return (
+      rooms.pendingOfType(task, "ask").length > 0 || rooms.pendingOfType(task, "owner-question").length > 0
+    );
   }
 
   private async maxAgentTurns(task: Task): Promise<number> {

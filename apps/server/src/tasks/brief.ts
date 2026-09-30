@@ -116,7 +116,7 @@ function teamLines(task: Task, members: readonly BriefAgent[]): string[] {
     }),
     "",
     "Your last message in a turn is posted to the room. Mention a teammate (like @" +
-      `${members[1]?.id ?? lead?.id ?? "agent"}) to hand work to them: majhi wakes them with your message. Mention @owner only when you need the owner. Only one agent edits a worktree at a time; majhi makes the others wait.`,
+      `${members[1]?.id ?? lead?.id ?? "agent"}) to hand work to them: majhi wakes them with your message. With nothing to hand on, mention no one. Mention @owner only when you need the owner. Only one agent edits a worktree at a time; majhi makes the others wait.`,
   ];
 }
 

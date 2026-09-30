@@ -635,14 +635,18 @@ export class TaskService {
     return this.get(task.id);
   }
 
-  /** A new coordination mode starts its own turn order; the loop guard's count stays. */
+  /** A new coordination mode starts its own turn order; the loop guard's count and the removed agents stay. */
   private async changeMode(task: Task, mode: CoordinationMode): Promise<void> {
     const at = this.now().toISOString();
     this.deps.store.tasks.setMode(task.id, mode, at);
     const next = this.get(task.id);
     const { state } = firstTurn(mode, this.members(next, await this.frontmatters()));
-    const agentTurns = this.deps.store.tasks.roomState(task.id).agentTurns;
-    this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns });
+    const { agentTurns, removed } = this.deps.store.tasks.roomState(task.id);
+    this.deps.store.tasks.setRoomState(task.id, {
+      ...state,
+      agentTurns,
+      ...(removed === undefined ? {} : { removed }),
+    });
     this.note(task.id, `Mode: ${MODE_LABELS[mode]}.`);
   }
 
@@ -652,7 +656,14 @@ export class TaskService {
   /** Adds an agent that can work in the task's org. With `lead`, it goes first. */
   async addToTeam(id: string, agent: string, options: { lead?: boolean; by?: string } = {}): Promise<Task> {
     const task = this.get(id);
+    const state = this.deps.store.tasks.roomState(id);
+    const removed = state.removed ?? [];
+    if (options.by !== undefined && removed.includes(agent))
+      throw new UserError(`The owner removed @${agent} from ${id}. Only the owner can add it back.`, 409);
     const fm = await this.checkMember(task, agent);
+    // The owner added it again: agents may mention it as usual.
+    if (removed.includes(agent))
+      this.deps.store.tasks.setRoomState(id, { ...state, removed: removed.filter((a) => a !== agent) });
     const rest = task.team.filter((a) => a !== agent);
     const team =
       options.lead === true ? [agent, ...rest] : task.team.includes(agent) ? task.team : [...rest, agent];
@@ -683,6 +694,10 @@ export class TaskService {
     );
     const { [agent]: _gone, ...overrides } = task.overrides;
     this.deps.store.tasks.setOverrides(id, overrides, at);
+    // Mentions do not bring it back, so the room cannot wake it again.
+    const state = this.deps.store.tasks.roomState(id);
+    const removed = [...(state.removed ?? []).filter((a) => a !== agent), agent];
+    this.deps.store.tasks.setRoomState(id, { ...state, removed });
     this.note(id, `Removed @${agent} from the team.`);
     return this.afterProcessesOf(id, held, await this.teamChanged(id));
   }
