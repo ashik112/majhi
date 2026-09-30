@@ -99,7 +99,7 @@ const rated = (level: Difficulty | undefined, confidence: number, counted = true
   ...(level === undefined ? {} : { level }),
   confidence,
   counted,
-  why: counted ? "" : `${confidence.toFixed(2)}, under the 0.40 floor`,
+  why: counted ? "" : "0.12 over chance, under 0.20",
   decisionId: "d1",
   provider: "laya",
   by: "Laya",
@@ -146,7 +146,7 @@ describe("pickForSession", () => {
     const out = await run(d, s, { fm: { role: "Builder" } });
     expect(set).toEqual({ model: "claude-sonnet-5-5", thought_level: "high" });
     expect(out.line).toContain(
-      "Laya rated the task large, but that does not count (0.30, under the 0.40 floor), so the Builder tiers: balanced model, middle effort.",
+      "Laya rated the task large, but that does not count (0.12 over chance, under 0.20), so the Builder tiers: balanced model, middle effort.",
     );
   });
 
@@ -307,7 +307,19 @@ function judge(yes: (description: string) => boolean, confidence = 0.9) {
     const state = typeof request.state === "string" ? {} : request.state;
     return {
       id: `j${calls.length}`,
-      answers: { delegates: { value: yes(state.description ?? "") ? "A" : "B", confidence } },
+      answers: {
+        delegates: {
+          value: yes(state.description ?? "") ? "A" : "B",
+          confidence,
+          // Two options: the gate takes 0.6 and up at the default bar.
+          gate: {
+            accepted: confidence >= 0.6,
+            reason: "",
+            lift: 2 * confidence - 1,
+            margin: 2 * confidence - 1,
+          },
+        },
+      },
       provider: "laya",
       skipped: [],
       trimmed: false,

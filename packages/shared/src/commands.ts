@@ -903,7 +903,7 @@ export const commands = {
   "decisions.set": {
     risk: "change",
     summary:
-      "Change the provider order, the stand-in agent, Jev's key, the confidence floor or the per-run limit",
+      "Change the provider order, the stand-in agent, Jev's key, when an answer counts (min_lift, min_margin), the role tiers or the per-run limit",
     input: DecisionPatchSchema,
     output: DecisionSettingsSchema,
   },

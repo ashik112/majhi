@@ -129,6 +129,17 @@ export type DecideRequest = z.infer<typeof DecideRequestSchema>;
 /** A request as a caller writes it, before defaults are filled in. */
 export type DecideRequestInput = z.input<typeof DecideRequestSchema>;
 
+export const GateSchema = z.object({
+  accepted: z.boolean(),
+  /** Why, in plain words: "0.31 over chance, 0.19 ahead" or what fell short. */
+  reason: z.string(),
+  /** `(n * p - 1) / (n - 1)`: 0 is a random pick, 1 is certain. */
+  lift: z.number(),
+  /** The answer's probability minus the next most probable option's. */
+  margin: z.number(),
+});
+export type Gate = z.infer<typeof GateSchema>;
+
 export const AnswerSchema = z.object({
   /** The option for `choice`, a number for `score`, a boolean for `noul`. */
   value: z.union([z.string(), z.number(), z.boolean()]),
@@ -137,8 +148,62 @@ export const AnswerSchema = z.object({
   confidence: z.number().min(0).max(1),
   /** The probabilities of each order run, when a choice was asked in more than one order. */
   runs: z.array(z.record(z.string(), z.number().min(0).max(1))).optional(),
+  /** Whether the answer is sure enough to act on, set by majhi from `decisions.min_lift` and `min_margin`. */
+  gate: GateSchema.optional(),
 });
 export type Answer = z.infer<typeof AnswerSchema>;
+
+export interface GateSettings {
+  min_lift: number;
+  min_margin: number;
+}
+
+/** How many options the provider chose among: a choice's options and the abstain option, a score's levels, 2 for a yes/no. */
+export function optionCount(q: Question): number {
+  if (q.type === "choice") return askedOptions(q).length;
+  if (q.type === "score") return Math.max(2, q.max - q.min + 1);
+  return 2;
+}
+
+/** Two decimals, cut instead of rounded, so a number just under a bar never reads as reaching it. */
+function cut2(n: number): string {
+  return (Math.floor(n * 100 + 1e-9) / 100).toFixed(2);
+}
+
+/**
+ * Whether an answer counts. It does when it is not the abstain option, beats chance by `min_lift`
+ * (chance-adjusted, so the bar means the same for any number of options), and leads the runner-up by
+ * `min_margin`. Without probabilities the rest is taken as spread evenly over the other options.
+ */
+export function gateAnswer(q: Question, a: Answer, s: GateSettings): Gate {
+  const n = optionCount(q);
+  const key = String(a.value);
+  const probabilities = a.probabilities ?? {};
+  const p = probabilities[key] ?? a.confidence;
+  const others = Object.entries(probabilities).filter(([k]) => k !== key);
+  const [runnerUp, second] = others.reduce<[string | undefined, number]>(
+    (best, [k, v]) => (v > best[1] ? [k, v] : best),
+    [undefined, others.length === 0 ? (1 - p) / (n - 1) : 0],
+  );
+  const lift = (n * p - 1) / (n - 1);
+  const margin = p - second;
+  const numbers = { lift, margin };
+  if (q.type === "choice" && q.abstain && a.value === ABSTAIN.key)
+    return { accepted: false, reason: "it said none of the options fits", ...numbers };
+  if (lift < s.min_lift)
+    return {
+      accepted: false,
+      reason: `${cut2(lift)} over chance, under ${s.min_lift.toFixed(2)}`,
+      ...numbers,
+    };
+  if (margin < s.min_margin)
+    return {
+      accepted: false,
+      reason: `${cut2(margin)} ahead of ${runnerUp ?? "the next option"}, under ${s.min_margin.toFixed(2)}`,
+      ...numbers,
+    };
+  return { accepted: true, reason: `${cut2(lift)} over chance, ${cut2(margin)} ahead`, ...numbers };
+}
 
 export const DecisionResultSchema = z.object({
   id: z.string(),
@@ -200,11 +265,17 @@ const decisionFields = {
   acp_agent: IdSchema,
   /** `secret:<name>` for Jev's API key. Jev is skipped without one. */
   jev_key: z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/),
-  /** Below this, an answer to the other decisions is not used. */
+  /**
+   * An answer counts only when it beats chance by this much: `(n * p - 1) / (n - 1)` for the
+   * answer's probability `p` among `n` options, 0 for a random pick and 1 for a certain one. The
+   * same bar means the same thing for 2 options or 20, which a fixed probability floor does not.
+   */
+  min_lift: z.number().min(0).max(1),
+  /** ...and leads the next most probable option by at least this much. */
+  min_margin: z.number().min(0).max(1),
+  /** Older fixed floors, replaced by `min_lift` and `min_margin`. Still read so an older majhi.yaml loads; not used. */
   min_confidence: z.number().min(0).max(1),
-  /** Below this, a model pick falls back to the role's model tier. Laya spreads probability across similar models, so it is lower than `min_confidence`. */
   model_floor: z.number().min(0).max(1),
-  /** Below this, an effort pick falls back to the role's effort tier. */
   effort_floor: z.number().min(0).max(1),
   /** Model and effort tiers per role. Orgs and agents can override them. */
   tiers: TiersPatchSchema,
@@ -215,9 +286,11 @@ export const DecisionSettingsSchema = z.strictObject({
   order: decisionFields.order.default(["laya", "acp", "rules"]),
   acp_agent: decisionFields.acp_agent.optional(),
   jev_key: decisionFields.jev_key.optional(),
-  min_confidence: decisionFields.min_confidence.default(0.6),
-  model_floor: decisionFields.model_floor.default(0.4),
-  effort_floor: decisionFields.effort_floor.default(0.4),
+  min_lift: decisionFields.min_lift.default(0.2),
+  min_margin: decisionFields.min_margin.default(0.05),
+  min_confidence: decisionFields.min_confidence.optional(),
+  model_floor: decisionFields.model_floor.optional(),
+  effort_floor: decisionFields.effort_floor.optional(),
   /** Every role, with the defaults filled in for whatever majhi.yaml leaves out. */
   tiers: decisionFields.tiers.default({}).transform((patch): Tiers => {
     const tiers = { ...DEFAULT_TIERS };

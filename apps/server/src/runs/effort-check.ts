@@ -42,7 +42,7 @@ const keyOf = (o: OptionValue) => `${o.id}\0${o.description?.trim() ?? ""}`;
 
 /**
  * Judges the effort options that have a description (an option with none gives nothing to judge, so
- * it stays). An answer counts only at or above `minConfidence`, either way: A flags the option, B
+ * it stays). An answer counts only when its gate accepts it, either way: A flags the option, B
  * clears it. Answers go into `known`, which the caller keeps for one session start at most, so a
  * wrong answer never outlives it. A weaker answer, or none, leaves the option in and sets `unchecked`.
  */
@@ -50,11 +50,10 @@ export async function checkEfforts(input: {
   decisions: Decisions | undefined;
   options: readonly OptionValue[];
   known: Map<string, boolean>;
-  minConfidence: number;
   task: string;
   agent: string;
 }): Promise<EffortCheck> {
-  const { known, minConfidence } = input;
+  const { known } = input;
   const judged = input.options.filter((o) => o.id !== "default" && o.description?.trim());
   let unchecked = false;
   for (const o of judged) {
@@ -63,8 +62,8 @@ export async function checkEfforts(input: {
       ?.decide(delegationQuestion(o), { use: "model-pick", task: input.task, agent: input.agent })
       .catch(() => undefined);
     const a = result?.answers.delegates;
-    // The rules provider answers with a weak guess: a guess is not a check.
-    if (a === undefined || (a.value !== "A" && a.value !== "B") || a.confidence < minConfidence) {
+    // An answer the gate does not take, a guess from the rules among them, is not a check.
+    if (a === undefined || (a.value !== "A" && a.value !== "B") || a.gate?.accepted !== true) {
       unchecked = true;
       continue;
     }

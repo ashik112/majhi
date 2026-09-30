@@ -178,7 +178,7 @@ describe("rateTask", () => {
     const { w } = await world({ status: READY, decide: answers("large", 0.3) });
     const rating = await w.h.majhi.services.decisions.rateTask(request);
     expect(rating).toMatchObject({ level: "large", counted: false });
-    expect(rating?.why).toContain("0.30");
+    expect(rating?.why).toBe("0.12 over chance, under 0.20");
   });
 });
 

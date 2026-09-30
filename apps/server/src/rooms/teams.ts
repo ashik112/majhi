@@ -23,9 +23,6 @@ export interface TeamOption {
 /** Account states where a new run would fail at once. */
 const UNUSABLE: ReadonlySet<AccountStatus> = new Set(["needs-login", "at-limit", "unreachable"]);
 
-/** Below this the pick is dropped and the rules' team is used (Laya spreads probability, like model picks). */
-export const TEAM_MIN_CONFIDENCE = 0.4;
-
 /**
  * The teams a new task can get from the agents that may work in its org (SPEC 5.3, Phase 3):
  * one agent; a builder and a reviewer taking turns; a lead with a builder and a reviewer. The org's
@@ -130,12 +127,7 @@ export function chooseTeam(
   if (fallback === undefined) return undefined;
   const answer = result?.answers.team;
   const picked = options.find((o) => o.key === answer?.value);
-  if (
-    result !== undefined &&
-    answer !== undefined &&
-    picked !== undefined &&
-    answer.confidence >= TEAM_MIN_CONFIDENCE
-  ) {
+  if (result !== undefined && answer?.gate?.accepted === true && picked !== undefined) {
     const name = PROVIDER_NAMES[result.provider] ?? result.provider;
     return {
       option: picked,
@@ -146,9 +138,11 @@ export function chooseTeam(
   const why =
     result === undefined
       ? "no decision provider answered"
-      : answer === undefined || picked === undefined
+      : answer === undefined
         ? "the decision provider gave no usable answer"
-        : `the decision provider was not sure (${answer.confidence.toFixed(2)})`;
+        : answer.gate?.accepted !== true
+          ? `the decision provider was not sure (${answer.gate?.reason ?? answer.confidence.toFixed(2)})`
+          : "the decision provider gave no usable answer";
   return {
     option: fallback,
     line: `Team: ${fallback.label}. ${MODE_LABELS[fallback.mode]}. Picked by the rules: ${why}.`,

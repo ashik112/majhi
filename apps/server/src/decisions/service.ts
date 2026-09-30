@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
 import {
+  type Answer,
   type CommandMeta,
   type DecideRequest,
   type DecideRequestInput,
@@ -9,8 +10,11 @@ import {
   type DecisionRecord,
   type DecisionResult,
   type DecisionSettings,
+  type Gate,
+  gateAnswer,
   type LayaStatus,
   type ProviderId,
+  type Question,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { secretName } from "../accounts/homes.ts";
@@ -85,9 +89,16 @@ export class DecisionService implements Decisions {
     const started = performance.now();
     const settings = await this.settings();
     const chain = await runChain(settings.order, this.providers(), request);
+    const answers = Object.fromEntries(
+      Object.entries(chain.answers).map(([key, a]) => {
+        const q = request.questions[key];
+        return [key, q === undefined ? a : { ...a, gate: gate(q, a, chain.provider, settings) }];
+      }),
+    );
     const result: DecisionResult = {
       id: `dec_${randomUUID().slice(0, 8)}`,
       ...chain,
+      answers,
       durationMs: Math.round(performance.now() - started),
     };
     this.deps.log.add({
@@ -158,7 +169,6 @@ export class DecisionService implements Decisions {
 
   async rateTask(request: RateTaskRequest): Promise<TaskRating | undefined> {
     try {
-      const floor = (await this.settings()).model_floor;
       const result = await this.decide(difficultyQuestion(request), {
         use: "model-pick",
         task: request.task,
@@ -167,12 +177,11 @@ export class DecisionService implements Decisions {
       const a = result.answers.difficulty;
       if (a === undefined) return undefined;
       const level = isDifficulty(a.value) ? a.value : undefined;
-      const counted = level !== undefined && a.confidence >= floor;
       return {
         ...(level === undefined ? {} : { level }),
         confidence: a.confidence,
-        counted,
-        why: counted ? "" : `${cutTo2(a.confidence)}, under the ${floor.toFixed(2)} floor`,
+        counted: level !== undefined && a.gate?.accepted === true,
+        why: a.gate?.reason ?? "",
         decisionId: result.id,
         provider: result.provider,
         by: NAMES[result.provider],
@@ -200,9 +209,10 @@ export class DecisionService implements Decisions {
   }
 }
 
-/** Two decimals, cut instead of rounded: a 0.3997 must not read as 0.40 under a 0.40 floor. */
-function cutTo2(n: number): string {
-  return (Math.floor(n * 100 + 1e-9) / 100).toFixed(2);
+/** Whether an answer counts. The rules provider only guesses, so its answers never do. */
+function gate(q: Question, a: Answer, provider: ProviderId, settings: DecisionSettings): Gate {
+  const g = gateAnswer(q, a, settings);
+  return provider === "rules" ? { ...g, accepted: false, reason: "the rules only guess" } : g;
 }
 
 function layaReason(laya: LayaStatus): string | undefined {

@@ -20,8 +20,6 @@ import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { asksOwner, loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
 
-/** Below this a verdict from the decision provider is not used. */
-const DECISION_FLOOR = 0.6;
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
 /** read_recent cuts each message to this, in the middle. */
@@ -200,7 +198,7 @@ export class RoomCoordinator {
       )
       .catch(() => undefined);
     const a = answer?.answers.verdict;
-    if (a === undefined || a.confidence < DECISION_FLOOR) return "unclear";
+    if (a === undefined || a.gate?.accepted !== true) return "unclear";
     return a.value === "A" ? "approved" : "changes";
   }
 

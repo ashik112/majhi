@@ -20,6 +20,7 @@ const TOOL = {
     "keep to 2 to 8 options; never use yes or no as keys. For a yes/no question use a choice with keys A and B, " +
     "each described, and orders 'reversed' (asked in both orders, averaged). " +
     "A choice gets the option 'none: none of these fits' unless abstain is false; an answer of none means it could not tell. " +
+    "Each answer has a gate: act on it only when gate.accepted is true, else decide yourself. " +
     "Question types: choice, score (an integer from min to max), noul (true or false, with criteria describing each). " +
     "The state and question share a window of about 500 tokens; `trimmed` says when the state was cut.",
   inputSchema: z.toJSONSchema(DecideRequestSchema, { io: "input", unrepresentable: "any" }),

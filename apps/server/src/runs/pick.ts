@@ -78,7 +78,6 @@ export async function pickForSession(input: {
           decisions,
           options: list,
           known,
-          minConfidence: settings.min_confidence,
           task: task.id,
           agent: fm.id,
         })
