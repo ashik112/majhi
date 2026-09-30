@@ -286,7 +286,8 @@ export class ProcessManager {
     const onData = (d: Buffer) => {
       const text = d.toString();
       proc.tail.write(text);
-      const port = proc.info.port === undefined ? findPort(text) : undefined;
+      // A container's own port is not the Mac's: a preview shows its host link in `container` instead.
+      const port = proc.info.port === undefined && proc.managed === undefined ? findPort(text) : undefined;
       if (port !== undefined) proc.info = { ...proc.info, port };
       this.changed(task, port !== undefined);
     };

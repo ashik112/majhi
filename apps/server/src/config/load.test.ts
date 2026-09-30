@@ -52,6 +52,15 @@ describe("parseConfigText", () => {
     });
   });
 
+  it("loads a file with the containers section, allowed images included", () => {
+    const text = "workspaces: [~/Work]\ncontainers:\n  images: [postgres:16-alpine]\n  cpus: 2\n";
+    expect(parse(text).state.status).toBe("loaded");
+    expect(parse("workspaces: [~/Work]\ncontainers:\n  cpus: 40\n").state).toMatchObject({
+      status: "invalid",
+      errors: [expect.stringMatching(/^containers\.cpus: /)],
+    });
+  });
+
   it("rejects an empty workspace list", () => {
     expect(parse("workspaces: []\n").state).toMatchObject({
       status: "invalid",
