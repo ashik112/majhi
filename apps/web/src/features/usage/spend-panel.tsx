@@ -88,11 +88,11 @@ export function SpendPanel({ org, className }: { org: string | undefined; classN
         </p>
       ) : (
         <>
-          <dl className="grid shrink-0 grid-cols-3 px-4 pt-2 pb-3">
+          <div className="grid shrink-0 grid-cols-3 px-4 pt-2 pb-3">
             <Total label="Today" totals={data.today} />
             <Total label="This week" totals={data.week} />
             <Total label="This month" totals={data.month} />
-          </dl>
+          </div>
           {unpriced && (
             <p className="shrink-0 px-4 pb-2 text-sm text-amber">
               {unpriced}{" "}
@@ -125,7 +125,7 @@ export function SpendPanel({ org, className }: { org: string | undefined; classN
               </Button>
             </div>
             <div className="min-h-0 overflow-y-auto overscroll-contain p-4 pb-6 scroll-fade">
-              <PriceTable id="price-table" models={modelIds} />
+              <PriceTable id="price-table" models={modelIds} className="border-0 bg-transparent p-0" />
             </div>
           </div>
         </Modal>
@@ -136,15 +136,16 @@ export function SpendPanel({ org, className }: { org: string | undefined; classN
 
 function Total({ label, totals }: { label: string; totals: UsageTotals }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 border-l border-line pl-3 first:border-l-0 first:pl-0">
-      <dt className="text-sm text-fg-muted">{label}</dt>
-      <dd className="m-0 flex flex-col gap-0.5">
-        <CostText totals={totals} className="font-mono text-md font-medium text-fg" />
-        <span className="tnum truncate text-xs text-fg-faint">
-          {formatTokens(totals.totalTokens)} tokens · {plural(totals.turns, "turn")}
-        </span>
-      </dd>
-    </div>
+    <section
+      aria-label={label}
+      className="flex min-w-0 flex-col gap-0.5 border-l border-line pl-3 first:border-l-0 first:pl-0"
+    >
+      <h3 className="text-sm font-normal text-fg-muted">{label}</h3>
+      <CostText totals={totals} className="font-mono text-md font-medium text-fg" />
+      <span className="tnum truncate text-xs text-fg-faint">
+        {formatTokens(totals.totalTokens)} tokens · {plural(totals.turns, "turn")}
+      </span>
+    </section>
   );
 }
 
@@ -283,7 +284,7 @@ export function CostChartPanel({ org, className }: { org: string | undefined; cl
   return (
     <section
       aria-label="Cost per day"
-      className={cn("shrink-0 rounded-2xl px-4 pt-3 pb-3", GLASS, className)}
+      className={cn("shrink-0 rounded-2xl px-4 pt-2.5 pb-2", GLASS, className)}
     >
       {summary.data ? <DailyChart days={summary.data.days} /> : <RowsSkeleton rows={1} height={150} />}
     </section>

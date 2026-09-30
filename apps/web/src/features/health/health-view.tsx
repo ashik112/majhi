@@ -47,7 +47,7 @@ export function HealthView() {
           <span>
             <span className={cn(bad && "text-red")}>{headline}</span>
             {checks.data && (
-              <span className="text-fg-faint"> · checked {formatAgo(checks.data.checkedAt, now)}</span>
+              <span className="text-fg-faint">. Checked {formatAgo(checks.data.checkedAt, now)}.</span>
             )}
           </span>
         }

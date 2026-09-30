@@ -27,7 +27,7 @@ export function EstLabel({
   return (
     <abbr
       title={title}
-      className={cn("cursor-help text-xs font-normal text-fg-faint no-underline", className)}
+      className={cn("cursor-help font-sans text-xs font-normal text-fg-faint no-underline", className)}
     >
       <span aria-hidden="true">est.</span>
       <span className="sr-only">{title}</span>

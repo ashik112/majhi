@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RowsSkeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useSetPrice, useUsagePrices } from "@/lib/usage-queries";
 import { dayLabel } from "./daily-chart";
@@ -22,7 +23,15 @@ import {
 const CELL = "px-2 py-1.5";
 
 /** The owner-editable price table: majhi's defaults and the owner's own rows, in dollars per million tokens. */
-export function PriceTable({ id, models }: { id: string; models: readonly string[] }) {
+export function PriceTable({
+  id,
+  models,
+  className,
+}: {
+  id: string;
+  models: readonly string[];
+  className?: string;
+}) {
   const prices = useUsagePrices();
   const setPrice = useSetPrice();
   /** The form: a new row, or the row being changed. */
@@ -47,7 +56,10 @@ export function PriceTable({ id, models }: { id: string; models: readonly string
   }
 
   return (
-    <div id={id} className="flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3.5">
+    <div
+      id={id}
+      className={cn("flex flex-col gap-3 rounded-[10px] border border-line-strong bg-card p-3.5", className)}
+    >
       <p className="text-sm text-fg-muted text-pretty">
         Dollars per million tokens. New turns use these prices; recorded turns keep their cost.
         {prices.data &&

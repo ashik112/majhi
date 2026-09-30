@@ -45,13 +45,13 @@ export function AccountsUsage({
       aria-label="Accounts"
       className={cn("flex min-h-0 flex-col overflow-hidden rounded-2xl", GLASS, className)}
     >
-      <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 pt-3.5 pb-2">
+      <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 pt-3 pb-1">
         <h2 className="text-base font-semibold">Accounts</h2>
         <p className="min-w-0 text-sm text-fg-faint">
           Limits belong to accounts, so agents on one account share its meters.
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 scroll-fade">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 scroll-fade">
         {error ? (
           <p role="alert" className="text-base text-red">
             Could not load accounts: {describeError(error)}
@@ -109,11 +109,9 @@ function AccountRow({
 }) {
   const status = statusText(account, now);
   const usage = account.usage;
-  const facts = [tool, org, usage?.plan && `${usage.plan} plan`, plural(account.agentCount, "agent")].filter(
-    Boolean,
-  );
+  const plan = [usage?.plan && `${usage.plan} plan`, plural(account.agentCount, "agent")].filter(Boolean);
   return (
-    <li className={cn(ROW, "border-t border-line py-2.5 first:border-t-0")}>
+    <li className={cn(ROW, "border-t border-line py-2 first:border-t-0")}>
       <div className="flex min-w-0 flex-col gap-1">
         <PageLink
           page="accounts"
@@ -122,11 +120,14 @@ function AccountRow({
         >
           {account.id}
         </PageLink>
-        <span className="flex min-w-0 items-center gap-1.5 text-xs">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs" title={`${tool} · ${org}`}>
           <Dot tone={status.tone} size={7} />
           <span className={cn("shrink-0", toneText(status.tone))}>{status.label}</span>
-          <span className="min-w-0 truncate text-fg-faint">· {facts.join(" · ")}</span>
+          <span className="min-w-0 truncate text-fg-faint">
+            · {tool} · {org}
+          </span>
         </span>
+        <span className="truncate text-xs text-fg-faint">{plan.join(" · ")}</span>
       </div>
       {account.auth === "api-key" ? (
         <>
