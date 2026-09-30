@@ -293,6 +293,51 @@ describe("team editing", () => {
     const cleared = await h.cmd("team.set", { task: "ACM-1", agent: "acme-lead", model: null, effort: null });
     expect(cleared.body.overrides).toEqual({});
   });
+
+  it("adds and removes with tasks.addAgent and tasks.removeAgent, never removing a working agent", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const { h, prompts } = await teamWorld({
+      "acme-reviewer": [
+        async () => {
+          await gate;
+          return "looked";
+        },
+      ],
+    });
+    await h.cmd("tasks.create", { text: "add a health endpoint to api", team: ["acme-lead"], start: false });
+    expect((await h.cmd("tasks.addAgent", { id: "ACM-1", agent: "acme-builder" })).body.team).toEqual([
+      "acme-lead",
+      "acme-builder",
+    ]);
+    expect(
+      (await h.cmd("tasks.addAgent", { id: "ACM-1", agent: "acme-reviewer", lead: true })).body.team,
+    ).toEqual(["acme-reviewer", "acme-lead", "acme-builder"]);
+    expect(
+      (await items("ACM-1")).some((i) => i.type === "system" && /Added @acme-reviewer/.test(i.text)),
+    ).toBe(true);
+
+    // A message with no mention goes to the first agent; it stays on the team while it works.
+    await h.cmd("room.send", { task: "ACM-1", text: "have a look" });
+    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "reviewer turn");
+    const refused = await h.cmd("tasks.removeAgent", { id: "ACM-1", agent: "acme-reviewer" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/is working on ACM-1/);
+    release();
+    const working = async () =>
+      ((await h.cmd("tasks.list", {})).body as { id: string; working: string[] }[]).find(
+        (t) => t.id === "ACM-1",
+      )?.working;
+    await until(async () => (await working())?.length === 0, "idle");
+
+    expect((await h.cmd("tasks.removeAgent", { id: "ACM-1", agent: "acme-reviewer" })).body.team).toEqual([
+      "acme-lead",
+      "acme-builder",
+    ]);
+    expect((await h.cmd("tasks.removeAgent", { id: "ACM-1", agent: "acme-reviewer" })).status).toBe(404);
+  });
 });
 
 describe("worktree locks", () => {

@@ -510,6 +510,25 @@ export const commands = {
     input: z.object({ task: TaskIdSchema, agent: IdSchema }),
     output: TaskSchema,
   },
+  "tasks.addAgent": {
+    risk: "change",
+    summary:
+      "Add an agent to a task's team, like team.add. It must be able to work in the task's org. Messages that @mention it go to it",
+    input: z.object({
+      id: TaskIdSchema,
+      agent: IdSchema,
+      /** Make it the lead: first in the team, and the agent unmentioned messages go to. */
+      lead: z.boolean().optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.removeAgent": {
+    risk: "change",
+    summary:
+      "Remove an agent from a task's team, like team.remove. Refused while it works and for the last agent. Its session closes",
+    input: z.object({ id: TaskIdSchema, agent: IdSchema }),
+    output: TaskSchema,
+  },
   "team.swap": {
     risk: "change",
     summary: "Replace an agent in a task's team with another, in the same place. The old session closes",

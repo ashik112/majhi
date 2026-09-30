@@ -535,12 +535,14 @@ export class TaskService {
     return this.teamChanged(id);
   }
 
-  /** Takes an agent off the team and closes its session. The last agent cannot go. */
+  /** Takes an agent off the team and closes its session. The last agent and a working agent cannot go. */
   async removeFromTeam(id: string, agent: string): Promise<Task> {
     const task = this.get(id);
     if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${id}.`, 404);
     if (task.team.length === 1)
       throw new UserError(`@${agent} is the only agent on ${id}. Swap it instead.`, 409);
+    if (this.deps.runs.working(id).includes(agent))
+      throw new UserError(`@${agent} is working on ${id}. Stop it first.`, 409);
     await this.deps.runs.remove(id, agent);
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
