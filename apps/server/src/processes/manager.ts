@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { AccountRuntime, RunMount, Spawned, Spawner } from "@majhi/acp";
-import type { ProcessInfo, StoppedBy } from "@majhi/shared";
+import type { ProcessContainer, ProcessInfo, StoppedBy } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import { findPort, OutputTail } from "./tail.ts";
 
@@ -41,6 +41,21 @@ export interface ProcessDeps {
   throttleMs?: number;
 }
 
+/** What a managed run may change about its container line while it runs. */
+export interface ManagedContext {
+  /** Adds what became known after the start, like the address of a preview. */
+  update(patch: Partial<ProcessContainer>): void;
+}
+
+/**
+ * A process majhi runs itself, for a container (PRV-53): no shell, no runner and no agent
+ * environment. `spawn` starts it, and starts it again on a restart.
+ */
+export interface ManagedRun {
+  spawn(ctx: ManagedContext): Promise<Spawned>;
+  container: ProcessContainer;
+}
+
 export interface StartInput {
   task: string;
   agent: string;
@@ -48,6 +63,8 @@ export interface StartInput {
   name?: string | undefined;
   cwd?: string | undefined;
   wait: boolean;
+  /** Runs `spawn` instead of `command`. `command` then only describes it, and `cwd` must be absolute. */
+  managed?: ManagedRun | undefined;
 }
 
 interface Proc {
@@ -56,6 +73,8 @@ interface Proc {
   spawned: Spawned | undefined;
   /** Resolves when the current child has closed. */
   closed: Promise<void>;
+  /** Set for a container process. */
+  managed?: ManagedRun | undefined;
   /** Set while the spawner is starting the child (a runner container can take a while). */
   spawning?: Promise<void> | undefined;
 }
@@ -84,6 +103,11 @@ export class ProcessManager {
     return [...(this.tasks.get(task)?.values() ?? [])].map((p) => this.view(p));
   }
 
+  /** Every process of every task. */
+  listAll(): ProcessInfo[] {
+    return [...this.tasks.keys()].flatMap((task) => this.list(task));
+  }
+
   get(task: string, id: string): ProcessInfo | undefined {
     const p = this.tasks.get(task)?.get(id);
     return p === undefined ? undefined : this.view(p);
@@ -104,17 +128,21 @@ export class ProcessManager {
   }
 
   async start(input: StartInput): Promise<ProcessInfo> {
-    const launch = await this.deps.launch(input.task, input.agent);
-    const cwd = await containedCwd(launch.folder, input.cwd);
-    const running = this.running(input.task);
-    const same = running.find((p) => p.command === input.command && p.cwd === cwd);
+    const managed = input.managed;
+    // A managed run has no runner environment to build, and its folder is the task's own.
+    const launch = managed === undefined ? await this.deps.launch(input.task, input.agent) : undefined;
+    const cwd = launch === undefined ? (input.cwd ?? "") : await containedCwd(launch.folder, input.cwd);
+    // Containers have their own limit (`containers.per_task`), kept by the container service.
+    const running = this.running(input.task).filter((p) => p.container === undefined);
+    const same =
+      managed === undefined ? running.find((p) => p.command === input.command && p.cwd === cwd) : undefined;
     if (same !== undefined) {
       throw new UserError(
         `${same.id} already runs \`${same.command}\` there. Read its output, or restart it.`,
         409,
       );
     }
-    if (running.length >= this.limit) {
+    if (managed === undefined && running.length >= this.limit) {
       throw new UserError(
         `This task already runs ${running.length} processes, the most it may: ${running.map((p) => p.id).join(", ")}. Stop one first.`,
         409,
@@ -134,10 +162,12 @@ export class ProcessManager {
         status: "running",
         startedAt: this.now().toISOString(),
         tail: [],
+        ...(managed === undefined ? {} : { container: managed.container }),
       },
       tail: new OutputTail(),
       spawned: undefined,
       closed: Promise.resolve(),
+      managed,
     };
     const procs = this.tasks.get(input.task) ?? new Map<string, Proc>();
     procs.set(proc.info.id, proc);
@@ -164,7 +194,7 @@ export class ProcessManager {
   async restart(task: string, id: string, agent: string): Promise<ProcessInfo> {
     const proc = this.find(task, id);
     await this.halt(proc, "agent");
-    const launch = await this.deps.launch(task, agent);
+    const launch = proc.managed === undefined ? await this.deps.launch(task, agent) : undefined;
     proc.tail.clear();
     proc.info = {
       ...proc.info,
@@ -175,6 +205,7 @@ export class ProcessManager {
       stoppedBy: undefined,
       endedAt: undefined,
       port: undefined,
+      ...(proc.managed === undefined ? {} : { container: proc.managed.container }),
     };
     try {
       await this.spawnTracked(proc, launch);
@@ -232,7 +263,7 @@ export class ProcessManager {
   }
 
   /** `spawn`, with the start visible to a stop that arrives meanwhile. */
-  private async spawnTracked(proc: Proc, launch: ProcessLaunch): Promise<void> {
+  private async spawnTracked(proc: Proc, launch: ProcessLaunch | undefined): Promise<void> {
     const spawning = this.spawn(proc, launch);
     proc.spawning = spawning;
     try {
@@ -243,17 +274,12 @@ export class ProcessManager {
   }
 
   /** Starts the child. Rejects when the spawner cannot start it (a runner that is not ready). */
-  private async spawn(proc: Proc, launch: ProcessLaunch): Promise<void> {
-    const { task, command, cwd } = proc.info;
-    const spawned = await this.deps.spawner({
-      command: { command: "/bin/sh", args: ["-c", command] },
-      env: launch.env,
-      cwd,
-      task,
-      account: launch.account,
-      // The whole task folder, whatever the cwd, as the session sees it.
-      mounts: [{ path: launch.folder }, ...launch.mounts],
-    });
+  private async spawn(proc: Proc, launch: ProcessLaunch | undefined): Promise<void> {
+    const { task } = proc.info;
+    const spawned =
+      proc.managed !== undefined
+        ? await proc.managed.spawn({ update: (patch) => this.updateContainer(proc, patch) })
+        : await this.spawnInRunner(proc, launch);
     proc.spawned = spawned;
     const { child } = spawned;
     child.stdin.end();
@@ -285,6 +311,28 @@ export class ProcessManager {
       child.on("close", (code) => finish(code));
     });
     this.changed(task, true);
+  }
+
+  /** `/bin/sh -c <command>` through the sessions' spawner, with the session's environment and mounts. */
+  private spawnInRunner(proc: Proc, launch: ProcessLaunch | undefined): Promise<Spawned> {
+    if (launch === undefined) throw new Error("A process needs its launch settings.");
+    const { task, command, cwd } = proc.info;
+    return this.deps.spawner({
+      command: { command: "/bin/sh", args: ["-c", command] },
+      env: launch.env,
+      cwd,
+      task,
+      account: launch.account,
+      // The whole task folder, whatever the cwd, as the session sees it.
+      mounts: [{ path: launch.folder }, ...launch.mounts],
+    });
+  }
+
+  /** Adds to a container process's line, while it runs. */
+  private updateContainer(proc: Proc, patch: Partial<ProcessContainer>): void {
+    if (proc.info.container === undefined || proc.info.status !== "running") return;
+    proc.info = { ...proc.info, container: { ...proc.info.container, ...patch } };
+    this.changed(proc.info.task, true);
   }
 
   /** Kills the current child with `by` as the reason, and waits for it to close. */

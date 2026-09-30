@@ -1,5 +1,29 @@
 # Progress
 
+## PRV-53: Containers for agents, run by majhi (built, waiting for owner review)
+
+Branch `task/prv-53-containers-for-agents-run-by-majhi`, from `main`. Design: `SPEC.md` 5.15 "Containers for agents" and the `docs/DECISIONS.md` rows of 2026-10-01.
+
+### What works
+
+- Shared: `packages/shared/src/containers.ts` (image, name, path, env and command schemas, the tool inputs), the `containers` settings section (`images`, `cpus`, `memory`, `per_task`, `build_cpus`, `build_memory`), `ProcessInfo.container`, the `containers` event topic and seven `containers.*` commands with card summaries.
+- Server, `apps/server/src/containers/`: `names.ts`, `args.ts` (argument builders and `assertSafe`, an allow list of flags), `docker.ts` (`DockerCli`: `exec` for reads and removals of `majhi-` things, `connect` to a task network, `create` and `attached` which run `assertSafe`), `service.ts` (`ContainerService`), `mcp.ts` (the `majhi-containers` tool, on `/mcp/containers`, only when majhi runs in Docker).
+- `ProcessManager` runs managed processes; `TaskService` calls `taskStopped` and `taskEnded`; `RunnerConfig.taskNetworks` joins runners to the task network; `SpawnRequest.task` labels runner containers `majhi.task`.
+- The Dockerfile copies the buildx plugin into the runtime stage.
+- Tests: `containers/args.test.ts` (mounts, networks, caps, flag injection, builds and paths), `service.test.ts` and `commands.test.ts` (a fake docker), the runner additions in `runner/docker.test.ts`, `config/settings.test.ts`.
+
+### How to try it
+
+Without Docker: `apps/server/src/testing/fake-docker/README.md` starts majhi with a fake `docker` and lists the calls. With Docker: `make up`, then in a task with a repo ask an agent to call `preview_build`, `preview_run` and `service_start`.
+
+### Left and known issues
+
+- Not tried against a real Docker: the buildx plugin path in the Dockerfile, `docker buildx create --driver-opt memory/cpu-quota`, repeated `--network` (Docker 25+), a real preview build of majhi and a real postgres. The owner's steps: build and run a preview of majhi, start postgres, see the Hub list, close the task and see everything go.
+- The Hub section and the Processes card additions are the web part (not built here).
+- A build's `Dockerfile` and context are checked just before the build; a symlink swapped in that moment is not caught. BuildKit does not follow symlinks out of the context.
+- The BuildKit container of the `docker-container` driver runs privileged (the driver's design). Only Dockerfile `RUN` steps reach it, and `--allow` entitlements are refused.
+- `terminal/terminal.test.ts` "caps the buffer at 256 KB" times out here, with or without this work.
+
 ## Phase 5: Memory (built, waiting for owner review)
 
 Branch `task/prv-20-phase-5-memory`, from `main` (Phase 4 merged).

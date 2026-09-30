@@ -49,6 +49,12 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "history.undo": (i) => `Undo change ${str(i.commit).slice(0, 7)}`,
   "workspaces.set": () => "Change the workspace roots",
   "settings.set": () => "Change settings",
+  "containers.images.allow": (i) => `Allow image ${str(i.image)} for service containers`,
+  "containers.images.remove": (i) => `Stop allowing image ${str(i.image)} for service containers`,
+  "containers.preview.build": (i) => `Build the preview of ${str(i.task)}`,
+  "containers.preview.run": (i) => `Run the preview of ${str(i.task)} on port ${str(i.port)}`,
+  "containers.services.start": (i) => `Start service ${str(i.name)} (${str(i.image)}) in ${str(i.task)}`,
+  "containers.stop": (i) => `Stop ${str(i.name)} in ${str(i.task)}`,
 };
 
 /** A command's own summary up to its first full stop: the rest explains, a card only names. */

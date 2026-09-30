@@ -156,7 +156,9 @@ export const ServiceVolumeSchema = z.object({
 export type ServiceVolume = z.infer<typeof ServiceVolumeSchema>;
 
 export const ServiceStartInputSchema = z.object({
-  name: ContainerNameSchema.describe("Short name, also the host name in this task's network"),
+  name: ContainerNameSchema.refine((name) => name !== "preview", {
+    message: "preview is the name of the preview container",
+  }).describe("Short name, also the host name in this task's network"),
   image: ImageRefSchema.describe("An image the owner allowed, like postgres:16-alpine"),
   port: z.number().int().min(1).max(65_535).optional().describe("The port the service listens on"),
   env: EnvMapSchema.optional().describe("Environment variables, like POSTGRES_PASSWORD"),
@@ -167,9 +169,11 @@ export type ServiceStartInput = z.infer<typeof ServiceStartInputSchema>;
 
 export const ServiceStopInputSchema = z.object({ name: ContainerNameSchema });
 
+/** Service names, and `preview` for the preview. */
+
 export const ContainerListInputSchema = z.object({});
 
 export const ContainerLogsInputSchema = z.object({
-  name: z.string().min(1).max(31).describe('"preview" or the name of a service'),
+  name: ContainerNameSchema.describe('"preview" or the name of a service'),
   lines: z.number().int().min(1).max(200).default(50).describe("How many of the last lines"),
 });

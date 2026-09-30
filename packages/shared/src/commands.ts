@@ -25,6 +25,14 @@ import {
   WorkspacesUpdateSchema,
 } from "./api.ts";
 import {
+  ContainerInfoSchema,
+  ContainerNameSchema,
+  ImageRefSchema,
+  PreviewBuildInputSchema,
+  PreviewRunInputSchema,
+  ServiceStartInputSchema,
+} from "./containers.ts";
+import {
   DecideRequestSchema,
   DecisionPatchSchema,
   DecisionRecordSchema,
@@ -875,6 +883,55 @@ export const commands = {
     summary: "Stop a background process of a task (the Stop button in the Processes card)",
     input: z.object({ task: TaskIdSchema, id: ProcessIdSchema }),
     output: z.object({ process: ProcessInfoSchema }),
+  },
+
+  // Containers for agents (PRV-53) ----------------------------------------------
+  "containers.list": {
+    risk: "read",
+    summary:
+      "Running previews and service containers majhi runs for agents, across tasks or for one task, and whether containers are available",
+    input: z.object({ task: TaskIdSchema.optional() }),
+    output: z.object({
+      available: z.boolean(),
+      reason: z.string().optional(),
+      containers: z.array(ContainerInfoSchema),
+    }),
+  },
+  "containers.images.allow": {
+    risk: "change",
+    summary: "Allow an image for service containers that majhi runs for agents",
+    input: z.object({ image: ImageRefSchema }),
+    output: z.object({ images: z.array(ImageRefSchema) }),
+  },
+  "containers.images.remove": {
+    risk: "change",
+    summary: "Stop allowing an image for service containers. Running ones keep running until stopped",
+    input: z.object({ image: ImageRefSchema }),
+    output: z.object({ images: z.array(ImageRefSchema) }),
+  },
+  "containers.preview.build": {
+    risk: "change",
+    summary: "Build the image of a task's repo as its preview, on the task's own builder",
+    input: PreviewBuildInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ process: ProcessInfoSchema }),
+  },
+  "containers.preview.run": {
+    risk: "change",
+    summary: "Run the task's preview image on a free port, with a throwaway folder and nothing of the host",
+    input: PreviewRunInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
+  },
+  "containers.services.start": {
+    risk: "change",
+    summary: "Start a service container (like postgres) for a task's tests, from an image the owner allowed",
+    input: ServiceStartInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
+  },
+  "containers.stop": {
+    risk: "change",
+    summary: "Stop the preview of a task (name preview) or one of its service containers",
+    input: z.object({ task: TaskIdSchema, name: ContainerNameSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
   },
 
   // Task links (5.4a) ---------------------------------------------------------

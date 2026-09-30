@@ -14,6 +14,8 @@ import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
+import { DockerCli } from "./containers/docker.ts";
+import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
@@ -87,6 +89,8 @@ export interface ServiceOptions {
   layaDocker?: LayaDocker;
   /** Replaces the embedding model, so tests never download one. */
   embedder?: Embedder;
+  /** Replaces the docker CLI of the containers majhi runs for agents, so tests never start a real container. */
+  containerDocker?: ContainerDocker;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -128,6 +132,8 @@ export interface Services {
   mrPoller: MrPoller;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
+  /** Previews and service containers majhi runs for agents (PRV-53). */
+  containers: ContainerService;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -205,7 +211,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
   });
-  const runner = runnerSetup(env, options.runnerInspect);
+  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
   const sessionOptions = runner.sessionOptions;
   const usageRepo = new UsageRepo(store.raw);
   const usageRecorder = new UsageRecorder({
@@ -246,7 +252,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     adminMcpUrl: () => adminTokens.mcpUrl,
   });
-  const roomAccess = new RoomAccess(() => adminTokens.mcpUrl);
+  const roomAccess = new RoomAccess(
+    () => adminTokens.mcpUrl,
+    () => containers.available(),
+  );
   const processes = new ProcessManager({
     spawner: sessionOptions.spawner ?? localSpawner,
     launch: (task, agent) =>
@@ -255,10 +264,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         task,
         agent,
       ),
-    onChange: (task, list) => room.setProcesses(task, list),
+    onChange: (task, list) => {
+      room.setProcesses(task, list);
+      if (list.some((p) => p.container !== undefined)) events.emit(["containers"]);
+    },
     // Bound below, like the run manager's callbacks.
     onEnded: (p, wakes) => void tasks.processEnded(p, wakes).catch(() => undefined),
   });
+  // Previews and services run as processes, so they need the process manager (PRV-53).
+  const containerDocker =
+    options.containerDocker ??
+    (env.runner.mode === "container"
+      ? new DockerCli({
+          docker: env.runner.docker,
+          cliEnv: env.runner.cliEnv,
+          majhiHome: env.majhiHome,
+          hostHome: env.hostHome,
+          protectedPaths: [env.secretsKeyFile],
+        })
+      : undefined);
+  const containers = new ContainerService({
+    docker: containerDocker,
+    processes,
+    task: (id) => store.tasks.get(id),
+    openTasks: () => [...store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),
+    settings: async () => (await config.settings()).containers,
+    runnerNetwork: env.runner.network,
+    paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
+    changed: () => events.emit(["containers"]),
+  });
+  void containers
+    .startup()
+    .catch((err: unknown) => console.error(`Could not clean up containers: ${errorMessage(err)}`));
   const runs = new RunManager({
     store,
     rooms: roomAccess,
@@ -351,6 +388,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     decisions,
     processes,
+    containers,
     terminals,
     memory,
     memoryScopes,
@@ -427,6 +465,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cardActions: new CardActions({ tasks, mrs, room }),
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
+    containers,
     memory,
     extraction,
     promotion,

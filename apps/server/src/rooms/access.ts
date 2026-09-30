@@ -9,10 +9,13 @@ export const TASKS_PATH = "/mcp/tasks";
 export const PROCESSES_SERVER_NAME = "majhi-processes";
 export const PROCESSES_PATH = "/mcp/processes";
 
+export const CONTAINERS_SERVER_NAME = "majhi-containers";
+export const CONTAINERS_PATH = "/mcp/containers";
+
 export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
-export type ToolServer = "room" | "tasks" | "processes" | "memory";
+export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers";
 
 /** Who a token belongs to: one agent session in one task. */
 export interface ToolCaller {
@@ -48,16 +51,24 @@ export class ToolTokens {
  * 5.15): `majhi-room` for every agent in a team of two or more, for the lead of a lead-mode task
  * even alone (it can bring in agents that could join), or with it in its `tools`;
  * `majhi-tasks` for leads and root agents, or with it in its `tools`. The boss has every command
- * through majhi-admin already. `majhi-processes` and `majhi-memory` for every session.
+ * through majhi-admin already. `majhi-processes` and `majhi-memory` for every session, and
+ * `majhi-containers` for every session when majhi can run containers.
  */
 export class RoomAccess {
   readonly room = new ToolTokens();
   readonly tasks = new ToolTokens();
   readonly processes = new ToolTokens();
   readonly memory = new ToolTokens();
+  readonly containers = new ToolTokens();
 
-  /** `mcpUrl` gives majhi-admin's URL; these servers sit next to it. */
-  constructor(private readonly mcpUrl: () => string) {}
+  /**
+   * `mcpUrl` gives majhi-admin's URL; these servers sit next to it. `containersOn` says whether majhi
+   * can run containers (PRV-53): only then do sessions get `majhi-containers`.
+   */
+  constructor(
+    private readonly mcpUrl: () => string,
+    private readonly containersOn: () => boolean = () => false,
+  ) {}
 
   attach(
     caller: ToolCaller,
@@ -88,6 +99,11 @@ export class RoomAccess {
     const token = this.processes.issue(caller);
     out.tokens.push({ server: "processes", token });
     out.servers.push(spec(PROCESSES_SERVER_NAME, `${base}${PROCESSES_PATH}`, token));
+    if (this.containersOn()) {
+      const containersToken = this.containers.issue(caller);
+      out.tokens.push({ server: "containers", token: containersToken });
+      out.servers.push(spec(CONTAINERS_SERVER_NAME, `${base}${CONTAINERS_PATH}`, containersToken));
+    }
     const memoryToken = this.memory.issue(caller);
     out.tokens.push({ server: "memory", token: memoryToken });
     out.servers.push(spec(MEMORY_SERVER_NAME, `${base}${MEMORY_PATH}`, memoryToken));

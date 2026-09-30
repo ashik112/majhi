@@ -16,6 +16,7 @@ import type { AdminService } from "../admin/service.ts";
 import { bearerOf } from "../admin/tokens.ts";
 import { toolName } from "../admin/tools.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
 import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
@@ -26,6 +27,8 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  CONTAINERS_PATH,
+  CONTAINERS_SERVER_NAME,
   MEMORY_PATH,
   MEMORY_SERVER_NAME,
   PROCESSES_PATH,
@@ -202,6 +205,8 @@ export interface RoomMcpDeps {
   agents: AgentStore;
   projects: ProjectService;
   processes: ProcessManager;
+  /** Absent when majhi cannot run containers: there is no `/mcp/containers` then. */
+  containers?: ContainersMcpDeps;
   memory: MemoryMcpDeps;
 }
 
@@ -242,6 +247,19 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       (caller) => processesServer(caller, deps.processes),
     ),
   );
+  const containers = deps.containers;
+  if (containers !== undefined) {
+    app.all(CONTAINERS_PATH, (c) =>
+      serve(
+        c.req.raw,
+        c.req.header("origin"),
+        c.req.header("authorization"),
+        deps.access.containers,
+        CONTAINERS_SERVER_NAME,
+        (caller) => containersServer(caller, containers),
+      ),
+    );
+  }
   app.all(MEMORY_PATH, (c) =>
     serve(
       c.req.raw,
