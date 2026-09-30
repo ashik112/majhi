@@ -9,9 +9,11 @@ import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
+import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
+import { actorName } from "../tasks/cards.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -100,6 +102,7 @@ export function createHandlers({
         : { ...hostLink.status(), sshHosts: hosts };
     },
 
+    "ssh.hosts": () => sshConfigHosts(config.paths.hostHome),
     "ssh.reload": async () => {
       const ssh = await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS);
       hostLink.noteSsh(ssh);
@@ -194,12 +197,17 @@ export function createHandlers({
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input) => services.tasks.close(input.id),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
-    "tasks.merge": (input) => services.tasks.merge(input),
+    "tasks.merge": ({ push, ...input }, ctx) =>
+      push
+        ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
+        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
+    "tasks.push": (input) => services.mrs.push(input.id),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
     "tasks.setMergeOrder": (input) => services.mrs.setOrder(input.id, input.order),
-    "tasks.openMrs": (input) => services.mrs.open(input.id),
+    "tasks.openMrs": (input, ctx) => services.mrs.open(input.id, input.into, actorName(ctx.meta.actor)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
     "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),
@@ -255,6 +263,10 @@ export function createHandlers({
     }),
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
+    }),
+    "room.cardAction": (input, ctx) => services.cardActions.act({ ...input, by: actorName(ctx.meta.actor) }),
+    "room.answerQuestion": async (input) => ({
+      item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
     }),
     "room.answerAsk": async (input) => ({
       item: await services.tasks.answerAsk(input.task, input.item, input.answers),

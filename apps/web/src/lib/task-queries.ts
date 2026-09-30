@@ -101,25 +101,41 @@ export const useStopTask = () => useTaskAction("tasks.stop");
 export const useCloseTask = () => useTaskAction("tasks.close");
 export const useReopenTask = () => useTaskAction("tasks.reopen");
 
-/** `tasks.merge`: merge the task branch into its base or another local branch. Never pushes. */
-export function useMergeTask() {
-  const client = useQueryClient();
-  return useMutation<CommandOutput<"tasks.merge">, ApiRequestError, CommandInput<"tasks.merge">>({
-    mutationFn: (input) => cmd("tasks.merge", input),
-    onSuccess: ({ task }) => {
-      setTaskInCache(client, task);
-      return refreshTasks(client);
-    },
+/** What Ship can do now, read again whenever the task changes. */
+export function useShipOptions(task: Pick<Task, "id" | "updatedAt" | "status">, enabled: boolean) {
+  return useQuery<CommandOutput<"tasks.shipOptions">, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "ship", task.id, task.updatedAt, task.status],
+    queryFn: () => cmd("tasks.shipOptions", { id: task.id }),
+    enabled,
+    staleTime: 5_000,
   });
 }
 
-/** Local branches of each repo of a task, for the merge dialog. */
+/** Local branches of each repo of a task, and its MR remote's, for picking where to ship. */
 export function useTaskBranches(id: string, enabled: boolean) {
   return useQuery({
     queryKey: [...queryKeys.tasks, "branches", id],
     queryFn: () => cmd("tasks.branches", { id }),
     enabled,
   });
+}
+
+/** The Host entries of the owner's ~/.ssh/config, for a remote's SSH alias. */
+export function useSshHosts() {
+  return useQuery<CommandOutput<"ssh.hosts">, ApiRequestError>({
+    queryKey: ["ssh-hosts"],
+    queryFn: () => cmd("ssh.hosts", {}),
+    staleTime: 60_000,
+  });
+}
+
+/** Refreshes the task and its lists after a Ship action or a card button. */
+export function useAfterTaskChange() {
+  const client = useQueryClient();
+  return (task?: Task) => {
+    if (task !== undefined) setTaskInCache(client, task);
+    return refreshTasks(client);
+  };
 }
 
 export function useUpdateTask() {

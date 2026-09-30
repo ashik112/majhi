@@ -23,6 +23,7 @@ import {
   remoteNames,
   suggestProjectId,
 } from "./project-model";
+import { SshAliasPicker } from "./ssh-alias-picker";
 
 /** Registers a repo as a project, or edits a registered one (`project` set). */
 export function RegisterDialog({
@@ -220,26 +221,16 @@ export function RegisterDialog({
               )}
             </Field>
           </div>
-          <Field
-            label="SSH alias"
-            hint="A Host from your SSH config. Pushes go through it. Blank: the URL as it is."
-          >
+          <Field label="SSH alias" hint="A Host from your SSH config. Pushes go through it.">
             {(props) => (
-              <Input
-                {...props}
-                list={`ssh-aliases-${id}`}
+              <SshAliasPicker
+                fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
                 value={choice.ssh}
-                onChange={(event) => setChoice({ ...choice, ssh: event.target.value.trim() })}
-                placeholder="github-acme"
-                className="font-mono"
+                onChange={(ssh) => setChoice({ ...choice, ssh })}
+                suggested={repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
               />
             )}
           </Field>
-          <datalist id={`ssh-aliases-${id}`}>
-            {[...new Set(repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : [])))].map((alias) => (
-              <option key={alias} value={alias} />
-            ))}
-          </datalist>
           {others.filter((p) => p.id !== id).length > 0 && (
             <fieldset className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
               <legend className="mb-1 p-0 text-sm text-fg-faint">Depends on</legend>

@@ -1,12 +1,11 @@
 import type { Task } from "@majhi/shared";
-import { Check, GitMerge, OctagonX, Play, RotateCw } from "lucide-react";
-import { useState } from "react";
+import { Check, OctagonX, Play, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
 import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
-import { MergeDialog } from "./merge-dialog";
 import { actionCopy } from "./model";
+import { Ship, useDirectShip } from "./ship";
 
 /** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
 export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
@@ -15,26 +14,17 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const close = useCloseTask();
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
-  const [merging, setMerging] = useState(false);
-  // Only once there is work to merge: a worktree exists and no agent is working.
-  const canMerge =
-    task.repos.some((r) => r.worktree !== undefined) && !["inbox", "ready", "running"].includes(task.status);
+  const ship = useDirectShip(task);
+  // Only once there is work to ship: a worktree exists and no agent is working.
+  const canShip =
+    task.repos.some((r) => r.worktree !== undefined) &&
+    !["inbox", "ready", "running", "done"].includes(task.status);
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
   return (
     <>
-      {canMerge && (
-        <Button
-          size="sm"
-          title="Merge the task branch into a local branch in your checkout. Nothing is pushed. For a merge request, use the Merge requests card."
-          onClick={() => setMerging(true)}
-        >
-          <GitMerge aria-hidden="true" />
-          Merge locally
-        </Button>
-      )}
-      {merging && <MergeDialog task={task} onClose={() => setMerging(false)} />}
+      {canShip && <Ship task={task} run={ship} />}
       {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-coral">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button

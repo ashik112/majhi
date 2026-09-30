@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { type ItemContext, PinnedPlan, RoomItemView } from "./items";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
+import type { OwnerContext } from "./owner-cards";
 
 /**
  * The room's messages. Stays pinned to the bottom while new items arrive, unless the owner scrolled
@@ -16,12 +17,14 @@ export function Timeline({
   onPermission,
   answering,
   task,
+  owner,
 }: {
   state: RoomState;
   onLoadOlder: () => Promise<void>;
   onPermission: (item: string, option: string) => void;
   answering: string | undefined;
   task: { id: string; folder: string };
+  owner?: OwnerContext | undefined;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -41,8 +44,9 @@ export function Timeline({
       onPermission,
       answering,
       task: { id: task.id, folder: task.folder, onLoad: onMediaLoad },
+      owner,
     }),
-    [state.agents, plans, onPermission, answering, task.id, task.folder, onMediaLoad],
+    [state.agents, plans, onPermission, answering, task.id, task.folder, onMediaLoad, owner],
   );
 
   // After every render that changed the items: stay at the bottom, keep the view when older

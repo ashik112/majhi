@@ -63,8 +63,8 @@ export function nextMrStep(task: Pick<Task, "status" | "repos">, policy: MergePo
   return policy === "approve" ? "merge" : "watch";
 }
 
-/** Only tasks that are near MRs show the card: finished work, an open MR, or a done task that had one. */
+/** The card tracks merge requests once one is open; Ship opens them. */
 export function showsMrCard(task: Pick<Task, "status" | "repos" | "kind">): boolean {
   if (task.kind === "chat" || task.repos.length === 0) return false;
-  return task.status === "review" || task.status === "mr" || task.repos.some((r) => r.mr !== undefined);
+  return task.status === "mr" || task.repos.some((r) => r.mr !== undefined);
 }

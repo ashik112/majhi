@@ -66,12 +66,15 @@ export function Composer({
   onSent,
   onCancel,
   cancelling,
+  draft,
 }: {
   taskId: string;
   agents: readonly AgentLive[];
   onSent: (item: RoomItem) => void;
   onCancel: () => void;
   cancelling: boolean;
+  /** Text a card button puts in the box, like "@lead ". A new `n` applies it again. */
+  draft?: { text: string; n: number } | undefined;
 }) {
   const toast = useToast();
   const field = useRef<HTMLTextAreaElement>(null);
@@ -152,6 +155,20 @@ export function Composer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
   }, [text]);
+
+  // A card's Reply or Ask for changes: address the agent, keep what was typed, and focus the box.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per click, keyed by its number
+  useEffect(() => {
+    if (draft === undefined) return;
+    const next = text.startsWith(draft.text) ? text : `${draft.text}${text}`;
+    setText(next);
+    setCaret(next.length);
+    setDismissed(0);
+    requestAnimationFrame(() => {
+      field.current?.focus();
+      field.current?.setSelectionRange(next.length, next.length);
+    });
+  }, [draft?.n]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the first option is active again whenever the query changes
   useEffect(() => setActive(0), [popupTrigger?.kind, popupTrigger?.query]);

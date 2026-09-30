@@ -19,6 +19,7 @@ import { trimMiddle } from "../runs/handoff.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { readChoices } from "./choices.ts";
 import { asksOwner, loopPair, type Member, planTurn, type Verdict, verdictOf } from "./coordinate.ts";
 
 /** How much of a message the decision provider reads. */
@@ -43,10 +44,14 @@ export interface CoordinatorDeps {
  * so. Asks the decision provider only when the words alone do not say what a reviewer decided.
  */
 export class RoomCoordinator {
+  /** (task, agent) pairs that posted an ask card in the turn now running. */
+  private readonly askedInTurn = new Set<string>();
+
   constructor(private readonly deps: CoordinatorDeps) {}
 
   async turnEnded(turn: { task: string; agent: string; text: string }): Promise<void> {
     const { store, runs } = this.deps;
+    const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return;
     const text = turn.text.trim();
@@ -95,6 +100,11 @@ export class RoomCoordinator {
       return;
     }
     for (const h of plan.handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    // Addressed to the owner in plain text: majhi puts the buttons under it.
+    const toOwner =
+      mentions.includes(OWNER_HANDLE) || (plan.handoffs.length === 0 && text !== "" && asksOwner(text));
+    const questioned = !asked && toOwner;
+    if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
       this.say(task.id, "info", `${plan.toOwner} Over to you.`);
       return;
@@ -102,7 +112,7 @@ export class RoomCoordinator {
     // Lead delegates: in a team, a message nobody else is woken by may still be for the owner.
     if (task.mode === "lead" && plan.handoffs.length === 0 && task.team.length > 1 && text !== "") {
       const others = runs.working(task.id).filter((a) => a !== turn.agent);
-      if (others.length > 0 && asksOwner(text)) {
+      if (others.length > 0 && !questioned && asksOwner(text)) {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
       }
     }
@@ -167,6 +177,7 @@ export class RoomCoordinator {
     if (!task.team.includes(agent)) {
       throw new UserError(`Agent @${agent} is not on this task.`, 409);
     }
+    this.askedInTurn.add(`${task.id}\u0000${agent}`);
     const itemId = `ask:${randomUUID()}`;
     this.deps.room.post(task.id, itemId, {
       type: "ask",
@@ -177,6 +188,16 @@ export class RoomCoordinator {
     const item = this.deps.room.get(task.id, itemId);
     if (item === undefined) throw new Error("The ask card was not stored");
     return item;
+  }
+
+  /** Reply, and a button per choice read from the message, under an agent's plain-text question. */
+  private postQuestion(task: TaskId, agent: string, text: string): void {
+    this.deps.room.post(task, `question:${randomUUID()}`, {
+      type: "owner-question",
+      agent,
+      choices: readChoices(text),
+      state: "pending",
+    });
   }
 
   private async maxAgentTurns(task: Task): Promise<number> {
