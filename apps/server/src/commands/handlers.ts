@@ -378,6 +378,7 @@ export function createHandlers({
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
+        ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
       };
       await config.setSettings(patch, {
@@ -423,6 +424,14 @@ export function createHandlers({
     },
     "boss.chat": (input) =>
       openBossChat({ config, store: services.store, tasks: services.tasks }, input.fresh === true),
+    "cleanup.preview": async (input) =>
+      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
+    "cleanup.run": async (input, ctx) =>
+      services.cleanup.run(
+        input.tasks,
+        input.days ?? (await config.settings()).cleanup.after_days,
+        actorName(ctx.meta.actor),
+      ),
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),

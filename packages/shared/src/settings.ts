@@ -81,6 +81,17 @@ export const RoomSettingsSchema = z.strictObject({
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomPatchSchema = z.strictObject(roomFields).partial();
 
+/** Cleanup of done tasks. */
+const cleanupFields = {
+  /** Tasks done for longer than this many days are offered for cleanup. */
+  after_days: z.number().int().min(1).max(3650),
+};
+export const CleanupSettingsSchema = z.strictObject({
+  after_days: cleanupFields.after_days.default(30),
+});
+export type CleanupSettings = z.infer<typeof CleanupSettingsSchema>;
+export const CleanupPatchSchema = z.strictObject(cleanupFields).partial();
+
 /** Memory curation (5.6). */
 const memoryFields = {
   /**
@@ -214,6 +225,7 @@ export const SettingsSchema = z.object({
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
+  cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

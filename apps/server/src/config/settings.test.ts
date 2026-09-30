@@ -23,6 +23,7 @@ describe("mergeSettings", () => {
         allow_destructive_rules: false,
       },
       memory: { auto_threshold: 0.4, review_all: false },
+      cleanup: { after_days: 30 },
       containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
     });
   });

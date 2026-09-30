@@ -1,0 +1,268 @@
+import type {
+  CleanupPreview,
+  CleanupReport,
+  CleanupStep,
+  CleanupTask,
+  RemoteConfig,
+  Task,
+  TaskId,
+  TaskRepo,
+} from "@majhi/shared";
+import { errorMessage, UserError } from "../errors.ts";
+import type { EventHub } from "../events/hub.ts";
+import { git, gitOk, localBranchExists } from "../git/git.ts";
+import { dirtyWorktrees, removeWorktree } from "../git/worktrees.ts";
+import { mrRemoteName } from "../mrs/remote.ts";
+import type { RoomService } from "../room/service.ts";
+import type { Store } from "../store/index.ts";
+
+const DAY_MS = 86_400_000;
+/** Id prefix of the note a cleanup leaves in a room. The note is not counted as a log. */
+const NOTE_PREFIX = "cleanup-note:";
+
+export interface CleanupDeps {
+  store: Store;
+  room: RoomService;
+  events: EventHub;
+  /** The registered projects, for the remote each one's MRs go to. */
+  projects: { get(id: string): Promise<{ remotes?: Readonly<Record<string, RemoteConfig>> }> };
+  now?: () => Date;
+}
+
+/** A step and what a run needs to do it. */
+interface Planned extends CleanupStep {
+  repo: TaskRepo;
+}
+
+/**
+ * Cleanup of tasks done for a while: their worktrees, merged task branches and room logs. The task
+ * row, its memory records and its plans stay. A preview and a run both work from the same
+ * checks, and a run looks again at every task: it never trusts an earlier preview. Nothing is
+ * forced: a worktree with uncommitted changes and a branch that is not merged stay.
+ */
+export class CleanupService {
+  private running = false;
+
+  constructor(private readonly deps: CleanupDeps) {}
+
+  private now(): Date {
+    return this.deps.now?.() ?? new Date();
+  }
+
+  private cutoff(days: number): string {
+    return new Date(this.now().getTime() - days * DAY_MS).toISOString();
+  }
+
+  /** Done tasks older than `days` that have something to clean up or something to say about it. */
+  async preview(days: number): Promise<CleanupPreview> {
+    const tasks: CleanupTask[] = [];
+    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(days))) {
+      const task = this.deps.store.tasks.get(id);
+      if (task === undefined) continue;
+      const steps = await this.plan(task);
+      const roomItems = this.deps.store.room.count(id, NOTE_PREFIX);
+      if (steps.length === 0 && roomItems === 0) continue;
+      tasks.push({ id: task.id, title: task.title, doneAt, steps: steps.map(publicStep), roomItems });
+    }
+    return { days, tasks };
+  }
+
+  async run(ids: readonly string[], days: number, by: string): Promise<CleanupReport> {
+    if (this.running) throw new UserError("A cleanup is already running.", 409);
+    this.running = true;
+    try {
+      const report: CleanupReport = { tasks: [] };
+      for (const id of new Set(ids)) report.tasks.push(await this.cleanTask(id, days, by));
+      this.deps.events.emit(["tasks"]);
+      return report;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async cleanTask(id: string, days: number, by: string): Promise<CleanupReport["tasks"][number]> {
+    const { store } = this.deps;
+    const task = store.tasks.get(id);
+    const left = (title: string, skipped: string, doneAt = "") => ({
+      id: id as TaskId,
+      title,
+      doneAt,
+      steps: [],
+      roomItems: 0,
+      skipped,
+    });
+    if (task === undefined) return left(id, "There is no such task.");
+    if (task.status !== "done") return left(task.title, `It is ${task.status}, not done.`, task.updatedAt);
+    if (task.updatedAt >= this.cutoff(days)) {
+      return left(task.title, `It was closed less than ${days} days ago.`, task.updatedAt);
+    }
+
+    const steps: CleanupStep[] = [];
+    const planned = await this.plan(task);
+    // Worktrees first: a branch that is still checked out cannot be deleted.
+    const failedTrees = new Set<string>();
+    for (const step of planned.filter((p) => p.kind === "worktree")) {
+      if (step.action === "skip") {
+        steps.push(publicStep(step));
+        failedTrees.add(step.project);
+        continue;
+      }
+      try {
+        await removeWorktree(step.repo.source, step.name, false);
+        store.tasks.clearWorktree(task.id, step.project);
+        steps.push(publicStep(step));
+      } catch (err) {
+        failedTrees.add(step.project);
+        steps.push({
+          ...publicStep(step),
+          action: "skip",
+          reason: `could not remove it: ${errorMessage(err)}`,
+        });
+      }
+    }
+    for (const step of planned.filter((p) => p.kind === "branch")) {
+      if (step.action === "skip") {
+        steps.push(publicStep(step));
+      } else if (failedTrees.has(step.project)) {
+        steps.push({ ...publicStep(step), action: "skip", reason: "its worktree is kept" });
+      } else {
+        try {
+          // `-D`: plan() already proved the branch merged or pushed. `-d` would check again against
+          // the checkout's current branch, and fail for a branch merged only on the remote.
+          await git(step.repo.source, ["branch", "-D", step.name]);
+          steps.push(publicStep(step));
+        } catch (err) {
+          steps.push({
+            ...publicStep(step),
+            action: "skip",
+            reason: `could not delete it: ${errorMessage(err)}`,
+          });
+        }
+      }
+    }
+
+    this.deps.room.flush(task.id);
+    const roomItems = store.room.deleteAll(task.id);
+    const removed = steps.filter((s) => s.action === "remove");
+    if (removed.length > 0 || roomItems > 0) {
+      this.note(task, steps, roomItems);
+      store.permissions.log({
+        task: task.id,
+        agent: by,
+        kind: "cleanup",
+        title: summarize(steps, roomItems),
+        decision: "allow",
+        by: "owner",
+        at: this.now().toISOString(),
+      });
+    }
+    const current = store.tasks.get(task.id);
+    if (current !== undefined) this.deps.room.publishTask(current);
+    return { id: task.id, title: task.title, doneAt: task.updatedAt, steps, roomItems };
+  }
+
+  private note(task: Task, steps: readonly CleanupStep[], roomItems: number): void {
+    const date = this.now().toISOString().slice(0, 10);
+    const kept = steps.filter((s) => s.action === "skip");
+    const text = `Cleaned up on ${date}: ${summarize(steps, roomItems)}.${
+      kept.length === 0
+        ? ""
+        : ` Kept: ${kept.map((s) => `${s.kind} ${s.name} (${s.reason ?? "kept"})`).join("; ")}.`
+    }`;
+    this.deps.room.post(task.id, `${NOTE_PREFIX}${this.now().toISOString()}`, {
+      type: "system",
+      level: "info",
+      text,
+    });
+  }
+
+  /** The remote the project's MRs go to, `origin` when the project is unknown. */
+  private async remoteOf(repo: TaskRepo): Promise<string> {
+    const project = await this.deps.projects.get(repo.project).catch(() => undefined);
+    return mrRemoteName(project?.remotes);
+  }
+
+  /** What a cleanup of this task would do now, worktrees before branches. */
+  private async plan(task: Task): Promise<Planned[]> {
+    const trees: Planned[] = [];
+    const branches: Planned[] = [];
+    const stackedOn = this.deps.store.tasks.stackedOn(task.id);
+    for (const repo of task.repos) {
+      let treeKept = false;
+      if (repo.worktree !== undefined) {
+        const [dirty] = await dirtyWorktrees([repo.worktree]);
+        treeKept = dirty !== undefined;
+        trees.push({
+          kind: "worktree",
+          project: repo.project,
+          name: repo.worktree,
+          action: dirty === undefined ? "remove" : "skip",
+          ...(dirty === undefined
+            ? {}
+            : {
+                reason: `it has uncommitted changes (${dirty.changes.length} ${dirty.changes.length === 1 ? "file" : "files"})`,
+              }),
+          repo,
+        });
+      }
+      if (!(await localBranchExists(repo.source, repo.branch))) continue;
+      const remote = await this.remoteOf(repo);
+      const branch = { kind: "branch" as const, project: repo.project, name: repo.branch, repo };
+      const skip = (reason: string) => branches.push({ ...branch, action: "skip", reason });
+      if (!repo.createdBranch) {
+        skip("the task did not create it");
+      } else if (repo.branch === repo.base) {
+        skip("it is the base branch");
+      } else if (stackedOn.some((s) => s.project === repo.project && s.branch === repo.branch)) {
+        skip("another task is stacked on it");
+      } else if (treeKept) {
+        skip("its worktree is kept");
+      } else if (await mergedInto(repo, remote)) {
+        branches.push({ ...branch, action: "remove" });
+      } else if (repo.mr?.state === "merged") {
+        // A squash merge leaves the branch unmerged as far as git can tell. Its commits are safe
+        // when the remote still has the branch and holds everything local has.
+        if (await unpushed(repo, remote)) skip("it has commits that were never pushed");
+        else branches.push({ ...branch, action: "remove" });
+      } else {
+        skip(`it is not merged into ${repo.base}, and its merge request is not merged`);
+      }
+    }
+    return [...trees, ...branches];
+  }
+}
+
+/** Whether the branch is an ancestor of its base, here or on the remote. */
+async function mergedInto(repo: TaskRepo, remote: string): Promise<boolean> {
+  const { source, branch, base } = repo;
+  if (await gitOk(source, ["merge-base", "--is-ancestor", branch, base])) return true;
+  const remoteBase = `${remote}/${base}`;
+  return (
+    (await refExists(source, `refs/remotes/${remoteBase}`)) &&
+    (await gitOk(source, ["merge-base", "--is-ancestor", branch, remoteBase]))
+  );
+}
+
+/** True when the remote still has the branch and the local branch holds commits it does not. */
+async function unpushed(repo: TaskRepo, remote: string): Promise<boolean> {
+  const { source, branch } = repo;
+  if (!(await refExists(source, `refs/remotes/${remote}/${branch}`))) return false;
+  return !(await gitOk(source, ["merge-base", "--is-ancestor", branch, `${remote}/${branch}`]));
+}
+
+function refExists(source: string, ref: string): Promise<boolean> {
+  return gitOk(source, ["show-ref", "--verify", "--quiet", ref]);
+}
+
+function publicStep(step: CleanupStep): CleanupStep {
+  const { kind, project, name, action, reason } = step;
+  return { kind, project, name, action, ...(reason === undefined ? {} : { reason }) };
+}
+
+function summarize(steps: readonly CleanupStep[], roomItems: number): string {
+  const parts = steps
+    .filter((s) => s.action === "remove")
+    .map((s) => `${s.kind === "worktree" ? "removed worktree" : "deleted branch"} ${s.name}`);
+  if (roomItems > 0) parts.push(`deleted ${roomItems} room items`);
+  return parts.join(", ") || "nothing to remove";
+}
