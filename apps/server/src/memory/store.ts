@@ -28,6 +28,7 @@ interface EventRow {
   reason: string | null;
   confidence: number | null;
   provider: string | null;
+  from_status: string | null;
   at: string;
   undone: number;
 }
@@ -62,6 +63,7 @@ export interface NewEvent {
   reason?: string | undefined;
   confidence?: number | undefined;
   provider?: string | undefined;
+  from?: FactStatus | undefined;
   at: string;
 }
 
@@ -177,6 +179,25 @@ export class MemoryStore {
       );
   }
 
+  /**
+   * Puts a fact back in the status it had, for undo. A fact that is not retired has no end, and one
+   * that is pending or rejected has no start. An active one keeps the start it had.
+   */
+  restoreStatus(id: number, status: FactStatus, decidedBy: string): void {
+    this.db
+      .prepare(
+        `UPDATE facts SET status = ?, decided_by = ?,
+           valid_to = CASE WHEN ? = 'retired' THEN valid_to ELSE NULL END,
+           valid_from = CASE WHEN ? IN ('pending', 'rejected') THEN NULL ELSE valid_from END
+         WHERE id = ?`,
+      )
+      .run(status, decidedBy, status, status, id);
+  }
+
+  setDuplicateOf(id: number, of: number | null): void {
+    this.db.prepare("UPDATE facts SET duplicate_of = ? WHERE id = ?").run(of, id);
+  }
+
   setPinned(id: number, pinned: boolean): void {
     this.db.prepare("UPDATE facts SET pinned = ? WHERE id = ?").run(pinned ? 1 : 0, id);
   }
@@ -234,6 +255,50 @@ export class MemoryStore {
     return rows.filter((r) => 1 - (r.distance * r.distance) / 2 >= minCosine).map((r) => Number(r.id));
   }
 
+  /**
+   * The facts nearest to the vector among those in `scopes` with one of the statuses, nearest
+   * first, with their cosine. `except` leaves out one fact (the one being compared).
+   */
+  nearest(
+    vector: Float32Array,
+    scopes: readonly MemoryScope[],
+    statuses: readonly FactStatus[],
+    limit: number,
+    options: { minCosine?: number; except?: number } = {},
+  ): { fact: Fact; cosine: number }[] {
+    if (scopes.length === 0 || statuses.length === 0) return [];
+    const minCosine = options.minCosine ?? MIN_SIMILARITY;
+    const rows = this.db
+      .prepare(
+        `SELECT rowid AS id, distance FROM facts_vec
+         WHERE embedding MATCH ? AND k = ?
+           AND rowid IN (SELECT id FROM facts WHERE status IN (${marks(statuses)}) AND scope IN (${marks(scopes)}) AND id != ?)
+         ORDER BY distance`,
+      )
+      .all(vectorBytes(vector), limit, ...statuses, ...scopes, options.except ?? 0) as {
+      id: number | bigint;
+      distance: number;
+    }[];
+    const near = rows
+      .map((r) => ({ id: Number(r.id), cosine: 1 - (r.distance * r.distance) / 2 }))
+      .filter((r) => r.cosine >= minCosine);
+    const facts = new Map(this.byIds(near.map((r) => r.id)).map((f) => [f.id, f]));
+    return near.flatMap((r) => {
+      const fact = facts.get(r.id);
+      return fact === undefined ? [] : [{ fact, cosine: r.cosine }];
+    });
+  }
+
+  /** The stored vector of a fact, if it has one. */
+  vectorOf(id: number): Float32Array | undefined {
+    const row = this.db.prepare("SELECT embedding FROM facts_vec WHERE rowid = ?").get(BigInt(id)) as
+      | { embedding: Buffer }
+      | undefined;
+    if (row === undefined) return undefined;
+    const b = row.embedding;
+    return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  }
+
   setVector(id: number, vector: Float32Array): void {
     const bytes = vectorBytes(vector);
     this.db.transaction(() => {
@@ -255,8 +320,8 @@ export class MemoryStore {
   logEvent(event: NewEvent): MemoryEvent {
     const info = this.db
       .prepare(
-        `INSERT INTO memory_events (fact, action, actor, task, reason, confidence, provider, at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memory_events (fact, action, actor, task, reason, confidence, provider, from_status, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         event.fact,
@@ -266,12 +331,32 @@ export class MemoryStore {
         event.reason ?? null,
         event.confidence ?? null,
         event.provider ?? null,
+        event.from ?? null,
         event.at,
       );
     const row = this.db
       .prepare("SELECT * FROM memory_events WHERE id = ?")
       .get(Number(info.lastInsertRowid)) as EventRow;
     return toEvent(row);
+  }
+
+  getEvent(id: number): MemoryEvent | undefined {
+    const row = this.db.prepare("SELECT * FROM memory_events WHERE id = ?").get(id) as EventRow | undefined;
+    return row === undefined ? undefined : toEvent(row);
+  }
+
+  markUndone(id: number): void {
+    this.db.prepare("UPDATE memory_events SET undone = 1 WHERE id = ?").run(id);
+  }
+
+  /** How many facts agents proposed in the task. The Housekeeper's candidates are not counted. */
+  proposalsBy(task: string): number {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM memory_events WHERE task = ? AND action = 'proposed' AND actor LIKE 'agent:%'",
+      )
+      .get(task) as { n: number };
+    return row.n;
   }
 
   /** Newest first. */
@@ -417,6 +502,7 @@ function toEvent(r: EventRow): MemoryEvent {
     ...(r.reason === null ? {} : { reason: r.reason }),
     ...(r.confidence === null ? {} : { confidence: r.confidence }),
     ...(r.provider === null ? {} : { provider: r.provider }),
+    ...(r.from_status === null ? {} : { from: r.from_status as FactStatus }),
     at: r.at,
     undone: r.undone === 1,
   };

@@ -60,4 +60,12 @@ CREATE TABLE task_recalls (
 );
 `,
   },
+  {
+    id: 2,
+    name: "what a logged step changed, for undo",
+    sql: `
+-- The fact's status before the step. Null for a step that changed no fact.
+ALTER TABLE memory_events ADD COLUMN from_status TEXT;
+`,
+  },
 ];

@@ -4,6 +4,7 @@ import {
   type Fact,
   type FactHit,
   type FactStatus,
+  type MemoryAction,
   type MemoryEvent,
   type MemoryScope,
 } from "@majhi/shared";
@@ -19,14 +20,28 @@ export const MAX_PROPOSALS_PER_TASK = 20;
 export const EMBED_WAIT_MS = 10_000;
 const FILL_BATCH = 32;
 
-/** Called with each fact an agent proposes. Curation (Housekeeper, duplicates, decisions) hooks in here. */
+/** Called with each fact an agent proposes. Curation (duplicates, decisions) hooks in here. */
 export type Curate = (fact: Fact) => Promise<void> | void;
+
+/** What curation wrote into the log for a step it took by itself. */
+export interface CurationNote {
+  reason: string;
+  /** 0 to 1. */
+  confidence?: number | undefined;
+  provider?: string | undefined;
+}
+
+/** The actor of a step curation took by itself. */
+export const CURATION = "curation";
+
+/** Steps the log can undo: the ones that moved a fact. */
+const UNDOABLE: readonly MemoryAction[] = ["approved", "rejected", "retired", "duplicate"];
 
 export interface MemoryDeps {
   store: MemoryStore;
   /** Absent, or failing: search uses keywords only and vectors are filled in later. */
   embedder?: Embedder | undefined;
-  /** Part B fills this in. Errors here never fail a proposal. */
+  /** Errors here never fail a proposal. The curator is wired in after the decision provider exists. */
   curate?: Curate | undefined;
   now?: () => Date;
   embedWaitMs?: number;
@@ -47,10 +62,17 @@ export class MemoryService {
   private readonly store: MemoryStore;
   private readonly now: () => Date;
   private filling = false;
+  private curate: Curate | undefined;
 
   constructor(private readonly deps: MemoryDeps) {
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
+    this.curate = deps.curate;
+  }
+
+  /** Hooks curation into proposals. Built after the decision provider, so it is set here. */
+  useCurator(curate: Curate): void {
+    this.curate = curate;
   }
 
   // ---------------------------------------------------------------------------
@@ -59,10 +81,8 @@ export class MemoryService {
   /** An agent's proposal: a pending fact, handed to curation. */
   async propose(input: { text: string; scope: MemoryScope; task: string; agent: string }): Promise<Fact> {
     refuseSecrets(input.text);
-    if (
-      this.store.list({ task: input.task, limit: MAX_PROPOSALS_PER_TASK + 1 }).length >=
-      MAX_PROPOSALS_PER_TASK
-    ) {
+    // Only what agents proposed counts: the Housekeeper's candidates do not use up the agent's share.
+    if (this.store.proposalsBy(input.task) >= MAX_PROPOSALS_PER_TASK) {
       throw new UserError(
         `This task already proposed ${MAX_PROPOSALS_PER_TASK} facts. Ask the owner to review them first.`,
         409,
@@ -79,10 +99,34 @@ export class MemoryService {
     this.log(fact, "proposed", `agent:${input.agent}`);
     await this.index(fact);
     try {
-      await this.deps.curate?.(fact);
+      await this.curate?.(fact);
     } catch {
       // Curation is extra: the fact stays pending for the owner.
     }
+    return this.mustGet(fact.id);
+  }
+
+  /**
+   * A fact the Housekeeper wrote from a finished task: pending, like a proposal, but logged under
+   * the Housekeeper and not counted against the agents' share of `MAX_PROPOSALS_PER_TASK`.
+   */
+  async addCandidate(input: {
+    text: string;
+    scope: MemoryScope;
+    task: string;
+    agent: string;
+  }): Promise<Fact> {
+    refuseSecrets(input.text);
+    const fact = this.store.insert({
+      text: input.text,
+      scope: input.scope,
+      task: input.task,
+      agent: input.agent,
+      status: "pending",
+      at: this.at(),
+    });
+    this.log(fact, "proposed", `housekeeper:${input.agent}`);
+    await this.index(fact);
     return this.mustGet(fact.id);
   }
 
@@ -138,14 +182,144 @@ export class MemoryService {
     actor: Actor,
     reason: string | undefined,
   ): Fact {
+    return this.step(id, from, to, action, actorName(actor), { reason });
+  }
+
+  /** One logged move of a fact, refused when the fact is not in one of the `from` statuses. */
+  private step(
+    id: number,
+    from: readonly FactStatus[],
+    to: FactStatus,
+    action: MemoryAction,
+    who: string,
+    note: { reason?: string | undefined; confidence?: number | undefined; provider?: string | undefined },
+  ): Fact {
     const fact = this.mustGet(id);
     if (!from.includes(fact.status)) {
       throw new UserError(`Fact ${id} is ${fact.status}, so it cannot become ${to}.`, 409);
     }
-    const who = actorName(actor);
     this.store.setStatus(id, to, { at: this.at(), decidedBy: who });
-    this.log(fact, action, who, reason);
+    this.log(fact, action, who, note.reason, {
+      from: fact.status,
+      confidence: note.confidence,
+      provider: note.provider,
+    });
     return this.mustGet(id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Curation: steps taken without the owner, each logged with its reason and undoable
+
+  /** A pending fact becomes active. */
+  keep(id: number, note: CurationNote): Fact {
+    return this.step(id, ["pending"], "active", "approved", CURATION, note);
+  }
+
+  /** A pending fact is dropped: it is kept as rejected. */
+  drop(id: number, note: CurationNote): Fact {
+    return this.step(id, ["pending"], "rejected", "rejected", CURATION, note);
+  }
+
+  /** An active fact stops being true: a newer one contradicts it. */
+  retire(id: number, note: CurationNote): Fact {
+    return this.step(id, ["active"], "retired", "retired", CURATION, note);
+  }
+
+  /** A pending fact is the same as `of`: it is dropped and points at it. */
+  merge(id: number, of: number, note: CurationNote): Fact {
+    this.mustGet(of);
+    const fact = this.step(id, ["pending"], "rejected", "duplicate", CURATION, note);
+    this.store.setDuplicateOf(id, of);
+    return this.mustGet(fact.id);
+  }
+
+  /**
+   * A candidate that matches fact `of` is not added at all. The log says so on `of`, with the
+   * candidate's words, and nothing changed, so there is nothing to undo.
+   */
+  noteDuplicate(of: number, candidate: { text: string; task: string }, note: CurationNote): void {
+    const fact = this.mustGet(of);
+    this.store.logEvent({
+      fact: fact.id,
+      action: "duplicate",
+      actor: CURATION,
+      task: candidate.task,
+      reason: `Not added, same as this fact: "${candidate.text}". ${note.reason}`,
+      ...(note.confidence === undefined ? {} : { confidence: note.confidence }),
+      ...(note.provider === undefined ? {} : { provider: note.provider }),
+      at: this.at(),
+    });
+  }
+
+  /**
+   * Reverses one logged step and logs the reversal. The fact must still be where the step left it:
+   * a later change comes off first. A candidate that was never added has nothing to restore.
+   */
+  undo(eventId: number, actor: Actor): Fact {
+    const event = this.store.getEvent(eventId);
+    if (event === undefined) throw new UserError(`There is no event ${eventId} in the memory log.`, 404);
+    if (event.undone) throw new UserError("That step is already undone.", 409);
+    if (!UNDOABLE.includes(event.action)) {
+      throw new UserError(`A "${event.action}" step cannot be undone.`, 409);
+    }
+    if (event.from === undefined) {
+      throw new UserError(
+        "That step changed no fact, so there is nothing to undo. Add the fact by hand.",
+        409,
+      );
+    }
+    const fact = this.mustGet(event.fact);
+    const left = event.action === "approved" ? "active" : event.action === "retired" ? "retired" : "rejected";
+    if (fact.status !== left) {
+      throw new UserError(
+        `Fact ${fact.id} is ${fact.status} now, not ${left}. Undo the later step first.`,
+        409,
+      );
+    }
+    const who = actorName(actor);
+    this.store.restoreStatus(fact.id, event.from, who);
+    if (event.action === "duplicate") this.store.setDuplicateOf(fact.id, null);
+    this.store.markUndone(event.id);
+    this.log(fact, "restored", who, `Undid step ${event.id} (${event.action}). Back to ${event.from}.`, {
+      from: fact.status,
+    });
+    return this.mustGet(fact.id);
+  }
+
+  /** Marks the fact as promoted to a repo's AGENTS.md by `task`. */
+  setPromoted(id: number, task: string, actor: Actor): Fact {
+    const fact = this.mustGet(id);
+    this.store.setPromoted(id, task);
+    this.log(fact, "promoted", actorName(actor), `Added to AGENTS.md by ${task}.`);
+    return this.mustGet(id);
+  }
+
+  /**
+   * The facts nearest in meaning to a fact or a text, among active and pending facts in `scopes`,
+   * nearest first, with cosine. Without a vector (no embedder, or it did not load) nothing is near.
+   */
+  async neighbours(
+    target: { fact: Fact } | { text: string },
+    scopes: readonly MemoryScope[],
+    limit = 5,
+  ): Promise<{ fact: Fact; cosine: number }[]> {
+    let vector: Float32Array | undefined;
+    if ("fact" in target) vector = this.store.vectorOf(target.fact.id);
+    if (vector === undefined) {
+      const embedder = this.embedder();
+      if (embedder === undefined) return [];
+      const text = "fact" in target ? target.fact.text : target.text;
+      try {
+        [vector] = await embedder.embed([text]);
+      } catch {
+        return [];
+      }
+    }
+    if (vector === undefined) return [];
+    return this.store.nearest(vector, scopes, ["active", "pending"], limit, {
+      minCosine: 0,
+      ...("fact" in target ? { except: target.fact.id } : {}),
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -289,13 +463,22 @@ export class MemoryService {
     return fact;
   }
 
-  private log(fact: Fact, action: MemoryEvent["action"], actor: string, reason?: string): void {
+  private log(
+    fact: Fact,
+    action: MemoryEvent["action"],
+    actor: string,
+    reason?: string,
+    extra: { from?: FactStatus; confidence?: number | undefined; provider?: string | undefined } = {},
+  ): void {
     this.store.logEvent({
       fact: fact.id,
       action,
       actor,
       ...(fact.task === undefined ? {} : { task: fact.task }),
       ...(reason === undefined ? {} : { reason }),
+      ...(extra.from === undefined ? {} : { from: extra.from }),
+      ...(extra.confidence === undefined ? {} : { confidence: extra.confidence }),
+      ...(extra.provider === undefined ? {} : { provider: extra.provider }),
       at: this.at(),
     });
   }
