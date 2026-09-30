@@ -88,6 +88,13 @@ export class LayaProvider implements DecisionProvider {
       { state: call.text, questions: call.questions },
       DECIDE_TIMEOUT_MS,
     );
-    return { answers: fromLayaCall(call, request, result.answers), estimated: false, trimmed: call.trimmed };
+    const version = link.status().info?.laya?.version;
+    return {
+      answers: fromLayaCall(call, request, result.answers),
+      estimated: false,
+      trimmed: call.trimmed,
+      sent: { state: call.state, questions: call.questions },
+      ...(version === undefined ? {} : { version: `laya-mlx ${version}` }),
+    };
   }
 }

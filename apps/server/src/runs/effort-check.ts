@@ -63,7 +63,18 @@ export async function checkEfforts(input: {
       .catch(() => undefined);
     const a = result?.answers.delegates;
     // An answer the gate does not take, a guess from the rules among them, is not a check.
-    if (a === undefined || (a.value !== "A" && a.value !== "B") || a.gate?.accepted !== true) {
+    const counted = a !== undefined && (a.value === "A" || a.value === "B") && a.gate?.accepted === true;
+    if (result !== undefined)
+      input.decisions?.outcome(result.id, {
+        text: !counted
+          ? `Not sure (${a?.gate?.reason ?? "no answer"}), so ${o.id} was left in.`
+          : a.value === "A"
+            ? `${o.id} hands work to sub-agents, so it was left out.`
+            : `${o.id} only changes how hard the agent thinks, so it was kept.`,
+        fellBack: !counted,
+        choices: ["hands work to sub-agents", "only changes how hard it thinks"],
+      });
+    if (!counted) {
       unchecked = true;
       continue;
     }

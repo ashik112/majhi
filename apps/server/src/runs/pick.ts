@@ -2,6 +2,8 @@ import type { AgentSession } from "@majhi/acp";
 import {
   type AgentFrontmatter,
   type DecisionSettings,
+  EffortTierSchema,
+  ModelTierSchema,
   type OptionValue,
   type PricesConfig,
   type Role,
@@ -163,6 +165,27 @@ export async function pickForSession(input: {
     }
   }
   if (parts.length === 1) parts.push("Nothing to pick: the session offers no choice.");
+  if (rating !== undefined && decisions !== undefined) {
+    // For "Wrong pick": the owner names the tier or the model (or effort) that was right.
+    decisions.outcome(rating.decisionId, {
+      text: parts.slice(1).join(" ").slice(0, 1000),
+      fellBack: counted === undefined,
+      choices: [
+        ...(wantModel
+          ? [
+              ...ModelTierSchema.options.map((t) => `model tier: ${t}`),
+              ...models.map((m) => `model: ${m.id}`),
+            ]
+          : []),
+        ...(wantEffort
+          ? [
+              ...EffortTierSchema.options.map((t) => `effort tier: ${t}`),
+              ...effortsNow.map((o) => `effort: ${o.id}`),
+            ]
+          : []),
+      ].slice(0, 40),
+    });
+  }
   if (applied.model !== undefined || applied.effort !== undefined) {
     if (rating !== undefined) applied.decisionId = rating.decisionId;
     return { line: parts.join(" "), applied, warnings };

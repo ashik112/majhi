@@ -222,6 +222,32 @@ export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 /** What a decision was for, in the log. */
 export const DecisionUseSchema = z.enum(["tool", "model-pick", "owner", "routing"]);
 
+/** What majhi did with a decision, recorded by the code that asked. */
+export const DecisionOutcomeSchema = z.object({
+  /** In plain words: "large, so most capable (acme-large-2) and highest (max)". */
+  text: z.string().max(1000),
+  /** True when the answer did not count and a fallback was used instead. */
+  fellBack: z.boolean(),
+  /** What the owner can name as the right answer in "Wrong pick", when it is not the question's options. */
+  choices: z.array(z.string().min(1).max(100)).max(40).optional(),
+});
+export type DecisionOutcome = z.infer<typeof DecisionOutcomeSchema>;
+
+/** The owner's "Wrong pick": what the right answer was. */
+export const DecisionCorrectionSchema = z.object({
+  right: z.string().trim().min(1).max(100),
+  note: z.string().trim().max(500).optional(),
+  at: z.string(),
+});
+export type DecisionCorrection = z.infer<typeof DecisionCorrectionSchema>;
+
+/** A question as the provider got it: Laya's own format, one per order run. */
+const SentQuestionSchema = z.looseObject({
+  type: z.string(),
+  instructions: z.string(),
+  criteria: z.union([z.array(z.string()), z.record(z.string(), z.string())]).optional(),
+});
+
 export const DecisionRecordSchema = z.object({
   id: z.string(),
   at: z.string(),
@@ -231,9 +257,24 @@ export const DecisionRecordSchema = z.object({
   /** The question keys and instructions, one line each. */
   summary: z.string(),
   provider: ProviderIdSchema,
+  /** Every answer with its probabilities, its order runs and its gate. */
   answers: z.record(z.string(), AnswerSchema),
   estimated: z.boolean(),
   durationMs: z.number().nonnegative(),
+  /** The whole request, secrets hidden: the state as sent (after fitting), the questions, and what the provider got. */
+  request: z
+    .object({
+      state: z.union([z.string(), z.record(z.string(), z.string())]),
+      questions: z.record(z.string(), QuestionSchema),
+      sent: z.record(z.string(), SentQuestionSchema).optional(),
+    })
+    .optional(),
+  trimmed: z.boolean().optional(),
+  skipped: z.array(z.object({ provider: ProviderIdSchema, reason: z.string() })).optional(),
+  /** The provider's version or checkpoint, when known: "laya-mlx 0.2.0". */
+  version: z.string().optional(),
+  outcome: DecisionOutcomeSchema.optional(),
+  correction: DecisionCorrectionSchema.optional(),
 });
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;
 

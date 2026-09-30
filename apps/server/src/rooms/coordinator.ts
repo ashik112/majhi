@@ -198,8 +198,18 @@ export class RoomCoordinator {
       )
       .catch(() => undefined);
     const a = answer?.answers.verdict;
-    if (a === undefined || a.gate?.accepted !== true) return "unclear";
-    return a.value === "A" ? "approved" : "changes";
+    const verdict: Verdict =
+      a === undefined || a.gate?.accepted !== true ? "unclear" : a.value === "A" ? "approved" : "changes";
+    if (answer !== undefined)
+      this.deps.decisions?.outcome(answer.id, {
+        text:
+          verdict === "unclear"
+            ? `Not sure (${a?.gate?.reason ?? "no answer"}), so the room asks the owner.`
+            : `Read as ${verdict === "approved" ? "approved" : "changes needed"}.`,
+        fellBack: verdict === "unclear",
+        choices: ["approved", "changes needed"],
+      });
+    return verdict;
   }
 
   private async frontmatters(): Promise<AgentFrontmatter[]> {

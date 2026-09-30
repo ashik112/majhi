@@ -20,11 +20,11 @@ import {
   useAskDecision,
   useDecisionsStatus,
   useInstallLaya,
-  useRecentDecisions,
   useSaveJevKey,
   useSetDecisions,
 } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
+import { RecentDecisions } from "./recent-decisions";
 
 const NAME: Record<ProviderId, string> = {
   laya: "Laya",
@@ -51,7 +51,7 @@ export function DecisionsPanel() {
           <Picks status={status.data} />
           <JevKey status={status.data} />
           <AskBox />
-          <Recent />
+          <RecentDecisions />
         </div>
       )}
     </section>
@@ -371,35 +371,13 @@ function AskBox() {
             <strong className="text-fg">{String(answer.value)}</strong>, confidence{" "}
             {answer.confidence.toFixed(2)}, {NAME[ask.data.provider]}
             {ask.data.estimated ? " (estimated)" : ""}, {ask.data.durationMs} ms
+            {answer.gate !== undefined &&
+              `. ${answer.gate.accepted ? "Counts" : "Does not count"}: ${answer.gate.reason}`}
             {ask.data.skipped.length > 0 &&
               `. Skipped: ${ask.data.skipped.map((s) => `${NAME[s.provider]} (${s.reason})`).join("; ")}`}
           </p>
         )}
       </div>
     </form>
-  );
-}
-
-function Recent() {
-  const recent = useRecentDecisions();
-  if (!recent.data || recent.data.length === 0)
-    return <p className="m-0 text-sm text-fg-faint">No decisions yet.</p>;
-  return (
-    <div className="flex flex-col gap-1">
-      <h3 className="text-base font-semibold">Recent decisions</h3>
-      <ul aria-label="Recent decisions" className="m-0 flex list-none flex-col gap-1 p-0">
-        {recent.data.map((d) => (
-          <li key={d.id} className="flex gap-2 text-sm text-fg-muted">
-            <span className="w-[90px] shrink-0">{NAME[d.provider]}</span>
-            <span className="min-w-0 flex-1 truncate font-mono">
-              {Object.entries(d.answers)
-                .map(([k, a]) => `${k}=${String(a.value)}`)
-                .join(" ")}
-            </span>
-            <span className="shrink-0 text-fg-faint">{d.use}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

@@ -2,6 +2,7 @@ import type { AgentSession } from "@majhi/acp";
 import {
   type AgentFrontmatter,
   type DecideRequestInput,
+  type DecisionOutcome,
   DecisionSettingsSchema,
   type OptionValue,
   type PricesConfig,
@@ -42,6 +43,7 @@ function decisions(
   decide: Decisions["decide"] = async () => undefined,
 ) {
   const asked: RateTaskRequest[] = [];
+  const outcomes: { id: string; outcome: DecisionOutcome }[] = [];
   const d: Decisions = {
     rateTask: async (r) => {
       asked.push(r);
@@ -50,8 +52,9 @@ function decisions(
     attachTool: () => undefined,
     revoke: () => {},
     decide,
+    outcome: (id, outcome) => outcomes.push({ id, outcome }),
   };
-  return { d, asked };
+  return { d, asked, outcomes };
 }
 
 const fm = (over: Partial<AgentFrontmatter> = {}) =>
@@ -142,9 +145,14 @@ describe("pickForSession", () => {
 
   it("keeps the role's tiers when the rating does not count, and says why", async () => {
     const { s, set } = session(CLAUDE, EFFORTS);
-    const { d } = decisions(() => rated("large", 0.3, false));
+    const { d, outcomes } = decisions(() => rated("large", 0.3, false));
     const out = await run(d, s, { fm: { role: "Builder" } });
     expect(set).toEqual({ model: "claude-sonnet-5-5", thought_level: "high" });
+    // The log gets what was done, and what the owner can name as right in "Wrong pick".
+    expect(outcomes[0]).toMatchObject({ id: "d1", outcome: { fellBack: true } });
+    expect(outcomes[0]?.outcome.choices).toEqual(
+      expect.arrayContaining(["model tier: most-capable", "model: claude-haiku-4-5", "effort: max"]),
+    );
     expect(out.line).toContain(
       "Laya rated the task large, but that does not count (0.12 over chance, under 0.20), so the Builder tiers: balanced model, middle effort.",
     );
@@ -226,6 +234,7 @@ describe("pickForSession", () => {
       attachTool: () => undefined,
       revoke: () => {},
       decide: async () => undefined,
+      outcome: () => {},
     };
     const out = await run(d, s);
     expect(out.line).toContain("No provider rated the task, so the Lead tiers");

@@ -374,6 +374,12 @@ export class TaskService {
       .catch(() => undefined);
     const pick = chooseTeam(options, result);
     if (pick === undefined) return { ...solo, line: undefined };
+    if (result !== undefined)
+      this.deps.decisions?.outcome(result.id, {
+        text: pick.line,
+        fellBack: pick.decision === undefined,
+        choices: options.map((o) => o.key),
+      });
     return { team: pick.option.team, mode: args.mode ?? pick.option.mode, line: pick.line };
   }
 

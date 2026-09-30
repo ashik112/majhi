@@ -103,6 +103,8 @@ export class LayaDocker {
       answers: fromLayaCall(call, request, parsed.data.answers),
       estimated: false,
       trimmed: call.trimmed,
+      sent: { state: call.state, questions: call.questions },
+      version: "laya-serve, English checkpoint (Docker)",
     };
   }
 

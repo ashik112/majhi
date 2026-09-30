@@ -6,6 +6,7 @@ import {
   type DecideRequest,
   type DecideRequestInput,
   DecideRequestSchema,
+  type DecisionOutcome,
   type DecisionPatchSchema,
   type DecisionRecord,
   type DecisionResult,
@@ -95,9 +96,10 @@ export class DecisionService implements Decisions {
         return [key, q === undefined ? a : { ...a, gate: gate(q, a, chain.provider, settings) }];
       }),
     );
+    const { sent, version, ...rest } = chain;
     const result: DecisionResult = {
       id: `dec_${randomUUID().slice(0, 8)}`,
-      ...chain,
+      ...rest,
       answers,
       durationMs: Math.round(performance.now() - started),
     };
@@ -112,16 +114,42 @@ export class DecisionService implements Decisions {
       answers: result.answers,
       estimated: result.estimated,
       durationMs: result.durationMs,
+      request: {
+        state: sent?.state ?? request.state,
+        questions: request.questions,
+        ...(sent === undefined ? {} : { sent: sent.questions }),
+      },
+      trimmed: result.trimmed,
+      skipped: result.skipped,
+      ...(version === undefined ? {} : { version }),
     });
     return result;
+  }
+
+  outcome(id: string, outcome: DecisionOutcome): void {
+    this.deps.log.setOutcome(id, outcome);
+  }
+
+  /** The owner's "Wrong pick". Kept for learning; changes nothing else. */
+  correct(input: { id: string; right: string; note?: string | undefined }): DecisionRecord {
+    const correction = {
+      right: input.right,
+      ...(input.note === undefined || input.note === "" ? {} : { note: input.note }),
+      at: this.now().toISOString(),
+    };
+    if (!this.deps.log.correct(input.id, correction))
+      throw new UserError(`There is no decision ${input.id}.`, 404);
+    const record = this.deps.log.get(input.id);
+    if (record === undefined) throw new Error(`Decision ${input.id} cannot be read.`);
+    return record;
   }
 
   ask(request: DecideRequest): Promise<DecisionResult> {
     return this.decide(request, { use: "owner" });
   }
 
-  recent(limit: number): DecisionRecord[] {
-    return this.deps.log.recent(limit);
+  recent(limit: number, offset = 0): DecisionRecord[] {
+    return this.deps.log.recent(limit, offset);
   }
 
   async status() {

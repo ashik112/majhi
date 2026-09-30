@@ -1,5 +1,11 @@
 import type { McpServerSpec } from "@majhi/acp";
-import type { DecideRequestInput, DecisionRecord, DecisionResult, ProviderId } from "@majhi/shared";
+import type {
+  DecideRequestInput,
+  DecisionOutcome,
+  DecisionRecord,
+  DecisionResult,
+  ProviderId,
+} from "@majhi/shared";
 import type { Difficulty, TaskBrief } from "../runs/difficulty.ts";
 
 /**
@@ -51,6 +57,8 @@ export interface Decisions {
     request: DecideRequestInput,
     use: { use: DecisionRecord["use"]; task?: string; agent?: string },
   ): Promise<DecisionResult | undefined>;
+  /** Records what majhi did with a decision, for the log and the owner's "Wrong pick". */
+  outcome(id: string, outcome: DecisionOutcome): void;
 }
 
 /** Used until the decision provider is wired: never picks, attaches nothing. */
@@ -59,4 +67,5 @@ export const noDecisions: Decisions = {
   attachTool: () => undefined,
   revoke: () => {},
   decide: async () => undefined,
+  outcome: () => {},
 };
