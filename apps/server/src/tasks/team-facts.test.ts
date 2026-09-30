@@ -14,10 +14,12 @@ import {
   buildTeamFacts,
   type FactsInput,
   limitsOf,
+  type PastPlan,
   priceTier,
   type RunningFacts,
   runningFactsOf,
   teamFactsLines,
+  tokensText,
   wakeFacts,
 } from "./team-facts.ts";
 
@@ -111,7 +113,10 @@ const member = (facts: ReturnType<typeof buildTeamFacts>, id: string) => {
 
 describe("the model of a member", () => {
   it("takes the owner's override over the latest run over the agent file", () => {
-    const withOverride = { ...task, overrides: { "acme-lead": { model: "claude-sonnet-4-6", effort: "low" } } };
+    const withOverride = {
+      ...task,
+      overrides: { "acme-lead": { model: "claude-sonnet-4-6", effort: "low" } },
+    };
     expect(member(buildTeamFacts(input()), "acme-lead").model).toBe("claude-opus-4-8");
     const ran = new Map([["acme-lead", { model: "claude-haiku-4-5", effort: "medium" }]]);
     expect(member(buildTeamFacts(input({ runs: ran })), "acme-lead")).toMatchObject({
@@ -155,7 +160,9 @@ describe("the model of a member", () => {
     expect(teamFactsLines(facts).find((l) => l.startsWith("- @acme-builder"))).toContain(
       "auto, picked when it starts",
     );
-    expect(wakeFacts(facts)).toContain("- @acme-builder (Builder): auto, picked when it starts, default effort");
+    expect(wakeFacts(facts)).toContain(
+      "- @acme-builder (Builder): auto, picked when it starts, default effort",
+    );
   });
 
   it("has no model for an auto agent when nothing is cached, and skips hidden models", () => {
@@ -462,6 +469,68 @@ describe("the wake block", () => {
       "- @acme-builder (Builder): claude-sonnet-4-6, balanced, effort high; claude-globex limits not read yet.",
       "Could join: @acme-reviewer (Reviewer, claude-opus-4-8).",
       "Running: ACM-3 (little overlap), ACM-4.",
+    ]);
+  });
+});
+
+describe("recent plans", () => {
+  const past = (id: string, over: Partial<PastPlan> = {}): PastPlan => ({
+    task: id,
+    title: "Add health endpoint",
+    how: ["builders", "reviewer"],
+    agents: [
+      { agent: "acme-builder", turns: 9, tokens: 1_200_000, outputTokens: 40_000, costUsd: 1.4 },
+      { agent: "acme-lead", turns: 4, tokens: 310_000, outputTokens: 20_000, costUsd: 2.1 },
+    ],
+    ...over,
+  });
+
+  it("caps them at three, newest first as given", () => {
+    const all = ["ACM-5", "ACM-4", "ACM-3", "ACM-2"].map((id) => past(id));
+    expect(buildTeamFacts(input({ past: all })).past.map((p) => p.task)).toEqual(["ACM-5", "ACM-4", "ACM-3"]);
+    expect(buildTeamFacts(input()).past).toEqual([]);
+  });
+
+  it("writes them after Running now, with the tokens each agent used", () => {
+    const lines = teamFactsLines(
+      buildTeamFacts(
+        input({
+          past: [
+            past("ACM-5"),
+            past("ACM-4", {
+              title: "",
+              agents: [{ agent: "acme-lead", turns: 1, tokens: 900, outputTokens: 10, costUsd: null }],
+            }),
+          ],
+        }),
+      ),
+    );
+    const at = lines.indexOf("Recent plans, with the tokens each agent used:");
+    expect(at).toBeGreaterThan(lines.indexOf("Running now: nothing else."));
+    expect(lines.slice(at + 1, at + 3)).toEqual([
+      "- ACM-5 Add health endpoint (builders, reviewer): @acme-builder 1.2M tokens ($1.40), @acme-lead 310k tokens ($2.10).",
+      "- ACM-4 (builders, reviewer): @acme-lead 900 tokens.",
+    ]);
+    expect(lines[at + 3]).toBe("");
+    expect(lines[at + 4]).toBe("## How the lead plans");
+  });
+
+  it("leaves the block out when there are none, and out of the wake block", () => {
+    expect(teamFactsLines(buildTeamFacts(input())).join("\n")).not.toContain("Recent plans");
+    expect(wakeFacts(buildTeamFacts(input({ past: [past("ACM-5")] })))).not.toContain("ACM-5");
+  });
+
+  it("writes token counts with k and M, one decimal at most", () => {
+    expect([0, 950, 1000, 1449, 310_000, 999_949, 999_950, 1_200_000, 12_340_000].map(tokensText)).toEqual([
+      "0",
+      "950",
+      "1k",
+      "1.4k",
+      "310k",
+      "999.9k",
+      "1M",
+      "1.2M",
+      "12.3M",
     ]);
   });
 });

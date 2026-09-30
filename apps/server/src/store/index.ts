@@ -1,10 +1,12 @@
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { createDb } from "./db.ts";
+import { PlanRepo } from "./plans.ts";
 import { RoomRepo } from "./room.ts";
 import { PermissionRepo, RunRepo } from "./runs.ts";
 import { TaskRepo } from "./tasks.ts";
 
+export type { NewPlan, PlanRow } from "./plans.ts";
 export type { RoomPayload } from "./room.ts";
 export type { AuditRow, RunRow } from "./runs.ts";
 
@@ -16,6 +18,7 @@ export class Store {
   readonly room: RoomRepo;
   readonly runs: RunRepo;
   readonly permissions: PermissionRepo;
+  readonly plans: PlanRepo;
   private readonly sqlite: Database.Database;
 
   constructor(file: string) {
@@ -25,6 +28,7 @@ export class Store {
     this.room = new RoomRepo(db);
     this.runs = new RunRepo(db);
     this.permissions = new PermissionRepo(db);
+    this.plans = new PlanRepo(db);
   }
 
   static open(majhiHome: string): Store {

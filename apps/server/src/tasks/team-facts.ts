@@ -9,6 +9,8 @@ import {
   canWorkIn,
   findPrice,
   normalizeModel,
+  type PlanAgentTokens,
+  type PlanHow,
   type PricesConfig,
   type Role,
   type Task,
@@ -66,6 +68,15 @@ export interface RunningFacts {
   overlap: OverlapLevel;
 }
 
+/** A plan of another task that has finished, with the tokens each agent used under it. */
+export interface PastPlan {
+  task: string;
+  /** Empty when the task is gone. */
+  title: string;
+  how: PlanHow[];
+  agents: PlanAgentTokens[];
+}
+
 export interface TeamFacts {
   /** ISO time of the read. */
   at: string;
@@ -74,6 +85,8 @@ export interface TeamFacts {
   /** Agents that may work in the task's org, not on the team, not the boss. Mentioning one adds it. */
   joinable: MemberFacts[];
   running: RunningFacts[];
+  /** At most 3 plans of other tasks with an outcome, newest first. */
+  past: PastPlan[];
 }
 
 export interface FactsInput {
@@ -90,10 +103,13 @@ export interface FactsInput {
   /** Fallback tier of an agent, resolved like runs/pick.ts: resolveTier(role, fm.tier, orgTiers[role], settings.tiers[role]). */
   tierOf: (fm: AgentFrontmatter) => Tier;
   running: readonly RunningFacts[];
+  past?: readonly PastPlan[];
 }
 
 /** At most this many agents that could join, and running tasks, and files per project. */
 const LIST_CAP = 6;
+/** At most this many recent plans. */
+const PAST_CAP = 3;
 
 // ---------------------------------------------------------------------------
 // Building the facts
@@ -125,6 +141,7 @@ export function buildTeamFacts(input: FactsInput): TeamFacts {
     members,
     joinable,
     running: input.running.slice(0, LIST_CAP),
+    past: (input.past ?? []).slice(0, PAST_CAP),
   };
 }
 
@@ -143,7 +160,10 @@ function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFacts {
   const overrideEffort = named(override?.effort);
   let model = overrideModel ?? run?.model ?? (override?.model === AUTO ? undefined : named(fm.model));
   let auto = false;
-  if (model === undefined && (override?.model === AUTO || (override?.model === undefined && fm.model === AUTO))) {
+  if (
+    model === undefined &&
+    (override?.model === AUTO || (override?.model === undefined && fm.model === AUTO))
+  ) {
     auto = true;
     model =
       offered === undefined
@@ -155,7 +175,9 @@ function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFacts {
     overrideEffort ??
     run?.effort ??
     (override?.effort === AUTO ? undefined : named(fm.effort)) ??
-    (effortAuto && offered !== undefined ? effortForTier(offered.efforts, input.tierOf(fm).effort) : undefined);
+    (effortAuto && offered !== undefined
+      ? effortForTier(offered.efforts, input.tierOf(fm).effort)
+      : undefined);
 
   return {
     id: fm.id,
@@ -268,16 +290,19 @@ export function teamFactsLines(f: TeamFacts): string[] {
   lines.push("");
   if (f.running.length === 0) lines.push("Running now: nothing else.");
   else lines.push("Running now:", ...f.running.map(runningLine));
+  if (f.past.length > 0) {
+    lines.push("", "Recent plans, with the tokens each agent used:", ...f.past.map(pastLine));
+  }
   lines.push(
     "",
     "## How the lead plans",
     "",
     `@${f.lead}: choose the cheapest way that gets this done well, and say why.`,
     "",
-    '- Your first reply states the plan in a few lines: who does what, in which order, and why that is cheaper or faster. For example "the builder on a cheaper model writes the code, I review", or "small change, I do it myself".',
+    '- Your first reply states the plan in a few lines: who does what, in which order, and why that is cheaper or faster. For example "the builder on a cheaper model writes the code, I review", or "small change, I do it myself". Record it with the majhi-room record_plan tool before you start the work: the room shows it as a plan line, and majhi keeps it with the tokens each agent used.',
     "- Rules of thumb, not limits: give bulk implementation to cheaper agents; keep expensive models for planning and review; split large work into child tasks so turns stay short; run independent parts in parallel on different accounts when their limits allow. Doing it alone is right when handing over would cost more than the work.",
     "- Do not give a long job to an agent whose account is nearly out.",
-    "- The owner may reply to change the plan. Follow the new plan.",
+    "- The owner may reply to change the plan. Follow the new plan, and record it again with record_plan.",
   );
   return lines;
 }
@@ -329,6 +354,33 @@ function runningLine(r: RunningFacts): string {
   return `- ${r.id} ${r.title}: ${[`${who}.`, ...where, `Overlap with this task: ${r.overlap}.`].join(" ")}`;
 }
 
+function pastLine(p: PastPlan): string {
+  const title = p.title === "" ? "" : ` ${p.title}`;
+  return `- ${p.task}${title} (${p.how.join(", ")}): ${agentsText(p.agents)}.`;
+}
+
+/** "@acme-lead 310k tokens ($2.10), @acme-builder 1.2M tokens ($1.40)". */
+export function agentsText(agents: readonly PlanAgentTokens[]): string {
+  return agents
+    .map(
+      (a) =>
+        `@${a.agent} ${tokensText(a.tokens)} tokens${a.costUsd === null ? "" : ` (${usdText(a.costUsd)})`}`,
+    )
+    .join(", ");
+}
+
+/** 950, 310k, 1.2M: one decimal at most. */
+export function tokensText(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 999_950) return `${String(Number((n / 1000).toFixed(1)))}k`;
+  return `${String(Number((n / 1_000_000).toFixed(1)))}M`;
+}
+
+/** "$2.10". */
+export function usdText(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
 /** Dollars without trailing zeros: 0.8, 1.25, 5. */
 function money(n: number): string {
   return String(Number(n.toFixed(4)));
@@ -362,7 +414,10 @@ const nearest5 = (pct: number) => Math.round(pct / 5) * 5;
 /** The short block added to a wake prompt. */
 export function wakeFacts(f: TeamFacts): string {
   const line = (m: MemberFacts) => {
-    const what = [m.model ?? (m.auto ? "auto, picked when it starts" : "CLI default model"), ...(m.tier === undefined ? [] : [m.tier])];
+    const what = [
+      m.model ?? (m.auto ? "auto, picked when it starts" : "CLI default model"),
+      ...(m.tier === undefined ? [] : [m.tier]),
+    ];
     what.push(m.effort === undefined ? "default effort" : `effort ${m.effort}`);
     return `- @${m.id} (${m.role}): ${what.join(", ")}; ${shortLimits(m.account, m.limits)}.`;
   };

@@ -258,6 +258,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     decisions,
     processes,
+    usage: usageRepo,
+    flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });

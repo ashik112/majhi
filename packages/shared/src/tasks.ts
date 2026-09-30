@@ -242,6 +242,56 @@ export const PermissionOptionSchema = z.object({
   kind: z.enum(["allow_once", "allow_always", "reject_once", "reject_always"]),
 });
 
+/** How a plan gets the work done (PRV-52), for comparing plans later. */
+export const PlanHowSchema = z.enum(["alone", "builders", "reviewer", "children", "parallel"]);
+export type PlanHow = z.infer<typeof PlanHowSchema>;
+
+/** The lead's plan for a task: who does what, in order, and why that is cheaper or faster. */
+export const TeamPlanSchema = z.strictObject({
+  /** In order. `who` is an @agent, "me", or "child tasks". */
+  steps: z
+    .array(z.strictObject({ who: z.string().trim().min(1).max(80), what: z.string().trim().min(1).max(300) }))
+    .min(1)
+    .max(8),
+  /** Why this is cheaper or faster, in a line or two. */
+  why: z.string().trim().min(1).max(600),
+  how: z.array(PlanHowSchema).min(1).max(5),
+});
+export type TeamPlan = z.infer<typeof TeamPlanSchema>;
+
+const PlanCount = z.number().int().nonnegative();
+
+/** Tokens one agent used under a plan version. `tokens` counts input, output, cache read and cache write. */
+export const PlanAgentTokensSchema = z.object({
+  agent: IdSchema,
+  turns: PlanCount,
+  tokens: PlanCount,
+  outputTokens: PlanCount,
+  /** Null when none of its turns had a price. */
+  costUsd: z.number().nonnegative().nullable(),
+});
+export type PlanAgentTokens = z.infer<typeof PlanAgentTokensSchema>;
+
+/** What a plan version cost, read when the task reached review or done. */
+export const PlanOutcomeSchema = z.object({
+  at: z.string(),
+  status: TaskStatusSchema,
+  /** The tokens include the task's subtasks. */
+  withSubtasks: z.boolean().default(false),
+  agents: z.array(PlanAgentTokensSchema),
+});
+export type PlanOutcome = z.infer<typeof PlanOutcomeSchema>;
+
+/** One member of the team when a plan was recorded, copied in so the history outlives the task. */
+export const PlanMemberSchema = z.object({
+  id: IdSchema,
+  role: z.string(),
+  model: z.string().optional(),
+  tier: z.string().optional(),
+  account: z.string(),
+});
+export type PlanMember = z.infer<typeof PlanMemberSchema>;
+
 export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("owner"),
@@ -377,6 +427,15 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     options: z.array(z.object({ id: z.string(), label: z.string() })).min(2),
     state: z.enum(["pending", "answered", "cancelled"]),
     chosen: z.string().optional(),
+  }),
+  /** The lead's plan (`record_plan`), shown as one line. Not the ACP to-do list, which is `plan`. */
+  RoomItemBase.extend({
+    type: z.literal("team-plan"),
+    agent: IdSchema,
+    version: z.number().int().positive(),
+    steps: TeamPlanSchema.shape.steps,
+    why: z.string(),
+    how: z.array(PlanHowSchema),
   }),
   RoomItemBase.extend({
     type: z.literal("system"),

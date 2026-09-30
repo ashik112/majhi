@@ -77,6 +77,7 @@ describe("store", () => {
       "task_allowances",
       "task_counters",
       "task_links",
+      "task_plans",
       "task_repos",
       "tasks",
       "turns",

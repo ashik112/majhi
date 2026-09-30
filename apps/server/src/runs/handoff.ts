@@ -76,6 +76,8 @@ export function itemLine(item: RoomItem): string | undefined {
       return `Command ${item.command}: ${item.state}`;
     case "plan":
       return `Plan: ${item.entries.map((e) => `[${e.status === "completed" ? "x" : " "}] ${e.content}`).join("; ")}`;
+    case "team-plan":
+      return `Team plan v${item.version}: ${item.steps.map((s, i) => `${i + 1}. ${s.who} ${s.what}`).join(" ")} Why: ${item.why}`;
     default:
       return undefined;
   }

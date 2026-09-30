@@ -138,3 +138,22 @@ export const taskAllowances = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.task, t.kind] })],
 );
+
+export const taskPlans = sqliteTable(
+  "task_plans",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    task: text("task").notNull(),
+    org: text("org"),
+    version: integer("version").notNull(),
+    at: text("at").notNull(),
+    agent: text("agent").notNull(),
+    /** JSON: the plan as `TeamPlanSchema` has it. */
+    plan: text("plan").notNull(),
+    /** JSON: the team when the plan was recorded, `PlanMemberSchema[]`. */
+    team: text("team").notNull(),
+    /** JSON: `PlanOutcomeSchema`, null until the task reached review or done. */
+    outcome: text("outcome"),
+  },
+  (t) => [index("task_plans_task_version").on(t.task, t.version), index("task_plans_org_at").on(t.org, t.at)],
+);

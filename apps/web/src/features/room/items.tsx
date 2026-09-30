@@ -72,6 +72,8 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
       return <ContextLine item={item} />;
     case "handoff":
       return <HandoffLine item={item} />;
+    case "team-plan":
+      return <TeamPlanLine item={item} />;
   }
 }
 
@@ -95,6 +97,36 @@ function HandoffLine({ item }: { item: Of<"handoff"> }) {
           <TaskRefText text={item.text.length > 600 ? `${item.text.slice(0, 600)}...` : item.text} />
         </p>
       )}
+    </div>
+  );
+}
+
+/** The lead's plan (`record_plan`) as one quiet line: the steps, why, and how the work gets done. */
+function TeamPlanLine({ item }: { item: Of<"team-plan"> }) {
+  return (
+    <div className="flex justify-center">
+      <p className="flex max-w-[720px] flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-fg-muted break-words">
+        <span className="font-mono font-medium text-fg-faint">
+          {item.version > 1 ? `Plan v${item.version}` : "Plan"}
+        </span>
+        <span>
+          {item.steps.map((step, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the steps of one plan keep their order
+            <span key={i}>
+              {i > 0 && " · "}
+              {i + 1}. <TaskRefText text={`${step.who} ${step.what}`} />
+            </span>
+          ))}
+        </span>
+        <span className="text-fg-faint">{item.why}</span>
+        <span className="flex gap-1">
+          {item.how.map((h) => (
+            <span key={h} className="rounded border border-line px-1 font-mono text-[10px] text-fg-faint">
+              {h}
+            </span>
+          ))}
+        </span>
+      </p>
     </div>
   );
 }

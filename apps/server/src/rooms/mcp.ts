@@ -1,4 +1,12 @@
-import { type AgentFrontmatter, type CommandName, canWorkIn, commands, parseTaskText } from "@majhi/shared";
+import {
+  type AgentFrontmatter,
+  type CommandName,
+  canWorkIn,
+  commands,
+  parseTaskText,
+  type TeamPlan,
+  TeamPlanSchema,
+} from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -86,6 +94,12 @@ const ROOM_TOOLS: Tool[] = [
         )
         .min(1),
     }),
+  },
+  {
+    name: "record_plan",
+    description:
+      "Record your plan for this task: who does what, in which order, and why that is cheaper or faster. The room shows it as a plan line, and majhi keeps it on the task with the tokens each agent used, so later plans can be compared. Call it again when the plan changes, for example after the owner replies.",
+    input: TeamPlanSchema,
   },
 ];
 
@@ -257,7 +271,11 @@ async function serve(
 
 function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: ROOM_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(ROOM_TOOLS, false) }));
+  // Only the lead records the plan, so only the lead is offered the tool.
+  const isLead = () => deps.store.tasks.get(caller.task)?.team[0] === caller.agent;
+  server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: listed(isLead() ? ROOM_TOOLS : ROOM_TOOLS.filter((t) => t.name !== "record_plan"), false),
+  }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = ROOM_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
@@ -291,6 +309,8 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
               args.text as string,
             ),
           );
+        case "record_plan":
+          return ok(await deps.tasks.recordPlan(caller.task, caller.agent, args as TeamPlan));
         case "ask": {
           const questions = args.questions as Array<{
             id: string;

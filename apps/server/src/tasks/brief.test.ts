@@ -179,6 +179,7 @@ describe("Team facts section", () => {
     members: [],
     joinable: [],
     running: [],
+    past: [],
   };
   const team = [
     { id: "lead", role: "Lead", model: undefined, effort: undefined },
@@ -190,6 +191,8 @@ describe("Team facts section", () => {
     const md = render(task, facts);
     expect(md).toContain("## Team facts");
     expect(md).toContain("## How the lead plans");
+    expect(md).toContain("Record it with the majhi-room record_plan tool before you start the work");
+    expect(md).toContain("record it again with record_plan.");
     expect(md.indexOf("## Team\n")).toBeLessThan(md.indexOf("## Team facts"));
     expect(md.indexOf("## How the lead plans")).toBeLessThan(md.indexOf("## Rules"));
   });

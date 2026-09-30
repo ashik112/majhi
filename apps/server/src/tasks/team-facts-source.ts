@@ -8,10 +8,18 @@ import type { Store } from "../store/index.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { TaskPlanner } from "./planner.ts";
 import { likelyPaths, overlapsOf } from "./planning.ts";
-import { buildTeamFacts, type RunningFacts, runningFactsOf, type TeamFacts } from "./team-facts.ts";
+import {
+  buildTeamFacts,
+  type PastPlan,
+  type RunningFacts,
+  runningFactsOf,
+  type TeamFacts,
+} from "./team-facts.ts";
 
 /** The facts list this many other tasks, so only this many are read. */
 const RUNNING_CAP = 6;
+/** Recent plans in the facts. */
+const PAST_CAP = 3;
 
 export interface TeamFactsDeps {
   store: Store;
@@ -72,7 +80,26 @@ export class TeamFactsSource {
       runs,
       tierOf: (fm) => resolveTier(fm.role, fm.tier, orgTiers?.[fm.role], settings?.tiers[fm.role]),
       running: (await attempt(() => this.running(task, lead, all))) ?? [],
+      past: (await attempt(async () => this.past(task, lead, Object.keys(sections?.orgs ?? {})))) ?? [],
     });
+  }
+
+  /** Recent plans of finished tasks in the orgs the lead may see. A root lead sees every org. */
+  private past(task: Task, lead: AgentFrontmatter, orgIds: readonly string[]): PastPlan[] {
+    const { store } = this.deps;
+    const orgs = lead.scope === "root" ? undefined : orgIds.filter((id) => canWorkIn(lead, id));
+    return store.plans.recent(orgs, PAST_CAP, task.id).flatMap((row) =>
+      row.outcome === null
+        ? []
+        : [
+            {
+              task: row.task,
+              title: store.tasks.get(row.task)?.title ?? "",
+              how: row.plan.how,
+              agents: row.outcome.agents,
+            },
+          ],
+    );
   }
 
   /** The other running tasks the lead may see, with the files they touch and how much they overlap this one. */

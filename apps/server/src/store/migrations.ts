@@ -211,6 +211,28 @@ ALTER TABLE decisions ADD COLUMN outcome TEXT;
 ALTER TABLE decisions ADD COLUMN correction TEXT;
 `,
   },
+  {
+    // The lead's plan for a task, one row per version (PRV-52). \`team\` copies the team at plan
+    // time and \`outcome\` holds the tokens each agent used under the version, read at review or
+    // done. Names are copied in, as \`turns\` does, so a removed task keeps its history.
+    id: 70,
+    name: "plans kept on the task, with the tokens each agent used",
+    sql: `
+CREATE TABLE task_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT NOT NULL,
+  org TEXT,
+  version INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  plan TEXT NOT NULL,
+  team TEXT NOT NULL,
+  outcome TEXT
+);
+CREATE INDEX task_plans_task_version ON task_plans (task, version);
+CREATE INDEX task_plans_org_at ON task_plans (org, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

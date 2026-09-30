@@ -5,12 +5,14 @@ import {
   type AccountStatus,
   type AgentFrontmatter,
   type Attachment,
+  AUTO,
   type CoordinationMode,
   canWorkIn,
   LOCAL_TASK_PREFIX,
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
+  type PlanMember,
   type ProcessInfo,
   parseMentions,
   parseTaskText,
@@ -22,6 +24,7 @@ import {
   type TaskRepo,
   type TaskSummary,
   type TeamOverride,
+  type TeamPlan,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -51,11 +54,13 @@ import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { UploadStore } from "../uploads/store.ts";
+import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
+import { TaskPlans } from "./plans.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
@@ -79,6 +84,10 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
+  /** Token totals per agent, for what each plan version cost. */
+  usage?: UsageRepo;
+  /** Resolves when every queued usage row is written. */
+  flushUsage?: () => Promise<void>;
 }
 
 export interface CreateInput {
@@ -108,6 +117,7 @@ export class TaskService {
   private readonly orchestrator: Orchestrator;
   private readonly planner: TaskPlanner;
   private readonly teamFacts: TeamFactsSource;
+  private readonly plans: TaskPlans;
   /** The facts block each (task, agent) got last, so a wake prompt only repeats them when they changed. */
   private readonly wakeSeen = new Map<string, string>();
   /** The last facts read per task, for the team it had then: a status change rewrites TASK.md without new git diffs. */
@@ -132,6 +142,14 @@ export class TaskService {
       accounts: deps.accounts,
       config: deps.config,
       planner: this.planner,
+      now: this.now,
+    });
+    this.plans = new TaskPlans({
+      store: deps.store,
+      room: deps.room,
+      usage: deps.usage,
+      flushUsage: deps.flushUsage,
+      team: (task) => this.planTeam(task),
       now: this.now,
     });
     this.orchestrator = new Orchestrator({
@@ -1131,8 +1149,44 @@ export class TaskService {
     // Waiting tasks that are free now, and queued ones that a freed slot or account may let in.
     await this.orchestrator.advance();
     if (parent !== undefined) await this.finishParentIfDone(parent);
+    await this.plans.settle(task).catch(() => undefined);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
     this.deps.events.emit(["tasks"]);
+  }
+
+  /** The lead records its plan (majhi-room `record_plan`). */
+  async recordPlan(id: string, agent: string, plan: TeamPlan): Promise<string> {
+    const task = this.get(id);
+    return this.plans.record(task, agent, plan);
+  }
+
+  /** The team as it is now, for the snapshot kept with a plan: from the last facts, else from the agent files. */
+  private async planTeam(task: Task): Promise<PlanMember[]> {
+    const facts = await this.knownFacts(task);
+    if (facts !== undefined) {
+      return facts.members.map((m) => ({
+        id: m.id,
+        role: m.role,
+        ...(m.model === undefined ? {} : { model: m.model }),
+        ...(m.tier === undefined ? {} : { tier: m.tier }),
+        account: m.account,
+      }));
+    }
+    const stored = await this.deps.agents.list();
+    const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
+    return task.team.flatMap((id) => {
+      const fm = agents.find((a) => a.id === id);
+      return fm === undefined
+        ? []
+        : [
+            {
+              id,
+              role: fm.role,
+              ...(fm.model === undefined || fm.model === AUTO ? {} : { model: fm.model }),
+              account: fm.account,
+            },
+          ];
+    });
   }
 
   private async finishParentIfDone(parent: string): Promise<void> {
