@@ -291,7 +291,7 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           );
         case "ask": {
           const questions = args.questions as Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string | undefined; freeText: boolean }>;
-          const item = await deps.coordinator.postAskCard(caller.task, questions);
+          const item = await deps.coordinator.postAskCard(caller.task, caller.agent, questions);
           return ok(JSON.stringify({ item }));
         }
       }

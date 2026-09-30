@@ -10,9 +10,13 @@ afterEach(async () => {
 const roomItems = async (id: string) =>
   (await w.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
 
-const postAskCard = async (taskId: string, questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string; freeText: boolean }>) => {
+const postAskCard = async (taskId: string, questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string; freeText: boolean }>, agent?: string) => {
   const coordinator = w.h.majhi.services.coordinator;
-  const card = await coordinator.postAskCard(taskId, questions);
+  const task = w.h.majhi.services.store.tasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+  const actualAgent = agent || task.team[0];
+  if (!actualAgent) throw new Error("No agent found");
+  const card = await coordinator.postAskCard(taskId, actualAgent, questions);
   if (card.type !== "ask") throw new Error("Expected ask card");
   return card;
 };
@@ -21,7 +25,7 @@ const findAskCard = async (id: string) =>
   (await roomItems(id)).find((i) => i.type === "ask") as (RoomItem & { type: "ask" }) | undefined;
 
 describe("room.answerAsk routing", () => {
-  it("answering a single-question card marks it answered with the chosen option", async () => {
+  it("answering a single-question card marks it answered with 'Owner chose' format", async () => {
     w = await taskWorld();
     const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
     const taskId = res.body.id;
@@ -209,5 +213,31 @@ describe("room.answerAsk routing", () => {
     });
 
     expect(answer.status).toBe(409);
+  });
+
+  it("stores the asking agent on the card, not the task lead", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const taskId = res.body.id;
+    const task = w.h.majhi.services.store.tasks.get(taskId);
+    if (!task) throw new Error("Task not found");
+    const taskLead = task.team[0];
+
+    const card = await postAskCard(
+      taskId,
+      [
+        {
+          id: "q1",
+          question: "Pick",
+          options: [{ id: "opt", label: "Option" }],
+          freeText: false,
+        },
+      ],
+      taskLead,
+    );
+
+    expect(card.type).toBe("ask");
+    if (card.type !== "ask") throw new Error("Not an ask card");
+    expect(card.agent).toBe(taskLead);
   });
 });

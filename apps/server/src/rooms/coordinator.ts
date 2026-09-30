@@ -157,11 +157,13 @@ export class RoomCoordinator {
 
   async postAskCard(
     taskId: string,
+    agent: string,
     questions: Array<{ id: string; question: string; options: Array<{ id: string; label: string }>; default?: string | undefined; freeText: boolean }>,
   ): Promise<RoomItem> {
     const task = this.deps.tasks.get(taskId);
-    const agent = task.team[0];
-    if (agent === undefined) throw new UserError(`Task ${taskId} has no agent.`, 409);
+    if (!task.team.includes(agent)) {
+      throw new UserError(`Agent @${agent} is not on this task.`, 409);
+    }
     const itemId = `ask:${randomUUID()}`;
     this.deps.room.post(task.id, itemId, {
       type: "ask",

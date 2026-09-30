@@ -975,13 +975,20 @@ export class TaskService {
       }
     }
 
-    const message = questions
-      .map((q) => {
-        const answer = validated[q.id];
-        const option = q.options.find((o) => o.id === answer);
-        return `${q.question}: ${option?.label ?? answer}`;
-      })
-      .join("\n");
+    const message = questions.length === 1
+      ? (() => {
+          const q = questions[0]!;
+          const answer = validated[q.id];
+          const option = q.options.find((o) => o.id === answer);
+          return `Owner chose: ${option?.label ?? answer}`;
+        })()
+      : `Owner answered:\n${questions
+          .map((q) => {
+            const answer = validated[q.id];
+            const option = q.options.find((o) => o.id === answer);
+            return `${q.question}: ${option?.label ?? answer}`;
+          })
+          .join("\n")}`;
 
     this.deps.room.post(task as TaskId, item, {
       type: "ask",
@@ -990,7 +997,7 @@ export class TaskService {
       state: "answered",
       answers: validated,
     });
-    await this.send({ task, text: `Owner answered:\n${message}`, attachments: [], mode: "queue", agent });
+    await this.send({ task, text: message, attachments: [], mode: "queue", agent });
     return this.deps.room.get(task, item) ?? (() => {
       throw new Error("The ask card was not stored");
     })();
