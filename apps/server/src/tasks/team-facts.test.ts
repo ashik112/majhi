@@ -110,17 +110,31 @@ const member = (facts: ReturnType<typeof buildTeamFacts>, id: string) => {
 };
 
 describe("the model of a member", () => {
-  it("takes the latest run over the override over the agent file", () => {
-    const withOverride = {
-      ...task,
-      overrides: { "acme-lead": { model: "claude-sonnet-4-6", effort: "low" } },
-    };
+  it("takes the owner's override over the latest run over the agent file", () => {
+    const withOverride = { ...task, overrides: { "acme-lead": { model: "claude-sonnet-4-6", effort: "low" } } };
     expect(member(buildTeamFacts(input()), "acme-lead").model).toBe("claude-opus-4-8");
-    const overridden = member(buildTeamFacts(input({ task: withOverride })), "acme-lead");
-    expect(overridden).toMatchObject({ model: "claude-sonnet-4-6", effort: "low", auto: false });
     const ran = new Map([["acme-lead", { model: "claude-haiku-4-5", effort: "medium" }]]);
-    const latest = member(buildTeamFacts(input({ task: withOverride, runs: ran })), "acme-lead");
-    expect(latest).toMatchObject({ model: "claude-haiku-4-5", effort: "medium", auto: false });
+    expect(member(buildTeamFacts(input({ runs: ran })), "acme-lead")).toMatchObject({
+      model: "claude-haiku-4-5",
+      effort: "medium",
+    });
+    // The owner changed the model after the run started: the run row still has the old one.
+    const overridden = member(buildTeamFacts(input({ task: withOverride, runs: ran })), "acme-lead");
+    expect(overridden).toMatchObject({ model: "claude-sonnet-4-6", effort: "low", auto: false });
+  });
+
+  it("treats an auto override as auto, over the agent file, unless the agent has run", () => {
+    const autoOverride = { ...task, overrides: { "acme-lead": { model: "auto" } } };
+    expect(member(buildTeamFacts(input({ task: autoOverride })), "acme-lead")).toMatchObject({
+      model: "claude-opus-4-8",
+      auto: true,
+      tier: "most capable",
+    });
+    const ran = new Map([["acme-lead", { model: "claude-haiku-4-5" }]]);
+    expect(member(buildTeamFacts(input({ task: autoOverride, runs: ran })), "acme-lead")).toMatchObject({
+      model: "claude-haiku-4-5",
+      auto: false,
+    });
   });
 
   it("gives an auto agent that has not run the model of its fallback tier, marked auto", () => {
@@ -134,6 +148,14 @@ describe("the model of a member", () => {
       model: "claude-opus-4-8",
       auto: false,
     });
+  });
+
+  it("says an auto agent with nothing cached is picked when it starts", () => {
+    const facts = buildTeamFacts(input({ offered: new Map() }));
+    expect(teamFactsLines(facts).find((l) => l.startsWith("- @acme-builder"))).toContain(
+      "auto, picked when it starts",
+    );
+    expect(wakeFacts(facts)).toContain("- @acme-builder (Builder): auto, picked when it starts, default effort");
   });
 
   it("has no model for an auto agent when nothing is cached, and skips hidden models", () => {

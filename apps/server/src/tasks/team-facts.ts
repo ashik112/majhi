@@ -138,22 +138,24 @@ function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFacts {
   const view = input.accounts.get(fm.account);
   const named = (value: string | undefined) => (value === undefined || value === AUTO ? undefined : value);
 
-  let model = run?.model ?? named(override?.model) ?? named(fm.model);
+  // The owner's override for this task wins: it switches a live session without touching its run row.
+  const overrideModel = named(override?.model);
+  const overrideEffort = named(override?.effort);
+  let model = overrideModel ?? run?.model ?? (override?.model === AUTO ? undefined : named(fm.model));
   let auto = false;
-  if (model === undefined && fm.model === AUTO) {
+  if (model === undefined && (override?.model === AUTO || (override?.model === undefined && fm.model === AUTO))) {
     auto = true;
     model =
       offered === undefined
         ? undefined
         : modelForTier(fallbackModels(fm, offered, view), input.tierOf(fm).model, input.prices);
   }
+  const effortAuto = override?.effort === AUTO || (override?.effort === undefined && fm.effort === AUTO);
   const effort =
+    overrideEffort ??
     run?.effort ??
-    named(override?.effort) ??
-    named(fm.effort) ??
-    (fm.effort === AUTO && offered !== undefined
-      ? effortForTier(offered.efforts, input.tierOf(fm).effort)
-      : undefined);
+    (override?.effort === AUTO ? undefined : named(fm.effort)) ??
+    (effortAuto && offered !== undefined ? effortForTier(offered.efforts, input.tierOf(fm).effort) : undefined);
 
   return {
     id: fm.id,
@@ -282,7 +284,7 @@ export function teamFactsLines(f: TeamFacts): string[] {
 
 function memberLine(m: MemberFacts): string {
   const parts: string[] = [];
-  if (m.model === undefined) parts.push("CLI default model");
+  if (m.model === undefined) parts.push(m.auto ? "auto, picked when it starts" : "CLI default model");
   else parts.push(m.auto ? `${m.model} (auto, its fallback tier)` : m.model);
   if (m.tier !== undefined) parts.push(m.estimated === true ? `${m.tier} (estimated)` : m.tier);
   if (m.price !== undefined)
@@ -360,7 +362,7 @@ const nearest5 = (pct: number) => Math.round(pct / 5) * 5;
 /** The short block added to a wake prompt. */
 export function wakeFacts(f: TeamFacts): string {
   const line = (m: MemberFacts) => {
-    const what = [m.model ?? "CLI default model", ...(m.tier === undefined ? [] : [m.tier])];
+    const what = [m.model ?? (m.auto ? "auto, picked when it starts" : "CLI default model"), ...(m.tier === undefined ? [] : [m.tier])];
     what.push(m.effort === undefined ? "default effort" : `effort ${m.effort}`);
     return `- @${m.id} (${m.role}): ${what.join(", ")}; ${shortLimits(m.account, m.limits)}.`;
   };

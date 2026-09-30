@@ -110,6 +110,8 @@ export class TaskService {
   private readonly teamFacts: TeamFactsSource;
   /** The facts block each (task, agent) got last, so a wake prompt only repeats them when they changed. */
   private readonly wakeSeen = new Map<string, string>();
+  /** The last facts read per task, for the team it had then: a status change rewrites TASK.md without new git diffs. */
+  private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -424,7 +426,7 @@ export class TaskService {
     related: Related = NO_RELATED,
   ): Promise<void> {
     const team = briefTeam(task, agents);
-    const md = renderTaskMd(task, team[0], orgName, related, team, await this.teamFacts.facts(task));
+    const md = renderTaskMd(task, team[0], orgName, related, team, await this.readFacts(task));
     const pointer = renderPointer(task);
     await Promise.all([
       writeFile(join(task.folder, "TASK.md"), md),
@@ -1181,14 +1183,25 @@ export class TaskService {
     this.deps.events.emit(["tasks"]);
   }
 
+  /** Fresh team facts, remembered for the task's team. Undefined when they do not apply. */
+  private async readFacts(task: Task): Promise<TeamFacts | undefined> {
+    const facts = await this.teamFacts.facts(task);
+    if (facts === undefined) this.lastFacts.delete(task.id);
+    else this.lastFacts.set(task.id, { team: task.team.join(","), facts });
+    return facts;
+  }
+
+  /** The facts last read for this team, or fresh ones when there are none yet. */
+  private async knownFacts(task: Task): Promise<TeamFacts | undefined> {
+    const known = this.lastFacts.get(task.id);
+    return known?.team === task.team.join(",") ? known.facts : this.readFacts(task);
+  }
+
   /**
-   * Rewrites TASK.md of each task so its Related tasks and Team facts sections are current. `known`
-   * gives the facts of one task that were just read.
+   * Rewrites TASK.md of each task so its Related tasks and Team facts sections are current. Facts
+   * are the last ones read; only a task without any gets a fresh read.
    */
-  private async refreshBriefs(
-    ids: readonly string[],
-    known?: { task: string; facts: TeamFacts },
-  ): Promise<void> {
+  private async refreshBriefs(ids: readonly string[]): Promise<void> {
     const sections = await this.deps.config.sections();
     const stored = await this.deps.agents.list();
     const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
@@ -1196,14 +1209,13 @@ export class TaskService {
       const task = this.deps.store.tasks.get(id);
       if (task === undefined) continue;
       const team = briefTeam(task, agents);
-      const facts = known?.task === id ? known.facts : await this.teamFacts.facts(task);
       const md = renderTaskMd(
         task,
         team[0],
         sections.orgs[task.org ?? ""]?.name,
         this.relatedOf(task),
         team,
-        facts,
+        await this.knownFacts(task),
       );
       // The folder can be gone by hand; the links still stand.
       await writeFile(join(task.folder, "TASK.md"), md).catch(() => undefined);
@@ -1219,9 +1231,9 @@ export class TaskService {
     try {
       const task = this.deps.store.tasks.get(turn.task);
       if (task === undefined || task.team[0] !== turn.agent) return undefined;
-      const facts = await this.teamFacts.facts(task);
+      const facts = await this.readFacts(task);
       if (facts === undefined) return undefined;
-      await this.refreshBriefs([task.id], { task: task.id, facts });
+      await this.refreshBriefs([task.id]);
       const block = wakeFacts(facts);
       const key = `${turn.task}:${turn.agent}`;
       const same = this.wakeSeen.get(key) === block;

@@ -584,11 +584,14 @@ export class RunManager {
         continue;
       }
       if (entry.kind !== "continue") run.compactions = 0;
-      const raw = await this.withFacts(
-        run,
-        entry.kind === "brief" || run.carry !== undefined,
-        this.withProcesses(run, await this.blocksFor(run, entry)),
-      );
+      // Read before `blocksFor` resets it: an owner or handoff prompt on a session that has not
+      // seen the brief starts with "First read TASK.md".
+      const unbriefed = run.needsBrief;
+      const brief =
+        entry.kind === "brief" ||
+        run.carry !== undefined ||
+        (unbriefed && (entry.kind === "owner" || entry.kind === "handoff"));
+      const raw = await this.withFacts(run, brief, this.withProcesses(run, await this.blocksFor(run, entry)));
       if (raw === undefined) continue;
 
       // One read of the settings per turn: before the prompt and after it.
