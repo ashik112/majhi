@@ -48,7 +48,8 @@ export function ChangesPanel({ task, items }: { task: Task; items: readonly Room
         <p className="text-sm text-fg-faint">Files the agent changes show up here.</p>
       )}
       <p className="text-xs text-fg-faint text-pretty">
-        Click a file to see what the agent changed. The Changes tab shows each repo's full diff against its base.
+        Click a file to see what the agent changed. The Changes tab shows each repo's full diff against its
+        base.
       </p>
     </Card>
   );
