@@ -17,6 +17,7 @@ import {
   parseMentions,
   parseTaskText,
   type RoomItem,
+  type RoomSearchHit,
   type ShipOption,
   type Task,
   type TaskId,
@@ -1790,6 +1791,11 @@ export class TaskService {
     this.get(id);
     this.deps.room.flush(id);
     return this.deps.store.room.page(id, limit, beforeSeq);
+  }
+
+  /** Full-text search over every task's room. Items still in the room's write buffer show up once it flushes. */
+  searchRooms(query: string, limit: number, org: string | undefined): RoomSearchHit[] {
+    return this.deps.store.room.search(query, limit, org);
   }
 
   searchFiles(id: string, query: string): Promise<FileHit[]> {

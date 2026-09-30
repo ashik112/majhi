@@ -546,6 +546,34 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;
 
+/** Room item types whose text `room.search` looks through: messages, handoffs, system lines and tool output. */
+export const SEARCHABLE_ITEM_TYPES = ["owner", "agent", "handoff", "system", "tool"] as const;
+
+/** A piece of a search snippet. `hit` marks the words the query matched. */
+export const SearchSnippetPartSchema = z.object({ text: z.string(), hit: z.boolean() });
+
+/** One room item that matches a search, with the task it is in. */
+export const RoomSearchHitSchema = z.object({
+  task: TaskIdSchema,
+  taskTitle: z.string(),
+  org: z.string().nullable(),
+  /** The room item's id, to scroll to it. */
+  item: z.string(),
+  type: z.enum(SEARCHABLE_ITEM_TYPES),
+  /** The agent that wrote it or ran the tool; absent for the owner and for system lines. */
+  agent: IdSchema.optional(),
+  at: z.string(),
+  snippet: z.array(SearchSnippetPartSchema),
+});
+export type RoomSearchHit = z.infer<typeof RoomSearchHitSchema>;
+
+export const RoomSearchInputSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+  /** Only tasks of this org. Default: every task. */
+  org: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(30),
+});
+
 /** Live state of one agent in a task. Not stored as a room item; sent on change. */
 export const AgentLiveSchema = z.object({
   agent: IdSchema,

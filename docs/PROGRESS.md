@@ -223,6 +223,12 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 - **Needs you.** `mr` tasks were already in the Needs you group; their board card now says "MR open, waiting for the merge".
 - **Checked in Chromium** against the e2e server (`e2e/start-server.ts` with the seeded UI home), with the fake `gh` and `glab` from `testing/mrHosts.ts` first on the server's PATH and local bare repos as the hosts. A Globex task on alpha-api (GitHub) and beta-web (GitLab, depends on alpha-api) reaches review; the Changes tab and card show both repos' diffs; "Push and open MRs" opens two MRs in order; "Merge in order" merges alpha-api, then beta-web; the task is done and its worktrees are gone. The check found the card saying "No files changed yet" next to a real diff, and "Start makes one" on a merged task; both are fixed. The driver script is not in the repo. No web tests, per CLAUDE.md.
 
+### Search across rooms (PRV-35)
+
+- **What works.** `room.search` finds messages, handoffs, system lines and tool output in every task, best match first, with the matched words marked. The board search shows the matches in a panel above the columns while it still filters cards by id, title and project. Cmd or Ctrl K opens a palette with task and room matches. Migration 90 builds the FTS5 index `room_search` and fills it from the existing room items; triggers keep it current.
+- **How to try it.** Type a word an agent wrote or a command printed in the board search, or press Cmd K anywhere. Tests: `pnpm exec vitest run apps/server/src/store/store.test.ts`.
+- **Left.** A match opens the task, not the place in the room. The palette has search only, not the commands SPEC 3.2 lists (new task, add account, and so on). Thoughts are not searched. A line still in the room's write buffer is found once it is saved.
+
 ## Phase 3: Teams, rooms and decisions (built, waiting for owner review)
 
 Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c merged). Lead orchestration (PRV-32), background processes (PRV-33) and more agents per task from the task box (PRV-45) are their own tasks. Task ids that open a drawer (PRV-34) are done. The plan below is kept for reference; the result comes first.

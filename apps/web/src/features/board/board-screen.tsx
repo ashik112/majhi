@@ -7,6 +7,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BoardMatches } from "@/features/search/board-matches";
 import { cn } from "@/lib/cn";
 import { formatTokens } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -138,7 +139,7 @@ export function BoardScreen() {
             ]}
           />
           <label htmlFor="task-search" className="sr-only">
-            Search tasks
+            Search tasks, messages and tool output
           </label>
           <span className="relative flex items-center">
             <Search
@@ -150,10 +151,10 @@ export function BoardScreen() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search tasks"
+              placeholder="Search tasks and messages"
               autoComplete="off"
               spellCheck={false}
-              title="Search tasks"
+              title="Search tasks, messages and tool output"
               // Below 1280 px the field is an icon until it has focus or text, so the telemetry keeps its room.
               className={cn(
                 "h-10 cursor-pointer rounded-md border border-line-strong bg-field pr-3 pl-8 text-base text-fg transition-[border-color,width] duration-200 hover:border-line-hover focus:w-[200px] focus:cursor-text focus:border-accent focus:outline-none",
@@ -176,6 +177,8 @@ export function BoardScreen() {
           </Button>
         </div>
       </header>
+
+      <BoardMatches query={query} org={org} />
 
       {tasks.isPending ? (
         <BoardSkeleton />
