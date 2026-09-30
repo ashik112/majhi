@@ -133,6 +133,28 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /** How many items the task's room holds, not counting the ones whose id starts with `except`. */
+  count(task: string, except?: string): number {
+    const row = this.db
+      .select({ n: sql<number>`count(*)` })
+      .from(roomItems)
+      .where(
+        except === undefined
+          ? eq(roomItems.task, task)
+          : and(eq(roomItems.task, task), sql`substr(${roomItems.id}, 1, ${except.length}) != ${except}`),
+      )
+      .get();
+    return row?.n ?? 0;
+  }
+
+  /** Deletes every item of the task's room, and returns how many went. */
+  deleteAll(task: string): number {
+    const before = this.count(task);
+    this.db.delete(roomItems).where(eq(roomItems.task, task)).run();
+    this.lastAt.delete(task);
+    return before;
+  }
+
   private nextAt(task: string): string {
     let last = this.lastAt.get(task);
     if (last === undefined) {

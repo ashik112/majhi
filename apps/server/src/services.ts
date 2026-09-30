@@ -55,6 +55,7 @@ import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
+import { CleanupService } from "./tasks/cleanup.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
@@ -125,6 +126,8 @@ export interface Services {
   mrs: MrService;
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
+  /** Worktrees, merged branches and room logs of tasks done for a while. */
+  cleanup: CleanupService;
   mrPoller: MrPoller;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
@@ -425,6 +428,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tasks,
     mrs,
     cardActions: new CardActions({ tasks, mrs, room }),
+    cleanup: new CleanupService({ store, room, events, projects }),
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     memory,

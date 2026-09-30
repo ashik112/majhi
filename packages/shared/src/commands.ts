@@ -24,6 +24,7 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   DecideRequestSchema,
   DecisionPatchSchema,
@@ -82,6 +83,7 @@ import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
+  CleanupPatchSchema,
   ContextPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
@@ -1025,13 +1027,14 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room or memory settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model). Policy changes use policy.set",
+      "Change context budget, limits, resume, room, memory or cleanup settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, cleanup after_days). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
+      cleanup: CleanupPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },
@@ -1069,6 +1072,22 @@ export const commands = {
     summary: "Open the boss chat, created on first use. With fresh, archive it and start a new conversation",
     input: z.object({ fresh: z.boolean().optional() }),
     output: TaskSchema,
+  },
+
+  // Cleanup of done tasks ------------------------------------------------------
+  "cleanup.preview": {
+    risk: "read",
+    summary:
+      "List done tasks older than N days (default: the cleanup.after_days setting) with the worktrees, merged task branches and room items a cleanup would remove, and what it would skip and why",
+    input: z.object({ days: z.number().int().min(1).max(3650).optional() }),
+    output: CleanupPreviewSchema,
+  },
+  "cleanup.run": {
+    risk: "destructive",
+    summary:
+      "Clean up the listed done tasks: remove clean worktrees, delete merged task branches and delete room items, keeping one note. Checks each task again and never forces. Dirty worktrees and unmerged branches are kept",
+    input: CleanupRunInputSchema,
+    output: CleanupReportSchema,
   },
 
   // Health and updates (no manual work outside majhi) ------------------------

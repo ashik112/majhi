@@ -23,6 +23,7 @@ describe("mergeSettings", () => {
         allow_destructive_rules: false,
       },
       memory: { auto_threshold: 0.4, review_all: false },
+      cleanup: { after_days: 30 },
     });
   });
 
