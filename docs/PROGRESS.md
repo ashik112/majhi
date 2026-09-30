@@ -1,12 +1,12 @@
 # Progress
 
-## Phase 5: Memory (in progress)
+## Phase 5: Memory (built, waiting for owner review)
 
 Branch `task/prv-20-phase-5-memory`, from `main` (Phase 4 merged).
 
 ### Done when
 
-- [ ] A fact learned in one task is approved and then recalled in a later task in the same repo.
+- [x] A fact learned in one task is approved and then recalled in a later task in the same repo. `apps/server/src/memory/integration.test.ts`, "Done when": an agent proposes a fact through `majhi-memory` in a task in `acme-api`, it stays pending and a task started meanwhile does not get it, `memory.approve` makes it active, and the next task in `acme-api` has it under "Memory" in TASK.md. A task in another org gets nothing, in TASK.md or from the tool. The Housekeeper path is covered by `memory/housekeeper.test.ts` (a done task's room is read, its candidates curated).
 
 ### Plan
 
@@ -98,6 +98,37 @@ Works, checked by tests against the fake runtime and the hashed fake embedder (n
 Try the tests: `npx vitest run apps/server/src/memory apps/server/src/config apps/server/src/agents/rename.test.ts` from the repo root.
 
 Not checked here: a real Housekeeper session on a real model (the fake runtime answers in tests), Laya's answers on real candidate facts (the tests play the provider; how sure Laya is on these questions is for the owner to watch in the log), and the Docker image (see Part A).
+
+### Part C status (built)
+
+Server:
+
+- `Extraction.afterClose` skips a task where no agent wrote anything (a promotion task, a task closed without a run), so it spends no tokens. `memory.extract` still reads any room when asked.
+- A promotion task that is closed or removed without its branch reaching the base branch clears the fact's `promoted` and logs an `unpromoted` step, so the fact can be promoted again (`Promotion.release`). A merged one keeps it.
+- `settings.set { memory }` takes `null` for `housekeeper` and `housekeeper_model`, to put back the boss and "Cheapest".
+
+Web (checked in Chromium, 1440x900, against the e2e server with a seeded home: `e2e/memory-seed.ts`, `e2e/shots.memory.ts`, `playwright.memory.config.ts`; screenshots in `media/`):
+
+- **Memory page** (sidebar, `g m`, `/memory`): search over active facts (`memory.search`), tabs All, Global, each org (its project facts included) and Needs review. A row shows the fact, where it holds, its source (task id opens the task drawer, and the agent), how many tasks got it, Pinned and "In AGENTS.md via <task>". Pending facts have Approve and Reject; active ones Pin/Unpin, To AGENTS.md (project facts not yet promoted, with a confirm that a task is made and waits in review) and Forget (confirm). "Recent automatic decisions" lists what curation kept, dropped, retired or merged, with the reason, how sure it was, the provider and Undo. Everything refreshes on the `memory` topic. The sidebar shows "N to review" for pending facts.
+- **Task Memory tab** (next to Room and Changes; shown when the task has facts or is done): the facts this task proposed or the Housekeeper wrote, each with its status and its logged steps, Approve and Reject on pending ones, Undo on steps, and Extract again for a done task or an empty tab.
+- **Hub setup, Memory**: the auto-keep threshold (0.5 to 1, with a line that explains it), Review every fact, the Housekeeper agent (default the boss) and its model (from that agent's account, or Cheapest).
+
+Try it: `pnpm exec playwright test -c playwright.memory.config.ts` starts the e2e server on port 7075 with the seeded home. `e2e/memory-seed.ts` has to run against it first (see the file header); for the screenshots, set `MEMORY_SHOTS` to the folder.
+
+The real embedding model was downloaded and run once on this linux arm64 host (`Xenova/all-MiniLM-L6-v2`, 384 numbers, cosine 0.86 for two sentences about the same thing and -0.06 for unrelated ones). The first load takes about 12 seconds including the download. A search waits up to 30 seconds for it (`EMBED_WAIT_MS`) and then goes on with keywords only; the load continues, and later searches use both.
+
+### Phase 5 result
+
+What works: the memory store and hybrid search, recall into TASK.md at task start, `majhi-memory` for every agent with org isolation, the `memory.*` commands (also through the boss), curation with duplicates, decisions, thresholds and Undo, the Housekeeper after a done task, promotion to AGENTS.md through a task in review, and the Memory screens above.
+
+Left, and known:
+
+- Facts are found by meaning only when the embedding model has loaded; until then keywords rank alone and vectors are filled in later.
+- Promotion adds one bullet per task. Several facts mean several tasks.
+- The "Needs you" count on Health and usage is not changed: pending facts have their own "N to review" on the Memory item, since they are not an account or a check.
+- The decision provider's calibration on real candidate facts is for the owner to watch in the decisions log.
+
+Only the owner can check: the Docker image with `sqlite-vec` and onnxruntime on x64 and arm64 (not built here), and a Housekeeper run on a real model.
 
 ### How I will test it
 
