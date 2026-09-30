@@ -63,6 +63,22 @@ Built in three parts, one after the other in this worktree.
 3. Hub setup, Memory section: threshold, "Review every fact", and the Housekeeper agent and model.
 4. Checked in Chromium against the e2e server, with screenshots.
 
+### Part A status (built)
+
+Works, checked by tests that run against the fake runtime and the hashed fake embedder:
+
+- Store: `~/.majhi/memory/memory.db` with `facts`, `facts_fts`, `facts_vec`, `memory_events` and `task_recalls`, migrations of its own. `sqlite-vec` 0.1.9 loads into better-sqlite3 (run here on linux arm64, and the filtered nearest-neighbour query too).
+- Embedder: `Embedder` interface, the transformers.js one (`Xenova/all-MiniLM-L6-v2`, q8, cache `~/.majhi/cache/models`, unloads after 5 idle minutes) and the hashed fake for tests. When the model does not load or is slow, search uses keywords and vectors are filled in by a later search.
+- Hybrid search: bm25 top 20 and vector top 20 (cosine 0.25 or more), reciprocal rank fusion, active facts in the allowed scopes only, pinned first.
+- TASK.md gets a "Memory" section when the task starts: pinned facts, then the best matches for the brief, cut at about 500 tokens, `use_count` up once per task.
+- `majhi-memory` (`recall`, `propose`, `list_recent`) for every session at `/mcp/memory`. An agent sees and proposes in global, its task's org and that org's projects only. `propose` makes a pending fact and calls `curate(fact)`, which does nothing until Part B.
+- Commands: `memory.search`, `memory.list`, `memory.add`, `memory.approve`, `memory.reject`, `memory.forget` (destructive), `memory.pin`, `memory.events`.
+- Done when, as a test (`memory/integration.test.ts`): a fact proposed in task one in `acme-api` is approved with `memory.approve` and is in task two's TASK.md in `acme-api`, and not in a task in another org.
+
+Try the tests: `npx vitest run apps/server/src/memory` from the repo root.
+
+Not checked here: the Docker image build and the x64 libraries (no Docker in this environment), and the real model download (the tests use the fake embedder). The `Dockerfile` installs `sqlite-vec` and `@huggingface/transformers` with npm for the image's CPU and loads `sqlite-vec` once as a build check.
+
 ### How I will test it
 
 - Unit tests:
