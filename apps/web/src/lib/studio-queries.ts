@@ -208,3 +208,19 @@ export function useSetBoss() {
     onSuccess: () => refresh(client, queryKeys.agents, queryKeys.config),
   });
 }
+
+/** Names and references of the saved secrets. Values never reach the browser. */
+export function useSecrets() {
+  return useQuery({
+    queryKey: queryKeys.secrets,
+    queryFn: () => cmd("secrets.list", {}),
+  });
+}
+
+export function useSaveSecret() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"secrets.save">, ApiRequestError, CommandInput<"secrets.save">>({
+    mutationFn: (input) => cmd("secrets.save", input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.secrets }),
+  });
+}
