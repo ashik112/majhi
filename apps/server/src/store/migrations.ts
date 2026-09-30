@@ -200,6 +200,17 @@ ALTER TABLE task_repos ADD COLUMN stack_branch TEXT;
 ALTER TABLE task_repos ADD COLUMN stack_commit TEXT;
 `,
   },
+  {
+    // Decisions kept for learning: the whole request and what the provider got (JSON), what majhi
+    // did with the answer, and the owner's correction. Older rows have none of them.
+    id: 60,
+    name: "decision requests, outcomes and corrections",
+    sql: `
+ALTER TABLE decisions ADD COLUMN detail TEXT;
+ALTER TABLE decisions ADD COLUMN outcome TEXT;
+ALTER TABLE decisions ADD COLUMN correction TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

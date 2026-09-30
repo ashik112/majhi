@@ -897,9 +897,24 @@ export const commands = {
   },
   "decisions.recent": {
     risk: "read",
-    summary: "Recent decisions, newest first",
-    input: z.object({ limit: z.number().int().min(1).max(200).default(50) }),
+    summary:
+      "Recent decisions, newest first, with the full request, every probability and the outcome. Page with offset",
+    input: z.object({
+      limit: z.number().int().min(1).max(200).default(50),
+      offset: z.number().int().min(0).default(0),
+    }),
     output: z.array(DecisionRecordSchema),
+  },
+  "decisions.correct": {
+    risk: "change",
+    summary:
+      "Record the owner's correction of a decision (Wrong pick): the right option, tier or model, and an optional note. Kept for learning; changes nothing else",
+    input: z.object({
+      id: z.string().min(1).max(40),
+      right: z.string().trim().min(1).max(100),
+      note: z.string().trim().max(500).optional(),
+    }),
+    output: DecisionRecordSchema,
   },
   "decisions.status": {
     risk: "read",
@@ -914,7 +929,7 @@ export const commands = {
   "decisions.set": {
     risk: "change",
     summary:
-      "Change the provider order, the stand-in agent, Jev's key, the confidence floor or the per-run limit",
+      "Change the provider order, the stand-in agent, Jev's key, when an answer counts (min_lift, min_margin), the role tiers or the per-run limit",
     input: DecisionPatchSchema,
     output: DecisionSettingsSchema,
   },

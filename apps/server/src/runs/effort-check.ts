@@ -1,4 +1,4 @@
-import type { DecideRequest, OptionValue } from "@majhi/shared";
+import type { DecideRequestInput, OptionValue } from "@majhi/shared";
 import type { Decisions } from "../decisions/api.ts";
 
 /**
@@ -6,18 +6,29 @@ import type { Decisions } from "../decisions/api.ts";
  * agent's own sub-agents duplicates the team, hides work from the room and burns tokens. An `auto`
  * pick and the effort tiers must not land on one. The decision provider judges each option from the
  * CLI's own description, so no effort name is in the code. An effort set by hand is never checked.
+ *
+ * Each option is its own question, with only that option in the state, as a choice between two
+ * described neutral options asked in both orders. On Laya this told Codex's delegating effort apart
+ * from every plain one; one choice over all the options, or all of them in one state, did not.
  */
 
-/** Most questions one call takes. */
-const CHUNK = 8;
-
-/** Answers kept for the life of the server, by tool, effort id and description. Only confident ones. */
-const answered = new Map<string, boolean>();
-
-const keyOf = (tool: string, o: OptionValue) => `${tool}\0${o.id}\0${o.description?.trim() ?? ""}`;
-
-export function delegationQuestion(id: string): string {
-  return `Does the effort option "${id}" change how the agent works, for example by handing work to its own sub-agents, rather than only how hard it thinks?`;
+/** The question for one effort option. */
+export function delegationQuestion(o: OptionValue): DecideRequestInput {
+  return {
+    state: { option: o.id, description: o.description?.trim() ?? "" },
+    questions: {
+      delegates: {
+        type: "choice",
+        instructions: "What does the effort option do?",
+        options: [
+          { key: "A", description: "hands work to sub-agents, delegates or splits the work across agents" },
+          { key: "B", description: "only changes how much or how fast the agent thinks" },
+        ],
+        abstain: false,
+        orders: "reversed",
+      },
+    },
+  };
 }
 
 export interface EffortCheck {
@@ -27,51 +38,48 @@ export interface EffortCheck {
   unchecked: boolean;
 }
 
-/** Forgets the answers. For tests. */
-export function clearEffortChecks(): void {
-  answered.clear();
-}
+const keyOf = (o: OptionValue) => `${o.id}\0${o.description?.trim() ?? ""}`;
 
 /**
  * Judges the effort options that have a description (an option with none gives nothing to judge, so
- * it stays). An answer counts only at or above `minConfidence`, yes or no: a yes flags the option, a no
- * clears it, and both are cached, so a session start asks at most once. A weaker answer, or none,
- * leaves the option in, sets `unchecked` and is not cached, so the next start asks again.
+ * it stays). An answer counts only when its gate accepts it, either way: A flags the option, B
+ * clears it. Answers go into `known`, which the caller keeps for one session start at most, so a
+ * wrong answer never outlives it. A weaker answer, or none, leaves the option in and sets `unchecked`.
  */
 export async function checkEfforts(input: {
   decisions: Decisions | undefined;
-  tool: string;
   options: readonly OptionValue[];
-  minConfidence: number;
+  known: Map<string, boolean>;
   task: string;
   agent: string;
 }): Promise<EffortCheck> {
-  const { tool, minConfidence } = input;
+  const { known } = input;
   const judged = input.options.filter((o) => o.id !== "default" && o.description?.trim());
-  const todo = judged.filter((o) => !answered.has(keyOf(tool, o)));
   let unchecked = false;
-  for (let i = 0; i < todo.length; i += CHUNK) {
-    const chunk = todo.slice(i, i + CHUNK);
-    const request: DecideRequest = {
-      state: chunk.map((o) => `${o.id}: ${o.description?.trim()}`).join("\n"),
-      questions: Object.fromEntries(
-        chunk.map((o, n) => [`e${n}`, { type: "noul" as const, instructions: delegationQuestion(o.id) }]),
-      ),
-    };
+  for (const o of judged) {
+    if (known.has(keyOf(o))) continue;
     const result = await input.decisions
-      ?.decide(request, { use: "model-pick", task: input.task, agent: input.agent })
+      ?.decide(delegationQuestion(o), { use: "model-pick", task: input.task, agent: input.agent })
       .catch(() => undefined);
-    chunk.forEach((o, n) => {
-      const a = result?.answers[`e${n}`];
-      // The rules provider answers every yes/no with a weak "no": a guess is not a check, so an answer
-      // counts, and is kept, only when it reaches the floor, yes or no.
-      if (a === undefined || typeof a.value !== "boolean" || a.confidence < minConfidence) {
-        unchecked = true;
-        return;
-      }
-      answered.set(keyOf(tool, o), a.value);
-    });
+    const a = result?.answers.delegates;
+    // An answer the gate does not take, a guess from the rules among them, is not a check.
+    const counted = a !== undefined && (a.value === "A" || a.value === "B") && a.gate?.accepted === true;
+    if (result !== undefined)
+      input.decisions?.outcome(result.id, {
+        text: !counted
+          ? `Not sure (${a?.gate?.reason ?? "no answer"}), so ${o.id} was left in.`
+          : a.value === "A"
+            ? `${o.id} hands work to sub-agents, so it was left out.`
+            : `${o.id} only changes how hard the agent thinks, so it was kept.`,
+        fellBack: !counted,
+        choices: ["hands work to sub-agents", "only changes how hard it thinks"],
+      });
+    if (!counted) {
+      unchecked = true;
+      continue;
+    }
+    known.set(keyOf(o), a.value === "A");
   }
-  const flagged = new Set(judged.filter((o) => answered.get(keyOf(tool, o)) === true).map((o) => o.id));
+  const flagged = new Set(judged.filter((o) => known.get(keyOf(o)) === true).map((o) => o.id));
   return { flagged, unchecked };
 }

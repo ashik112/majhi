@@ -1,6 +1,14 @@
 import { parseMentions } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { firstTurn, type Member, pipelineStages, planTurn, type TurnEnd, verdictOf } from "./coordinate.ts";
+import {
+  asksOwner,
+  firstTurn,
+  type Member,
+  pipelineStages,
+  planTurn,
+  type TurnEnd,
+  verdictOf,
+} from "./coordinate.ts";
 import { WorktreeLocks } from "./locks.ts";
 
 const team: Member[] = [
@@ -149,6 +157,22 @@ describe("verdictOf", () => {
     expect(verdictOf("I cannot approve this yet, the handler leaks")).toBe("changes");
     expect(verdictOf("Not approved: see below")).toBe("changes");
     expect(verdictOf("I looked at the handler.")).toBeUndefined();
+  });
+});
+
+describe("asksOwner", () => {
+  it("counts a question or a request for a decision that is not for another agent", () => {
+    expect(asksOwner("The branch is ready. Should I open the MR, or wait for you to check it?")).toBe(true);
+    expect(asksOwner("Done with the parser. Please confirm the new flag name.")).toBe(true);
+    expect(asksOwner("@owner the migration is ready")).toBe(true);
+    expect(asksOwner("Your call: keep the old endpoint or drop it.")).toBe(true);
+  });
+
+  it("does not count a status, a question to an agent, or a question in code or a quote", () => {
+    expect(asksOwner("All done. The fix is merged into the task branch and the tests pass.")).toBe(false);
+    expect(asksOwner("@acme-builder can you add the missing null check?")).toBe(false);
+    expect(asksOwner("Fixed it.\n```\nif (x?.y) return\n```\nThe `a ? b : c` stays.")).toBe(false);
+    expect(asksOwner("> Why does it fail?\nIt failed on a missing import; fixed.")).toBe(false);
   });
 });
 

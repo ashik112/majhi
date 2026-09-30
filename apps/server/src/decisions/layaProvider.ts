@@ -1,9 +1,8 @@
 import type { DecideRequest, LayaStatus } from "@majhi/shared";
 import type { HostLink } from "../host/link.ts";
 import type { LayaDocker } from "./layaDocker.ts";
-import { fromLayaAnswer, toLayaQuestion } from "./layaMap.ts";
+import { fromLayaCall, toLayaCall } from "./layaMap.ts";
 import type { DecisionProvider } from "./providers.ts";
-import { trimState } from "./trim.ts";
 
 /** The first question loads the model, which takes a few seconds. */
 const DECIDE_TIMEOUT_MS = 20_000;
@@ -82,18 +81,20 @@ export class LayaProvider implements DecisionProvider {
       return this.docker.decide(request);
     const link = this.host;
     if (link === undefined) throw new Error("No host helper");
-    const { text, trimmed } = trimState(request.state);
-    const questions = Object.fromEntries(
-      Object.entries(request.questions).map(([key, q]) => [key, toLayaQuestion(q)]),
+    const call = toLayaCall(request);
+    // Fields go as text: Laya renders a dict as JSON anyway, and an older helper takes only text.
+    const result = await link.call(
+      "decide",
+      { state: call.text, questions: call.questions },
+      DECIDE_TIMEOUT_MS,
     );
-    const result = await link.call("decide", { state: text, questions }, DECIDE_TIMEOUT_MS);
-    const answers = Object.fromEntries(
-      Object.entries(request.questions).map(([key, q]) => {
-        const raw = result.answers[key];
-        if (raw === undefined) throw new Error(`Laya gave no answer for "${key}".`);
-        return [key, fromLayaAnswer(q, raw)];
-      }),
-    );
-    return { answers, estimated: false, trimmed };
+    const version = link.status().info?.laya?.version;
+    return {
+      answers: fromLayaCall(call, request, result.answers),
+      estimated: false,
+      trimmed: call.trimmed,
+      sent: { state: call.state, questions: call.questions },
+      ...(version === undefined ? {} : { version: `laya-mlx ${version}` }),
+    };
   }
 }

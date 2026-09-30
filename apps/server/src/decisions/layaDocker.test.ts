@@ -1,3 +1,4 @@
+import { DecideRequestSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { LayaDocker } from "./layaDocker.ts";
 import { LayaProvider } from "./layaProvider.ts";
@@ -21,18 +22,19 @@ function fakes(options: { built?: boolean } = {}) {
     if (path === "/health")
       return Response.json({ status: "ok", loaded: posts.length > 0 ? ["english"] : [] });
     if (path === "/v1/systemone") {
-      posts.push(JSON.parse(String(init?.body)));
+      const body = JSON.parse(String(init?.body));
+      posts.push(body);
+      const team = { "one agent": 0.2, "a builder and a reviewer": 0.8 };
+      const owner = { A: 0.9, B: 0.1 };
       return Response.json({
         model: "english",
-        answers: {
-          team: {
-            type: "choice",
-            choice: "a builder and a reviewer",
-            probabilities: { "one agent": 0.2, "a builder and a reviewer": 0.8 },
-            confidence: 0.3,
-          },
-          owner: { type: "noul", noul: 0.9, confidence: 0.9 },
-        },
+        answers: Object.fromEntries(
+          Object.keys(body.questions).map((id) => {
+            const p = id.startsWith("team") ? team : owner;
+            const choice = Object.entries(p).sort((a, b) => b[1] - a[1])[0]?.[0];
+            return [id, { type: "choice", choice, probabilities: p, confidence: 0.3 }];
+          }),
+        ),
       });
     }
     return new Response("not found", { status: 404 });
@@ -48,17 +50,18 @@ function fakes(options: { built?: boolean } = {}) {
   return { laya, docker, posts, isRunning: () => running };
 }
 
-const request = {
+const request = DecideRequestSchema.parse({
   state: "Add a health endpoint with a test",
   questions: {
     team: {
-      type: "choice" as const,
+      type: "choice",
       instructions: "Which team?",
       options: ["one agent", "a builder and a reviewer"],
+      abstain: false,
     },
-    owner: { type: "noul" as const, instructions: "Needs the owner?" },
+    owner: { type: "noul", instructions: "Needs the owner?" },
   },
-};
+});
 
 describe("Laya in Docker", () => {
   it("starts the container on the first question, answers through /v1/systemone and stops when idle", async () => {
@@ -73,7 +76,8 @@ describe("Laya in Docker", () => {
       model: "english",
       questions: {
         team: { type: "choice", criteria: ["one agent", "a builder and a reviewer"] },
-        owner: { type: "noul" },
+        "owner#0": { type: "choice" },
+        "owner#1": { type: "choice" },
       },
     });
     expect(out.answers.team).toMatchObject({ value: "a builder and a reviewer", confidence: 0.8 });

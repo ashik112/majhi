@@ -66,16 +66,21 @@ const ask = {
   },
 };
 
-const layaAnswers = () => ({
-  answers: {
-    model: {
-      type: "choice",
-      choice: "haiku",
-      confidence: 0.1,
-      probabilities: { haiku: 0.8, sonnet: 0.15, opus: 0.05 },
-    },
-    risky: { type: "noul", noul: 0.1, confidence: 0.9 },
-  },
+/** Plays Laya: `model` picks haiku; the yes/no, asked as A and B in both orders, says B (false). */
+const layaAnswers = (job: Extract<HostJob, { method: "decide" }>) => ({
+  answers: Object.fromEntries(
+    Object.keys(job.params.questions).map((id) => [
+      id,
+      id === "model"
+        ? {
+            type: "choice",
+            choice: "haiku",
+            confidence: 0.1,
+            probabilities: { haiku: 0.8, sonnet: 0.1, opus: 0.05, none: 0.05 },
+          }
+        : { type: "choice", choice: "B", confidence: 0.4, probabilities: { A: 0.1, B: 0.9 } },
+    ]),
+  ),
   loadMs: 0,
   predictMs: 12,
 });
@@ -115,98 +120,65 @@ describe("decisions.ask", () => {
   });
 });
 
-describe("pickModel", () => {
+describe("rateTask", () => {
   const request = {
     task: "ACM-1",
     agent: "acme-builder",
     role: "Builder" as const,
-    context: "Fix a typo",
-    models: [
-      { id: "haiku-1", label: "haiku-1: cheapest and fastest", rank: "cheapest and fastest" },
-      { id: "opus-1", label: "opus-1: most capable", rank: "most capable" },
-    ],
-    efforts: [
-      { id: "low", label: "low" },
-      { id: "high", label: "high" },
-    ],
+    title: "Fix a typo",
+    brief: "Fix a typo\nThe readme says recieve.",
+    kind: "code" as const,
+    repos: ["acme-web"],
   };
-  const answers = (model: number, effort: number) => () => ({
-    answers: {
-      model: {
-        type: "choice",
-        choice: "haiku-1: cheapest and fastest",
-        confidence: 0,
-        probabilities: { "haiku-1: cheapest and fastest": model, "opus-1: most capable": 1 - model },
-      },
-      effort: {
-        type: "choice",
-        choice: "low",
-        confidence: 0,
-        probabilities: { low: effort, high: 1 - effort },
-      },
-    },
-    loadMs: 0,
-    predictMs: 1,
-  });
+  const answers = (level: string, p: number) => (job: Extract<HostJob, { method: "decide" }>) => {
+    const keys = Object.keys(job.params.questions);
+    const rest = (1 - p) / 3;
+    return {
+      answers: Object.fromEntries(
+        keys.map((k) => [
+          k,
+          {
+            type: "choice",
+            choice: level,
+            confidence: 0,
+            probabilities: Object.fromEntries(
+              ["trivial", "small", "medium", "large"].map((l) => [l, l === level ? p : rest]),
+            ),
+          },
+        ]),
+      ),
+      loadMs: 0,
+      predictMs: 1,
+    };
+  };
 
-  it("returns each answer as an id with its confidence, low ones too", async () => {
-    const { w } = await world({ status: READY, decide: answers(0.9, 0.3) });
-    const pick = await w.h.majhi.services.decisions.pickModel(request);
-    expect(pick).toMatchObject({
-      model: { id: "haiku-1", confidence: 0.9 },
-      effort: { id: "low", confidence: 0.3 },
+  it("asks about the task in named fields, never about models, the agent's id or its instructions", async () => {
+    const { w, jobs } = await world({ status: READY, decide: answers("small", 0.7) });
+    const rating = await w.h.majhi.services.decisions.rateTask(request);
+    expect(rating).toMatchObject({
+      level: "small",
+      confidence: 0.7,
+      counted: true,
       provider: "laya",
       by: "Laya",
     });
-  });
-
-  it("asks only the lists with two options", async () => {
-    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
-    const pick = await w.h.majhi.services.decisions.pickModel({ ...request, efforts: [] });
-    expect(pick?.model?.id).toBe("haiku-1");
-    expect(pick?.effort).toBeUndefined();
-    expect(
-      await w.h.majhi.services.decisions.pickModel({ ...request, models: [], efforts: [] }),
-    ).toBeUndefined();
-  });
-
-  it("asks for the ranking in the same call and maps the two answers back to ids", async () => {
-    const plain = [
-      { id: "haiku-1", label: "haiku-1: Quick" },
-      { id: "opus-1", label: "opus-1: Thorough" },
-    ];
-    const choice = (label: string, other: string) => ({
-      type: "choice",
-      choice: label,
-      confidence: 0,
-      probabilities: { [label]: 0.5, [other]: 0.5 },
+    const job = jobs.find((j) => j.method === "decide");
+    const state = job?.method === "decide" ? job.params.state : "";
+    expect(JSON.parse(state)).toEqual({
+      task: "Fix a typo",
+      description: "The readme says recieve.",
+      kind: "code",
+      repos: "acme-web",
+      role: "Builder, who writes the code",
     });
-    const ranking = () => ({
-      answers: {
-        model: choice("haiku-1: Quick", "opus-1: Thorough"),
-        effort: choice("low", "high"),
-        capable: choice("opus-1: Thorough", "haiku-1: Quick"),
-        cheapest: choice("haiku-1: Quick", "opus-1: Thorough"),
-      },
-      loadMs: 0,
-      predictMs: 1,
-    });
-    const { w } = await world({ status: READY, decide: ranking });
-    const pick = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain, rank: plain });
-    expect(pick).toMatchObject({ capable: "opus-1", cheapest: "haiku-1" });
-    const [logged] = w.h.majhi.services.decisions.recent(1);
-    expect(logged?.summary).toContain("capable: Which of these models is the most capable?");
-    expect(logged?.summary).toContain("cheapest: Which of these models is the cheapest and fastest?");
-    // Not asked without `rank`.
-    const none = await w.h.majhi.services.decisions.pickModel({ ...request, models: plain });
-    expect(none?.capable).toBeUndefined();
+    expect(state).not.toContain("acme-builder");
   });
 
-  it("puts the role in the question", async () => {
-    const { w } = await world({ status: READY, decide: answers(0.9, 0.8) });
-    await w.h.majhi.services.decisions.pickModel({ ...request, role: "Lead" });
-    const [logged] = w.h.majhi.services.decisions.recent(1);
-    expect(logged?.summary).toContain("model: Which model fits a Lead who plans and reviews the work?");
+  it("returns a weak answer as not counted, with why", async () => {
+    const { w } = await world({ status: READY, decide: answers("large", 0.3) });
+    const rating = await w.h.majhi.services.decisions.rateTask(request);
+    expect(rating).toMatchObject({ level: "large", counted: false });
+    expect(rating?.why).toBe("0.12 over chance, under 0.20");
   });
 });
 

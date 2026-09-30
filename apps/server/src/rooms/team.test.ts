@@ -385,11 +385,12 @@ describe("the default team", () => {
       standIn?.(session, start);
       if (!start.scratch) return;
       session.script = async (turn) => {
-        const options = [...turn.text.matchAll(/"(a lead who plans[^"]*)"/g)].map((m) => m[1]);
+        // The options are keyed: `full` is described as a lead who plans, with a builder and a reviewer.
+        const full = /"full": "a lead who plans/.test(turn.text);
         turn.emit({
           type: "text",
           messageId: "d",
-          text: JSON.stringify({ team: { value: options[0], confidence: 0.9 } }),
+          text: JSON.stringify({ team: { value: full ? "full" : "none", confidence: 0.9 } }),
         });
         return "end_turn";
       };

@@ -13,9 +13,16 @@ import type { DecideTokens } from "./tokens.ts";
 const TOOL = {
   name: "decide",
   description:
-    "Ask a fast decision model typed questions about some text and get answers with probabilities. " +
-    "Question types: choice (pick one of 2 to 20 options), score (an integer from min to max), noul (is the statement in instructions true). " +
-    "Use it for small classification decisions, not for writing or reasoning. The state is trimmed to about 500 tokens.",
+    "Ask a small, fast classifier typed questions about some text and get answers with probabilities. " +
+    "It reads, it does not reason or write: use it for quick classification, not for judgment calls that need thought. " +
+    "Best results: give the state as named fields ({ message, file }) and refer to them by name in the question; " +
+    "give each choice option a short key and a description ({ key: 'small', description: 'a one-file change' }); " +
+    "keep to 2 to 8 options; never use yes or no as keys. For a yes/no question use a choice with keys A and B, " +
+    "each described, and orders 'reversed' (asked in both orders, averaged). " +
+    "A choice gets the option 'none: none of these fits' unless abstain is false; an answer of none means it could not tell. " +
+    "Each answer has a gate: act on it only when gate.accepted is true, else decide yourself. " +
+    "Question types: choice, score (an integer from min to max), noul (true or false, with criteria describing each). " +
+    "The state and question share a window of about 500 tokens; `trimmed` says when the state was cut.",
   inputSchema: z.toJSONSchema(DecideRequestSchema, { io: "input", unrepresentable: "any" }),
 };
 

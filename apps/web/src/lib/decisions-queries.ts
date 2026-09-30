@@ -23,10 +23,23 @@ export function useDecisionsStatus() {
   });
 }
 
-export function useRecentDecisions(limit = 5) {
-  return useQuery<CommandOutput<"decisions.recent">, ApiRequestError>({
-    queryKey: [...keys.recent, limit],
-    queryFn: () => cmd("decisions.recent", { limit }),
+/** One page of the log, newest first. Asks for one more than `limit` to know whether there is an older page. */
+export function useRecentDecisions(limit = 10, offset = 0) {
+  return useQuery<{ records: CommandOutput<"decisions.recent">; more: boolean }, ApiRequestError>({
+    queryKey: [...keys.recent, limit, offset],
+    queryFn: async () => {
+      const rows = await cmd("decisions.recent", { limit: limit + 1, offset });
+      return { records: rows.slice(0, limit), more: rows.length > limit };
+    },
+  });
+}
+
+/** The owner's "Wrong pick" on a decision. */
+export function useCorrectDecision() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"decisions.correct">, ApiRequestError, CommandInput<"decisions.correct">>({
+    mutationFn: (input) => cmd("decisions.correct", input, { reason: "Owner corrected a decision" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.recent }),
   });
 }
 

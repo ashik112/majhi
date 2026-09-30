@@ -959,7 +959,6 @@ export class RunManager {
           decisions: deps.decisions,
           session,
           fm,
-          instructions: agent.instructions,
           task,
           settings: await readDecisionSettings(deps.config.file),
           prices,
@@ -967,7 +966,6 @@ export class RunManager {
             accountHome(deps.majhiHome, fm.account),
             getTool(agent.account.tool).modelCatalog,
           ),
-          tool: agent.account.tool,
           hidden: agent.account.hidden_models ?? [],
           orgTiers: task.org === undefined ? undefined : sections.orgs[task.org]?.tiers,
         });

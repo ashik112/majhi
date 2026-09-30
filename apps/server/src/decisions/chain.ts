@@ -1,8 +1,9 @@
 import type { DecideRequest, DecisionResult, ProviderId } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
-import type { DecisionProvider } from "./providers.ts";
+import type { DecisionProvider, ProviderOutcome } from "./providers.ts";
 
-export type ChainResult = Omit<DecisionResult, "id" | "durationMs">;
+export type ChainResult = Omit<DecisionResult, "id" | "durationMs"> &
+  Pick<ProviderOutcome, "sent" | "version">;
 
 /**
  * Tries the providers in `order`. A provider that is unavailable or fails is recorded in
@@ -29,6 +30,8 @@ export async function runChain(
         skipped,
         trimmed: outcome.trimmed,
         estimated: outcome.estimated,
+        ...(outcome.sent === undefined ? {} : { sent: outcome.sent }),
+        ...(outcome.version === undefined ? {} : { version: outcome.version }),
       };
     } catch (err) {
       skipped.push({ provider: id, reason: errorMessage(err) });

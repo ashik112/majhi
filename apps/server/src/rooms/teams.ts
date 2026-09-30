@@ -3,7 +3,7 @@ import {
   type AgentFrontmatter,
   type CoordinationMode,
   canWorkIn,
-  type DecideRequest,
+  type DecideRequestInput,
   type DecisionResult,
   MODE_LABELS,
   type Role,
@@ -22,9 +22,6 @@ export interface TeamOption {
 
 /** Account states where a new run would fail at once. */
 const UNUSABLE: ReadonlySet<AccountStatus> = new Set(["needs-login", "at-limit", "unreachable"]);
-
-/** Below this the pick is dropped and the rules' team is used (Laya spreads probability, like model picks). */
-export const TEAM_MIN_CONFIDENCE = 0.4;
 
 /**
  * The teams a new task can get from the agents that may work in its org (SPEC 5.3, Phase 3):
@@ -84,16 +81,20 @@ function who(agents: readonly AgentFrontmatter[], ids: readonly string[]): strin
 export function teamQuestion(
   brief: { title: string; text: string; kind: TaskKind; repos: readonly string[] },
   options: readonly TeamOption[],
-): DecideRequest {
-  const repos = brief.repos.length === 0 ? "no repos" : `repos: ${brief.repos.join(", ")}`;
+): DecideRequestInput {
   return {
-    state: `Task (${brief.kind}, ${repos}): ${brief.text}`,
+    state: {
+      task: brief.text,
+      kind: brief.kind,
+      repos: brief.repos.length === 0 ? "none" : brief.repos.join(", "),
+    },
     questions: {
       team: {
         type: "choice",
         instructions:
-          "Which team should do this task? A small, clear change needs one agent. A feature or a fix that should be checked needs a builder and a reviewer. Large or many-part work needs a lead to plan and split it.",
-        options: options.map((o) => o.label),
+          "Which team should do the task? A small, clear change needs one agent. A feature or a fix that should be checked needs a builder and a reviewer. Large or many-part work needs a lead to plan and split it.",
+        options: options.map((o) => ({ key: o.key, description: o.label })),
+        orders: "shifted",
       },
     },
   };
@@ -125,13 +126,8 @@ export function chooseTeam(
   const fallback = options[0];
   if (fallback === undefined) return undefined;
   const answer = result?.answers.team;
-  const picked = options.find((o) => o.label === answer?.value);
-  if (
-    result !== undefined &&
-    answer !== undefined &&
-    picked !== undefined &&
-    answer.confidence >= TEAM_MIN_CONFIDENCE
-  ) {
+  const picked = options.find((o) => o.key === answer?.value);
+  if (result !== undefined && answer?.gate?.accepted === true && picked !== undefined) {
     const name = PROVIDER_NAMES[result.provider] ?? result.provider;
     return {
       option: picked,
@@ -142,9 +138,11 @@ export function chooseTeam(
   const why =
     result === undefined
       ? "no decision provider answered"
-      : answer === undefined || picked === undefined
+      : answer === undefined
         ? "the decision provider gave no usable answer"
-        : `the decision provider was not sure (${answer.confidence.toFixed(2)})`;
+        : answer.gate?.accepted !== true
+          ? `the decision provider was not sure (${answer.gate?.reason ?? answer.confidence.toFixed(2)})`
+          : "the decision provider gave no usable answer";
   return {
     option: fallback,
     line: `Team: ${fallback.label}. ${MODE_LABELS[fallback.mode]}. Picked by the rules: ${why}.`,

@@ -20,11 +20,11 @@ import {
   useAskDecision,
   useDecisionsStatus,
   useInstallLaya,
-  useRecentDecisions,
   useSaveJevKey,
   useSetDecisions,
 } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
+import { RecentDecisions } from "./recent-decisions";
 
 const NAME: Record<ProviderId, string> = {
   laya: "Laya",
@@ -51,7 +51,7 @@ export function DecisionsPanel() {
           <Picks status={status.data} />
           <JevKey status={status.data} />
           <AskBox />
-          <Recent />
+          <RecentDecisions />
         </div>
       )}
     </section>
@@ -153,13 +153,24 @@ function Providers({ status }: { status: DecisionsStatus }) {
   );
 }
 
-/** When a model or effort pick is not confident enough, and what each role falls back to. */
+const BAR: Record<"min_lift" | "min_margin", { label: string; hint: string }> = {
+  min_lift: {
+    label: "Least lift over chance",
+    hint: "0 to 1. 0 is a random pick, 1 is certain. The same bar for 2 options or 20.",
+  },
+  min_margin: {
+    label: "Least lead over the next option",
+    hint: "0 to 1. How far the answer must lead the runner-up.",
+  },
+};
+
+/** When an answer counts, and what each role falls back to when it does not. */
 function Picks({ status }: { status: DecisionsStatus }) {
   const toast = useToast();
   const save = useSetDecisions();
   const { settings } = status;
   const failed = (e: unknown) => toast("Could not save", { detail: describeError(e), tone: "error" });
-  const setFloor = (key: "model_floor" | "effort_floor", text: string) => {
+  const setBar = (key: "min_lift" | "min_margin", text: string) => {
     const value = Number(text);
     if (text.trim() === "" || !Number.isFinite(value) || value < 0 || value > 1) return;
     if (value !== settings[key]) save.mutate({ [key]: value }, { onError: failed });
@@ -168,14 +179,13 @@ function Picks({ status }: { status: DecisionsStatus }) {
     save.mutate({ tiers: { ...settings.tiers, [role]: tier } }, { onError: failed });
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-base font-semibold">Model and effort picks</h3>
+      <h3 className="text-base font-semibold">When an answer counts</h3>
+      <p className="m-0 text-sm text-fg-faint">
+        An answer that falls short, or says none of the options fits, is not used: the fallback is.
+      </p>
       <div className="grid grid-cols-2 gap-2">
-        {(["model_floor", "effort_floor"] as const).map((key) => (
-          <Field
-            key={`${key}-${settings[key]}`}
-            label={key === "model_floor" ? "Model confidence floor" : "Effort confidence floor"}
-            hint="0 to 1. Below it, the role's fallback below is used."
-          >
+        {(["min_lift", "min_margin"] as const).map((key) => (
+          <Field key={`${key}-${settings[key]}`} label={BAR[key].label} hint={BAR[key].hint}>
             {(p) => (
               <Input
                 {...p}
@@ -184,7 +194,7 @@ function Picks({ status }: { status: DecisionsStatus }) {
                 max={1}
                 step={0.05}
                 defaultValue={settings[key]}
-                onBlur={(e) => setFloor(key, e.target.value)}
+                onBlur={(e) => setBar(key, e.target.value)}
               />
             )}
           </Field>
@@ -238,8 +248,9 @@ function Picks({ status }: { status: DecisionsStatus }) {
         </tbody>
       </table>
       <p className="m-0 text-sm text-fg-faint">
-        Model fallbacks rank by the price table, so models without a price keep the CLI default. Orgs and
-        agents can override a role.
+        For an auto agent, the task's size moves its role's tiers one step: down for trivial or small work, up
+        for large work. Models rank by the price table, else by the CLI's order. Orgs and agents can override
+        a role.
       </p>
     </div>
   );
@@ -360,35 +371,13 @@ function AskBox() {
             <strong className="text-fg">{String(answer.value)}</strong>, confidence{" "}
             {answer.confidence.toFixed(2)}, {NAME[ask.data.provider]}
             {ask.data.estimated ? " (estimated)" : ""}, {ask.data.durationMs} ms
+            {answer.gate !== undefined &&
+              `. ${answer.gate.accepted ? "Counts" : "Does not count"}: ${answer.gate.reason}`}
             {ask.data.skipped.length > 0 &&
               `. Skipped: ${ask.data.skipped.map((s) => `${NAME[s.provider]} (${s.reason})`).join("; ")}`}
           </p>
         )}
       </div>
     </form>
-  );
-}
-
-function Recent() {
-  const recent = useRecentDecisions();
-  if (!recent.data || recent.data.length === 0)
-    return <p className="m-0 text-sm text-fg-faint">No decisions yet.</p>;
-  return (
-    <div className="flex flex-col gap-1">
-      <h3 className="text-base font-semibold">Recent decisions</h3>
-      <ul aria-label="Recent decisions" className="m-0 flex list-none flex-col gap-1 p-0">
-        {recent.data.map((d) => (
-          <li key={d.id} className="flex gap-2 text-sm text-fg-muted">
-            <span className="w-[90px] shrink-0">{NAME[d.provider]}</span>
-            <span className="min-w-0 flex-1 truncate font-mono">
-              {Object.entries(d.answers)
-                .map(([k, a]) => `${k}=${String(a.value)}`)
-                .join(" ")}
-            </span>
-            <span className="shrink-0 text-fg-faint">{d.use}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

@@ -1,29 +1,30 @@
 import { randomUUID } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
-import type {
-  CommandMeta,
-  DecideRequest,
-  DecisionPatchSchema,
-  DecisionRecord,
-  DecisionResult,
-  DecisionSettings,
-  LayaStatus,
-  ProviderId,
+import {
+  type Answer,
+  type CommandMeta,
+  type DecideRequest,
+  type DecideRequestInput,
+  DecideRequestSchema,
+  type DecisionOutcome,
+  type DecisionPatchSchema,
+  type DecisionRecord,
+  type DecisionResult,
+  type DecisionSettings,
+  type Gate,
+  gateAnswer,
+  type LayaStatus,
+  type ProviderId,
+  type Question,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { secretName } from "../accounts/homes.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
-import {
-  CAPABLE_QUESTION,
-  CHEAPEST_QUESTION,
-  effortQuestion,
-  modelQuestion,
-  type PickOption,
-} from "../runs/model-options.ts";
+import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, ModelPick, ModelPickRequest, PickAnswer } from "./api.ts";
+import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
 import type { LayaProvider } from "./layaProvider.ts";
@@ -84,13 +85,22 @@ export class DecisionService implements Decisions {
   }
 
   /** Runs the chain and records the decision. */
-  async decide(request: DecideRequest, use: Use): Promise<DecisionResult> {
+  async decide(input: DecideRequestInput, use: Use): Promise<DecisionResult> {
+    const request = DecideRequestSchema.parse(input);
     const started = performance.now();
     const settings = await this.settings();
     const chain = await runChain(settings.order, this.providers(), request);
+    const answers = Object.fromEntries(
+      Object.entries(chain.answers).map(([key, a]) => {
+        const q = request.questions[key];
+        return [key, q === undefined ? a : { ...a, gate: gate(q, a, chain.provider, settings) }];
+      }),
+    );
+    const { sent, version, ...rest } = chain;
     const result: DecisionResult = {
       id: `dec_${randomUUID().slice(0, 8)}`,
-      ...chain,
+      ...rest,
+      answers,
       durationMs: Math.round(performance.now() - started),
     };
     this.deps.log.add({
@@ -104,16 +114,42 @@ export class DecisionService implements Decisions {
       answers: result.answers,
       estimated: result.estimated,
       durationMs: result.durationMs,
+      request: {
+        state: sent?.state ?? request.state,
+        questions: request.questions,
+        ...(sent === undefined ? {} : { sent: sent.questions }),
+      },
+      trimmed: result.trimmed,
+      skipped: result.skipped,
+      ...(version === undefined ? {} : { version }),
     });
     return result;
+  }
+
+  outcome(id: string, outcome: DecisionOutcome): void {
+    this.deps.log.setOutcome(id, outcome);
+  }
+
+  /** The owner's "Wrong pick". Kept for learning; changes nothing else. */
+  correct(input: { id: string; right: string; note?: string | undefined }): DecisionRecord {
+    const correction = {
+      right: input.right,
+      ...(input.note === undefined || input.note === "" ? {} : { note: input.note }),
+      at: this.now().toISOString(),
+    };
+    if (!this.deps.log.correct(input.id, correction))
+      throw new UserError(`There is no decision ${input.id}.`, 404);
+    const record = this.deps.log.get(input.id);
+    if (record === undefined) throw new Error(`Decision ${input.id} cannot be read.`);
+    return record;
   }
 
   ask(request: DecideRequest): Promise<DecisionResult> {
     return this.decide(request, { use: "owner" });
   }
 
-  recent(limit: number): DecisionRecord[] {
-    return this.deps.log.recent(limit);
+  recent(limit: number, offset = 0): DecisionRecord[] {
+    return this.deps.log.recent(limit, offset);
   }
 
   async status() {
@@ -159,73 +195,21 @@ export class DecisionService implements Decisions {
     return this.deps.laya.install();
   }
 
-  async pickModel(request: ModelPickRequest): Promise<ModelPick | undefined> {
-    const askModel = request.models.length >= 2;
-    const askEffort = request.efforts.length >= 2;
-    const rank = request.rank ?? [];
-    const askRank = rank.length >= 2;
-    if (!askModel && !askEffort) return undefined;
-    const brief = `Role: ${request.role}\nAgent: @${request.agent}\n\n${request.context}`;
-    const questions: DecideRequest["questions"] = {
-      ...(askModel
-        ? {
-            model: {
-              type: "choice" as const,
-              instructions: modelQuestion(request.role),
-              options: request.models.map((o) => o.label),
-            },
-          }
-        : {}),
-      ...(askEffort
-        ? {
-            effort: {
-              type: "choice" as const,
-              instructions: effortQuestion(request.role),
-              options: request.efforts.map((o) => o.label),
-            },
-          }
-        : {}),
-      ...(askRank
-        ? {
-            capable: {
-              type: "choice" as const,
-              instructions: CAPABLE_QUESTION,
-              options: rank.map((o) => o.label),
-            },
-            cheapest: {
-              type: "choice" as const,
-              instructions: CHEAPEST_QUESTION,
-              options: rank.map((o) => o.label),
-            },
-          }
-        : {}),
-    };
+  async rateTask(request: RateTaskRequest): Promise<TaskRating | undefined> {
     try {
-      const result = await this.decide(
-        { state: brief, questions },
-        { use: "model-pick", task: request.task, agent: request.agent },
-      );
-      const answer = (
-        key: "model" | "effort" | "capable" | "cheapest",
-        options: readonly PickOption[],
-      ): PickAnswer | undefined => {
-        const a = result.answers[key];
-        if (a === undefined || typeof a.value !== "string") return undefined;
-        const id = options.find((o) => o.label === a.value)?.id ?? options.find((o) => o.id === a.value)?.id;
-        return id === undefined ? undefined : { id, confidence: a.confidence };
-      };
-      const named = (key: "capable" | "cheapest") => (askRank ? answer(key, rank)?.id : undefined);
-      const capable = named("capable");
-      const cheapest = named("cheapest");
-      const model = askModel ? answer("model", request.models) : undefined;
-      const effort = askEffort ? answer("effort", request.efforts) : undefined;
-      if (model === undefined && effort === undefined && capable === undefined && cheapest === undefined)
-        return undefined;
+      const result = await this.decide(difficultyQuestion(request), {
+        use: "model-pick",
+        task: request.task,
+        agent: request.agent,
+      });
+      const a = result.answers.difficulty;
+      if (a === undefined) return undefined;
+      const level = isDifficulty(a.value) ? a.value : undefined;
       return {
-        ...(model === undefined ? {} : { model }),
-        ...(effort === undefined ? {} : { effort }),
-        ...(capable === undefined ? {} : { capable }),
-        ...(cheapest === undefined ? {} : { cheapest }),
+        ...(level === undefined ? {} : { level }),
+        confidence: a.confidence,
+        counted: level !== undefined && a.gate?.accepted === true,
+        why: a.gate?.reason ?? "",
         decisionId: result.id,
         provider: result.provider,
         by: NAMES[result.provider],
@@ -251,6 +235,12 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
+}
+
+/** Whether an answer counts. The rules provider only guesses, so its answers never do. */
+function gate(q: Question, a: Answer, provider: ProviderId, settings: DecisionSettings): Gate {
+  const g = gateAnswer(q, a, settings);
+  return provider === "rules" ? { ...g, accepted: false, reason: "the rules only guess" } : g;
 }
 
 function layaReason(laya: LayaStatus): string | undefined {
