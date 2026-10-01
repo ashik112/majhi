@@ -67,7 +67,8 @@ export function createHandlers({
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
   const adoptDeps = (ctx: CommandContext): AdoptDeps => ({
-    readToken: async (via, host) => (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
+    readToken: async (via, host) =>
+      (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
     saveSecret: (secret) => services.secretService.save(secret),
     orgTokens: async (id) => {
       const org = (await config.sections()).orgs[id];
@@ -136,15 +137,20 @@ export function createHandlers({
     "orgs.useGitLogin": (input, ctx) => useGitLogin(adoptDeps(ctx), input),
 
     "orgs.setGitAccount": async (input, ctx) => {
+      // A raw token from an agent has passed through its chat. Agents ask the owner with a secret request.
+      if (input.token !== undefined && ctx.meta.actor.kind === "agent") {
+        throw new UserError("Agents cannot pass a token. Ask the owner for it with a secret request.", 409);
+      }
       await setGitAccount(
         {
           org: async (id) => {
             const org = (await config.sections()).orgs[id];
-            return org === undefined ? undefined : { identity: org.identity, accounts: org.git_accounts ?? [] };
+            return org === undefined
+              ? undefined
+              : { identity: org.identity, accounts: org.git_accounts ?? [] };
           },
           logins: () => services.gitLogins.list().then((r) => r.hosts),
-          adopt: async (via, host) =>
-            (await useGitLogin(adoptDeps(ctx), { id: input.id, via, host })).ref,
+          adopt: async (via, host) => (await useGitLogin(adoptDeps(ctx), { id: input.id, via, host })).ref,
           saveSecret: (secret) => services.secretService.save(secret),
           publicProfile: fetchPublicProfile,
           write: async (id, patch) => {
