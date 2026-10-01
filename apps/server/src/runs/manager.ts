@@ -11,6 +11,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { readDecisionSettings } from "../decisions/settings.ts";
 import { errorMessage } from "../errors.ts";
+import { noticeText, sameRun, splitCurrent } from "../processes/notices.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RoomAccess } from "../rooms/access.ts";
@@ -72,8 +73,8 @@ export interface RunDeps {
   rooms?: RoomAccess;
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
-  /** Background processes (5.15): each prompt says what already runs. */
-  processes?: { running(task: string): ProcessInfo[] };
+  /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
+  processes?: { running(task: string): ProcessInfo[]; list(task: string): ProcessInfo[] };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /**
@@ -312,6 +313,21 @@ export class RunManager {
     if (run.paused === undefined) void this.drive(run);
   }
 
+  /**
+   * A background process of `p.agent` ended by itself (5.15). Queued once per run of the process,
+   * and every end that waits is sent in one prompt: while the agent works, or is paused, they pile
+   * up and go out together, without the ones a newer run replaced by then.
+   */
+  processEnded(p: ProcessInfo): void {
+    const run = this.runFor(p.task, p.agent);
+    if (run.processEnds.some((e) => sameRun(e, p))) return;
+    run.processEnds.push(p);
+    if (!run.queue.some((e) => e.kind === "processes")) run.queue.push({ kind: "processes" });
+    run.held = false;
+    this.live.refreshQueued(run);
+    if (run.paused === undefined) void this.drive(run);
+  }
+
   /** The owner changed an agent's model or effort for this task: a live session switches now (5.15). */
   async applyOptions(
     task: string,
@@ -412,6 +428,7 @@ export class RunManager {
         run.resuming = false;
         run.freshDue = false;
         run.queue = run.queue.filter((e) => e.kind === "owner" || e.kind === "brief" || e.kind === "handoff");
+        run.processEnds = [];
         this.deps.store.runs.setInFlight(run.task, run.agent, 0, false);
         this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
         run.closing = false;
@@ -888,6 +905,20 @@ export class RunManager {
         return undefined;
       case "notice":
         return [{ type: "text", text: entry.text }];
+      case "processes": {
+        const ends = run.processEnds;
+        run.processEnds = [];
+        const { current, replaced } = splitCurrent(ends, this.deps.processes?.list(run.task) ?? []);
+        if (replaced.length > 0) {
+          const ids = replaced.map((p) => p.id).join(", ");
+          this.live.system(
+            run,
+            "info",
+            `${ids} ended, but newer runs replaced ${replaced.length === 1 ? "it" : "them"}, so @${run.agent} is not told.`,
+          );
+        }
+        return current.length === 0 ? undefined : [{ type: "text", text: noticeText(current, replaced) }];
+      }
       case "handoff": {
         const item = this.deps.room.get(run.task, entry.itemId);
         if (item === undefined || item.type !== "handoff") return undefined;

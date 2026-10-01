@@ -1,5 +1,5 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
-import type { AgentLive, AuthMode, Perm, Task, ToolId } from "@majhi/shared";
+import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId } from "@majhi/shared";
 import type { ToolServer } from "../rooms/access.ts";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
@@ -18,8 +18,10 @@ export type QueueEntry =
   | { kind: "continue" }
   /** The owner asked for a fresh session. */
   | { kind: "fresh" }
-  /** majhi tells the agent something, like a background process that ended (5.15). */
-  | { kind: "notice"; text: string };
+  /** majhi tells the agent something, like a restart that stopped its processes. */
+  | { kind: "notice"; text: string }
+  /** Background processes of the agent ended (5.15): `processEnds`, merged into one prompt when sent. */
+  | { kind: "processes" };
 
 /** What a fresh session gets before its first prompt (SPEC 5.13). */
 export interface Carry {
@@ -43,6 +45,8 @@ export class AgentRun {
   runId: number | undefined;
   mapper: ItemMapper | undefined;
   queue: QueueEntry[] = [];
+  /** Ended background processes of this agent not yet told, for the queued `processes` entry. */
+  processEnds: ProcessInfo[] = [];
   /** The queue waits: the owner pressed Esc, or stopped the task. A new message releases it. */
   held = false;
   /** Stop was called: the drive loop leaves quietly. */

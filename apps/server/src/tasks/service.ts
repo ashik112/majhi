@@ -67,7 +67,7 @@ import type { TaskScopes } from "../memory/wiring.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import { orgKeys } from "../orgs/keys.ts";
 import type { ProcessManager } from "../processes/manager.ts";
-import { wakeText } from "../processes/text.ts";
+import { endItemId, supersededBy } from "../processes/notices.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
@@ -2018,8 +2018,9 @@ export class TaskService {
 
   /**
    * A background process ended (5.15). A `wait` process that exited by itself wakes the agent that
-   * started it, and a task in review runs again. Any other end of a `wait` process may leave
-   * nobody working: the task may be ready for review.
+   * started it, once, and a task in review runs again. Not when a newer run of the same command
+   * started after it: that one's result counts, and the room only notes the old end. Any other end
+   * of a `wait` process may leave nobody working: the task may be ready for review.
    */
   async processEnded(p: ProcessInfo, wakes: boolean): Promise<void> {
     this.waitNoted.delete(`${p.task} ${p.id} ${p.startedAt}`);
@@ -2028,6 +2029,19 @@ export class TaskService {
     if (!wakes) {
       // The task itself stopped it (stop, close, remove, a team change): the caller sets the status.
       if (p.wait && p.stoppedBy !== "task") await this.agentsIdle(p.task);
+      return;
+    }
+    // Stored under an id of its own: an end reported again (a replay, a restart) wakes nobody.
+    const itemId = endItemId(p);
+    if (this.deps.room.get(task.id, itemId) !== undefined) return;
+    const newer = supersededBy(p, this.deps.processes?.list(task.id) ?? []);
+    if (newer !== undefined) {
+      this.deps.room.post(task.id, itemId, {
+        type: "system",
+        level: "info",
+        text: `${p.id} \`${p.name}\` ended, but ${newer.id} is a newer run of it, so nobody is woken.`,
+      });
+      await this.agentsIdle(p.task);
       return;
     }
     if (!task.team.includes(p.agent)) return;
@@ -2040,8 +2054,12 @@ export class TaskService {
       this.deps.events.emit(["tasks"]);
       await this.statusChanged(task.id);
     }
-    this.note(task.id, `${p.id} \`${p.name}\` ended. Waking @${p.agent}.`);
-    this.deps.runs.notify(task.id, p.agent, wakeText(p));
+    this.deps.room.post(task.id, itemId, {
+      type: "system",
+      level: "info",
+      text: `${p.id} \`${p.name}\` ended. Waking @${p.agent}.`,
+    });
+    this.deps.runs.processEnded(p);
   }
 
   /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */

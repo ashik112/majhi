@@ -1,10 +1,5 @@
 import type { ProcessInfo } from "@majhi/shared";
 
-/** Lines of output in a wake message. */
-const WAKE_LINES = 30;
-/** Characters of output in a wake message, at most. */
-const WAKE_CHARS = 4_000;
-
 /** `42s`, `3m 5s`, `1h 2m`. */
 export function duration(from: string, to: string): string {
   const s = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000));
@@ -14,7 +9,8 @@ export function duration(from: string, to: string): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function label(p: ProcessInfo): string {
+/** `cmd`, or `name (cmd)` when it has a name of its own. */
+export function label(p: ProcessInfo): string {
   return p.name === p.command ? `\`${p.command}\`` : `${p.name} (\`${p.command}\`)`;
 }
 
@@ -25,18 +21,6 @@ export function endLine(p: ProcessInfo): string {
   return p.exitCode === null || p.exitCode === undefined
     ? "ended by a signal"
     : `exited with code ${p.exitCode}`;
-}
-
-/** The message that wakes an agent when its `wait` process ended by itself. */
-export function wakeText(p: ProcessInfo): string {
-  let tail = p.tail.slice(-WAKE_LINES).join("\n");
-  if (tail.length > WAKE_CHARS) tail = `…${tail.slice(-WAKE_CHARS)}`;
-  const took = p.endedAt === undefined ? "" : ` after ${duration(p.startedAt, p.endedAt)}`;
-  return [
-    `Your background process ${p.id}, ${label(p)}, ${endLine(p)}${took}.`,
-    tail === "" ? "It printed nothing." : `Last lines of its output:\n\`\`\`\n${tail}\n\`\`\``,
-    "Continue from here. The majhi-processes tool has its full output.",
-  ].join("\n\n");
 }
 
 /** One short line for each prompt while anything runs, or undefined. */

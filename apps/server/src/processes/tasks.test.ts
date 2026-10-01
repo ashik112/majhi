@@ -7,7 +7,15 @@ import { taskWorld, type World } from "../testing/world.ts";
 /** How background processes hold a task in running and wake its agent (5.15), with in-memory sessions. */
 
 let w: World;
-afterEach(() => w?.cleanup());
+let extra: Harness | undefined;
+afterEach(async () => {
+  if (extra !== undefined) {
+    await extra.majhi.services.runs.closeAll();
+    await extra.majhi.close();
+    extra = undefined;
+  }
+  await w?.cleanup();
+});
 
 const until = async (check: () => boolean | Promise<boolean>, what: string): Promise<void> => {
   for (let i = 0; i < 600; i++) {
@@ -126,5 +134,90 @@ describe("background processes and the task", () => {
       { status: "stopped", stoppedBy: "task" },
     ]);
     expect(h.runtime.sessions[0]?.prompts).toHaveLength(1);
+  });
+
+  it("an old run that ends after a newer run of the same name started wakes nobody", async () => {
+    const { h } = await startWith("true", false);
+    await until(async () => (await status(h)) === "review", "review");
+    const { processes } = h.majhi.services;
+    const old = await processes.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      name: "tests",
+      command: "sleep 0.3; echo old failure; exit 1",
+      wait: true,
+    });
+    await processes.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      name: "tests",
+      command: "sleep 30",
+      wait: true,
+    });
+    await until(() => processes.get("ACM-1", old.id)?.status === "exited", "the old run's end");
+    await until(
+      async () =>
+        (await systems(h)).includes("p2 `tests` ended, but p3 is a newer run of it, so nobody is woken."),
+      "the quiet line",
+    );
+    await h.majhi.services.runs.idle();
+    expect(h.runtime.sessions[0]?.prompts).toHaveLength(1);
+    await processes.stopTask("ACM-1");
+  });
+
+  it("an end is told once, and ends that pile up while the agent is paused go out in one prompt", async () => {
+    const { h } = await startWith("true", false);
+    await until(async () => (await status(h)) === "review", "review");
+    const { processes, runs, tasks } = h.majhi.services;
+    const session = h.runtime.sessions[0];
+    if (session === undefined) throw new Error("no session");
+    runs.markInterrupted("ACM-1", "acme-builder");
+    const lint = await processes.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      name: "lint",
+      command: "echo lint ok",
+      wait: true,
+    });
+    await until(() => processes.get("ACM-1", lint.id)?.status === "exited", "lint's end");
+    await new Promise((r) => setTimeout(r, 20));
+    const build = await processes.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      name: "build",
+      command: "echo build ok",
+      wait: true,
+    });
+    await until(() => processes.get("ACM-1", build.id)?.status === "exited", "build's end");
+    const ended = processes.get("ACM-1", build.id);
+    if (ended === undefined) throw new Error("no process");
+    // The same end reported again, as a replay would.
+    await tasks.processEnded(ended, true);
+    await runs.idle();
+    expect(session.prompts).toHaveLength(1);
+
+    runs.resumeAfterRestart("ACM-1", "acme-builder");
+    await until(() => session.prompts.length >= 3, "the resume and the notice");
+    await runs.idle();
+    expect(session.prompts).toHaveLength(3);
+    const notice = text(session.prompts[2]);
+    expect(notice).toContain("2 of your background processes ended. Newest first");
+    expect(notice.indexOf("p3, build")).toBeLessThan(notice.indexOf("p2, lint"));
+    expect(notice).toContain("Do not mention other agents just to report status");
+    const wakes = (await systems(h)).filter((t) => t.includes("ended. Waking @acme-builder."));
+    expect(wakes.sort()).toEqual([
+      "p2 `lint` ended. Waking @acme-builder.",
+      "p3 `build` ended. Waking @acme-builder.",
+    ]);
+
+    // After a restart the same end, reported again, wakes nobody.
+    extra = h.restart();
+    const again = extra;
+    await again.majhi.services.runs.idle();
+    const before = h.runtime.sessions.flatMap((s) => s.prompts).length;
+    await again.majhi.services.tasks.processEnded(ended, true);
+    await again.majhi.services.runs.idle();
+    expect(h.runtime.sessions.flatMap((s) => s.prompts).length).toBe(before);
+    expect((await systems(again)).filter((t) => t.startsWith("p3 `build` ended"))).toHaveLength(1);
   });
 });
