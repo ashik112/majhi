@@ -24,6 +24,7 @@ const summary = (
   org,
   status,
   team,
+  mode: "lead",
   updatedAt: iso(10),
   repos: repos.map((project) => ({ project, branch: `task/${id}` })),
   working: [],
@@ -61,6 +62,8 @@ const FULL: Task = {
   org: "globex",
   status: "running",
   folder: "/Users/you/.majhi/tasks/GLX-418",
+  mode: "lead",
+  overrides: {},
   repos: [
     {
       project: "alpha-api",
@@ -84,6 +87,7 @@ const item = (n: number, rest: Record<string, unknown>): RoomItem =>
 const ROOM: RoomServerMessage = {
   type: "snapshot",
   more: false,
+  processes: [],
   agents: [
     {
       agent: "globex-lead",
@@ -152,6 +156,7 @@ const PAUSED: Task = {
 const PAUSED_ROOM: RoomServerMessage = {
   type: "snapshot",
   more: false,
+  processes: [],
   agents: [
     { agent: "nw-lead", status: "idle", queued: 0, model: "opus-5.5", commands: [] },
     { agent: "nw-builder", status: "idle", queued: 0, model: "gpt-5.5", commands: [] },
@@ -171,6 +176,7 @@ const PAUSED_ROOM: RoomServerMessage = {
 
 async function stub(page: Page, tasks: TaskSummary[] = TASKS): Promise<void> {
   await page.route("**/api/cmd/tasks.list", (route) => route.fulfill({ json: tasks }));
+  await page.route("**/api/cmd/tasks.diff", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/cmd/tasks.get", (route) => {
     const id = (route.request().postDataJSON() as { id: string }).id;
     return route.fulfill({ json: id === "NW-231" ? PAUSED : FULL });
@@ -184,7 +190,7 @@ async function stub(page: Page, tasks: TaskSummary[] = TASKS): Promise<void> {
 test("board", async ({ page }) => {
   await stub(page);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /GLX-418/ }).first()).toBeVisible();
+  await expect(page.getByText("GLX-418").first()).toBeVisible();
   await page.waitForTimeout(900);
   await page.screenshot({ path: "e2e/screenshots/ui-board.png" });
 });
@@ -203,7 +209,7 @@ test("task", async ({ page }) => {
 test("new task", async ({ page }) => {
   await stub(page);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /GLX-418/ }).first()).toBeVisible();
+  await expect(page.getByText("GLX-418").first()).toBeVisible();
   await page.keyboard.press("n");
   const dialog = page.getByRole("dialog", { name: "New task" });
   await expect(dialog).toBeVisible();
@@ -232,7 +238,7 @@ test("states for review", async ({ page }) => {
   test.skip(!SCRATCH, "set MAJHI_SHOT_DIR to render the review states");
   await stub(page);
   await page.goto("/");
-  await expect(page.getByRole("link", { name: /GLX-418/ }).first()).toBeVisible();
+  await expect(page.getByText("GLX-418").first()).toBeVisible();
   await page.keyboard.press("j");
   await page.keyboard.press("l");
   await page.waitForTimeout(300);
