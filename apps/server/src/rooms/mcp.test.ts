@@ -254,6 +254,7 @@ describe("majhi-tasks", () => {
     const { h, servers, release } = await world();
     const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
     expect((await tasks.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "change_task_branch",
       "close",
       "create",
       "get",

@@ -24,6 +24,8 @@ import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { fetchPublicProfile, setGitAccount, useSavedLogin } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
+import { attributionOf, orgIdentity } from "../runs/attribution.ts";
+import { commitBy } from "../runs/checkpoint.ts";
 import { classifyHost } from "../scan/remote.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
@@ -31,6 +33,7 @@ import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
+import { changeTaskBranch } from "../tasks/change-branch.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -364,6 +367,28 @@ export function createHandlers({
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
     "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),
+    "tasks.changeBranch": (input, ctx) =>
+      changeTaskBranch(
+        {
+          tasks: services.store.tasks,
+          working: (task) => services.runs.working(task),
+          locks: services.runs.locks,
+          room: services.room,
+          commitBy: async (target, project, agent) => {
+            const [author, on] = await Promise.all([
+              orgIdentity(config, target.org),
+              attributionOf(config, target),
+            ]);
+            return commitBy(author, target.id, agent, on.repos[project] !== false);
+          },
+          isRoot: async (agent) => {
+            const stored = await services.agentStore.get(agent);
+            return stored?.ok === true && stored.agent.frontmatter.scope === "root";
+          },
+        },
+        input,
+        ctx.meta,
+      ),
     "tasks.remove": async (input) => {
       await services.tasks.remove(input.id, input.force === true);
       return { removed: input.id };

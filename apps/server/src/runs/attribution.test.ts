@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { buildEnv } from "@majhi/acp";
@@ -150,5 +150,88 @@ describe("which repos are attributed", () => {
     );
     expect(on.git).toMatchObject({ committer: { name: "acme-dev via majhi" }, task: "ACM-7" });
     expect(on.hooks).toBe(join(dir, "home", "git-hooks"));
+  });
+});
+
+describe("another task's branch", () => {
+  /** A repo with task branches of ACM-1 and ACM-2, and git as a run of `task` would run it there. */
+  async function twoTasks(): Promise<{ repo: string; as: (task?: string) => Record<string, string> }> {
+    const repo = join(dir, "api");
+    await makeRepo(repo, { commit: true });
+    await git(repo, "branch", "task/acm-1-own-work");
+    await git(repo, "branch", "task/acm-2-other-work");
+    await git(repo, "branch", "task/acm-12-similar-id");
+    const hooks = await ensureHooks(join(dir, "home"));
+    const as = (task?: string) => ({
+      PATH: process.env.PATH ?? "",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.hooksPath",
+      GIT_CONFIG_VALUE_0: hooks,
+      GIT_AUTHOR_NAME: "Ada",
+      GIT_AUTHOR_EMAIL: "ada@acme.test",
+      GIT_COMMITTER_NAME: "Ada",
+      GIT_COMMITTER_EMAIL: "ada@acme.test",
+      ...(task === undefined ? {} : { MAJHI_TASK: task }),
+    });
+    return { repo, as };
+  }
+
+  /** `commit-tree` and `update-ref`, as the lead in the incident moved another task's branch. */
+  async function updateRef(repo: string, env: Record<string, string>, branch: string): Promise<void> {
+    const { stdout } = await run("git", ["commit-tree", "-p", "HEAD", "-m", "change", "HEAD^{tree}"], {
+      cwd: repo,
+      env,
+    });
+    await run("git", ["update-ref", `refs/heads/${branch}`, stdout.trim()], { cwd: repo, env });
+  }
+
+  it("refuses a raw update-ref from a run of another task, and points to change_task_branch", async () => {
+    const { repo, as } = await twoTasks();
+    const before = await git(repo, "rev-parse", "task/acm-2-other-work");
+    const refused = updateRef(repo, as("ACM-1"), "task/acm-2-other-work");
+    await expect(refused).rejects.toThrow(/another task \(ACM-2\).*change_task_branch/s);
+    expect(await git(repo, "rev-parse", "task/acm-2-other-work")).toBe(before);
+    // A task id that only starts the same is another task too.
+    await expect(updateRef(repo, as("ACM-1"), "task/acm-12-similar-id")).rejects.toThrow(/ACM-12/);
+    await expect(
+      run("git", ["branch", "-D", "task/acm-2-other-work"], { cwd: repo, env: as("ACM-1") }),
+    ).rejects.toThrow(/change_task_branch/);
+  });
+
+  it("refuses a commit in a worktree on another task's branch", async () => {
+    const { repo, as } = await twoTasks();
+    const other = join(dir, "other");
+    await git(repo, "worktree", "add", "--quiet", other, "task/acm-2-other-work");
+    await writeFile(join(other, "a.txt"), "two\n");
+    await run("git", ["add", "."], { cwd: other, env: as("ACM-1") });
+    await expect(
+      run("git", ["commit", "--quiet", "--no-verify", "-m", "sneak"], { cwd: other, env: as("ACM-1") }),
+    ).rejects.toThrow(/change_task_branch/);
+    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-2-other-work")).toBe("init");
+  });
+
+  it("allows the run's own branch, and anything without MAJHI_TASK", async () => {
+    const { repo, as } = await twoTasks();
+    await updateRef(repo, as("ACM-1"), "task/acm-1-own-work");
+    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-1-own-work")).toBe("change");
+    await updateRef(repo, as(), "task/acm-2-other-work");
+    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-2-other-work")).toBe("change");
+    // Branches that are not a task's stay free.
+    await updateRef(repo, as("ACM-1"), "feature/x");
+  });
+
+  it("still runs the repo's own reference-transaction hook, with its input", async () => {
+    const { repo, as } = await twoTasks();
+    await mkdir(join(repo, ".git", "hooks"), { recursive: true });
+    await writeFile(
+      join(repo, ".git", "hooks", "reference-transaction"),
+      '#!/bin/sh\n[ "$1" = committed ] && cat >> "$(git rev-parse --git-common-dir)/seen"\nexit 0\n',
+      { mode: 0o755 },
+    );
+    await updateRef(repo, as("ACM-1"), "task/acm-1-own-work");
+    const seen = await readFile(join(repo, ".git", "seen"), "utf8");
+    expect(seen).toContain("refs/heads/task/acm-1-own-work");
   });
 });

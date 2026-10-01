@@ -174,6 +174,12 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
       "Merge a task's branch into a local branch in the owner's checkout: its base by default, or the branch the owner names (dev, staging). Never pushes. Only for agents with the Merge permission, once the checks pass.",
   },
   {
+    name: "change_task_branch",
+    command: "tasks.changeBranch",
+    description:
+      "Change another task's branch: commit whole files (path from the repo root, full new content) inside that task's own worktree, so its files and index stay in step with the branch. Never commit to another task's branch with git: majhi refuses it, and that task's agents would undo the change. Only for tasks in your own org. Refused while that task's agents are working or have work queued: retry when it is idle, paused or in review. Give the reason: the task's room shows who changed which files and why. Returns the commit.",
+  },
+  {
     name: "link",
     command: "tasks.link",
     description: "Make a task wait for another (depends-on), or a subtask of another (parent).",

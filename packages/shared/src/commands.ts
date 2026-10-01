@@ -121,6 +121,8 @@ import {
 import {
   AttachmentSchema,
   CardActionSchema,
+  ChangeBranchInputSchema,
+  ChangeBranchResultSchema,
   MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
@@ -1025,6 +1027,13 @@ export const commands = {
       force: z.boolean().default(false),
     }),
     output: MarkMergedResultSchema,
+  },
+  "tasks.changeBranch": {
+    risk: "change",
+    summary:
+      "Commit file changes to another task's branch inside that task's own worktree, so its files, index and branch stay in step. Give each file whole: its path from the repo root and its full new content. Only for a task in your own org (root agents: any). Refused while one of its agents is working or has work queued (retry when it is idle, paused or in review), and while its worktree has uncommitted changes. The task's room gets a line saying who changed what and why",
+    input: ChangeBranchInputSchema,
+    output: ChangeBranchResultSchema,
   },
   "tasks.remove": {
     risk: "destructive",

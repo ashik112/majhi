@@ -24,11 +24,14 @@ export const FETCH_TIMEOUT_MS = 60_000;
 
 /**
  * The environment of majhi's own git: the server's, so the forwarded SSH agent socket
- * (`SSH_AUTH_SOCK`) reaches fetches and pushes. Agent runs never get it (SPEC 4.5).
+ * (`SSH_AUTH_SOCK`) reaches fetches and pushes. Agent runs never get it (SPEC 4.5). Never a run's
+ * `MAJHI_TASK`, which majhi's hooks read as "this is that task's agent": majhi started by an agent
+ * (its tests, a dev server) still makes and moves every task's branches.
  */
 export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { MAJHI_TASK: _run, ...rest } = source;
   return {
-    ...source,
+    ...rest,
     GIT_TERMINAL_PROMPT: "0",
     GIT_SSH_COMMAND: source.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
   };
