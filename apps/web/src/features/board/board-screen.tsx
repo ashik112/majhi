@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 import { formatTokens } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useAgents, useOrgs } from "@/lib/studio-queries";
+import { useOrgs } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
 import { useNewTask } from "../new-task/new-task-context";
@@ -24,7 +24,6 @@ import {
   COLUMN_LAMP,
   type Column,
   directionOf,
-  isBossChat,
   moveFocus,
 } from "./model";
 import { Roster } from "./roster";
@@ -54,10 +53,7 @@ export function BoardScreen() {
   const [query, setQuery] = useState("");
   const [showDone, setShowDone] = useState(false);
 
-  const bossId = useAgents().data?.flatMap((a) =>
-    a.status === "ok" && a.isBoss ? [a.agent.frontmatter.id] : [],
-  )[0];
-  const all = useMemo(() => (tasks.data ?? []).filter((t) => !isBossChat(t, bossId)), [tasks.data, bossId]);
+  const all = useMemo(() => tasks.data ?? [], [tasks.data]);
   const columns = useMemo(() => buildColumns(all, { org, query }), [all, org, query]);
   const treeColumns = useMemo(
     () => (showDone ? columns : columns.filter((c) => c.id !== "done")),

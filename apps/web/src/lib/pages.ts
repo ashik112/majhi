@@ -1,6 +1,7 @@
 /** The path of every page, in one place: the router, the sidebar, the keys and the links between pages read it. */
 export const PAGE_PATH = {
   board: "/",
+  chats: "/chats",
   agents: "/agents",
   accounts: "/accounts",
   // Not `/health`: the server answers that address itself, so a reload there would show its JSON.

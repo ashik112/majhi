@@ -66,16 +66,6 @@ export function waitingText(waitingOn: readonly string[]): string {
   return `Waiting on ${shown}${more > 0 ? ` +${more}` : ""}`;
 }
 
-/** The boss's chat lives behind Cmd J and on Hub setup, not on the board. */
-export function isBossChat(
-  task: Pick<TaskSummary, "kind" | "title" | "team">,
-  bossId: string | undefined,
-): boolean {
-  return (
-    bossId !== undefined && task.kind === "chat" && task.title === "Boss chat" && task.team[0] === bossId
-  );
-}
-
 /** "@lead working", "@lead and @builder working", "@lead +2 working". */
 export function workingText(working: readonly string[]): string {
   const [first, second] = working;

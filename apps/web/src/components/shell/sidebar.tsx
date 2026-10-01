@@ -27,6 +27,7 @@ import { useNow } from "@/lib/use-now";
 
 const NAV: readonly { page: PageName; label: string }[] = [
   { page: "board", label: "Board" },
+  { page: "chats", label: "Chats" },
   { page: "agents", label: "Agents" },
   { page: "accounts", label: "Accounts" },
   { page: "usage", label: "Health and usage" },

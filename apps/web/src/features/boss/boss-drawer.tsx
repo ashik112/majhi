@@ -5,12 +5,12 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Menu } from "@/components/ui/menu";
-import { isBossChat } from "@/features/board/model";
+import { chatTitle } from "@/features/chats/model";
 import { useBossChat, useNewBossChat } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
-import { MOD_KEY } from "@/lib/format";
+import { formatAgo, MOD_KEY } from "@/lib/format";
 import { GLASS_STRONG } from "@/lib/glass";
-import { useTasks } from "@/lib/task-queries";
+import { useChats } from "@/lib/task-queries";
 import { useBoss } from "./boss-context";
 import { BossConversation } from "./boss-conversation";
 
@@ -19,7 +19,7 @@ export function BossDrawer() {
   const { open, hide } = useBoss();
   const chat = useBossChat(open);
   const fresh = useNewBossChat();
-  const tasks = useTasks(open);
+  const chats = useChats(open);
   const navigate = useNavigate();
   const panel = useRef<HTMLElement>(null);
 
@@ -31,11 +31,11 @@ export function BossDrawer() {
 
   if (!open) return null;
   const boss = chat.data?.team[0];
-  // Earlier conversations with this boss, newest first: archived by "New chat", readable as tasks.
-  const past = (tasks.data ?? [])
-    .filter((t) => t.id !== chat.data?.id && t.status === "done" && isBossChat(t, boss))
-    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  // Earlier chats with this boss, newest first: the same ones the Chats page lists.
+  const past = (chats.data ?? [])
+    .filter((t) => t.id !== chat.data?.id && t.team[0] === boss && t.org === undefined)
     .slice(0, 15);
+  const now = Date.now();
   return (
     <aside
       ref={panel}
@@ -60,7 +60,7 @@ export function BossDrawer() {
             size="sm"
             disabled={fresh.isPending || !chat.data}
             onClick={() => fresh.mutate()}
-            title="Archive this conversation and start a new one"
+            title="Start a new conversation. This one stays in Chats"
           >
             <SquarePen aria-hidden="true" />
             New chat
@@ -69,22 +69,31 @@ export function BossDrawer() {
             <Menu
               label="Past chats"
               icon={<History aria-hidden="true" />}
-              items={past.map((t) => ({
-                label: `${t.id} · ${new Date(t.updatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
-                onSelect: () => {
-                  hide();
-                  void navigate({ to: "/t/$taskId", params: { taskId: t.id } });
+              items={[
+                ...past.map((t) => ({
+                  label: `${chatTitle(t)} · ${formatAgo(t.updatedAt, now)}`,
+                  onSelect: () => {
+                    hide();
+                    void navigate({ to: "/chats/$taskId", params: { taskId: t.id } });
+                  },
+                })),
+                {
+                  label: "All chats",
+                  onSelect: () => {
+                    hide();
+                    void navigate({ to: "/chats" });
+                  },
                 },
-              }))}
+              ]}
             />
           )}
           {chat.data && (
-            <Button asChild variant="ghost" size="icon-sm" title="Open as a task">
+            <Button asChild variant="ghost" size="icon-sm" title="Open in Chats">
               <Link
-                to="/t/$taskId"
+                to="/chats/$taskId"
                 params={{ taskId: chat.data.id }}
                 onClick={hide}
-                aria-label="Open the boss chat as a task"
+                aria-label="Open the boss chat in Chats"
               >
                 <ExternalLink aria-hidden="true" />
               </Link>

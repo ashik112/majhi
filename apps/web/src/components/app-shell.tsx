@@ -26,7 +26,7 @@ import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
 
 /** Pages that lay out their own panes to fit the viewport. */
-const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.agents, PAGE_PATH.usage, PAGE_PATH.orgs]);
+const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.chats, PAGE_PATH.agents, PAGE_PATH.usage, PAGE_PATH.orgs]);
 
 export function AppShell() {
   useServerEvents();
@@ -69,7 +69,12 @@ function Frame() {
   );
   // The page fades in when the section changes (board, task, a page), not on every task switch.
   const section = useRouterState({
-    select: (s) => (s.location.pathname.startsWith("/t/") ? "/" : s.location.pathname),
+    select: (s) =>
+      s.location.pathname.startsWith("/t/")
+        ? "/"
+        : s.location.pathname.startsWith("/chats")
+          ? PAGE_PATH.chats
+          : s.location.pathname,
   });
   // The board, the task view and the list-and-detail pages fix their own frame and scroll inside it;
   // other pages scroll here.

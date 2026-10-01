@@ -14,11 +14,26 @@ export function useProjects(enabled = true) {
   });
 }
 
-/** Every task, done ones included: the list collapses the done group itself. */
+/** Chats live in Chats. On the board and in counts they show only while they wait for the owner. */
+const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || t.asking === true);
+const onlyChats = (list: TaskSummary[]) => list.filter((t) => t.chat === true);
+
+/** Every task, done ones included: the list collapses the done group itself. Chats show only when they need you. */
 export function useTasks(enabled = true) {
-  return useQuery<TaskSummary[], ApiRequestError>({
+  return useQuery<TaskSummary[], ApiRequestError, TaskSummary[]>({
     queryKey: [...queryKeys.tasks, "list"],
     queryFn: () => cmd("tasks.list", { includeDone: true }),
+    select: withoutQuietChats,
+    enabled,
+  });
+}
+
+/** The chats with agents, newest first, done ones included. */
+export function useChats(enabled = true) {
+  return useQuery<TaskSummary[], ApiRequestError, TaskSummary[]>({
+    queryKey: [...queryKeys.tasks, "list"],
+    queryFn: () => cmd("tasks.list", { includeDone: true }),
+    select: onlyChats,
     enabled,
   });
 }
