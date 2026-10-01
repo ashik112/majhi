@@ -24,6 +24,8 @@ export const tasks = sqliteTable("tasks", {
   overrides: text("overrides").notNull().default("{}"),
   /** JSON: the room's turn counters (loop guard, pipeline step, review round). */
   roomState: text("room_state").notNull().default("{}"),
+  /** JSON array of ReadMount: folders mounted read-only into the task's runs. */
+  readMounts: text("read_mounts").notNull().default("[]"),
   /** JSON PendingShip: the ship majhi runs once the lead resolves its conflicts. NULL when none. */
   pendingShip: text("pending_ship"),
   createdAt: text("created_at").notNull(),

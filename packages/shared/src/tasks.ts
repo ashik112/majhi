@@ -190,6 +190,14 @@ export const AttachmentSchema = z.object({
 });
 export type Attachment = z.infer<typeof AttachmentSchema>;
 
+/** A folder or file a task's agents may read, mounted read-only. No `agent` means every agent of the task. */
+export const ReadMountSchema = z.object({
+  path: z.string().min(1),
+  agent: IdSchema.optional(),
+  at: z.string(),
+});
+export type ReadMount = z.infer<typeof ReadMountSchema>;
+
 export const TaskSchema = z.object({
   id: TaskIdSchema,
   /** One line, from the first line of the brief. */
@@ -204,6 +212,11 @@ export const TaskSchema = z.object({
   /** Absolute path of the task folder. */
   folder: z.string(),
   repos: z.array(TaskRepoSchema),
+  /**
+   * Folders mounted read-only into the agents' runs: ones the owner mentioned with `@/path`, and the
+   * repos of an investigation task, which has no branch, worktree or Ship. Absent for none.
+   */
+  readMounts: z.array(ReadMountSchema).optional(),
   /** Agent ids. The first is the lead: owner messages without a mention go to it. */
   team: z.array(IdSchema),
   /** How the team takes turns (5.3). */

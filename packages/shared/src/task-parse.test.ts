@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseMentions, parsePathMentions } from "./rooms.ts";
 import { parseTaskText, TITLE_MAX } from "./task-parse.ts";
 import { type ParseContext, ParsedTaskSchema } from "./tasks.ts";
 
@@ -203,4 +204,18 @@ it("handles long text quickly", () => {
   const started = Date.now();
   parseTaskText(text, ctx);
   expect(Date.now() - started).toBeLessThan(200);
+});
+
+describe("path mentions", () => {
+  it("reads @/absolute paths, without trailing punctuation, code or quotes", () => {
+    const text = [
+      "for @/Users/owner/Work/acme/api, run it. Also @/Users/owner/Work/acme/web/src.",
+      "`@/Users/owner/in-code` and",
+      "> @/Users/owner/quoted",
+      "@/Users/owner/Work/acme/api again, @/Users/owner/../etc and email me@/not/a/mention",
+      "@acme-lead stays an agent mention",
+    ].join("\n");
+    expect(parsePathMentions(text)).toEqual(["/Users/owner/Work/acme/api", "/Users/owner/Work/acme/web/src"]);
+    expect(parseMentions(text, ["acme-lead"])).toEqual(["acme-lead"]);
+  });
 });

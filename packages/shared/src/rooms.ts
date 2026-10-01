@@ -45,6 +45,29 @@ const CODE = /```[\s\S]*?(?:```|$)|`[^`\n]*`/g;
  * count, plus `owner`. Mentions inside code are ignored, and so is quoted text (lines starting
  * with `>`), so an agent quoting an earlier message does not wake its author again.
  */
+/** `@/absolute/path`: a folder or file the owner points an agent at. Not an agent mention (those start with a letter). */
+const PATH_MENTION = /(?<![A-Za-z0-9_@/.-])@(\/[^\s`'"<>|*?]+)/g;
+
+/**
+ * The absolute paths a message mentions as `@/path`, in order, once each. Trailing punctuation
+ * (`.`, `,`, `;`, `:`, `)`, `!`, `?`) is not part of the path. Code and quoted lines are ignored,
+ * like agent mentions. Paths with `..` or a NUL are dropped here; the server still checks the rest.
+ */
+export function parsePathMentions(text: string): string[] {
+  const plain = text
+    .replace(CODE, (m) => " ".repeat(m.length))
+    .split("\n")
+    .map((line) => (/^\s*>/.test(line) ? "" : line))
+    .join("\n");
+  const out: string[] = [];
+  for (const m of plain.matchAll(PATH_MENTION)) {
+    const path = (m[1] ?? "").replace(/[.,;:)!?\]]+$/, "").replace(/\/+$/, "");
+    if (path === "" || path.split("/").includes("..") || path.includes("\0")) continue;
+    if (!out.includes(path)) out.push(path);
+  }
+  return out;
+}
+
 export function parseMentions(text: string, known: Iterable<string>): string[] {
   const ids = new Set([...known].map((k) => k.toLowerCase()));
   const plain = text

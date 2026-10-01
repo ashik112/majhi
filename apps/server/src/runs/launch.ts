@@ -6,6 +6,7 @@ import { accountRuntime, secretName } from "../accounts/homes.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { UserError } from "../errors.ts";
@@ -15,6 +16,7 @@ import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../tasks/read-mounts.ts";
 import { gitAttribution } from "./attribution.ts";
 
 /** An agent file and the account it runs on, checked. */
@@ -123,7 +125,12 @@ export async function launch(
       cwd: task.folder,
       git: attribution.git,
       task: task.id,
-      mounts: [...(await repoMounts(task)), ...hooksMount(attribution.hooks)],
+      mounts: [
+        // Read-only checkouts first: a task repo's own .git below one stays writable.
+        ...(await readMounts(deps, task, run.agent, fm.scope)),
+        ...(await repoMounts(task)),
+        ...hooksMount(attribution.hooks),
+      ],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
@@ -146,6 +153,50 @@ export async function launch(
     model,
     effort,
   };
+}
+
+/**
+ * What this agent reads in every run, read-only, at the same path as on the owner's machine: the
+ * registered projects it may see (a root agent all of them, an org agent its own org's), then the
+ * folders the owner mentioned for it and the task's investigation repos. The task's own worktrees
+ * stay read-write. Each folder is checked again, so one that moved is left out rather than failing
+ * the start. The runner's mount guard is the last check.
+ */
+export async function readMounts(
+  deps: { config: ConfigService; majhiHome: string; secrets: Pick<SecretStore, "keyFile"> },
+  task: Task,
+  agent: string,
+  scope: string,
+): Promise<RunMount[]> {
+  const loaded = await deps.config.load();
+  if (loaded.state.status !== "loaded") return [];
+  const { hostHome } = deps.config.paths;
+  const blocked = blockedPaths({
+    majhiHome: deps.majhiHome,
+    hostHome,
+    protectedPaths: [deps.secrets.keyFile],
+  });
+  const { workspaces, tasksDir } = loaded.state.config;
+  const sections = await deps.config.sections();
+  const projects = projectsFor(
+    scope,
+    Object.values(sections.projects).map((p) => ({ org: p.org, path: resolvePath(p.path, hostHome) })),
+  );
+  const mounts: RunMount[] = [];
+  const add = async (path: string, policy: ReadPolicy) => {
+    const ok = await checkReadMount(path, policy).catch(() => undefined);
+    if (ok !== undefined && !mounts.some((m) => m.path === ok)) mounts.push({ path: ok, readOnly: true });
+  };
+  // A registered project is the owner's own choice, even outside the roots: it is its own root.
+  for (const p of projects) {
+    await add(p.path, { roots: [p.path], projects: [], scope: "root", blocked, tasksDir });
+  }
+  // Mentioned folders and investigation repos must lie inside the workspace roots.
+  const wanted = (task.readMounts ?? []).filter((m) => m.agent === undefined || m.agent === agent);
+  for (const m of wanted) {
+    await add(m.path, { roots: workspaces, projects: [], scope: "root", blocked, tasksDir });
+  }
+  return mounts;
 }
 
 /** majhi's hooks folder, read-only, for a run that has them. */
@@ -179,13 +230,18 @@ export async function processLaunch(
 ): Promise<ProcessLaunch> {
   const task = deps.store.tasks.get(taskId);
   if (task === undefined) throw new UserError(`Task ${taskId} does not exist.`);
-  const account = await runtimeAccountOf(deps, await resolveAgent(deps, agentId));
+  const resolved = await resolveAgent(deps, agentId);
+  const account = await runtimeAccountOf(deps, resolved);
   const attribution = await gitAttribution(deps, task, agentId);
   return {
     folder: task.folder,
     env: buildEnv(account, deps.options.base, attribution.git),
     account,
-    mounts: [...(await repoMounts(task)), ...hooksMount(attribution.hooks)],
+    mounts: [
+      ...(await readMounts(deps, task, agentId, resolved.fm.scope)),
+      ...(await repoMounts(task)),
+      ...hooksMount(attribution.hooks),
+    ],
   };
 }
 

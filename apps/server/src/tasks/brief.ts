@@ -44,6 +44,8 @@ export function renderTaskMd(
   facts?: TeamFacts,
   /** The Memory section recalled for this task (5.6), already cut to the cap. Empty for none. */
   memory = "",
+  /** Registered projects every run of the task reads read-only, at these paths. */
+  readable: readonly { id: string; org: string; path: string }[] = [],
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -51,8 +53,14 @@ export function renderTaskMd(
   lines.push(`Kind: ${task.kind}${orgName === undefined ? "" : `. Org: ${orgName}`}.`, "");
   lines.push("## Brief", "", task.brief.trim(), "");
   lines.push("## Repos", "");
+  const reads = task.readMounts ?? [];
+  if (task.repos.length === 0 && reads.length > 0) {
+    lines.push("Read-only. Nothing to change here: no branch, no worktree, no Ship.", "");
+  }
   if (task.repos.length === 0) {
-    lines.push("No repos. Work in this folder.");
+    lines.push(
+      reads.length > 0 ? "No repos to change. Work in this folder." : "No repos. Work in this folder.",
+    );
   } else {
     for (const r of task.repos) {
       const worktree = r.worktree ?? join(task.folder, r.project);
@@ -60,6 +68,26 @@ export function renderTaskMd(
         `- ${r.project}: worktree \`${worktree}\`, branch \`${r.branch}\` ${r.createdBranch ? "(new, from" : "(existing; base"} \`${r.base}\`)`,
       );
     }
+  }
+  if (readable.length > 0) {
+    lines.push(
+      "",
+      "## Projects you can read",
+      "",
+      "Mounted read-only at these paths. Read them directly (cat, grep, ls). Do not create a task just to look at code. A task worktree above is the only place you write.",
+      "",
+    );
+    for (const p of readable) lines.push(`- ${p.id} (${p.org}): \`${p.path}\``);
+  }
+  if (reads.length > 0) {
+    lines.push(
+      "",
+      "## Read-only folders",
+      "",
+      "Mounted read-only at the same path. Read them, never write to them.",
+      "",
+    );
+    for (const m of reads) lines.push(`- \`${m.path}\`${m.agent === undefined ? "" : ` (@${m.agent})`}`);
   }
   if (related !== undefined && hasRelated(related)) lines.push("", ...relatedLines(related));
   if (multi) lines.push("", ...teamLines(task, members), "");

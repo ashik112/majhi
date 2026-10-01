@@ -5,6 +5,8 @@ import {
   type PausedReason,
   type PendingShip,
   PendingShipSchema,
+  type ReadMount,
+  ReadMountSchema,
   type RepoMr,
   type Task,
   type TaskId,
@@ -34,6 +36,17 @@ function parsePendingShip(json: string | null): PendingShip | undefined {
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
+  }
+}
+
+const ReadMountsSchema = z.array(ReadMountSchema);
+
+function parseReadMounts(json: string): ReadMount[] {
+  try {
+    const parsed = ReadMountsSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
   }
 }
 
@@ -76,6 +89,7 @@ export class TaskRepo {
           team: JSON.stringify(task.team),
           mode: task.mode,
           overrides: JSON.stringify(task.overrides),
+          readMounts: JSON.stringify(ReadMountsSchema.parse(task.readMounts ?? [])),
           pendingShip: task.pendingShip === undefined ? null : JSON.stringify(task.pendingShip),
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
@@ -164,6 +178,7 @@ export class TaskRepo {
       team: TeamSchema.parse(JSON.parse(row.team)),
       mode: CoordinationModeSchema.catch("lead").parse(row.mode),
       overrides: parseOverrides(row.overrides),
+      ...(row.readMounts === "[]" ? {} : { readMounts: parseReadMounts(row.readMounts) }),
       links: links.map((l) => ({
         type: TaskLinkTypeSchema.parse(l.type),
         task: l.other,
@@ -393,6 +408,14 @@ export class TaskRepo {
 
   setMode(id: string, mode: CoordinationMode, at: string): void {
     this.db.update(tasks).set({ mode, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  setReadMounts(id: string, mounts: readonly ReadMount[], at: string): void {
+    this.db
+      .update(tasks)
+      .set({ readMounts: JSON.stringify(ReadMountsSchema.parse(mounts)), updatedAt: at })
+      .where(eq(tasks.id, id))
+      .run();
   }
 
   setOverrides(id: string, overrides: Record<string, TeamOverride>, at: string): void {

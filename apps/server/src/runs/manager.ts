@@ -387,6 +387,18 @@ export class RunManager {
     return item;
   }
 
+  /**
+   * The agent's task got new read-only mounts. A session already open cannot see them, so an idle
+   * one is closed now and the next prompt resumes it with the mounts; a busy one restarts when its
+   * turn ends, before the next queued prompt.
+   */
+  remount(task: string, agent: string): void {
+    const run = this.runs.get(this.key(task, agent));
+    if (run?.session === undefined) return;
+    if (run.turning) run.remountDue = true;
+    else this.evict(this.key(task, agent));
+  }
+
   /** The concurrency limits changed: starts that wait may fit now. */
   limitsChanged(): Promise<void> {
     return this.slots.pump();
@@ -763,6 +775,16 @@ export class RunManager {
     if (run.freshDue) {
       run.freshDue = false;
       await this.compaction.fresh(run);
+    }
+    if (run.remountDue) {
+      run.remountDue = false;
+      const session = run.session;
+      if (session !== undefined && !run.closing) {
+        // The slot stays when a prompt is waiting: it resumes the session at once, with the new mounts.
+        this.endSession(run, "mounts", run.queue.length > 0 && !run.held);
+        void session.close().catch(() => undefined);
+        this.setLive(run, { status: "idle", nowDoing: undefined });
+      }
     }
     return true;
   }

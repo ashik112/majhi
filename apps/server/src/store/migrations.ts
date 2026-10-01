@@ -378,6 +378,15 @@ CREATE INDEX triggers_org ON triggers (org);
 ALTER TABLE task_repos ADD COLUMN start_commit TEXT;
 `,
   },
+  {
+    // Folders a task's agents may read, mounted read-only: ones the owner mentioned and the repos
+    // of an investigation task (JSON array).
+    id: 104,
+    name: "task read-only mounts",
+    sql: `
+ALTER TABLE tasks ADD COLUMN read_mounts TEXT NOT NULL DEFAULT '[]';
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

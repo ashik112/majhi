@@ -111,6 +111,8 @@ export class AgentRun {
   retryTimer: NodeJS.Timeout | undefined;
   /** The owner asked for a fresh session while a turn ran. */
   freshDue = false;
+  /** New read-only mounts were added while a turn ran: the session restarts when it ends. */
+  remountDue = false;
   /** The room already said this run waits for a slot. */
   queuedNoted = false;
   /** Aborts a wait for another agent's worktree lock (5.3). */

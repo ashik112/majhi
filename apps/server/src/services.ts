@@ -397,6 +397,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   const tasks = new TaskService({
+    protectedPaths: [env.secretsKeyFile],
     store,
     config,
     projects,

@@ -86,7 +86,9 @@ describe("what a task's run mounts", () => {
     await w.h.majhi.services.runs.idle();
     const start = w.h.runtime.starts[0];
     const gitDir = join(w.repo("api"), ".git");
-    expect(start?.mounts).toEqual([
+    // The project's checkout comes first, read-only: the .git below it stays writable.
+    expect(start?.mounts?.slice(0, 4)).toEqual([
+      { path: w.repo("api"), readOnly: true },
       { path: gitDir },
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
@@ -107,9 +109,11 @@ describe("what a task's run mounts", () => {
     expect(mounts).toEqual([
       w.taskDir("ACM-1"),
       join(w.h.env.majhiHome, "accounts", "claude-acme"),
+      w.repo("api"),
       gitDir,
       join(gitDir, "config"),
       join(gitDir, "hooks"),
+      join(w.h.env.majhiHome, "git-hooks"),
     ]);
     const args = dockerRunArgs(request, config, "majhi-run-x").join(" ");
     expect(args).not.toContain(`source=${w.h.env.majhiHome},`);
