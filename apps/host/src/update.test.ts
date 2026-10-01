@@ -21,6 +21,8 @@ describe("update", () => {
     failOn?: string;
     /** Fails only the first command that starts with this. */
     failOnce?: string;
+    /** Fails the build this many times with a network error first. */
+    netFails?: number;
     dirty?: boolean;
     selfIsBundle?: boolean;
     keyExists?: boolean;
@@ -29,11 +31,19 @@ describe("update", () => {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
     let failedOnce = false;
+    let netFailed = 0;
     const exec: ExecFn = async (file, args, opts) => {
       const line = args.join(" ");
       calls.push({ file, args: line, env: opts.env });
       if (options.failOn !== undefined && line.startsWith(options.failOn)) {
         throw Object.assign(new Error("Command failed"), { stderr: "boom: no space left" });
+      }
+      if (line.startsWith("compose --profile runner build") && netFailed < (options.netFails ?? 0)) {
+        netFailed += 1;
+        throw Object.assign(new Error("Command failed"), {
+          stderr:
+            'failed to fetch oauth token: Post "https://auth.docker.io/token": net/http: TLS handshake timeout',
+        });
       }
       if (options.failOnce !== undefined && line.startsWith(options.failOnce) && !failedOnce) {
         failedOnce = true;
@@ -181,5 +191,28 @@ describe("update", () => {
     expect(status.state).toBe("failed");
     expect(status.lines.join("\n")).toContain("No previous version to go back to");
     expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
+  });
+
+  it("tries the build again when Docker Hub does not answer, and goes on when it does", async () => {
+    const s = setup({ netFails: 2 });
+    const status = await s.run();
+    expect(status.state).toBe("done");
+    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
+    expect(status.lines.join("\n")).toContain("Docker Hub did not answer. Trying again");
+  });
+
+  it("gives up after three network failures with a plain reason, and leaves majhi running", async () => {
+    const s = setup({ netFails: 5 });
+    const status = await s.run();
+    expect(status.state).toBe("failed");
+    expect(status.error).toContain("Docker Hub could not be reached after 3 tries");
+    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
+    expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
+  });
+
+  it("does not retry a build that failed for another reason", async () => {
+    const s = setup({ failOn: "compose --profile runner build" });
+    await s.run();
+    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(1);
   });
 });

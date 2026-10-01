@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1.7
+# No `# syntax=` line: it makes every build fetch the frontend from Docker Hub, and the
+# built-in one supports everything here (RUN --mount included).
 
 FROM node:22-bookworm-slim AS build
 # node-pty has no Linux prebuilds, so it compiles from source.

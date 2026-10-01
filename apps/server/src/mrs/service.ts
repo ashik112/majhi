@@ -23,6 +23,7 @@ import { logShip } from "../audit.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { type FastForwardOutcome, fastForwardBranch } from "../git/fast-forward.ts";
 import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, uncommitted } from "../git/git.ts";
 import type { GitLoginService } from "../git/logins.ts";
 import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
@@ -128,7 +129,7 @@ export class MrService {
 
   private audit(
     task: string,
-    kind: "push" | "mr" | "merge" | "merge+push",
+    kind: "push" | "mr" | "merge" | "merge+push" | "update",
     who: string,
     ok: boolean,
     detail: string,
@@ -874,6 +875,17 @@ export class MrService {
     if (!(await localBranchExists(source, branch))) return false;
     // The container cannot read an https login, so it cannot look. git itself refuses a non-fast-forward push.
     if (target.viaHost) return false;
+    if (!(await this.fetchTracking(source, target, branch))) return false;
+    return !(await gitOk(source, [
+      "merge-base",
+      "--is-ancestor",
+      `refs/remotes/${target.remote}/${branch}`,
+      `refs/heads/${branch}`,
+    ]));
+  }
+
+  /** Fetches the remote's `branch` into its tracking ref. False when the remote has no such branch. */
+  private async fetchTracking(source: string, target: PushTarget, branch: string): Promise<boolean> {
     const tracking = `refs/remotes/${target.remote}/${branch}`;
     const from = target.pushUrl ?? target.remote;
     const fetch = async (): Promise<string | undefined> => {
@@ -890,11 +902,51 @@ export class MrService {
     if (failed !== undefined && isSshAuthFailure(failed) && this.deps.reloadKeys !== undefined) {
       if (await this.deps.reloadKeys().catch(() => false)) failed = await fetch();
     }
-    if (failed !== undefined) {
-      if (/couldn't find remote ref|could not find remote ref/i.test(failed)) return false;
-      throw new UserError(`Could not read ${target.remote}/${branch} before pushing: ${failed}`, 409);
-    }
-    return !(await gitOk(source, ["merge-base", "--is-ancestor", tracking, `refs/heads/${branch}`]));
+    if (failed === undefined) return true;
+    if (/couldn't find remote ref|could not find remote ref/i.test(failed)) return false;
+    throw new UserError(`Could not read ${target.remote}/${branch} before pushing: ${failed}`, 409);
+  }
+
+  /**
+   * Brings the owner's local target branch up to the remote's, when that is a pure fast-forward, so a
+   * ship that was refused for a behind branch can run. Only the owner asks for it (the command checks).
+   */
+  async updateTarget(input: {
+    id: string;
+    into?: string | undefined;
+    project?: string | undefined;
+    by: string;
+  }): Promise<{ results: ShipResult[] }> {
+    const task = this.deps.tasks.get(input.id);
+    return this.exclusive(input.id, async () => {
+      const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
+      if (repos.length === 0) throw new UserError(`${task.id} has no repo ${input.project ?? ""}.`, 409);
+      const results: ShipResult[] = [];
+      for (const repo of repos) {
+        const into = input.into ?? repo.base;
+        const target = await this.pushTarget(repo);
+        let outcome: FastForwardOutcome;
+        if (target.viaHost) {
+          outcome = {
+            ok: false,
+            reason: `${repo.project} pushes with the Mac's saved login, which majhi cannot read from here. Update ${into} from ${target.remote} yourself in the project.`,
+          };
+        } else if (!(await this.fetchTracking(repo.source, target, into))) {
+          outcome = { ok: false, reason: `${target.remote} has no branch ${into}.` };
+        } else {
+          outcome = await fastForwardBranch({
+            source: repo.source,
+            branch: into,
+            to: `refs/remotes/${target.remote}/${into}`,
+            remote: target.remote,
+          });
+        }
+        const detail = outcome.ok ? outcome.detail : outcome.reason;
+        results.push({ project: repo.project, into, ok: outcome.ok, detail });
+        this.audit(input.id, "update", input.by, outcome.ok, `${target.remote}/${into}: ${detail}`, repo.project);
+      }
+      return { results };
+    });
   }
 
   // ---------------------------------------------------------------------------

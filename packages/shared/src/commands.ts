@@ -940,6 +940,19 @@ export const commands = {
     input: z.object({ id: TaskIdSchema }),
     output: ShipOptionsSchema,
   },
+  "tasks.updateTarget": {
+    risk: "change",
+    summary:
+      "Owner only. Fetch the MR remote's copy of a target branch and fast-forward the owner's local branch of the same name to it, in the project's checkout. Only when the local branch has no commit the remote lacks; where the branch is checked out, only when no incoming file has uncommitted changes and no untracked path is in the way. Never forced, never a reset, no other branch moves. Refused with the reason otherwise",
+    input: z.object({
+      id: TaskIdSchema,
+      /** The branch to update. Default: each repo's base branch. */
+      into: LocalBranchSchema.optional(),
+      /** Only this repo of the task. Default: every repo. */
+      project: IdSchema.optional(),
+    }),
+    output: z.object({ results: z.array(MergeResultSchema) }),
+  },
   "tasks.branches": {
     risk: "read",
     summary:

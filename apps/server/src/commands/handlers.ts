@@ -357,6 +357,15 @@ export function createHandlers({
       push
         ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
         : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.updateTarget": (input, ctx) => {
+      if (ctx.meta.actor.kind === "agent") {
+        throw new UserError(
+          "Only the owner can update a branch in their checkout. Ask them to click Update in Ship.",
+          409,
+        );
+      }
+      return services.mrs.updateTarget({ ...input, by: "owner" });
+    },
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
