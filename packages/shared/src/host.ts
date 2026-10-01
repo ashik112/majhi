@@ -185,6 +185,24 @@ export const HostJobSchema = z.discriminatedUnion("method", [
       line: z.number().int().min(1).optional(),
     }),
   }),
+  /**
+   * Show a macOS notification. `path` is where a click leads in majhi, like `/t/ACM-12`; the helper
+   * joins it to majhi's own address and only opens it when it can carry a click.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("notify"),
+    params: z.object({
+      title: z.string().min(1).max(120),
+      message: z.string().min(1).max(300),
+      path: z
+        .string()
+        .max(300)
+        .regex(/^\/(?!\/)/)
+        .optional(),
+      sound: z.boolean(),
+    }),
+  }),
   /** Which accounts `gh`, `glab` and the SSH keys are logged in as, per git host. Reads no token. */
   z.object({
     id: z.string(),
@@ -249,6 +267,8 @@ export const HostResultSchemas = {
     changes: z.array(z.string()).max(20),
   }),
   "editor.open": z.object({ opened: z.literal(true) }),
+  /** `clickable`: a click on the notification opens majhi. */
+  notify: z.object({ shown: z.literal(true), clickable: z.boolean() }),
   "git.logins": GitLoginsResultSchema,
   "git.token": z.object({ token: z.string().min(1) }),
   "git.push": z.object({ pushed: z.literal(true) }),

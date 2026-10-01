@@ -109,6 +109,7 @@ import {
   EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
+  NotificationsPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -387,6 +388,20 @@ export const commands = {
       line: z.number().int().min(1).optional(),
     }),
     output: z.object({ app: EditorAppSchema, path: z.string() }),
+  },
+  "notify.test": {
+    risk: "change",
+    summary:
+      "Send a test notification to the Mac and to open browser tabs, as the notification settings allow, so the owner can see they work",
+    input: z.object({}),
+    output: z.object({
+      /** `off`: turned off in settings. `no-helper`: the host helper is not connected. */
+      mac: z.enum(["sent", "off", "no-helper", "failed"]),
+      /** Why the Mac notification failed, in plain words. */
+      error: z.string().optional(),
+      /** Whether open tabs were told to show one. */
+      browser: z.boolean(),
+    }),
   },
   "fs.listDirs": {
     risk: "read",
@@ -1305,7 +1320,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
+      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -1315,6 +1330,7 @@ export const commands = {
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),
       cleanup: CleanupPatchSchema.optional(),
+      notifications: NotificationsPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
     }),
     output: SettingsSchema,

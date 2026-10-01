@@ -38,6 +38,8 @@ export interface JobHandlers {
   /** Throws an error whose message is safe to show when the editor cannot open the path. */
   editorOpen(params: { app: EditorApp; path: string; line?: number | undefined }): Promise<void>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
+  /** Throws an error whose message is safe to show when macOS shows nothing. */
+  notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
 }
 
 export type SendReply = (reply: HostReply) => Promise<void>;
@@ -97,6 +99,11 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         await handlers.editorOpen(job.params);
         await reply({ id: job.id, ok: true, result: { opened: true } });
         return;
+      case "notify": {
+        const { clickable } = await handlers.notify(job.params);
+        await reply({ id: job.id, ok: true, result: { shown: true, clickable } });
+        return;
+      }
       case "git.logins":
         await reply({ id: job.id, ok: true, result: await handlers.gitLogins(job.params) });
         return;

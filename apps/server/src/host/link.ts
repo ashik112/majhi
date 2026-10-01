@@ -32,6 +32,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
   "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
+  notify: (value) => HostResultSchemas.notify.safeParse(value),
   "git.logins": (value) => HostResultSchemas["git.logins"].safeParse(value),
   "git.token": (value) => HostResultSchemas["git.token"].safeParse(value),
   "git.push": (value) => HostResultSchemas["git.push"].safeParse(value),

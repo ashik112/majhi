@@ -177,7 +177,7 @@ describe("accounts.login.start", () => {
       expect(output).toContain("signed-in-abc123");
       const exit = messages.at(-1);
       expect(exit).toMatchObject({ type: "exit", code: 0, health: { ok: true } });
-      expect(seen.some((e) => e.topics.includes("accounts"))).toBe(true);
+      expect(seen.some((e) => e.type === "changed" && e.topics.includes("accounts"))).toBe(true);
       expect(h.runtime.probes).toHaveLength(1);
       expect(
         (await h.cmd("accounts.list")).body.find((a: { id: string }) => a.id === "claude-acme").status,

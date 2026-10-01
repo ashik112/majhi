@@ -259,6 +259,8 @@ export function createHandlers({
       return { app: editor.app, path };
     },
 
+    "notify.test": () => services.notifier.test(),
+
     "fs.listDirs": (input) =>
       hostLink.call("listDirs", {
         path: input.path ?? config.paths.hostHome,
@@ -528,6 +530,7 @@ export function createHandlers({
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
+        ...(input.notifications === undefined ? {} : { notifications: input.notifications }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
       };
       await config.setSettings(patch, {

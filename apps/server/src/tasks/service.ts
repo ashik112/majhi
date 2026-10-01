@@ -234,13 +234,11 @@ export class TaskService {
 
   list(includeDone: boolean): TaskSummary[] {
     const rows = this.deps.store.tasks.list(includeDone);
-    const waiting = rows.some((t) => t.chat === true && t.status !== "done")
-      ? this.deps.store.room.tasksWaitingOnOwner()
-      : new Set<string>();
+    const waiting = this.deps.store.room.tasksWaitingOnOwner();
     return rows.map((t) => ({
       ...t,
       working: this.deps.runs.working(t.id),
-      ...(t.chat === true && t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
+      ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
     }));
   }
 

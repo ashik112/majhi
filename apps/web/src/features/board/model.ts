@@ -29,13 +29,14 @@ const COLUMNS: readonly ColumnId[] = ["inbox", "working", "needs", "mr", "done"]
  * task that waits for the owner: a finished one to review, a running one whose agents all finished
  * their turn, and a paused one.
  */
-export function columnOf(task: Pick<TaskSummary, "status" | "working">): ColumnId {
+export function columnOf(task: Pick<TaskSummary, "status" | "working" | "asking">): ColumnId {
   switch (task.status) {
     case "inbox":
     case "ready":
       return "inbox";
     case "running":
-      return isYourTurn(task) ? "needs" : "working";
+      // An agent that waits on an approval or a question is working on paper only.
+      return isYourTurn(task) || task.asking === true ? "needs" : "working";
     case "paused":
     case "review":
       return "needs";
@@ -197,9 +198,27 @@ export function boardCounts(tasks: readonly TaskSummary[], org: string | undefin
   return {
     open: own.filter(isOpen).length,
     working: own.filter((t) => columnOf(t) === "working").length,
-    needs: own.filter((t) => columnOf(t) === "needs").length,
+    needs: own.filter(needsOwner).length,
     done: own.filter((t) => !isOpen(t)).length,
   };
+}
+
+/**
+ * Whether a task or chat counts as needing the owner: it sits under Needs you, and a chat only counts
+ * while it asks something or is paused (an idle chat waits for the next message, not for a decision).
+ */
+export function needsOwner(task: Pick<TaskSummary, "status" | "working" | "asking" | "chat">): boolean {
+  if (columnOf(task) !== "needs") return false;
+  return task.chat !== true || task.asking === true || task.status === "paused" || task.status === "review";
+}
+
+/** Everything that needs the owner, as the tab title and the banner count it: tasks, chats and sign-ins. */
+export function needsYouCount(
+  tasks: readonly TaskSummary[],
+  accounts: readonly { status: string }[],
+): number {
+  const signedOut = accounts.filter((a) => a.status === "needs-login" || a.status === "unreachable").length;
+  return tasks.filter(needsOwner).length + signedOut;
 }
 
 export type Direction = "up" | "down" | "left" | "right";

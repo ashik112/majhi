@@ -30,6 +30,7 @@ export class RoomService {
   private readonly processes = new Map<string, ProcessInfo[]>();
   private readonly deferred = new Map<string, Map<string, RoomPayload>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  private readonly writeListeners = new Set<(task: TaskId, item: RoomItem) => void>();
 
   /** The last slash commands each agent advertised, so `/` works before a session starts. */
   private readonly commands = new Map<string, AgentLive["commands"]>();
@@ -104,7 +105,19 @@ export class RoomService {
   private write(task: TaskId, id: string, payload: RoomPayload): RoomItem {
     const item = this.store.room.upsert(task, id, payload);
     this.send(task, { type: "item", item });
+    for (const listener of this.writeListeners) {
+      try {
+        listener(task, item);
+      } catch {
+        // A listener that fails must not lose the item.
+      }
+    }
     return item;
+  }
+
+  /** Calls `listener` after every stored item, from any task. */
+  onWrite(listener: (task: TaskId, item: RoomItem) => void): void {
+    this.writeListeners.add(listener);
   }
 
   /** The stored item, with anything still held for it merged in. */

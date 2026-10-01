@@ -20,6 +20,7 @@ import { runJob } from "./jobs.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
+import { showNotification } from "./notify.ts";
 import { findExecutable, toolPath } from "./paths.ts";
 import { composeEnv, createRemounter, dockerStep, type ExecFn, type RemountOptions } from "./remount.ts";
 import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
@@ -207,6 +208,16 @@ async function main(): Promise<void> {
       readGitToken(gitDeps, params.via, params.host),
     gitPush: (params: { path: string; url: string; branch: string }) => gitPush(gitPushDeps, params),
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
+    notify: async (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
+      showNotification(
+        {
+          run: runCommand,
+          env: { PATH: path },
+          terminalNotifier: await findExecutable("terminal-notifier", path),
+          baseUrl: config.url,
+        },
+        params,
+      ),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),

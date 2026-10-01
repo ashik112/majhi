@@ -3,9 +3,11 @@ import * as m from "motion/react-m";
 import { useMemo } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
+import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
+import { needsYouCount } from "@/features/board/model";
 import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
 import { AppGate } from "@/features/home/app-gate";
@@ -17,6 +19,7 @@ import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
+import { useAttentionBadge } from "@/lib/browser-notify";
 import { cn } from "@/lib/cn";
 import { useAdoptOrgParam, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH } from "@/lib/pages";
@@ -72,6 +75,7 @@ function Frame() {
     () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
     [tasks, agents, accounts, permission, now],
   );
+  useAttentionBadge(useMemo(() => needsYouCount(tasks ?? [], accounts ?? []), [tasks, accounts]));
   // The page fades in when the section changes (board, task, a page), not on every task switch.
   const section = useRouterState({
     select: (s) =>
@@ -89,6 +93,7 @@ function Frame() {
     <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
+        <NotifyPrompt />
         <AttentionBanner banner={banner} org={org} />
         <m.div
           key={section}

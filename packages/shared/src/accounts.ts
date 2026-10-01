@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttentionEventSchema } from "./notify.ts";
 import { CommitsPatchSchema, ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
@@ -402,6 +403,7 @@ export const EventTopicSchema = z.enum([
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),
+  AttentionEventSchema,
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 

@@ -1,5 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { showAttention } from "./browser-notify";
 import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
 
 /**
@@ -9,6 +11,7 @@ import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } f
  */
 export function useServerEvents(): void {
   const client = useQueryClient();
+  const router = useRouter();
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -34,7 +37,12 @@ export function useServerEvents(): void {
       };
       ws.onmessage = (message) => {
         const event = parseServerEvent(message.data);
-        if (event) invalidate(event.topics);
+        if (event === null) return;
+        if (event.type === "attention") {
+          showAttention(event, (path) => router.history.push(path));
+          // The item is new: the lists that count it must show it at once.
+          invalidate(["tasks"]);
+        } else invalidate(event.topics);
       };
       ws.onclose = () => {
         if (stopped) return;
@@ -49,5 +57,5 @@ export function useServerEvents(): void {
       window.clearTimeout(timer);
       socket?.close();
     };
-  }, [client]);
+  }, [client, router]);
 }

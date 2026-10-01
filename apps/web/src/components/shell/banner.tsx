@@ -25,6 +25,8 @@ export function AttentionBanner({ banner, org }: { banner: Banner | null; org: s
   function run(action: BannerAction) {
     if (action.kind === "task")
       void navigate({ to: "/t/$taskId", params: { taskId: action.id }, search: orgSearch(org) });
+    else if (action.kind === "chat")
+      void navigate({ to: "/chats/$taskId", params: { taskId: action.id }, search: orgSearch(org) });
     else if (action.kind === "page")
       void navigate({ to: action.to, search: { ...orgSearch(org), ...action.search } });
     else {

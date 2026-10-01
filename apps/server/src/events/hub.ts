@@ -11,6 +11,11 @@ export class EventHub {
     return () => this.listeners.delete(listener);
   }
 
+  /** Sends one event, like an attention notice, to every open socket. */
+  send(event: ServerEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+
   emit(topics: readonly EventTopic[]): void {
     const unique = [...new Set(topics)];
     const [first, ...rest] = unique;

@@ -107,8 +107,29 @@ export async function startAtLogin(deps: StartupDeps): Promise<StartupOutcome> {
   return outcome;
 }
 
-/** AppleScript text for a notification. Quotes and backslashes are escaped so a message cannot end the string. */
-export function notificationScript(message: string): string {
-  const safe = message.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `display notification "${safe}" with title "majhi"`;
+/** Text that is safe inside an AppleScript string: no control characters, one line, a bounded length. */
+export function plainLine(text: string, max = 300): string {
+  let flat = "";
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    flat += code < 32 || code === 127 || code === 0x2028 || code === 0x2029 ? " " : ch;
+  }
+  flat = flat.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
+}
+
+function quoted(text: string): string {
+  return `"${plainLine(text).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * AppleScript text for a notification. Quotes and backslashes are escaped and line breaks removed, so
+ * a message cannot end the string or add a command.
+ */
+export function notificationScript(
+  message: string,
+  options: { title?: string; sound?: boolean } = {},
+): string {
+  const sound = options.sound === true ? ' sound name "Glass"' : "";
+  return `display notification ${quoted(message)} with title ${quoted(options.title ?? "majhi")}${sound}`;
 }
