@@ -172,6 +172,8 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
 
 const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   owner: "You stopped it.",
+  loop: "The agents handed work back and forth without changing a file, so majhi paused them. Reply or Resume to continue.",
+  blocked: "A task it waits on changed. See the room for what to do.",
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
   limit: "An account reached its usage limit.",

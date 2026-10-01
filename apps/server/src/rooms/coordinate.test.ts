@@ -81,20 +81,29 @@ describe("planTurn: lead delegates", () => {
 });
 
 describe("planTurn: the loop guard", () => {
-  it("pauses instead of handing on past the limit, and keeps the count", () => {
+  it("past the limit wakes only the lead once, then pauses if the loop goes on", () => {
     const at = planTurn(turn({ mentions: ["builder"], state: { agentTurns: 11 } }));
     expect(at.handoffs).toHaveLength(1);
     expect(at.state.agentTurns).toBe(12);
-    const over = planTurn(turn({ mentions: ["builder"], state: { agentTurns: 12 } }));
-    expect(over.handoffs).toEqual([]);
-    expect(over.pause).toMatch(/12 handoffs in a row changed no files/);
-    expect(over.state.agentTurns).toBe(12);
+    const first = planTurn(turn({ from: "builder", mentions: ["reviewer"], state: { agentTurns: 12 } }));
+    expect(first.handoffs).toEqual([]);
+    expect(first.pause).toBeUndefined();
+    expect(first.nudge?.to).toBe("lead");
+    expect(first.nudge?.text).toMatch(/12 handoffs in a row changed no files/);
+    expect(first.state).toMatchObject({ agentTurns: 0, nudged: true });
+    const again = planTurn(
+      turn({ from: "builder", mentions: ["reviewer"], state: { agentTurns: 12, nudged: true } }),
+    );
+    expect(again.handoffs).toEqual([]);
+    expect(again.nudge).toBeUndefined();
+    expect(again.pause).toMatch(/12 more handoffs changed no files/);
+    expect(again.state.agentTurns).toBe(12);
   });
 
   it("counts every handoff of one message", () => {
     const plan = planTurn(turn({ mentions: ["builder", "web"], state: { agentTurns: 11 } }));
     expect(plan.handoffs).toEqual([]);
-    expect(plan.pause).toBeDefined();
+    expect(plan.nudge).toBeDefined();
   });
 });
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Task, TaskId } from "@majhi/shared";
+import { waitsForOwner } from "@majhi/shared";
 import { isBossChat } from "../admin/boss.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage } from "../errors.ts";
@@ -82,7 +83,7 @@ export class Resilience {
       if (
         task === undefined ||
         task.status === "done" ||
-        (task.status === "paused" && task.pausedReason === "owner")
+        (task.status === "paused" && waitsForOwner(task.pausedReason))
       ) {
         store.runs.setInFlight(id, agent, 0, false);
         continue;

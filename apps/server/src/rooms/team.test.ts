@@ -202,11 +202,11 @@ describe("the pipeline", () => {
 });
 
 describe("the loop guard", () => {
-  it("pauses with reason owner after too many agent turns, and an owner message resets it", async () => {
+  it("wakes the lead once when agents loop, then pauses with reason loop, and an owner message resets it", async () => {
     const ping = say("@acme-reviewer your turn.");
     const pong = say("@acme-builder your turn.");
     const { h } = await teamWorld(
-      { "acme-builder": Array(10).fill(ping), "acme-reviewer": Array(10).fill(pong) },
+      { "acme-builder": Array(20).fill(ping), "acme-reviewer": Array(20).fill(pong) },
       { lead: false },
     );
     expect((await h.cmd("settings.set", { rooms: { max_agent_turns: 3 } })).status).toBe(200);
@@ -218,16 +218,16 @@ describe("the loop guard", () => {
     await until(async () => (await status("ACM-1")) === "paused", "paused");
     await h.majhi.services.runs.idle("ACM-1");
     const task = (await h.cmd("tasks.get", { id: "ACM-1" })).body;
-    expect(task.pausedReason).toBe("owner");
-    expect(await handoffs("ACM-1")).toHaveLength(3);
-    expect(
-      (await systemTexts("ACM-1")).some((t) => t.startsWith("3 handoffs in a row changed no files.")),
-    ).toBe(true);
+    expect(task.pausedReason).toBe("loop");
+    // The first trip woke the lead (the team's first member) instead of pausing.
+    expect(await handoffs("ACM-1")).toContain("majhi>acme-builder (guard)");
+    expect((await systemTexts("ACM-1")).some((t) => t.startsWith("Agents went in circles"))).toBe(true);
+    expect((await systemTexts("ACM-1")).some((t) => t.includes("more handoffs changed no files"))).toBe(true);
 
     const sent = await h.cmd("room.send", { task: "ACM-1", text: "carry on" });
     expect(sent.status).toBe(200);
     expect(sent.body.item.to).toBe("acme-builder");
-    expect(h.majhi.services.store.tasks.roomState("ACM-1").agentTurns).toBe(0);
+    expect(h.majhi.services.store.tasks.roomState("ACM-1")).toMatchObject({ agentTurns: 0, nudged: false });
   });
 });
 

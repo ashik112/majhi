@@ -254,6 +254,7 @@ const HANDOFF_WORDS: Record<Of<"handoff">["via"], string> = {
   tool: "handed to",
   pipeline: "finished, next step:",
   "review-loop": "passed the work to",
+  guard: "woke",
 };
 
 /**

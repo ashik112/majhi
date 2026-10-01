@@ -17,6 +17,7 @@ import {
   type ShipOptions,
   type Task,
   type TaskRepo,
+  waitsForOwner,
 } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -1147,7 +1148,7 @@ export class MrService {
     for (const link of store.tasks.linksTo(id)) {
       const holder =
         link.type === "depends-on" && link.when !== "ready" ? store.tasks.get(link.task) : undefined;
-      if (holder?.status === "paused" && holder.pausedReason === "owner") {
+      if (holder?.status === "paused" && waitsForOwner(holder.pausedReason)) {
         this.note(
           holder.id,
           `Every merge request of ${id} is merged now. Start ${holder.id} when you are ready.`,

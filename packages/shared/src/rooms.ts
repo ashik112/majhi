@@ -30,7 +30,8 @@ export const TeamOverrideSchema = z.object({
 export type TeamOverride = z.infer<typeof TeamOverrideSchema>;
 
 /** Why an agent was woken by another. */
-export const HandoffViaSchema = z.enum(["mention", "pipeline", "review-loop", "tool"]);
+/** `guard`: majhi's loop guard woke the lead once to break a loop, before it pauses the room. */
+export const HandoffViaSchema = z.enum(["mention", "pipeline", "review-loop", "tool", "guard"]);
 export type HandoffVia = z.infer<typeof HandoffViaSchema>;
 
 /** Written by the owner or an agent to hand the task back to the owner. */

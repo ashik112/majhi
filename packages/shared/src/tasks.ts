@@ -91,8 +91,17 @@ export type TaskKind = z.infer<typeof TaskKindSchema>;
 export const TaskStatusSchema = z.enum(["inbox", "ready", "running", "paused", "review", "mr", "done"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
-export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner"]);
+/**
+ * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in
+ * circles. `blocked`: a task it waits on changed. owner, loop and blocked wait for you to continue.
+ */
+export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner", "loop", "blocked"]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
+
+/** Paused until the owner continues it: never resumed by majhi on its own. */
+export function waitsForOwner(reason: PausedReason | undefined): boolean {
+  return reason === "owner" || reason === "loop" || reason === "blocked";
+}
 
 export const MrStateSchema = z.enum(["open", "merged", "closed"]);
 export type MrState = z.infer<typeof MrStateSchema>;

@@ -18,6 +18,8 @@ const PAUSE_WORDS: Record<string, string> = {
   offline: "connection lost",
   error: "error",
   owner: "stopped by you",
+  loop: "going in circles",
+  blocked: "waiting on another task",
 };
 
 /** A task's status in words, and its lamp. Waiting on the owner (your turn, your review) is the red lamp. */

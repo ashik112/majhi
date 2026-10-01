@@ -19,6 +19,8 @@ export const RoomStateSchema = z.object({
   pending: z.array(z.string()).optional(),
   /** Review loop: rounds the reviewer has sent back so far. */
   round: z.number().int().nonnegative().optional(),
+  /** The loop guard already woke the lead once for this run of no-change turns; the next trip pauses. */
+  nudged: z.boolean().optional(),
   /** Agents the owner took off the team. An agent's mention does not bring them back; the owner can. */
   removed: z.array(z.string()).optional(),
 });

@@ -34,8 +34,10 @@ export interface TurnEnd {
 export interface Plan {
   handoffs: { to: string; via: HandoffVia }[];
   state: RoomState;
-  /** The loop guard or the round cap stopped the room: pause the task with reason owner and say this. */
+  /** The loop guard or the round cap stopped the room: pause the task and say this. */
   pause?: string;
+  /** The loop guard's first trip: wake only the lead with this note instead of pausing. */
+  nudge?: { to: string; text: string };
   /** The work goes back to the owner: it was approved, the pipeline finished, or someone asked for them. */
   toOwner?: string;
 }
@@ -110,7 +112,7 @@ export function planTurn(input: TurnEnd): Plan {
       break;
   }
   if (ownerAsked && plan.toOwner === undefined) plan.toOwner = `@${from} asked for you.`;
-  return guard(plan, input.limits.maxAgentTurns);
+  return guard(plan, input.limits.maxAgentTurns, team[0]?.id);
 }
 
 function pipelineTurn(input: TurnEnd, ownerAsked: boolean): Plan {
@@ -175,15 +177,29 @@ function reviewTurn(input: TurnEnd, mentioned: readonly string[]): Plan {
   return { handoffs: mentioned.map((to) => ({ to, via: "mention" as const })), state: { ...state } };
 }
 
-/** The loop guard (5.3): too many agent-to-agent turns without the owner pause the room. */
-function guard(plan: Plan, max: number): Plan {
+/**
+ * The loop guard (5.3): too many agent-to-agent turns that change no files. The first time, only
+ * the lead is woken with a note to finish or hand back; if the agents keep going in circles after
+ * that, the room pauses.
+ */
+function guard(plan: Plan, max: number, lead: string | undefined): Plan {
   if (plan.handoffs.length === 0) return plan;
   const turns = plan.state.agentTurns + plan.handoffs.length;
+  if (turns > max && plan.state.nudged !== true && lead !== undefined) {
+    return {
+      handoffs: [],
+      state: { ...plan.state, agentTurns: 0, nudged: true },
+      nudge: {
+        to: lead,
+        text: `Loop guard: ${plan.state.agentTurns} handoffs in a row changed no files. Do not answer old process results or status lines. Decide now: finish the remaining work (say who does what, and only mention an agent that must act), or hand the task back to the owner for review. If it keeps going in circles, majhi pauses the task.`,
+      },
+    };
+  }
   if (turns > max) {
     return {
       handoffs: [],
       state: { ...plan.state },
-      pause: `${plan.state.agentTurns} handoffs in a row changed no files. Paused so agents do not go in circles. Reply to continue.`,
+      pause: `${plan.state.agentTurns} more handoffs changed no files after the lead was asked to finish. Paused so agents do not go in circles. Reply to continue.`,
     };
   }
   return { ...plan, state: { ...plan.state, agentTurns: turns } };

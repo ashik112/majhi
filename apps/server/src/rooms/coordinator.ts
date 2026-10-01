@@ -96,7 +96,7 @@ export class RoomCoordinator {
     const before = store.tasks.roomState(task.id);
     const fingerprint = await worktreeFingerprint(task);
     const changed = fingerprint !== undefined && fingerprint !== before.fingerprint;
-    const state = changed ? { ...before, agentTurns: 0, fingerprint } : before;
+    const state = changed ? { ...before, agentTurns: 0, fingerprint, nudged: false } : before;
     // The owner has yet to answer and this turn only waits: nobody else needs to wake for it.
     const waiting = !changed && this.ownerQuestionPending(task.id) && waitsOnly(text);
     const plan = planTurn({
@@ -119,6 +119,15 @@ export class RoomCoordinator {
       ...(removedNow === undefined ? {} : { removed: removedNow }),
     });
 
+    if (plan.nudge !== undefined) {
+      this.say(
+        task.id,
+        "warn",
+        `Agents went in circles without changing files. Woke @${plan.nudge.to} to finish or hand it back.`,
+      );
+      runs.handoff(task, { from: "majhi", to: plan.nudge.to, via: "guard", text: plan.nudge.text });
+      return;
+    }
     if (plan.pause !== undefined) {
       // Not awaited: stopping waits for this agent's loop, which is waiting for this call.
       void this.deps.tasks.pauseForOwner(task.id, plan.pause).catch(() => undefined);

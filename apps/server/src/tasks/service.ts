@@ -35,6 +35,7 @@ import {
   type TaskSummary,
   type TeamOverride,
   type TeamPlan,
+  waitsForOwner,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -718,7 +719,7 @@ export class TaskService {
   }
 
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
-  async stop(id: string): Promise<Task> {
+  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner"): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
@@ -726,10 +727,10 @@ export class TaskService {
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
-      this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
+      this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, "owner");
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason);
     this.deps.room.publishTask(stopped);
     return stopped;
   }
@@ -942,9 +943,10 @@ export class TaskService {
   }
 
   /** The loop guard or the review round cap stopped the room: pause with reason owner and say why. */
+  /** The loop guard's pause: the agents went in circles, so the owner decides how to continue. */
   async pauseForOwner(id: string, text: string): Promise<void> {
     this.deps.room.post(id as TaskId, `error:${randomUUID()}`, { type: "system", level: "warn", text });
-    await this.stop(id);
+    await this.stop(id, "loop");
     this.deps.events.emit(["tasks"]);
   }
 
@@ -1744,7 +1746,7 @@ export class TaskService {
       const waiting = store.tasks.get(link.task);
       if (waiting?.status !== "inbox" && waiting?.status !== "ready") continue;
       store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(waiting.id, "paused", "owner", this.now().toISOString());
+      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -1825,7 +1827,7 @@ export class TaskService {
       if (waiting === undefined) continue;
       if (waiting.status !== "inbox" && waiting.status !== "ready" && waiting.status !== "paused") continue;
       store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(waiting.id, "paused", "owner", this.now().toISOString());
+      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -2030,7 +2032,7 @@ export class TaskService {
     }
     if (!task.team.includes(p.agent)) return;
     if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
-    if (task.status === "paused" && task.pausedReason === "owner") return;
+    if (task.status === "paused" && waitsForOwner(task.pausedReason)) return;
     if (task.status === "review") {
       this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
       this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
@@ -2058,7 +2060,7 @@ export class TaskService {
   /** A paused agent resumes by itself: a task majhi paused runs again. Tasks the owner stopped stay stopped. */
   async resumedByRuns(id: string): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined || task.status !== "paused" || task.pausedReason === "owner") return;
+    if (task === undefined || task.status !== "paused" || waitsForOwner(task.pausedReason)) return;
     this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     this.cards.settle(id, "paused", "Resumed by itself", "majhi");
     this.deps.room.publishTask(this.get(id));
@@ -2139,7 +2141,8 @@ export class TaskService {
     this.cards.replied(task.id);
     // The owner spoke: the loop guard counts agent turns from here.
     const state = this.deps.store.tasks.roomState(task.id);
-    if (state.agentTurns > 0) this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0 });
+    if (state.agentTurns > 0 || state.nudged === true)
+      this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0, nudged: false });
     // A task that was never started gets its brief before this message, in the room and in the queue.
     if (starts) {
       const first = await this.firstAgents(task);
@@ -2204,7 +2207,8 @@ export class TaskService {
     this.cards.settle(task.id, "review", input.settled, "owner");
     if (task.status !== "running") await this.start(task.id);
     const state = this.deps.store.tasks.roomState(task.id);
-    if (state.agentTurns > 0) this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0 });
+    if (state.agentTurns > 0 || state.nudged === true)
+      this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0, nudged: false });
     this.deps.runs.notify(task.id, input.agent, input.text);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
