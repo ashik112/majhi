@@ -129,6 +129,8 @@ export interface TaskDeps {
   /** Facts recalled into TASK.md when a task starts (Phase 5). */
   memory?: MemoryService;
   memoryScopes?: TaskScopes;
+  /** An agent finished a turn in a chat: names it, and so on. Never awaited. */
+  onChatTurn?: (id: string) => void;
   /** A task became done (Phase 5): the Housekeeper reads its room, and a promotion that did not merge is released. */
   onDone?: (task: Task) => void | Promise<void>;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
@@ -179,6 +181,7 @@ export class TaskService {
   private readonly teamFacts: TeamFactsSource;
   private readonly plans: TaskPlans;
   /** The facts block each (task, agent) got last, so a wake prompt only repeats them when they changed. */
+  private readonly chatRecallSeen = new Map<string, string>();
   private readonly wakeSeen = new Map<string, string>();
   /** The last facts read per task, for the team it had then: a status change rewrites TASK.md without new git diffs. */
   private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
@@ -1361,10 +1364,23 @@ export class TaskService {
     const task = this.get(id);
     if (!isOwnerChat(task)) throw new UserError(`Task ${id} is not a chat.`, 409);
     this.deps.store.tasks.setText(id, title.trim(), task.brief, this.now().toISOString());
+    // The owner's title stays: majhi never names this chat again.
+    this.deps.store.chats.markOwnerTitled(id);
     const renamed = this.get(id);
     this.deps.room.publishTask(renamed);
     this.deps.events.emit(["tasks"]);
     return renamed;
+  }
+
+  /** Gives a chat a title majhi made. False, and nothing changes, when the owner renamed it. */
+  autoTitleChat(id: string, title: string): boolean {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || !isOwnerChat(task) || this.deps.store.chats.get(id).titledBy === "owner")
+      return false;
+    this.deps.store.tasks.setText(id, title, task.brief, this.now().toISOString());
+    this.deps.room.publishTask(this.get(id));
+    this.deps.events.emit(["tasks"]);
+    return true;
   }
 
   /** Opens a done task again: back to review when it has a worktree, else the inbox. */
@@ -1884,6 +1900,7 @@ export class TaskService {
     try {
       const task = this.deps.store.tasks.get(turn.task);
       if (task === undefined || task.team[0] !== turn.agent) return undefined;
+      if (isOwnerChat(task)) return await this.chatMemoryBlock(task);
       const facts = await this.readFacts(task);
       if (facts === undefined) return undefined;
       await this.refreshBriefs([task.id]);
@@ -1896,6 +1913,26 @@ export class TaskService {
       // Facts never stop a turn.
       return undefined;
     }
+  }
+
+  /**
+   * The memory of a project the chat has just named or read, as a block for the next prompt: sent
+   * when the set of projects changes. Capped like the Memory section of TASK.md, which it also updates.
+   */
+  private async chatMemoryBlock(task: Task): Promise<string | undefined> {
+    const { memory, memoryScopes } = this.deps;
+    if (memory === undefined || memoryScopes === undefined) return undefined;
+    const scopes = await memoryScopes.recall(task.id);
+    if (scopes === undefined) return undefined;
+    const key = `${task.id}:${[...scopes].sort().join(",")}`;
+    const before = this.chatRecallSeen.get(task.id);
+    this.chatRecallSeen.set(task.id, key);
+    if (before === key) return undefined;
+    await memory.recall(task, scopes);
+    await this.refreshBriefs([task.id]);
+    const text = memory.recalledText(task.id).trim();
+    // The first prompt of a chat has TASK.md already; later ones need the block.
+    return before === undefined || text === "" ? undefined : `## Memory\n\n${text}`;
   }
 
   private relatedOf(task: Task): Related {
@@ -1949,7 +1986,10 @@ export class TaskService {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "running") return;
     // The boss chat is an ongoing conversation, never a piece of work to review.
-    if (isBossChat(task)) return;
+    if (isBossChat(task)) {
+      this.deps.onChatTurn?.(id);
+      return;
+    }
     if (this.deps.runs.working(id).length > 0) return;
     // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
     if (this.deps.store.tasks.children(id).length > 0 && !this.deps.store.tasks.childrenDone(id)) return;

@@ -32,6 +32,7 @@ import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { HostLink } from "./host/link.ts";
+import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
@@ -74,6 +75,9 @@ import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
 import { UsageRepo } from "./usage/repo.ts";
 import { UsageService } from "./usage/service.ts";
+
+/** How often chats are checked for memory. */
+const CHAT_SWEEP_MS = 60_000;
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
@@ -220,7 +224,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ?.repos.find((r) => r.project === repo.project && r.branch === repo.branch);
     return found === undefined ? undefined : landedNow(found, repo.head);
   });
-  const memoryScopes = new TaskScopes(store, config);
+  const memoryScopes = new TaskScopes(store, config, async () =>
+    Object.entries((await config.sections()).projects).map(([id, p]) => ({
+      id,
+      path: resolvePath(p.path, config.paths.hostHome),
+      org: p.org,
+    })),
+  );
   const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
   const agents = new AgentService(config, agentStore, cache, accounts, Date.now, {
     isWorking: (agent) => runs.isWorking(agent),
@@ -373,16 +383,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   memory.useCurator((fact) => curator.curate(fact));
+  const housekeeper = new Housekeeper({
+    config,
+    agents: agentStore,
+    secrets,
+    runtime,
+    options: sessionOptions,
+    majhiHome: env.majhiHome,
+    usage: usageRecorder,
+  });
   const extraction = new Extraction({
-    housekeeper: new Housekeeper({
-      config,
-      agents: agentStore,
-      secrets,
-      runtime,
-      options: sessionOptions,
-      majhiHome: env.majhiHome,
-      usage: usageRecorder,
-    }),
+    housekeeper,
     curator,
     memory,
     repoDocs,
@@ -399,6 +410,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     project: async (id) => (await projectList()).find((p) => p.id === id),
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
+  let chatMemory: ChatMemory | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     store,
@@ -416,6 +428,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     terminals,
     memory,
     memoryScopes,
+    onChatTurn: (id) => void chatMemory?.afterTurn(id),
     onDone: async (task) => {
       if (!isBossChat(task)) extraction.afterClose(task);
       await promotion.release(task);
@@ -428,6 +441,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  chatMemory = new ChatMemory({
+    store,
+    settings: async () => (await config.settings()).memory,
+    extraction,
+    housekeeper,
+    mentioned: (id) => memoryScopes.mentioned(id),
+    working: (id) => runs.working(id).length > 0,
+    setTitle: (id, title) => tasks.autoTitleChat(id, title),
+  });
+  const chatSweep = setInterval(() => void chatMemory?.sweep().catch(() => undefined), CHAT_SWEEP_MS);
+  chatSweep.unref();
   const promotion = new Promotion({ memory, tasks, projects, config });
   // Once: old pending facts that only repeat the repo docs are rejected (logged, undoable).
   void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
@@ -529,6 +553,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      clearInterval(chatSweep);
       automation.scheduler.stop();
       automation.triggerEngine.stop();
       layaDocker?.close();

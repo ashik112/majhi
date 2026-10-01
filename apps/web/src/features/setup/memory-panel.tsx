@@ -25,6 +25,13 @@ interface Edits {
   reviewAll?: boolean;
   housekeeper?: string;
   model?: string;
+  idle?: string;
+}
+
+/** The idle field's text as whole minutes from 1 to 1440, or undefined when it is not. */
+export function parseIdleMinutes(text: string): number | undefined {
+  const value = Number(text.trim());
+  return Number.isInteger(value) && value >= 1 && value <= 1440 ? value : undefined;
 }
 
 /**
@@ -41,6 +48,8 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
   const reviewAll = edits.reviewAll ?? saved.review_all;
   const housekeeper = edits.housekeeper ?? saved.housekeeper ?? "";
   const model = edits.model ?? saved.housekeeper_model ?? "";
+  const idle = edits.idle ?? String(saved.chat_idle_minutes);
+  const idleMinutes = parseIdleMinutes(idle);
   const edit = (patch: Edits) => {
     if (state.kind !== "saving") setState(IDLE);
     setEdits((e) => ({ ...e, ...patch }));
@@ -59,16 +68,18 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
     parsed !== saved.auto_threshold ||
     reviewAll !== saved.review_all ||
     housekeeper !== (saved.housekeeper ?? "") ||
-    model !== (saved.housekeeper_model ?? "");
+    model !== (saved.housekeeper_model ?? "") ||
+    idleMinutes !== saved.chat_idle_minutes;
 
   function onSave() {
     setShowErrors(true);
-    if (parsed === undefined || !dirty) return;
+    if (parsed === undefined || idleMinutes === undefined || !dirty) return;
     setState({ kind: "saving" });
     save.mutate(
       {
         memory: {
           ...(parsed !== saved.auto_threshold ? { auto_threshold: parsed } : {}),
+          ...(idleMinutes !== saved.chat_idle_minutes ? { chat_idle_minutes: idleMinutes } : {}),
           ...(reviewAll !== saved.review_all ? { review_all: reviewAll } : {}),
           ...(housekeeper !== (saved.housekeeper ?? "")
             ? { housekeeper: housekeeper === "" ? null : housekeeper }
@@ -172,6 +183,21 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
               className="w-24 font-mono"
               value={threshold}
               onChange={(e) => edit({ threshold: e.target.value })}
+            />
+          )}
+        </Field>
+        <Field
+          label="Read a quiet chat after (minutes)"
+          hint="A chat with no new message for this long is read for memory, once. Starting a new chat with the same agent reads the old one at once."
+          error={showErrors && idleMinutes === undefined ? "Use whole minutes from 1 to 1440." : undefined}
+        >
+          {(p) => (
+            <Input
+              {...p}
+              inputMode="numeric"
+              className="w-24 font-mono"
+              value={idle}
+              onChange={(e) => edit({ idle: e.target.value })}
             />
           )}
         </Field>

@@ -95,6 +95,7 @@ export function renderTaskMd(
   if (facts !== undefined && task.mode === "lead" && task.kind !== "chat")
     lines.push(...teamFactsLines(facts), "");
   if (memory.trim() !== "") lines.push("## Memory", "", memory.trim(), "");
+  if (task.kind === "chat") lines.push(...rememberLines(), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
   }
@@ -117,6 +118,15 @@ export function renderTaskMd(
     "",
   );
   return lines.join("\n");
+}
+
+/** What a chat agent does when the owner says to remember something. */
+function rememberLines(): string[] {
+  return [
+    "## Remembering",
+    "",
+    'When the owner says to remember or note something ("remember this", "note that", "keep in mind"), save it right away with the majhi-memory propose tool: one short fact in plain words, in the narrowest scope that holds (a project, the org, or global only when it is true everywhere). Then say in one line that you saved it. Never save a secret or personal data. majhi also reads quiet chats for lasting facts, which wait for the owner to review.',
+  ];
 }
 
 function sharedPerms(members: readonly BriefAgent[]): string[] {
