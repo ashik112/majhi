@@ -138,7 +138,7 @@ export function dockerRunArgs(
   req: SpawnRequest,
   cfg: RunnerConfig,
   name: string,
-  options: { tty?: boolean } = {},
+  options: { tty?: boolean; spawner?: string } = {},
 ): string[] {
   const args = [
     "run",
@@ -149,6 +149,7 @@ export function dockerRunArgs(
     name,
     "--label",
     "majhi.runner=1",
+    ...(options.spawner === undefined ? [] : ["--label", `${SPAWNER_LABEL}=${options.spawner}`]),
     ...(req.task === undefined ? [] : ["--label", `majhi.task=${req.task}`]),
     "--network",
     cfg.network,
@@ -181,37 +182,98 @@ function secretValues(env: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter(([key]) => !CLI_OWNED.has(key)));
 }
 
-/** Starts each run in its own runner container, and removes the container when it stops. */
-export function dockerSpawner(cfg: RunnerConfig): Spawner {
-  const docker = cfg.docker ?? "docker";
-  return async (req): Promise<Spawned> => {
+/** Labels each runner container with the spawner that started it, so a prune never touches another majhi's. */
+export const SPAWNER_LABEL = "majhi.spawner";
+
+/** The environment of the docker CLI: the CLI's own, with a config folder it can write. */
+function cliEnvOf(cfg: Pick<RunnerConfig, "cliEnv">): Record<string, string> {
+  return { ...cfg.cliEnv, DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker" };
+}
+
+/** `docker rm -f`, quietly: the container may be gone already. */
+function removeContainers(cfg: Pick<RunnerConfig, "docker" | "cliEnv">, names: string[]): Promise<void> {
+  return new Promise((done) => {
+    if (names.length === 0) return done();
+    const rm = spawn(cfg.docker ?? "docker", ["rm", "-f", ...names], { env: cliEnvOf(cfg), stdio: "ignore" });
+    rm.on("error", () => done());
+    rm.on("close", () => done());
+  });
+}
+
+/** Names of runner containers, running or not, with every label in `labels`. */
+function listRunners(cfg: Pick<RunnerConfig, "docker" | "cliEnv">, labels: string[]): Promise<string[]> {
+  return new Promise((done) => {
+    const filters = ["majhi.runner=1", ...labels].flatMap((l) => ["--filter", `label=${l}`]);
+    const ps = spawn(cfg.docker ?? "docker", ["ps", "-a", ...filters, "--format", "{{.Names}}"], {
+      env: cliEnvOf(cfg),
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let out = "";
+    ps.stdout.on("data", (d: Buffer) => {
+      out += d.toString();
+    });
+    ps.on("error", () => done([]));
+    ps.on("close", () => done(out.split(/\s+/).filter(Boolean)));
+  });
+}
+
+/** A spawner of runner containers that knows which of them still belong to a live run. */
+export interface RunnerSpawner extends Spawner {
+  /** Containers of runs that are still live. */
+  live(): string[];
+  /**
+   * Removes this spawner's containers that no live run holds: one whose `docker run` CLI died,
+   * or that the daemon created after a kill. Returns their names.
+   */
+  prune(): Promise<string[]>;
+}
+
+/**
+ * Starts each run in its own runner container, and removes the container when the run is killed
+ * or its docker CLI exits, so no container outlives its run.
+ */
+export function dockerSpawner(cfg: RunnerConfig): RunnerSpawner {
+  const id = randomBytes(6).toString("hex");
+  const live = new Set<string>();
+  const spawner = async (req: SpawnRequest): Promise<Spawned> => {
     await cfg.ready?.();
     const name = `majhi-run-${randomBytes(6).toString("hex")}`;
-    const args = dockerRunArgs(req, cfg, name);
+    const args = dockerRunArgs(req, cfg, name, { spawner: id });
+    live.add(name);
     // The CLI reads the values of `--env NAME` from its own environment.
-    const child = spawn(docker, args, {
-      env: {
-        ...secretValues(req.env),
-        ...cfg.cliEnv,
-        DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker",
-      },
+    const child = spawn(cfg.docker ?? "docker", args, {
+      env: { ...secretValues(req.env), ...cliEnvOf(cfg) },
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let removed = false;
+    const remove = () => {
+      live.delete(name);
+      if (removed) return;
+      removed = true;
+      // Killing the CLI does not stop the container; removing it does.
+      void removeContainers(cfg, [name]);
+    };
+    // The CLI died (a crash, a lost daemon connection): the container may still run.
+    child.once("close", remove);
+    child.once("error", remove);
     return {
       child,
       cwd: req.scratch ? "/tmp" : req.cwd,
       kill() {
         killTree(child);
-        if (removed) return;
-        removed = true;
-        // Killing the CLI does not stop the container; removing it does.
-        const rm = spawn(docker, ["rm", "-f", name], { env: cfg.cliEnv, stdio: "ignore" });
-        rm.on("error", () => undefined);
+        remove();
       },
     };
   };
+  return Object.assign(spawner, {
+    live: () => [...live],
+    async prune(): Promise<string[]> {
+      const stale = (await listRunners(cfg, [`${SPAWNER_LABEL}=${id}`])).filter((n) => !live.has(n));
+      await removeContainers(cfg, stale);
+      return stale;
+    },
+  });
 }
 
 /** A shell for a person in a runner container: the command for a pty, and how to stop it. */
@@ -237,40 +299,20 @@ export function dockerTty(cfg: RunnerConfig): (req: SpawnRequest) => Promise<Tty
     return {
       command: docker,
       args: dockerRunArgs(req, cfg, name, { tty: true }),
-      env: {
-        ...secretValues(req.env),
-        ...cfg.cliEnv,
-        DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker",
-      },
+      env: { ...secretValues(req.env), ...cliEnvOf(cfg) },
       stop() {
         if (removed) return;
         removed = true;
-        const rm = spawn(docker, ["rm", "-f", name], { env: cfg.cliEnv, stdio: "ignore" });
-        rm.on("error", () => undefined);
+        void removeContainers(cfg, [name]);
       },
     };
   };
 }
 
-/** Removes runner containers a previous majhi left behind (a crash, a restart). */
-export function removeStaleRunners(cfg: Pick<RunnerConfig, "docker" | "cliEnv">): Promise<void> {
-  const docker = cfg.docker ?? "docker";
-  return new Promise((done) => {
-    const ps = spawn(docker, ["ps", "-aq", "--filter", "label=majhi.runner=1"], {
-      env: cfg.cliEnv,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    let out = "";
-    ps.stdout.on("data", (d: Buffer) => {
-      out += d.toString();
-    });
-    ps.on("error", () => done());
-    ps.on("close", () => {
-      const ids = out.split(/\s+/).filter(Boolean);
-      if (ids.length === 0) return done();
-      const rm = spawn(docker, ["rm", "-f", ...ids], { env: cfg.cliEnv, stdio: "ignore" });
-      rm.on("error", () => done());
-      rm.on("close", () => done());
-    });
-  });
+/**
+ * Removes runner containers a previous majhi left behind (a crash, a restart). At start majhi
+ * runs nothing yet, so every runner container is stale.
+ */
+export async function removeStaleRunners(cfg: Pick<RunnerConfig, "docker" | "cliEnv">): Promise<void> {
+  await removeContainers(cfg, await listRunners(cfg, []));
 }

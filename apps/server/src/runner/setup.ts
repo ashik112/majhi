@@ -7,6 +7,8 @@ export interface Runner {
   network: RunnerNetwork;
   /** How every run container is started, and what it may mount. */
   config: RunnerConfig;
+  /** Removes this majhi's runner containers that no live run holds. */
+  prune(): Promise<string[]>;
 }
 
 /**
@@ -40,5 +42,9 @@ export function runnerSetup(
     },
   };
   void network.ensure().catch((err: unknown) => console.error(errorMessage(err)));
-  return { sessionOptions: { ...env.runtime, spawner: dockerSpawner(config) }, runner: { network, config } };
+  const spawner = dockerSpawner(config);
+  return {
+    sessionOptions: { ...env.runtime, spawner },
+    runner: { network, config, prune: () => spawner.prune() },
+  };
 }
