@@ -65,13 +65,7 @@ majhi turns that into a desk you can run all day:
 - **Autonomous mode.** Turn it on and the boss runs the desk like you would: picks work, sets up teams, fixes, builds and researches within the time and budget you set. You watch it live and can stop, pause or guide it at any time.
 - **Background checks on every merge**, with a task opened automatically when something breaks.
 
-## Use it
-
-**Personal use is free.** Hobby projects, learning and your own work that earns nothing.
-
-**Commercial use needs a license.** Freelance and client work, use inside a company, and agencies. majhi is in early access, and commercial licenses are available now: contact [@ashik112](https://github.com/ashik112).
-
-### Install
+## Install
 
 You need Docker (Docker Desktop or OrbStack) on a Mac.
 
