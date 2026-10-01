@@ -117,6 +117,8 @@ export class RunManager {
   private readonly compaction: Compaction;
   /** One lock per worktree: two agents never edit one worktree at the same time (5.3). */
   readonly locks = new WorktreeLocks();
+  /** Per task, the owner messages still on their way to a session (see `inOrder`). */
+  private readonly deliveries = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -176,20 +178,7 @@ export class RunManager {
    */
   startTask(task: Task, agent: string, options: { ownBrief?: boolean } = {}): void {
     const run = this.runFor(task.id, agent);
-    const { room } = this.deps;
-    // Several agents start together (a pipeline's first step): each after the first gets its own brief.
-    const briefId = options.ownBrief === true ? `${BRIEF_ITEM_ID}:${agent}` : BRIEF_ITEM_ID;
-    // The boss chat has no brief to send: the owner's first message starts it.
-    if (room.get(task.id, briefId) === undefined && !isBossChat(task)) {
-      room.post(task.id, briefId, {
-        type: "owner",
-        text: task.brief,
-        attachments: task.attachments,
-        queued: false,
-        to: agent,
-      });
-      run.queue.unshift({ kind: "brief" });
-    }
+    this.queueBrief(task, agent, options);
     if (run.paused !== undefined || run.interrupted) {
       this.resumeRun(run, "the task was resumed");
       return;
@@ -198,6 +187,27 @@ export class RunManager {
     this.live.refreshQueued(run);
     // Nothing queued: an empty loop would hand the task back for review before the owner's message lands.
     if (run.queue.length > 0) void this.drive(run);
+  }
+
+  /**
+   * Posts the task's brief for `agent` and puts it first in its queue, once. `startTask` does it,
+   * and a message that starts the task does it first so the brief comes before the message.
+   */
+  queueBrief(task: Task, agent: string, options: { ownBrief?: boolean } = {}): void {
+    const { room } = this.deps;
+    // Several agents start together (a pipeline's first step): each after the first gets its own brief.
+    const briefId = options.ownBrief === true ? `${BRIEF_ITEM_ID}:${agent}` : BRIEF_ITEM_ID;
+    // The boss chat has no brief to send: the owner's first message starts it.
+    if (room.get(task.id, briefId) !== undefined || isBossChat(task)) return;
+    const run = this.runFor(task.id, agent);
+    room.post(task.id, briefId, {
+      type: "owner",
+      text: task.brief,
+      attachments: task.attachments,
+      queued: false,
+      to: agent,
+    });
+    run.queue.unshift({ kind: "brief" });
   }
 
   /** Stores the owner's message and sends it: now when the agent is idle, else queued, or after a cancel when `interrupt`. */
@@ -212,34 +222,82 @@ export class RunManager {
       also?: readonly string[];
     },
   ): Promise<RoomItem> {
-    const run = this.runFor(task.id, agent);
-    const busy = run.turning;
-    const interrupt = busy && input.mode === "interrupt";
+    const item = this.postOwner(task.id, agent, input);
+    await this.deliver(task.id, agent, item.id, input.mode, input.also ?? []);
+    return item;
+  }
+
+  /**
+   * Stores the owner's message in the room without sending it; `deliver` sends it. It shows as
+   * queued when the agent is busy or earlier messages of the task are still on their way.
+   */
+  postOwner(
+    task: Task["id"],
+    agent: string,
+    input: { text: string; attachments: Attachment[]; mode: "queue" | "interrupt" },
+  ): RoomItem {
+    // The run exists before the item: a run made later reads queued items back from the store.
+    const run = this.runFor(task, agent);
+    const behind = run.turning || run.queue.length > 0 || this.deliveries.has(task);
     const id = `owner:${randomUUID()}`;
-    this.deps.room.post(task.id, id, {
+    this.deps.room.post(task, id, {
       type: "owner",
       text: input.text,
       attachments: input.attachments,
-      queued: busy && input.mode === "queue",
+      queued: behind && input.mode === "queue",
       to: agent,
     });
-    const item = this.deps.room.get(task.id, id);
+    const item = this.deps.room.get(task, id);
     if (item === undefined) throw new Error("The message was not stored");
-    if (interrupt) run.queue.unshift({ kind: "owner", itemId: id });
-    else run.queue.push({ kind: "owner", itemId: id });
+    return item;
+  }
+
+  /**
+   * Queues a stored owner message for `agent` (and the same message for `also`) and starts the
+   * loop: sent now when the agent is idle, else on its next turn, or after a cancel when
+   * `interrupt`. Each agent gets it once, even when its run read it back from the store.
+   */
+  async deliver(
+    task: Task["id"],
+    agent: string,
+    itemId: string,
+    mode: "queue" | "interrupt",
+    also: readonly string[],
+  ): Promise<void> {
+    const run = this.runFor(task, agent);
+    const interrupt = run.turning && mode === "interrupt";
+    if (!hasOwnerEntry(run, itemId)) {
+      if (interrupt) run.queue.unshift({ kind: "owner", itemId });
+      else run.queue.push({ kind: "owner", itemId });
+    }
     run.held = false;
     this.live.refreshQueued(run);
     if (interrupt) await this.cancelRun(run);
     void this.drive(run);
-    for (const other of input.also ?? []) {
+    for (const other of also) {
       if (other === agent) continue;
-      const extra = this.runFor(task.id, other);
-      extra.queue.push({ kind: "owner", itemId: id });
+      const extra = this.runFor(task, other);
+      if (!hasOwnerEntry(extra, itemId)) extra.queue.push({ kind: "owner", itemId });
       extra.held = false;
       this.live.refreshQueued(extra);
       void this.drive(extra);
     }
-    return item;
+  }
+
+  /**
+   * Runs `work` in the background after the task's earlier deliveries, so owner messages reach
+   * their agents in the order they were sent while the sender returns at once. `work` reports
+   * its own errors; a failed one does not stop the next. `idle` waits for these too.
+   */
+  inOrder(task: Task["id"], work: () => Promise<void>): void {
+    const previous = this.deliveries.get(task) ?? Promise.resolve();
+    const next: Promise<void> = previous
+      .then(work)
+      .catch(() => undefined)
+      .then(() => {
+        if (this.deliveries.get(task) === next) this.deliveries.delete(task);
+      });
+    this.deliveries.set(task, next);
   }
 
   /**
@@ -494,6 +552,11 @@ export class RunManager {
   /** Resolves when no agent of the task (or of any task) is running a turn. For tests and shutdown. */
   async idle(task?: string): Promise<void> {
     for (;;) {
+      const sending = [...this.deliveries].filter(([t]) => task === undefined || t === task);
+      if (sending.length > 0) {
+        await Promise.all(sending.map(([, p]) => p));
+        continue;
+      }
       const busy = [...this.runs.values()].filter(
         (r) => (task === undefined || r.task === task) && r.drive !== undefined,
       );
@@ -1327,4 +1390,9 @@ export class RunManager {
       `Could not resume @${run.agent} after two tries: ${message}. Resume the task to try again.`,
     );
   }
+}
+
+/** True when the run already has this owner message queued. */
+function hasOwnerEntry(run: AgentRun, itemId: string): boolean {
+  return run.queue.some((e) => e.kind === "owner" && e.itemId === itemId);
 }

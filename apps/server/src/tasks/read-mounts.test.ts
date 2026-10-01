@@ -130,6 +130,8 @@ describe("an agent reads the folder a message mentions", () => {
     await must("tasks.create", { text: "look at the api repo", readOnly: true, start: false });
     const asked = `why does @${w.repo("billing")} fail? Also @${w.repo("ledger")} and @${join(w.h.dir, "outside")}.`;
     await must("room.send", { task: "ACM-1", text: asked });
+    // The send returns at once; the grants come with its delivery.
+    await w.h.majhi.services.runs.idle("ACM-1");
     const task = (await must("tasks.get", { id: "ACM-1" })) as {
       readMounts?: { path: string; agent?: string }[];
     };
@@ -142,7 +144,6 @@ describe("an agent reads the folder a message mentions", () => {
     expect(lines).toContain(`@acme-builder can now read ${w.repo("billing")} (read-only).`);
     expect(lines.some((l) => l.includes(w.repo("ledger")) && l.includes("cannot read"))).toBe(true);
     expect(lines.some((l) => l.includes("outside") && l.includes("cannot read"))).toBe(true);
-    await w.h.majhi.services.runs.idle("ACM-1");
     const start = w.h.runtime.starts.at(-1);
     expect(start?.mounts).toContainEqual({ path: w.repo("billing"), readOnly: true });
   });

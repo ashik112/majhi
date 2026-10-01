@@ -1,7 +1,9 @@
 import {
   type AgentLive,
+  type Attachment,
   commands,
   type ProcessInfo,
+  parseMentions,
   type RoomItem,
   type RoomServerMessage,
   RoomServerMessageSchema,
@@ -76,7 +78,47 @@ export type RoomAction =
   | { type: "message"; message: RoomServerMessage }
   | { type: "older"; items: readonly RoomItem[]; more: boolean }
   | { type: "local"; item: RoomItem }
+  /** Takes an item out, like a message shown before the server had it that then failed. */
+  | { type: "drop"; id: string }
   | { type: "connection"; connection: Connection };
+
+/** Ids of messages shown before the server stored them. */
+export const PENDING_PREFIX = "pending:";
+
+/**
+ * The owner's message as it shows the moment it is sent, before the server answers. The stored
+ * one replaces it when it arrives (see `withStored`).
+ */
+export function pendingOwnerItem(
+  task: Task["id"],
+  text: string,
+  attachments: Attachment[],
+  n: number,
+): RoomItem {
+  return {
+    id: `${PENDING_PREFIX}${n}`,
+    task,
+    seq: 0,
+    at: new Date().toISOString(),
+    type: "owner",
+    text,
+    attachments,
+    queued: false,
+  };
+}
+
+/** Adds stored items; a stored owner message takes the place of the pending copy with its text. */
+function withStored(items: readonly RoomItem[], incoming: readonly RoomItem[]): RoomItem[] {
+  let current = items;
+  for (const next of incoming) {
+    if (next.type !== "owner" || next.id.startsWith(PENDING_PREFIX)) continue;
+    const copy = current.find(
+      (i) => i.type === "owner" && i.id.startsWith(PENDING_PREFIX) && i.text === next.text,
+    );
+    if (copy) current = current.filter((i) => i !== copy);
+  }
+  return mergeItems(current, incoming);
+}
 
 /** Applies one socket message or fetch result. Pure, so it can be tested and cached per task. */
 export function roomReducer(state: RoomState, action: RoomAction): RoomState {
@@ -84,7 +126,9 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
     case "connection":
       return state.connection === action.connection ? state : { ...state, connection: action.connection };
     case "local":
-      return { ...state, items: mergeItems(state.items, [action.item]) };
+      return { ...state, items: withStored(state.items, [action.item]) };
+    case "drop":
+      return { ...state, items: state.items.filter((item) => item.id !== action.id) };
     case "older":
       return { ...state, items: mergeItems(state.items, action.items), more: action.more };
     case "message": {
@@ -94,14 +138,14 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
           // Older pages we already loaded stay; `more` only means something before them.
           return {
             ...state,
-            items: mergeItems(state.items, message.items),
+            items: withStored(state.items, message.items),
             agents: message.agents,
             processes: message.processes,
             more: state.loaded && state.items.length > message.items.length ? state.more : message.more,
             loaded: true,
           };
         case "item":
-          return { ...state, items: mergeItems(state.items, [message.item]) };
+          return { ...state, items: withStored(state.items, [message.item]) };
         case "agent":
           return { ...state, agents: upsertAgent(state.agents, message.agent) };
         case "processes":
@@ -484,6 +528,11 @@ export function composerKey(
   if (!state.hasContent) return "none";
   if (event.metaKey || event.ctrlKey) return state.busy ? "interrupt" : "send";
   return "send";
+}
+
+/** The agent a message goes to: the first team member it mentions, else the lead. */
+export function addressedAgent(text: string, team: readonly string[]): string | undefined {
+  return parseMentions(text, team).find((id) => team.includes(id)) ?? team[0];
 }
 
 export interface Trigger {
