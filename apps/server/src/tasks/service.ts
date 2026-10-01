@@ -20,6 +20,7 @@ import {
   type RoomItem,
   type RoomSearchHit,
   type ShipOption,
+  type ShipOptions,
   shipWords,
   type Task,
   type TaskId,
@@ -65,7 +66,8 @@ import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
 import { firstTurn, type Member } from "../rooms/coordinate.ts";
 import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
-import { commitAll, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
+import { attributionOf } from "../runs/attribution.ts";
+import { commitAll, commitBy, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TerminalManager } from "../terminal/manager.ts";
@@ -81,6 +83,7 @@ import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
+import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 
@@ -957,10 +960,20 @@ export class TaskService {
   /**
    * Marks a task done. A parent with open subtasks is not done: an explicit close is refused, and a
    * close after a merge (`stay`) keeps it open, says so, and lets it close with its last subtask.
+   * Work not shipped (commits not merged, pushed or in a pull request) is refused with what it is,
+   * unless the owner keeps it (`keep`); `stay` leaves the task open and says why. An agent is
+   * refused whatever it asks: only the owner may leave commits behind.
    */
   async close(
     id: string,
-    opts: { whenSubtasksOpen?: "refuse" | "stay"; by?: string | undefined } = {},
+    opts: {
+      whenSubtasksOpen?: "refuse" | "stay";
+      /** Who closes it, as the room shows it: `owner`, an agent id, or `majhi`. */
+      by?: string | undefined;
+      /** True when an agent asks. */
+      agent?: boolean;
+      whenUnshipped?: "refuse" | "keep" | "stay";
+    } = {},
   ): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") return task;
@@ -976,6 +989,21 @@ export class TaskService {
       }
       throw new UserError(
         `${id} has ${open.length} open subtask${open.length === 1 ? "" : "s"} (${list}). It closes by itself when they are done.`,
+        409,
+      );
+    }
+    const when = opts.agent === true ? "refuse" : (opts.whenUnshipped ?? "refuse");
+    const unshipped = when === "keep" ? [] : await unshippedWork(task.repos);
+    if (unshipped.length > 0) {
+      const what = unshippedText(unshipped);
+      if (when === "stay") {
+        this.note(id, `${id} stays open: ${what}`);
+        return task;
+      }
+      throw new UserError(
+        opts.agent === true
+          ? `${id} cannot be closed yet. ${what} Ship it first: merge it with the merge tool if you have the Merge permission; a push or a pull request needs the owner's approval or an org policy. Or leave it in review, and the owner ships or closes it from the review card.`
+          : `${what} Close it anyway to leave the commits on the branch.`,
         409,
       );
     }
@@ -1010,10 +1038,15 @@ export class TaskService {
       await this.ensureWorktrees(task);
       const sections = await this.deps.config.sections();
       const identity = sections.orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+      const attribution = await attributionOf(this.deps.config, this.get(task.id));
       for (const repo of this.get(task.id).repos) {
         if (repo.worktree === undefined) continue;
         await input.change({ project: repo.project, worktree: repo.worktree });
-        await commitAll(repo.worktree, input.message, identity);
+        await commitAll(
+          repo.worktree,
+          input.message,
+          commitBy(identity, task.id, undefined, attribution.repos[repo.project] !== false),
+        );
       }
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
@@ -1107,7 +1140,7 @@ export class TaskService {
     if (input.settle !== false)
       this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
     const after = input.done
-      ? await this.close(task.id, { whenSubtasksOpen: "stay", by })
+      ? await this.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by })
       : this.get(task.id);
     if (input.deleteAfter !== true) return { results, task: after };
     const deleted = await this.deleteAfterShip(task.id, heads);
@@ -1313,13 +1346,13 @@ export class TaskService {
   // Owner cards: review, paused, plain-text questions
 
   /** What the review card's buttons may do now, with the reason when not. */
-  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: ShipOption }> {
+  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: DoneOption }> {
     const task = this.get(id);
     const base = task.repos[0]?.base;
     return {
       ...(base === undefined ? {} : { base }),
       merge: await this.mergeOption(task),
-      done: this.doneOption(task),
+      done: await this.doneOption(task),
     };
   }
 
@@ -1381,10 +1414,13 @@ export class TaskService {
     };
   }
 
-  private doneOption(task: Task): { ok: boolean; why?: string } {
+  private async doneOption(task: Task): Promise<DoneOption> {
     if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
     const open = this.openSubtasks(task.id);
-    if (open.length === 0) return { ok: true };
+    if (open.length === 0) {
+      const unshipped = await unshippedWork(task.repos);
+      return unshipped.length === 0 ? { ok: true } : { ok: true, unshipped };
+    }
     const list = `${open.slice(0, 5).join(", ")}${open.length > 5 ? ", ..." : ""}`;
     return {
       ok: false,
@@ -1595,12 +1631,26 @@ export class TaskService {
     });
   }
 
+  /**
+   * Closes a parent once every subtask is done. A parent with work of its own not shipped stays open
+   * (said once) and goes to review when nobody works on it, so the owner ships it or closes it.
+   */
   private async finishParentIfDone(parent: string): Promise<void> {
     const { store } = this.deps;
     const task = store.tasks.get(parent);
     if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
+    const unshipped = await unshippedWork(task.repos);
+    if (unshipped.length > 0) {
+      const text = `Every subtask is done, but ${parent} stays open: ${unshippedText(unshipped)} Ship it, or close it from the review card.`;
+      if (!this.waitNoted.has(`${parent} ${text}`)) {
+        this.waitNoted.add(`${parent} ${text}`);
+        this.note(parent, text);
+      }
+      await this.agentsIdle(parent);
+      return;
+    }
     this.note(parent, this.orchestrator.report(parent));
-    await this.close(parent, { by: "majhi" });
+    await this.close(parent, { by: "majhi", whenUnshipped: "stay" });
   }
 
   /** A task other tasks pointed at is gone: children become top-level, waiting tasks ask the owner. */
@@ -1972,6 +2022,9 @@ function briefTeam(task: Task, agents: readonly AgentFrontmatter[]): BriefAgent[
     ];
   });
 }
+
+/** The review card's Mark done: allowed or why not, and the work that would stay behind. */
+type DoneOption = ShipOptions["done"];
 
 async function headOf(worktree: string): Promise<string> {
   return (await git(worktree, ["rev-parse", "HEAD"])).trim();

@@ -306,3 +306,27 @@ describe("lessons that restate the repo docs", () => {
     expect(memory.get(restated.id)?.status).toBe("pending");
   });
 });
+
+describe("a record's merge status", () => {
+  it("reads a repo merged after the record was written as merged, and saves it", async () => {
+    const m = service().project;
+    const repo = { project: "acme-api", branch: "task/acm-1-fix", base: "main", merged: false, commits: 2 };
+    await m.putRecord({ ...record("ACM-1", "acme", "acme-api", "Fixed it."), repos: [repo] });
+
+    let merged = false;
+    const asked: string[] = [];
+    m.setLanded(async (task) => {
+      asked.push(task);
+      return merged;
+    });
+    const list = async () => (await m.records({ project: "acme-api", limit: 10 }))[0]?.record.repos[0];
+    expect(await list()).toMatchObject({ merged: false });
+
+    merged = true;
+    expect(await list()).toMatchObject({ merged: true });
+    // Saved: the stored record says so, and git is not asked again.
+    expect(m.record("ACM-1")?.repos[0]).toMatchObject({ merged: true });
+    expect((await m.recordNow("ACM-1"))?.repos[0]).toMatchObject({ merged: true });
+    expect(asked).toEqual(["ACM-1", "ACM-1"]);
+  });
+});

@@ -7,6 +7,7 @@ import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
 import { type RunShip, Ship, type ShipChoices } from "@/features/task/ship";
+import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
@@ -83,6 +84,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
     action: "merge" | "mergePush" | "push" | "mr" | "done",
     into?: string,
     choices?: ShipChoices,
+    keep = false,
   ) =>
     cmd("room.cardAction", {
       task: task.id,
@@ -90,18 +92,26 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       action,
       ...(into === undefined ? {} : { into }),
       ...(choices === undefined ? {} : choices),
+      ...(keep ? { unshipped: "keep" as const } : {}),
     });
   const run: RunShip = async (action, into, choices) => {
     const out = await act(action, into, choices);
     await after();
     return out;
   };
-  const done = useMutation<unknown, ApiRequestError>({
-    mutationFn: () => act("done"),
-    onSuccess: () => after(),
-    onError: (error) => toast("Could not mark it done", { detail: describeError(error), tone: "error" }),
+  const [confirming, setConfirming] = useState(false);
+  const done = useMutation<unknown, ApiRequestError, boolean>({
+    mutationFn: (keep) => act("done", undefined, undefined, keep),
+    onSuccess: () => {
+      setConfirming(false);
+      return after();
+    },
+    onError: (error, keep) => {
+      if (!keep) toast("Could not mark it done", { detail: describeError(error), tone: "error" });
+    },
   });
   const doneOption = options.data?.done;
+  const unshipped = doneOption?.unshipped ?? [];
 
   return (
     <section
@@ -123,7 +133,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
           variant={task.repos.length > 0 ? "secondary" : "primary"}
           disabled={done.isPending || doneOption?.ok === false}
           title={doneOption?.ok === false ? doneOption.why : "Mark the task done. Nothing is merged."}
-          onClick={() => done.mutate()}
+          onClick={() => (unshipped.length > 0 ? setConfirming(true) : done.mutate(false))}
         >
           <Check aria-hidden="true" />
           Mark done
@@ -141,6 +151,20 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       </div>
       {doneOption?.ok === false && (
         <p className="pl-6 text-xs text-fg-muted text-pretty">Mark done: {doneOption.why}</p>
+      )}
+      {doneOption?.ok === true && unshipped.length > 0 && (
+        <p className="pl-6 text-xs text-amber-soft text-pretty">
+          {unshippedCount(unshipped)}. Ship it, or mark it done to leave the commits on the branch.
+        </p>
+      )}
+      {confirming && (
+        <CloseUnshippedDialog
+          unshipped={unshipped}
+          busy={done.isPending}
+          error={done.error === null ? undefined : describeError(done.error)}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => done.mutate(true)}
+        />
       )}
     </section>
   );

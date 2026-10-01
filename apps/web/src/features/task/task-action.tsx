@@ -1,11 +1,13 @@
 import type { Task } from "@majhi/shared";
 import { Check, OctagonX, Play, RotateCw } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
 import { useCloseTask, useShipOptions, useStartTask, useStopTask } from "@/lib/task-queries";
 import { actionCopy } from "./model";
 import { Ship, useDirectShip } from "./ship";
+import { CloseUnshippedDialog, unshippedCount } from "./unshipped";
 
 /** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
 export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
@@ -15,13 +17,15 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
   const ship = useDirectShip(task);
-  // Only once there is work to ship: a worktree exists and no agent is working. A done task keeps
-  // Ship while some of its work is not merged or pushed.
   const hasTree = task.repos.some((r) => r.worktree !== undefined);
   const done = task.status === "done";
-  const shipOptions = useShipOptions(task, hasTree && done);
-  const unshipped = [shipOptions.data?.merge, shipOptions.data?.push].some((o) => o?.ok === true);
-  const canShip = hasTree && (done ? unshipped : !["inbox", "ready", "running"].includes(task.status));
+  const options = useShipOptions(task, (hasTree && done) || copy.kind === "done");
+  const unshipped = options.data?.done.unshipped ?? [];
+  const [confirming, setConfirming] = useState(false);
+  // Only once there is work to ship: a worktree exists and no agent is working. A done task keeps
+  // Ship while some of its work is not merged or pushed.
+  const shippable = [options.data?.merge, options.data?.push].some((o) => o?.ok === true);
+  const canShip = hasTree && (done ? shippable : !["inbox", "ready", "running"].includes(task.status));
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
@@ -53,17 +57,38 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
           Resume
         </Button>
       )}
+      {copy.kind === "done" && unshipped.length > 0 && (
+        // Narrow headers have no room for it: the button's tooltip and the review card say it too.
+        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft lg:inline">
+          {unshippedCount(unshipped)}
+        </span>
+      )}
       {copy.kind === "done" && (
         <Button
           variant="primary"
           size="sm"
-          title={copy.text}
+          title={unshipped.length > 0 ? `${unshippedCount(unshipped)}. ${copy.text}` : copy.text}
           disabled={close.isPending}
-          onClick={() => close.mutate(task.id, { onError: fail("Could not mark it done") })}
+          onClick={() =>
+            unshipped.length > 0
+              ? setConfirming(true)
+              : close.mutate({ id: task.id }, { onError: fail("Could not mark it done") })
+          }
         >
           <Check aria-hidden="true" />
           Mark done
         </Button>
+      )}
+      {confirming && (
+        <CloseUnshippedDialog
+          unshipped={unshipped}
+          busy={close.isPending}
+          error={close.error?.message}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() =>
+            close.mutate({ id: task.id, unshipped: "keep" }, { onSuccess: () => setConfirming(false) })
+          }
+        />
       )}
       {copy.kind === "stop" && (
         <Button

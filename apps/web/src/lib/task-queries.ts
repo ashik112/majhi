@@ -83,7 +83,7 @@ export function useCreateTask() {
   });
 }
 
-type TaskAction = "tasks.start" | "tasks.stop" | "tasks.close" | "tasks.reopen";
+type TaskAction = "tasks.start" | "tasks.stop" | "tasks.reopen";
 
 function useTaskAction(name: TaskAction) {
   const client = useQueryClient();
@@ -98,7 +98,17 @@ function useTaskAction(name: TaskAction) {
 
 export const useStartTask = () => useTaskAction("tasks.start");
 export const useStopTask = () => useTaskAction("tasks.stop");
-export const useCloseTask = () => useTaskAction("tasks.close");
+/** Marks a task done. `unshipped: "keep"` is the owner's yes to closing with commits not shipped. */
+export function useCloseTask() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, CommandInput<"tasks.close">>({
+    mutationFn: (input) => cmd("tasks.close", input),
+    onSuccess: (task) => {
+      client.setQueryData([...queryKeys.tasks, "one", task.id], task);
+      return refreshTasks(client);
+    },
+  });
+}
 export const useReopenTask = () => useTaskAction("tasks.reopen");
 
 /** Opens the task's shell, or the one that runs. */

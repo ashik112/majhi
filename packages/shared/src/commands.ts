@@ -44,6 +44,7 @@ import {
 } from "./decisions.ts";
 import {
   DirListingSchema,
+  EDITOR_PATH_MAX,
   HostResultSchemas,
   HostStatusSchema,
   SSH_PASSPHRASE_MAX,
@@ -92,8 +93,11 @@ import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
   CleanupPatchSchema,
+  CommitsPatchSchema,
   ContainersPatchSchema,
   ContextPatchSchema,
+  EditorAppSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -184,6 +188,20 @@ export const ShipOptionSchema = z.object({
 });
 export type ShipOption = z.infer<typeof ShipOptionSchema>;
 
+/** One repo of a task whose branch has commits that are not merged, pushed or in a pull request. */
+export const UnshippedRepoSchema = z.object({
+  project: IdSchema,
+  branch: z.string(),
+  /** Commits on the branch that are nowhere else. */
+  commits: z.number().int().nonnegative(),
+  /** Set when git could not say: the branch counts as not shipped. */
+  problem: z.string().optional(),
+});
+export type UnshippedRepo = z.infer<typeof UnshippedRepoSchema>;
+
+/** Closing a task that has work not shipped: the owner confirms it with `keep`. */
+export const UnshippedChoiceSchema = z.literal("keep");
+
 /** `tasks.shipOptions`: what Ship and the review card may do now. */
 export const ShipOptionsSchema = z.object({
   /** The first repo's base: the default target. */
@@ -198,8 +216,8 @@ export const ShipOptionsSchema = z.object({
   push: ShipOptionSchema,
   /** Push the task branch and open a merge request. */
   mr: ShipOptionSchema,
-  /** Mark the task done. */
-  done: ShipOptionSchema,
+  /** Mark the task done. `unshipped` lists the repos whose commits would stay behind on their branch. */
+  done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -276,6 +294,17 @@ export const commands = {
     }),
     output: SshStatusSchema,
   },
+  "editor.open": {
+    risk: "change",
+    summary:
+      "Open a file, a task's worktree or a project folder in the owner's editor (VS Code or Cursor, chosen in settings) through the host helper. The path must be inside a workspace root or the tasks folder",
+    input: z.object({
+      path: z.string().trim().min(1).max(EDITOR_PATH_MAX),
+      /** Jump to this line. Only for a file. */
+      line: z.number().int().min(1).optional(),
+    }),
+    output: z.object({ app: EditorAppSchema, path: z.string() }),
+  },
   "fs.listDirs": {
     risk: "read",
     summary: "List the subfolders of a folder on the host (default: home)",
@@ -318,7 +347,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -330,6 +359,8 @@ export const commands = {
       context: OrgConfigSchema.shape.context.nullable().optional(),
       /** Overrides majhi's `resume.auto` for this org's runs. */
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
+      /** Overrides majhi's `commits.attribution` for this org's commits. */
+      commits: OrgConfigSchema.shape.commits.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
       /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
@@ -531,13 +562,15 @@ export const commands = {
   "projects.update": {
     risk: "change",
     summary:
-      "Change a project's org, aliases or base branch, and (when given) its remotes and links to other projects. null removes remotes or links",
+      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects and agent attribution in commits. null removes remotes, links or the attribution override",
     input: z
       .object({ id: IdSchema })
       .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape)
       .extend({
         remotes: ProjectConfigSchema.shape.remotes.nullable().optional(),
         links: ProjectConfigSchema.shape.links.nullable().optional(),
+        /** Overrides the org's `commits.attribution` for this project. null clears it. */
+        commits: ProjectConfigSchema.shape.commits.nullable().optional(),
       }),
     output: ProjectViewSchema,
   },
@@ -715,8 +748,13 @@ export const commands = {
   },
   "tasks.close": {
     risk: "change",
-    summary: "Mark a task done. Worktrees stay until removed",
-    input: z.object({ id: TaskIdSchema }),
+    summary:
+      "Mark a task done. Worktrees stay until removed. Refused while a repo has commits that are not merged, pushed or in a pull request, unless the owner confirms with unshipped: keep. An agent can never close such a task",
+    input: z.object({
+      id: TaskIdSchema,
+      /** The owner confirmed closing with work not shipped: the commits stay on the branch. Agents are refused anyway. */
+      unshipped: UnshippedChoiceSchema.optional(),
+    }),
     output: TaskSchema,
   },
   "tasks.terminal.open": {
@@ -1047,6 +1085,8 @@ export const commands = {
       method: MergeMethodSchema.optional(),
       /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */
       deleteAfter: z.boolean().optional(),
+      /** For done: the owner confirmed closing with work not shipped. */
+      unshipped: UnshippedChoiceSchema.optional(),
     }),
     output: z.object({
       item: RoomItemSchema,
@@ -1135,13 +1175,15 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room, memory, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
+      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
+      commits: CommitsPatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
+      editor: EditorPatchSchema.optional(),
       cleanup: CleanupPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
     }),

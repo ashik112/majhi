@@ -1,9 +1,9 @@
-import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
 import type { Logger } from "./log.ts";
-import { dockerStep, type RemountOptions, regenerateAndUp } from "./remount.ts";
+import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
 
 const BUILD_TIMEOUT_MS = 20 * 60_000;
@@ -11,6 +11,10 @@ const KEY_TIMEOUT_MS = 60_000;
 const MAX_LINES = 40;
 /** The image `docker-compose.yml` builds and runs. */
 export const IMAGE = "majhi-server:dev";
+/** The image that ran before the last update, kept so a failed update can go back to it. */
+const PREVIOUS_IMAGE = "majhi-server:previous";
+/** Lines of the server's log searched for why it did not start. */
+const LOG_LINES = 40;
 
 export interface UpdateOptions {
   remount: RemountOptions;
@@ -84,12 +88,31 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     // The same environment `make up` gives compose, plus the commit the image should carry.
     const env = { ...remount.env, MAJHI_COMMIT: repo.commit };
     const step = dockerStep({ ...remount, env }, "update");
+    const previous = await keepPrevious(step);
+    const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
     await say("Building the new image. This takes a few minutes");
     // The runner image too: agents run in it (it is never started by compose).
     await step("build", ["compose", "--profile", "runner", "build"], BUILD_TIMEOUT_MS);
 
-    await ensureSecretsKey(options, env, say);
-    await regenerateAndUp({ ...remount, env }, "update", (text) => void say(text));
+    try {
+      await ensureSecretsKey(options, env, say);
+      await regenerateAndUp({ ...remount, env }, "update", (text) => void say(text));
+    } catch (err) {
+      const reason = await crashReason(step);
+      if (reason !== undefined) await say(`The new majhi said: ${reason}`);
+      await say(
+        previous === undefined
+          ? "No previous version to go back to"
+          : "The new majhi did not start. Going back to the previous version",
+      );
+      if (previous !== undefined) {
+        await goBack(step, remount.repo, previous, mounts).then(
+          () => say("Went back to the previous version"),
+          (back: unknown) => say(`Could not go back: ${errorMessage(back).split("\n", 1)[0]}`),
+        );
+      }
+      throw new Error(`${errorMessage(err)}${reason === undefined ? "" : `\n${reason}`}`);
+    }
 
     await say("Installing the new host helper");
     const replaced = await installBundle(options, env);
@@ -156,4 +179,46 @@ async function installBundle(options: UpdateOptions, env: NodeJS.ProcessEnv): Pr
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type Step = ReturnType<typeof dockerStep>;
+
+/** Tags the image majhi runs now, so the build cannot orphan it. Undefined when there is none yet. */
+async function keepPrevious(step: Step): Promise<string | undefined> {
+  const id = await step(
+    "find the running image",
+    ["image", "inspect", "--format", "{{.Id}}", IMAGE],
+    KEY_TIMEOUT_MS,
+  )
+    .then((out) => out.trim())
+    .catch(() => "");
+  if (id === "") return undefined;
+  await step("keep the running image", ["tag", id, PREVIOUS_IMAGE], KEY_TIMEOUT_MS);
+  return id;
+}
+
+/** Puts the previous image and mounts back and starts majhi on them. */
+async function goBack(step: Step, repo: string, previous: string, mounts: string | undefined): Promise<void> {
+  await step("go back to the previous image", ["tag", previous, IMAGE], KEY_TIMEOUT_MS);
+  if (mounts !== undefined) {
+    const target = join(repo, OVERRIDE_FILE);
+    const temp = `${target}.${process.pid}.tmp`;
+    await writeFile(temp, mounts);
+    await rename(temp, target);
+  }
+  await step("start the previous majhi", ["compose", "up", "-d", "--wait"], BUILD_TIMEOUT_MS);
+}
+
+/** The last error-looking line of the server's log, the reason `--wait` only calls "unhealthy". */
+async function crashReason(step: Step): Promise<string | undefined> {
+  const log = await step(
+    "read the server log",
+    ["compose", "logs", "--no-color", "--no-log-prefix", "--tail", String(LOG_LINES), "server"],
+    KEY_TIMEOUT_MS,
+  ).catch(() => "");
+  const lines = log
+    .split("\n")
+    .map((l) => l.replace(/^[\w.-]+\s+\|\s?/, "").trim())
+    .filter((l) => l !== "");
+  return [...lines].reverse().find((l) => /error|exception|failed|cannot|refused/i.test(l));
 }

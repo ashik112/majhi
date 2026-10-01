@@ -369,4 +369,25 @@ describe("room search", () => {
     const rows = db.prepare("SELECT rowid FROM room_search WHERE room_search MATCH 'flaky'").all();
     expect(rows).toHaveLength(1);
   });
+
+  it("skips items whose payload is not JSON, before and after the migration", () => {
+    const db = new Database(":memory:");
+    migrate(
+      db,
+      MIGRATIONS.filter((m) => m.id < 90),
+    );
+    db.prepare(
+      "INSERT INTO tasks (id, title, brief, kind, status, folder, team, created_at, updated_at) VALUES ('ACME-2', 't', 'b', 'code', 'inbox', '/t', '[]', 'x', 'x')",
+    ).run();
+    const insert = db.prepare(
+      "INSERT INTO room_items (task, id, seq, type, payload, at) VALUES ('ACME-2', ?, ?, ?, ?, 'x')",
+    );
+    insert.run("t1", 1, "tool", "");
+    insert.run("m1", 2, "owner", JSON.stringify({ text: "please fix the flaky test" }));
+    migrate(db);
+    expect(db.prepare("SELECT rowid FROM room_search WHERE room_search MATCH 'flaky'").all()).toHaveLength(1);
+    insert.run("t2", 3, "tool", "not json");
+    db.prepare("UPDATE room_items SET payload = '' WHERE id = 'm1'").run();
+    expect(db.prepare("SELECT rowid FROM room_search WHERE room_search MATCH 'flaky'").all()).toEqual([]);
+  });
 });

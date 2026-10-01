@@ -21,6 +21,9 @@ export interface ProjectMemoryDeps {
   onChange?: () => void;
 }
 
+/** Whether one repo of a task's record is in its base now. Undefined when git cannot say (the task is gone). */
+export type Landed = (task: string, repo: RecordRepo) => Promise<boolean | undefined>;
+
 export interface RecordInput {
   task: string;
   title: string;
@@ -54,6 +57,7 @@ function embedText(r: Pick<TaskRecord, "title" | "asked" | "done">): string {
 export class ProjectMemory {
   private readonly store: RecordStore;
   private readonly now: () => Date;
+  private landed: Landed | undefined;
 
   constructor(private readonly deps: ProjectMemoryDeps) {
     this.store = deps.store;
@@ -80,6 +84,40 @@ export class ProjectMemory {
     return this.store.record(task);
   }
 
+  /** How a record's merge status is checked again; wired once the task store exists. */
+  setLanded(landed: Landed): void {
+    this.landed = landed;
+  }
+
+  /** The record, with any repo merged since it was written marked merged. */
+  async recordNow(task: string): Promise<TaskRecord | undefined> {
+    const record = this.store.record(task);
+    return record === undefined ? undefined : (await this.landedNow([record]))[0];
+  }
+
+  /**
+   * A record is written once, when its task closes; a branch merged later (a reopened task, an MR
+   * merged after the close, a merge by hand) would still read "not merged". Repos not merged are
+   * checked in git again, and a repo that landed is saved as merged, so it is not checked again.
+   */
+  private async landedNow(records: readonly TaskRecord[]): Promise<TaskRecord[]> {
+    const landed = this.landed;
+    if (landed === undefined) return [...records];
+    const out: TaskRecord[] = [];
+    for (const record of records) {
+      let changed = false;
+      const repos: RecordRepo[] = [];
+      for (const repo of record.repos) {
+        const now = repo.merged ? true : await landed(record.task, repo).catch(() => undefined);
+        if (now === true && !repo.merged) changed = true;
+        repos.push(now === true ? { ...repo, merged: true } : repo);
+      }
+      if (changed) this.store.setRecordRepos(record.id, repos);
+      out.push(changed ? { ...record, repos } : record);
+    }
+    return out;
+  }
+
   /**
    * Records seen in `scopes` (undefined: all). With a query: the best by keywords and meaning, fused
    * by reciprocal rank. Without: newest first.
@@ -95,11 +133,11 @@ export class ProjectMemory {
     const keep = (r: TaskRecord) => r.task !== options.except;
     const query = options.query?.trim() ?? "";
     if (query === "") {
-      return this.store
+      const listed = this.store
         .records({ scopes, project, limit: options.limit + 1 })
         .filter(keep)
-        .slice(0, options.limit)
-        .map((record) => ({ record, score: 0 }));
+        .slice(0, options.limit);
+      return (await this.landedNow(listed)).map((record) => ({ record, score: 0 }));
     }
     if (this.store.countRecords(scopes, project) === 0) return [];
     await this.fillVectors();
@@ -111,10 +149,10 @@ export class ProjectMemory {
     const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
     const records = this.store.recordsByIds(ranked.map(([id]) => id));
     const score = new Map(ranked);
-    return records
-      .filter(keep)
-      .slice(0, options.limit)
-      .map((record) => ({ record, score: score.get(record.id) ?? 0 }));
+    return (await this.landedNow(records.filter(keep).slice(0, options.limit))).map((record) => ({
+      record,
+      score: score.get(record.id) ?? 0,
+    }));
   }
 
   private async fillVectors(): Promise<void> {

@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { openBossChat } from "../admin/boss.ts";
 import { sameRule } from "../admin/policy.ts";
 import type { ConfigService } from "../config/service.ts";
+import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
@@ -129,6 +130,20 @@ export function createHandlers({
       return ssh;
     },
 
+    "editor.open": async (input) => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+      const { workspaces, tasksDir } = loaded.state.config;
+      const path = await editorPath(input.path, [...workspaces, tasksDir, ...loaded.projectPaths]);
+      const { editor } = await config.settings();
+      await hostLink.call("editor.open", {
+        app: editor.app,
+        path,
+        ...(input.line === undefined ? {} : { line: input.line }),
+      });
+      return { app: editor.app, path };
+    },
+
     "fs.listDirs": (input) =>
       hostLink.call("listDirs", {
         path: input.path ?? config.paths.hostHome,
@@ -196,7 +211,12 @@ export function createHandlers({
     "tasks.start": (input) => services.tasks.start(input.id),
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.update": (input) => services.tasks.update(input),
-    "tasks.close": (input) => services.tasks.close(input.id),
+    "tasks.close": (input, ctx) =>
+      services.tasks.close(input.id, {
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+        whenUnshipped: input.unshipped ?? "refuse",
+      }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": ({ push, ...input }, ctx) =>
       push
@@ -339,7 +359,12 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
-    "room.cardAction": (input, ctx) => services.cardActions.act({ ...input, by: actorName(ctx.meta.actor) }),
+    "room.cardAction": (input, ctx) =>
+      services.cardActions.act({
+        ...input,
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+      }),
     "room.answerQuestion": async (input) => ({
       item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
     }),
@@ -381,8 +406,10 @@ export function createHandlers({
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
+        ...(input.commits === undefined ? {} : { commits: input.commits }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
+        ...(input.editor === undefined ? {} : { editor: input.editor }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
       };
@@ -469,7 +496,7 @@ export function createHandlers({
     }),
     "memory.records": async (input) =>
       services.memory.project.records({ query: input.query, project: input.project, limit: input.limit }),
-    "memory.record": async (input) => services.memory.project.record(input.task) ?? null,
+    "memory.record": async (input) => (await services.memory.project.recordNow(input.task)) ?? null,
     "memory.brief": async (input) => services.memory.project.brief(input.project),
     "memory.restoreBrief": async (input) =>
       services.memory.project.restoreBrief(input.project, input.version),

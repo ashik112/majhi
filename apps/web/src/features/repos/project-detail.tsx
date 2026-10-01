@@ -9,6 +9,7 @@ import {
 import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -51,6 +52,7 @@ function useSectionSave(project: ProjectView) {
     base?: string;
     remotes?: ProjectView["remotes"] | null;
     links?: ProjectView["links"] | null;
+    commits?: ProjectView["commits"] | null;
   }) => {
     setState({ kind: "saving" });
     const base = patch.base ?? project.base ?? "";
@@ -62,6 +64,7 @@ function useSectionSave(project: ProjectView) {
         ...(base.trim() !== "" ? { base: base.trim() } : {}),
         ...(patch.remotes !== undefined ? { remotes: patch.remotes } : {}),
         ...(patch.links !== undefined ? { links: patch.links } : {}),
+        ...(patch.commits !== undefined ? { commits: patch.commits } : {}),
       },
       {
         onSuccess: () => setState({ kind: "saved" }),
@@ -119,6 +122,7 @@ export function ProjectDetail({
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <OpenInEditor path={project.path} name={project.id} size="icon-sm" variant="ghost" />
             <CopyPath name={project.id} path={project.path} home={home} />
             <Button size="sm" variant="ghost" aria-label={`Remove project ${project.id}`} onClick={onRemove}>
               Remove
@@ -146,7 +150,15 @@ export function ProjectDetail({
   );
 }
 
-/** Org, aliases and base branch. */
+type AttributionChoice = "default" | "on" | "off";
+
+/** The project's own attribution setting as the select shows it. */
+function attributionChoice(project: ProjectView): AttributionChoice {
+  const on = project.commits?.attribution;
+  return on === undefined ? "default" : on ? "on" : "off";
+}
+
+/** Org, aliases, base branch and agent attribution in commits. */
 function NamesSection({
   project,
   repo,
@@ -158,7 +170,12 @@ function NamesSection({
   projects: readonly ProjectView[];
   orgs: readonly OrgView[];
 }) {
-  const initial = { org: project.org, aliases: [...project.aliases], base: project.base ?? "" };
+  const initial = {
+    org: project.org,
+    aliases: [...project.aliases],
+    base: project.base ?? "",
+    commits: attributionChoice(project),
+  };
   const [draft, setDraft] = useState(initial);
   const { state, setState, save } = useSectionSave(project);
   const clashes = aliasClashes(draft.aliases, projects, project.id);
@@ -169,6 +186,7 @@ function NamesSection({
   const dirty =
     draft.org !== initial.org ||
     draft.base.trim() !== initial.base ||
+    draft.commits !== initial.commits ||
     draft.aliases.join("\n") !== initial.aliases.join("\n");
   const set = (patch: Partial<typeof draft>) => {
     if (state.kind !== "saving") setState(IDLE);
@@ -186,7 +204,12 @@ function NamesSection({
       }}
       onSave={() => {
         if (aliasProblem) return;
-        save({ org: draft.org, aliases: draft.aliases, base: draft.base });
+        save({
+          org: draft.org,
+          aliases: draft.aliases,
+          base: draft.base,
+          commits: draft.commits === "default" ? null : { attribution: draft.commits === "on" },
+        });
       }}
     >
       <div className={GRID}>
@@ -217,6 +240,22 @@ function NamesSection({
               placeholder="main"
               className="font-mono"
             />
+          )}
+        </Field>
+        <Field
+          label="Agent attribution in commits"
+          hint="The agent is the committer and each commit names its task. Off: your identity alone."
+        >
+          {(props) => (
+            <Select
+              {...props}
+              value={draft.commits}
+              onChange={(e) => set({ commits: e.target.value as AttributionChoice })}
+            >
+              <option value="default">Use the org's setting</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </Select>
           )}
         </Field>
         <Field

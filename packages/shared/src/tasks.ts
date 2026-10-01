@@ -2,6 +2,7 @@ import { z } from "zod";
 import { IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
+import { CommitsPatchSchema } from "./settings.ts";
 
 /**
  * Projects, tasks, rooms and runs (SPEC 2, 3.1, 5.1, 5.4, 5.4a, 5.15).
@@ -48,6 +49,8 @@ export const ProjectConfigSchema = z.looseObject({
   remotes: z.record(z.string().trim().min(1), RemoteConfigSchema).optional(),
   /** Other projects this one depends on. Sets the merge order of a multi-repo task. */
   links: z.array(ProjectLinkSchema).optional(),
+  /** Overrides the org's and majhi's `commits.attribution` for this project (5.7). */
+  commits: CommitsPatchSchema.optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -65,6 +68,8 @@ export const ProjectViewSchema = z.object({
   links: z.array(ProjectLinkSchema).default([]),
   /** The remote MRs are opened against: the one marked `mr`, else `origin`. */
   mrRemote: z.string().optional(),
+  /** This project's own `commits.attribution`, when it overrides the org's. */
+  commits: CommitsPatchSchema.optional(),
 });
 export type ProjectView = z.infer<typeof ProjectViewSchema>;
 

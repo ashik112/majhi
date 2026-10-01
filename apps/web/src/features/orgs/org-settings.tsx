@@ -214,6 +214,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
+          <Field
+            label="Agent attribution in commits"
+            hint="The agent is the committer and each commit names its task. Off: your identity alone."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.commits}
+                onChange={(e) => set({ commits: e.target.value as OrgDraft["commits"] })}
+              >
+                <option value="default">Use majhi's setting</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </Select>
+            )}
+          </Field>
           <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
             <legend className="mb-1.5 p-0 text-sm text-fg-faint">Color</legend>
             <div className="flex h-[34px] items-center gap-2">

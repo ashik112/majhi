@@ -1,5 +1,6 @@
 import type { RecordRepo, TaskRepo } from "@majhi/shared";
 import { git, gitOk, localBranchExists } from "../git/git.ts";
+import { aheadOfBase } from "../tasks/shipped.ts";
 
 const MAX_COMMITS = 40;
 const MAX_STAT_LINES = 40;
@@ -135,4 +136,17 @@ export function factsText(facts: readonly RepoFacts[]): string {
       return lines.join("\n");
     })
     .join("\n\n");
+}
+
+/**
+ * Whether a repo of a task is in its base now: its merge request merged, or the branch (or the tip
+ * the record kept, once the branch is gone) in the base by ancestry, patch or squash.
+ */
+export async function landedNow(repo: TaskRepo, head: string | undefined): Promise<boolean> {
+  if (repo.mr?.state === "merged") return true;
+  const cwd = repo.source;
+  const tip = (await localBranchExists(cwd, repo.branch)) ? `refs/heads/${repo.branch}` : head;
+  if (tip === undefined || !(await gitOk(cwd, ["rev-parse", "--verify", "--quiet", `${tip}^{commit}`])))
+    return false;
+  return (await aheadOfBase(cwd, repo.base, tip)) === 0;
 }

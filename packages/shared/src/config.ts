@@ -3,8 +3,10 @@ import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
   CleanupPatchSchema,
+  CommitsPatchSchema,
   ContainersFilePatchSchema,
   ContextPatchSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -32,10 +34,14 @@ export const MajhiConfigSchema = z.strictObject({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  /** Agent attribution in commits (5.7). */
+  commits: CommitsPatchSchema.optional(),
   /** Teams in a room: the loop guard and review rounds (5.3). */
   rooms: RoomPatchSchema.optional(),
   /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */
   memory: MemoryPatchSchema.optional(),
+  /** Which editor "Open in editor" uses: VS Code or Cursor. */
+  editor: EditorPatchSchema.optional(),
   /** Cleanup of done tasks: after how many days (PRV-39). */
   cleanup: CleanupPatchSchema.optional(),
   /** Previews and test services majhi runs for agents (PRV-53): the allowed images and the limits. */

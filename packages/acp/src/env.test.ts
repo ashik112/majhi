@@ -48,14 +48,34 @@ describe("buildEnv", () => {
     expect(buildEnv({ tool: "codex", home: "/h" }, base).DEFAULT_AUTH_REQUEST).toBeUndefined();
   });
 
-  it("sets the git identity", () => {
-    const env = buildEnv({ tool: "claude", home: "/h" }, base, { name: "Ada", email: "ada@acme.test" });
+  it("sets the git author, committer and task, and a hooks folder for this run only", () => {
+    const env = buildEnv({ tool: "claude", home: "/h" }, base, {
+      author: { name: "Ada", email: "ada@acme.test" },
+      committer: { name: "acme-dev via majhi", email: "majhi@majhi.local" },
+      task: "ACM-1",
+      hooks: "/m/git-hooks",
+    });
     expect(env).toMatchObject({
       GIT_AUTHOR_NAME: "Ada",
       GIT_AUTHOR_EMAIL: "ada@acme.test",
+      GIT_COMMITTER_NAME: "acme-dev via majhi",
+      GIT_COMMITTER_EMAIL: "majhi@majhi.local",
+      MAJHI_TASK: "ACM-1",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.hooksPath",
+      GIT_CONFIG_VALUE_0: "/m/git-hooks",
+    });
+  });
+
+  it("with attribution off sets the same person for both and no task or hooks", () => {
+    const ada = { name: "Ada", email: "ada@acme.test" };
+    const env = buildEnv({ tool: "claude", home: "/h" }, base, { author: ada, committer: ada });
+    expect(env).toMatchObject({
+      GIT_AUTHOR_NAME: "Ada",
       GIT_COMMITTER_NAME: "Ada",
       GIT_COMMITTER_EMAIL: "ada@acme.test",
     });
+    expect(Object.keys(env).filter((k) => k === "MAJHI_TASK" || k.startsWith("GIT_CONFIG_"))).toEqual([]);
   });
 
   it("never sets NO_BROWSER or any SSH variable, so agents have no SSH access", () => {

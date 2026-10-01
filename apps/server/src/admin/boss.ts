@@ -41,7 +41,8 @@ export async function openBossChat({ config, store, tasks }: BossChatDeps, fresh
     if (!isBossChat(task)) continue;
     if (!fresh) return task;
     // A new conversation: the current one is archived (done) and stays readable under Past chats.
-    await tasks.close(task.id);
+    // The owner asked for a new conversation. A boss chat has no repo of its own, so nothing stays behind.
+    await tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
     break;
   }
   return tasks.create({ text: BOSS_CHAT_BRIEF, kind: "chat", agent: boss, attachments: [], start: false });

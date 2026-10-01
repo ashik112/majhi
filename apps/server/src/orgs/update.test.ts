@@ -25,6 +25,21 @@ describe("orgs.update", () => {
   });
 });
 
+describe("orgs.update agent attribution", () => {
+  it("overrides majhi's setting for an org, and null clears the override", async () => {
+    await withOrgs();
+    const shown = () => h.cmd("orgs.list").then((r) => r.body.find((o: { id: string }) => o.id === "acme"));
+    expect(await shown()).not.toHaveProperty("commits");
+    const off = await h.cmd("orgs.update", { id: "acme", commits: { attribution: false } });
+    expect(off.body.commits).toEqual({ attribution: false });
+    expect((await shown()).commits).toEqual({ attribution: false });
+    // The file still loads.
+    expect((await h.cmd("settings.get")).status).toBe(200);
+    const cleared = await h.cmd("orgs.update", { id: "acme", commits: null });
+    expect(cleared.body).not.toHaveProperty("commits");
+  });
+});
+
 describe("orgs.update merge policy and MR tokens", () => {
   it("sets the policy and the secret per host, shows them, and defaults to never", async () => {
     await withOrgs();

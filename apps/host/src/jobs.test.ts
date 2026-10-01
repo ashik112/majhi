@@ -45,6 +45,9 @@ describe("host jobs", () => {
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
+    editorOpen: async ({ path }) => {
+      if (path === "/gone") throw new Error("There is nothing at /gone on this Mac.");
+    },
     versionChanges: async () => ({ head: "abc1234", dirty: false, changes: [] }),
     update: undefined,
     restart: () => undefined,
@@ -153,6 +156,21 @@ describe("host jobs", () => {
       "exec compose run",
       "up started",
       "up finished",
+    ]);
+  });
+
+  it("answers editor.open once the editor has the path, and with the message when it cannot", async () => {
+    const params = { app: "cursor" as const, path: "/Users/a/Work/x" };
+    await runJob({ id: "e1", method: "editor.open", params }, handlers(fakeExec()), reply);
+    await runJob(
+      { id: "e2", method: "editor.open", params: { ...params, path: "/gone" } },
+      handlers(fakeExec()),
+      reply,
+    );
+
+    expect(replies).toEqual([
+      { id: "e1", ok: true, result: { opened: true } },
+      { id: "e2", ok: false, error: "There is nothing at /gone on this Mac." },
     ]);
   });
 

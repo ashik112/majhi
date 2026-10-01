@@ -10,10 +10,14 @@ export interface Migration {
 /** The item types the room search indexes, as an SQL list (see SEARCHABLE_ITEM_TYPES in shared). */
 const SEARCHABLE = "'owner', 'agent', 'handoff', 'system', 'tool'";
 
-/** SQL for the text of a room item in `row` (a table name, or `new`): a message's text, or a tool's title and output. */
+/**
+ * SQL for the text of a room item in `row` (a table name, or `new`): a message's text, or a tool's title and output.
+ * A payload that is not JSON gives no text: json_extract would throw and abort the whole statement.
+ */
 function searchText(row: string): string {
-  return `CASE ${row}.type
-    WHEN 'tool' THEN coalesce(json_extract(${row}.payload, '$.title'), '') || char(10) || coalesce(
+  return `CASE
+    WHEN NOT json_valid(${row}.payload) THEN ''
+    WHEN ${row}.type = 'tool' THEN coalesce(json_extract(${row}.payload, '$.title'), '') || char(10) || coalesce(
       (SELECT group_concat(coalesce(json_extract(c.value, '$.text'), json_extract(c.value, '$.output'), json_extract(c.value, '$.newText'), ''), char(10))
        FROM json_each(${row}.payload, '$.content') AS c), '')
     ELSE coalesce(json_extract(${row}.payload, '$.text'), '')

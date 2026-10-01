@@ -622,7 +622,12 @@ export class MrService {
           `Merged into ${into} and pushed it${closes ? ", marked done" : ""}`,
           input.by,
         );
-        if (input.done) await this.deps.tasks.close(input.id, { whenSubtasksOpen: "stay", by: input.by });
+        if (input.done)
+          await this.deps.tasks.close(input.id, {
+            whenSubtasksOpen: "stay",
+            whenUnshipped: "stay",
+            by: input.by,
+          });
         if (input.deleteAfter === true) {
           return { results: await this.withDeleted(input.id, results, heads), task: this.publish(input.id) };
         }
@@ -937,7 +942,7 @@ export class MrService {
       }
     }
     this.note(task.id, "Every merge request is merged. The task is done.");
-    await this.deps.tasks.close(task.id, { whenSubtasksOpen: "stay" });
+    await this.deps.tasks.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by: "majhi" });
   }
 
   private async fetchBase(source: string, remote: string, base: string): Promise<string | undefined> {

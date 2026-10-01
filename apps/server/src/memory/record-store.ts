@@ -159,6 +159,11 @@ export class RecordStore {
     })();
   }
 
+  /** Where the record's repos landed, read again from git. The record's text stays. */
+  setRecordRepos(id: number, repos: readonly RecordRepo[]): void {
+    this.db.prepare("UPDATE task_records SET repos = ? WHERE id = ?").run(JSON.stringify(repos), id);
+  }
+
   record(task: string): TaskRecord | undefined {
     const row = this.db.prepare("SELECT * FROM task_records WHERE task = ?").get(task) as
       | RecordRow

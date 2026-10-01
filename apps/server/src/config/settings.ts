@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import {
   CleanupPatchSchema,
+  CommitsPatchSchema,
   ContainersFilePatchSchema,
   ContextPatchSchema,
   DecisionPatchSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -22,10 +24,12 @@ export const SettingsPatchSchema = z.object({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
+  commits: CommitsPatchSchema.optional(),
   rooms: RoomPatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
   memory: MemoryPatchSchema.optional(),
+  editor: EditorPatchSchema.optional(),
   cleanup: CleanupPatchSchema.optional(),
   containers: ContainersFilePatchSchema.optional(),
 });
@@ -37,9 +41,11 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     context: raw.context ?? {},
     limits: raw.limits ?? {},
     resume: raw.resume ?? {},
+    commits: raw.commits ?? {},
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
     memory: raw.memory ?? {},
+    editor: raw.editor ?? {},
     cleanup: raw.cleanup ?? {},
     containers: raw.containers ?? {},
   });
@@ -67,9 +73,11 @@ export async function readSettings(file: string): Promise<Settings> {
     context: record.context,
     limits: record.limits,
     resume: record.resume,
+    commits: record.commits,
     rooms: record.rooms,
     policy: record.policy,
     memory: record.memory,
+    editor: record.editor,
     cleanup: record.cleanup,
     containers: record.containers,
   });

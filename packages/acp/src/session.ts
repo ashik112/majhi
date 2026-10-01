@@ -1,6 +1,6 @@
 import type { ToolContent } from "@majhi/shared";
 import type { SessionOptions } from "./acp-session.ts";
-import type { GitIdentity } from "./env.ts";
+import type { GitAttribution } from "./env.ts";
 import type { AccountRuntime, RuntimeOptions } from "./index.ts";
 import type { DebugLog } from "./normalize.ts";
 import { openSession } from "./session-impl.ts";
@@ -17,7 +17,7 @@ export interface SessionStart {
   options: RuntimeOptions;
   /** The task folder. */
   cwd: string;
-  git?: GitIdentity;
+  git?: GitAttribution;
   /** MCP servers to attach (Phase 2b adds majhi-admin for the boss). */
   mcpServers?: McpServerSpec[];
   /** Resume this ACP session id with session/load when the agent supports it. */

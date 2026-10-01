@@ -41,14 +41,14 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export async function git(
   cwd: string,
   args: readonly string[],
-  options: { timeoutMs?: number; maxBufferBytes?: number } = {},
+  options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> } = {},
 ): Promise<string> {
   try {
     const { stdout } = await run("git", [...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       maxBuffer: options.maxBufferBytes ?? 64 * 1024 * 1024,
-      env: gitEnv(process.env),
+      env: { ...gitEnv(process.env), ...options.env },
     });
     return stdout;
   } catch (err) {

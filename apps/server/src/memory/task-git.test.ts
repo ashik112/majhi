@@ -1,11 +1,14 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { TaskRepo } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { git, makeRepo } from "../testing/fixtures.ts";
-import { repoFacts } from "./task-git.ts";
+import { landedNow, repoFacts } from "./task-git.ts";
 
+const run = promisify(execFile);
 const dirs: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -17,12 +20,28 @@ async function repo() {
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
   const path = await mkdtemp(join(tmpdir(), "majhi-git-"));
   dirs.push(path);
-  // The base's first commit is old: it is from before any task.
-  vi.stubEnv("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z");
-  vi.stubEnv("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z");
   await makeRepo(path, { commit: true });
-  vi.stubEnv("GIT_COMMITTER_DATE", "");
-  vi.stubEnv("GIT_AUTHOR_DATE", "");
+  // The base's first commit is old: it is from before any task. The fixtures' git drops the
+  // GIT_*_DATE variables, so the date is set here.
+  const old = "2020-01-01T00:00:00Z";
+  await run(
+    "git",
+    [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--amend",
+      "--allow-empty",
+      "--no-edit",
+      "--quiet",
+    ],
+    {
+      cwd: path,
+      env: { ...process.env, GIT_COMMITTER_DATE: old, GIT_AUTHOR_DATE: old },
+    },
+  );
   await mkdir(join(path, "docs"), { recursive: true });
   const commit = async (file: string, text: string, message: string) => {
     await writeFile(join(path, file), text);
@@ -82,5 +101,25 @@ describe("what git says about a finished task's branch", () => {
 
     const gone = await repoFacts(task("task/acm-9"), start);
     expect(gone).toMatchObject({ repo: { commits: 0, merged: false }, problem: "The branch is gone." });
+  });
+});
+
+describe("whether a finished task's branch is in its base now", () => {
+  it("says no before a merge, yes after a squash merge, and still yes once the branch is gone", async () => {
+    const { path, commit, task } = await repo();
+    await git(path, "checkout", "--quiet", "-b", "task/acm-1");
+    await commit("health.ts", "export const ok = true;\n", "feat: health check");
+    await commit("docs/PROGRESS.md", "# Progress\n", "docs: progress");
+    const head = await git(path, "rev-parse", "--short", "HEAD");
+    await git(path, "checkout", "--quiet", "main");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(false);
+
+    await git(path, "merge", "--squash", "task/acm-1");
+    await git(path, "commit", "--quiet", "-m", "squashed");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(true);
+
+    await git(path, "branch", "-D", "task/acm-1");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(true);
+    expect(await landedNow(task("task/acm-1"), undefined)).toBe(false);
   });
 });

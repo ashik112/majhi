@@ -115,7 +115,7 @@ function NumberField({
 }: {
   label: string;
   hint?: string;
-  name: Exclude<keyof SettingsForm, "resumeAuto">;
+  name: Exclude<keyof SettingsForm, "resumeAuto" | "commitsAttribution">;
   draft: Draft;
 }) {
   return (
@@ -133,11 +133,12 @@ function NumberField({
   );
 }
 
-/** Context budget, agent limits and resume: three sections, each saved on its own. */
+/** Context budget, agent limits, resume and commits: four sections, each saved on its own. */
 export function ContextSection({ settings }: { settings: Settings }) {
   const context = useSettingsDraft(settings, ["compactAt", "compactTarget", "maxTurns"]);
   const limits = useSettingsDraft(settings, ["agentsMax", "perAccount", "perTask", "idleTimeout"]);
   const resume = useSettingsDraft(settings, ["resumeAuto"]);
+  const commits = useSettingsDraft(settings, ["commitsAttribution"]);
   return (
     <>
       <Section
@@ -175,6 +176,21 @@ export function ContextSection({ settings }: { settings: Settings }) {
           checked={resume.form.resumeAuto}
           onChange={(v) => resume.set("resumeAuto", v)}
         />
+      </Section>
+      <Section
+        title="Commits"
+        note="Orgs and projects can override this. It applies to runs that start after you save."
+        draft={commits}
+      >
+        <Switch
+          label="Agent attribution in commits"
+          checked={commits.form.commitsAttribution}
+          onChange={(v) => commits.set("commitsAttribution", v)}
+        />
+        <p className="text-sm text-fg-faint text-pretty">
+          Commits keep your identity as the author. The agent becomes the committer and a Majhi-Task line
+          links each commit to its task. Off: your identity is both, with no task line.
+        </p>
       </Section>
     </>
   );

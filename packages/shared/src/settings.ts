@@ -67,6 +67,18 @@ export const ResumeSettingsSchema = z.strictObject({
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
 export const ResumePatchSchema = z.strictObject({ auto: z.boolean() }).partial();
 
+/**
+ * Who a commit is attributed to (5.7): the agent as committer and a `Majhi-Task` trailer. On unless
+ * turned off here, for an org or for a project; the project wins, then the org, then this.
+ * A change applies to runs launched after it. Checkpoints follow it at once.
+ */
+export const CommitsSettingsSchema = z.strictObject({
+  attribution: z.boolean().default(true),
+});
+export type CommitsSettings = z.infer<typeof CommitsSettingsSchema>;
+export const CommitsPatchSchema = z.strictObject({ attribution: z.boolean() }).partial();
+export type CommitsPatch = z.infer<typeof CommitsPatchSchema>;
+
 /** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
 const roomFields = {
   /** Agent-to-agent turns without an owner message before the task pauses and asks (loop guard). */
@@ -127,6 +139,15 @@ export const MemoryPatchSchema = z
   .partial();
 export type MemoryPatch = z.infer<typeof MemoryPatchSchema>;
 
+/** The owner's editor (SPEC 11). The host helper opens files and folders in it. */
+export const EditorAppSchema = z.enum(["vscode", "cursor"]);
+export type EditorApp = z.infer<typeof EditorAppSchema>;
+export const EDITOR_LABEL: Record<EditorApp, string> = { vscode: "VS Code", cursor: "Cursor" };
+
+const editorFields = { app: EditorAppSchema };
+export const EditorSettingsSchema = z.strictObject({ app: editorFields.app.default("vscode") });
+export type EditorSettings = z.infer<typeof EditorSettingsSchema>;
+export const EditorPatchSchema = z.strictObject(editorFields).partial();
 /** Containers majhi runs for agents: previews and test services (PRV-53). */
 const containersFields = {
   /** Service images the owner allowed. Changed only by `containers.images.allow` and `.remove`. */
@@ -222,9 +243,11 @@ export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
   limits: LimitsSettingsSchema,
   resume: ResumeSettingsSchema,
+  commits: CommitsSettingsSchema,
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
+  editor: EditorSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
 });
