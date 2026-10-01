@@ -1,0 +1,2 @@
+# Append-only logs: when two branches each add rows at the end, keep both instead of conflicting.
+docs/DECISIONS.md merge=union
