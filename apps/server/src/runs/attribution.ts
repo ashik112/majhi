@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type GitAttribution, MAJHI_HOOKS_DIR } from "@majhi/acp";
 import { agentCommitter, attributionEnabled, TASK_TRAILER } from "@majhi/shared";
@@ -29,42 +29,120 @@ const HOOKS = [
 
 /**
  * Every hook runs the repo's own hook of the same name, so the repo's checks still run, and
- * `prepare-commit-msg` adds the trailer first. It runs even under `--no-verify`, which skips
- * `commit-msg`. The repo's hooks are where its own `core.hooksPath` says (husky, lefthook), read
- * with `--local` because majhi's override sits in the command-line scope, else in the git folder.
- * A relative path is from the worktree's top, where hooks run. The repo's hooks stay read-only for
- * the agent (5.15).
+ * `prepare-commit-msg` adds the trailer first when attribution is on (`MAJHI_TRAILER`). It runs even
+ * under `--no-verify`, which skips `commit-msg`. The repo's hooks are where its own `core.hooksPath`
+ * says (husky, lefthook), read with `--local` because majhi's override sits in the command-line
+ * scope, else in the git folder. A relative path is from the worktree's top, where hooks run. The
+ * repo's hooks stay read-only for the agent (5.15).
  *
- * `reference-transaction` keeps a run off other tasks' branches. Every task worktree shares the
- * repo's git folder, so a commit, `update-ref` or `branch -f` from one task could move another
- * task's `task/<id>-...` branch while that worktree's index and files stay behind. With the locks
- * taken ("prepared", where a non-zero exit aborts), it refuses any change to `refs/heads/task/*`
- * that is not the run's own task (`MAJHI_TASK`). Every line counts: git reports a deletion and a
- * `verify` alike (new value all zeros), so a harmless line cannot be told apart. Without
- * `MAJHI_TASK` (the owner's git, majhi's own) nothing is refused. The input is kept and passed on
- * to the repo's own hook of that name.
+ * `reference-transaction` keeps a run on its own task's branches. Every task worktree shares the
+ * repo's git folder with the owner's checkout, so without it a run could move or delete the owner's
+ * branches (main, release/*), another task's branch, the remote-tracking refs majhi reads to tell
+ * what is merged or pushed, tags, notes or the shared stash. With the locks taken ("prepared", where a
+ * non-zero exit aborts the whole change) and `MAJHI_TASK` set, it allows only:
+ * - the task's branches: `task/<id>`, `task/<id>-*` and the branches named in `MAJHI_BRANCHES`,
+ *   except a deletion or rename of a branch majhi tracks (`MAJHI_BRANCHES`): git renames by deleting
+ *   first, and a rename the guard then stops halfway would lose the branch;
+ * - the worktree's own HEAD (detached, or switched to one of those branches) and the refs git keeps
+ *   per worktree: pseudo refs like ORIG_HEAD and MERGE_HEAD, `refs/bisect`, `refs/worktree`,
+ *   `refs/rewritten`;
+ * and nothing at all from the project's own checkout, where a run never works. Only the task's repos
+ * are guarded (`MAJHI_GIT_DIRS`, the only git folders a run can write): a repo the agent makes for
+ * itself, like a test's, stays free. Every line counts: git
+ * reports a deletion and a `verify` alike (new value all zeros), so a harmless line cannot be told
+ * apart. Git reports a branch switch as HEAD becoming `ref:<branch>` from 2.46; older git (the runner
+ * image's) does not, so `post-checkout` switches back to where the worktree was and fails the
+ * checkout. Without `MAJHI_TASK` (the owner's git, majhi's own) nothing is refused. The input is kept
+ * and passed on to the repo's own hook of that name.
+ *
+ * This is a guard rail against mistakes and plain commands, not a wall: the run can write files in
+ * the shared git folder directly or turn the hooks off for one command.
  */
 const SCRIPT = `#!/bin/sh
 name=$(basename "$0")
-if [ "$name" = prepare-commit-msg ] && [ -n "$MAJHI_TASK" ]; then
+set -f
+own="refs/heads/task/$(printf '%s' "$MAJHI_TASK" | tr '[:upper:]' '[:lower:]')"
+# Succeeds for a branch of the run's own task.
+is_own() {
+  case "$1" in
+    "$own" | "$own"-*) return 0 ;;
+  esac
+  for b in $MAJHI_BRANCHES; do
+    [ "$1" = "refs/heads/$b" ] && return 0
+  done
+  return 1
+}
+# Succeeds for a branch majhi tracks as the task's working branch, by name.
+is_tracked() {
+  for b in $MAJHI_BRANCHES; do
+    [ "$1" = "refs/heads/$b" ] && return 0
+  done
+  return 1
+}
+# Succeeds when git works on one of the task's repos (MAJHI_GIT_DIRS), by either form of its path.
+guarded() {
+  [ -n "$MAJHI_TASK" ] && [ -n "$MAJHI_GIT_DIRS" ] || return 1
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  real=$(cd "$common" 2>/dev/null && pwd -P)
+  [ -n "$real" ] || real=$common
+  printf '%s\\n' "$MAJHI_GIT_DIRS" | grep -Fqx -e "$common" -e "$real"
+}
+# Prints why a run may not set ref $2 to $1, or nothing when it may. A switch of HEAD ranks after
+# the branch it names, whose reason says more ("2 " and "1 ", cut before showing).
+refusal() {
+  case "$2" in
+    HEAD)
+      case "$1" in
+        ref:*) is_own "\${1#ref:}" || echo "2 this worktree stays on its task branch, so it cannot switch to \${1#ref:refs/heads/}. Read another branch with git show or git diff, or look at it with git checkout --detach." ;;
+      esac ;;
+    refs/heads/task/*)
+      case "$1" in
+        *[!0]*) ;;
+        *) is_tracked "$2" && echo "1 majhi tracks \${2#refs/heads/} as the branch of $MAJHI_TASK, so it cannot be deleted or renamed." && return ;;
+      esac
+      is_own "$2" || {
+        other=\${2#refs/heads/}
+        id=$(printf '%s' "$other" | sed -n 's|^task/\\([a-z][a-z0-9]*-[0-9][0-9]*\\).*|\\1|p' | tr '[:lower:]' '[:upper:]')
+        echo "1 $other is the branch of another task\${id:+ ($id)}, not of $MAJHI_TASK. Do not change it with git: its worktree would not follow and its agents would undo the change. Use the majhi-tasks change_task_branch tool, which commits inside that task's own worktree."
+      } ;;
+    refs/heads/*)
+      case "$1" in
+        *[!0]*) ;;
+        *) is_tracked "$2" && echo "1 majhi tracks \${2#refs/heads/} as the branch of $MAJHI_TASK, so it cannot be deleted or renamed." && return ;;
+      esac
+      is_own "$2" || echo "1 \${2#refs/heads/} is not a branch of $MAJHI_TASK. A run changes only its own branches (\${own#refs/heads/} and \${own#refs/heads/}-<name>). The owner merges and pushes from Ship." ;;
+    refs/bisect/* | refs/worktree/* | refs/rewritten/*) ;;
+    refs/remotes/*)
+      echo "1 $2 is majhi's copy of what the remote has. A run does not fetch, pull or move it; majhi fetches when it ships." ;;
+    refs/stash)
+      echo "1 the stash is shared by every checkout of this repo, the owner's too. Commit work in progress on your task branch instead of git stash." ;;
+    *[!ABCDEFGHIJKLMNOPQRSTUVWXYZ_]*)
+      echo "1 $2 is shared by every checkout of this repo, so a run may not change it." ;;
+  esac
+}
+if [ "$name" = prepare-commit-msg ] && [ -n "$MAJHI_TASK" ] && [ "$MAJHI_TRAILER" = 1 ]; then
   git interpret-trailers --in-place --if-exists doNothing --trailer "${TASK_TRAILER}: $MAJHI_TASK" "$1" || exit 1
 fi
 if [ "$name" = reference-transaction ]; then
   input=$(cat)
-  if [ "$1" = prepared ] && [ -n "$MAJHI_TASK" ]; then
-    own="refs/heads/task/$(printf '%s' "$MAJHI_TASK" | tr '[:upper:]' '[:lower:]')"
-    # The patterns open with "(" so that a shell reading this inside $( ) does not end it early.
-    other=$(printf '%s\\n' "$input" | while read -r _old _new ref; do
-      case "$ref" in
-        ("$own" | "$own"-*) ;;
-        (refs/heads/task/*) printf '%s\\n' "\${ref#refs/heads/}" ;;
-      esac
-    done | head -n 1)
-    if [ -n "$other" ]; then
-      id=$(printf '%s' "$other" | sed -n 's|^task/\\([a-z][a-z0-9]*-[0-9][0-9]*\\).*|\\1|p' | tr '[:lower:]' '[:upper:]')
-      echo "majhi: $other is the branch of another task\${id:+ ($id)}, not of $MAJHI_TASK. Do not change it with git: its worktree would not follow and its agents would undo the change. Use the majhi-tasks change_task_branch tool, which commits inside that task's own worktree." >&2
+  if [ "$1" = prepared ] && guarded; then
+    if [ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+      why="a run changes git only inside its task's worktrees, not in the project's own checkout."
+    else
+      why=$(printf '%s\\n' "$input" | while read -r _old new ref; do refusal "$new" "$ref"; done | sort | head -n 1 | cut -c 3-)
+    fi
+    if [ -n "$why" ]; then
+      echo "majhi: $why" >&2
       exit 1
     fi
+  fi
+fi
+if [ "$name" = post-checkout ] && [ "$3" = 1 ] && guarded; then
+  head=$(git symbolic-ref -q HEAD)
+  if [ -n "$head" ] && ! is_own "$head"; then
+    git checkout --quiet - >/dev/null 2>&1
+    echo "majhi: $(refusal "ref:$head" HEAD | cut -c 3-)" >&2
+    exit 1
   fi
 fi
 repo_hooks=$(git config --local --get core.hooksPath)
@@ -96,6 +174,19 @@ export async function ensureHooks(majhiHome: string): Promise<string> {
     await rename(temp, path);
   }
   return dir;
+}
+
+/** Each repo's git folder, as given and with symlinks resolved, so the hooks match either form. */
+async function gitDirsOf(repos: readonly { source?: string | undefined }[]): Promise<string[]> {
+  const dirs = new Set<string>();
+  for (const { source } of repos) {
+    if (source === undefined) continue;
+    const dir = join(source, ".git");
+    dirs.add(dir);
+    const real = await realpath(dir).catch(() => undefined);
+    if (real !== undefined) dirs.add(real);
+  }
+  return [...dirs];
 }
 
 /** The org's commit identity for a task, or majhi's own when the org has none. */
@@ -137,19 +228,26 @@ export async function attributionOf(
 }
 
 /**
- * The git environment of one agent's run in a task. With attribution off it is the org's identity
- * for author and committer, no task and no hooks, so the repo's hooks run as they always did.
+ * The git environment of one agent's run in a task: majhi's hooks and the task, always, so the run
+ * stays on its own branches. With attribution off the org's identity is author and committer and
+ * commits get no trailer, so they look as the owner's own.
  */
 export async function gitAttribution(
   deps: { config: ConfigService; majhiHome: string },
-  task: { id: string; org?: string | undefined; repos: readonly { project: string }[] },
+  task: {
+    id: string;
+    org?: string | undefined;
+    repos: readonly { project: string; branch?: string | undefined; source?: string | undefined }[];
+  },
   agent: string,
-): Promise<{ git: GitAttribution; hooks?: string }> {
-  const [author, on] = await Promise.all([
+): Promise<{ git: GitAttribution; hooks: string }> {
+  const [author, on, hooks] = await Promise.all([
     orgIdentity(deps.config, task.org),
     attributionOf(deps.config, task),
+    ensureHooks(deps.majhiHome),
   ]);
-  if (!on.run) return { git: { author, committer: author } };
-  const hooks = await ensureHooks(deps.majhiHome);
-  return { git: { author, committer: agentCommitter(agent), task: task.id, hooks }, hooks };
+  const branches = task.repos.flatMap((r) => (r.branch === undefined ? [] : [r.branch]));
+  const scope = { task: task.id, branches, gitDirs: await gitDirsOf(task.repos), hooks };
+  if (!on.run) return { git: { author, committer: author, ...scope }, hooks };
+  return { git: { author, committer: agentCommitter(agent), ...scope, trailer: true }, hooks };
 }

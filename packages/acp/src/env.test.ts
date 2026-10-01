@@ -48,11 +48,14 @@ describe("buildEnv", () => {
     expect(buildEnv({ tool: "codex", home: "/h" }, base).DEFAULT_AUTH_REQUEST).toBeUndefined();
   });
 
-  it("sets the git author, committer and task, and a hooks folder for this run only", () => {
+  it("sets the git author, committer and task, a hooks folder and gc settings for this run only", () => {
     const env = buildEnv({ tool: "claude", home: "/h" }, base, {
       author: { name: "Ada", email: "ada@acme.test" },
       committer: { name: "acme-dev via majhi", email: "majhi@majhi.local" },
       task: "ACM-1",
+      branches: ["task/acm-1-x", "feature/y"],
+      gitDirs: ["/w/api/.git", "/w/web/.git"],
+      trailer: true,
       hooks: "/m/git-hooks",
     });
     expect(env).toMatchObject({
@@ -61,9 +64,16 @@ describe("buildEnv", () => {
       GIT_COMMITTER_NAME: "acme-dev via majhi",
       GIT_COMMITTER_EMAIL: "majhi@majhi.local",
       MAJHI_TASK: "ACM-1",
-      GIT_CONFIG_COUNT: "1",
+      MAJHI_BRANCHES: "task/acm-1-x feature/y",
+      MAJHI_GIT_DIRS: "/w/api/.git\n/w/web/.git",
+      MAJHI_TRAILER: "1",
+      GIT_CONFIG_COUNT: "7",
       GIT_CONFIG_KEY_0: "core.hooksPath",
       GIT_CONFIG_VALUE_0: "/m/git-hooks",
+      GIT_CONFIG_KEY_2: "gc.pruneExpire",
+      GIT_CONFIG_VALUE_2: "never",
+      GIT_CONFIG_KEY_6: "core.logAllRefUpdates",
+      GIT_CONFIG_VALUE_6: "always",
     });
   });
 

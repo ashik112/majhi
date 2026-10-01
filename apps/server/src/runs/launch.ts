@@ -164,7 +164,7 @@ export async function launch(
       mounts: [
         // Read-only checkouts first: a task repo's own .git below one stays writable.
         ...(await readMounts(deps, task, run.agent, fm.scope)),
-        ...(await repoMounts(task)),
+        ...(await repoMounts(task, { guardRefs: true })),
         ...hooksMount(attribution.hooks),
       ],
       ...(resume === undefined ? {} : { resume }),
@@ -237,9 +237,9 @@ export async function readMounts(
   return mounts;
 }
 
-/** majhi's hooks folder, read-only, for a run that has them. */
-function hooksMount(hooks: string | undefined): RunMount[] {
-  return hooks === undefined ? [] : [{ path: hooks, readOnly: true }];
+/** majhi's hooks folder, read-only. Every run has it: the hooks keep its git on its own branches. */
+function hooksMount(hooks: string): RunMount[] {
+  return [{ path: hooks, readOnly: true }];
 }
 
 /** The agent's account as the runtime needs it, with its API key when it has one. */
@@ -277,7 +277,7 @@ export async function processLaunch(
     account,
     mounts: [
       ...(await readMounts(deps, task, agentId, resolved.fm.scope)),
-      ...(await repoMounts(task)),
+      ...(await repoMounts(task, { guardRefs: true })),
       ...hooksMount(attribution.hooks),
     ],
   };
@@ -286,9 +286,10 @@ export async function processLaunch(
 /**
  * What a runner needs besides the task folder: each task repo's `.git`, where the worktree keeps
  * its objects and refs. `config` and `hooks` are read-only, so a run cannot plant a hook or a
- * command in the config that the owner's own git would later run on the host.
+ * command in the config that the owner's own git would later run on the host. For an agent's run
+ * (`guardRefs`) the refs are read-only too, but for majhi's task branches: see `refMounts`.
  */
-export async function repoMounts(task: Task): Promise<RunMount[]> {
+export async function repoMounts(task: Task, options: { guardRefs?: boolean } = {}): Promise<RunMount[]> {
   const mounts: RunMount[] = [];
   for (const repo of task.repos) {
     if (repo.worktree === undefined) continue;
@@ -301,6 +302,29 @@ export async function repoMounts(task: Task): Promise<RunMount[]> {
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
     );
+    if (options.guardRefs === true) mounts.push(...(await refMounts(gitDir, repo.branch)));
   }
   return mounts;
+}
+
+/**
+ * A run's refs: branches, remote-tracking refs and tags read-only, but `refs/heads/task`, where
+ * majhi's task branches live. majhi's hooks refuse every other ref change git makes in a transaction,
+ * but git writes the branch of a `git branch -C` (copy) without one, so the hooks never see it; a
+ * read-only folder refuses it, and a hand-written ref file too. A packed ref changes as a new loose
+ * file, so it is covered the same way. A repo whose working branch the owner named outside `task/`
+ * keeps only the hooks: that branch must stay writable.
+ */
+async function refMounts(gitDir: string, branch: string): Promise<RunMount[]> {
+  if (!branch.startsWith("task/")) return [];
+  const refs = join(gitDir, "refs");
+  for (const dir of [join(refs, "heads", "task"), join(refs, "remotes"), join(refs, "tags")]) {
+    await mkdir(dir, { recursive: true });
+  }
+  return [
+    { path: join(refs, "heads"), readOnly: true },
+    { path: join(refs, "heads", "task") },
+    { path: join(refs, "remotes"), readOnly: true },
+    { path: join(refs, "tags"), readOnly: true },
+  ];
 }

@@ -76,7 +76,7 @@ describe("what a task's run mounts", () => {
   let w: World;
   afterEach(() => w?.cleanup());
 
-  it("asks for the repo's .git with config and hooks read-only, and passes the mount guard", async () => {
+  it("asks for the repo's .git with config, hooks and other refs read-only, and passes the mount guard", async () => {
     w = await taskWorld();
     const created = await w.h.cmd("tasks.create", {
       text: "add a health endpoint to api from develop",
@@ -92,7 +92,12 @@ describe("what a task's run mounts", () => {
       { path: gitDir },
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
-      // majhi's own hooks (commit attribution), the one folder of its home a run may read.
+      // Branches, remote-tracking refs and tags, but majhi's task branches.
+      { path: join(gitDir, "refs", "heads"), readOnly: true },
+      { path: join(gitDir, "refs", "heads", "task") },
+      { path: join(gitDir, "refs", "remotes"), readOnly: true },
+      { path: join(gitDir, "refs", "tags"), readOnly: true },
+      // majhi's own hooks (they keep the run on its branches), the one folder of its home a run may read.
       { path: join(w.h.env.majhiHome, "git-hooks"), readOnly: true },
     ]);
     expect(existsSync(join(gitDir, "hooks"))).toBe(true);
@@ -115,6 +120,10 @@ describe("what a task's run mounts", () => {
       gitDir,
       join(gitDir, "config"),
       join(gitDir, "hooks"),
+      join(gitDir, "refs", "heads"),
+      join(gitDir, "refs", "heads", "task"),
+      join(gitDir, "refs", "remotes"),
+      join(gitDir, "refs", "tags"),
       join(w.h.env.majhiHome, "git-hooks"),
     ]);
     const args = dockerRunArgs(request, config, "majhi-run-x").join(" ");

@@ -90,7 +90,7 @@ export interface AccountProbe {
   models?: Omit<AccountModels, "account">;
 }
 
-export { buildEnv, type GitAttribution, type GitIdentity } from "./env.ts";
+export { buildEnv, type GitAttribution, type GitIdentity, RUN_GIT_CONFIG } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";
 export { loginCommand } from "./login.ts";

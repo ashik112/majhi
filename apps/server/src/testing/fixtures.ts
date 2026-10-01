@@ -14,7 +14,12 @@ const run = promisify(execFile);
 function cleanGitEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (/^GIT_(AUTHOR|COMMITTER)_|^GIT_CONFIG_(COUNT|KEY_|VALUE_)|^MAJHI_TASK$/.test(key)) delete env[key];
+    if (
+      /^GIT_(AUTHOR|COMMITTER)_|^GIT_CONFIG_(COUNT|KEY_|VALUE_)|^MAJHI_(TASK|BRANCHES|GIT_DIRS|TRAILER)$/.test(
+        key,
+      )
+    )
+      delete env[key];
   }
   return env;
 }

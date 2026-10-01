@@ -29,7 +29,13 @@ export const FETCH_TIMEOUT_MS = 60_000;
  * (its tests, a dev server) still makes and moves every task's branches.
  */
 export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const { MAJHI_TASK: _run, ...rest } = source;
+  const {
+    MAJHI_TASK: _run,
+    MAJHI_BRANCHES: _branches,
+    MAJHI_GIT_DIRS: _dirs,
+    MAJHI_TRAILER: _trailer,
+    ...rest
+  } = source;
   return {
     ...rest,
     GIT_TERMINAL_PROMPT: "0",
