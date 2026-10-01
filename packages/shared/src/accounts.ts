@@ -372,6 +372,8 @@ export const EventTopicSchema = z.enum([
   "usage",
   "memory",
   "containers",
+  "schedules",
+  "triggers",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [

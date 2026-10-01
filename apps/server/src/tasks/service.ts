@@ -1954,6 +1954,23 @@ export class TaskService {
   }
 
   /**
+   * A message from a schedule or trigger to the task's lead. Like an owner message it wakes the
+   * task, but the room shows a plain line saying where it came from, not an owner message.
+   */
+  async postFromScheduler(input: { task: string; text: string; from: string }): Promise<void> {
+    const task = this.get(input.task);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    const lead = task.team[0];
+    if (lead === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
+    this.note(task.id, `Message from scheduler "${input.from}" to @${lead}: ${input.text}`);
+    this.cards.settle(task.id, "review", `Message from scheduler "${input.from}"`, "majhi");
+    if (task.status !== "running") await this.start(task.id);
+    this.deps.runs.notify(task.id, lead, `Scheduled message from "${input.from}": ${input.text}`);
+    this.deps.store.tasks.touch(task.id, this.now().toISOString());
+    this.deps.events.emit(["tasks"]);
+  }
+
+  /**
    * Who an owner message goes to (5.3): the requested agent; else every @mentioned agent, adding
    * the ones not on the team when they may work in its org; else the lead.
    */

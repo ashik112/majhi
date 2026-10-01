@@ -4,6 +4,8 @@ import { RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat } from "../admin/boss.ts";
 import { sameRule } from "../admin/policy.ts";
+import { scheduleHandlers } from "../automation/handlers.ts";
+import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
@@ -64,6 +66,9 @@ export function createHandlers({
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
   return {
+    ...scheduleHandlers(services.automation.schedules),
+    ...triggerHandlers(services.automation.triggers),
+
     "config.get": async () => (await config.load()).state,
 
     "repos.scan": async (input) => {

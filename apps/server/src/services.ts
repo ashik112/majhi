@@ -12,6 +12,9 @@ import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
+import { createActionHost } from "./automation/host.ts";
+import { type Automation, createAutomation } from "./automation/index.ts";
+import { createWatchHost } from "./automation/triggers/host.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
 import { DockerCli } from "./containers/docker.ts";
@@ -142,6 +145,8 @@ export interface Services {
   processes: ProcessManager;
   /** Previews and service containers majhi runs for agents (PRV-53). */
   containers: ContainerService;
+  /** Schedules and the action runner they share with watch triggers (PRV-63). */
+  automation: Automation;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -438,6 +443,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
+  const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
+  const automation = createAutomation({
+    db: store.raw,
+    host: actionHost,
+    watch: createWatchHost({ store, processes, projects, usage: usageService, actions: actionHost }),
+    orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
+    changed: () => events.emit(["schedules"]),
+    triggersChanged: () => events.emit(["triggers"]),
+  });
   const coordinator = new RoomCoordinator({
     store,
     room,
@@ -488,6 +502,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     containers,
+    automation,
     memory,
     extraction,
     promotion,
@@ -498,6 +513,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      automation.scheduler.stop();
+      automation.triggerEngine.stop();
       layaDocker?.close();
       await runs.closeAll();
       await processes.stopAll();

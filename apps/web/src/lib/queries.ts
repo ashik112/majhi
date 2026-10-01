@@ -46,6 +46,10 @@ export const queryKeys = {
   memory: ["memory"],
   /** Every `containers.*` read: running previews and services across tasks. */
   containers: ["containers"],
+  /** Every `schedules.*` read: the list, one schedule and its runs. */
+  schedules: ["schedules"],
+  /** Every `triggers.*` read: the list, one trigger and its runs. */
+  triggers: ["triggers"],
 } as const;
 
 export function useConfig() {

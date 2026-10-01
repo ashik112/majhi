@@ -32,6 +32,7 @@ const NAV: readonly { page: PageName; label: string }[] = [
   { page: "usage", label: "Health and usage" },
   { page: "skills", label: "Skills" },
   { page: "memory", label: "Memory" },
+  { page: "automations", label: "Automations" },
   { page: "setup", label: "Hub setup" },
   { page: "projects", label: "Projects and links" },
   { page: "orgs", label: "Orgs" },

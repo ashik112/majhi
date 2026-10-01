@@ -24,6 +24,13 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import {
+  AutomationRunSchema,
+  ScheduleCreateInputSchema,
+  ScheduleIdSchema,
+  ScheduleUpdateInputSchema,
+  ScheduleViewSchema,
+} from "./automation.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ContainerInfoSchema,
@@ -119,6 +126,12 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
+import {
+  TriggerCreateInputSchema,
+  TriggerIdSchema,
+  TriggerUpdateInputSchema,
+  TriggerViewSchema,
+} from "./triggers.ts";
 import {
   DaySchema,
   PriceKeySchema,
@@ -1581,6 +1594,124 @@ export const commands = {
       "Set the price of a model (dollars per million tokens), or remove the owner's row with price null. New turns use it; recorded turns keep their cost",
     input: z.object({ model: PriceKeySchema, price: PriceSchema.nullable() }),
     output: z.object({ checked: z.string(), rows: z.array(PriceRowSchema) }),
+  },
+
+  // Schedules (PRV-63) ----------------------------------------------------------
+  "schedules.list": {
+    risk: "read",
+    summary: "List schedules with their next run time and last run result, optionally for one org",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(ScheduleViewSchema),
+  },
+  "schedules.get": {
+    risk: "read",
+    summary: "Show one schedule with its next run time and last run result",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.runs": {
+    risk: "read",
+    summary: "The run history of a schedule, newest first",
+    input: z.object({ id: ScheduleIdSchema, limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(AutomationRunSchema),
+  },
+  "schedules.create": {
+    risk: "change",
+    summary:
+      "Create a schedule that starts a task, posts to a task's room or runs a command, every N minutes, hours or days, by a cron expression, or once. Give a spec, or a phrase like 'weekdays at 9:00'. The time zone is the caller's, UTC when not sent",
+    input: ScheduleCreateInputSchema,
+    output: ScheduleViewSchema,
+  },
+  "schedules.update": {
+    risk: "change",
+    summary: "Edit a schedule's name, when it runs, its time zone, its action or its overlap rule",
+    input: ScheduleUpdateInputSchema,
+    output: ScheduleViewSchema,
+  },
+  "schedules.pause": {
+    risk: "change",
+    summary: "Pause a schedule: it does not run until it is resumed",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.resume": {
+    risk: "change",
+    summary: "Resume a paused schedule. Missed runs are not replayed",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.runNow": {
+    risk: "change",
+    summary:
+      "Run a schedule's action now. The overlap rule applies: with skip, a run is recorded as skipped while the last one still goes",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: AutomationRunSchema,
+  },
+  "schedules.delete": {
+    risk: "destructive",
+    summary: "Delete a schedule and its run history",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: z.object({ removed: ScheduleIdSchema }),
+  },
+
+  // Watch triggers (PRV-63) -----------------------------------------------------
+  "triggers.list": {
+    risk: "read",
+    summary:
+      "List watch triggers with what they watch, their last check and last run result, optionally for one org",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(TriggerViewSchema),
+  },
+  "triggers.get": {
+    risk: "read",
+    summary: "Show one watch trigger with its last check and last run result",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.runs": {
+    risk: "read",
+    summary: "The run history of a watch trigger, newest first",
+    input: z.object({ id: TriggerIdSchema, limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(AutomationRunSchema),
+  },
+  "triggers.create": {
+    risk: "change",
+    summary:
+      "Create a watch trigger that starts a task, posts to a task's room or runs a command when something changes: a task's status (done, failed, needs you), a task's merge request, a branch, a file or folder in a project, a process exit, usage over a limit, a URL, or a command's output. settleSeconds is the quiet time a change must hold before it fires, cooldownSeconds the wait after a firing (default 300). {{event}} in the action's text becomes a line about what matched",
+    input: TriggerCreateInputSchema,
+    output: TriggerViewSchema,
+  },
+  "triggers.update": {
+    risk: "change",
+    summary:
+      "Edit a watch trigger's name, what it watches, its action, its overlap rule, check interval, settle time or cooldown",
+    input: TriggerUpdateInputSchema,
+    output: TriggerViewSchema,
+  },
+  "triggers.pause": {
+    risk: "change",
+    summary: "Pause a watch trigger: it stops checking until it is resumed",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.resume": {
+    risk: "change",
+    summary: "Resume a paused watch trigger. Changes made while it was paused do not fire it",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.runNow": {
+    risk: "change",
+    summary:
+      "Run a watch trigger's action now, as a test. The overlap rule applies; the cooldown and what the trigger watches are left alone",
+    input: z.object({ id: TriggerIdSchema }),
+    output: AutomationRunSchema,
+  },
+  "triggers.delete": {
+    risk: "destructive",
+    summary: "Delete a watch trigger and its run history",
+    input: z.object({ id: TriggerIdSchema }),
+    output: z.object({ removed: TriggerIdSchema }),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 
