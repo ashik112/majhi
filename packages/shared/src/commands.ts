@@ -45,6 +45,7 @@ import {
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
+  GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
   SSH_PASSPHRASE_MAX,
@@ -272,6 +273,37 @@ export const commands = {
         identityFile: z.string().optional(),
       }),
     ),
+  },
+  "git.logins": {
+    risk: "read",
+    summary:
+      "The accounts this Mac is logged in as on git hosts: gh and glab logins, and SSH keys per host or alias. Never returns a token",
+    input: z.object({ refresh: z.boolean().optional() }),
+    output: GitLoginsResultSchema,
+  },
+  "orgs.useGitLogin": {
+    risk: "change",
+    summary:
+      "Use this Mac's gh or glab login as the org's token for a git host: the helper reads the token once and it is saved in secrets.age as that org's mr_tokens entry. Never returns the token",
+    input: z.object({
+      id: IdSchema,
+      via: z.enum(["gh", "glab"]),
+      /** The git host name the login was found for, like `github.com`. */
+      host: z.string().min(1).max(255),
+    }),
+    output: z.object({ id: IdSchema, host: MrHostSchema, ref: z.string() }),
+  },
+  "projects.pushRoute": {
+    risk: "read",
+    summary: "How a project pushes its MR remote over SSH, and the keys that could do it",
+    input: z.object({ id: IdSchema }),
+    output: z.object({
+      host: z.string().optional(),
+      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh"]),
+      /** A plain sentence like "Pushes as acme-dev via github.com key". */
+      label: z.string().optional(),
+      choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),
+    }),
   },
   "ssh.reload": {
     risk: "change",

@@ -22,6 +22,7 @@ import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, uncommitted } from "../git/git.ts";
+import type { GitLoginService } from "../git/logins.ts";
 import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -34,8 +35,11 @@ import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from 
 import { nextMerge, type RepoMrState } from "./policy.ts";
 import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
+import { chooseRoute, describeLogin, httpsToSsh, loginsOf, ownerOf, type PushRoute } from "./route.ts";
 
 export interface MrDeps {
+  /** Which accounts the owner's keys log in as per git host. Without it https remotes need an alias. */
+  gitLogins?: Pick<GitLoginService, "list">;
   store: Store;
   config: ConfigService;
   projects: ProjectService;
@@ -71,6 +75,14 @@ interface RepoContext {
   pushUrl: string | undefined;
   target: Omit<MrTarget, "token">;
   client: MrHostClient;
+}
+
+/** The host an alias reaches, read from the logins found for it. */
+function aliasHost(
+  alias: string,
+  hosts: readonly { host: string; logins: readonly { alias?: string | undefined }[] }[] | undefined,
+): string | undefined {
+  return hosts?.find((h) => h.logins.some((l) => l.alias === alias))?.host;
 }
 
 /** A refusal the owner fixes on another page: Ship links straight to it. */
@@ -209,7 +221,8 @@ export class MrService {
       );
     }
     const hostName = remoteConfig?.ssh === undefined ? hostNameOf(url) : undefined;
-    const pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
+    let pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
+    if (/^https?:\/\//i.test(pushUrl)) pushUrl = (await this.routeFor(url, undefined)).url ?? pushUrl;
     return {
       repo,
       project,
@@ -653,12 +666,92 @@ export class MrService {
       );
     const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
     if (/^https?:\/\//i.test(pushUrl)) {
+      const routed = await this.routeFor(url, undefined);
+      if (routed.url !== undefined) return { remote, pushUrl: routed.url };
+      const fix = { page: "projects", project: project.id } as const;
+      if (routed.route.state === "ambiguous") {
+        const host = hostNameOf(url) ?? "the host";
+        const choices = routed.route.choices.map((c) => describeLogin(host, c)).join(", ");
+        throw new FixableError(
+          `${project.id}'s ${remote} remote is https, and more than one key could push it (${choices}). Pick one in Projects.`,
+          fix,
+        );
+      }
       throw new FixableError(
         `No SSH alias for ${project.id}'s ${remote} remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.`,
-        { page: "projects", project: project.id },
+        fix,
       );
     }
     return { remote, pushUrl: pushUrl === url ? undefined : pushUrl };
+  }
+
+  /** The SSH route for an https remote, from the keys the Mac's logins show. `url` is the push address when one fits. */
+  private async routeFor(
+    url: string,
+    explicit: string | undefined,
+  ): Promise<{ route: PushRoute; url: string | undefined }> {
+    const host = hostNameOf(url);
+    const found =
+      host === undefined
+        ? undefined
+        : await this.deps.gitLogins?.list().then(
+            (r) => r.hosts,
+            () => undefined,
+          );
+    const route = chooseRoute({
+      explicit,
+      owner: ownerOf(url),
+      logins: host === undefined || found === undefined ? [] : loginsOf(found, host),
+    });
+    if (route.state === "auto") return { route, url: httpsToSsh(url, route.alias) };
+    if (route.state === "picked") return { route, url: httpsToSsh(url, route.alias) };
+    return { route, url: undefined };
+  }
+
+  /** How `project` pushes its MR remote, for the project page. */
+  async pushRoute(id: string): Promise<{
+    host: string | undefined;
+    state: PushRoute["state"] | "ssh";
+    label?: string;
+    choices: Array<{ alias?: string; account: string; label: string }>;
+  }> {
+    const project = await this.deps.projects.get(id);
+    const remote = mrRemoteName(project.remotes);
+    const url = await remoteUrl(project.path, remote).catch(() => undefined);
+    const host = url === undefined ? undefined : hostNameOf(url);
+    if (url === undefined || host === undefined) return { host: undefined, state: "none", choices: [] };
+    const explicit = project.remotes[remote]?.ssh;
+    const https = /^https?:\/\//i.test(url);
+    if (!https && explicit === undefined) return { host, state: "ssh", choices: [] };
+    const { route } = await this.routeFor(url, explicit);
+    const logins = (await this.deps.gitLogins?.list().catch(() => undefined))?.hosts;
+    const hostKey = explicit === undefined ? host : (aliasHost(explicit, logins) ?? host);
+    const choices = (logins === undefined ? [] : loginsOf(logins, hostKey))
+      .filter((l) => l.via === "ssh")
+      .map((l) => ({
+        ...(l.alias === undefined ? {} : { alias: l.alias }),
+        account: l.account,
+        label: describeLogin(hostKey, l),
+      }));
+    if (route.state === "auto") {
+      return {
+        host,
+        state: "auto",
+        label: `Pushes as ${route.account} via ${route.alias ?? hostKey} key`,
+        choices,
+      };
+    }
+    if (route.state === "picked") {
+      const account = choices.find((c) => c.alias === route.alias)?.account;
+      return {
+        host,
+        state: "picked",
+        label:
+          account === undefined ? `Pushes via ${route.alias}` : `Pushes as ${account} via ${route.alias} key`,
+        choices,
+      };
+    }
+    return { host, state: route.state, choices };
   }
 
   /** Every repo of the task, ready to push its branch: a worktree, all committed, a remote to push to. */

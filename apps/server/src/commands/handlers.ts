@@ -10,6 +10,7 @@ import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
+import { useGitLogin } from "../orgs/gitLogin.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { Services } from "../services.ts";
@@ -19,6 +20,9 @@ import { actorName } from "../tasks/cards.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
+
+/** `gh auth token` is quick, but the helper may be busy. */
+const GIT_TOKEN_TIMEOUT_MS = 20_000;
 
 export interface CommandContext {
   command: CommandName;
@@ -105,6 +109,27 @@ export function createHandlers({
     },
 
     "ssh.hosts": () => sshConfigHosts(config.paths.hostHome),
+    "git.logins": (input) => services.gitLogins.list(input.refresh === true),
+
+    "orgs.useGitLogin": (input, ctx) =>
+      useGitLogin(
+        {
+          readToken: async (via, host) =>
+            (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
+          saveSecret: (secret) => services.secretService.save(secret),
+          orgTokens: async (id) => {
+            const org = (await config.sections()).orgs[id];
+            return org === undefined ? undefined : (org.mr_tokens ?? {});
+          },
+          setOrgTokens: async (id, tokens) => {
+            await orgs.update({ id, mr_tokens: tokens }, ctx.command, ctx.meta);
+          },
+        },
+        input,
+      ),
+
+    "projects.pushRoute": (input) => services.mrs.pushRoute(input.id),
+
     "ssh.reload": async () => {
       const ssh = await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS);
       hostLink.noteSsh(ssh);

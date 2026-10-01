@@ -27,6 +27,7 @@ import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import { GitLoginService } from "./git/logins.ts";
 import type { HostLink } from "./host/link.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
@@ -130,6 +131,7 @@ export interface Services {
   tasks: TaskService;
   /** Push, open, watch and merge the merge requests of a task (5.5). */
   mrs: MrService;
+  gitLogins: GitLoginService;
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
   pendingShips: PendingShips;
@@ -421,7 +423,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
     console.error(`Memory cleanup failed: ${errorMessage(err)}`),
   );
+  const gitLogins = new GitLoginService(options.hostLink, async () => (await config.load()).projectPaths);
   const mrs = new MrService({
+    gitLogins,
     store,
     config,
     projects,
@@ -477,6 +481,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runs,
     tasks,
     mrs,
+    gitLogins,
     cardActions: new CardActions({ tasks, mrs, room }),
     pendingShips,
     cleanup: new CleanupService({ store, room, events, projects }),

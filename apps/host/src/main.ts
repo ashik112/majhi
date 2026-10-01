@@ -14,6 +14,7 @@ import { type LinkOptions, pollLoop, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
+import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
 import { runJob } from "./jobs.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
@@ -120,6 +121,22 @@ async function main(): Promise<void> {
     run: runCommand,
     log,
   });
+  const gitDeps: GitLoginsDeps = {
+    run: runCommand,
+    readText: files.readText,
+    home: config.home,
+    path,
+    socket: async () => {
+      const own = process.env.SSH_AUTH_SOCK?.trim();
+      if (own) return own;
+      const got = await runCommand("/bin/launchctl", ["getenv", "SSH_AUTH_SOCK"], {
+        env: { PATH: path },
+        timeoutMs: 5_000,
+      });
+      return got.code === 0 ? got.stdout.trim() || undefined : undefined;
+    },
+    find: (name) => findExecutable(name, path),
+  };
   // The server resumes turns that stalled while the Mac slept when it sees this change.
   let wokeAt: string | undefined;
   const info = (): HostInfo => {
@@ -181,6 +198,11 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(0), 300);
     },
     sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
+    gitLogins: async (params: { extraHosts: string[] }) => ({
+      hosts: await detectGitLogins(gitDeps, params.extraHosts),
+    }),
+    gitToken: (params: { via: "gh" | "glab"; host: string }) =>
+      readGitToken(gitDeps, params.via, params.host),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),

@@ -51,6 +51,8 @@ describe("host jobs", () => {
     versionChanges: async () => ({ head: "abc1234", dirty: false, changes: [] }),
     update: undefined,
     restart: () => undefined,
+    gitLogins: async () => ({ hosts: [] }),
+    gitToken: async () => "unused",
     layaStatus: () => ({ state: "not-installed" }),
     layaInstall: () => ({ state: "installing" }),
     layaDecide: async () => ({ answers: {}, loadMs: 0, predictMs: 1 }),
