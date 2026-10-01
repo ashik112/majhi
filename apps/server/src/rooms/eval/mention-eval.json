@@ -1,0 +1,113 @@
+{
+  "cases": [
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "act",
+      "text": "@builder please fix the failing test in orders.test.ts and push a commit."
+    },
+    {
+      "from": "reviewer",
+      "to": "builder",
+      "expected": "act",
+      "text": "Two problems: the null check in parseOrder is missing and the retry loop never ends. @builder, fix both and tell me when done."
+    },
+    {
+      "from": "lead",
+      "to": "reviewer",
+      "expected": "act",
+      "text": "@reviewer the change is in commit 4f2a9c1. Review it."
+    },
+    {
+      "from": "builder",
+      "to": "lead",
+      "expected": "act",
+      "text": "@lead should the invoice total include tax? I need that before I go on."
+    },
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "act",
+      "text": "@builder rerun the migration test with a clean database."
+    },
+    {
+      "from": "reviewer",
+      "to": "builder",
+      "expected": "act",
+      "text": "CHANGES NEEDED. The new endpoint skips auth. @builder add the auth middleware."
+    },
+    {
+      "from": "builder",
+      "to": "reviewer",
+      "expected": "act",
+      "text": "Done: the export now streams rows (commit 9b1e2d0). @reviewer, over to you for review."
+    },
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "act",
+      "text": "Tests passed on p12. @builder, go ahead with the next step: the Globex importer."
+    },
+    {
+      "from": "builder",
+      "to": "tester",
+      "expected": "act",
+      "text": "@tester the staging build is up on port 3000. Run the checkout smoke test against it."
+    },
+    {
+      "from": "reviewer",
+      "to": "lead",
+      "expected": "no",
+      "text": "I'm still waiting. @builder's check is running and it reports to @lead."
+    },
+    {
+      "from": "builder",
+      "to": "lead",
+      "expected": "no",
+      "text": "That's the old p5 result; p11 is the current run. Nothing to do on my side, @lead."
+    },
+    { "from": "reviewer", "to": "builder", "expected": "no", "text": "Thanks @builder, looks good to me." },
+    {
+      "from": "builder",
+      "to": "reviewer",
+      "expected": "no",
+      "text": "Already in commit 3c4d5e6, which @reviewer saw earlier."
+    },
+    {
+      "from": "lead",
+      "to": "reviewer",
+      "expected": "no",
+      "text": "@reviewer is reviewing the patch now. I'll wait for the verdict."
+    },
+    {
+      "from": "builder",
+      "to": "lead",
+      "expected": "no",
+      "text": "Started p10 `pnpm test`. I'll report back to @lead when it ends."
+    },
+    {
+      "from": "reviewer",
+      "to": "builder",
+      "expected": "no",
+      "text": "Approved. @builder did the fix in commit 7a8b9c0, nothing more from me."
+    },
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "no",
+      "text": "Noted, @builder. The Northwind sync is done on your side."
+    },
+    {
+      "from": "builder",
+      "to": "reviewer",
+      "expected": "no",
+      "text": "FYI @reviewer, the lint run is still going; no news yet."
+    },
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "no",
+      "text": "@builder and @reviewer are both busy. I'm standing by until one of them reports."
+    }
+  ]
+}

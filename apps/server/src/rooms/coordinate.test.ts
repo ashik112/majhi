@@ -6,6 +6,7 @@ import {
   type Member,
   pipelineStages,
   planTurn,
+  statusOnly,
   type TurnEnd,
   verdictOf,
   waitsOnly,
@@ -196,6 +197,27 @@ describe("asksOwner", () => {
     expect(asksOwner("@acme-builder can you add the missing null check?")).toBe(false);
     expect(asksOwner("Fixed it.\n```\nif (x?.y) return\n```\nThe `a ? b : c` stays.")).toBe(false);
     expect(asksOwner("> Why does it fail?\nIt failed on a missing import; fixed.")).toBe(false);
+  });
+});
+
+describe("statusOnly", () => {
+  it("reads a reply that only waits or reports where work stands", () => {
+    expect(
+      statusOnly("I'm still waiting. @acme-builder's check is running and it reports to @acme-lead."),
+    ).toBe(true);
+    expect(statusOnly("Started p10 `pnpm test`. I'll report back to @acme-lead when it ends.")).toBe(true);
+    expect(statusOnly("FYI @acme-reviewer, the lint run is still going; no news yet.")).toBe(true);
+    expect(statusOnly("Nothing to do for me.")).toBe(true);
+  });
+
+  it("does not count a request, even next to a status line", () => {
+    expect(statusOnly("@acme-builder please fix the failing test.")).toBe(false);
+    expect(statusOnly("The tests are still running. @acme-builder fix the lint error meanwhile.")).toBe(
+      false,
+    );
+    expect(statusOnly("The build is still running, so @acme-builder should rebase after it.")).toBe(false);
+    expect(statusOnly("@acme-reviewer the change is in commit 4f2a9c1. Review it.")).toBe(false);
+    expect(statusOnly("Added the handler and a test.")).toBe(false);
   });
 });
 

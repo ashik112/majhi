@@ -230,32 +230,61 @@ const ASKS =
   /\b(please|can you|could you|would you|go ahead|start|pick up|take over|meanwhile|in the meantime|while)\b/i;
 const AGENT_MENTION = /(^|[^A-Za-z0-9_@/.-])@(?!owner\b)[A-Za-z0-9][A-Za-z0-9-]*/gi;
 
+/** A sentence that only reports where work stands: something runs, or someone will report. */
+const STATUS =
+  /\b((is|are) (still )?(running|in progress|under ?way|building|going)|still (running|working|building|checking|reviewing|going|in progress)|in progress|under ?way|will (report|reply|ping|post|follow up|get back|let (you|us|me|everyone) know)|reports? (back )?(to|when|once)|(has|have)( not|n't) (finished|reported|ended)( yet)?|not (done|finished) yet|no (news|update|result) yet)\b/i;
+/** Words that ask for work in a sentence that otherwise reports status. */
+const WORK =
+  /\b(fix|add|change|implement|write|remove|rename|investigate|look (at|into)|re-?run|retry|revert|rebase|merge|commit|push|need(s)? (you|to)|should|must|let's|instead)\b/i;
+
 /**
  * Whether an agent's message only says it is waiting or has nothing to do ("Nothing for me until
  * the owner answers. Standing by, @lead."). A sentence that asks a teammate for something, or
  * mentions one with more to say than a name, makes it more than waiting. Code and quotes are not read.
  */
 export function waitsOnly(text: string): boolean {
+  return onlySays(text, (s) => IDLE.test(s));
+}
+
+/**
+ * Like `waitsOnly`, and a sentence that only reports status counts too ("I'm still waiting.
+ * @builder's check is running and it reports to @lead."). A mention in it names who the status is
+ * about, so it wakes nobody. A sentence that asks for work makes it more than status.
+ */
+export function statusOnly(text: string): boolean {
+  return onlySays(text, (s) => IDLE.test(s) || (STATUS.test(s) && !WORK.test(s)));
+}
+
+/** Whether every sentence is `idle` or a bare mention, and at least one is `idle`. */
+function onlySays(text: string, idle: (sentence: string) => boolean): boolean {
   const sentences = plainText(text)
     .split(/(?<=[.!?])\s+|\n+/)
     .map((s) => s.trim())
     .filter((s) => s !== "");
-  let idle = false;
+  let said = false;
   for (const s of sentences) {
     const mentions = s.match(AGENT_MENTION) !== null;
-    if (IDLE.test(s)) {
+    if (idle(s)) {
       if (mentions && ASKS.test(s)) return false;
-      idle = true;
+      said = true;
       continue;
     }
     // A bare mention ("@lead.") names who it waits on; anything more to a teammate is a request.
     if (mentions && /[A-Za-z0-9]/.test(s.replace(AGENT_MENTION, " "))) return false;
   }
-  return idle;
+  return said;
+}
+
+/** Whether `planTurn` hands work to the agents a message from `from` mentions. */
+export function routesMentions(mode: CoordinationMode, team: readonly Member[], from: string): boolean {
+  if (mode === "lead") return true;
+  if (mode === "pipeline") return false;
+  const { builder, reviewer } = loopPair(team);
+  return builder === undefined || reviewer === undefined || (from !== builder && from !== reviewer);
 }
 
 /** The text an agent wrote itself: no code, no quoted lines. */
-function plainText(text: string): string {
+export function plainText(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")

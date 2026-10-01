@@ -48,6 +48,8 @@ async function teamWorld(
   }
   const prompts: Record<string, string[]> = {};
   h.runtime.onSession = (session, start) => {
+    // A decision stand-in's session is not the agent's turn.
+    if (start.scratch) return;
     const agent = agentOf[basename(start.account.home)] ?? "unknown";
     session.script = async (turn) => {
       const list = prompts[agent] ?? [];
@@ -519,3 +521,108 @@ async function must(h: World["h"], name: string, body: unknown): Promise<void> {
   const res = await h.cmd(name, body);
   if (res.status !== 200) throw new Error(`${name}: ${JSON.stringify(res.body)}`);
 }
+
+describe("mentions that ask for nothing", () => {
+  /** A lead and a builder, with the stand-in agent answering each mention by `answer`. */
+  async function mentionWorld(
+    lead: Turns,
+    answer: (message: string) => { value: boolean; confidence: number },
+  ) {
+    const world = await teamWorld({ "acme-lead": lead }, { reviewer: false });
+    const { h } = world;
+    expect(
+      (await h.cmd("decisions.set", { order: ["acp", "rules"], acp_agent: "acme-builder" })).status,
+    ).toBe(200);
+    const asked: string[] = [];
+    const team = h.runtime.onSession;
+    h.runtime.onSession = (session, start) => {
+      team?.(session, start);
+      if (!start.scratch) return;
+      session.script = async (turn) => {
+        const message = /message: (.*)/.exec(turn.text)?.[1] ?? "";
+        asked.push(message);
+        turn.emit({ type: "text", messageId: "d", text: JSON.stringify({ acts_1: answer(message) }) });
+        return "end_turn";
+      };
+    };
+    expect(
+      (
+        await h.cmd("tasks.create", {
+          text: "tidy the api readme",
+          team: ["acme-lead", "acme-builder"],
+          start: true,
+        })
+      ).status,
+    ).toBe(200);
+    return { ...world, asked };
+  }
+
+  it("a status line wakes nobody, without asking the provider", async () => {
+    const { h, prompts, asked } = await mentionWorld(
+      [
+        say("Reading the readme first."),
+        say("I'm still waiting. @acme-builder's check is running and it reports to @acme-lead."),
+      ],
+      () => ({ value: true, confidence: 0.95 }),
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+    await until(
+      async () =>
+        (await systemTexts("ACM-1")).includes(
+          "@acme-lead only reported status to @acme-builder, so nobody was woken.",
+        ),
+      "the quiet line",
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review");
+    expect(await handoffs("ACM-1")).toEqual([]);
+    expect(prompts["acme-builder"]).toBeUndefined();
+    expect(asked).toEqual([]);
+    expect(await systemTexts("ACM-1")).toContain(
+      "@acme-lead only reported status to @acme-builder, so nobody was woken.",
+    );
+  });
+
+  it("a sure no keeps the agent asleep, a request wakes it, and an unsure answer wakes it as before", async () => {
+    const { h, prompts, asked } = await mentionWorld(
+      [
+        // The first turn counts as a change: the worktree had no fingerprint before it.
+        say("Reading the readme first."),
+        say("Thanks @acme-builder, that is all from me for now."),
+        say("@acme-builder please add a test for the readme links."),
+        say("@acme-builder maybe glance at the readme."),
+      ],
+      (message) =>
+        message.startsWith("Thanks")
+          ? { value: false, confidence: 0.95 }
+          : message.includes("please")
+            ? { value: true, confidence: 0.95 }
+            : { value: false, confidence: 0.6 },
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+    await until(() => asked.length === 1, "the provider asked about the thanks");
+    await until(async () => (await status("ACM-1")) === "review", "review after the thanks");
+    expect(prompts["acme-builder"]).toBeUndefined();
+    expect(await systemTexts("ACM-1")).toContain(
+      "@acme-lead mentioned @acme-builder without asking for anything, so they were not woken.",
+    );
+
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead carry on" });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder woken by a request");
+    await until(async () => (await status("ACM-1")) === "review", "review after the request");
+
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead one more thing" });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 2, "the builder woken when unsure");
+    expect(asked).toHaveLength(3);
+    expect(await handoffs("ACM-1")).toEqual([
+      "acme-lead>acme-builder (mention)",
+      "acme-lead>acme-builder (mention)",
+    ]);
+    const recent = (await h.cmd("decisions.recent", {})).body as {
+      use: string;
+      outcome?: { text: string };
+    }[];
+    expect(recent.filter((d) => d.use === "routing")).toHaveLength(3);
+  });
+});

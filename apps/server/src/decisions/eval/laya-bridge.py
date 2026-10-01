@@ -1,4 +1,4 @@
-"""Laya for the scope eval: one JSON request per line on stdin, one answer per line on stdout.
+"""Laya for the evals: one JSON request per line on stdin, one answer per line on stdout.
 
 Run with the venv majhi's host helper installed (~/.majhi/laya/venv/bin/python), HF_HOME set to
 ~/.majhi/laya/hf. Each line is {"state": "...", "questions": {...}} as layad.py's /predict takes.

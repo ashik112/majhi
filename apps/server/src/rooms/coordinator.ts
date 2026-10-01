@@ -25,10 +25,13 @@ import {
   loopPair,
   type Member,
   planTurn,
+  routesMentions,
+  statusOnly,
   type Verdict,
   verdictOf,
   waitsOnly,
 } from "./coordinate.ts";
+import { mentionQuestion, QUIET_ON_NO, readMentions } from "./mentions.ts";
 
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
@@ -71,6 +74,7 @@ export class RoomCoordinator {
       agents.map((a) => a.id),
     ).filter((m) => m !== turn.agent);
     const removed = store.tasks.roomState(task.id).removed ?? [];
+    const joined = new Set<string>();
 
     // An agent mentioned from outside the team joins when it may work in the org. One the owner
     // removed stays out: only the owner brings it back.
@@ -79,6 +83,7 @@ export class RoomCoordinator {
       const fm = agents.find((a) => a.id === m);
       if (fm !== undefined && canWorkIn(fm, task.org)) {
         task = await this.deps.tasks.addToTeam(task.id, m, { by: turn.agent });
+        joined.add(m);
       } else {
         this.say(
           task.id,
@@ -99,11 +104,20 @@ export class RoomCoordinator {
     const state = changed ? { ...before, agentTurns: 0, fingerprint, nudged: false } : before;
     // The owner has yet to answer and this turn only waits: nobody else needs to wake for it.
     const waiting = !changed && this.ownerQuestionPending(task.id) && waitsOnly(text);
+    // A turn that changed nothing wakes only the teammates it asks to act. One that just joined
+    // was asked for, so it wakes.
+    const named = mentions.filter(
+      (m) => m !== OWNER_HANDLE && team.some((t) => t.id === m) && !joined.has(m),
+    );
+    const quiet =
+      changed || waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
+        ? []
+        : await this.quietMentions(task.id, turn.agent, text, named);
     const plan = planTurn({
       mode: task.mode,
       team,
       from: turn.agent,
-      mentions,
+      mentions: mentions.filter((m) => !quiet.includes(m)),
       state,
       limits: {
         maxAgentTurns: await this.maxAgentTurns(task),
@@ -150,6 +164,45 @@ export class RoomCoordinator {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
       }
     }
+  }
+
+  /**
+   * The teammates in `asked` that the message only names, without asking them to act: they are
+   * not woken, and the room says so in a quiet line. Plain status by the words alone; otherwise
+   * the decision provider is asked, and only a sure "no" counts. Unsure, or no provider: none.
+   */
+  private async quietMentions(task: string, from: string, text: string, asked: string[]): Promise<string[]> {
+    const names = (agents: readonly string[]) => agents.map((a) => `@${a}`).join(", ");
+    if (statusOnly(text)) {
+      this.say(task, "info", `@${from} only reported status to ${names(asked)}, so nobody was woken.`);
+      return asked;
+    }
+    const decisions = this.deps.decisions;
+    if (decisions === undefined) return [];
+    const result = await decisions
+      .decide(mentionQuestion(from, asked, text), { use: "routing", task, agent: from })
+      .catch(() => undefined);
+    if (result === undefined) return [];
+    const reading = readMentions(asked, result);
+    const quiet = QUIET_ON_NO ? reading.quiet : [];
+    const parts = [
+      reading.act.length > 0 ? `asks ${names(reading.act)} to act` : "",
+      reading.quiet.length > 0 ? `does not ask ${names(reading.quiet)} to act` : "",
+      reading.unsure.length > 0 ? `not sure about ${names(reading.unsure)}, so woken` : "",
+    ].filter((p) => p !== "");
+    decisions.outcome(result.id, {
+      text: `Read as: ${parts.join("; ")}.${reading.quiet.length > 0 && !QUIET_ON_NO ? " Woken all the same: a no does not count yet." : ""}`,
+      fellBack: reading.unsure.length > 0,
+      choices: ["wake", "do not wake"],
+    });
+    if (quiet.length > 0) {
+      this.say(
+        task,
+        "info",
+        `@${from} mentioned ${names(quiet)} without asking for anything, so they were not woken.`,
+      );
+    }
+    return quiet;
   }
 
   /**
