@@ -69,4 +69,3 @@ export function useAnchoredPanel({
   const container = (open && trigger.current?.closest("dialog[open]")) || document.body;
   return { panel, style, container };
 }
-

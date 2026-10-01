@@ -14,7 +14,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: "list",
   use: {
-    trace: "retain-on-failure",
+    // DOM snapshots only: a screencast for every test costs more CPU than the tests themselves.
+    trace: { mode: "retain-on-failure", screenshots: false },
     // No looping motion (the working lamp's sweep, shimmers): headless Chromium paints it in software,
     // and a few pages doing that at once starve the servers.
     reducedMotion: "reduce",

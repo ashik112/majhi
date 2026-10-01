@@ -84,10 +84,9 @@ async function openHealthCheck(page: Page, title: string) {
   await expect(dialog).toBeHidden();
 }
 
-test("fresh install: roots, first account, boss, and onboarding does not come back", { tag: "@smoke" }, async ({
-  page,
-  request,
-}) => {
+test("fresh install: roots, first account, boss, and onboarding does not come back", {
+  tag: "@smoke",
+}, async ({ page, request }) => {
   await waitForHelper(request);
   await page.goto("/");
 

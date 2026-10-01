@@ -49,9 +49,9 @@ async function openBoss(page: Page) {
   await expect(drawer(page)).toBeVisible();
 }
 
-test("Cmd J opens the boss over any page; a change waits for approval, then applies and can be undone", { tag: "@smoke" }, async ({
-  page,
-}) => {
+test("Cmd J opens the boss over any page; a change waits for approval, then applies and can be undone", {
+  tag: "@smoke",
+}, async ({ page }) => {
   await page.goto("/agents");
   await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(drawer(page)).toHaveCount(0);

@@ -131,9 +131,9 @@ test("Esc stops a slow turn, and a queued message waits until the next send", as
   await expect(log.getByText("Queued for the agent's next turn")).toHaveCount(0);
 });
 
-test("a command the agent may not run asks inline: Deny fails the tool and the turn goes on", { tag: "@smoke" }, async ({
-  page,
-}) => {
+test("a command the agent may not run asks inline: Deny fails the tool and the turn goes on", {
+  tag: "@smoke",
+}, async ({ page }) => {
   await startTask(page, "tidy the readme in backend @acme-builder");
   const log = messages(page);
   const prompt = room(page).getByRole("region", { name: "Permission: Run npm test" });
@@ -186,7 +186,9 @@ test.describe("a chat task", () => {
     const id = taskIdOf(page);
     chatTaskId = id;
     const log = messages(page);
-    await expect(log.getByText(/Done\..*Created HEALTH\.md\. Tests passed\./)).toBeVisible({ timeout: 20_000 });
+    await expect(log.getByText(/Done\..*Created HEALTH\.md\. Tests passed\./)).toBeVisible({
+      timeout: 20_000,
+    });
     await expectIdle(page);
 
     await composer(page).fill("echo: hello");

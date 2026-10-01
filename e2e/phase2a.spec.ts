@@ -5,9 +5,9 @@ import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { expect, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
 // Org Acme with its agents. One task on api, from registering the project to removing the task.
-// The fake Claude adapter pauses 250 ms between the steps of a turn, so the turn can be watched.
+// The fake Claude adapter pauses 120 ms between the steps of a turn, so the turn can be watched.
 // The room's other flows are in phase2a-room.spec.ts.
-useHome({ seed: "team", slow: { claude: 250 } });
+useHome({ seed: "team", slow: { claude: 120 } });
 test.describe.configure({ mode: "serial" });
 
 const API_SOURCE = join(HOST_HOME, "Work", "alpha-api");
@@ -65,15 +65,6 @@ async function openNewTask(page: Page, title: string) {
   await page.keyboard.press("n");
   await expect(newTaskDialog(page)).toBeVisible();
   await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);
-}
-
-/** Adds a task from the dialog and starts it; resolves with the new task's id once its room is open. */
-async function startTask(page: Page, text: string): Promise<string> {
-  await openNewTask(page, text);
-  await newTaskDialog(page).getByRole("button", { name: "Add and start" }).click();
-  await expect(page).toHaveURL(/\/t\/[A-Z]+-\d+$/);
-  await expect(room(page)).toBeVisible();
-  return taskIdOf(page);
 }
 
 /** A permission that no longer waits: its verdict ("Allowed by rule", "Denied") and the request, on one line. */
@@ -222,7 +213,10 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   expect(readFileSync(file, "utf8")).toBe("# Health\n\nok\n");
   // The turn ended with a checkpoint: the file is committed on the task branch, nothing is left over.
   const worktree = join(apiTask.folder, "api");
-  expect(git(worktree, "log", "-1", "--format=%s")).toMatch(/^wip\([A-Z]+-\d+\): checkpoint \d+$/);
+  // The checkpoint lands a moment after the room shows the agent idle.
+  await expect
+    .poll(() => git(worktree, "log", "-1", "--format=%s"))
+    .toMatch(/^wip\([A-Z]+-\d+\): checkpoint \d+$/);
   expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toContain("HEALTH.md");
   expect(git(worktree, "status", "--porcelain")).toBe("");
   // The agent is the committer, and the message links the commit to its task.

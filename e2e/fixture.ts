@@ -50,6 +50,16 @@ export const test = base.extend<object, { home: Home; server: Server }>({
     { scope: "worker", timeout: 60_000 },
   ],
   baseURL: async ({ server }, use) => use(server.url),
+  // The glass blur is painted in software by headless Chromium, and with several pages open that is
+  // most of the suite's CPU. Tests check behavior, not the blur, so it is off.
+  context: async ({ context }, use) => {
+    await context.addInitScript(() => {
+      const style = document.createElement("style");
+      style.textContent = "*,*::before,*::after{backdrop-filter:none!important}";
+      document.documentElement.append(style);
+    });
+    await use(context);
+  },
 });
 
 /**

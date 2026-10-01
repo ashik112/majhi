@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const DIST_INDEX = join(REPO, "apps/web/dist/index.html");
 /** What the web build reads. */
-const SOURCES = ["apps/web/src", "apps/web/public", "apps/web/index.html", "apps/web/vite.config.ts", "packages/shared/src"];
+const SOURCES = [
+  "apps/web/src",
+  "apps/web/public",
+  "apps/web/index.html",
+  "apps/web/vite.config.ts",
+  "packages/shared/src",
+];
 
 function newest(path: string): number {
   if (!existsSync(path)) return 0;

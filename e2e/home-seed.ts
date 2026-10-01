@@ -8,7 +8,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { serializeAgent } from "../apps/server/src/agents/file.ts";
 import { SecretStore } from "../apps/server/src/secrets/store.ts";
-import { type Agent, AccountModelsSchema, AccountUsageSchema, HealthCheckSchema } from "../packages/shared/src/index.ts";
+import {
+  AccountModelsSchema,
+  AccountUsageSchema,
+  type Agent,
+  HealthCheckSchema,
+} from "../packages/shared/src/index.ts";
 import { MAJHI_HOME, SECRETS_KEY_FILE } from "./paths.ts";
 
 /** The models, efforts and usage the fake adapters report (see start-server.ts). */
@@ -114,8 +119,12 @@ export async function seedHome(seed: "roots" | "team" | "team-api"): Promise<voi
 
   mkdirSync(join(MAJHI_HOME, "agents"), { recursive: true });
   for (const frontmatter of AGENTS) {
-    const instructions = frontmatter.id === "majhi-boss" ? BOSS_INSTRUCTIONS : "Work inside the task worktree.";
-    writeFileSync(join(MAJHI_HOME, "agents", `${frontmatter.id}.md`), serializeAgent({ frontmatter, instructions }));
+    const instructions =
+      frontmatter.id === "majhi-boss" ? BOSS_INSTRUCTIONS : "Work inside the task worktree.";
+    writeFileSync(
+      join(MAJHI_HOME, "agents", `${frontmatter.id}.md`),
+      serializeAgent({ frontmatter, instructions }),
+    );
   }
 
   const cacheDir = join(MAJHI_HOME, "cache", "accounts");
@@ -126,7 +135,9 @@ export async function seedHome(seed: "roots" | "team" | "team-api"): Promise<voi
     mkdirSync(home, { recursive: true, mode: 0o700 });
     writeFileSync(
       join(home, ".credentials.json"),
-      JSON.stringify({ claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 } }),
+      JSON.stringify({
+        claudeAiOauth: { accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0 },
+      }),
       { mode: 0o600 },
     );
     writeFileSync(join(cacheDir, `${id}.json`), JSON.stringify(cache(id, "claude")));
