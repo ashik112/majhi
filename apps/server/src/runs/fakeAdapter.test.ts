@@ -1,7 +1,7 @@
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem } from "@majhi/shared";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { baseEnv } from "../env.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -65,5 +65,43 @@ describe("the run manager with the fake ACP adapter", () => {
     await w.h.majhi.services.runs.idle();
     const tools = (await items()).filter((i) => i.type === "tool") as Extract<RoomItem, { type: "tool" }>[];
     expect(tools.find((t) => t.toolCallId === "t-exec")?.status).toBe("failed");
+  });
+
+  it("shows the owner's message before the task starts, then sends each message once, in order", async () => {
+    await realWorld();
+    const tasks = w.h.majhi.services.tasks;
+    // Starting is slow in real use (worktrees, memory): here it waits until the test opens it.
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const ensure = tasks.ensureWorktrees.bind(tasks);
+    vi.spyOn(tasks, "ensureWorktrees").mockImplementation(async (task) => {
+      await gate;
+      return ensure(task);
+    });
+    let opened = 0;
+    w.h.runtime.startSession = (start) => {
+      opened++;
+      return startSession(start);
+    };
+    expect((await w.h.cmd("tasks.create", { text: "fix api", start: false })).status).toBe(200);
+
+    const first = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: one" });
+    const second = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: two" });
+    // Both came back while the task was still starting, and the room already shows them.
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body.item).toMatchObject({ type: "owner", text: "echo: one" });
+    expect(tasks.get("ACM-1").status).not.toBe("running");
+    expect(opened).toBe(0);
+    const owner = (await items()).flatMap((i) => (i.type === "owner" ? [i.text] : []));
+    expect(owner).toEqual(["fix api", "echo: one", "echo: two"]);
+
+    open();
+    await w.h.majhi.services.runs.idle();
+    const said = (await items()).flatMap((i) => (i.type === "agent" ? [i.text] : []));
+    expect(said.filter((t) => t.startsWith("echo:"))).toEqual(["echo: echo: one", "echo: echo: two"]);
+    expect(opened).toBe(1);
   });
 });

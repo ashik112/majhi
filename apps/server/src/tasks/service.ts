@@ -599,10 +599,33 @@ export class TaskService {
   async start(id: string, by = "owner"): Promise<Task> {
     const { store } = this.deps;
     const task = this.get(id);
+    this.checkStartable(task);
+
+    await this.ensureWorktrees(task);
+    store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
+    store.tasks.setStartWhenReady(id, true);
+    if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
+    await this.recallMemory(task);
+    const started = this.get(id);
+    this.deps.room.publishTask(started);
+    const first = await this.firstAgents(started);
+    first.forEach((agent, i) => {
+      // The first agent gets the task's brief; others that start with it get their own, once.
+      this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
+    });
+    return started;
+  }
+
+  /**
+   * Throws when the task cannot start now: done, no agent, or dependencies not met. With unmet
+   * dependencies the owner's wish is kept: it starts by itself when the last one is met.
+   */
+  private checkStartable(task: Task): void {
+    const { store } = this.deps;
+    const id = task.id;
     if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
     const waiting = store.tasks.unmetDependencies(id);
     if (waiting.length > 0) {
-      // The owner wants it started: it starts by itself when the last dependency is met.
       store.tasks.setStartWhenReady(id, true);
       if (task.status === "inbox") {
         store.tasks.setStatus(id, "ready", undefined, this.now().toISOString());
@@ -615,22 +638,11 @@ export class TaskService {
         `Task ${id} has no agent. Create one for its org in Studio, then create the task again.`,
         409,
       );
+  }
 
-    await this.ensureWorktrees(task);
-    store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
-    store.tasks.setStartWhenReady(id, true);
-    if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
-    await this.recallMemory(task);
-    const started = this.get(id);
-    this.deps.room.publishTask(started);
-    // The mode says who goes first: the lead, the pipeline's first step, the loop's builder.
-    const agents = await this.frontmatters();
-    const first = firstTurn(started.mode, this.members(started, agents)).agents;
-    first.forEach((agent, i) => {
-      // The first agent gets the task's brief; others that start with it get their own, once.
-      this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
-    });
-    return started;
+  /** Who goes first when the task starts, by its mode: the lead, the pipeline's first step, the loop's builder. */
+  private async firstAgents(task: Task): Promise<string[]> {
+    return firstTurn(task.mode, this.members(task, await this.frontmatters())).agents;
   }
 
   /** Creates the worktrees the task does not have yet, each from its base (or the branch it stacks on). */
@@ -2055,10 +2067,13 @@ export class TaskService {
     // Writing in a finished chat continues it. Other tasks stay done until the owner reopens them.
     if (task.status === "done" && isOwnerChat(task)) task = await this.reopen(task.id);
     if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
-    this.nameChat(task, input.text);
     const targets = await this.ownerTargets(task, input.text, input.agent);
     const agent = targets[0];
     if (agent === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
+    // A task that cannot start says so now, before the message is stored.
+    const starts = task.status !== "running";
+    if (starts) this.checkStartable(task);
+    this.nameChat(task, input.text);
     const planned = await planAttachments(
       this.deps.uploads,
       input.attachments,
@@ -2066,31 +2081,59 @@ export class TaskService {
       { org: task.org },
     );
     const attachments = await takePlanned(this.deps.uploads, planned, join(task.folder, "attachments"));
-    if (attachments.length > 0) {
-      this.deps.store.tasks.addAttachments(task.id, attachments);
-      // TASK.md lists them, so every agent in the task can find the files.
-      await this.refreshBriefs([task.id]);
-      this.deps.room.publishTask(this.get(task.id));
-    }
-    await this.grantMentionedReads(task, targets, input.text);
+    if (attachments.length > 0) this.deps.store.tasks.addAttachments(task.id, attachments);
     // The owner wrote back: a review card and plain-text questions stop waiting.
     this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
     this.cards.replied(task.id);
-    // A task that was never started, or was stopped, starts with the first message.
-    let current = task;
-    if (task.status !== "running") current = await this.start(task.id);
     // The owner spoke: the loop guard counts agent turns from here.
     const state = this.deps.store.tasks.roomState(task.id);
     if (state.agentTurns > 0) this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0 });
-    const item = await this.deps.runs.send(current, agent, {
-      text: input.text,
-      attachments,
-      mode: input.mode,
-      also: targets.slice(1),
-    });
+    // A task that was never started gets its brief before this message, in the room and in the queue.
+    if (starts) {
+      const first = await this.firstAgents(task);
+      first.forEach((a, i) => this.deps.runs.queueBrief(task, a, { ownBrief: i > 0 }));
+    }
+    // The message shows at once. Starting the task (worktrees, memory, the session) and sending
+    // it happen in the background, after earlier messages of this task.
+    const item = this.deps.runs.postOwner(task.id, agent, { text: input.text, attachments, mode: input.mode });
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
+    const id = task.id;
+    this.deps.runs.inOrder(id, async () => {
+      try {
+        await this.deliver(id, item.id, targets, input, attachments.length > 0);
+      } catch (err) {
+        this.warn(id, `Your message did not reach @${agent}: ${errorMessage(err)}`);
+      }
+    });
     return item;
+  }
+
+  /** The slow half of `send`: joins mentioned agents, starts the task when needed, then queues the message. */
+  private async deliver(
+    id: string,
+    itemId: string,
+    targets: readonly string[],
+    input: { text: string; mode: "queue" | "interrupt" },
+    attached: boolean,
+  ): Promise<void> {
+    const [agent, ...also] = targets;
+    if (agent === undefined) return;
+    for (const m of targets) {
+      if (!this.get(id).team.includes(m)) await this.addToTeam(id, m);
+    }
+    if (attached) {
+      // TASK.md lists them, so every agent in the task can find the files.
+      await this.refreshBriefs([id]);
+      this.deps.room.publishTask(this.get(id));
+    }
+    await this.grantMentionedReads(this.get(id), targets, input.text);
+    const task = this.get(id);
+    if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
+    // A task that was never started, or was stopped, starts with the message.
+    if (task.status !== "running") await this.start(id);
+    await this.deps.runs.deliver(task.id, agent, itemId, input.mode, also);
+    this.deps.events.emit(["tasks"]);
   }
 
   /**
@@ -2142,8 +2185,9 @@ export class TaskService {
       text,
       agents.map((a) => a.id),
     ).filter((m) => m !== OWNER_HANDLE);
+    // Checked now so a mention that cannot join fails the send; `deliver` adds them.
     for (const m of mentioned) {
-      if (!task.team.includes(m)) await this.addToTeam(task.id, m);
+      if (!task.team.includes(m)) await this.checkMember(task, m);
     }
     if (mentioned.length > 0) return mentioned;
     const lead = task.team[0];

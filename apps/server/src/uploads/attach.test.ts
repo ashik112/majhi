@@ -72,6 +72,8 @@ describe("attachments by upload id and by path", () => {
     const file = await upload("shot.png", "image/png", PNG);
     const sent = await w.h.cmd("room.send", { task: id, text: "see this", attachments: [file.body.id] });
     expect(sent.status).toBe(200);
+    // TASK.md is written again while the message is delivered, after the send returned.
+    await w.h.majhi.services.runs.idle(id);
     const task = (await w.h.cmd("tasks.get", { id })).body as Task;
     expect(task.attachments.map((a) => a.name)).toEqual(["shot.png"]);
     expect(await taskMd(task)).toContain("`attachments/shot.png`");
