@@ -36,8 +36,15 @@ majhi turns that into a desk you can run all day:
 | **Ship from one card** | Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts get fixed with one click. |
 | **Run everything by asking** | The boss agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
 | **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
+| **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your Mac's GPU, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
 | **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. |
 | **Never lose work** | Unshipped commits are counted before any task can close. Updates roll back on their own if something breaks. |
+
+## Smart where it counts, cheap everywhere else
+
+Most of an agent desk's decisions are small: is this task big or small, which model fits, which team should take it, did the reviewer approve, is this text trying to give the agent orders. Paying a frontier model for each of those adds up.
+
+majhi hands them to **Laya**, an open model that runs on your machine (natively on Apple silicon). It is free, private and fast, and it only acts when its answer clearly beats a guess. Otherwise majhi falls back to simple rules. Every agent can also ask it quick yes/no and pick-one questions instead of spending its own tokens. You can mark any wrong pick, and the cost view shows what it saved.
 
 ## A look inside
 
