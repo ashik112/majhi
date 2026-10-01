@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { CommandMeta, CommandName, CommandOutput, commands, Remount, TaskId } from "@majhi/shared";
+import type {
+  Budget,
+  BudgetsPatch,
+  BudgetsSettings,
+  CommandMeta,
+  CommandName,
+  CommandOutput,
+  commands,
+  Remount,
+  TaskId,
+} from "@majhi/shared";
 import { RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
@@ -532,6 +542,7 @@ export function createHandlers({
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.notifications === undefined ? {} : { notifications: input.notifications }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
+        ...(input.budgets === undefined ? {} : { budgets: mergeBudgets(current.budgets, input.budgets) }),
       };
       await config.setSettings(patch, {
         command: ctx.command,
@@ -540,6 +551,8 @@ export function createHandlers({
       });
       // Limits apply live: starts waiting in line may fit now.
       if (patch.limits !== undefined) await services.runs.limitsChanged();
+      // Budgets apply live: a raised one re-arms its alerts, a lowered one may fire now.
+      if (patch.budgets !== undefined) await services.budgets.recheck();
       return config.settings();
     },
     "policy.set": async (input, ctx) => {
@@ -635,6 +648,7 @@ export function createHandlers({
     "memory.closeThread": async (input) =>
       services.memory.project.closeThread(input.id, "owner", input.reason),
     "memory.reopenThread": async (input) => services.memory.project.reopenThread(input.id),
+    "budgets.status": () => services.budgets.status(),
     "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),
     "usage.breakdown": async (input) => services.usage.breakdown(input),
     "usage.turns": async (input) => services.usage.turns(input.filters, input.limit),
@@ -677,6 +691,25 @@ function actingAgent(services: Services, task: string, ctx: CommandContext): str
 
 async function requireConfigFile(config: ConfigService): Promise<void> {
   if (!(await config.sections()).exists) throw new UserError("Pick workspace roots first.", 409);
+}
+
+/**
+ * The budget maps `settings.set` writes: the ones already there, with the patch's added, changed or
+ * (null) removed. The writer replaces a whole map, so the other budgets must be in it.
+ */
+function mergeBudgets(current: BudgetsSettings, patch: BudgetsPatch): Partial<BudgetsSettings> {
+  const out: Partial<BudgetsSettings> = {};
+  for (const scope of ["orgs", "accounts"] as const) {
+    const changes = patch[scope];
+    if (changes === undefined) continue;
+    const merged: Record<string, Budget> = { ...current[scope] };
+    for (const [id, budget] of Object.entries(changes)) {
+      if (budget === null) delete merged[id];
+      else merged[id] = budget;
+    }
+    out[scope] = merged;
+  }
+  return out;
 }
 
 /** `limits.agents_max to 3, context.compact_at to 0.7`. */

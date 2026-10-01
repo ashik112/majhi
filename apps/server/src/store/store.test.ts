@@ -82,6 +82,8 @@ describe("store", () => {
       "attachments",
       "audit",
       "automation_runs",
+      "budget_alerts",
+      "budget_resumes",
       "chat_state",
       "decisions",
       "migrations",

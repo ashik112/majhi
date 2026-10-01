@@ -42,6 +42,8 @@ export const queryKeys = {
   allowances: ["allowances"],
   /** Every `usage.*` read: totals, breakdowns, turns and the price table. */
   usage: ["usage"],
+  /** `budgets.status`. Under `usage`, so every recorded turn refetches it too. */
+  budgets: ["usage", "budgets"],
   /** Every `memory.*` read: facts, search and the log. */
   memory: ["memory"],
   /** Every `containers.*` read: running previews and services across tasks. */

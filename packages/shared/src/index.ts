@@ -3,6 +3,7 @@ export * from "./api.ts";
 export * from "./attribution.ts";
 export * from "./audit.ts";
 export * from "./automation.ts";
+export * from "./budgets.ts";
 export * from "./cleanup.ts";
 export * from "./commands.ts";
 export * from "./config.ts";

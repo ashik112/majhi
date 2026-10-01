@@ -48,6 +48,8 @@ export interface RecorderDeps {
   prices: () => Promise<PricesConfig>;
   /** A turn was written: tell open pages. */
   onRecorded?: () => void;
+  /** After the row is written, with who it counts for: the budget check. Its failure is logged, not thrown. */
+  afterRecord?: (turn: { org: string | null; account: string; task: string }) => Promise<void>;
   now?: () => Date;
 }
 
@@ -99,6 +101,7 @@ export class UsageRecorder {
         ...cost,
       });
       this.deps.onRecorded?.();
+      await this.deps.afterRecord?.({ org: task?.org ?? null, account: ctx.account, task: ctx.task });
     } catch (err) {
       console.error(`Could not record a turn of ${ctx.agent} in ${ctx.task}: ${errorMessage(err)}`);
     }

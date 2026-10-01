@@ -85,7 +85,7 @@ export function removeProjectEntry(file: string, id: string): Promise<void> {
 }
 
 /**
- * Sets the given fields of `context`, `limits`, `resume`, `commits`, `rooms`, `policy`, `decisions`, `memory`, `editor`, `cleanup`, `notifications` and `containers`, and nothing else. A policy
+ * Sets the given fields of `context`, `limits`, `resume`, `commits`, `rooms`, `policy`, `decisions`, `memory`, `editor`, `cleanup`, `notifications`, `containers` and `budgets`, and nothing else. A policy
  * `commands` map replaces the old one; an empty map removes the key.
  */
 export function writeSettings(
@@ -103,7 +103,8 @@ export function writeSettings(
       | "editor"
       | "cleanup"
       | "notifications"
-      | "containers",
+      | "containers"
+      | "budgets",
       object | undefined
     >
   >,

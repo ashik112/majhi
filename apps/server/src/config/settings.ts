@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import {
+  BudgetsFilePatchSchema,
   CleanupPatchSchema,
   CommitsPatchSchema,
   ContainersFilePatchSchema,
@@ -34,6 +35,7 @@ export const SettingsPatchSchema = z.object({
   cleanup: CleanupPatchSchema.optional(),
   notifications: NotificationsPatchSchema.optional(),
   containers: ContainersFilePatchSchema.optional(),
+  budgets: BudgetsFilePatchSchema.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
@@ -51,6 +53,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     cleanup: raw.cleanup ?? {},
     notifications: raw.notifications ?? {},
     containers: raw.containers ?? {},
+    budgets: raw.budgets ?? {},
   });
 }
 
@@ -84,6 +87,7 @@ export async function readSettings(file: string): Promise<Settings> {
     cleanup: record.cleanup,
     notifications: record.notifications,
     containers: record.containers,
+    budgets: record.budgets,
   });
   if (!parsed.success) {
     throw new ConfigConflictError("majhi.yaml has invalid settings.", formatIssues(parsed.error));

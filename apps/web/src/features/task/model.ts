@@ -73,7 +73,8 @@ export interface ActionCopy {
 }
 
 const PAUSE_TEXT: Record<string, string> = {
-  limit: "Paused: the account hit its usage limit. Resume once it resets.",
+  limit:
+    "Paused: a weekly budget reached 100%. It continues when the budget is raised or on Monday, or resume it now.",
   offline: "majhi is offline. The task continues on its own when the connection is back.",
   error: "Paused after an error. Read the room, then resume.",
   owner: "You stopped the task. Resume when you are ready.",

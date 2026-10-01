@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
+  BudgetsFilePatchSchema,
   CleanupPatchSchema,
   CommitsPatchSchema,
   ContainersFilePatchSchema,
@@ -49,6 +50,8 @@ export const MajhiConfigSchema = z.strictObject({
   notifications: NotificationsFilePatchSchema.optional(),
   /** Previews and test services majhi runs for agents (PRV-53): the allowed images and the limits. */
   containers: ContainersFilePatchSchema.optional(),
+  /** Weekly token and cost budgets per org and account, with alerts at 80% and 100% (PRV-40). */
+  budgets: BudgetsFilePatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),

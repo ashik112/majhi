@@ -12,7 +12,7 @@ import { NetworkWatch, type Probe } from "./network.ts";
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
   statusChanged(id: string): Promise<void>;
-  pausedByRuns(id: string, reason: "offline" | "error"): Promise<void>;
+  pausedByRuns(id: string, reason: "offline" | "error" | "limit"): Promise<void>;
 }
 
 export interface ResilienceDeps {

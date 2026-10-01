@@ -22,6 +22,10 @@ import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
 import { type Automation, createAutomation } from "./automation/index.ts";
 import { createWatchHost } from "./automation/triggers/host.ts";
+import { alertLine } from "./budgets/alert-line.ts";
+import { atLimit, liftLimits } from "./budgets/limit-action.ts";
+import { BudgetMonitor } from "./budgets/monitor.ts";
+import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
 import { DockerCli } from "./containers/docker.ts";
@@ -87,6 +91,8 @@ import { UsageService } from "./usage/service.ts";
 
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
+/** How often paused budget runs are checked against the week. */
+const LIMIT_SWEEP_MS = 60_000;
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
@@ -179,6 +185,8 @@ export interface Services {
   usage: UsageService;
   /** Writes one row per agent turn. */
   usageRecorder: UsageRecorder;
+  /** Weekly budgets: the check after each turn, the alerts and `budgets.status`. */
+  budgets: BudgetMonitor;
   /** The runner network and config, when agents run in runner containers (MAJHI_RUNNER=container). */
   runner: Runner | undefined;
   /** Stops every agent process and closes the database. */
@@ -257,11 +265,48 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
   const sessionOptions = runner.sessionOptions;
   const usageRepo = new UsageRepo(store.raw);
+  const budgets = new BudgetMonitor({
+    usage: usageRepo,
+    alerts: new BudgetAlertRepo(store.raw),
+    budgets: async () => (await config.settings()).budgets,
+    announce: (alert) => {
+      const task = alert.task === undefined ? undefined : store.tasks.get(alert.task);
+      if (task === undefined) return;
+      const { text, level } = alertLine(alert);
+      room.post(task.id, `budget:${randomUUID()}`, {
+        type: "system",
+        level,
+        text,
+      });
+    },
+    onChange: () => events.emit(["budgets"]),
+    onLimit: (alert) => atLimit(alert, runs),
+    lift: () =>
+      liftLimits({
+        runs,
+        limited: limitedRun,
+        pausedTasks: () =>
+          store.tasks.list(false).filter((t) => t.status === "paused" && t.pausedReason === "limit"),
+        start: (id) => tasks.start(id, "majhi"),
+      }),
+  });
+  /** Whether a budget holds this agent's task: its org's budget, or its account's. */
+  const limitedRun = async (task: string, agent: string): Promise<string | undefined> => {
+    const found = store.tasks.get(task);
+    // The boss is how the owner raises a budget (SPEC 5.17): its chat is never held.
+    if (found !== undefined && isBossChat(found)) return undefined;
+    const org = found?.org ?? null;
+    const stored = await agentStore.get(agent);
+    const account =
+      stored === undefined ? undefined : stored.ok ? stored.agent.frontmatter.account : stored.account;
+    return budgets.limitedFor({ org, account, task });
+  };
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
     store,
     prices: () => readPrices(config.file),
     onRecorded: () => events.emit(["usage"]),
+    afterRecord: (turn) => budgets.afterTurn(turn),
   });
   const usageService = new UsageService({ repo: usageRepo, config });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
@@ -341,6 +386,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     .catch((err: unknown) => console.error(`Could not clean up containers: ${errorMessage(err)}`));
   const runs = new RunManager({
     store,
+    limited: limitedRun,
     rooms: roomAccess,
     processes,
     usage: usageRecorder,
@@ -439,6 +485,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let chatMemory: ChatMemory | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
+    onOwnerResumedLimit: (task) => budgets.exempt(task),
     store,
     config,
     projects,
@@ -503,6 +550,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   updateWatch.unref();
   const chatSweep = setInterval(() => void chatMemory?.sweep().catch(() => undefined), CHAT_SWEEP_MS);
   chatSweep.unref();
+  // A new week lifts the budget pauses; a raised budget lifts them at once, through `recheck`.
+  const limitSweep = setInterval(() => void budgets.lift(), LIMIT_SWEEP_MS);
+  limitSweep.unref();
   const promotion = new Promotion({ memory, tasks, projects, config });
   // Once: old pending facts that only repeat the repo docs are rejected (logged, undoable).
   void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
@@ -602,10 +652,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     resilience,
     usage: usageService,
     usageRecorder,
+    budgets,
     runner: runner.runner,
     close: async () => {
       resilience.stop();
       clearInterval(chatSweep);
+      clearInterval(limitSweep);
       clearInterval(updateWatch);
       notifier.close();
       automation.scheduler.stop();

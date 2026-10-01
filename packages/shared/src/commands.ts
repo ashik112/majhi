@@ -32,6 +32,7 @@ import {
   ScheduleUpdateInputSchema,
   ScheduleViewSchema,
 } from "./automation.ts";
+import { BudgetStatusSchema } from "./budgets.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ContainerInfoSchema,
@@ -102,6 +103,7 @@ import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
+  BudgetsPatchSchema,
   CleanupPatchSchema,
   CommitsPatchSchema,
   ContainersPatchSchema,
@@ -1321,7 +1323,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task). Policy changes use policy.set",
+      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -1333,6 +1335,7 @@ export const commands = {
       cleanup: CleanupPatchSchema.optional(),
       notifications: NotificationsPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
+      budgets: BudgetsPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },
@@ -1726,6 +1729,15 @@ export const commands = {
       "Set the price of a model (dollars per million tokens), or remove the owner's row with price null. New turns use it; recorded turns keep their cost",
     input: z.object({ model: PriceKeySchema, price: PriceSchema.nullable() }),
     output: z.object({ checked: z.string(), rows: z.array(PriceRowSchema) }),
+  },
+
+  // Budgets (5.17, PRV-40) ------------------------------------------------------
+  "budgets.status": {
+    risk: "read",
+    summary:
+      "Each org and account with a weekly budget: used this week, the budget, percent, when the week started and resets, and the 80% and 100% alerts fired. Budgets are changed with settings.set",
+    input: Empty,
+    output: BudgetStatusSchema,
   },
 
   // Schedules (PRV-63) ----------------------------------------------------------

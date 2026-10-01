@@ -20,6 +20,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.secrets];
     case "usage":
       return [queryKeys.usage];
+    case "budgets":
+      return [queryKeys.budgets];
     case "memory":
       return [queryKeys.memory];
     case "containers":
@@ -41,6 +43,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "tasks",
   "secrets",
   "usage",
+  "budgets",
   "memory",
   "containers",
   "schedules",

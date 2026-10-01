@@ -36,7 +36,7 @@ export interface Pending {
   resolve: (option: string | undefined) => void;
 }
 
-export type PauseReason = "offline" | "error";
+export type PauseReason = "offline" | "error" | "limit";
 
 /** Everything the manager holds for one (task, agent). */
 export class AgentRun {

@@ -176,7 +176,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   blocked: "A task it waits on changed. See the room for what to do.",
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
-  limit: "An account reached its usage limit.",
+  limit: "A weekly budget reached 100%. It continues when the budget is raised or on Monday.",
 };
 
 /** The task paused: Resume, and the fix when majhi knows the cause. Settled: what happened. */

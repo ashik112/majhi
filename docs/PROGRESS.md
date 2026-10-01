@@ -1,5 +1,32 @@
 # Progress
 
+## PRV-40: Budgets and alerts (built, waiting for owner review)
+
+Branch `task/prv-40-budgets-and-alerts`, from `main`. Weekly budgets per org and per account, built on the Phase 2c `turns` table. The choices are in `docs/DECISIONS.md` (2026-10-01, Weekly budgets).
+
+### What works
+
+- **Config.** `budgets.orgs.<org>` and `budgets.accounts.<account>` in `majhi.yaml`, each `{ tokens?, cost? }` per week. `settings.get` returns them, `settings.set` changes one at a time (`null` removes one). Changes apply live.
+- **Check.** After each recorded turn, this week's turns for its org and account are summed and compared (`budgets/thresholds.ts` holds the pure math). Tokens are input + output + cache write.
+- **Alerts.** 80% and 100%, once per (scope, id, week, threshold) in `budget_alerts` (migration 106). Raising a budget re-arms only the thresholds now under. Each alert is a quiet room line in the newest task that spent in that scope this week, and a `budgets` event that refreshes open pages.
+- **Commands.** `budgets.status` (read, no confirm card for the boss).
+- **Web.** Health and usage has a "Budgets" panel above "Tokens and cost": a bar per budget (amber from 80%, red from 100%), edit, remove and add, and a banner when one is over.
+- **100% action (pause).** After the 100% alert, runs pause with reason `limit` through the run manager's own pause and resume. An org budget holds the runs of tasks in that org, an account budget the runs on that account. A run asks `limited` between turns, so a turn in progress finishes, and new runs and queued prompts wait; the task shows Paused. A pause lifts when the budget is raised above the use (or removed), when the owner resumes the task by hand (`tasks.start`; that task is not paused again until a new 100% alert is recorded), or when the week resets (a 60 second sweep notices, since a paused scope records no turns). The lifts also reach a task still paused at budget after a majhi restart: it starts again as majhi, not as an owner resume. The panel and banner say "Paused at budget".
+- **Overshoot.** A budget is a brake, not a hard cap: turns in progress finish, and the boss's chat is never held (the boss is how the owner raises a budget), so spend can pass 100% a little.
+
+### How to try it
+
+1. Health and usage, Budgets: add a small token budget for an org.
+2. Run a task in that org. Watch the bar turn amber at 80% and red at 100%, with a room line at each.
+3. At 100% the task pauses with "Paused at budget". Raise the budget, or resume the task, and it continues.
+4. Ask the boss (Cmd J): "How are the budgets this week?"
+
+### Left and known issues
+
+- Not run with real accounts or a long-running majhi. Per-task and per-day budgets from SPEC 5.17 are not built.
+- After a restart, a prompt that was waiting in a paused run may not be in the stored queue, so it may not be sent when the pause lifts. This looks like how restarts already treat any pause; not confirmed.
+- The boss integration tests share a cleanup race (`ENOTEMPTY` while the chat is still being titled) that fails now and then. It is filed as its own task.
+
 ## PRV-63: Scheduler and watch triggers (built, waiting for owner review)
 
 Branch `task/prv-63-scheduler-and-watch-triggers`, from `main`. Choices: the `docs/DECISIONS.md` rows of 2026-10-01 on schedules, triggers and automation.

@@ -28,6 +28,7 @@ describe("mergeSettings", () => {
       cleanup: { after_days: 30 },
       notifications: { mac: true, browser: true, sound: false, muted: [] },
       containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
+      budgets: { orgs: {}, accounts: {} },
     });
   });
 
@@ -85,6 +86,39 @@ describe("settings commands", () => {
     expect((await h.cmd("settings.set", { memory: { auto_threshold: 1.5 } })).status).toBe(400);
     expect((await h.cmd("settings.set", { memory: { housekeeper: "nobody" } })).status).toBe(404);
     expect((await h.cmd("settings.set", { memory: { nope: 1 } })).status).toBe(400);
+  });
+
+  it("saves weekly budgets to majhi.yaml, merges one at a time, removes with null, and refuses bad ones", async () => {
+    h = await harness();
+    const set = await h.cmd("settings.set", {
+      budgets: { orgs: { acme: { tokens: 5_000_000 } }, accounts: { "claude-acme": { cost: 40 } } },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body.budgets).toEqual({
+      orgs: { acme: { tokens: 5_000_000 } },
+      accounts: { "claude-acme": { cost: 40 } },
+    });
+    // Another org is added, and the rest stay.
+    const more = await h.cmd("settings.set", { budgets: { orgs: { globex: { tokens: 1000, cost: 5 } } } });
+    expect(more.body.budgets.orgs).toEqual({
+      acme: { tokens: 5_000_000 },
+      globex: { tokens: 1000, cost: 5 },
+    });
+    expect(more.body.budgets.accounts).toEqual({ "claude-acme": { cost: 40 } });
+    const yaml = await readFile(h.majhi.services.config.file, "utf8");
+    expect(yaml).toContain("budgets:");
+    expect(yaml).toContain("tokens: 5000000");
+    // The file as a whole still loads: majhi.yaml's own schema knows the section.
+    expect((await h.majhi.services.config.load()).state.status).toBe("loaded");
+    expect((await h.cmd("settings.get")).body.budgets).toEqual(more.body.budgets);
+    const gone = await h.cmd("settings.set", { budgets: { orgs: { acme: null, globex: null } } });
+    expect(gone.body.budgets.orgs).toEqual({});
+    expect(await readFile(h.majhi.services.config.file, "utf8")).not.toContain("globex");
+    expect((await h.cmd("settings.set", { budgets: { orgs: { acme: { tokens: 0 } } } })).status).toBe(400);
+    expect((await h.cmd("settings.set", { budgets: { orgs: { acme: { gold: 1 } } } })).status).toBe(400);
+    expect((await h.cmd("settings.set", { budgets: { orgs: { "Not An Id": { tokens: 5 } } } })).status).toBe(
+      400,
+    );
   });
 
   it("turns agent attribution off for majhi, and back to the default", async () => {

@@ -90,6 +90,11 @@ export interface RunDeps {
   beforePrompt?: (turn: { task: string; agent: string; brief: boolean }) => Promise<string | undefined>;
   /** After every checkpoint of a task: branches stacked on it may need a rebase. */
   onCheckpoint?: (task: string) => void;
+  /**
+   * Asked between turns, never during one: a line when a budget holds this agent's task (the org's
+   * or the account's weekly budget reached 100%), else undefined. The run then pauses with `limit`.
+   */
+  limited?: (task: string, agent: string) => Promise<string | undefined>;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
   onIdle?: (task: string) => void;
   /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
@@ -540,7 +545,7 @@ export class RunManager {
   /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
   async wake(): Promise<void> {
     const views = [...this.runs.values()]
-      .filter((r) => !r.closing && r.paused !== "offline")
+      .filter((r) => !r.closing && r.paused !== "offline" && r.paused !== "limit")
       .map((r) => ({
         key: this.key(r.task, r.agent),
         turning: r.turning && r.session !== undefined,
@@ -662,6 +667,11 @@ export class RunManager {
       if (run.session !== undefined && run.live.status === "idle") {
         this.slots.mark(this.key(run.task, run.agent), false);
       }
+      // A budget pause can last days: the process goes, and the prompts stay queued.
+      if (run.paused === "limit" && !run.closing) {
+        this.evict(this.key(run.task, run.agent));
+        this.setLive(run, { status: "paused", nowDoing: undefined });
+      }
       if (run.redrive) {
         run.redrive = false;
         if (!run.closing) void this.drive(run);
@@ -669,8 +679,51 @@ export class RunManager {
     }
   }
 
+  /** Pauses the run when a budget holds its task. True when it paused. */
+  private async pauseIfLimited(run: AgentRun): Promise<boolean> {
+    const why = await this.deps.limited?.(run.task, run.agent);
+    if (why === undefined || run.closing) return false;
+    this.pause(run, "limit", why);
+    return true;
+  }
+
+  /**
+   * A budget reached 100%: runs that wait with prompts queued pause now. A run in the middle of a
+   * turn is not touched, and pauses between turns by itself.
+   */
+  async pauseLimited(): Promise<void> {
+    for (const run of [...this.runs.values()]) {
+      if (run.turning || run.paused !== undefined || run.closing || run.held || run.queue.length === 0)
+        continue;
+      // Idle between turns, so nothing else releases the process: a budget pause can last days.
+      if ((await this.pauseIfLimited(run)) && !run.turning) {
+        this.evict(this.key(run.task, run.agent));
+        this.setLive(run, { status: "paused", nowDoing: undefined });
+      }
+    }
+  }
+
+  /** Runs paused by a budget, for the lift to look at. */
+  pausedForLimit(): { task: string; agent: string }[] {
+    return [...this.runs.values()]
+      .filter((r) => r.paused === "limit" && !r.closing)
+      .map((r) => ({ task: r.task, agent: r.agent }));
+  }
+
+  /** Continues a run a budget paused: its queued prompts go on, with no extra "continue" prompt. */
+  resumeLimit(task: string, agent: string, why: string): void {
+    const run = this.runs.get(this.key(task, agent));
+    if (run?.paused !== "limit" || run.closing) return;
+    run.paused = undefined;
+    this.live.system(run, "info", `Resuming @${run.agent}: ${why}.`);
+    this.deps.onResumed?.(run.task);
+    if (run.turning) run.redrive = true;
+    else void this.drive(run);
+  }
+
   private async runQueue(run: AgentRun): Promise<void> {
     while (run.queue.length > 0 && !run.held && !run.closing && run.paused === undefined) {
+      if (await this.pauseIfLimited(run)) break;
       if (run.session === undefined) {
         if (!(await this.startSession(run))) {
           this.resumeFailed(run, "the agent could not start");
@@ -683,6 +736,8 @@ export class RunManager {
         }
       }
       if (run.closing || run.paused !== undefined) break;
+      // The wait for a slot or the session start may have been long: ask again before the turn.
+      if (await this.pauseIfLimited(run)) break;
       const session = run.session;
       const entry = run.queue.shift();
       if (session === undefined || entry === undefined) break;
@@ -1349,7 +1404,7 @@ export class RunManager {
   private pause(run: AgentRun, reason: PauseReason, text: string): void {
     run.paused = reason;
     run.clearTimers();
-    this.live.system(run, reason === "offline" ? "warn" : "error", text);
+    this.live.system(run, reason === "error" ? "error" : "warn", text);
     this.setLive(run, { status: "paused", nowDoing: undefined });
     this.deps.onPaused?.(run.task, reason);
   }

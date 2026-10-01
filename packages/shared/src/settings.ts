@@ -153,6 +153,44 @@ export const EditorSettingsSchema = z.strictObject({ app: editorFields.app.defau
 export type EditorSettings = z.infer<typeof EditorSettingsSchema>;
 export const EditorPatchSchema = z.strictObject(editorFields).partial();
 /**
+ * Weekly budgets (5.17, PRV-40): `budgets.orgs.<org>` and `budgets.accounts.<account>`, each a token
+ * and/or a cost (USD) cap for the week from Monday in the owner's time zone. majhi alerts at 80% and
+ * 100%. Tokens are input + output + cache write; cache reads are left out, and reasoning is already
+ * part of output. With both set, the one further along counts.
+ */
+const BUDGET_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const BudgetIdSchema = z.string().regex(BUDGET_ID, "Use an org or account id");
+const budgetFields = {
+  tokens: z.number().int().min(1).max(1e12),
+  cost: z.number().positive().max(1e7),
+};
+export const BudgetSchema = z
+  .strictObject({ tokens: budgetFields.tokens.optional(), cost: budgetFields.cost.optional() })
+  .refine((b) => b.tokens !== undefined || b.cost !== undefined, {
+    message: "A budget needs tokens, cost or both",
+  });
+export type Budget = z.infer<typeof BudgetSchema>;
+export const BudgetsSettingsSchema = z.strictObject({
+  orgs: z.record(BudgetIdSchema, BudgetSchema).default({}),
+  accounts: z.record(BudgetIdSchema, BudgetSchema).default({}),
+});
+export type BudgetsSettings = z.infer<typeof BudgetsSettingsSchema>;
+/** What majhi.yaml holds and what majhi writes: a section's whole map, or nothing. */
+export const BudgetsFilePatchSchema = z
+  .strictObject({
+    orgs: z.record(BudgetIdSchema, BudgetSchema),
+    accounts: z.record(BudgetIdSchema, BudgetSchema),
+  })
+  .partial();
+/** What `settings.set` accepts: only the budgets to change; `null` removes one. The rest stay. */
+export const BudgetsPatchSchema = z
+  .strictObject({
+    orgs: z.record(BudgetIdSchema, BudgetSchema.nullable()),
+    accounts: z.record(BudgetIdSchema, BudgetSchema.nullable()),
+  })
+  .partial();
+export type BudgetsPatch = z.infer<typeof BudgetsPatchSchema>;
+/**
  * Notifications when something needs the owner: a Mac banner through the host helper, and a browser
  * notification in an open tab. `muted` lists the kinds that stay quiet. Quiet hours hold every
  * notification between `quiet_from` and `quiet_to` (24 h clock, in `quiet_tz`).
@@ -293,6 +331,7 @@ export const SettingsSchema = z.object({
   editor: EditorSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
+  budgets: BudgetsSettingsSchema,
   notifications: NotificationsSettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

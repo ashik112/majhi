@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
+import { BudgetsPanel } from "@/features/usage/budgets-panel";
 import { CostChartPanel, SpendPanel } from "@/features/usage/spend-panel";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
@@ -93,7 +94,10 @@ export function HealthView() {
             />
             <CostChartPanel org={orgFilter} />
           </div>
-          <SpendPanel org={orgFilter} className="min-h-[420px] min-[1280px]:min-h-0" />
+          <div className="flex min-h-0 flex-col gap-3">
+            <BudgetsPanel />
+            <SpendPanel org={orgFilter} className="min-h-[420px] min-[1280px]:min-h-0 min-[1280px]:flex-1" />
+          </div>
         </div>
       </div>
     </div>

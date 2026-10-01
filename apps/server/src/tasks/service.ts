@@ -104,6 +104,8 @@ import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 
 export interface TaskDeps {
+  /** The owner resumed a task that a budget paused: budget alerts so far no longer hold it. */
+  onOwnerResumedLimit?: (task: string) => void;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -608,6 +610,10 @@ export class TaskService {
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     store.tasks.setStartWhenReady(id, true);
     if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
+    // The owner resumed a task a budget paused: it is not paused again for the alerts so far.
+    if (task.status === "paused" && task.pausedReason === "limit" && by === "owner") {
+      this.deps.onOwnerResumedLimit?.(id);
+    }
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -2073,7 +2079,7 @@ export class TaskService {
   }
 
   /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */
-  async pausedByRuns(id: string, reason: "offline" | "error"): Promise<void> {
+  async pausedByRuns(id: string, reason: "offline" | "error" | "limit"): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
     // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.

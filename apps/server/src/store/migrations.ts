@@ -414,6 +414,30 @@ CREATE INDEX audit_at ON audit (at);
 CREATE INDEX audit_org_at ON audit (org, at);
 `,
   },
+  {
+    // Weekly budgets (PRV-40): one row per alert fired, so each (scope, id, week, threshold) says
+    // its line once. A raised budget deletes the rows that are under it again. `week` is the
+    // Monday of the week in the owner's time zone. The index serves the weekly sum per account.
+    id: 107,
+    name: "budget alerts",
+    sql: `
+CREATE TABLE budget_alerts (
+  scope TEXT NOT NULL,
+  id TEXT NOT NULL,
+  week TEXT NOT NULL,
+  threshold INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (scope, id, week, threshold)
+);
+-- When the owner last resumed a task by hand while a budget had paused it. A 100% alert fired before
+-- that moment does not pause the task again; a later one does.
+CREATE TABLE budget_resumes (
+  task TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+CREATE INDEX turns_account_at ON turns (account, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
