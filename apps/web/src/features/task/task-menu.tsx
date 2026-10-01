@@ -7,7 +7,8 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
-import { useCloseTask, useRemoveTask, useReopenTask } from "@/lib/task-queries";
+import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/lib/task-queries";
+import { unshippedBody } from "./unshipped";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
 export function TaskMenu({ task }: { task: Task }) {
@@ -51,19 +52,27 @@ export function TaskMenu({ task }: { task: Task }) {
   );
 }
 
+/** Work not shipped turns the dialog into the one confirmation to close without shipping. */
 function CloseDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   const close = useCloseTask();
   const toast = useToast();
+  const options = useShipOptions(task, true);
+  const unshipped = options.data?.done.unshipped ?? [];
+  const keep = unshipped.length > 0;
   return (
     <ConfirmDialog
-      title={`Close ${task.id}`}
-      body="The task moves to Done. Its worktrees and branches stay until you remove the task."
-      confirmLabel="Close task"
-      busy={close.isPending}
+      title={keep ? "Close without shipping?" : `Close ${task.id}`}
+      body={
+        keep
+          ? unshippedBody(unshipped)
+          : "The task moves to Done. Its worktrees and branches stay until you remove the task."
+      }
+      confirmLabel={keep ? "Close anyway" : "Close task"}
+      busy={close.isPending || options.isPending}
       error={close.error?.message}
       onCancel={onDone}
       onConfirm={() =>
-        close.mutate(task.id, {
+        close.mutate(keep ? { id: task.id, unshipped: "keep" } : { id: task.id }, {
           onSuccess: () => {
             toast("Task closed", { detail: task.id });
             onDone();

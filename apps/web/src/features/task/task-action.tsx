@@ -1,11 +1,13 @@
 import type { Task } from "@majhi/shared";
 import { Check, OctagonX, Play, RotateCw } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
-import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
+import { useCloseTask, useShipOptions, useStartTask, useStopTask } from "@/lib/task-queries";
 import { actionCopy } from "./model";
 import { Ship, useDirectShip } from "./ship";
+import { CloseUnshippedDialog, unshippedCount } from "./unshipped";
 
 /** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
 export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
@@ -15,6 +17,9 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
   const ship = useDirectShip(task);
+  const options = useShipOptions(task, copy.kind === "done");
+  const unshipped = options.data?.done.unshipped ?? [];
+  const [confirming, setConfirming] = useState(false);
   // Only once there is work to ship: a worktree exists and no agent is working.
   const canShip =
     task.repos.some((r) => r.worktree !== undefined) &&
@@ -50,17 +55,35 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
           Resume
         </Button>
       )}
+      {copy.kind === "done" && unshipped.length > 0 && (
+        <span className="mr-1 text-xs text-amber-soft">{unshippedCount(unshipped)}</span>
+      )}
       {copy.kind === "done" && (
         <Button
           variant="primary"
           size="sm"
           title={copy.text}
           disabled={close.isPending}
-          onClick={() => close.mutate(task.id, { onError: fail("Could not mark it done") })}
+          onClick={() =>
+            unshipped.length > 0
+              ? setConfirming(true)
+              : close.mutate({ id: task.id }, { onError: fail("Could not mark it done") })
+          }
         >
           <Check aria-hidden="true" />
           Mark done
         </Button>
+      )}
+      {confirming && (
+        <CloseUnshippedDialog
+          unshipped={unshipped}
+          busy={close.isPending}
+          error={close.error?.message}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() =>
+            close.mutate({ id: task.id, unshipped: "keep" }, { onSuccess: () => setConfirming(false) })
+          }
+        />
       )}
       {copy.kind === "stop" && (
         <Button
