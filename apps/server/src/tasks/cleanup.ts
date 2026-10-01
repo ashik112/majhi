@@ -10,7 +10,7 @@ import type {
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { git, gitOk, localBranchExists } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists } from "../git/git.ts";
 import { dirtyWorktrees, removeWorktree } from "../git/worktrees.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import type { RoomService } from "../room/service.ts";
@@ -127,8 +127,13 @@ export class CleanupService {
         steps.push({ ...publicStep(step), action: "skip", reason: "its worktree is kept" });
       } else {
         try {
-          // `-D`: plan() already proved the branch merged or pushed. `-d` would check again against
-          // the checkout's current branch, and fail for a branch merged only on the remote.
+          const unsafe = await this.unsafeToDelete(step.repo);
+          if (unsafe !== undefined) {
+            steps.push({ ...publicStep(step), action: "skip", reason: unsafe });
+            continue;
+          }
+          // `-D`: unsafeToDelete just proved every commit kept elsewhere. `-d` would check again
+          // against the checkout's current branch, and fail for a branch merged only on the remote.
           await git(step.repo.source, ["branch", "-D", step.name]);
           steps.push(publicStep(step));
         } catch (err) {
@@ -174,6 +179,38 @@ export class CleanupService {
       level: "info",
       text,
     });
+  }
+
+  /**
+   * Why deleting the branch could lose commits, or undefined when its tip is kept elsewhere: it is in
+   * the local base, or in the remote's base or branch as fetched right now. A remote-tracking ref can
+   * be stale or missing, and an MR recorded as merged (by hand, with `markMerged` force) proves
+   * nothing, so neither counts here. A fetch that fails keeps the branch.
+   */
+  private async unsafeToDelete(repo: TaskRepo): Promise<string | undefined> {
+    const { source, branch, base } = repo;
+    const tip = await git(source, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`]).then(
+      (s) => s.trim(),
+      () => undefined,
+    );
+    if (tip === undefined) return "it could not be read";
+    if (await gitOk(source, ["merge-base", "--is-ancestor", tip, `refs/heads/${base}`])) return undefined;
+    const remote = await this.remoteOf(repo);
+    if (!(await gitOk(source, ["remote", "get-url", remote]))) {
+      return `it is not in ${base} here, and there is no remote ${remote} to check`;
+    }
+    const failures: string[] = [];
+    for (const name of new Set([base, branch])) {
+      const fetched = await fetchTip(source, remote, name);
+      if (fetched.failed !== undefined) failures.push(`could not fetch ${remote}/${name}: ${fetched.failed}`);
+      else if (
+        fetched.tip !== undefined &&
+        (await gitOk(source, ["merge-base", "--is-ancestor", tip, fetched.tip]))
+      )
+        return undefined;
+    }
+    if (failures.length > 0) return `it is not in ${base} here and ${failures.join("; ")}`;
+    return `its commits are not in ${base}, here or on ${remote}, and ${remote} has no branch that holds them`;
   }
 
   /** The remote the project's MRs go to, `origin` when the project is unknown. */
@@ -248,6 +285,37 @@ async function unpushed(repo: TaskRepo, remote: string): Promise<boolean> {
   const { source, branch } = repo;
   if (!(await refExists(source, `refs/remotes/${remote}/${branch}`))) return false;
   return !(await gitOk(source, ["merge-base", "--is-ancestor", branch, `${remote}/${branch}`]));
+}
+
+/** Where cleanup fetches a remote branch to check it, outside the branches and tracking refs. */
+const CHECK_REF = "refs/majhi/cleanup-check";
+
+/**
+ * The remote's `name` branch as it is now: its tip, or no tip when the remote has no such branch,
+ * or why the fetch failed. Fetched into a ref of majhi's own, read and dropped, so no branch or
+ * tracking ref of the owner moves.
+ */
+async function fetchTip(
+  source: string,
+  remote: string,
+  name: string,
+): Promise<{ tip?: string; failed?: string }> {
+  try {
+    await git(
+      source,
+      ["fetch", "--quiet", "--no-tags", "--no-write-fetch-head", remote, `+refs/heads/${name}:${CHECK_REF}`],
+      { timeoutMs: FETCH_TIMEOUT_MS },
+    );
+  } catch (err) {
+    const message = errorMessage(err);
+    if (/couldn't find remote ref|could not find remote ref/i.test(message)) return {};
+    return { failed: message.split("\n")[0] ?? message };
+  }
+  try {
+    return { tip: (await git(source, ["rev-parse", "--verify", `${CHECK_REF}^{commit}`])).trim() };
+  } finally {
+    await git(source, ["update-ref", "-d", CHECK_REF]).catch(() => undefined);
+  }
 }
 
 function refExists(source: string, ref: string): Promise<boolean> {

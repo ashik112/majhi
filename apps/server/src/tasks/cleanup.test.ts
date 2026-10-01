@@ -200,10 +200,57 @@ describe("run", () => {
     expect(await branches()).toContain(branch);
   });
 
-  it("deletes a branch whose merge request is merged even when git cannot see it as merged", async () => {
+  it("keeps a branch whose merge request is recorded merged when nothing holds its commits", async () => {
+    // Recorded by hand (markMerged force), with no remote to check: the commits exist only here.
     const { branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
-    await service.run(["ACM-1"], 30, "owner");
-    expect(await branches()).not.toContain(branch);
+    const report = await service.run(["ACM-1"], 30, "owner");
+    expect(report.tasks[0]?.steps[1]).toMatchObject({
+      kind: "branch",
+      action: "skip",
+      reason: "it is not in main here, and there is no remote origin to check",
+    });
+    expect(await branches()).toContain(branch);
+  });
+
+  it("keeps the branch of a merged MR when the remote has neither it nor its commits", async () => {
+    // A squash merge on the host that deleted the branch: git cannot prove the commits are kept.
+    await addRemote("origin");
+    const { branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
+    await git(source, "push", "--quiet", "origin", "main");
+    const report = await service.run(["ACM-1"], 30, "owner");
+    expect(report.tasks[0]?.steps[1]).toMatchObject({
+      action: "skip",
+      reason: "its commits are not in main, here or on origin, and origin has no branch that holds them",
+    });
+    expect(await branches()).toContain(branch);
+  });
+
+  it("checks the remote itself, not a tracking ref that claims the branch is pushed", async () => {
+    await addRemote("origin");
+    const { worktree, branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
+    await git(source, "push", "--quiet", "origin", branch);
+    await writeFile(join(worktree, "late.txt"), "late\n");
+    await git(worktree, "add", ".");
+    await git(worktree, "commit", "--quiet", "-m", "late");
+    // A stale or moved tracking ref says the remote has the late commit too; it does not.
+    await git(source, "update-ref", `refs/remotes/origin/${branch}`, branch);
+    expect((await service.preview(30)).tasks[0]?.steps[1]).toMatchObject({ action: "remove" });
+    const tip = await git(source, "rev-parse", branch);
+    const report = await service.run(["ACM-1"], 30, "owner");
+    expect(report.tasks[0]?.steps[1]).toMatchObject({ action: "skip" });
+    expect(await git(source, "rev-parse", branch)).toBe(tip);
+    // The check leaves no ref of its own behind, and does not move the tracking ref back.
+    expect(await git(source, "for-each-ref", "refs/majhi")).toBe("");
+  });
+
+  it("keeps the branch when the remote cannot be reached", async () => {
+    await git(source, "remote", "add", "origin", join(dir, "missing.git"));
+    const { branch } = await seed({ id: "ACM-1", ahead: true, mr: "merged" });
+    const report = await service.run(["ACM-1"], 30, "owner");
+    expect(report.tasks[0]?.steps[1]?.reason).toMatch(
+      /^it is not in main here and could not fetch origin\/main/,
+    );
+    expect(await branches()).toContain(branch);
   });
 
   it("keeps a branch whose merge request is still open", async () => {
