@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
-import { type RunShip, Ship } from "@/features/task/ship";
+import { type RunShip, Ship, type ShipChoices } from "@/features/task/ship";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
@@ -79,10 +79,20 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const after = useAfterTaskChange();
   const options = useShipOptions(task, true);
   const lead = item.lead ?? task.team[0];
-  const act = (action: "merge" | "mergePush" | "push" | "mr" | "done", into?: string) =>
-    cmd("room.cardAction", { task: task.id, item: item.id, action, ...(into === undefined ? {} : { into }) });
-  const run: RunShip = async (action, into) => {
-    const out = await act(action, into);
+  const act = (
+    action: "merge" | "mergePush" | "push" | "mr" | "done",
+    into?: string,
+    choices?: ShipChoices,
+  ) =>
+    cmd("room.cardAction", {
+      task: task.id,
+      item: item.id,
+      action,
+      ...(into === undefined ? {} : { into }),
+      ...(choices === undefined ? {} : choices),
+    });
+  const run: RunShip = async (action, into, choices) => {
+    const out = await act(action, into, choices);
     await after();
     return out;
   };
@@ -106,7 +116,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2 pl-6">
-        {task.repos.length > 0 && <Ship task={task} run={run} align="left" variant="primary" />}
+        {task.repos.length > 0 && <Ship task={task} run={run} lead={lead} align="left" variant="primary" />}
         <Button
           size="sm"
           variant={task.repos.length > 0 ? "secondary" : "primary"}

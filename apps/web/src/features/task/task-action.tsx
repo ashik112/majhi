@@ -3,7 +3,7 @@ import { Check, OctagonX, Play, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { ApiRequestError } from "@/lib/api";
-import { useCloseTask, useStartTask, useStopTask } from "@/lib/task-queries";
+import { useCloseTask, useShipOptions, useStartTask, useStopTask } from "@/lib/task-queries";
 import { actionCopy } from "./model";
 import { Ship, useDirectShip } from "./ship";
 
@@ -15,10 +15,13 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
   const ship = useDirectShip(task);
-  // Only once there is work to ship: a worktree exists and no agent is working.
-  const canShip =
-    task.repos.some((r) => r.worktree !== undefined) &&
-    !["inbox", "ready", "running", "done"].includes(task.status);
+  // Only once there is work to ship: a worktree exists and no agent is working. A done task keeps
+  // Ship while some of its work is not merged or pushed.
+  const hasTree = task.repos.some((r) => r.worktree !== undefined);
+  const done = task.status === "done";
+  const shipOptions = useShipOptions(task, hasTree && done);
+  const unshipped = [shipOptions.data?.merge, shipOptions.data?.push].some((o) => o?.ok === true);
+  const canShip = hasTree && (done ? unshipped : !["inbox", "ready", "running"].includes(task.status));
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
