@@ -25,6 +25,8 @@ export interface OrgDraft {
   identityEmail: string;
   /** Resume interrupted work on its own: majhi's setting, or this org's own. */
   resume: "default" | "on" | "off";
+  /** Agent attribution in commits: majhi's setting, or this org's own. */
+  commits: "default" | "on" | "off";
   /** When majhi merges the org's MRs. */
   merge: MergePolicy;
   /** The saved secret (`secret:<name>`) each host's token is read from; `""` for none. */
@@ -44,6 +46,7 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     identityName: org.identity?.name ?? "",
     identityEmail: org.identity?.email ?? "",
     resume: org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off",
+    commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     merge: org.merge,
     mrTokens: perHost((host) => org.mrTokens?.[host] ?? ""),
     newTokens: perHost(() => ""),
@@ -110,6 +113,10 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   const resume = org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off";
   if (draft.resume !== resume)
     input.resume = draft.resume === "default" ? null : { auto: draft.resume === "on" };
+
+  const commits = org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off";
+  if (draft.commits !== commits)
+    input.commits = draft.commits === "default" ? null : { attribution: draft.commits === "on" };
 
   if (draft.merge !== org.merge) input.merge = draft.merge;
 

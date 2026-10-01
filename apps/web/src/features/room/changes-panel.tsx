@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, FileDiff, FileMinus, FilePlus, FileSymlink } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { Card } from "@/components/ui/card";
+import { CommitList } from "@/features/changes/commit-list";
 import { repoTotals } from "@/features/changes/model";
 import { viewablePath } from "@/features/viewer/model";
 import { plural } from "@/lib/format";
@@ -11,6 +12,8 @@ import { filesByRepo, shortPath, type TouchedFile, touchedFiles } from "./model"
 
 /** Files listed per repo in the card; the Changes tab has the rest. */
 const LIST_UP_TO = 8;
+/** Commits listed per repo in the card. */
+const COMMITS_UP_TO = 5;
 
 /**
  * The Changes card. Per repo, what git sees against the base (commits and uncommitted work, as in
@@ -142,6 +145,7 @@ function RepoChanges({
       {diff && diff.error === undefined && diff.files.length === 0 && (
         <p className="text-sm text-fg-faint">No changes against {diff.base} yet.</p>
       )}
+      {diff && <CommitList commits={diff.commits} limit={COMMITS_UP_TO} />}
       {diff && diff.files.length > 0 && (
         <ul className="flex flex-col gap-0.5">
           {diff.files.slice(0, LIST_UP_TO).map((file) => (

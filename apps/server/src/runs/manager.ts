@@ -915,7 +915,7 @@ export class RunManager {
     const task = this.deps.store.tasks.get(run.task);
     if (task === undefined) return;
     try {
-      for (const line of await checkpointTurn(this.deps, task, run.runId))
+      for (const line of await checkpointTurn(this.deps, task, run.runId, run.agent))
         this.live.system(run, "warn", line);
     } catch (err) {
       this.live.system(run, "warn", `Checkpoint failed: ${errorMessage(err)}`);

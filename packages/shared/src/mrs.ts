@@ -83,11 +83,24 @@ export const RepoDiffFileSchema = z.object({
 });
 export type RepoDiffFile = z.infer<typeof RepoDiffFileSchema>;
 
+/** A commit on a task branch, and the agent that made it. */
+export const RepoCommitSchema = z.object({
+  sha: z.string(),
+  subject: z.string(),
+  /** The agent that committed it. Absent for commits made by hand or by majhi itself. */
+  agent: z.string().optional(),
+  /** The commit's date, ISO 8601. */
+  at: z.string(),
+});
+export type RepoCommit = z.infer<typeof RepoCommitSchema>;
+
 /** What one repo of a task changed against its base: commits and uncommitted work together. */
 export const RepoDiffSchema = z.object({
   project: IdSchema,
   base: z.string(),
   branch: z.string(),
+  /** The branch's commits since it left the base, newest first. */
+  commits: z.array(RepoCommitSchema).default([]),
   files: z.array(RepoDiffFileSchema),
   /** Files past the cap that are not listed. */
   omitted: z.number().int().nonnegative(),

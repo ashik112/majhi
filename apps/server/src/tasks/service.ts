@@ -57,7 +57,8 @@ import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
 import { firstTurn, type Member } from "../rooms/coordinate.ts";
 import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
-import { commitAll, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
+import { attributionOf } from "../runs/attribution.ts";
+import { commitAll, commitBy, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TerminalManager } from "../terminal/manager.ts";
@@ -997,10 +998,15 @@ export class TaskService {
       await this.ensureWorktrees(task);
       const sections = await this.deps.config.sections();
       const identity = sections.orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+      const attribution = await attributionOf(this.deps.config, this.get(task.id));
       for (const repo of this.get(task.id).repos) {
         if (repo.worktree === undefined) continue;
         await input.change({ project: repo.project, worktree: repo.worktree });
-        await commitAll(repo.worktree, input.message, identity);
+        await commitAll(
+          repo.worktree,
+          input.message,
+          commitBy(identity, task.id, undefined, attribution.repos[repo.project] !== false),
+        );
       }
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);

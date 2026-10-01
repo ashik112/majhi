@@ -93,6 +93,7 @@ import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
   CleanupPatchSchema,
+  CommitsPatchSchema,
   ContainersPatchSchema,
   ContextPatchSchema,
   EditorAppSchema,
@@ -318,7 +319,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -330,6 +331,8 @@ export const commands = {
       context: OrgConfigSchema.shape.context.nullable().optional(),
       /** Overrides majhi's `resume.auto` for this org's runs. */
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
+      /** Overrides majhi's `commits.attribution` for this org's commits. */
+      commits: OrgConfigSchema.shape.commits.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
       /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
@@ -531,13 +534,15 @@ export const commands = {
   "projects.update": {
     risk: "change",
     summary:
-      "Change a project's org, aliases or base branch, and (when given) its remotes and links to other projects. null removes remotes or links",
+      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects and agent attribution in commits. null removes remotes, links or the attribution override",
     input: z
       .object({ id: IdSchema })
       .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape)
       .extend({
         remotes: ProjectConfigSchema.shape.remotes.nullable().optional(),
         links: ProjectConfigSchema.shape.links.nullable().optional(),
+        /** Overrides the org's `commits.attribution` for this project. null clears it. */
+        commits: ProjectConfigSchema.shape.commits.nullable().optional(),
       }),
     output: ProjectViewSchema,
   },
@@ -1108,11 +1113,12 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
+      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
+      commits: CommitsPatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),

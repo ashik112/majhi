@@ -12,6 +12,7 @@ describe("mergeSettings", () => {
       context: { compact_at: 0.8, compact_target: 0.4, max_turns: 40 },
       limits: { agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "10m" },
       resume: { auto: true },
+      commits: { attribution: true },
       rooms: { max_agent_turns: 12, review_rounds: 5 },
       policy: {
         read: "auto",
@@ -82,6 +83,18 @@ describe("settings commands", () => {
     expect((await h.cmd("settings.set", { memory: { auto_threshold: 1.5 } })).status).toBe(400);
     expect((await h.cmd("settings.set", { memory: { housekeeper: "nobody" } })).status).toBe(404);
     expect((await h.cmd("settings.set", { memory: { nope: 1 } })).status).toBe(400);
+  });
+
+  it("turns agent attribution off for majhi, and back to the default", async () => {
+    h = await harness();
+    expect((await h.cmd("settings.get")).body.commits).toEqual({ attribution: true });
+    const off = await h.cmd("settings.set", { commits: { attribution: false } });
+    expect(off.status).toBe(200);
+    expect(off.body.commits).toEqual({ attribution: false });
+    expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("attribution: false");
+    // The file still loads: the section is part of the schema.
+    expect((await h.cmd("settings.get")).body.commits).toEqual({ attribution: false });
+    expect((await h.cmd("settings.set", { commits: { nope: 1 } })).status).toBe(400);
   });
 
   it("sets the container limits but never the image list, which only its own command changes", async () => {
