@@ -60,6 +60,7 @@ async function world(): Promise<World> {
   await git(repo, "commit", "--quiet", "-m", "init");
   const target = join(dir, "ACM-2", "acme-api");
   await git(repo, "worktree", "add", "--quiet", "-b", "task/acm-2-api", target);
+  headOf = (await git(target, "rev-parse", "HEAD")).trim();
   const tasks = new Map([
     ["ACM-1", task("ACM-1", "acme")],
     ["ACM-2", task("ACM-2", "acme", { worktree: target, branch: "task/acm-2-api" })],
@@ -82,8 +83,12 @@ async function world(): Promise<World> {
   return { deps, target, posted, working };
 }
 
-const input = (files: { path: string; content: string }[]) =>
-  ChangeBranchInputSchema.parse({ task: "ACM-2", files, message: "fix: the greeting" });
+const input = (files: { path: string; content: string }[], base = headOf) =>
+  ChangeBranchInputSchema.parse({ task: "ACM-2", base, files, message: "fix: the greeting" });
+const patchInput = (patch: string, base = headOf) =>
+  ChangeBranchInputSchema.parse({ task: "ACM-2", base, patch, message: "fix: the greeting" });
+/** The commit ACM-2's branch is at when a test starts: the one `world()` made. */
+let headOf = "";
 const lead = (task = "ACM-1") => ({
   actor: { kind: "agent" as const, id: "acme-lead" },
   task,
@@ -161,7 +166,7 @@ describe("changing another task's branch", () => {
       "a\\b",
     ]) {
       expect(
-        ChangeBranchInputSchema.safeParse({ task: "ACM-2", files: [{ path, content: "" }], message: "m" })
+        ChangeBranchInputSchema.safeParse({ task: "ACM-2", base: "abcdef1", files: [{ path, content: "" }], message: "m" })
           .success,
       ).toBe(false);
     }
@@ -174,6 +179,7 @@ describe("changing another task's branch", () => {
     await symlink(outside, join(w.target, "link"));
     await git(w.target, "add", "link");
     await git(w.target, "commit", "--quiet", "-m", "link");
+    headOf = (await git(w.target, "rev-parse", "HEAD")).trim();
     await expect(
       changeTaskBranch(w.deps, input([{ path: "link/x.txt", content: "x\n" }]), lead()),
     ).rejects.toThrow(/symlink/);
@@ -194,6 +200,64 @@ describe("changing another task's branch", () => {
     expect(await git(w.target, "status", "--porcelain")).toBe("");
     expect(w.deps.locks.holder(w.target)).toBeUndefined();
     expect(w.posted).toEqual([]);
+  });
+
+  it("refuses a stale base and writes nothing", async () => {
+    const w = await world();
+    const stale = headOf;
+    await writeFile(join(w.target, "a.txt"), "newer\n");
+    await git(w.target, "commit", "--quiet", "-am", "newer");
+    const now = (await git(w.target, "rev-parse", "HEAD")).trim();
+    await expect(
+      changeTaskBranch(w.deps, input([{ path: "a.txt", content: "two\n" }], stale), lead()),
+    ).rejects.toThrow(
+      `task/acm-2-api moved since you read it: it is at ${now.slice(0, 7)} now, you read ${stale.slice(0, 7)}. Read the files again at ${now.slice(0, 7)} and retry.`,
+    );
+    expect(await readFile(join(w.target, "a.txt"), "utf8")).toBe("newer\n");
+    expect(await git(w.target, "status", "--porcelain")).toBe("");
+    expect(await git(w.target, "rev-parse", "HEAD")).toBe(now);
+    await changeTaskBranch(w.deps, input([{ path: "a.txt", content: "two\n" }], now.slice(0, 9)), lead());
+    expect(await readFile(join(w.target, "a.txt"), "utf8")).toBe("two\n");
+  });
+
+  it("refuses files and patch together, or neither", () => {
+    const base = { task: "ACM-2", base: "abcdef1", message: "m" };
+    const files = [{ path: "a.txt", content: "x" }];
+    expect(ChangeBranchInputSchema.safeParse({ ...base, files, patch: "diff" }).success).toBe(false);
+    expect(ChangeBranchInputSchema.safeParse(base).success).toBe(false);
+    expect(ChangeBranchInputSchema.safeParse({ ...base, files, base: "xyz" }).success).toBe(false);
+  });
+
+  it("commits a one-line patch and nothing else", async () => {
+    const w = await world();
+    const patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+two\n";
+    const out = await changeTaskBranch(w.deps, patchInput(patch), lead());
+    expect(out.files).toEqual(["a.txt"]);
+    expect(await git(w.target, "status", "--porcelain")).toBe("");
+    expect(await readFile(join(w.target, "a.txt"), "utf8")).toBe("two\n");
+    expect(await git(w.target, "rev-parse", "HEAD")).toBe(out.commit);
+    expect(await git(w.target, "show", "--stat", "--format=", "HEAD")).toContain("1 file changed");
+  });
+
+  it("refuses a patch that touches .git, an ignored file or a path outside the repo", async () => {
+    const w = await world();
+    const mk = (path: string) => `--- /dev/null\n+++ b/${path}\n@@ -0,0 +1 @@\n+x\n`;
+    for (const path of [".git/hooks/pre-commit", ".env", "../outside.txt"]) {
+      await expect(changeTaskBranch(w.deps, patchInput(mk(path)), lead())).rejects.toThrow();
+      expect(await git(w.target, "status", "--porcelain")).toBe("");
+      expect(await git(w.target, "rev-parse", "HEAD")).toBe(headOf);
+    }
+    await expect(readFile(join(dir, "ACM-2", "outside.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(w.target, ".env"), "utf8")).rejects.toThrow();
+  });
+
+  it("refuses a patch that does not apply and leaves the worktree clean", async () => {
+    const w = await world();
+    const patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-zzz\n+two\n";
+    await expect(changeTaskBranch(w.deps, patchInput(patch), lead())).rejects.toThrow(/does not apply/);
+    expect(await git(w.target, "status", "--porcelain")).toBe("");
+    expect(await git(w.target, "rev-parse", "HEAD")).toBe(headOf);
+    expect(w.deps.locks.holder(w.target)).toBeUndefined();
   });
 
   it("refuses the caller's own task", async () => {

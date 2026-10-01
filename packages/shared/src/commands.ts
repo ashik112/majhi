@@ -1043,7 +1043,7 @@ export const commands = {
   "tasks.changeBranch": {
     risk: "change",
     summary:
-      "Commit file changes to another task's branch inside that task's own worktree, so its files, index and branch stay in step. Give each file whole: its path from the repo root and its full new content. Only for a task in your own org (root agents: any). Refused while one of its agents is working or has work queued (retry when it is idle, paused or in review), and while its worktree has uncommitted changes. The task's room gets a line saying who changed what and why",
+      "Commit file changes to another task's branch inside that task's own worktree, so its files, index and branch stay in step. Give base, the commit of that branch you read from (git rev-parse <branch> before reading); a branch that moved since is refused and nothing is written. Send a patch (unified diff from the repo root) for small edits, or whole files (path from the repo root, full new content) for new files and full rewrites, never both. Only for a task in your own org (root agents: any). Refused while one of its agents is working or has work queued (retry when it is idle, paused or in review), and while its worktree has uncommitted changes. The task's room gets a line saying who changed what and why",
     input: ChangeBranchInputSchema,
     output: ChangeBranchResultSchema,
   },
