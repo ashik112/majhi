@@ -17,14 +17,34 @@ describe("update", () => {
   });
   afterEach(() => rm(dir, { recursive: true, force: true }));
 
-  function setup(options: { failOn?: string; dirty?: boolean; selfIsBundle?: boolean; keyExists?: boolean }) {
+  function setup(options: {
+    failOn?: string;
+    /** Fails only the first command that starts with this. */
+    failOnce?: string;
+    dirty?: boolean;
+    selfIsBundle?: boolean;
+    keyExists?: boolean;
+    noImage?: boolean;
+  }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
+    let failedOnce = false;
     const exec: ExecFn = async (file, args, opts) => {
       const line = args.join(" ");
       calls.push({ file, args: line, env: opts.env });
       if (options.failOn !== undefined && line.startsWith(options.failOn)) {
         throw Object.assign(new Error("Command failed"), { stderr: "boom: no space left" });
+      }
+      if (options.failOnce !== undefined && line.startsWith(options.failOnce) && !failedOnce) {
+        failedOnce = true;
+        throw Object.assign(new Error("Command failed"), { stderr: "container majhi-server-1 is unhealthy" });
+      }
+      if (line.startsWith("image inspect")) {
+        if (options.noImage) throw Object.assign(new Error("Command failed"), { stderr: "No such image" });
+        return { stdout: "sha256:old\n", stderr: "" };
+      }
+      if (line.startsWith("compose logs")) {
+        return { stdout: "server-1  | starting\nserver-1  | SqliteError: malformed JSON\n", stderr: "" };
       }
       if (file === "/usr/bin/git") {
         return {
@@ -126,5 +146,40 @@ describe("update", () => {
     expect(status.error).toContain("no space left");
     expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
     expect(s.exit).toEqual([]);
+  });
+
+  it("goes back to the previous image and mounts when the new majhi does not start, with the reason", async () => {
+    const s = setup({ failOnce: "compose up", selfIsBundle: true });
+    await writeFile(join(dir, "repo", "docker-compose.override.yml"), "old mounts\n");
+    const status = await s.run();
+    expect(status.state).toBe("failed");
+    expect(status.error).toContain("SqliteError: malformed JSON");
+    expect(status.lines).toContain("The new majhi said: SqliteError: malformed JSON");
+    expect(status.lines.join("\n")).toContain("Went back to the previous version");
+    const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
+    const tagBack = docker.indexOf("tag sha256:old majhi-server:dev");
+    const firstUp = docker.indexOf("compose up -d --wait");
+    expect(tagBack).toBeGreaterThan(firstUp);
+    expect(docker.lastIndexOf("compose up -d --wait")).toBeGreaterThan(tagBack);
+    expect(await readFile(join(dir, "repo", "docker-compose.override.yml"), "utf8")).toBe("old mounts\n");
+    expect(s.calls.some((c) => c.args.startsWith("create"))).toBe(false);
+    expect(s.exit).toEqual([]);
+  });
+
+  it("keeps the previous image tagged so a prune cannot remove it", async () => {
+    const s = setup({});
+    await s.run();
+    const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
+    const tagged = docker.indexOf("tag sha256:old majhi-server:previous");
+    expect(tagged).toBeGreaterThanOrEqual(0);
+    expect(tagged).toBeLessThan(docker.indexOf("compose --profile runner build"));
+  });
+
+  it("says so when there was no previous image to go back to", async () => {
+    const s = setup({ failOnce: "compose up", noImage: true });
+    const status = await s.run();
+    expect(status.state).toBe("failed");
+    expect(status.lines.join("\n")).toContain("No previous version to go back to");
+    expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
   });
 });
