@@ -51,6 +51,12 @@ export const ProjectConfigSchema = z.looseObject({
   links: z.array(ProjectLinkSchema).optional(),
   /** Overrides the org's and majhi's `commits.attribution` for this project (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /**
+   * Infra or otherwise sensitive (gitops, terraform, deploy). majhi never adds it to a task by
+   * itself, agents get it read-only unless the owner allows writes for a task, and it ships only
+   * alone, when the owner types its name.
+   */
+  protected: z.boolean().optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -70,6 +76,10 @@ export const ProjectViewSchema = z.object({
   mrRemote: z.string().optional(),
   /** This project's own `commits.attribution`, when it overrides the org's. */
   commits: CommitsPatchSchema.optional(),
+  /** See ProjectConfig.protected. */
+  protected: z.boolean().default(false),
+  /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
+  looksLikeInfra: z.boolean().optional(),
 });
 export type ProjectView = z.infer<typeof ProjectViewSchema>;
 
@@ -121,8 +131,12 @@ export type MergeMethod = z.infer<typeof MergeMethodSchema>;
  */
 export const PendingShipSchema = z.object({
   action: z.enum(["merge", "mergePush"]),
-  /** The local branch to merge into. */
+  /** The local branch to merge into, or the targets joined for display when `targets` is set. */
   into: z.string(),
+  /** The branch each repo merges into, by project. */
+  targets: z.record(z.string(), z.string()).optional(),
+  /** The commit each target was at when the ship was asked for, by project: a target that moved since is not shipped onto. */
+  heads: z.record(z.string(), z.string()).optional(),
   method: MergeMethodSchema,
   deleteAfter: z.boolean(),
   /** The agent asked to resolve the conflicts. */
@@ -168,6 +182,8 @@ export const TaskRepoSchema = z.object({
   pushedAt: z.string().optional(),
   /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
   startCommit: z.string().optional(),
+  /** A protected project the owner let agents write in, for this task. Else agents get it read-only. */
+  writes: z.boolean().optional(),
   /** Set once the MR is open. */
   mr: RepoMrSchema.optional(),
 });
@@ -278,7 +294,10 @@ export const ChangeBranchInputSchema = z
     /** Which repo of that task. Needed when it has more than one. */
     project: IdSchema.optional(),
     /** The commit of the target branch the caller read its files from. A branch that moved since is refused. */
-    base: z.string().trim().regex(/^[0-9a-fA-F]{7,40}$/, "base is a commit: 7 to 40 hex characters"),
+    base: z
+      .string()
+      .trim()
+      .regex(/^[0-9a-fA-F]{7,40}$/, "base is a commit: 7 to 40 hex characters"),
     /** Whole files: for new files or full rewrites. */
     files: z
       .array(BranchFileSchema)
@@ -287,7 +306,11 @@ export const ChangeBranchInputSchema = z
       .refine((files) => new Set(files.map((f) => f.path)).size === files.length, "Each path only once")
       .optional(),
     /** A unified diff relative to the repo root: for small edits. */
-    patch: z.string().min(1).max(200 * 1024).optional(),
+    patch: z
+      .string()
+      .min(1)
+      .max(200 * 1024)
+      .optional(),
     message: z.string().trim().min(1).max(2000),
   })
   .refine((v) => (v.files === undefined) !== (v.patch === undefined), "Give exactly one of files or patch");

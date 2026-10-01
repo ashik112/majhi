@@ -37,14 +37,14 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.reopen": (i) => `Reopen ${str(i.id)}`,
   "tasks.merge": (i) =>
     `${i.method === "squash" ? "Squash" : i.method === "rebase" ? "Rebase and merge" : "Merge"} ${str(i.id)} into ${
-      str(i.into) || "its base"
+      targetsText(i.targets) || str(i.into) || "its base"
     }${i.push === true ? " and push" : ""}${i.done === true ? ", then mark it done" : ""}${
       i.deleteAfter === true ? ", then delete the local branch and worktree" : ""
     }`,
   "tasks.push": (i) =>
     `Push the branch of ${str(i.id)}${i.deleteAfter === true ? ", then delete the local branch and worktree" : ""}`,
   "tasks.resolveShip": (i) =>
-    `Ask the lead of ${str(i.id)} to resolve the conflicts with ${str(i.into)}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
+    `Ask the lead of ${str(i.id)} to resolve the conflicts with ${targetsText(i.targets) || str(i.into) || "its base"}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
   "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
   "tasks.changeBranch": (i) => {
     const n = Array.isArray(i.files) ? i.files.length : 0;
@@ -87,4 +87,12 @@ export function summarize(command: CommandName, input: unknown): string {
   const template = TEMPLATES[command];
   const text = template === undefined ? firstSentence(commands[command].summary) : template(record);
   return redactText(text.trim());
+}
+
+/** Per-repo ship targets in a line: "api: main, ops: stage". Empty when there are none. */
+function targetsText(targets: unknown): string {
+  if (typeof targets !== "object" || targets === null) return "";
+  return Object.entries(targets)
+    .map(([project, branch]) => `${project}: ${str(branch)}`)
+    .join(", ");
 }

@@ -25,7 +25,10 @@ async function reviewTask(write: boolean): Promise<string> {
       return "end_turn";
     };
   };
-  expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+      .status,
+  ).toBe(200);
   await idle();
   const t = await task();
   expect(t.status).toBe("review");

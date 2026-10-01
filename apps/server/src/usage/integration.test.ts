@@ -72,13 +72,19 @@ describe("tokens and cost from real turns", () => {
     await twoOrgs();
     const { h } = w;
     expect(
-      (await h.cmd("tasks.create", { text: "add a health endpoint to api from develop", start: true }))
-        .status,
+      (
+        await h.cmd("tasks.create", {
+          text: "add a health endpoint to api from develop",
+          repos: [{ project: "acme-api", base: "develop" }],
+          start: true,
+        })
+      ).status,
     ).toBe(200);
     expect(
       (
         await h.cmd("tasks.create", {
           text: "add a health endpoint to web from develop",
+          repos: [{ project: "globex-web", base: "develop" }],
           agent: "globex-builder",
           start: true,
         })
@@ -184,7 +190,11 @@ describe("tokens and cost from real turns", () => {
   it("lets the boss answer a cost question from the same numbers", async () => {
     await twoOrgs();
     const { h } = w;
-    await h.cmd("tasks.create", { text: "add a health endpoint to api from develop", start: true });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api from develop",
+      repos: [{ project: "acme-api", base: "develop" }],
+      start: true,
+    });
     await settle();
     const acmeWeek = (await h.cmd("usage.summary", { filters: { org: "acme" } })).body.week as UsageTotals;
     expect(acmeWeek.turns).toBe(1);

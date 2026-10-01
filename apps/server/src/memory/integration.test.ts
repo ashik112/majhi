@@ -62,8 +62,13 @@ async function world() {
       return "cancelled";
     };
   };
+  // The repo a task changes is picked like the owner's chip: web is globex's, api is acme's.
   const create = async (body: string) =>
-    (await must("tasks.create", { text: body, start: true })) as { id: string };
+    (await must("tasks.create", {
+      text: body,
+      repos: [{ project: / web$/.test(body) ? "globex-web" : "acme-api" }],
+      start: true,
+    })) as { id: string };
   const memoryOf = async (account: string): Promise<Client> => {
     for (let i = 0; i < 600 && servers[account] === undefined; i++)
       await new Promise((r) => setTimeout(r, 5));

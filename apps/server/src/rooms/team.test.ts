@@ -111,6 +111,7 @@ describe("lead, builder and reviewer on different tools", () => {
     });
     const res = await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-lead", "acme-builder", "acme-reviewer"],
       start: true,
     });
@@ -161,6 +162,7 @@ describe("the build and review loop", () => {
     );
     const res = await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-builder", "acme-reviewer"],
       mode: "review-loop",
       start: true,
@@ -186,6 +188,7 @@ describe("the pipeline", () => {
     });
     const res = await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-reviewer", "acme-builder", "acme-lead"],
       mode: "pipeline",
       start: true,
@@ -214,6 +217,7 @@ describe("the loop guard", () => {
     expect((await h.cmd("settings.set", { rooms: { max_agent_turns: 3 } })).status).toBe(200);
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-builder", "acme-reviewer"],
       start: true,
     });
@@ -236,7 +240,12 @@ describe("the loop guard", () => {
 describe("owner messages", () => {
   it("go to the lead without a mention, to every mentioned agent, and add a mentioned agent to the team", async () => {
     const { h, prompts } = await teamWorld({});
-    await h.cmd("tasks.create", { text: "add a health endpoint to api", team: ["acme-lead"], start: true });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead"],
+      start: true,
+    });
     await until(async () => (await status("ACM-1")) === "review", "review");
 
     const toLead = await h.cmd("room.send", { task: "ACM-1", text: "what is the plan?" });
@@ -262,7 +271,11 @@ describe("owner messages", () => {
       frontmatter: { scope: "globex", role: "Builder", account: "claude-globex" },
       instructions: "x\n",
     });
-    await h.cmd("tasks.create", { text: "add a health endpoint to api", start: false });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     const res = await h.cmd("room.send", { task: "ACM-1", text: "@globex-builder help" });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/cannot work in "acme"/);
@@ -274,6 +287,7 @@ describe("team editing", () => {
     const { h } = await teamWorld({});
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-builder"],
       start: false,
     });
@@ -311,7 +325,12 @@ describe("team editing", () => {
         },
       ],
     });
-    await h.cmd("tasks.create", { text: "add a health endpoint to api", team: ["acme-lead"], start: false });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead"],
+      start: false,
+    });
     expect((await h.cmd("tasks.addAgent", { id: "ACM-1", agent: "acme-builder" })).body.team).toEqual([
       "acme-lead",
       "acme-builder",
@@ -361,6 +380,7 @@ describe("idle messages", () => {
     });
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-lead", "acme-builder", "acme-reviewer"],
       start: true,
     });
@@ -384,6 +404,7 @@ describe("idle messages", () => {
     );
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-lead", "acme-builder"],
       start: true,
     });
@@ -405,6 +426,7 @@ describe("idle messages", () => {
     });
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-lead", "acme-builder", "acme-reviewer"],
       start: false,
     });
@@ -450,6 +472,7 @@ describe("worktree locks", () => {
     );
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
       team: ["acme-lead", "acme-builder"],
       start: true,
     });
@@ -487,6 +510,7 @@ describe("the default team", () => {
     };
     const res = await h.cmd("tasks.create", {
       text: "rebuild the api's auth, billing and admin",
+      repos: [{ project: "acme-api" }],
       start: false,
     });
     expect(res.status).toBe(200);
@@ -505,14 +529,22 @@ describe("the default team", () => {
 
   it("falls back to one agent when the provider is not sure, and uses the org's team without asking", async () => {
     const { h } = await teamWorld({});
-    const first = await h.cmd("tasks.create", { text: "fix the api readme", start: false });
+    const first = await h.cmd("tasks.create", {
+      text: "fix the api readme",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     expect(first.body.team).toEqual(["acme-lead"]);
     expect((await systemTexts(first.body.id)).some((t) => t.includes("Picked by the rules"))).toBe(true);
 
     expect((await h.cmd("orgs.update", { id: "acme", team: ["acme-builder", "acme-reviewer"] })).status).toBe(
       200,
     );
-    const second = await h.cmd("tasks.create", { text: "fix the api readme again", start: false });
+    const second = await h.cmd("tasks.create", {
+      text: "fix the api readme again",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     expect(second.body.team).toEqual(["acme-builder", "acme-reviewer"]);
   });
 });
@@ -549,6 +581,7 @@ describe("mentions that ask for nothing", () => {
       (
         await h.cmd("tasks.create", {
           text: "tidy the api readme",
+          repos: [{ project: "acme-api" }],
           team: ["acme-lead", "acme-builder"],
           start: true,
         })

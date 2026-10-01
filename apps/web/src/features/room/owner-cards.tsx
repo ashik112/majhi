@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
-import { type RunShip, Ship, type ShipChoices } from "@/features/task/ship";
+import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/features/task/ship";
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
@@ -82,7 +82,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const lead = item.lead ?? task.team[0];
   const act = (
     action: "merge" | "mergePush" | "push" | "mr" | "done",
-    into?: string,
+    target?: ShipTarget,
     choices?: ShipChoices,
     keep = false,
   ) =>
@@ -90,12 +90,12 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       task: task.id,
       item: item.id,
       action,
-      ...(into === undefined ? {} : { into }),
+      ...(target === undefined ? {} : target),
       ...(choices === undefined ? {} : choices),
       ...(keep ? { unshipped: "keep" as const } : {}),
     });
-  const run: RunShip = async (action, into, choices) => {
-    const out = await act(action, into, choices);
+  const run: RunShip = async (action, target, choices) => {
+    const out = await act(action, target, choices);
     await after();
     return out;
   };
@@ -111,6 +111,10 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
     },
   });
   const doneOption = options.data?.done;
+  // No repo changed since the task started: nothing to ship, so no Ship.
+  const shipping =
+    task.repos.length > 0 &&
+    (options.data?.changed?.length !== 0 || (options.data?.protected ?? []).length > 0);
   const unshipped = doneOption?.unshipped ?? [];
 
   return (
@@ -127,12 +131,10 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       </p>
       {item.why !== undefined && <p className="pl-6 text-sm text-amber text-pretty">{item.why}</p>}
       <div className="flex flex-wrap items-center gap-2 pl-6">
-        {task.repos.length > 0 && (
-          <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />
-        )}
+        {shipping && <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />}
         <Button
           size="sm"
-          variant={task.repos.length > 0 ? "secondary" : "primary"}
+          variant={shipping ? "secondary" : "primary"}
           {...(task.repos.length > 0 ? {} : { "data-primary-action": "" })}
           disabled={done.isPending || doneOption?.ok === false}
           title={doneOption?.ok === false ? doneOption.why : "Mark the task done. Nothing is merged."}

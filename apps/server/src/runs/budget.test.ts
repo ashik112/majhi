@@ -43,7 +43,7 @@ const contexts = async (task = "ACM-1") =>
 const _systems = async () => (await items()).flatMap((i) => (i.type === "system" ? [i.text] : []));
 
 async function start(text = "fix api"): Promise<void> {
-  const res = await w.h.cmd("tasks.create", { text, start: true });
+  const res = await w.h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: true });
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   await runs().idle();
 }

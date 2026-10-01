@@ -32,6 +32,16 @@ import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
+import {
+  HELD,
+  heldResult,
+  NO_CHANGES,
+  planTargets,
+  type ShipTargets,
+  skippedResult,
+  splitChanged,
+  targetsFor,
+} from "../tasks/ship-plan.ts";
 import { mrTitle, renderMrDescription } from "./description.ts";
 import type { HostGit } from "./hostGit.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
@@ -68,6 +78,7 @@ export interface MrDeps {
     | "cards"
     | "doneAndShipped"
     | "assertDeletable"
+    | "shipPlan"
     | "deleteAfterShip"
   >;
   /** True while an agent of the task works. */
@@ -281,7 +292,7 @@ export class MrService {
   // Push and open
 
   /** Pushes each repo, opens one MR per repo in merge order, then writes the sibling links into each. */
-  async open(id: string, into?: string, by?: string): Promise<OpenMrsResult> {
+  async open(id: string, pick: ShipTargets = {}, by?: string): Promise<OpenMrsResult> {
     const task = this.deps.tasks.get(id);
     if (task.status !== "review" && task.status !== "mr") {
       throw new UserError(`${id} is ${task.status}. Open merge requests from review.`, 409);
@@ -294,7 +305,7 @@ export class MrService {
     }
     return this.exclusive(id, async () => {
       const { repos } = await this.ordered(task);
-      const plans = await this.preflight(repos, into);
+      const plans = await this.preflight(repos, pick, task.repos);
       const results: OpenMrsResult["repos"] = [];
       const opened: { ctx: RepoContext; target: MrTarget; number: number }[] = [];
       let failed = false;
@@ -336,7 +347,7 @@ export class MrService {
           const body = this.body(task, project, this.siblings(id, plans));
           const mr = await ctx.client.open(target, {
             head: ctx.repo.branch,
-            base: into ?? ctx.repo.base,
+            base: plan.into ?? ctx.repo.base,
             title: mrTitle(task.id, task.title),
             body,
           });
@@ -386,7 +397,9 @@ export class MrService {
       if (!failed && anyMr) {
         if (task.status !== "mr") {
           this.deps.store.tasks.setStatus(id, "mr", undefined, this.now().toISOString());
-          const target = into ?? [...new Set(task.repos.map((r) => r.base))].join(", ");
+          const target = [
+            ...new Set(plans.filter((p) => p.skip === undefined).map((p) => p.into ?? p.ctx.repo.base)),
+          ].join(", ");
           this.deps.tasks.cards.settle(id, "review", `Opened merge requests into ${target}`, by ?? "owner");
           this.note(id, "Merge requests are open. Waiting for them to be merged.");
         }
@@ -426,11 +439,27 @@ export class MrService {
   }
 
   /** Checks every repo before anything is pushed, so a problem in the last one does not leave the first half sent. */
-  private async preflight(repos: readonly TaskRepo[], into?: string): Promise<Plan[]> {
+  private async preflight(
+    repos: readonly TaskRepo[],
+    pick: ShipTargets,
+    all: readonly TaskRepo[],
+  ): Promise<Plan[]> {
     const plans: Plan[] = [];
+    // A repo the task did not change gets no merge request, and needs no worktree or token.
+    const { changed } = await splitChanged(repos);
+    const targets = targetsFor(changed, pick, all);
     for (const repo of repos) {
       const ctx = await this.context(repo);
       const project = ctx.project.id;
+      if (!changed.includes(repo) && repo.mr === undefined) {
+        plans.push({ ctx, skip: NO_CHANGES });
+        continue;
+      }
+      // majhi never pushes a protected repo for a merge request: it ships only alone, by the owner.
+      if (ctx.project.protected) {
+        plans.push({ ctx, skip: HELD });
+        continue;
+      }
       if (repo.worktree === undefined) {
         throw new UserError(`${project} has no worktree, so there is nothing to push.`);
       }
@@ -454,13 +483,13 @@ export class MrService {
           `No ${ctx.target.host} token is set for ${project}. Save one (secrets.save) and set it as mr_tokens.${ctx.target.host} on the org ${ctx.project.org}, or as token on the remote ${ctx.remote} of the project.`,
         );
       }
-      const base = into ?? repo.base;
+      const base = targets.get(repo.project) ?? repo.base;
       const ahead = await commitsAhead(repo.source, base, ctx.remote, repo.branch).catch(() => 0);
       const hasMr = repo.mr !== undefined;
       plans.push(
         ahead === 0 && !hasMr
           ? { ctx, skip: `${repo.branch} has no commits past ${base}, so there is nothing to merge.` }
-          : { ctx },
+          : { ctx, into: base },
       );
     }
     if (plans.every((p) => p.skip !== undefined)) {
@@ -476,14 +505,21 @@ export class MrService {
   async shipOptions(id: string): Promise<ShipOptions> {
     const task = this.deps.tasks.get(id);
     const local = await this.deps.tasks.reviewOptions(id);
+    // Ship sends only the repos with changes; the rest are listed as skipped. Protected ones are
+    // listed apart: each ships only alone.
+    const split = await splitChanged(task.repos);
+    const guarded = new Set((await this.deps.projects.infos()).filter((p) => p.protected).map((p) => p.id));
+    const changed = split.changed.filter((r) => !guarded.has(r.project));
+    const held = split.changed.filter((r) => guarded.has(r.project));
+    const { unchanged } = split;
+    const base = changed[0]?.base ?? local.base;
     const push = await this.option(async () => {
-      const ready = await this.pushReady(task);
+      const ready = await this.pushReady(task, changed);
       let ahead = 0;
       for (const { repo, target } of ready) {
         ahead += await commitsAhead(repo.source, repo.base, target.remote, repo.branch).catch(() => 1);
       }
-      if (ahead === 0)
-        throw new UserError(`Nothing to push: no commits ahead of ${local.base ?? "the base"}.`);
+      if (ahead === 0) throw new UserError(`Nothing to push: no commits ahead of ${base ?? "the base"}.`);
     });
     let host: MrHost | undefined;
     const mr = !push.ok
@@ -491,7 +527,7 @@ export class MrService {
       : task.status !== "review" && task.status !== "mr"
         ? { ok: false, why: `Open merge requests from review. ${id} is ${task.status}.` }
         : await this.option(async () => {
-            for (const repo of task.repos) {
+            for (const repo of changed) {
               const ctx = await this.context(repo);
               host ??= ctx.target.host;
               if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) {
@@ -505,7 +541,7 @@ export class MrService {
             }
           });
     if (host === undefined) {
-      const first = task.repos[0];
+      const first = changed[0] ?? task.repos[0];
       host =
         first === undefined
           ? undefined
@@ -515,8 +551,11 @@ export class MrService {
             );
     }
     return {
-      ...(local.base === undefined ? {} : { base: local.base }),
+      ...(base === undefined ? {} : { base }),
       ...(host === undefined ? {} : { host }),
+      changed: changed.map((r) => ({ project: r.project, base: r.base, branch: r.branch })),
+      unchanged: unchanged.map((r) => r.project),
+      protected: held.map((r) => ({ project: r.project, base: r.base, branch: r.branch })),
       merge: local.merge,
       mergePush: local.merge.ok ? push : local.merge,
       push,
@@ -542,7 +581,11 @@ export class MrService {
   async push(id: string, deleteAfter = false, by = "owner"): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(id);
     return this.exclusive(id, async () => {
-      const ready = await this.pushReady(task);
+      const plan = await this.deps.tasks.shipPlan(task, {});
+      const ready = await this.pushReady(
+        task,
+        plan.ship.map((s) => s.repo),
+      );
       if (deleteAfter) await this.deps.tasks.assertDeletable(ready.map((r) => r.repo));
       const results: ShipResult[] = [];
       const heads = new Map<string, string>();
@@ -580,10 +623,14 @@ export class MrService {
         if (r === undefined) continue;
         this.audit(id, "push", by, r.ok, r.ok ? `${target.remote}/${repo.branch}` : r.detail, r.project);
       }
+      const skipped = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
       if (deleteAfter && results.every((r) => r.ok)) {
-        return { results: await this.withDeleted(id, results, heads), task: this.publish(id) };
+        return {
+          results: [...(await this.withDeleted(id, results, heads)), ...skipped],
+          task: this.publish(id),
+        };
       }
-      return { results, task: this.publish(id) };
+      return { results: [...results, ...skipped], task: this.publish(id) };
     });
   }
 
@@ -601,12 +648,21 @@ export class MrService {
   }
 
   /**
-   * Merges the task into a local branch, then pushes that branch to the MR remote. Never forced:
-   * before anything merges, the remote's copy of the branch must already be in the local one.
+   * Merges the task into a local branch in each changed repo, then pushes those branches to the MR
+   * remote. All or nothing up to the push: every repo must merge cleanly, and every remote target
+   * must already be in its local copy (never forced), before anything merges. A push that fails
+   * after the merges leaves that repo merged and not pushed, said per repo, so Push again sends it.
    */
   async mergeAndPush(input: {
     id: string;
     into?: string | undefined;
+    /** The owner confirmed pushing local commits on a target that are not the task's. */
+    pushLocalCommits?: boolean | undefined;
+    /** The owner confirmed creating a target branch the remote does not have. */
+    createRemoteBranch?: boolean | undefined;
+    /** The owner typed this protected repo's name to ship it alone. */
+    confirmProtected?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
     by: string;
@@ -615,24 +671,55 @@ export class MrService {
   }): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(input.id);
     return this.exclusive(input.id, async () => {
-      const ready = (await this.pushReady(task)).filter(
-        (r) => input.project === undefined || r.repo.project === input.project,
+      const plan = await this.deps.tasks.shipPlan(task, input);
+      const ready = await this.pushReady(
+        task,
+        plan.ship.map((s) => s.repo),
       );
-      if (ready.length === 0) throw new UserError(`${task.id} has no repo ${input.project ?? ""}.`);
       if (input.deleteAfter === true) await this.deps.tasks.assertDeletable(ready.map((r) => r.repo));
+      const targets = planTargets(plan);
+      // Every remote target is read before anything merges. A push sends the whole local target,
+      // so commits on it that are not the task's, or a branch the remote does not have, go out
+      // only when the owner confirmed it.
+      const behind: { project: string; remote: string; into: string }[] = [];
+      const asks: string[] = [];
       for (const { repo, target } of ready) {
-        const into = input.into ?? repo.base;
-        if (await this.remoteHasMore(repo.source, target, into)) {
-          throw new UserError(
-            `${target.remote}/${into} has commits that your local ${into} in ${repo.project} does not have. majhi never force-pushes: bring ${into} up to date first, then ship again.`,
-            409,
+        const into = targets[repo.project] ?? repo.base;
+        const state = await this.remoteState(repo.source, target, into, {
+          branch: repo.branch,
+          subject: `Merge ${task.id}: `,
+        });
+        if (state.behind) behind.push({ project: repo.project, remote: target.remote, into });
+        if (state.missing && input.createRemoteBranch !== true) {
+          asks.push(
+            state.unknown
+              ? `majhi cannot read ${target.remote}/${into} for ${repo.project} from here, so it cannot tell what the push would send. ${CONFIRM_NEW}`
+              : `${target.remote} has no branch ${into} for ${repo.project}. ${CONFIRM_NEW}`,
+          );
+        }
+        if (state.extra.length > 0 && input.pushLocalCommits !== true) {
+          const n = state.extra.length;
+          asks.push(
+            `Your local ${into} in ${repo.project} has ${n} commit${n === 1 ? "" : "s"} that ${target.remote} does not have and that are not this task's: ${state.extra.slice(0, 5).join("; ")}${n > 5 ? "; and more" : ""}. ${CONFIRM_EXTRA}`,
           );
         }
       }
+      if (asks.length > 0 && behind.length === 0) throw new UserError(asks.join(" "), 409);
+      if (behind.length > 0) {
+        const lines = behind.map(
+          (b) => `${b.remote}/${b.into} has commits that your local ${b.into} in ${b.project} does not have.`,
+        );
+        const which = behind.length === 1 ? (behind[0]?.into ?? "it") : "them";
+        throw new UserError(
+          `${lines.join(" ")} majhi never force-pushes: bring ${which} up to date first, then ship again.`,
+          409,
+        );
+      }
       const merged = await this.deps.tasks.merge({
         id: input.id,
-        into: input.into,
+        targets,
         project: input.project,
+        confirmProtected: input.confirmProtected,
         done: false,
         by: input.by,
         settle: false,
@@ -646,7 +733,7 @@ export class MrService {
       }
       const results: ShipResult[] = [];
       for (const { repo, target } of ready) {
-        const into = input.into ?? repo.base;
+        const into = targets[repo.project] ?? repo.base;
         try {
           await pushBranch({
             worktree: repo.source,
@@ -667,6 +754,7 @@ export class MrService {
             project: repo.project,
             into,
             ok: false,
+            notPushed: true,
             detail: `Merged into ${into}, but ${pushFailure(err, target.remote, into)}`,
           });
         }
@@ -683,7 +771,16 @@ export class MrService {
           r.project,
         );
       }
-      if (results.every((r) => r.ok)) {
+      const stuck = results.filter((r) => r.notPushed === true);
+      if (stuck.length > 0) {
+        this.note(
+          input.id,
+          `Merged in your checkout but not pushed: ${stuck.map((r) => `${r.project} (${r.into})`).join(", ")}. Nothing was undone. Fix the cause, then Push again.`,
+          "error",
+        );
+      }
+      const skipped = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
+      if (results.every((r) => r.ok) && plan.held.length === 0) {
         const into = [...new Set(results.map((r) => r.into))].join(", ");
         const closes =
           input.done &&
@@ -703,10 +800,13 @@ export class MrService {
             by: input.by,
           });
         if (input.deleteAfter === true) {
-          return { results: await this.withDeleted(input.id, results, heads), task: this.publish(input.id) };
+          return {
+            results: [...(await this.withDeleted(input.id, results, heads)), ...skipped],
+            task: this.publish(input.id),
+          };
         }
       }
-      return { results, task: this.publish(input.id) };
+      return { results: [...results, ...skipped], task: this.publish(input.id) };
     });
   }
 
@@ -848,15 +948,23 @@ export class MrService {
     return { host, state: route.state === "org-missing" ? "none" : route.state, choices };
   }
 
-  /** Every repo of the task, ready to push its branch: a worktree, all committed, a remote to push to. */
-  private async pushReady(task: Task): Promise<{ repo: TaskRepo; target: PushTarget }[]> {
+  /**
+   * The repos a ship sends (its changed ones), each ready to push: a worktree, all committed, a
+   * remote to push to.
+   */
+  private async pushReady(
+    task: Task,
+    repos: readonly TaskRepo[],
+  ): Promise<{ repo: TaskRepo; target: PushTarget }[]> {
     const shipped = await this.deps.tasks.doneAndShipped(task);
     if (shipped !== undefined) throw new UserError(shipped, 409);
     if (task.repos.length === 0) throw new UserError("The task has no repo.", 409);
     if (this.deps.working(task.id))
       throw new UserError("An agent is working. Wait for its turn to end.", 409);
+    if (repos.length === 0)
+      throw new UserError("Nothing to ship: no repo has changes since the task started.", 409);
     const out: { repo: TaskRepo; target: PushTarget }[] = [];
-    for (const repo of task.repos) {
+    for (const repo of repos) {
       if (repo.worktree === undefined)
         throw new UserError(`${repo.project} has no worktree yet, so there is nothing to push.`, 409);
       const dirty = (await uncommitted(repo.worktree).catch(() => [])).filter((l) => !l.startsWith("??"));
@@ -868,20 +976,43 @@ export class MrService {
   }
 
   /**
-   * True when the remote's copy of `branch` has commits the local one lacks, so a push would need a
-   * force. Reads the remote first. A branch the remote does not have yet is fine.
+   * What pushing the local `branch` would do to the remote's: `behind` when the remote has commits
+   * the local one lacks (a push would need a force), `extra` the local commits the remote lacks
+   * (they would go out with the push), `missing` when the push would create the branch. Reads the
+   * remote first. The Mac's https route cannot be read from here: the last fetched copy stands in,
+   * and with none the result is `missing` and `unknown`. The task's own commits are not extra:
+   * those on its branch, and the merge or squash commits majhi made for it (`own.subject`).
    */
-  private async remoteHasMore(source: string, target: PushTarget, branch: string): Promise<boolean> {
-    if (!(await localBranchExists(source, branch))) return false;
-    // The container cannot read an https login, so it cannot look. git itself refuses a non-fast-forward push.
-    if (target.viaHost) return false;
-    if (!(await this.fetchTracking(source, target, branch))) return false;
-    return !(await gitOk(source, [
-      "merge-base",
-      "--is-ancestor",
-      `refs/remotes/${target.remote}/${branch}`,
-      `refs/heads/${branch}`,
-    ]));
+  private async remoteState(
+    source: string,
+    target: PushTarget,
+    branch: string,
+    own: { branch: string; subject: string },
+  ): Promise<{ behind: boolean; extra: string[]; missing: boolean; unknown: boolean }> {
+    const none = { behind: false, extra: [], missing: false, unknown: false };
+    if (!(await localBranchExists(source, branch))) return none;
+    const tracking = `refs/remotes/${target.remote}/${branch}`;
+    if (target.viaHost) {
+      if (!(await gitOk(source, ["show-ref", "--verify", "--quiet", tracking]))) {
+        return { ...none, missing: true, unknown: true };
+      }
+    } else if (!(await this.fetchTracking(source, target, branch))) {
+      return { ...none, missing: true };
+    }
+    const behind = !(await gitOk(source, ["merge-base", "--is-ancestor", tracking, `refs/heads/${branch}`]));
+    const extra = (
+      await git(source, [
+        "log",
+        "--format=%h %s",
+        `${tracking}..refs/heads/${branch}`,
+        "--not",
+        `refs/heads/${own.branch}`,
+      ])
+    )
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "" && !l.slice(l.indexOf(" ") + 1).startsWith(own.subject));
+    return { behind, extra, missing: false, unknown: false };
   }
 
   /** Fetches the remote's `branch` into its tracking ref. False when the remote has no such branch. */
@@ -914,16 +1045,16 @@ export class MrService {
   async updateTarget(input: {
     id: string;
     into?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     by: string;
   }): Promise<{ results: ShipResult[] }> {
     const task = this.deps.tasks.get(input.id);
     return this.exclusive(input.id, async () => {
-      const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
-      if (repos.length === 0) throw new UserError(`${task.id} has no repo ${input.project ?? ""}.`, 409);
+      // Only the targets a ship would send to: the changed repos'.
+      const plan = await this.deps.tasks.shipPlan(task, input);
       const results: ShipResult[] = [];
-      for (const repo of repos) {
-        const into = input.into ?? repo.base;
+      for (const { repo, into } of plan.ship) {
         const target = await this.pushTarget(repo);
         let outcome: FastForwardOutcome;
         if (target.viaHost) {
@@ -943,7 +1074,14 @@ export class MrService {
         }
         const detail = outcome.ok ? outcome.detail : outcome.reason;
         results.push({ project: repo.project, into, ok: outcome.ok, detail });
-        this.audit(input.id, "update", input.by, outcome.ok, `${target.remote}/${into}: ${detail}`, repo.project);
+        this.audit(
+          input.id,
+          "update",
+          input.by,
+          outcome.ok,
+          `${target.remote}/${into}: ${detail}`,
+          repo.project,
+        );
       }
       return { results };
     });
@@ -1050,8 +1188,18 @@ export class MrService {
         }
         const repo = fresh.repos.find((r) => r.project === decision.project);
         if (repo?.mr === undefined) break;
+        const ctx0 = await this.context(repo).catch(() => undefined);
+        if (ctx0?.project.protected === true) {
+          // No merge policy merges a protected repo: the owner merges it on the host.
+          stoppedAt = {
+            project: repo.project,
+            reason: `${repo.project} is protected, so majhi never merges it. Merge it on the host yourself, then choose I merged it.`,
+          };
+          this.problem(id, `stop:${repo.project}`, `Merging stopped at ${repo.project}: ${stoppedAt.reason}`);
+          break;
+        }
         try {
-          const ctx = await this.context(repo);
+          const ctx = ctx0 ?? (await this.context(repo));
           const target = await this.targetOf(ctx);
           await ctx.client.merge(target, repo.mr.number);
           const status = await ctx.client.status(target, repo.mr.number);
@@ -1290,6 +1438,8 @@ interface Plan {
   ctx: RepoContext;
   /** Why this repo sends nothing. */
   skip?: string;
+  /** The branch its merge request goes into. */
+  into?: string;
 }
 
 /** Where a repo's branches are pushed. `pushUrl` is the SSH alias's address, when it differs. */
@@ -1300,7 +1450,20 @@ interface PushTarget {
   viaHost: boolean;
 }
 
-type ShipResult = { project: string; into: string; ok: boolean; detail: string };
+/** The ends of the refusals the owner can confirm past; the Ship panel looks for them. */
+export const CONFIRM_NEW = "Pushing would create it there. Confirm to create it.";
+export const CONFIRM_EXTRA =
+  "Pushing would send them with the task. Push them yourself first, or confirm to send them too.";
+
+type ShipResult = {
+  project: string;
+  into: string;
+  ok: boolean;
+  detail: string;
+  conflicts?: string[] | undefined;
+  skipped?: boolean | undefined;
+  notPushed?: boolean | undefined;
+};
 
 const HOST_LABEL: Record<MrHost, string> = { github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" };
 

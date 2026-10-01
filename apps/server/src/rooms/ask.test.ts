@@ -37,7 +37,11 @@ const findAskCard = async (id: string) =>
 describe("room.answerAsk routing", () => {
   it("answering a single-question card marks it answered with 'Owner chose' format", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -69,7 +73,11 @@ describe("room.answerAsk routing", () => {
 
   it("answering a multi-question card marks all answers", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -100,7 +108,11 @@ describe("room.answerAsk routing", () => {
 
   it("rejects answering twice on the same card", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -131,7 +143,11 @@ describe("room.answerAsk routing", () => {
 
   it("rejects answers not in the options when freeText is false", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -157,7 +173,11 @@ describe("room.answerAsk routing", () => {
 
   it("accepts free-text answers when freeText is true", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -182,7 +202,11 @@ describe("room.answerAsk routing", () => {
 
   it("rejects answers for non-existent items", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const answer = await w.h.cmd("room.answerAsk", {
@@ -196,7 +220,11 @@ describe("room.answerAsk routing", () => {
 
   it("rejects missing answers for required questions", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
 
     const card = await postAskCard(taskId, [
@@ -225,7 +253,11 @@ describe("room.answerAsk routing", () => {
 
   it("routes answered ask to the non-lead agent who called it", async () => {
     w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", { text: "ACM api", start: true });
+    const res = await w.h.cmd("tasks.create", {
+      text: "ACM api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     const taskId = res.body.id;
     const task = w.h.majhi.services.store.tasks.get(taskId);
     if (!task) throw new Error("Task not found");

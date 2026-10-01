@@ -52,10 +52,14 @@ describe("lead orchestration: parallel planning", () => {
   it("drops a waits-for link between tasks that change different files, and says so in the rooms", async () => {
     w = await taskWorld();
     hold();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: false });
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     const res = await split([
-      { text: "add docs/intro.md to api" },
-      { text: "add apps/web/src/page.ts to api", dependsOn: [0] },
+      { text: "add docs/intro.md to api", repos: [{ project: "acme-api" }] },
+      { text: "add apps/web/src/page.ts to api", dependsOn: [0], repos: [{ project: "acme-api" }] },
     ]);
     expect(res.status).toBe(200);
     await until(async () => (await status("ACM-3")) === "running", "ACM-3 started");
@@ -73,8 +77,15 @@ describe("lead orchestration: parallel planning", () => {
   it("keeps a link when the paths are not known", async () => {
     w = await taskWorld();
     hold();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: false });
-    await split([{ text: "add the model to api" }, { text: "add the view to api", dependsOn: [0] }]);
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
+    await split([
+      { text: "add the model to api", repos: [{ project: "acme-api" }] },
+      { text: "add the view to api", dependsOn: [0], repos: [{ project: "acme-api" }] },
+    ]);
     await until(async () => (await status("ACM-2")) === "running", "ACM-2 started");
     expect(await status("ACM-3")).toBe("ready");
     const second = (await w.h.cmd("tasks.get", { id: "ACM-3" })).body;
@@ -84,10 +95,14 @@ describe("lead orchestration: parallel planning", () => {
   it("makes a task that overlaps a running one wait, and starts it when that one is ready", async () => {
     w = await taskWorld();
     const release = hold();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: false });
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     await split([
-      { text: "change apps/server/src/runs/manager.ts in api" },
-      { text: "also change apps/server/src/runs/manager.ts in api" },
+      { text: "change apps/server/src/runs/manager.ts in api", repos: [{ project: "acme-api" }] },
+      { text: "also change apps/server/src/runs/manager.ts in api", repos: [{ project: "acme-api" }] },
     ]);
     await until(async () => (await status("ACM-2")) === "running", "ACM-2 started");
     await until(
@@ -104,14 +119,22 @@ describe("lead orchestration: parallel planning", () => {
   it("asks the owner in one card when the wait would be long, and starts on the answer", async () => {
     w = await taskWorld();
     hold();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: false });
-    await split([{ text: "change apps/server/src/runs/manager.ts in api" }]);
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
+    await split([
+      { text: "change apps/server/src/runs/manager.ts in api", repos: [{ project: "acme-api" }] },
+    ]);
     await until(async () => (await status("ACM-2")) === "running", "ACM-2 started");
 
     // Two hours later, a task that overlaps it.
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 2 * 3_600_000);
-    await split([{ text: "also change apps/server/src/runs/manager.ts in api" }]);
+    await split([
+      { text: "also change apps/server/src/runs/manager.ts in api", repos: [{ project: "acme-api" }] },
+    ]);
     await until(async () => (await roomItems("ACM-1")).some((i) => i.type === "choice"), "choice card");
     const card = (await roomItems("ACM-1")).find((i) => i.type === "choice");
     if (card?.type !== "choice") throw new Error("no card");
@@ -136,15 +159,29 @@ describe("lead orchestration: parallel planning", () => {
   it("tasks.plan answers what can start now without changing anything", async () => {
     w = await taskWorld();
     hold();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: false });
-    await w.h.cmd("tasks.create", { text: "change apps/server/src/runs/manager.ts in api", start: true });
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
+    await w.h.cmd("tasks.create", {
+      text: "change apps/server/src/runs/manager.ts in api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     await until(async () => (await status("ACM-2")) === "running", "ACM-2 started");
     await w.h.cmd("tasks.create", {
       text: "change apps/server/src/runs/manager.ts again in api",
+      repos: [{ project: "acme-api" }],
       start: false,
       parent: "ACM-1",
     });
-    await w.h.cmd("tasks.create", { text: "change docs/intro.md in api", start: false, parent: "ACM-1" });
+    await w.h.cmd("tasks.create", {
+      text: "change docs/intro.md in api",
+      repos: [{ project: "acme-api" }],
+      start: false,
+      parent: "ACM-1",
+    });
 
     const res = await w.h.cmd("tasks.plan", { id: "ACM-1" });
     expect(res.status).toBe(200);
@@ -159,9 +196,13 @@ describe("lead orchestration: parallel planning", () => {
 describe("lead orchestration: the parent", () => {
   it("tells the parent's lead when a child is ready, and closes the parent with a report", async () => {
     w = await taskWorld();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: true });
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     await until(async () => (await status("ACM-1")) === "running", "parent running");
-    await split([{ text: "add docs/intro.md to api" }]);
+    await split([{ text: "add docs/intro.md to api", repos: [{ project: "acme-api" }] }]);
 
     // The parent's lead hears about the child.
     const told = () =>
@@ -182,9 +223,13 @@ describe("lead orchestration: the parent", () => {
 
   it("keeps a parent with commits not shipped open, in review for the owner", async () => {
     w = await taskWorld();
-    await w.h.cmd("tasks.create", { text: "drive the api work", start: true });
+    await w.h.cmd("tasks.create", {
+      text: "drive the api work",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     await until(async () => (await status("ACM-1")) === "running", "parent running");
-    await split([{ text: "add docs/intro.md to api" }]);
+    await split([{ text: "add docs/intro.md to api", repos: [{ project: "acme-api" }] }]);
     await until(async () => (await status("ACM-2")) === "review", "child in review");
     await w.h.majhi.services.runs.idle();
     // The lead committed work of its own on the parent's branch.

@@ -12,10 +12,11 @@ import { useRoom } from "@/features/room/use-room";
 import { setPendingPermission } from "@/lib/attention";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
-import { useTask } from "@/lib/task-queries";
+import { useReport, useTask } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { ContextTab } from "./context-tab";
 import { briefBody, firstPendingPermission } from "./model";
+import { ReportTab } from "./report-tab";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
 import { TAB_PANEL_ID, type TaskTab, TaskTabs, tabId } from "./task-tabs";
@@ -53,6 +54,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const showChanges = useCallback(() => setTab("changes"), []);
   const facts = useFacts();
   const record = useTaskRecord(taskId);
+  const report = useReport(taskId);
 
   // A search match lives in the room, whichever tab was open.
   useEffect(() => {
@@ -117,7 +119,8 @@ function TaskView({ taskId }: { taskId: string }) {
   const taskFacts = (facts.data ?? []).filter((f) => f.task === data.id);
   const memoryTab = hasMemoryTab(data, taskFacts, record.data);
   // A tab that is gone (a task with no facts left) falls back to the room.
-  const shown = tab === "memory" && !memoryTab ? "room" : tab;
+  const reportTab = data.kind === "ops" || (report.data ?? null) !== null;
+  const shown = (tab === "memory" && !memoryTab) || (tab === "report" && !reportTab) ? "room" : tab;
   const brief = briefBody(data.brief, data.title);
   const yourTurn =
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
@@ -125,6 +128,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const tabs: TaskTab[] = [
     "room",
     ...(data.repos.length > 0 ? (["changes"] as const) : []),
+    ...(reportTab ? (["report"] as const) : []),
     "context",
     ...(memoryTab ? (["memory"] as const) : []),
     "terminal",
@@ -160,6 +164,7 @@ function TaskView({ taskId }: { taskId: string }) {
           {shown === "changes" && data.repos.length > 0 && (
             <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
           )}
+          {shown === "report" && <ReportTab task={data} />}
           {shown === "context" && <ContextTab task={data} agents={room.state.agents} />}
           {shown === "memory" && <TaskMemory task={data} />}
           {shown === "terminal" && <TaskTerminal task={data} />}

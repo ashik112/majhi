@@ -10,7 +10,9 @@ describe("orgs.rename", () => {
   it("updates accounts, projects, agents and tasks in one config commit, and keeps task keys", async () => {
     w = await taskWorld();
     const { h } = w;
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body;
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body;
     expect(task.id).toBe("ACM-1");
     const before = (await h.log()).length;
 
@@ -38,6 +40,9 @@ describe("orgs.rename", () => {
     const got = (await h.cmd("tasks.get", { id: "ACM-1" })).body;
     expect(got.org).toBe("acme-corp");
     // New tasks still use the org's key.
-    expect((await h.cmd("tasks.create", { text: "fix api again", start: false })).body.id).toBe("ACM-2");
+    expect(
+      (await h.cmd("tasks.create", { text: "fix api again", repos: [{ project: "acme-api" }], start: false }))
+        .body.id,
+    ).toBe("ACM-2");
   });
 });

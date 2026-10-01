@@ -56,7 +56,9 @@ async function conflicted(): Promise<void> {
       return "end_turn";
     };
   };
-  expect((await cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true })).status,
+  ).toBe(200);
   await w.h.majhi.services.runs.idle();
   await until(async () => (await get()).status === "review", "review");
   await writeFile(join(w.repo("api"), "shared.txt"), "main side\n");
@@ -135,6 +137,28 @@ describe("resolve and ship", () => {
       "Did not merge into main: Still conflicts in shared.txt.",
     );
     expect(await tip(world().repo("api"), "main")).toBe(main);
+  });
+
+  it("a target that moved after the owner asked is not shipped onto", async () => {
+    await conflicted();
+    next = async () => {
+      await resolve();
+      // Someone commits to main while the lead works.
+      await writeFile(join(world().repo("api"), "later.txt"), "later\n");
+      await git(world().repo("api"), "add", "later.txt");
+      await git(world().repo("api"), ...who, "commit", "-qm", "later");
+    };
+    expect((await cmd("tasks.resolveShip", { id: "ACM-1", action: "merge", into: "main" })).status).toBe(200);
+    await until(
+      async () =>
+        (await items()).some((i) => i.type === "review" && i.state === "pending" && i.why !== undefined),
+      "the review card with the reason",
+    );
+    const card = (await items()).find((i) => i.type === "review" && i.state === "pending");
+    expect(card?.type === "review" && card.why).toBe(
+      "Did not merge into main: main in acme-api moved since you asked. Look at it and ship again.",
+    );
+    expect(await git(world().repo("api"), "show", "main:shared.txt")).toBe("main side");
   });
 
   it("cancel: the lead finishes, and nothing ships", async () => {

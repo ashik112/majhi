@@ -121,7 +121,9 @@ async function world(options: { housekeeper?: boolean } = {}) {
     };
   };
   const newTask = async (text = "fix the health check in api", said = true) => {
-    const task = (await must("tasks.create", { text, start: false })) as { id: string };
+    const task = (await must("tasks.create", { text, repos: [{ project: "acme-api" }], start: false })) as {
+      id: string;
+    };
     if (said) {
       h.majhi.services.room.post(task.id, `say-${task.id}`, {
         type: "agent",

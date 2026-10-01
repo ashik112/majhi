@@ -16,7 +16,9 @@ describe("an agent saying the owner asked", () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const { admin } = h.majhi.services;
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const caller = { task: task.id, agent: "acme-builder" };
     const cards = async () =>
       (await w.items(task.id)).filter(
@@ -41,8 +43,11 @@ describe("an agent saying the owner asked", () => {
       ["majhi_projects_update", { id: "acme-api", org: "acme", aliases: ["api"] }],
       ["majhi_projects_remove", { id: "acme-api" }],
       ["majhi_workspaces_set", { workspaces: ["/Users/owner"] }],
-      ["majhi_tasks_create", { text: "fix the login bug in api", start: true }],
-      ["majhi_tasks_split", { task: task.id, children: [{ text: "api: add a test" }] }],
+      ["majhi_tasks_create", { text: "fix the login bug", repos: [{ project: "acme-api" }], start: true }],
+      [
+        "majhi_tasks_split",
+        { task: task.id, children: [{ text: "add a test", repos: [{ project: "acme-api" }] }] },
+      ],
       ["majhi_tasks_start", { id: task.id }],
     ] as const;
     for (const [tool, input] of waiting) {
@@ -59,7 +64,9 @@ describe("an agent saying the owner asked", () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     expect((await h.cmd("policy.set", { change: "auto" })).status).toBe(200);
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const result = await h.majhi.services.admin.call(
       { task: task.id, agent: "acme-builder" },
       "majhi_orgs_update",
@@ -83,7 +90,9 @@ describe("what an agent can never ask for", () => {
     expect(Object.keys(agentInput("tasks.merge").shape)).not.toContain("push");
     expect(Object.keys(agentInput("tasks.merge").shape)).toContain("into");
 
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const caller = { task: task.id, agent: "acme-builder" };
     const pushed = await h.majhi.services.admin.call(caller, "majhi_tasks_merge", {
       id: task.id,
@@ -102,7 +111,9 @@ describe("what an agent can never ask for", () => {
     const { h } = w;
     const remove = adminTools().find((t) => t.command === "tasks.remove");
     expect(Object.keys(remove?.inputSchema.properties ?? {})).not.toContain("force");
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const forced = await h.majhi.services.admin.call(
       { task: task.id, agent: "acme-builder" },
       "majhi_tasks_remove",

@@ -62,6 +62,8 @@ async function openNewTask(page: Page, title: string) {
 /** Adds a task from the dialog and starts it; resolves with the new task's id once its room is open. */
 async function startTask(page: Page, text: string): Promise<string> {
   await openNewTask(page, text);
+  // Naming a project only offers it: the click adds it.
+  await newTaskDialog(page).getByRole("button", { name: "Add api", exact: true }).click();
   await newTaskDialog(page).getByRole("button", { name: "Add and start" }).click();
   await expect(page).toHaveURL(/\/t\/[A-Z]+-\d+$/);
   await expect(room(page)).toBeVisible();

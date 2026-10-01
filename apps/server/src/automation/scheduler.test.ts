@@ -324,10 +324,10 @@ describe("org boundaries", () => {
     }
   });
 
-  it("refuses task text that names a second project", async () => {
-    await expect(create({ action: { ...startTask, text: "Compare with globex-web." } })).rejects.toThrow(
-      /Name one project only/,
-    );
+  it("takes task text that names another project: only the schedule's project joins the task", async () => {
+    await expect(
+      create({ action: { ...startTask, text: "Compare with globex-web." } }),
+    ).resolves.toBeDefined();
   });
 });
 

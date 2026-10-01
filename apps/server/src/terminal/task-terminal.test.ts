@@ -40,7 +40,11 @@ describe("one shell per task", () => {
   async function setup() {
     w = await taskWorld();
     const { h } = w;
-    const created = await h.cmd("tasks.create", { text: "fix api", start: false });
+    const created = await h.cmd("tasks.create", {
+      text: "fix api",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     expect(created.status).toBe(200);
     const services = h.majhi.services;
     return { h, services, task: created.body as Task };

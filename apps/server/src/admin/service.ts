@@ -6,7 +6,6 @@ import {
   commands,
   IdSchema,
   isDestructiveCommand,
-  parseTaskText,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -70,7 +69,13 @@ export class AdminService {
   // Agent calls
 
   /** One MCP tool call. Never throws: problems come back as an error result the agent can read. */
-  async call(caller: AdminCaller, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+  async call(
+    caller: AdminCaller,
+    tool: string,
+    args: Record<string, unknown>,
+    /** `confirm`: always wait for the owner's click, whatever the policy, a saved rule or `ownerAsked` say. */
+    options: { confirm?: boolean } = {},
+  ): Promise<ToolResult> {
     try {
       if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
       const spec = this.tools.get(tool);
@@ -81,6 +86,7 @@ export class AdminService {
       return await this.callCommand(caller, spec.command, input, {
         ownerAsked: ownerAsked === true,
         reason: typeof reason === "string" ? reason.trim().slice(0, 500) : "",
+        confirm: options.confirm === true,
       });
     } catch (err) {
       return error(errorMessage(err));
@@ -135,7 +141,7 @@ export class AdminService {
     caller: AdminCaller,
     command: CommandName,
     input: Record<string, unknown>,
-    ask: { ownerAsked: boolean; reason: string },
+    ask: { ownerAsked: boolean; reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const def = commands[command];
     const checked = def.input.safeParse(input);
@@ -146,14 +152,14 @@ export class AdminService {
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const { policy } = await this.deps.config.settings();
-    const mode = modeFor(policy, command, def.risk);
+    const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
     // An agent's word that the owner asked counts only for low-risk changes.
-    const ownerAsked = ask.ownerAsked && !(await this.alwaysAsks(command, checked.data));
+    const ownerAsked = ask.ownerAsked && !this.alwaysAsks(command, checked.data);
     // A saved rule turns a card that would wait into a run. It is looked up only then.
     const decision = decideMode(mode, ownerAsked);
     const rule =
-      decision === "run"
+      decision === "run" || ask.confirm === true
         ? undefined
         : matchRule(policy, {
             agent: caller.agent,
@@ -198,10 +204,10 @@ export class AdminService {
 
   /**
    * True for a call whose card shows even when the agent says the owner asked for it (`when-asked`):
-   * see `ALWAYS_ASK`. A task attaches repos when its text names a project; for `tasks.start`, when
-   * the task has repos. Only the owner's own settings (an `auto` mode, a saved rule) skip the card.
+   * see `ALWAYS_ASK`, and a task that attaches repos (`repos` on create or a split's child; for
+   * `tasks.start`, a task that has repos or read mounts). Only the owner's own settings (an `auto` mode, a saved rule) skip the card.
    */
-  private async alwaysAsks(command: CommandName, input: unknown): Promise<boolean> {
+  private alwaysAsks(command: CommandName, input: unknown): boolean {
     if (ALWAYS_ASK.has(command)) return true;
     const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
     if (command === "orgs.update") return SENSITIVE_ORG_FIELDS.some((f) => fields[f] !== undefined);
@@ -209,22 +215,13 @@ export class AdminService {
       const task = typeof fields.id === "string" ? this.deps.store.tasks.get(fields.id) : undefined;
       return task === undefined || task.repos.length > 0 || (task.readMounts ?? []).length > 0;
     }
-    if (command !== "tasks.create" && command !== "tasks.split") return false;
-    const texts =
-      command === "tasks.create"
-        ? [[fields.title, fields.text].filter((t) => typeof t === "string").join("\n\n")]
-        : (Array.isArray(fields.children) ? fields.children : []).map((c: unknown) =>
-            typeof c === "object" && c !== null && typeof (c as { text?: unknown }).text === "string"
-              ? (c as { text: string }).text
-              : "",
-          );
-    const sections = await this.deps.config.sections();
-    const projects = Object.entries(sections.projects).map(([id, p]) => ({
-      id,
-      org: p.org,
-      aliases: p.aliases ?? [],
-    }));
-    return texts.some((text) => parseTaskText(text, { projects, agents: [] }).repos.length > 0);
+    const listsRepos = (value: unknown) =>
+      typeof value === "object" && value !== null && Array.isArray((value as { repos?: unknown }).repos)
+        ? (value as { repos: unknown[] }).repos.length > 0
+        : false;
+    if (command === "tasks.create") return listsRepos(fields);
+    if (command === "tasks.split") return Array.isArray(fields.children) && fields.children.some(listsRepos);
+    return false;
   }
 
   private requestSecret(caller: AdminCaller, args: Record<string, unknown>): ToolResult {

@@ -37,6 +37,7 @@ export function createActionHost({ store, tasks, processes, projects, agents }: 
     startTask: async (input) => {
       const task = await tasks.create({
         text: input.text,
+        repos: [{ project: input.project }],
         ...(input.agent === undefined ? {} : { agent: input.agent }),
         ...(input.team === undefined ? {} : { team: input.team }),
         attachments: [],

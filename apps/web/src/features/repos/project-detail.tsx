@@ -6,7 +6,7 @@ import {
   type ProjectView,
   type Repo,
 } from "@majhi/shared";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { OpenInEditor } from "@/components/open-in-editor";
@@ -20,6 +20,7 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Select } from "@/components/ui/select";
 import { Dot } from "@/components/ui/status-dot";
+import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
 import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -144,10 +145,63 @@ export function ProjectDetail({
           </span>
         </p>
       )}
+      <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
       <RemotesSection project={project} repo={repo} />
       <LinksSection project={project} projects={projects} />
     </DetailPane>
+  );
+}
+
+/**
+ * Protected (infra): majhi never adds it to a task by itself, agents get it read-only, and it ships
+ * only alone when the owner types its name. A project that looks like infra is offered it.
+ */
+function ProtectionSection({ project }: { project: ProjectView }) {
+  const update = useUpdateProject();
+  const [error, setError] = useState<string>();
+  const set = (on: boolean) => {
+    setError(undefined);
+    update.mutate(
+      {
+        id: project.id,
+        org: project.org,
+        aliases: [...project.aliases],
+        ...(project.base === undefined ? {} : { base: project.base }),
+        protected: on,
+      },
+      { onError: (e: ApiRequestError) => setError(e.message) },
+    );
+  };
+  return (
+    <section aria-label="Protection" className="mt-4 flex flex-col gap-1.5">
+      {project.looksLikeInfra === true && !project.protected && (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-line bg-amber-wash px-3 py-2 text-sm text-fg-soft">
+          <Lock aria-hidden="true" className="size-3.5 shrink-0 text-amber" />
+          <span className="min-w-0 flex-1 text-pretty">
+            This looks like infra. Protect it so majhi never merges or pushes it without you.
+          </span>
+          <Button size="sm" variant="secondary" disabled={update.isPending} onClick={() => set(true)}>
+            Protect it
+          </Button>
+        </p>
+      )}
+      <Switch
+        label="Protected (infra): majhi never merges or pushes it without you"
+        checked={project.protected}
+        disabled={update.isPending}
+        onChange={set}
+      />
+      <p className="text-xs text-fg-faint text-pretty">
+        Only you can add it to a task. Agents get it read-only unless you allow writes for a task. It ships
+        alone, after you type its name.
+      </p>
+      {error && (
+        <p role="alert" className="text-xs text-red text-pretty">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

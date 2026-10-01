@@ -41,6 +41,8 @@ export interface GateContext {
   serena: boolean;
   /** The task has repos with a worktree to change. */
   hasWorktrees: boolean;
+  /** The task is an `ops` task: its agents can make fix tasks (5.15) without being leads. */
+  opsTask?: boolean;
 }
 
 type GateAgent = Pick<AgentFrontmatter, "id" | "role" | "scope" | "tools">;
@@ -65,7 +67,7 @@ export function turnedOff(tools: readonly string[]): Set<string> {
  * - `majhi-admin`: the boss, and a root agent that lists it.
  * - `majhi-decide`, `majhi-processes`, `majhi-memory`: every session.
  * - `majhi-room`: a team of two or more, a lone lead of a lead-mode task, or listed.
- * - `majhi-tasks`: leads and root agents (not the boss), or listed.
+ * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the boss), or listed.
  * - `majhi-containers`: every session, when majhi can run containers.
  * - `serena`: builders of a task with worktrees, when it can start; or listed, with worktrees.
  */
@@ -77,7 +79,7 @@ export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
     [ADMIN_TOOL_ID]: getsAdminTools(agent, ctx.boss),
     [DECIDE_SERVER_NAME]: true,
     [ROOM_SERVER_NAME]: ctx.teamSize > 1 || ctx.soloLead || listed(ROOM_SERVER_NAME),
-    [TASKS_SERVER_NAME]: agent.id !== ctx.boss && (lead || listed(TASKS_SERVER_NAME)),
+    [TASKS_SERVER_NAME]: agent.id !== ctx.boss && (lead || ctx.opsTask === true || listed(TASKS_SERVER_NAME)),
     [PROCESSES_SERVER_NAME]: true,
     [MEMORY_SERVER_NAME]: true,
     [CONTAINERS_SERVER_NAME]: ctx.containersOn,

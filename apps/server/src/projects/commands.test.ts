@@ -20,6 +20,7 @@ describe("projects", () => {
         exists: true,
         remotes: {},
         links: [],
+        protected: false,
       },
     ]);
     expect(await readFile(join(w.h.env.majhiHome, "majhi.yaml"), "utf8")).toContain("acme-api:");

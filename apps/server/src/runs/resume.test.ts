@@ -67,7 +67,10 @@ async function startWorking(options: WorldOptions = {}, file = "a.txt") {
   w.h.runtime.onSession = (session) => {
     if (w.h.runtime.sessions.length === 0) session.script = turn.script;
   };
-  expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+      .status,
+  ).toBe(200);
   await until(() => existsSync(join(w.taskDir("ACM-1"), "acme-api", file)), "the first turn");
   return turn;
 }
@@ -222,7 +225,10 @@ describe("offline", () => {
       await gate;
       return start(s);
     };
-    expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+    expect(
+      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+        .status,
+    ).toBe(200);
     await until(
       () => w.h.majhi.services.room.getLive("ACM-1", "acme-builder")?.status === "starting",
       "the start",
@@ -339,7 +345,9 @@ describe("limits", () => {
         });
     };
     for (const text of ["one on api", "two on api @acme-two", "three on api @acme-three"]) {
-      expect((await w.h.cmd("tasks.create", { text, start: true })).status).toBe(200);
+      expect(
+        (await w.h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: true })).status,
+      ).toBe(200);
     }
     const live = (task: string, agent: string) => w.h.majhi.services.room.getLive(task, agent);
     await until(() => live("ACM-3", "acme-three")?.status === "queued", "the queue");

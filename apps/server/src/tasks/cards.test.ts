@@ -29,7 +29,10 @@ function agentSays(text: string, write = false): void {
 
 async function reviewTask(text = "Done.", write = false): Promise<void> {
   agentSays(text, write);
-  expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+      .status,
+  ).toBe(200);
   await idle();
   expect(await status()).toBe("review");
 }
@@ -119,7 +122,14 @@ describe("the review card", () => {
     w = await taskWorld();
     await reviewTask();
     expect(
-      (await w.h.cmd("tasks.create", { text: "child on api", start: false, parent: "ACM-1" })).status,
+      (
+        await w.h.cmd("tasks.create", {
+          text: "child on api",
+          repos: [{ project: "acme-api" }],
+          start: false,
+          parent: "ACM-1",
+        })
+      ).status,
     ).toBe(200);
     const options = await w.h.cmd("tasks.shipOptions", { id: "ACM-1" });
     expect(options.body.done).toEqual({

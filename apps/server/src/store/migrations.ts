@@ -463,6 +463,12 @@ CREATE UNIQUE INDEX usage_events_memory ON usage_events (task) WHERE kind = 'mem
 ALTER TABLE runs ADD COLUMN tools TEXT;
 `,
   },
+  {
+    // A protected project the owner let agents write in, for one task. Off: agents get it read-only.
+    id: 109,
+    name: "task repo writes",
+    sql: "ALTER TABLE task_repos ADD COLUMN writes INTEGER NOT NULL DEFAULT 0;",
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

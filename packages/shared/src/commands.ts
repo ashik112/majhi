@@ -188,6 +188,31 @@ const LocalBranchSchema = z
   .refine((b) => !b.includes(".."), "Not a branch name")
   .max(200);
 
+/**
+ * The branch each repo ships into, by project. Repos not named here ship into `into` when given and
+ * the repos share one base (or their base is `into`), else into their own base.
+ */
+const ShipTargetsSchema = z.record(IdSchema, LocalBranchSchema);
+
+/**
+ * The repos a new task changes, picked on purpose: each gets a branch and a worktree. Project
+ * names in the task text attach nothing; agents can read every registered project without it.
+ */
+const TaskReposSchema = z
+  .array(
+    z.object({
+      project: IdSchema,
+      /** The branch it starts from. Default: the project's base. */
+      base: LocalBranchSchema.optional(),
+      /** Owner only, for a protected project: let agents write in it for this task. */
+      writes: z.boolean().optional(),
+    }),
+  )
+  .max(20)
+  .describe(
+    "The projects this task will change, each with an optional base branch. Only these get a branch and a worktree. Naming a project in the text attaches nothing, and every registered project is readable without being listed here: list only the repos the task must change",
+  );
+
 /** What a local merge or a push did in one repo of a task. */
 const MergeResultSchema = z.object({
   project: IdSchema,
@@ -196,6 +221,10 @@ const MergeResultSchema = z.object({
   detail: z.string(),
   /** The files that conflicted, when a merge stopped on conflicts. Nothing was merged. */
   conflicts: z.array(z.string()).optional(),
+  /** The repo has no change since the task started, so nothing was done in it. */
+  skipped: z.boolean().optional(),
+  /** Merged into the local target, but the push failed: Push again sends it. */
+  notPushed: z.boolean().optional(),
 });
 
 /** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
@@ -229,8 +258,14 @@ export const UnshippedChoiceSchema = z.literal("keep");
 
 /** `tasks.shipOptions`: what Ship and the review card may do now. */
 export const ShipOptionsSchema = z.object({
-  /** The first repo's base: the default target. */
+  /** The first changed repo's base: the default target. */
   base: z.string().optional(),
+  /** The repos with changes since the task started, each with its base: the ones Ship sends. */
+  changed: z.array(z.object({ project: IdSchema, base: z.string(), branch: z.string() })).optional(),
+  /** The repos with no change since the task started: every Ship action skips them. */
+  unchanged: z.array(IdSchema).optional(),
+  /** Changed repos of protected projects: never in a ship with others, each ships alone when the owner types its name. */
+  protected: z.array(z.object({ project: IdSchema, base: z.string(), branch: z.string() })).optional(),
   /** The first repo's MR host, so the UI can say PR or MR. */
   host: MrHostSchema.optional(),
   /** Merge into a local branch. Nothing is pushed. */
@@ -680,10 +715,10 @@ export const commands = {
   "projects.update": {
     risk: "change",
     summary:
-      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects and agent attribution in commits. null removes remotes, links or the attribution override",
+      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects, agent attribution in commits and whether it is protected (only the owner turns protection off). null removes remotes, links or the attribution override",
     input: z
       .object({ id: IdSchema })
-      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape)
+      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true, protected: true }).shape)
       .extend({
         remotes: ProjectConfigSchema.shape.remotes.nullable().optional(),
         links: ProjectConfigSchema.shape.links.nullable().optional(),
@@ -714,15 +749,18 @@ export const commands = {
   },
   "tasks.create": {
     risk: "change",
-    summary: "Create a task from the task box text. With start, create worktrees and start the agent",
+    summary:
+      "Create a task. repos lists the projects it changes: only those get a branch and a worktree; project names in the text attach nothing. With start, create worktrees and start the agent",
     input: z.object({
       text: z.string().trim().min(1).max(20_000),
+      /** The repos the task changes. Default: none, a chat task. */
+      repos: TaskReposSchema.optional(),
       /** A short title. Without it, the first line of `text` is the title and the rest the description. */
       title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /**
-       * An investigation: the repos the text names are mounted read-only. No branch, no worktree, no
+       * An investigation: the repos listed in repos are mounted read-only. No branch, no worktree, no
        * Changes and no Ship. `kind: "ops"` does the same.
        */
       readOnly: z.boolean().optional(),
@@ -748,8 +786,20 @@ export const commands = {
       parent: TaskIdSchema.optional(),
       /** The new task waits for these (5.4a); it does not start until they are met. */
       dependsOn: z.array(TaskIdSchema).max(20).default([]),
+      /**
+       * Makes the new task a fix task of this one: it gets a `follow-up` link to it (5.15). A fix
+       * task starts only when the owner approves, whatever the org's `lead_start` says.
+       */
+      followUpOf: TaskIdSchema.optional(),
     }),
     output: TaskSchema,
+  },
+  "tasks.report": {
+    risk: "read",
+    summary:
+      "Read REPORT.md from the task folder (an ops task's write-up: summary, timeline, evidence, cause, what was changed, follow-ups), with the time it was last changed. Null until the file exists",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ content: z.string(), modifiedAt: z.string() }).nullable(),
   },
   "tasks.plan": {
     risk: "read",
@@ -804,8 +854,10 @@ export const commands = {
       children: z
         .array(
           z.object({
-            /** Task box text for the child: what to do, which repos. */
+            /** Task box text for the child: what to do. */
             text: z.string().trim().min(1).max(20_000),
+            /** The repos the child changes. Default: none. */
+            repos: TaskReposSchema.optional(),
             /** Positions of earlier children this one waits for. */
             dependsOn: z.array(z.number().int().min(0).max(19)).max(20).default([]),
             /** When a dependency counts as met. `ready` stacks this child's branch on the dependency's. */
@@ -916,13 +968,21 @@ export const commands = {
       "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push). method picks a merge commit, one squashed commit, or a rebase of the task branch and a fast-forward; the target is never rewritten, and a conflict changes nothing. With deleteAfter, a clean run removes the worktree and the local branch majhi created",
     input: z.object({
       id: TaskIdSchema,
-      /** The branch to merge into. Default: each repo's base branch. */
+      /** The branch to merge into. Default: each repo's base branch. With repos on different bases, only repos whose base it is. */
       into: LocalBranchSchema.optional(),
-      /** Only this repo of the task. Default: every repo. */
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      /** Only this repo of the task. Default: every repo with changes. */
       project: IdSchema.optional(),
       done: z.boolean().default(false),
       /** Push the merged branch afterwards. */
       push: z.boolean().default(false),
+      /** Owner only. With push: also send local commits on the target that the remote lacks and are not the task's. */
+      pushLocalCommits: z.boolean().default(false),
+      /** Owner only. With push: create the target branch on the remote when it has none. */
+      createRemoteBranch: z.boolean().default(false),
+      /** Owner only. A protected repo ships only alone (project set to it) with its name typed here. */
+      confirmProtected: z.string().optional(),
       /** Default `merge`: fast-forward when it can, else a merge commit. */
       method: MergeMethodSchema.optional(),
       /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
@@ -948,7 +1008,9 @@ export const commands = {
       id: TaskIdSchema,
       /** The branch to update. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
-      /** Only this repo of the task. Default: every repo. */
+      /** The branch to update, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      /** Only this repo of the task. Default: every repo with changes. */
       project: IdSchema.optional(),
     }),
     output: z.object({ results: z.array(MergeResultSchema) }),
@@ -982,7 +1044,9 @@ export const commands = {
     input: z.object({
       id: TaskIdSchema,
       action: z.enum(["merge", "mergePush"]),
-      into: LocalBranchSchema,
+      into: LocalBranchSchema.optional(),
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
       method: MergeMethodSchema.default("merge"),
       deleteAfter: z.boolean().default(false),
     }),
@@ -1024,6 +1088,8 @@ export const commands = {
       id: TaskIdSchema,
       /** The branch the merge requests go into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** The branch the merge requests go into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
     }),
     output: OpenMrsResultSchema,
   },
@@ -1268,10 +1334,16 @@ export const commands = {
       action: CardActionSchema,
       /** For merge: the local branch to merge into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** For merge, mergePush and mr: the target per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
       /** For merge and mergePush. Default `merge`. */
       method: MergeMethodSchema.optional(),
       /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */
       deleteAfter: z.boolean().optional(),
+      /** For mergePush: the owner confirmed sending local commits on the target that are not the task's. */
+      pushLocalCommits: z.boolean().optional(),
+      /** For mergePush: the owner confirmed creating the target branch on the remote. */
+      createRemoteBranch: z.boolean().optional(),
       /** For done: the owner confirmed closing with work not shipped. */
       unshipped: UnshippedChoiceSchema.optional(),
     }),

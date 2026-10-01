@@ -56,7 +56,11 @@ async function started(script?: Script): Promise<FakeSession> {
       if (w.h.runtime.sessions.length === 0) session.script = script;
     };
   }
-  const res = await w.h.cmd("tasks.create", { text: "fix api", start: true });
+  const res = await w.h.cmd("tasks.create", {
+    text: "fix api",
+    repos: [{ project: "acme-api" }],
+    start: true,
+  });
   expect(res.status).toBe(200);
   await until(
     () => w.h.runtime.sessions.length > 0 && w.h.runtime.sessions[0]?.prompts.length === 1,
@@ -178,7 +182,7 @@ describe("permissions", () => {
         return "end_turn";
       };
     };
-    await w.h.cmd("tasks.create", { text: "fix api", start: true });
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
     await until(() => live()?.status === "waiting", "edit prompt");
     expect(answers).toEqual(["allow"]);
     await w.h.cmd("room.cancel", { task: "ACM-1" });
@@ -245,7 +249,7 @@ describe("start-up messages", () => {
       frontmatter: { scope: "acme", role: "Builder", account: "claude-beta", perms: ["edit"] },
       instructions: "",
     });
-    await w.h.cmd("tasks.create", { text: "fix api", start: true });
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
     await runs().idle();
     expect(await texts()).toContain(
       'system: @acme-builder could not start: @acme-builder works in "acme" and cannot use the account of "beta".',

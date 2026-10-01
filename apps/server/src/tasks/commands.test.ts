@@ -15,7 +15,9 @@ const idle = () => w.h.majhi.services.runs.idle();
 describe("tasks.create", () => {
   it("parses the text on the server and creates an inbox task with its folder", async () => {
     w = await taskWorld();
-    const res = await create("add a health endpoint to api from develop");
+    const res = await create("add a health endpoint to api from develop", {
+      repos: [{ project: "acme-api", base: "develop" }],
+    });
     expect(res.status).toBe(200);
     const task = res.body;
     expect(task).toMatchObject({
@@ -76,7 +78,10 @@ describe("tasks.create", () => {
 describe("tasks.start", () => {
   it("creates the worktree on a new branch from the base and runs the agent", async () => {
     w = await taskWorld();
-    const res = await create("add a health endpoint to api from develop", { start: true });
+    const res = await create("add a health endpoint to api from develop", {
+      start: true,
+      repos: [{ project: "acme-api", base: "develop" }],
+    });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("running");
     const wt = join(res.body.folder, "acme-api");
@@ -115,7 +120,7 @@ describe("tasks.start", () => {
 describe("stopping, closing and removing", () => {
   it("refuses to remove a task with uncommitted changes unless forced and confirmed with its id", async () => {
     w = await taskWorld();
-    const made = await create("fix api", { start: true });
+    const made = await create("fix api", { start: true, repos: [{ project: "acme-api" }] });
     await idle();
     const wt = join(made.body.folder, "acme-api");
     await writeFile(join(wt, "work.txt"), "unsaved");
@@ -141,6 +146,6 @@ describe("stopping, closing and removing", () => {
     expect(await git(w.repo("api"), "worktree", "list", "--porcelain")).not.toContain("acm-1");
     expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).status).toBe(404);
     // The next task does not reuse the number.
-    expect((await create("again api")).body.id).toBe("ACM-2");
+    expect((await create("again api", { repos: [{ project: "acme-api" }] })).body.id).toBe("ACM-2");
   });
 });

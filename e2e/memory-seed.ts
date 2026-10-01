@@ -24,10 +24,12 @@ async function cmd<T>(name: string, body: unknown): Promise<T> {
 
 const done = await cmd<{ id: string }>("tasks.create", {
   text: "document the install steps in alpha-api",
+  repos: [{ project: "alpha-api" }],
   start: false,
 });
 const open = await cmd<{ id: string }>("tasks.create", {
   text: "add a health endpoint to alpha-api",
+  repos: [{ project: "alpha-api" }],
   start: false,
 });
 await cmd("tasks.close", { id: done.id });
@@ -97,10 +99,12 @@ await from(open.id, "The api serves /health without a login", "project:alpha-api
 // Task records, the brief and its history, and open threads, as the Housekeeper leaves them.
 const route = await cmd<{ id: string }>("tasks.create", {
   text: "move the health check of alpha-api to its own route",
+  repos: [{ project: "alpha-api" }],
   start: false,
 });
 const logging = await cmd<{ id: string }>("tasks.create", {
   text: "add request logging to alpha-api with a request id on every line",
+  repos: [{ project: "alpha-api" }],
   start: false,
 });
 await cmd("tasks.close", { id: route.id });

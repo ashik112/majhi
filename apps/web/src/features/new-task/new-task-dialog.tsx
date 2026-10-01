@@ -1,6 +1,6 @@
-import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText } from "@majhi/shared";
+import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText, type TaskKind, taskKindOf } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Paperclip, X } from "lucide-react";
+import { ChevronDown, Lock, Paperclip, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -16,6 +16,7 @@ import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
@@ -27,8 +28,6 @@ import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "
 import { defaultAgentId, eligibleAgents } from "../tasks/model";
 import {
   canAdd,
-  chosenProjects,
-  composeTaskText,
   groupProjects,
   initialProjects,
   linkChoices,
@@ -47,6 +46,17 @@ function tryParse(text: string, ctx: Parameters<typeof parseTaskText>[1]): Parse
   } catch {
     return null;
   }
+}
+
+const KINDS: readonly { id: TaskKind; hint: string }[] = [
+  { id: "code", hint: "Changes a project: worktree, branch, review, ship." },
+  { id: "ops", hint: "Investigates with the org's connections and writes a report. Projects are read only." },
+  { id: "chat", hint: "One agent, no project." },
+];
+
+/** A code task needs a project, a chat task has none. An ops task may have either. */
+function kindFits(kind: TaskKind, projects: number): boolean {
+  return kind === "ops" || (kind === "code") === projects > 0;
 }
 
 const FIELD =
@@ -70,6 +80,9 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  // Protected projects the owner lets agents write in for this task. Off: read-only.
+  const [writes, setWrites] = useState<string[]>([]);
+  const [kindPick, setKindPick] = useState<TaskKind | undefined>();
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
   const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [parent, setParent] = useState<string[]>([]);
@@ -100,11 +113,20 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   );
   const parsed = useMemo(() => tryParse(deferred, parseCtx), [deferred, parseCtx]);
   const named = namedProjects(parsed);
-  const chosen = chosenProjects(named, picked);
+  // Only the chips attach repos. Projects the words name are offered, never added by themselves.
+  const chosen = picked;
+  const mentioned = named.filter((id) => !chosen.includes(id));
   const chosenOrg = projects.data?.find((p) => chosen.includes(p.id))?.org ?? filterOrg;
-  const kind = chosen.length > 0 ? "code" : "chat";
-  // What the server will read: the words plus the chips. Its warnings (an unknown @agent, repos from two orgs) show as they are.
-  const warnings = tryParse(composeTaskText(draft, chosen, named), parseCtx)?.warnings ?? [];
+  // The parser's warnings about the words (an unknown @agent). Repos come from the chips alone.
+  const orgsChosen = new Set(chosen.map((id) => projects.data?.find((p) => p.id === id)?.org));
+  const warnings = [
+    ...(parsed?.warnings ?? []).filter((w) => !w.startsWith("Repos from")),
+    ...(orgsChosen.size > 1 ? [`Repos from more than one org: ${[...orgsChosen].join(", ")}`] : []),
+  ];
+  // The kind the words suggest for the chosen projects, until the owner picks one. A pick that no
+  // longer fits the projects falls back.
+  const inferred = taskKindOf(deferred, chosen.length > 0, parsed?.branch);
+  const kind = kindPick !== undefined && kindFits(kindPick, chosen.length) ? kindPick : inferred;
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);
   const orgName = orgs.find((o) => o.id === chosenOrg)?.name;
@@ -116,9 +138,11 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
     setFailure(undefined);
     create.mutate(
       {
-        text: composeTaskText(draft, chosen, named),
+        text: typedText(draft),
+        repos: chosen.map((project) => ({ project, ...(writes.includes(project) ? { writes: true } : {}) })),
         attachments: attachmentIds(attachments.items),
         start,
+        ...(kindPick !== undefined && kind === kindPick ? { kind } : {}),
         ...linkFields(parent[0], dependsOn),
         ...(agentOverride ? { agent: agentOverride } : {}),
       },
@@ -193,11 +217,6 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             autoComplete="off"
             className={cn(FIELD, "h-11 px-3.5 text-md placeholder:text-fg-faint")}
           />
-          {parsed?.base && (
-            <p className="text-xs text-fg-muted">
-              Branches from <span className="font-mono text-fg">{parsed.base}</span>
-            </p>
-          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -253,6 +272,28 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <legend className="mb-2 p-0 text-sm text-fg-faint">Kind</legend>
+          <div className="flex flex-wrap items-center gap-2">
+            {KINDS.map((k) => (
+              <ChoiceChip
+                key={k.id}
+                pressed={kind === k.id}
+                disabled={!kindFits(k.id, chosen.length)}
+                className="h-[34px] text-sm"
+                title={k.hint}
+                onClick={() => setKindPick(k.id)}
+              >
+                {k.id}
+              </ChoiceChip>
+            ))}
+            <span className="text-sm text-fg-muted">
+              {kindPick === undefined ? "Picked from your words. " : ""}
+              {KINDS.find((k) => k.id === kind)?.hint}
+            </span>
+          </div>
+        </fieldset>
+
+        <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm text-fg-faint">Project</legend>
           {projects.isPending && (
             <span className="h-8 animate-shimmer rounded-md bg-raised" aria-hidden="true" />
@@ -278,18 +319,56 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
                     mono
                     pressed={on}
                     className="h-[34px] text-sm"
-                    title={named.includes(project.id) ? "Named in the title or details" : undefined}
-                    onClick={() => setPicked(togglePicked(picked, named, project.id))}
+                    onClick={() => setPicked(togglePicked(picked, project.id))}
+                    title={
+                      project.protected
+                        ? "Protected: agents get it read-only unless you allow writes"
+                        : undefined
+                    }
                   >
+                    {project.protected && <Lock aria-hidden="true" className="size-3 text-amber" />}
                     {project.id}
                   </ChoiceChip>
                 );
               })}
             </div>
           ))}
+          {chosen
+            .filter((id) => projects.data?.find((p) => p.id === id)?.protected === true)
+            .map((id) => (
+              <div key={id} className="flex flex-col">
+                <Switch
+                  label={`Let agents write in ${id} for this task`}
+                  checked={writes.includes(id)}
+                  onChange={(on) => setWrites(on ? [...writes, id] : writes.filter((w) => w !== id))}
+                />
+                <span className="text-xs text-fg-faint text-pretty">
+                  {id} is protected. Off: agents read it only. It ships only alone, after you type its name.
+                </span>
+              </div>
+            ))}
+          {mentioned.length > 0 && (
+            <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
+              Mentioned:
+              {mentioned.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPicked([...picked, id])}
+                  className="cursor-pointer font-mono text-blue underline-offset-2 hover:underline"
+                >
+                  Add {id}
+                </button>
+              ))}
+              <span>Only picked projects get a branch. Agents can read the others.</span>
+            </p>
+          )}
           {projects.data && projects.data.length > 0 && chosen.length === 0 && (
             <p className="text-sm text-fg-muted">
-              No project chosen: this becomes a chat task, with no worktree.
+              No project chosen:{" "}
+              {kind === "ops"
+                ? "this is an ops task, with no worktree."
+                : "this becomes a chat task, with no worktree."}
             </p>
           )}
         </fieldset>

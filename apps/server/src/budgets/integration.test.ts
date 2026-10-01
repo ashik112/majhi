@@ -69,6 +69,7 @@ describe("weekly budgets from real turns", () => {
 
     const made = await h.cmd("tasks.create", {
       text: "add a health endpoint to api from develop",
+      repos: [{ project: "acme-api", base: "develop" }],
       start: true,
     });
     expect(made.status).toBe(200);
@@ -92,6 +93,7 @@ describe("weekly budgets from real turns", () => {
     // A Globex turn does not touch Acme's alerts.
     await h.cmd("tasks.create", {
       text: "add a health endpoint to web from develop",
+      repos: [{ project: "globex-web", base: "develop" }],
       agent: "globex-builder",
       start: true,
     });
@@ -128,7 +130,11 @@ describe("weekly budgets from real turns", () => {
     await twoOrgs();
     const { h } = w;
     await h.cmd("settings.set", { budgets: { accounts: { "claude-acme": { cost: 0.02 } } } });
-    await h.cmd("tasks.create", { text: "add a health endpoint to api from develop", start: true });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api from develop",
+      repos: [{ project: "acme-api", base: "develop" }],
+      start: true,
+    });
     await settle();
     await h.cmd("room.send", { task: "ACM-1", text: "echo: again" });
     await settle();

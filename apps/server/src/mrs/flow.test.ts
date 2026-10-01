@@ -97,7 +97,13 @@ async function reviewed(setup: Setup = {}) {
   );
 
   // "web" is named first, so the task lists web before api: the merge order must still put api first.
-  const made = must(await cmd("tasks.create", { text: "add invoices to web and api", start: true })) as Task;
+  const made = must(
+    await cmd("tasks.create", {
+      text: "add invoices to web and api",
+      repos: [{ project: "acme-web" }, { project: "acme-api" }],
+      start: true,
+    }),
+  ) as Task;
   await w.h.majhi.services.runs.idle();
   await until(async () => (await get(made.id)).status === "review", "review");
   expect(made.repos.map((r) => r.project)).toEqual(["acme-web", "acme-api"]);
@@ -123,7 +129,12 @@ describe("one task, two repos on two hosts", () => {
     const id = await reviewed({ policy: "approve" });
     // A second task waits until the first one's MRs are merged.
     const waiting = must(
-      await cmd("tasks.create", { text: "tweak invoices in api", start: true, dependsOn: [id] }),
+      await cmd("tasks.create", {
+        text: "tweak invoices in api",
+        repos: [{ project: "acme-api" }],
+        start: true,
+        dependsOn: [id],
+      }),
     ) as Task;
     expect(waiting.status).not.toBe("running");
 
@@ -439,7 +450,13 @@ describe("opening MRs", () => {
     expect(none.status).toBe(409);
     expect(none.body.error).toContain("No repo of this task has a commit to send");
 
-    const inbox = must(await cmd("tasks.create", { text: "another change to api", start: false })) as Task;
+    const inbox = must(
+      await cmd("tasks.create", {
+        text: "another change to api",
+        repos: [{ project: "acme-api" }],
+        start: false,
+      }),
+    ) as Task;
     const early = await cmd("tasks.openMrs", { id: inbox.id });
     expect(early.status).toBe(409);
     expect(early.body.error).toContain("Open merge requests from review");
@@ -566,7 +583,12 @@ describe("a task closed with merge requests not merged", () => {
   it("keeps what waits on it waiting, pauses it with a reason, and says when the merge happened", async () => {
     const id = await reviewed({ policy: "never" });
     const waiting = must(
-      await cmd("tasks.create", { text: "tweak invoices in api", start: false, dependsOn: [id] }),
+      await cmd("tasks.create", {
+        text: "tweak invoices in api",
+        repos: [{ project: "acme-api" }],
+        start: false,
+        dependsOn: [id],
+      }),
     ) as Task;
     must(await cmd("tasks.openMrs", { id }));
 
@@ -621,9 +643,16 @@ describe("a task closed with merge requests not merged", () => {
 
   it("a task with no merge request still counts as merged once it is done", async () => {
     w = await taskWorld();
-    const first = must(await cmd("tasks.create", { text: "change api", start: false })) as Task;
+    const first = must(
+      await cmd("tasks.create", { text: "change api", repos: [{ project: "acme-api" }], start: false }),
+    ) as Task;
     const second = must(
-      await cmd("tasks.create", { text: "change api again", start: false, dependsOn: [first.id] }),
+      await cmd("tasks.create", {
+        text: "change api again",
+        repos: [{ project: "acme-api" }],
+        start: false,
+        dependsOn: [first.id],
+      }),
     ) as Task;
     must(await cmd("tasks.close", { id: first.id }));
     const listed = (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === second.id);

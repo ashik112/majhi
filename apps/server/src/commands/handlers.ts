@@ -34,6 +34,7 @@ import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
+import { readReport } from "../tasks/report.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -327,7 +328,16 @@ export function createHandlers({
 
     "projects.list": () => services.projects.list(),
     "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
-    "projects.update": (input, ctx) => services.projects.update(input, ctx.command, ctx.meta),
+    "projects.update": async (input, ctx) => {
+      // Protection is the owner's guard on their infra: an agent may turn it on, never off.
+      if (input.protected === false && ctx.meta.actor.kind === "agent") {
+        const current = (await services.projects.infos()).find((p) => p.id === input.id);
+        if (current?.protected === true) {
+          throw new UserError(`Only the owner can turn protection off for ${input.id}.`, 409);
+        }
+      }
+      return services.projects.update(input, ctx.command, ctx.meta);
+    },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       return { removed: input.id };
@@ -338,10 +348,16 @@ export function createHandlers({
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
       const captured = await services.secretService.capture(input.text);
-      const task = await services.tasks.create({ ...input, text: captured.text, from: ctx.meta.task });
+      const task = await services.tasks.create({
+        ...input,
+        text: captured.text,
+        from: ctx.meta.task,
+        byOwner: ctx.meta.actor.kind === "owner",
+      });
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
+    "tasks.report": async (input) => (await readReport(services.tasks.get(input.id).folder)) ?? null,
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
     "tasks.stop": (input) => services.tasks.stop(input.id),
@@ -353,10 +369,25 @@ export function createHandlers({
         whenUnshipped: input.unshipped ?? "refuse",
       }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
-    "tasks.merge": ({ push, ...input }, ctx) =>
-      push
-        ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
-        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
+      if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
+        throw new UserError("Only the owner can ship a protected repo.", 409);
+      }
+      if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
+        throw new UserError(
+          "Only the owner can confirm pushing commits that are not the task's, or creating a branch on the remote.",
+          409,
+        );
+      }
+      return push
+        ? services.mrs.mergeAndPush({
+            ...input,
+            pushLocalCommits,
+            createRemoteBranch,
+            by: actorName(ctx.meta.actor),
+          })
+        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) });
+    },
     "tasks.updateTarget": (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
         throw new UserError(
@@ -369,14 +400,19 @@ export function createHandlers({
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
-      task: await services.pendingShips.request({ ...input, by: actorName(ctx.meta.actor) }),
+      task: await services.pendingShips.request({
+        ...input,
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+      }),
     }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
     "tasks.setMergeOrder": (input) => services.mrs.setOrder(input.id, input.order),
-    "tasks.openMrs": (input, ctx) => services.mrs.open(input.id, input.into, actorName(ctx.meta.actor)),
+    "tasks.openMrs": (input, ctx) =>
+      services.mrs.open(input.id, { into: input.into, targets: input.targets }, actorName(ctx.meta.actor)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
     "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),

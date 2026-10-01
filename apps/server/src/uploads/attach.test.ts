@@ -50,6 +50,7 @@ describe("attachments by upload id and by path", () => {
 
     const made = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: [owner.body.id, "attachments/image.png"],
       start: false,
     });
@@ -68,7 +69,11 @@ describe("attachments by upload id and by path", () => {
 
   it("adds a later upload to TASK.md with room.send", async () => {
     w = await bossWorld({ real: false });
-    const created = await w.h.cmd("tasks.create", { text: "fix the bug in api", start: false });
+    const created = await w.h.cmd("tasks.create", {
+      text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
     expect(created.status).toBe(200);
     const id = created.body.id as string;
     const file = await upload("shot.png", "image/png", PNG);
@@ -84,7 +89,13 @@ describe("attachments by upload id and by path", () => {
   it("gives a split child the file, and leaves the source in place", async () => {
     w = await bossWorld({ real: false });
     await put(w.chat.folder, "attachments/image.png");
-    const parent = (await w.h.cmd("tasks.create", { text: "fix the bug in api", start: false })).body as Task;
+    const parent = (
+      await w.h.cmd("tasks.create", {
+        text: "fix the bug in api",
+        repos: [{ project: "acme-api" }],
+        start: false,
+      })
+    ).body as Task;
     const split = await asBoss("majhi_tasks_split", {
       task: parent.id,
       children: [{ text: "reproduce it", attachments: ["attachments/image.png"] }, { text: "fix it" }],
@@ -112,12 +123,14 @@ describe("attachments by upload id and by path", () => {
 
     const made = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: [att.id],
       start: false,
     });
     expect(made.isError).toBe(false);
     const again = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api again",
+      repos: [{ project: "acme-api" }],
       attachments: [att.id],
       start: false,
     });
@@ -132,6 +145,7 @@ describe("attachment errors", () => {
     w = await bossWorld({ real: false });
     const res = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: ["attachments/imge.png"],
       start: false,
     });
@@ -180,6 +194,7 @@ describe("attachment errors", () => {
     expect(res.text).toContain("over the limit of 20 MB");
     const task = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: ["attachments/big.log"],
       start: false,
     });
@@ -191,6 +206,7 @@ describe("attachment errors", () => {
     const file = await upload("a.txt", "text/plain");
     const res = await asBoss("majhi_tasks_create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: [file.body.id, file.body.id],
       start: false,
     });
@@ -200,7 +216,13 @@ describe("attachment errors", () => {
 
   it("refuses files across orgs, in both directions", async () => {
     w = await bossWorld({ real: false });
-    const acme = (await w.h.cmd("tasks.create", { text: "fix the bug in api", start: false })).body as Task;
+    const acme = (
+      await w.h.cmd("tasks.create", {
+        text: "fix the bug in api",
+        repos: [{ project: "acme-api" }],
+        start: false,
+      })
+    ).body as Task;
     await put(acme.folder, "attachments/image.png");
     const inAcme = (tool: string, args: Record<string, unknown>) =>
       w.h.majhi.services.admin.call({ task: acme.id, agent: "acme-builder" }, tool, {
@@ -238,6 +260,7 @@ describe("attachment errors", () => {
     await put(w.chat.folder, "attachments/image.png");
     const plain = await w.h.cmd("tasks.create", {
       text: "fix the bug in api",
+      repos: [{ project: "acme-api" }],
       attachments: ["attachments/image.png"],
       start: false,
     });
@@ -245,7 +268,12 @@ describe("attachment errors", () => {
     expect(plain.body.error).toContain('"attachments/image.png" is not an upload id');
     const spoofed = await w.h.cmd(
       "tasks.create",
-      { text: "fix the bug in api", attachments: ["attachments/image.png"], start: false },
+      {
+        text: "fix the bug in api",
+        repos: [{ project: "acme-api" }],
+        attachments: ["attachments/image.png"],
+        start: false,
+      },
       { task: w.chat.id },
     );
     expect(spoofed.status).toBe(400);

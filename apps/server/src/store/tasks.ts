@@ -117,6 +117,7 @@ export class TaskRepo {
             ciState: r.mr?.ci ?? null,
             pushedAt: r.pushedAt ?? null,
             startCommit: r.startCommit ?? null,
+            writes: r.writes === true,
           })
           .run();
       });
@@ -172,6 +173,7 @@ export class TaskRepo {
         ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
         ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
         ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
+        ...(r.writes ? { writes: true } : {}),
         ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
           ? {}
           : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
