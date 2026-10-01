@@ -56,13 +56,16 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
         </Button>
       )}
       {copy.kind === "done" && unshipped.length > 0 && (
-        <span className="mr-1 text-xs text-amber-soft">{unshippedCount(unshipped)}</span>
+        // Narrow headers have no room for it: the button's tooltip and the review card say it too.
+        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft lg:inline">
+          {unshippedCount(unshipped)}
+        </span>
       )}
       {copy.kind === "done" && (
         <Button
           variant="primary"
           size="sm"
-          title={copy.text}
+          title={unshipped.length > 0 ? `${unshippedCount(unshipped)}. ${copy.text}` : copy.text}
           disabled={close.isPending}
           onClick={() =>
             unshipped.length > 0
