@@ -67,13 +67,15 @@ describe("buildEnv", () => {
       MAJHI_BRANCHES: "task/acm-1-x feature/y",
       MAJHI_GIT_DIRS: "/w/api/.git\n/w/web/.git",
       MAJHI_TRAILER: "1",
-      GIT_CONFIG_COUNT: "7",
+      GIT_CONFIG_COUNT: "8",
       GIT_CONFIG_KEY_0: "core.hooksPath",
       GIT_CONFIG_VALUE_0: "/m/git-hooks",
       GIT_CONFIG_KEY_2: "gc.pruneExpire",
       GIT_CONFIG_VALUE_2: "never",
       GIT_CONFIG_KEY_6: "core.logAllRefUpdates",
       GIT_CONFIG_VALUE_6: "always",
+      GIT_CONFIG_KEY_7: "gc.packRefs",
+      GIT_CONFIG_VALUE_7: "false",
     });
   });
 
