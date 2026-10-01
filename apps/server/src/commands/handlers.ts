@@ -403,7 +403,7 @@ export function createHandlers({
         ctx.meta,
       ),
     "tasks.remove": async (input) => {
-      await services.tasks.remove(input.id, input.force === true);
+      await services.tasks.remove(input.id, input.force === true, input.confirm);
       return { removed: input.id };
     },
     "tasks.split": async (input, ctx) => {

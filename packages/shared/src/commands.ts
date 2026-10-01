@@ -1063,8 +1063,13 @@ export const commands = {
   "tasks.remove": {
     risk: "destructive",
     summary:
-      "Delete a task, its folder and its worktrees. Refused when a worktree has uncommitted changes, unless force",
-    input: z.object({ id: TaskIdSchema, force: z.boolean().optional() }),
+      "Delete a task, its folder and its worktrees. Refused when a worktree has uncommitted changes, unless force with confirm: the task id, typed by the owner after seeing the list of changes",
+    input: z.object({
+      id: TaskIdSchema,
+      force: z.boolean().optional(),
+      /** With force over uncommitted changes: the task id, typed by the owner. */
+      confirm: z.string().max(40).optional(),
+    }),
     output: z.object({ removed: TaskIdSchema }),
   },
 

@@ -113,7 +113,7 @@ describe("tasks.start", () => {
 });
 
 describe("stopping, closing and removing", () => {
-  it("refuses to remove a task with uncommitted changes unless forced", async () => {
+  it("refuses to remove a task with uncommitted changes unless forced and confirmed with its id", async () => {
     w = await taskWorld();
     const made = await create("fix api", { start: true });
     await idle();
@@ -126,7 +126,16 @@ describe("stopping, closing and removing", () => {
     expect(existsSync(wt)).toBe(true);
     expect((await w.h.cmd("tasks.get", { id: "ACM-1" })).status).toBe(200);
 
-    const forced = await w.h.cmd("tasks.remove", { id: "ACM-1", force: true });
+    // Force alone is not enough: the owner types the task id after seeing the list.
+    const unconfirmed = await w.h.cmd("tasks.remove", { id: "ACM-1", force: true });
+    expect(unconfirmed.status).toBe(409);
+    expect(unconfirmed.body.error).toContain("Type ACM-1 to confirm");
+    expect(unconfirmed.body.details).toEqual(["acme-api: ?? work.txt"]);
+    const wrong = await w.h.cmd("tasks.remove", { id: "ACM-1", force: true, confirm: "ACM-2" });
+    expect(wrong.status).toBe(409);
+    expect(existsSync(join(wt, "work.txt"))).toBe(true);
+
+    const forced = await w.h.cmd("tasks.remove", { id: "ACM-1", force: true, confirm: "ACM-1" });
     expect(forced.body).toEqual({ removed: "ACM-1" });
     expect(existsSync(made.body.folder)).toBe(false);
     expect(await git(w.repo("api"), "worktree", "list", "--porcelain")).not.toContain("acm-1");

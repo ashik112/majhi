@@ -1415,15 +1415,26 @@ export class TaskService {
     return reopened;
   }
 
-  async remove(id: string, force: boolean): Promise<void> {
+  /**
+   * Deletes a task, its folder and its worktrees. Uncommitted changes go only with `force` and
+   * `confirm`, the task id the owner typed after seeing the list of them. Agents never get here with
+   * force (the admin tools refuse it). Changes that appear while the agents stop refuse the removal,
+   * so what goes is what the owner saw.
+   */
+  async remove(id: string, force: boolean, confirm?: string): Promise<void> {
     const task = this.get(id);
     const trees = task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree]));
     const dirty = await dirtyWorktrees(trees);
     if (dirty.length > 0 && !force) {
-      throw new UserError(
+      throw discardRefusal(
         `Uncommitted changes in ${dirty.map((d) => d.path).join(", ")}. Commit or discard them, or remove with force.`,
-        409,
-        dirty.flatMap((d) => d.changes.slice(0, 5).map((c) => `${basename(d.path)}: ${c}`)),
+        dirty,
+      );
+    }
+    if (dirty.length > 0 && confirm?.trim().toUpperCase() !== task.id) {
+      throw discardRefusal(
+        `Removing ${task.id} deletes these uncommitted changes for good. Type ${task.id} to confirm.`,
+        dirty,
       );
     }
     await this.deps.onRemoving?.(task).catch(() => undefined);
@@ -1432,6 +1443,16 @@ export class TaskService {
     await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.processes?.forget(id);
+    if (force) {
+      const seen = new Set(changeLines(dirty));
+      const now = await dirtyWorktrees(trees);
+      if (changeLines(now).some((line) => !seen.has(line))) {
+        throw discardRefusal(
+          `More uncommitted changes appeared while the agents of ${task.id} stopped. Check them, then type ${task.id} again to confirm.`,
+          now,
+        );
+      }
+    }
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) await removeWorktree(repo.source, repo.worktree, force);
     }
@@ -2365,4 +2386,22 @@ function mergedDetail(
     default:
       return `Merged ${branch} into ${into} (${how}). Not pushed.`;
   }
+}
+
+/** Uncommitted changes, one line per file: `<worktree folder>: <git status line>`. */
+function changeLines(dirty: readonly { path: string; changes: string[] }[]): string[] {
+  return dirty.flatMap((d) => d.changes.map((c) => `${basename(d.path)}: ${c}`));
+}
+
+/** At most this many changed files in a refusal. */
+const DISCARD_LIST_MAX = 200;
+
+/** A 409 that lists every uncommitted change a forced removal would delete. */
+function discardRefusal(message: string, dirty: readonly { path: string; changes: string[] }[]): UserError {
+  const lines = changeLines(dirty);
+  const shown =
+    lines.length > DISCARD_LIST_MAX
+      ? [...lines.slice(0, DISCARD_LIST_MAX), `and ${lines.length - DISCARD_LIST_MAX} more`]
+      : lines;
+  return new UserError(message, 409, shown);
 }

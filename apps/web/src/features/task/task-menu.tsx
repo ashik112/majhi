@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
 import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
@@ -83,20 +84,31 @@ function CloseDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   );
 }
 
-/** Removing a task with uncommitted work is refused by the server; the dialog shows why and offers to force it. */
+/**
+ * Removing a task with uncommitted work is refused by the server with the list of changes. The dialog
+ * then shows them and removes the task only after the owner types its id.
+ */
 function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   const remove = useRemoveTask();
   const toast = useToast();
   const navigate = useNavigate();
-  const [refused, setRefused] = useState(false);
+  const [refusal, setRefusal] = useState<{ message: string; changes: string[]; again: boolean } | null>(null);
+  const [typed, setTyped] = useState("");
+  const confirmed = typed.trim().toUpperCase() === task.id;
 
   // Awaited instead of per-call callbacks: removing the task can unmount this view (the task
   // disappears from the list) before a per-call onSuccess would run, and then it never runs.
-  async function run(force: boolean) {
+  async function run() {
     try {
-      await remove.mutateAsync(force ? { id: task.id, force: true } : { id: task.id });
+      await remove.mutateAsync(
+        refusal === null ? { id: task.id } : { id: task.id, force: true, confirm: typed.trim() },
+      );
     } catch (error) {
-      setRefused(error instanceof ApiRequestError && !error.unreachable);
+      if (error instanceof ApiRequestError && error.status === 409 && error.details.length > 0) {
+        setRefusal({ message: error.message, changes: error.details, again: refusal !== null });
+        setTyped("");
+        remove.reset();
+      }
       return;
     }
     toast("Task removed", { detail: task.id });
@@ -104,15 +116,46 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
     void navigate({ to: "/" });
   }
 
+  const body =
+    refusal === null ? (
+      "This deletes the task, its folder and its worktrees. Branches already pushed stay on the remote."
+    ) : (
+      <div className="flex flex-col gap-3">
+        <p>
+          {refusal.again
+            ? refusal.message
+            : "These changes are in no commit. Removing the task deletes them for good."}
+        </p>
+        <ul className="max-h-40 overflow-auto rounded-md border border-line bg-field px-3 py-2 font-mono text-sm text-fg">
+          {refusal.changes.map((line) => (
+            <li key={line} className="truncate" title={line}>
+              {line}
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={`remove-${task.id}`}>Type {task.id} to remove the task and these changes.</label>
+          <Input
+            id={`remove-${task.id}`}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={task.id}
+            className="font-mono"
+          />
+        </div>
+      </div>
+    );
+
   return (
     <ConfirmDialog
       title={`Remove ${task.id}`}
-      body="This deletes the task, its folder and its worktrees. Branches already pushed stay on the remote."
-      confirmLabel={refused ? "Remove anyway" : "Remove task"}
+      body={body}
+      confirmLabel={refusal === null ? "Remove task" : "Remove with changes"}
       busy={remove.isPending}
+      confirmDisabled={refusal !== null && !confirmed}
       error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}
       onCancel={onDone}
-      onConfirm={() => void run(refused)}
+      onConfirm={() => void run()}
     />
   );
 }

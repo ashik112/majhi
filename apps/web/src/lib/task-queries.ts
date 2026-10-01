@@ -212,8 +212,8 @@ export function useUnlinkTask() {
 
 export function useRemoveTask() {
   const client = useQueryClient();
-  return useMutation<CommandOutput<"tasks.remove">, ApiRequestError, { id: string; force?: boolean }>({
-    mutationFn: ({ id, force }) => cmd("tasks.remove", force ? { id, force } : { id }),
+  return useMutation<CommandOutput<"tasks.remove">, ApiRequestError, CommandInput<"tasks.remove">>({
+    mutationFn: (input) => cmd("tasks.remove", input),
     onSuccess: () => refreshTasks(client),
   });
 }

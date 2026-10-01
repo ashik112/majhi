@@ -8,6 +8,7 @@ export function ConfirmDialog({
   body,
   confirmLabel,
   busy,
+  confirmDisabled,
   error,
   onConfirm,
   onCancel,
@@ -16,6 +17,8 @@ export function ConfirmDialog({
   body: ReactNode;
   confirmLabel: string;
   busy?: boolean;
+  /** Keeps the confirm button off until the dialog's own check passes, like a typed name. */
+  confirmDisabled?: boolean;
   error?: string | undefined;
   onConfirm: () => void;
   onCancel: () => void;
@@ -35,7 +38,7 @@ export function ConfirmDialog({
         )}
         <div className="flex justify-end gap-2">
           <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" onClick={onConfirm} disabled={busy}>
+          <Button variant="primary" onClick={onConfirm} disabled={busy === true || confirmDisabled === true}>
             {confirmLabel}
           </Button>
         </div>
