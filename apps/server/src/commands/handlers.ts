@@ -12,7 +12,8 @@ import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
-import { useGitLogin } from "../orgs/gitLogin.ts";
+import { fetchPublicProfile, setGitAccount } from "../orgs/gitAccount.ts";
+import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { Services } from "../services.ts";
@@ -65,6 +66,22 @@ export function createHandlers({
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
+  const adoptDeps = (ctx: CommandContext): AdoptDeps => ({
+    readToken: async (via, host) => (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
+    saveSecret: (secret) => services.secretService.save(secret),
+    orgTokens: async (id) => {
+      const org = (await config.sections()).orgs[id];
+      return org === undefined ? undefined : (org.mr_tokens ?? {});
+    },
+    setOrgTokens: async (id, tokens) => {
+      await orgs.update({ id, mr_tokens: tokens }, ctx.command, ctx.meta);
+    },
+  });
+  const viewOf = async (id: string) => {
+    const org = (await orgs.list()).find((o) => o.id === id);
+    if (org === undefined) throw new UserError(`Org "${id}" does not exist.`, 404);
+    return org;
+  };
   return {
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
@@ -116,22 +133,42 @@ export function createHandlers({
     "ssh.hosts": () => sshConfigHosts(config.paths.hostHome),
     "git.logins": (input) => services.gitLogins.list(input.refresh === true),
 
-    "orgs.useGitLogin": (input, ctx) =>
-      useGitLogin(
+    "orgs.useGitLogin": (input, ctx) => useGitLogin(adoptDeps(ctx), input),
+
+    "orgs.setGitAccount": async (input, ctx) => {
+      await setGitAccount(
         {
-          readToken: async (via, host) =>
-            (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
-          saveSecret: (secret) => services.secretService.save(secret),
-          orgTokens: async (id) => {
+          org: async (id) => {
             const org = (await config.sections()).orgs[id];
-            return org === undefined ? undefined : (org.mr_tokens ?? {});
+            return org === undefined ? undefined : { identity: org.identity, accounts: org.git_accounts ?? [] };
           },
-          setOrgTokens: async (id, tokens) => {
-            await orgs.update({ id, mr_tokens: tokens }, ctx.command, ctx.meta);
+          logins: () => services.gitLogins.list().then((r) => r.hosts),
+          adopt: async (via, host) =>
+            (await useGitLogin(adoptDeps(ctx), { id: input.id, via, host })).ref,
+          saveSecret: (secret) => services.secretService.save(secret),
+          publicProfile: fetchPublicProfile,
+          write: async (id, patch) => {
+            await orgs.update({ id, ...patch }, ctx.command, ctx.meta);
           },
         },
         input,
-      ),
+      );
+      return viewOf(input.id);
+    },
+
+    "orgs.removeGitAccount": async (input, ctx) => {
+      const org = (await config.sections()).orgs[input.id];
+      if (org === undefined) throw new UserError(`Org "${input.id}" does not exist.`, 404);
+      const host = input.host.toLowerCase();
+      const rest = (org.git_accounts ?? []).filter(
+        (a) => !(a.host === host && a.account.toLowerCase() === input.account.toLowerCase()),
+      );
+      return orgs.update(
+        { id: input.id, git_accounts: rest.length === 0 ? null : rest },
+        ctx.command,
+        ctx.meta,
+      );
+    },
 
     "projects.pushRoute": (input) => services.mrs.pushRoute(input.id),
 

@@ -60,3 +60,40 @@ describe("chooseRoute", () => {
     });
   });
 });
+
+describe("chooseRoute with an org git account", () => {
+  const acme = { via: "ssh", account: "acme-dev" } as const;
+  const globex = { via: "ssh", alias: "gh-globex", account: "globex-dev" } as const;
+
+  it("the org's account wins over the automatic choice", () => {
+    expect(chooseRoute({ explicit: undefined, org: { account: "globex-dev" }, owner: "acme", logins: [acme, globex] })).toEqual({
+      state: "auto",
+      account: "globex-dev",
+      alias: "gh-globex",
+    });
+  });
+
+  it("a project's explicit alias wins over the org", () => {
+    expect(chooseRoute({ explicit: "mine", org: { account: "acme-dev" }, owner: "acme", logins: [acme] })).toEqual({
+      state: "picked",
+      alias: "mine",
+    });
+  });
+
+  it("refuses with the account's name when no key logs in as it, or the named route is absent", () => {
+    expect(chooseRoute({ explicit: undefined, org: { account: "globex-dev" }, owner: "x", logins: [acme] })).toEqual({
+      state: "org-missing",
+      account: "globex-dev",
+    });
+    expect(
+      chooseRoute({ explicit: undefined, org: { account: "globex-dev", ssh: "default" }, owner: "x", logins: [globex] }),
+    ).toEqual({ state: "org-missing", account: "globex-dev" });
+  });
+
+  it("an org without a binding ignores other orgs' accounts", () => {
+    expect(chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [acme] })).toEqual({
+      state: "auto",
+      account: "acme-dev",
+    });
+  });
+});

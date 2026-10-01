@@ -262,3 +262,19 @@ export function usePushRoute(id: string) {
     retry: false,
   });
 }
+
+/** Binds or removes an org's git account on a host. */
+export function useSetGitAccount() {
+  const client = useQueryClient();
+  const done = () => refresh(client, queryKeys.orgs, queryKeys.secrets);
+  const set = useMutation<CommandOutput<"orgs.setGitAccount">, ApiRequestError, CommandInput<"orgs.setGitAccount">>({
+    mutationFn: (input) => cmd("orgs.setGitAccount", input),
+    onSuccess: done,
+  });
+  const remove = useMutation<
+    CommandOutput<"orgs.removeGitAccount">,
+    ApiRequestError,
+    CommandInput<"orgs.removeGitAccount">
+  >({ mutationFn: (input) => cmd("orgs.removeGitAccount", input), onSuccess: done });
+  return { set, remove };
+}

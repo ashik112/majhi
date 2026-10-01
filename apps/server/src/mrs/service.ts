@@ -222,7 +222,7 @@ export class MrService {
     }
     const hostName = remoteConfig?.ssh === undefined ? hostNameOf(url) : undefined;
     let pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
-    if (/^https?:\/\//i.test(pushUrl)) pushUrl = (await this.routeFor(url, undefined)).url ?? pushUrl;
+    if (/^https?:\/\//i.test(pushUrl)) pushUrl = (await this.routeFor(url, undefined, project.org)).url ?? pushUrl;
     return {
       repo,
       project,
@@ -666,9 +666,15 @@ export class MrService {
       );
     const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
     if (/^https?:\/\//i.test(pushUrl)) {
-      const routed = await this.routeFor(url, undefined);
+      const routed = await this.routeFor(url, undefined, project.org);
       if (routed.url !== undefined) return { remote, pushUrl: routed.url };
       const fix = { page: "projects", project: project.id } as const;
+      if (routed.route.state === "org-missing") {
+        throw new FixableError(
+          `${project.org} uses the git account ${routed.route.account}, but no SSH key on this Mac logs in as it. Fix it in the org's Git accounts.`,
+          { page: "orgs", org: project.org },
+        );
+      }
       if (routed.route.state === "ambiguous") {
         const host = hostNameOf(url) ?? "the host";
         const choices = routed.route.choices.map((c) => describeLogin(host, c)).join(", ");
@@ -689,6 +695,7 @@ export class MrService {
   private async routeFor(
     url: string,
     explicit: string | undefined,
+    orgId?: string,
   ): Promise<{ route: PushRoute; url: string | undefined }> {
     const host = hostNameOf(url);
     const found =
@@ -698,8 +705,13 @@ export class MrService {
             (r) => r.hosts,
             () => undefined,
           );
+    const bound =
+      host === undefined || orgId === undefined
+        ? undefined
+        : (await this.deps.config.sections()).orgs[orgId]?.git_accounts?.find((a) => a.host === host);
     const route = chooseRoute({
       explicit,
+      org: bound === undefined ? undefined : { account: bound.account, ssh: bound.ssh },
       owner: ownerOf(url),
       logins: host === undefined || found === undefined ? [] : loginsOf(found, host),
     });
@@ -711,7 +723,7 @@ export class MrService {
   /** How `project` pushes its MR remote, for the project page. */
   async pushRoute(id: string): Promise<{
     host: string | undefined;
-    state: PushRoute["state"] | "ssh";
+    state: Exclude<PushRoute["state"], "org-missing"> | "ssh";
     label?: string;
     choices: Array<{ alias?: string; account: string; label: string }>;
   }> {
@@ -723,7 +735,7 @@ export class MrService {
     const explicit = project.remotes[remote]?.ssh;
     const https = /^https?:\/\//i.test(url);
     if (!https && explicit === undefined) return { host, state: "ssh", choices: [] };
-    const { route } = await this.routeFor(url, explicit);
+    const { route } = await this.routeFor(url, explicit, project.org);
     const logins = (await this.deps.gitLogins?.list().catch(() => undefined))?.hosts;
     const hostKey = explicit === undefined ? host : (aliasHost(explicit, logins) ?? host);
     const choices = (logins === undefined ? [] : loginsOf(logins, hostKey))
@@ -751,7 +763,7 @@ export class MrService {
         choices,
       };
     }
-    return { host, state: route.state, choices };
+    return { host, state: route.state === "org-missing" ? "none" : route.state, choices };
   }
 
   /** Every repo of the task, ready to push its branch: a worktree, all committed, a remote to push to. */

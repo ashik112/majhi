@@ -6,11 +6,15 @@ export type PushRoute =
   | { state: "picked"; alias: string }
   | { state: "auto"; account: string; alias?: string }
   | { state: "ambiguous"; choices: GitLogin[] }
+  /** The project's org binds an account, and no detected SSH key logs in as it. */
+  | { state: "org-missing"; account: string }
   | { state: "none" };
 
 export interface RouteInput {
   /** The SSH alias the owner picked for the remote. It always wins. */
   explicit: string | undefined;
+  /** The git account the project's org bound for this host. Wins over the automatic choice. */
+  org?: { account: string; ssh?: string | undefined } | undefined;
   /** The remote's namespace: `acme` of `acme/api`, or `group/sub` of `group/sub/api`. */
   owner: string;
   /** Logins of the remote's host. Only `ssh` ones can push. */
@@ -18,9 +22,19 @@ export interface RouteInput {
 }
 
 /** The SSH route to push with. Prefers the account that owns the repo's namespace, else the only one. */
-export function chooseRoute({ explicit, owner, logins }: RouteInput): PushRoute {
+export function chooseRoute({ explicit, org, owner, logins }: RouteInput): PushRoute {
   if (explicit !== undefined && explicit !== "") return { state: "picked", alias: explicit };
   const ssh = logins.filter((l) => l.via === "ssh");
+  if (org !== undefined) {
+    const mine = ssh.filter(
+      (l) =>
+        l.account.toLowerCase() === org.account.toLowerCase() &&
+        (org.ssh === undefined || (org.ssh === "default" ? l.alias === undefined : l.alias === org.ssh)),
+    );
+    const first = mine.find((l) => l.alias === undefined) ?? mine[0];
+    if (first === undefined) return { state: "org-missing", account: org.account };
+    return { state: "auto", account: first.account, ...(first.alias === undefined ? {} : { alias: first.alias }) };
+  }
   if (ssh.length === 0) return { state: "none" };
   const pick = (candidates: readonly GitLogin[]): PushRoute | undefined => {
     const accounts = new Set(candidates.map((c) => c.account.toLowerCase()));

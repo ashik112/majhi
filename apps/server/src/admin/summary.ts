@@ -9,6 +9,9 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "orgs.create": (i) => `Create org ${str(i.name) || str(i.id)}${i.key ? ` (key ${str(i.key)})` : ""}`,
   "orgs.update": (i) => `Change org ${str(i.id)}`,
+  "orgs.setGitAccount": (i) =>
+    `Use ${str(i.account)} on ${str(i.host)} for org ${str(i.id)}${i.ssh ? ` (SSH ${str(i.ssh)})` : ""}${i.token ? ", with a pasted token" : ""}`,
+  "orgs.removeGitAccount": (i) => `Remove ${str(i.account)} on ${str(i.host)} from org ${str(i.id)}`,
   "orgs.rename": (i) => `Rename org ${str(i.id)} to ${str(i.newId)}`,
   "agents.rename": (i) => `Rename agent ${str(i.id)} to ${str(i.newId)}`,
   "tasks.update": (i) => `Edit task ${str(i.id)}`,

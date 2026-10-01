@@ -74,6 +74,7 @@ export class OrgService {
       "merge",
       "lead_start",
       "mr_tokens",
+      "git_accounts",
     ] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
@@ -155,5 +156,6 @@ function view(
   if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;
+  if (org.git_accounts !== undefined && org.git_accounts.length > 0) out.gitAccounts = org.git_accounts;
   return out;
 }

@@ -78,6 +78,18 @@ export type AuthMode = z.infer<typeof AuthModeSchema>;
 // ---------------------------------------------------------------------------
 // majhi.yaml sections
 
+/** One git account an org pushes and opens MRs as on one host. */
+export const GitAccountSchema = z.strictObject({
+  /** The git host name, like `gitlab.com`. */
+  host: z.string().trim().toLowerCase().min(1).max(255),
+  account: z.string().trim().min(1).max(255),
+  /** The SSH route: a `Host` alias, or absent for the host's default key. */
+  ssh: z.string().trim().min(1).max(255).optional(),
+  /** The account's own token for MRs and the API. */
+  token: SecretRefSchema.optional(),
+});
+export type GitAccount = z.infer<typeof GitAccountSchema>;
+
 export const OrgConfigSchema = z.looseObject({
   name: z.string().trim().min(1),
   /** Hex color used for the org's dot and badges. */
@@ -118,6 +130,8 @@ export const OrgConfigSchema = z.looseObject({
   lead_start: LeadStartSchema.optional(),
   /** Credentials for opening and merging MRs, one secret per host. A project remote's own `token` wins. */
   mr_tokens: z.partialRecord(MrHostSchema, SecretRefSchema).optional(),
+  /** The git accounts of this org per host. They decide the push key, token and commit identity. */
+  git_accounts: z.array(GitAccountSchema).optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -357,6 +371,7 @@ export const OrgViewSchema = z.object({
   leadStart: LeadStartSchema,
   /** Secret references (never values) for the MR hosts, when set. */
   mrTokens: OrgConfigSchema.shape.mr_tokens,
+  gitAccounts: OrgConfigSchema.shape.git_accounts,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });

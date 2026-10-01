@@ -306,6 +306,27 @@ export const commands = {
     }),
     output: z.object({ id: IdSchema, host: MrHostSchema, ref: z.string() }),
   },
+  "orgs.setGitAccount": {
+    risk: "change",
+    summary:
+      "Bind a git account to an org on one host, like acme-dev on gitlab.com. Projects of this org then push with that account's SSH route. Adopts the Mac's gh or glab login token for it when one exists, or saves a pasted token. Fills the org's commit identity only when it has none. Never returns a token",
+    input: z.object({
+      id: IdSchema,
+      host: z.string().trim().min(1).max(255),
+      account: z.string().trim().min(1).max(255),
+      /** A `Host` alias from the detected SSH logins. Absent: the host's default key. */
+      ssh: z.string().trim().min(1).max(255).optional(),
+      /** A pasted token (GitLab personal access token, Bitbucket `user:app-password`), saved in secrets. */
+      token: z.string().min(1).max(4096).optional(),
+    }),
+    output: OrgViewSchema,
+  },
+  "orgs.removeGitAccount": {
+    risk: "change",
+    summary: "Remove an org's git account for a host. Its token secret is left in secrets",
+    input: z.object({ id: IdSchema, host: z.string().trim().min(1).max(255), account: z.string().trim().min(1) }),
+    output: OrgViewSchema,
+  },
   "projects.pushRoute": {
     risk: "read",
     summary: "How a project pushes its MR remote over SSH, and the keys that could do it",
@@ -416,6 +437,7 @@ export const commands = {
       /** Which tasks a lead may start without asking. null goes back to `children`. */
       lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
+      git_accounts: OrgConfigSchema.shape.git_accounts.nullable().optional(),
     }),
     output: OrgViewSchema,
   },
