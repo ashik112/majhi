@@ -112,6 +112,7 @@ describe("what a task's run mounts", () => {
       gitDir,
       join(gitDir, "config"),
       join(gitDir, "hooks"),
+      join(w.h.env.majhiHome, "git-hooks"),
     ]);
     const args = dockerRunArgs(request, config, "majhi-run-x").join(" ");
     expect(args).not.toContain(`source=${w.h.env.majhiHome},`);
