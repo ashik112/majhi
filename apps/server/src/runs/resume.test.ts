@@ -112,13 +112,65 @@ describe("restart and crash", () => {
   });
 });
 
+/** A fake clock for the runs and the network watch, and a probe the test turns off and on. */
+function outageKit() {
+  let t = Date.parse("2026-10-01T11:20:00.000Z");
+  let online = true;
+  return {
+    clock: () => new Date(t),
+    probe: async () => online,
+    pass: (ms: number) => {
+      t += ms;
+    },
+    set online(value: boolean) {
+      online = value;
+    },
+  };
+}
+
+/** Probe rounds 15 s apart from now until `ms` passed, as the watch does while the network is down. */
+async function failFor(kit: ReturnType<typeof outageKit>, ms: number): Promise<void> {
+  kit.online = false;
+  await w.h.majhi.services.resilience.network.check();
+  for (let passed = 15_000; passed <= ms; passed += 15_000) {
+    kit.pass(15_000);
+    await w.h.majhi.services.resilience.network.check();
+  }
+}
+
+async function backOnline(kit: ReturnType<typeof outageKit>): Promise<void> {
+  kit.online = true;
+  await w.h.majhi.services.resilience.network.check();
+}
+
+/** Sessions that are still open: each one is a runner container in production. */
+const openSessions = () => w.h.runtime.sessions.filter((s) => !s.closed).length;
+
 describe("offline", () => {
-  it("pauses running turns when the network drops and resumes them when it returns, with the work intact", async () => {
-    let online = true;
-    const turn = await startWorking({ probe: async () => online });
-    const { resilience, room } = w.h.majhi.services;
-    online = false;
-    await resilience.network.check();
+  it("pauses nothing for a blip shorter than 45 seconds", async () => {
+    const kit = outageKit();
+    const turn = await startWorking({ probe: kit.probe, runClock: kit.clock });
+    // The turn has been quiet a while: it would pause if majhi counted as offline.
+    kit.pass(60_000);
+    await failFor(kit, 30_000);
+    expect(w.h.majhi.services.resilience.network.online).toBe(true);
+    await backOnline(kit);
+    expect((await status(w.h)).status).toBe("running");
+    expect(w.h.runtime.sessions[0]?.cancels).toBe(0);
+    expect(await systems(w.h)).not.toContain(
+      "majhi is offline. @acme-builder paused and continues when the connection is back.",
+    );
+    turn.release();
+    await w.h.majhi.services.runs.idle();
+    expect(w.h.runtime.sessions[0]?.prompts).toHaveLength(1);
+  });
+
+  it("pauses a quiet turn in a real outage and resumes it with one prompt in the same session", async () => {
+    const kit = outageKit();
+    const turn = await startWorking({ probe: kit.probe, runClock: kit.clock });
+    const { room } = w.h.majhi.services;
+    kit.pass(31_000);
+    await failFor(kit, 45_000);
     await until(async () => (await status(w.h)).status === "paused", "the offline pause");
     expect(await status(w.h)).toMatchObject({ pausedReason: "offline" });
     expect(room.getLive("ACM-1", "acme-builder")?.status).toBe("paused");
@@ -133,18 +185,131 @@ describe("offline", () => {
       "the checkpoint",
     );
 
-    online = true;
-    await resilience.network.check();
-    await until(() => (w.h.runtime.sessions[0]?.prompts.length ?? 0) === 2, "the resume prompt");
+    // The resumed turn stays open until released, so the test sees it working.
+    const session = w.h.runtime.sessions[0];
+    if (session === undefined) throw new Error("no session");
+    session.script = turn.script;
+    await backOnline(kit);
+    // Another watcher call at the same moment resumes nothing twice.
+    await w.h.majhi.services.resilience.networkChanged(true);
+    await until(() => session.prompts.length === 2, "the resume prompt");
+    await until(() => room.getLive("ACM-1", "acme-builder")?.status === "working", "working again");
+    expect((await status(w.h)).status).toBe("running");
     turn.release();
     await w.h.majhi.services.runs.idle();
-    // The same session continues: nothing was restarted.
+    // The same session continues: nothing was restarted, and the turn was sent again once.
     expect(w.h.runtime.sessions).toHaveLength(1);
-    expect(w.h.runtime.sessions[0]?.prompts[1]).toEqual([
+    expect(session.prompts).toHaveLength(2);
+    expect(session.prompts[1]).toEqual([
       { type: "text", text: "Continue from where you stopped. The last checkpoint is 1." },
     ]);
+    expect(
+      (await systems(w.h)).filter((t) => t === "Resuming @acme-builder: the connection is back."),
+    ).toHaveLength(1);
     expect((await status(w.h)).status).toBe("review");
-    expect(existsSync(join(wt, "a.txt"))).toBe(true);
+  });
+
+  it("sends the waiting message once when the outage hits while the agent is still starting", async () => {
+    const kit = outageKit();
+    w = await taskWorld({ probe: kit.probe, runClock: kit.clock });
+    // The runner takes its time to start, like a container on a flaky connection.
+    let opened: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      opened = r;
+    });
+    const start = w.h.runtime.startSession.bind(w.h.runtime);
+    w.h.runtime.startSession = async (s) => {
+      await gate;
+      return start(s);
+    };
+    expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+    await until(
+      () => w.h.majhi.services.room.getLive("ACM-1", "acme-builder")?.status === "starting",
+      "the start",
+    );
+    await failFor(kit, 45_000);
+    expect(w.h.majhi.services.resilience.network.online).toBe(false);
+    await backOnline(kit);
+    opened();
+    await until(() => (w.h.runtime.sessions[0]?.prompts.length ?? 0) >= 1, "the first prompt");
+    await w.h.majhi.services.runs.idle();
+    const prompts = w.h.runtime.sessions[0]?.prompts ?? [];
+    expect(prompts).toHaveLength(1);
+    expect(JSON.stringify(prompts[0])).toContain("TASK.md");
+    expect(w.h.runtime.sessions).toHaveLength(1);
+    expect((await status(w.h)).status).toBe("review");
+  });
+
+  it("does not cut a turn that streams during the outage, and pauses it once it goes quiet", async () => {
+    const kit = outageKit();
+    const turn = await startWorking({ probe: kit.probe, runClock: kit.clock });
+    const session = w.h.runtime.sessions[0];
+    if (session === undefined) throw new Error("no session");
+    // The agent keeps sending through the outage: every probe round sees fresh output.
+    kit.online = false;
+    for (let round = 0; round <= 4; round++) {
+      if (round > 0) kit.pass(15_000);
+      session.emit({ type: "text", messageId: "m", text: "." });
+      await w.h.majhi.services.resilience.network.check();
+    }
+    expect(w.h.majhi.services.resilience.network.online).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(session.cancels).toBe(0);
+    expect((await status(w.h)).status).toBe("running");
+    expect(w.h.majhi.services.room.getLive("ACM-1", "acme-builder")?.status).toBe("working");
+
+    // Then it goes quiet while still offline: the next round pauses it.
+    kit.pass(31_000);
+    await w.h.majhi.services.resilience.network.check();
+    await until(async () => (await status(w.h)).status === "paused", "the pause once quiet");
+    expect(session.cancels).toBe(1);
+    await backOnline(kit);
+    await until(() => session.prompts.length === 2, "the resume prompt");
+    turn.release();
+    await w.h.majhi.services.runs.idle();
+    expect(openSessions()).toBe(1);
+  });
+
+  it("keeps one live runner per run across pause and resume, also when a cancel fails", async () => {
+    const kit = outageKit();
+    await startWorking({ probe: kit.probe, runClock: kit.clock });
+    // The agent ignores cancel, like one stuck on a dead connection: majhi closes its process.
+    w.h.runtime.onSession = (session) => {
+      session.script = async (turn) => {
+        turn.emit({ type: "text", messageId: "m", text: "working" });
+        await turn.untilCancelled();
+        return "end_turn";
+      };
+      session.cancel = async () => {
+        throw new Error("The agent did not stop after cancel");
+      };
+    };
+    const first = w.h.runtime.sessions[0];
+    if (first === undefined) throw new Error("no session");
+    first.cancel = async () => {
+      throw new Error("The agent did not stop after cancel");
+    };
+    for (let cycle = 1; cycle <= 3; cycle++) {
+      await until(async () => (await status(w.h)).status === "running", `running ${cycle}`);
+      kit.pass(31_000);
+      await failFor(kit, 45_000);
+      await until(async () => (await status(w.h)).status === "paused", `pause ${cycle}`);
+      await until(() => openSessions() === 0, `the closed session ${cycle}`);
+      await backOnline(kit);
+      await until(() => w.h.runtime.sessions.length === cycle + 1, `session ${cycle + 1}`);
+      await until(() => (w.h.runtime.sessions[cycle]?.prompts.length ?? 0) === 1, `resume ${cycle}`);
+      expect(openSessions()).toBe(1);
+    }
+    await w.h.majhi.services.runs.stop("ACM-1");
+    expect(openSessions()).toBe(0);
+  });
+
+  it("removes the runner of an agent whose process died", async () => {
+    await startWorking();
+    const session = w.h.runtime.sessions[0];
+    session?.emit({ type: "exit", code: 1, error: "getaddrinfo ENOTFOUND api.anthropic.com" });
+    await until(() => session?.closed === true, "the runner removed");
+    expect(openSessions()).toBe(0);
   });
 });
 

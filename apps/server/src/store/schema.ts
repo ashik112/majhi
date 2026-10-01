@@ -24,6 +24,8 @@ export const tasks = sqliteTable("tasks", {
   overrides: text("overrides").notNull().default("{}"),
   /** JSON: the room's turn counters (loop guard, pipeline step, review round). */
   roomState: text("room_state").notNull().default("{}"),
+  /** JSON array of ReadMount: folders mounted read-only into the task's runs. */
+  readMounts: text("read_mounts").notNull().default("[]"),
   /** JSON PendingShip: the ship majhi runs once the lead resolves its conflicts. NULL when none. */
   pendingShip: text("pending_ship"),
   createdAt: text("created_at").notNull(),
@@ -54,6 +56,8 @@ export const taskRepos = sqliteTable(
     /** `none`, `pending`, `passing` or `failing`. */
     ciState: text("ci_state"),
     pushedAt: text("pushed_at"),
+    /** The commit the branch was cut from. Null on tasks made before it was recorded. */
+    startCommit: text("start_commit"),
   },
   (t) => [primaryKey({ columns: [t.task, t.project] })],
 );

@@ -130,7 +130,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",

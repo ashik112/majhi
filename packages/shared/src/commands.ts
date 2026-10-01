@@ -688,6 +688,11 @@ export const commands = {
       title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
+      /**
+       * An investigation: the repos the text names are mounted read-only. No branch, no worktree, no
+       * Changes and no Ship. `kind: "ops"` does the same.
+       */
+      readOnly: z.boolean().optional(),
       /** Overrides the default agent. */
       agent: IdSchema.optional(),
       /** The whole team, lead first. Overrides @mentions and the default team. */

@@ -143,7 +143,7 @@ function RepoChanges({
       )}
       {diff?.error !== undefined && <p className="text-sm text-red text-pretty">{diff.error}</p>}
       {diff && diff.error === undefined && diff.files.length === 0 && (
-        <p className="text-sm text-fg-faint">No changes against {diff.base} yet.</p>
+        <p className="text-sm text-fg-faint">No changes since this task started.</p>
       )}
       {diff && <CommitList commits={diff.commits} limit={COMMITS_UP_TO} />}
       {diff && diff.files.length > 0 && (

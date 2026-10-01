@@ -16,7 +16,9 @@ import {
   type PlanMember,
   type ProcessInfo,
   parseMentions,
+  parsePathMentions,
   parseTaskText,
+  type ReadMount,
   type RoomItem,
   type RoomSearchHit,
   type ShipOption,
@@ -48,6 +50,7 @@ import {
   mergeBranch,
   remoteBranches,
 } from "../git/merge.ts";
+import { commitsSinceStart } from "../git/since-start.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -89,12 +92,15 @@ import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
+import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 
 export interface TaskDeps {
+  /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
+  protectedPaths?: string[];
   store: Store;
   config: ConfigService;
   projects: ProjectService;
@@ -137,6 +143,8 @@ export interface CreateInput {
   /** A separate short title: it becomes the first line, and `text` the description. */
   title?: string | undefined;
   kind?: TaskKind | undefined;
+  /** An investigation: the named repos are mounted read-only, with no branch, worktree or Ship. */
+  readOnly?: boolean | undefined;
   agent?: string | undefined;
   /** The whole team, lead first. */
   team?: string[] | undefined;
@@ -258,7 +266,9 @@ export class TaskService {
         `${parsed.warnings.find((w) => w.startsWith("Repos from")) ?? "Repos from more than one org"}. Make one task per org.`,
       );
     }
-    const kind = input.kind ?? parsed.kind;
+    // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
+    const investigation = input.readOnly === true || input.kind === "ops";
+    const kind = input.kind ?? (investigation && parsed.kind === "code" ? "ops" : parsed.kind);
     if (kind === "code" && parsed.repos.length === 0) {
       throw new UserError("A code task needs a project. Name one in the text, or change the kind.");
     }
@@ -307,7 +317,7 @@ export class TaskService {
             fallback: agent,
             mode: input.mode,
           });
-    const repos = await this.planRepos(id, parsed, projects);
+    const repos = investigation ? [] : await this.planRepos(id, parsed, projects);
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
@@ -330,6 +340,7 @@ export class TaskService {
         status: input.start ? "ready" : "inbox",
         folder,
         repos,
+        ...(investigation ? { readMounts: this.investigationMounts(parsed, projects, at) } : {}),
         team: picked.team,
         mode: picked.mode,
         overrides: {},
@@ -467,6 +478,57 @@ export class TaskService {
     return { team: pick.option.team, mode: args.mode ?? pick.option.mode, line: pick.line };
   }
 
+  /** The checkouts an investigation reads, read-only, for every agent of the task. */
+  private investigationMounts(parsed: ParsedTask, projects: readonly ProjectInfo[], at: string): ReadMount[] {
+    const mounts: ReadMount[] = [];
+    for (const match of parsed.repos) {
+      const project = projects.find((p) => p.id === match.project);
+      if (project === undefined) continue;
+      if (!project.exists) throw new UserError(`${project.path} is not a git repo the server can see.`, 409);
+      mounts.push({ path: project.path, at });
+    }
+    return mounts;
+  }
+
+  /**
+   * Folders the owner mentioned as `@/path` in a message to these agents: each one that passes the
+   * read rules is mounted read-only for that agent from now on, the room gets a quiet line, and
+   * the agent's session restarts to see it. A path that does not pass gets a line saying why.
+   */
+  private async grantMentionedReads(task: Task, agents: readonly string[], text: string): Promise<void> {
+    const paths = parsePathMentions(text);
+    if (paths.length === 0) return;
+    const loaded = await this.deps.config.load();
+    if (loaded.state.status !== "loaded") return;
+    const { workspaces, tasksDir } = loaded.state.config;
+    const projects = (await this.deps.projects.infos()).map((p) => ({ path: p.path, org: p.org }));
+    const frontmatters = await this.frontmatters();
+    const { majhiHome, hostHome } = this.deps.config.paths;
+    const blocked = blockedPaths({ majhiHome, hostHome, protectedPaths: this.deps.protectedPaths ?? [] });
+    let mounts = this.get(task.id).readMounts ?? [];
+    for (const agent of agents) {
+      const scope = frontmatters.find((a) => a.id === agent)?.scope;
+      if (scope === undefined) continue;
+      const policy: ReadPolicy = { roots: workspaces, projects, scope, blocked, tasksDir };
+      let granted = false;
+      for (const asked of paths) {
+        try {
+          const path = await checkReadMount(asked, policy);
+          if (mounts.some((m) => m.path === path && (m.agent === undefined || m.agent === agent))) continue;
+          mounts = [...mounts, { path, agent, at: this.now().toISOString() }];
+          granted = true;
+          this.note(task.id, `@${agent} can now read ${path} (read-only).`);
+        } catch (err) {
+          if (!(err instanceof ReadRefused)) throw err;
+          this.note(task.id, `@${agent} cannot read ${asked}: ${err.message}`);
+        }
+      }
+      if (!granted) continue;
+      this.deps.store.tasks.setReadMounts(task.id, mounts, this.now().toISOString());
+      this.deps.runs.remount(task.id, agent);
+    }
+  }
+
   private async planRepos(
     id: string,
     parsed: ParsedTask,
@@ -488,6 +550,12 @@ export class TaskService {
     return repos;
   }
 
+  /** The registered projects the task's agents read read-only: its org's, or all for a task without an org. */
+  private async readableProjects(task: Task): Promise<{ id: string; org: string; path: string }[]> {
+    const all = await this.deps.projects.infos();
+    return projectsFor(task.org ?? "root", all).map((p) => ({ id: p.id, org: p.org, path: p.path }));
+  }
+
   private async writeBriefFiles(
     task: Task,
     agents: readonly AgentFrontmatter[],
@@ -503,6 +571,7 @@ export class TaskService {
       team,
       await this.readFacts(task),
       this.deps.memory?.recalledText(task.id),
+      await this.readableProjects(task),
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -571,7 +640,7 @@ export class TaskService {
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
-        store.tasks.setWorktree(id, repo.project, path, result.createdBranch);
+        store.tasks.setWorktree(id, repo.project, path, result.createdBranch, result.startCommit);
         if (stack !== undefined && result.createdBranch) {
           store.tasks.setBase(id, repo.project, stack.branch);
           store.tasks.setStack(id, repo.project, { ...stack, commit: await headOf(path) });
@@ -1390,7 +1459,7 @@ export class TaskService {
   private async workShipped(repo: TaskRepo): Promise<boolean> {
     if (repo.mr !== undefined && repo.mr.state !== "closed") return true;
     if (!(await localBranchExists(repo.source, repo.branch))) return true;
-    const ahead = await commitsAhead(repo.source, repo.base, repo.branch);
+    const ahead = await commitsSinceStart(repo.source, repo).catch(() => undefined);
     if (ahead === 0) return true;
     const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     const remote = mrRemoteName(project?.remotes);
@@ -1417,7 +1486,7 @@ export class TaskService {
     let known = true;
     let ahead = 0;
     for (const r of trees) {
-      const n = await commitsAhead(r.source, r.base, r.branch);
+      const n = await commitsSinceStart(r.source, r).catch(() => undefined);
       if (n === undefined) known = false;
       else ahead += n;
     }
@@ -1969,6 +2038,7 @@ export class TaskService {
       await this.refreshBriefs([task.id]);
       this.deps.room.publishTask(this.get(task.id));
     }
+    await this.grantMentionedReads(task, targets, input.text);
     // The owner wrote back: a review card and plain-text questions stop waiting.
     this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
     this.cards.replied(task.id);
@@ -2105,16 +2175,6 @@ async function branchExists(source: string, branch: string): Promise<boolean> {
   if (await localBranchExists(source, branch)) return true;
   const remote = await remoteOf(source).catch(() => undefined);
   return remote !== undefined && (await remoteBranchExists(source, remote, branch));
-}
-
-/** Commits on `branch` that `base` does not have, or undefined when git cannot say. */
-async function commitsAhead(source: string, base: string, branch: string): Promise<number | undefined> {
-  try {
-    const n = Number.parseInt((await git(source, ["rev-list", "--count", `${base}..${branch}`])).trim(), 10);
-    return Number.isNaN(n) ? undefined : n;
-  } catch {
-    return undefined;
-  }
 }
 
 /** What a clean merge did, for the room and the Ship panel. */

@@ -52,6 +52,8 @@ const RESUME_RETRY_MS = 1_000;
 /** `activeAt` goes out at most this often while an agent streams. */
 const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
+/** A turn that heard from its agent this recently is streaming fine: going offline does not cut it. */
+export const STREAMING_MS = 30_000;
 
 export interface RunDeps {
   store: Store;
@@ -387,6 +389,18 @@ export class RunManager {
     return item;
   }
 
+  /**
+   * The agent's task got new read-only mounts. A session already open cannot see them, so an idle
+   * one is closed now and the next prompt resumes it with the mounts; a busy one restarts when its
+   * turn ends, before the next queued prompt.
+   */
+  remount(task: string, agent: string): void {
+    const run = this.runs.get(this.key(task, agent));
+    if (run?.session === undefined) return;
+    if (run.turning) run.remountDue = true;
+    else this.evict(this.key(task, agent));
+  }
+
   /** The concurrency limits changed: starts that wait may fit now. */
   limitsChanged(): Promise<void> {
     return this.slots.pump();
@@ -407,9 +421,21 @@ export class RunManager {
     this.live.set(run, { status: "paused", nowDoing: undefined });
   }
 
-  /** majhi is offline: every agent in a turn stops it and waits (5.7). */
+  /**
+   * majhi is offline (5.7): turns that went quiet or wait on a permission stop and wait. A turn
+   * that heard from its agent in the last `STREAMING_MS` goes on; it pauses by itself if its agent
+   * fails on the network, or on a later probe once it goes quiet. Runs still starting, or waiting
+   * for a worktree, have sent nothing yet and are left alone.
+   */
   async pauseForOffline(): Promise<void> {
-    const targets = [...this.runs.values()].filter((r) => r.turning && r.paused === undefined && !r.closing);
+    const now = this.now().getTime();
+    const targets = [...this.runs.values()].filter(
+      (r) =>
+        r.prompting &&
+        r.paused === undefined &&
+        !r.closing &&
+        (r.pending.size > 0 || now - r.lastEventAt >= STREAMING_MS),
+    );
     await Promise.all(
       targets.map(async (run) => {
         run.interrupted = true;
@@ -430,10 +456,10 @@ export class RunManager {
       .map((r) => ({ task: r.task, agent: r.agent }));
   }
 
-  /** Continues a paused or cut run. */
-  resume(task: string, agent: string, why: string): void {
+  /** Continues a run that is still paused because majhi went offline. Once, however often it is called. */
+  resumeOffline(task: string, agent: string, why: string): void {
     const run = this.runs.get(this.key(task, agent));
-    if (run !== undefined) this.resumeRun(run, why);
+    if (run?.paused === "offline") this.resumeRun(run, why);
   }
 
   /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
@@ -694,9 +720,11 @@ export class RunManager {
     run.mapper?.beginTurn();
     this.markTurn(run, true);
     let stopReason: string;
+    run.prompting = true;
     try {
       stopReason = (await session.prompt(blocks)).stopReason;
     } catch (err) {
+      run.prompting = false;
       this.deps.room.flush(run.task);
       if (run.closing || run.exited) return undefined;
       const message = errorMessage(err);
@@ -733,6 +761,7 @@ export class RunManager {
       this.resumeFailed(run, message);
       return undefined;
     }
+    run.prompting = false;
     run.lastStop = stopReason;
     run.overloadRetries = 0;
     this.finishTurn(run, stopReason);
@@ -763,6 +792,16 @@ export class RunManager {
     if (run.freshDue) {
       run.freshDue = false;
       await this.compaction.fresh(run);
+    }
+    if (run.remountDue) {
+      run.remountDue = false;
+      const session = run.session;
+      if (session !== undefined && !run.closing) {
+        // The slot stays when a prompt is waiting: it resumes the session at once, with the new mounts.
+        this.endSession(run, "mounts", run.queue.length > 0 && !run.held);
+        void session.close().catch(() => undefined);
+        this.setLive(run, { status: "idle", nowDoing: undefined });
+      }
     }
     return true;
   }
@@ -1087,9 +1126,11 @@ export class RunManager {
       case "notice":
         this.live.system(run, event.level, event.text);
         break;
-      case "exit":
+      case "exit": {
         if (run.closing) break;
         run.exited = true;
+        // A turn the crash cut continues on resume (a wake, a restart, the owner).
+        if (run.prompting) run.interrupted = true;
         run.retryable = looksLikeNetworkError(event.error ?? "");
         this.deps.room.flush(run.task);
         this.live.system(
@@ -1097,9 +1138,13 @@ export class RunManager {
           "error",
           `@${run.agent} stopped unexpectedly: ${event.error ?? `exit code ${event.code ?? "unknown"}`}`,
         );
+        const session = run.session;
         this.endSession(run, "exit");
+        // The process is gone, but its runner container may not be: remove it.
+        void session?.close().catch(() => undefined);
         this.setLive(run, { status: "error", nowDoing: undefined });
         break;
+      }
     }
   }
 
@@ -1220,6 +1265,8 @@ export class RunManager {
     if (run.closing) return;
     run.paused = undefined;
     run.retryable = false;
+    // A cancel that waited for the session to open was for the turn this resume replaces.
+    run.cancelBeforePrompt = false;
     if (run.retryTimer !== undefined) clearTimeout(run.retryTimer);
     run.retryTimer = undefined;
     if (!run.queue.some((e) => e.kind === "resume")) run.queue.unshift({ kind: "resume" });

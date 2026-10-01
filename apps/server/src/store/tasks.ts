@@ -5,6 +5,8 @@ import {
   type PausedReason,
   type PendingShip,
   PendingShipSchema,
+  type ReadMount,
+  ReadMountSchema,
   type RepoMr,
   type Task,
   type TaskId,
@@ -34,6 +36,17 @@ function parsePendingShip(json: string | null): PendingShip | undefined {
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
+  }
+}
+
+const ReadMountsSchema = z.array(ReadMountSchema);
+
+function parseReadMounts(json: string): ReadMount[] {
+  try {
+    const parsed = ReadMountsSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
   }
 }
 
@@ -76,6 +89,7 @@ export class TaskRepo {
           team: JSON.stringify(task.team),
           mode: task.mode,
           overrides: JSON.stringify(task.overrides),
+          readMounts: JSON.stringify(ReadMountsSchema.parse(task.readMounts ?? [])),
           pendingShip: task.pendingShip === undefined ? null : JSON.stringify(task.pendingShip),
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
@@ -101,6 +115,7 @@ export class TaskRepo {
             mrState: r.mr?.state ?? null,
             ciState: r.mr?.ci ?? null,
             pushedAt: r.pushedAt ?? null,
+            startCommit: r.startCommit ?? null,
           })
           .run();
       });
@@ -155,6 +170,7 @@ export class TaskRepo {
           : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
         ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
         ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
+        ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
         ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
           ? {}
           : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
@@ -162,6 +178,7 @@ export class TaskRepo {
       team: TeamSchema.parse(JSON.parse(row.team)),
       mode: CoordinationModeSchema.catch("lead").parse(row.mode),
       overrides: parseOverrides(row.overrides),
+      ...(row.readMounts === "[]" ? {} : { readMounts: parseReadMounts(row.readMounts) }),
       links: links.map((l) => ({
         type: TaskLinkTypeSchema.parse(l.type),
         task: l.other,
@@ -393,6 +410,14 @@ export class TaskRepo {
     this.db.update(tasks).set({ mode, updatedAt: at }).where(eq(tasks.id, id)).run();
   }
 
+  setReadMounts(id: string, mounts: readonly ReadMount[], at: string): void {
+    this.db
+      .update(tasks)
+      .set({ readMounts: JSON.stringify(ReadMountsSchema.parse(mounts)), updatedAt: at })
+      .where(eq(tasks.id, id))
+      .run();
+  }
+
   setOverrides(id: string, overrides: Record<string, TeamOverride>, at: string): void {
     this.db
       .update(tasks)
@@ -504,10 +529,16 @@ export class TaskRepo {
     this.db.update(tasks).set({ updatedAt: at }).where(eq(tasks.id, id)).run();
   }
 
-  setWorktree(task: string, project: string, worktree: string, createdBranch: boolean): void {
+  setWorktree(
+    task: string,
+    project: string,
+    worktree: string,
+    createdBranch: boolean,
+    startCommit?: string,
+  ): void {
     this.db
       .update(taskRepos)
-      .set({ worktree, createdBranch })
+      .set({ worktree, createdBranch, ...(startCommit === undefined ? {} : { startCommit }) })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
   }

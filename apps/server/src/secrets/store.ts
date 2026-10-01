@@ -30,7 +30,7 @@ export class SecretStore {
 
   constructor(
     majhiHome: string,
-    private readonly keyFile: string,
+    readonly keyFile: string,
   ) {
     this.file = join(majhiHome, SECRETS_FILE_NAME);
   }

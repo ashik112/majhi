@@ -22,6 +22,10 @@ export interface ResilienceDeps {
   config: ConfigService;
   probe: Probe;
   probeMs?: number;
+  /** Runner containers: when the connection is back, any left without a live run are removed. */
+  runners?: { prune(): Promise<unknown> } | undefined;
+  /** In ms. Tests pass a fake clock. */
+  now?: () => number;
 }
 
 /**
@@ -36,7 +40,10 @@ export class Resilience {
     this.network = new NetworkWatch({
       probe: deps.probe,
       ...(deps.probeMs === undefined ? {} : { intervalMs: deps.probeMs }),
+      ...(deps.now === undefined ? {} : { now: deps.now }),
       onChange: (online) => void this.networkChanged(online).catch(() => undefined),
+      // Turns still streaming when offline was declared pause once they go quiet.
+      onStillOffline: () => void deps.runs.pauseForOffline().catch(() => undefined),
     });
   }
 
@@ -154,16 +161,21 @@ export class Resilience {
     for (const { task: id, agent } of runs.pausedOffline()) {
       const task = store.tasks.get(id);
       if (task === undefined) continue;
-      if (await this.autoResume(task)) runs.resume(id, agent, "the connection is back");
+      // Two calls can overlap (the probe and an agent's network error): only one resumes a run.
+      if (await this.autoResume(task)) runs.resumeOffline(id, agent, "the connection is back");
       else
         this.note(
           task.id,
           "majhi is back online. Automatic resume is off for this org, so resume the task when you are ready.",
         );
     }
+    await this.deps.runners?.prune().catch(() => undefined);
   }
 
-  /** An agent failed like a lost connection. Probe now: offline pauses the rest, a working network resumes it. */
+  /**
+   * An agent failed like a lost connection and paused. Probe now: a working network resumes it,
+   * and a failing one counts toward the outage that pauses the rest.
+   */
   async networkError(): Promise<void> {
     const online = await this.network.check();
     if (online) await this.networkChanged(true);

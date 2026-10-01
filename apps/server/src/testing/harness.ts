@@ -39,6 +39,8 @@ export interface HarnessOptions {
   hostLink?: HostLink;
   /** The network probe, so a test can go offline. */
   probe?: Probe;
+  /** The clock of agent runs and the network watch. */
+  runClock?: () => Date;
   /** Fake `gh`, `glab` and Bitbucket for merge requests. */
   mrHosts?: MrHostOptions;
   /** Replaces the deterministic fake embedder. */
@@ -75,6 +77,7 @@ function build(
     ...(links === undefined ? {} : { links }),
     ...(hostLink === undefined ? {} : { hostLink }),
     ...(probe === undefined ? {} : { probe }),
+    ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(mrHosts === undefined ? {} : { mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
   });

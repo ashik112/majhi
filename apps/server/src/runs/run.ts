@@ -51,7 +51,10 @@ export class AgentRun {
   turning = false;
   /** The loop sent its last prompt and is handing back: not working any more, though `turning` is still set. */
   settling = false;
+  /** Set when a cancel arrives while the session is still opening: the loop sends nothing once it opens. */
   cancelBeforePrompt = false;
+  /** A prompt is open on the session: sent, and no answer yet. */
+  prompting = false;
   needsBrief = false;
   /** Stop reason of the last finished turn. */
   lastStop: string | undefined;
@@ -111,6 +114,8 @@ export class AgentRun {
   retryTimer: NodeJS.Timeout | undefined;
   /** The owner asked for a fresh session while a turn ran. */
   freshDue = false;
+  /** New read-only mounts were added while a turn ran: the session restarts when it ends. */
+  remountDue = false;
   /** The room already said this run waits for a slot. */
   queuedNoted = false;
   /** Aborts a wait for another agent's worktree lock (5.3). */
