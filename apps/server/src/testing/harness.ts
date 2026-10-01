@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { COMMAND_META_HEADER } from "@majhi/shared";
+import type { RemoteRunFn } from "../connections/remote.ts";
 import type { ContainerDocker } from "../containers/service.ts";
 import type { ServerEnv } from "../env.ts";
 import type { HostLink } from "../host/link.ts";
@@ -47,6 +48,8 @@ export interface HarnessOptions {
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents. */
   containerDocker?: ContainerDocker;
+  /** Replaces ssh for majhi-connections. */
+  connectionsRemote?: RemoteRunFn;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -80,6 +83,7 @@ function build(
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(mrHosts === undefined ? {} : { mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
+    ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
   });
   const h: Harness = {
     dir,

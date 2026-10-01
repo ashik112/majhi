@@ -53,6 +53,26 @@ ENV GIT_CONFIG_COUNT=1 \
     GIT_CONFIG_KEY_0=safe.directory \
     GIT_CONFIG_VALUE_0=*
 
+# kubectl for kubectl connections (SPEC 5.14): agent runs and each connection's Test run it in the runner.
+# Pinned by version and by the SHA-256 per CPU. To update, change the version and take the sums from
+# https://dl.k8s.io/release/<version>/bin/linux/<arch>/kubectl.sha256.
+FROM debian:bookworm-slim AS kubectl
+ARG TARGETARCH
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+  KUBECTL_VERSION=v1.37.1; \
+  case "$TARGETARCH" in \
+    amd64) KUBECTL_SHA=65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8 ;; \
+    arm64) KUBECTL_SHA=ff749f4b78d9c4f1ec87307df9b50119ed819e2094aa9810cb9acffc3286c8c7 ;; \
+    *) echo "kubectl is not pinned for $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL -o /kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl"; \
+  echo "${KUBECTL_SHA}  /kubectl" | sha256sum -c -; \
+  chmod 755 /kubectl; \
+  /kubectl version --client
+
 # Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
 # task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
 # real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
@@ -66,6 +86,17 @@ RUN apt-get update \
   && npx -y playwright@1.63.0 install --with-deps chromium \
   && chmod -R a+rX /opt/ms-playwright \
   && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
+# Browser connections (SPEC 5.14): the agent CLI starts one of these MCP servers in the runner, with
+# the connection's own profile. Pinned: raise them here and in apps/server/src/connections/browser.ts
+# together. Playwright MCP brings its own Playwright, whose Chromium is installed next to the one
+# above; Chrome DevTools MCP uses that Chromium through /usr/local/bin/chromium.
+RUN npm install -g @playwright/mcp@0.0.83 chrome-devtools-mcp@1.10.1 \
+  && node /usr/local/lib/node_modules/@playwright/mcp/node_modules/playwright/cli.js install chromium \
+  && ln -sf "$(find /opt/ms-playwright -path '*/chrome-linux*/chrome' -type f | sort | tail -n 1)" /usr/local/bin/chromium \
+  && test -x /usr/local/bin/chromium \
+  && chmod -R a+rX /opt/ms-playwright \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /root/.cache
 # Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
 # runner, one per task worktree (`apps/server/src/runs/serena.ts`). Installed with uv, which is
 # mounted for this step only and not left in the image. Python 3.13 and the package live under
@@ -77,6 +108,7 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   UV_COMPILE_BYTECODE=1 uv tool install -p 3.13 serena-agent==1.7.0 \
   && chmod -R a+rX /opt/serena \
   && /opt/serena/bin/serena --version
+COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +

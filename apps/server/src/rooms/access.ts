@@ -14,7 +14,10 @@ export const CONTAINERS_PATH = "/mcp/containers";
 export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
-export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers";
+export const CONNECTIONS_SERVER_NAME = "majhi-connections";
+export const CONNECTIONS_PATH = "/mcp/connections";
+
+export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers" | "connections";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
 const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
@@ -23,6 +26,7 @@ const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
   { key: "processes", name: PROCESSES_SERVER_NAME, path: PROCESSES_PATH },
   { key: "containers", name: CONTAINERS_SERVER_NAME, path: CONTAINERS_PATH },
   { key: "memory", name: MEMORY_SERVER_NAME, path: MEMORY_PATH },
+  { key: "connections", name: CONNECTIONS_SERVER_NAME, path: CONNECTIONS_PATH },
 ];
 
 /** Who a token belongs to: one agent session in one task. */
@@ -65,6 +69,7 @@ export class RoomAccess {
   readonly processes = new ToolTokens();
   readonly memory = new ToolTokens();
   readonly containers = new ToolTokens();
+  readonly connections = new ToolTokens();
 
   /**
    * `mcpUrl` gives majhi-admin's URL; these servers sit next to it. `containersOn` says whether majhi

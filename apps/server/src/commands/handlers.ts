@@ -17,6 +17,10 @@ import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
+import { connectionHandlers } from "../connections/handlers.ts";
+import { redactSecrets } from "../connections/redact.ts";
+import { taskSecrets } from "../connections/run-files.ts";
+import { connectionDir } from "../connections/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
@@ -107,6 +111,7 @@ export function createHandlers({
   return {
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
+    ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
 
     "config.get": async () => (await config.load()).state,
 
@@ -357,7 +362,23 @@ export function createHandlers({
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
-    "tasks.report": async (input) => (await readReport(services.tasks.get(input.id).folder)) ?? null,
+    "tasks.report": async (input) => {
+      const task = services.tasks.get(input.id);
+      const report = await readReport(task.folder);
+      if (report === undefined) return null;
+      // The report is shown with the task's connection secrets kept out (5.14).
+      const majhiHome = config.paths.majhiHome;
+      const secrets = await taskSecrets(
+        {
+          config,
+          secrets: services.secrets,
+          majhiHome,
+          connectionDir: (id) => connectionDir(majhiHome, id),
+        },
+        task,
+      );
+      return { ...report, content: redactSecrets(report.content, secrets) };
+    },
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
     "tasks.stop": (input) => services.tasks.stop(input.id),

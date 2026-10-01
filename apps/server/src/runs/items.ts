@@ -135,6 +135,11 @@ export class ItemMapper {
     this.sink.post(this.toolItemId(event.toolCallId), next);
   }
 
+  /** The title a tool call was shown with, like Codex's `mcp.<server>.<tool>`. */
+  toolTitle(toolCallId: string): string | undefined {
+    return this.tools.get(toolCallId)?.title;
+  }
+
   private toolItemId(toolCallId: string): string {
     return `tool:${this.agent}:${this.run}:${toolCallId}`;
   }
@@ -195,5 +200,6 @@ export function permissionPayload(
     state: patch.state ?? item.state,
     ...(item.toolCallId === undefined ? {} : { toolCallId: item.toolCallId }),
     ...(chosen === undefined ? {} : { chosen }),
+    ...(item.connection === undefined ? {} : { connection: item.connection }),
   };
 }

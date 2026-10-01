@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { killTree } from "../exec.ts";
 import type { RunMount, Spawned, Spawner, SpawnRequest } from "../spawn.ts";
 
@@ -62,6 +62,15 @@ export class MountRefused extends Error {}
  */
 export const MAJHI_HOOKS_DIR = "git-hooks";
 
+/**
+ * A run's connection files (SPEC 5.14), one folder per run under `<majhiHome>/run/connections`. A run
+ * may mount a folder right under it, and only read-only: the server passes only the run's own.
+ */
+export const MAJHI_RUN_CONNECTIONS_DIR = "run/connections";
+
+/** Each connection's own files, `<majhiHome>/connections/<id>`. Only a browser's `profile` folder is ever mounted. */
+const CONNECTIONS_DIR = "connections";
+
 function inside(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
@@ -100,13 +109,21 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const isOwnHome = (path: string) => ownHomes.includes(path) && accountsDirs.includes(dirname(path));
   const hooksDirs = majhiHomes.map((h) => resolve(h, MAJHI_HOOKS_DIR));
   const isHooks = (path: string, m: RunMount) => m.readOnly === true && hooksDirs.includes(path);
+  const runFolders = majhiHomes.map((h) => resolve(h, MAJHI_RUN_CONNECTIONS_DIR));
+  const isRunFolder = (path: string, m: RunMount) =>
+    m.readOnly === true && runFolders.includes(dirname(path));
+  // A browser connection's profile, read-write: its logins persist, and nothing else of the connection shows.
+  const connectionDirs = majhiHomes.map((h) => resolve(h, CONNECTIONS_DIR));
+  const isProfile = (path: string) =>
+    basename(path) === "profile" && connectionDirs.includes(dirname(dirname(path)));
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
     for (const path of realForms(m.path)) {
       if (path === "/") throw new MountRefused("A run cannot mount the whole disk.");
       for (const p of protectedPaths) {
         if (inside(p, path)) throw new MountRefused(`A run cannot mount ${path}: it holds ${p}.`);
-        if (inside(path, p) && !(majhiHomes.includes(p) && (isOwnHome(path) || isHooks(path, m)))) {
+        const allowed = isOwnHome(path) || isHooks(path, m) || isRunFolder(path, m) || isProfile(path);
+        if (inside(path, p) && !(majhiHomes.includes(p) && allowed)) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }
       }

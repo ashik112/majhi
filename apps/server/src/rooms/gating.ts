@@ -2,6 +2,7 @@ import type { AgentFrontmatter } from "@majhi/shared";
 import { ADMIN_TOOL_ID, getsAdminTools } from "../admin/access.ts";
 import { DECIDE_SERVER_NAME } from "../decisions/service.ts";
 import {
+  CONNECTIONS_SERVER_NAME,
   CONTAINERS_SERVER_NAME,
   MEMORY_SERVER_NAME,
   PROCESSES_SERVER_NAME,
@@ -22,6 +23,7 @@ export const GATED_TOOLS = [
   MEMORY_SERVER_NAME,
   CONTAINERS_SERVER_NAME,
   SERENA_SERVER_NAME,
+  CONNECTIONS_SERVER_NAME,
 ] as const;
 export type GatedTool = (typeof GATED_TOOLS)[number];
 
@@ -43,6 +45,8 @@ export interface GateContext {
   hasWorktrees: boolean;
   /** The task is an `ops` task: its agents can make fix tasks (5.15) without being leads. */
   opsTask?: boolean;
+  /** The run holds a connection (5.14). */
+  holdsConnections?: boolean;
 }
 
 type GateAgent = Pick<AgentFrontmatter, "id" | "role" | "scope" | "tools">;
@@ -70,6 +74,7 @@ export function turnedOff(tools: readonly string[]): Set<string> {
  * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the boss), or listed.
  * - `majhi-containers`: every session, when majhi can run containers.
  * - `serena`: builders of a task with worktrees, when it can start; or listed, with worktrees.
+ * - `majhi-connections`: every session that holds a connection, and root agents, which can attach one.
  */
 export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
   const off = turnedOff(agent.tools);
@@ -85,6 +90,7 @@ export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
     [CONTAINERS_SERVER_NAME]: ctx.containersOn,
     [SERENA_SERVER_NAME]:
       ctx.serena && ctx.hasWorktrees && (CODE_ROLES.has(agent.role) || listed(SERENA_SERVER_NAME)),
+    [CONNECTIONS_SERVER_NAME]: ctx.holdsConnections === true || agent.scope === "root",
   };
   return GATED_TOOLS.filter((name) => {
     // The boss without majhi-admin could not do its job: a dash cannot take it away.

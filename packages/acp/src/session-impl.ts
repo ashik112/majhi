@@ -85,7 +85,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 export async function openSession(start: SessionStart, log: DebugLog = () => {}): Promise<AgentSession> {
   const { account, options } = start;
   await prepareHome(account);
-  const env = buildEnv(account, options.base, start.git);
+  // A connection's variables first: majhi's own (PATH, HOME, the account's) always win.
+  const env = { ...start.env, ...buildEnv(account, options.base, start.git) };
   const adapter = options.adapters?.[account.tool] ?? getTool(account.tool).adapter;
 
   const spawned = await (options.spawner ?? localSpawner)({

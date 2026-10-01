@@ -52,6 +52,8 @@ export const queryKeys = {
   schedules: ["schedules"],
   /** Every `triggers.*` read: the list, one trigger and its runs. */
   triggers: ["triggers"],
+  /** Every `connections.*` read: the list, one connection and the types. */
+  connections: ["connections"],
 } as const;
 
 export function useConfig() {

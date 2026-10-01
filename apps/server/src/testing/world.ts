@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { vi } from "vitest";
+import type { RemoteRunFn } from "../connections/remote.ts";
 import type { ContainerDocker } from "../containers/service.ts";
 import type { HostLink } from "../host/link.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
@@ -33,6 +34,7 @@ export interface WorldOptions {
   runClock?: () => Date;
   mrHosts?: MrHostOptions;
   containerDocker?: ContainerDocker;
+  connectionsRemote?: RemoteRunFn;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
+    ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
   });
   const world: World = {
     h,

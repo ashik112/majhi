@@ -242,6 +242,11 @@ export const TaskSchema = z.object({
    * repos of an investigation task, which has no branch, worktree or Ship. Absent for none.
    */
   readMounts: z.array(ReadMountSchema).optional(),
+  /**
+   * Connections the task's root agents get beyond its org's (SPEC 5.14): named when it was created,
+   * or attached by a root agent. Absent for none.
+   */
+  connections: z.array(IdSchema).optional(),
   /** Agent ids. The first is the lead: owner messages without a mention go to it. */
   team: z.array(IdSchema),
   /** How the team takes turns (5.3). */
@@ -593,6 +598,13 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["pending", "answered", "auto", "cancelled"]),
     /** The option picked, by the owner (`answered`) or by the agent's permissions (`auto`). */
     chosen: z.string().optional(),
+    /**
+     * A write to one of the run's connections (5.14): which one, the action and why it counts as a
+     * write. No remembered choice covers it, and Allow counts once.
+     */
+    connection: z
+      .object({ id: z.string().optional(), name: z.string(), action: z.string(), why: z.string() })
+      .optional(),
   }),
   /**
    * A command the boss (or another agent with majhi tools) wants to run (5.16).

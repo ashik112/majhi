@@ -9,6 +9,7 @@ import {
   type CoordinationMode,
   canWorkIn,
   chatTitleFrom,
+  connectionType,
   DEFAULT_CHAT_TITLES,
   isOwnerChat,
   LOCAL_TASK_PREFIX,
@@ -42,6 +43,8 @@ import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { logShip } from "../audit.ts";
 import type { ConfigService } from "../config/service.ts";
+import { runConnections } from "../connections/access.ts";
+import { useLine } from "../connections/plan.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
@@ -91,7 +94,7 @@ import {
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
-import { type BriefAgent, branchName, renderPointer, renderTaskMd } from "./brief.ts";
+import { type BriefAgent, type BriefConnection, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
@@ -188,6 +191,8 @@ export interface CreateInput {
   followUpOf?: string | undefined;
   /** When those count as met. Default `merged`. */
   dependsWhen?: "merged" | "ready" | undefined;
+  /** Connection ids its root agents get beyond the task's org's. */
+  connections?: string[] | undefined;
 }
 
 /** Creating, starting, stopping and removing tasks, and the owner's messages to a task's agent. */
@@ -337,6 +342,12 @@ export class TaskService {
     if (org !== undefined && sections.orgs[org] === undefined) {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
+    const connections = [...new Set(input.connections ?? [])];
+    for (const id of connections) {
+      if (!Object.values(sections.orgs).some((o) => o.connections?.[id] !== undefined)) {
+        throw new UserError(`There is no connection ${id}.`, 404);
+      }
+    }
 
     const asked = this.askedTeam({ input, parsed, agents, org });
     const views = asked === undefined ? await this.deps.accounts.list() : [];
@@ -400,6 +411,7 @@ export class TaskService {
         folder,
         repos,
         ...(investigation ? { readMounts: this.investigationMounts(parsed, projects, at) } : {}),
+        ...(connections.length === 0 ? {} : { connections }),
         team: picked.team,
         mode: picked.mode,
         overrides: {},
@@ -654,6 +666,7 @@ export class TaskService {
       await this.readFacts(task),
       this.deps.memory?.recalledText(task.id),
       await this.readableProjects(task),
+      await this.briefConnections(task, agents),
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -2084,11 +2097,38 @@ export class TaskService {
     return known?.team === task.team.join(",") ? known.facts : this.readFacts(task);
   }
 
+  /** The connections the task's team may hold (5.14), for TASK.md. Never a value. */
+  private async briefConnections(
+    task: Task,
+    agents: readonly AgentFrontmatter[],
+  ): Promise<BriefConnection[]> {
+    const { orgs } = await this.deps.config.sections();
+    const found = new Map<string, BriefConnection>();
+    for (const fm of agents.filter((a) => task.team.includes(a.id))) {
+      const held = runConnections({
+        agent: { scope: fm.scope, connections: fm.connections },
+        task: { org: task.org, connections: task.connections ?? [] },
+        orgs,
+      });
+      for (const h of held) {
+        if (found.has(h.id)) continue;
+        found.set(h.id, {
+          id: h.id,
+          name: h.connection.name,
+          type: connectionType(h.connection.type).label,
+          description: h.connection.description ?? "",
+          use: useLine(h),
+        });
+      }
+    }
+    return [...found.values()];
+  }
+
   /**
    * Rewrites TASK.md of each task so its Related tasks and Team facts sections are current. Facts
    * are the last ones read; only a task without any gets a fresh read.
    */
-  private async refreshBriefs(ids: readonly string[]): Promise<void> {
+  async refreshBriefs(ids: readonly string[]): Promise<void> {
     const sections = await this.deps.config.sections();
     const stored = await this.deps.agents.list();
     const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
@@ -2104,6 +2144,8 @@ export class TaskService {
         team,
         await this.knownFacts(task),
         this.deps.memory?.recalledText(task.id),
+        await this.readableProjects(task),
+        await this.briefConnections(task, agents),
       );
       // The folder can be gone by hand; the links still stand.
       await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);

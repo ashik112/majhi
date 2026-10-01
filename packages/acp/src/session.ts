@@ -20,6 +20,8 @@ export interface SessionStart {
   git?: GitAttribution;
   /** MCP servers to attach (Phase 2b adds majhi-admin for the boss). */
   mcpServers?: (McpServerSpec | StdioServerSpec)[];
+  /** Variables of the run's connections (SPEC 5.14). The run's own variables win over them. */
+  env?: Record<string, string>;
   /** Resume this ACP session id with session/load when the agent supports it. */
   resume?: string;
   model?: string;

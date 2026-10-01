@@ -1,6 +1,13 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AccountConfig, OrgConfig, Price, ProjectConfig, WorkspacesUpdate } from "@majhi/shared";
+import type {
+  AccountConfig,
+  ConnectionConfig,
+  OrgConfig,
+  Price,
+  ProjectConfig,
+  WorkspacesUpdate,
+} from "@majhi/shared";
 import { type Document, isCollection, isMap, isNode, isScalar, isSeq, parseDocument } from "yaml";
 import { errorCode } from "../errors.ts";
 
@@ -54,6 +61,35 @@ export function writeWorkspaces(file: string, update: WorkspacesUpdate): Promise
 /** Adds or replaces `orgs.<id>`. */
 export function writeOrg(file: string, id: string, org: OrgConfig): Promise<void> {
   return editConfig(file, (doc) => doc.setIn(["orgs", id], doc.createNode(org)));
+}
+
+/**
+ * Adds or replaces `orgs.<org>.connections.<id>`. An org with no entry yet (the built-in Private
+ * org) is written whole first, from `entry`, so it keeps its required name.
+ */
+export function writeConnection(
+  file: string,
+  org: string,
+  entry: OrgConfig,
+  id: string,
+  connection: ConnectionConfig,
+): Promise<void> {
+  return editConfig(file, (doc) => {
+    if (!isMap(doc.getIn(["orgs", org], true))) {
+      const { connections: _connections, ...rest } = entry;
+      doc.setIn(["orgs", org], doc.createNode(rest));
+    }
+    doc.setIn(["orgs", org, "connections", id], doc.createNode(connection));
+  });
+}
+
+/** Removes `orgs.<org>.connections.<id>`, and the `connections` key when it is left empty. */
+export function removeConnectionEntry(file: string, org: string, id: string): Promise<void> {
+  return editConfig(file, (doc) => {
+    doc.deleteIn(["orgs", org, "connections", id]);
+    const left: unknown = doc.getIn(["orgs", org, "connections"], true);
+    if (isMap(left) && left.items.length === 0) doc.deleteIn(["orgs", org, "connections"]);
+  });
 }
 
 /** Adds or replaces `accounts.<id>`. */

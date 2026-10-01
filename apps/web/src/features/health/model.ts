@@ -9,6 +9,7 @@ const GROUPS: readonly { id: CheckGroupId; title: string }[] = [
   { id: "host", title: "This Mac" },
   { id: "ssh", title: "Git over SSH" },
   { id: "accounts", title: "Accounts" },
+  { id: "connections", title: "Connections" },
   { id: "disk", title: "Disk" },
 ];
 

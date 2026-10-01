@@ -100,6 +100,7 @@ export {
   dockerSpawner,
   dockerTty,
   MAJHI_HOOKS_DIR,
+  MAJHI_RUN_CONNECTIONS_DIR,
   MountRefused,
   type RunnerConfig,
   type RunnerSpawner,

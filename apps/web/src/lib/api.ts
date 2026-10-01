@@ -76,11 +76,15 @@ export async function getHealth(signal?: AbortSignal): Promise<Health> {
   return parseWith("health", HealthSchema, body);
 }
 
-/** `POST /api/uploads`: stores one file for a task being written and answers with its attachment. */
-export async function uploadFile(file: File): Promise<Attachment> {
+/**
+ * `POST /api/uploads`: stores one file for a task being written and answers with its attachment.
+ * `connection` stores a connection's file instead: any type, for connections.setFile only.
+ */
+export async function uploadFile(file: File, purpose?: "connection"): Promise<Attachment> {
   const form = new FormData();
   form.append("file", file, file.name);
-  const body = await request("uploads", "/api/uploads", { method: "POST", body: form });
+  const url = purpose === "connection" ? "/api/uploads?for=connection" : "/api/uploads";
+  const body = await request("uploads", url, { method: "POST", body: form });
   return parseWith("uploads", AttachmentSchema, body);
 }
 

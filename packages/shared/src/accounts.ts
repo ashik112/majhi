@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { AgentToolRefSchema } from "./agent-tools.ts";
+import { ConnectionConfigSchema, duplicateConnectionIds } from "./connections.ts";
+import { IdSchema, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
 import { CommitsPatchSchema, ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
@@ -14,14 +16,8 @@ import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
  *   ~/.majhi/secrets.age         API keys, encrypted with age (git-ignored)
  */
 
-/** Lowercase id used for accounts, orgs and agents: `claude-acme-2`, `globex`, `majhi-boss`. */
-export const IdSchema = z
-  .string()
-  .trim()
-  .regex(
-    /^[a-z0-9][a-z0-9-]{0,62}$/,
-    "Use lowercase letters, digits and dashes, starting with a letter or digit",
-  );
+// In their own module so connections.ts can use them without importing this file.
+export { IdSchema, type SecretRef, SecretRefSchema } from "./ids.ts";
 
 /**
  * The built-in org for the owner's own accounts and projects. It always exists, even
@@ -51,10 +47,6 @@ export const OrgIdSchema = z
     "Use lowercase letters, digits and dashes, starting with a letter or digit",
   )
   .transform(currentOrgId);
-
-/** Reference to an entry in `secrets.age`, like `secret:anthropic-personal`. */
-export const SecretRefSchema = z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/, "Use secret:<name>");
-export type SecretRef = z.infer<typeof SecretRefSchema>;
 
 /** Git hosts majhi can open and merge MRs on (5.5). Other hosts get a push and no MR. */
 export const MrHostSchema = z.enum(["github", "gitlab", "bitbucket"]);
@@ -134,8 +126,21 @@ export const OrgConfigSchema = z.looseObject({
   mr_tokens: z.partialRecord(MrHostSchema, SecretRefSchema).optional(),
   /** The git accounts of this org per host. They decide the push key, token and commit identity. */
   git_accounts: z.array(GitAccountSchema).optional(),
+  /** The clusters, MCP servers, hosts and accounts this org's agents may reach (5.14), by id. */
+  connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
+
+/** `orgs` in majhi.yaml. A connection id is unique across orgs: it names the folder of the connection's files. */
+export const OrgsConfigSchema = z.record(IdSchema, OrgConfigSchema).superRefine((orgs, ctx) => {
+  for (const { id, orgs: owners } of duplicateConnectionIds(orgs)) {
+    ctx.addIssue({
+      code: "custom",
+      path: [owners[1] ?? id, "connections", id],
+      message: `Connection ${id} is in both ${owners.join(" and ")}. A connection id is unique across orgs.`,
+    });
+  }
+});
 
 export const AccountConfigSchema = z
   .strictObject({
@@ -401,6 +406,7 @@ export const EventTopicSchema = z.enum([
   "schedules",
   "triggers",
   "budgets",
+  "connections",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [

@@ -182,6 +182,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     { id: "go-to-task", name: "Go to task", keywords: "open jump", run: () => into({ kind: "tasks" }) },
     {
+      id: "connections",
+      name: "Open connections",
+      keywords: "kubectl kubernetes cluster mcp new relic ssh server env variables keys mail browser",
+      run: () => go(PAGE_PATH.connections),
+    },
+    {
       id: "audit",
       name: "Open the audit log",
       keywords: "history pushes merges approvals who did what",

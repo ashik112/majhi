@@ -30,6 +30,7 @@ const NAV: readonly { page: PageName; label: string }[] = [
   { page: "chats", label: "Chats" },
   { page: "agents", label: "Agents" },
   { page: "accounts", label: "Accounts" },
+  { page: "connections", label: "Connections" },
   { page: "usage", label: "Health and usage" },
   { page: "audit", label: "Audit log" },
   { page: "skills", label: "Skills" },

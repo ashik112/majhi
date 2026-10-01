@@ -2,6 +2,7 @@ import {
   type AccountView,
   type AgentEntry,
   AUTO,
+  connectionType,
   EFFORT_TIER_LABEL,
   EffortTierSchema,
   MODEL_TIER_LABEL,
@@ -19,10 +20,12 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { DetailSection } from "@/components/ui/list-detail";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
+import { useConnections } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
 import { useAccountModels, useAgentAttached, useTools, useUpdateAgent } from "@/lib/studio-queries";
@@ -36,6 +39,7 @@ import {
   fallbackCandidates,
   type OkAgent,
   PERMS,
+  ROOT_SCOPE,
   rolesForScope,
   togglePerm,
   updateInput,
@@ -49,6 +53,7 @@ const SECTIONS = {
   model: ["model", "effort", "models", "tier"],
   perms: ["perms"],
   tools: ["tools"],
+  connections: ["connections"],
   fallback: ["fallback"],
   instructions: ["instructions"],
 } as const satisfies Record<string, readonly (keyof AgentDraft)[]>;
@@ -171,6 +176,11 @@ export function AgentSettings({
         draft={view("tools")}
         onChange={(patch) => change("tools", patch)}
         {...sectionProps("tools")}
+      />
+      <ConnectionsSection
+        draft={view("connections")}
+        onChange={(patch) => change("connections", patch)}
+        {...sectionProps("connections")}
       />
       <FallbackSection
         draft={view("fallback")}
@@ -502,6 +512,66 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
           ? `Latest run (${attached.task}) attached: ${attached.tools.length === 0 ? "nothing" : attached.tools.join(", ")}.`
           : "No run has recorded its tools yet."}
       </p>
+    </SettingsSection>
+  );
+}
+
+/**
+ * The connections of the agent's org it may use (5.14). A root agent lists none: it gets every
+ * connection of the task's org. An org agent never gets another org's connection.
+ */
+function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
+  const connections = useConnections().data;
+  if (draft.scope === ROOT_SCOPE) {
+    return (
+      <DetailSection title="Connections">
+        <p className="text-sm text-fg-muted text-pretty">
+          A root agent gets every connection of the task's org, and can attach one of another org to a task.
+          Each attach shows in the room.
+        </p>
+      </DetailSection>
+    );
+  }
+  const own = (connections ?? []).filter((c) => c.org === draft.scope);
+  const gone = draft.connections.filter((id) => connections !== undefined && !own.some((c) => c.id === id));
+  return (
+    <SettingsSection
+      title="Connections"
+      note="What it may reach outside its repos. Only this org's connections."
+      {...section}
+    >
+      {own.length === 0 ? (
+        <p className="text-sm text-fg-muted text-pretty">
+          This org has no connections yet.{" "}
+          <PageLink page="connections" className="text-fg underline-offset-2 hover:underline">
+            Add one
+          </PageLink>
+          .
+        </p>
+      ) : (
+        <MultiSelect
+          label="Connections"
+          className="@[560px]:max-w-[calc(50%-6px)]"
+          options={own.map((c) => ({ value: c.id, label: `${c.name} (${connectionType(c.type).label})` }))}
+          value={draft.connections.filter((id) => own.some((c) => c.id === id))}
+          onChange={(next) => onChange({ connections: [...next, ...gone] })}
+          emptyText="None"
+          clearText="None"
+        />
+      )}
+      {gone.length > 0 && (
+        <p className="text-sm text-amber text-pretty">
+          Lists {gone.join(", ")}, which {gone.length === 1 ? "is not a connection" : "are not connections"}{" "}
+          of this org. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
+          <button
+            type="button"
+            className="cursor-pointer text-fg underline-offset-2 hover:underline"
+            onClick={() => onChange({ connections: draft.connections.filter((id) => !gone.includes(id)) })}
+          >
+            Remove from the list
+          </button>
+        </p>
+      )}
     </SettingsSection>
   );
 }

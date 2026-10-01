@@ -15,6 +15,12 @@ export class OutputTail {
   private lines: string[] = [];
   private bytes = 0;
   private partial = "";
+  private redact: (line: string) => string = (line) => line;
+
+  /** Keeps what must not show out of every line from now on, like a connection's secret values. */
+  redactWith(redact: (line: string) => string): void {
+    this.redact = redact;
+  }
 
   write(chunk: string): void {
     const text = this.partial + chunk.replace(ANSI, "");
@@ -34,7 +40,7 @@ export class OutputTail {
 
   /** The last `n` lines, the partial one included. */
   last(n: number = TAIL_LINES): string[] {
-    const all = this.partial === "" ? this.lines : [...this.lines, lastSegment(this.partial)];
+    const all = this.partial === "" ? this.lines : [...this.lines, this.redact(lastSegment(this.partial))];
     return all.slice(-n);
   }
 
@@ -45,7 +51,7 @@ export class OutputTail {
   }
 
   private push(raw: string): void {
-    const line = clip(lastSegment(raw.replace(/\r$/, "")));
+    const line = this.redact(clip(lastSegment(raw.replace(/\r$/, ""))));
     this.lines.push(line);
     this.bytes += Buffer.byteLength(line) + 1;
     while (this.lines.length > TAIL_LINES || (this.bytes > TAIL_BYTES && this.lines.length > 1)) {

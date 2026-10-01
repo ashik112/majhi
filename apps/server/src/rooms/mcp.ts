@@ -17,6 +17,7 @@ import { bearerOf } from "../admin/tokens.ts";
 import { OWNER_ONLY_INPUTS, toolName } from "../admin/tools.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
+import { type ConnectionsMcpDeps, connectionsServer } from "../connections/mcp.ts";
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
@@ -29,6 +30,8 @@ import type { Store } from "../store/index.ts";
 import { leadMayStart } from "../tasks/lead-start.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  CONNECTIONS_PATH,
+  CONNECTIONS_SERVER_NAME,
   CONTAINERS_PATH,
   CONTAINERS_SERVER_NAME,
   MEMORY_PATH,
@@ -243,6 +246,8 @@ export interface RoomMcpDeps {
   /** Absent when majhi cannot run containers: there is no `/mcp/containers` then. */
   containers?: ContainersMcpDeps;
   memory: MemoryMcpDeps;
+  /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
+  connections?: ConnectionsMcpDeps;
 }
 
 /**
@@ -305,6 +310,19 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       (caller) => memoryServer(caller, deps.memory),
     ),
   );
+  const connections = deps.connections;
+  if (connections !== undefined) {
+    app.all(CONNECTIONS_PATH, (c) =>
+      serve(
+        c.req.raw,
+        c.req.header("origin"),
+        c.req.header("authorization"),
+        deps.access.connections,
+        CONNECTIONS_SERVER_NAME,
+        (caller) => connectionsServer(caller, connections),
+      ),
+    );
+  }
   return app;
 }
 
@@ -563,6 +581,13 @@ async function refuseOutsideOrg(
     if (typeof id !== "string") continue;
     const task = deps.store.tasks.get(id);
     if (task !== undefined && !canWorkIn(fm, task.org)) return `${id} is not in an org @${fm.id} works in.`;
+  }
+  // An org agent never gets another org's connection, so it cannot hand one to a task either.
+  if (command === "tasks.create" && Array.isArray(args.connections) && args.connections.length > 0) {
+    const own = (await deps.config.sections()).orgs[fm.scope]?.connections ?? {};
+    const foreign = args.connections.find((c) => typeof c !== "string" || own[c] === undefined);
+    if (foreign !== undefined)
+      return `@${fm.id} can only name connections of ${fm.scope}, not ${String(foreign)}.`;
   }
   // The repos a new task changes are listed on purpose; names in the text attach nothing.
   const picks: unknown[] =

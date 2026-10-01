@@ -50,6 +50,11 @@ export const TOOL_CATALOG = [
     rule: "On for builders in a task with a worktree, when the runner can start it; add it to any other agent",
   },
   {
+    name: "majhi-connections",
+    summary: "List the run's connections, attach one to the task, run commands over SSH through the gate",
+    rule: "On for every session that holds a connection, and for root agents",
+  },
+  {
     name: "majhi-admin",
     summary: "Every majhi command, with the owner's approval policy",
     rule: "The boss, and root agents that list it. The boss keeps it",

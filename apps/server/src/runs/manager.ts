@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getTool, type PromptBlock, type RuntimeOptions, type SessionEvent } from "@majhi/acp";
+import {
+  getTool,
+  type PermissionAsk,
+  type PromptBlock,
+  type RuntimeOptions,
+  type SessionEvent,
+} from "@majhi/acp";
 import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
@@ -10,6 +16,9 @@ import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
+import type { GateWrite } from "../connections/gate.ts";
+import { type HeldSecret, redactSecrets } from "../connections/redact.ts";
+import { type RunConnections, removeRunFiles } from "../connections/run-files.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { readDecisionSettings } from "../decisions/settings.ts";
 import { errorMessage } from "../errors.ts";
@@ -39,7 +48,7 @@ import {
 import { checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
-import { launch, resolveAgent, withOverride } from "./launch.ts";
+import { type LaunchDeps, launch, resolveAgent, withOverride } from "./launch.ts";
 import { Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
@@ -78,6 +87,8 @@ export interface RunDeps {
   rooms?: RoomAccess;
   /** Serena can start in the runner container (5.9 item 6); absent when agents do not run in one. */
   serena?: SerenaLaunch;
+  /** Where connections keep their files (5.14). Absent: runs get no connections. */
+  connectionFiles?: LaunchDeps["connectionFiles"];
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
@@ -123,6 +134,8 @@ export interface RunDeps {
  */
 export class RunManager {
   private readonly runs = new Map<string, AgentRun>();
+  /** Per task: each secret value its runs held, to its `<connection>.<field>` name. */
+  private readonly heldSecrets = new Map<string, Map<string, string>>();
   private readonly now: () => Date;
   private readonly slots: Slots;
   private readonly live: RunLive;
@@ -488,6 +501,41 @@ export class RunManager {
     else this.evict(this.key(task, agent));
   }
 
+  /** What the agent's open session holds of its connections (5.14), or undefined. */
+  connectionsOf(task: string, agent: string): RunConnections | undefined {
+    return this.runs.get(this.key(task, agent))?.connections;
+  }
+
+  /**
+   * The secret values the task's runs and processes have held (5.14), kept until the task is
+   * forgotten, so a late tool update or a process's end is still redacted after its session went.
+   */
+  secretsOf(task: string): HeldSecret[] {
+    return [...(this.heldSecrets.get(task)?.entries() ?? [])].map(([value, name]) => ({ name, value }));
+  }
+
+  rememberSecrets(task: string, secrets: readonly HeldSecret[]): void {
+    if (secrets.length === 0) return;
+    const known = this.heldSecrets.get(task) ?? new Map<string, string>();
+    for (const s of secrets) known.set(s.value, s.name);
+    this.heldSecrets.set(task, known);
+  }
+
+  /**
+   * Asks the owner about a connection write majhi runs for the agent, like an ssh command through
+   * majhi-connections: a prompt in the room that names the connection. Undefined without a session.
+   */
+  askConnectionWrite(
+    task: string,
+    agent: string,
+    ask: PermissionAsk,
+    writes: readonly GateWrite[],
+  ): Promise<string | undefined> | undefined {
+    const run = this.runs.get(this.key(task, agent));
+    if (run?.session === undefined) return undefined;
+    return this.permissions.askWrite(run, ask, writes, new AbortController().signal);
+  }
+
   /** The concurrency limits changed: starts that wait may fit now. */
   limitsChanged(): Promise<void> {
     return this.slots.pump();
@@ -602,6 +650,7 @@ export class RunManager {
       this.slots.release(key);
       this.runs.delete(key);
     }
+    this.heldSecrets.delete(task);
     this.deps.room.drop(task);
   }
 
@@ -915,7 +964,9 @@ export class RunManager {
 
   private async routeTurn(run: AgentRun, text: string): Promise<void> {
     try {
-      await this.deps.onTurnEnd?.({ task: run.task, agent: run.agent, text });
+      // Other agents get the message as the room shows it.
+      const shown = redactSecrets(text, this.secretsOf(run.task));
+      await this.deps.onTurnEnd?.({ task: run.task, agent: run.agent, text: shown });
     } catch (err) {
       this.live.system(run, "warn", `Could not route @${run.agent}'s message: ${errorMessage(err)}`);
     }
@@ -1172,6 +1223,8 @@ export class RunManager {
       run.adminToken = opened.adminToken;
       run.decideToken = opened.decideToken;
       run.roomTokens = opened.roomTokens;
+      run.connections = opened.connections;
+      this.rememberSecrets(run.task, opened.connections?.secrets ?? []);
       run.turns = 0;
       run.usage = undefined;
       run.runId = deps.store.runs.start({
@@ -1361,6 +1414,8 @@ export class RunManager {
     run.decideToken = undefined;
     if (run.roomTokens !== undefined) this.deps.rooms?.revoke(run.roomTokens);
     run.roomTokens = undefined;
+    if (run.connections !== undefined) void removeRunFiles(run.connections.dir).catch(() => undefined);
+    run.connections = undefined;
     if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
     run.idleTimer = undefined;
     this.permissions.cancelAll(run);

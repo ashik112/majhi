@@ -159,6 +159,8 @@ export interface AgentDraft {
   perms: Perm[];
   /** Server names to add and `-name` to turn a default off (see `TOOL_CATALOG`). */
   tools: string[];
+  /** Connection ids of the agent's org it may use (5.14). Root agents get every connection of the task's org. */
+  connections: string[];
   fallback: string | undefined;
   instructions: string;
 }
@@ -176,12 +178,13 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     where: f.where,
     perms: f.perms,
     tools: f.tools,
+    connections: f.connections,
     fallback: f.fallback,
     instructions: agent.instructions,
   };
 }
 
-/** The `agents.update` input: the draft laid over the file's other fields (skills, connections, ...), which the editor does not touch. */
+/** The `agents.update` input: the draft laid over the file's other fields (skills, ...), which the editor does not touch. */
 export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
   const {
     id: _id,
@@ -200,6 +203,7 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
     where: draft.where,
     perms: draft.perms,
     tools: draft.tools,
+    connections: draft.connections,
   };
   if (draft.model) frontmatter.model = draft.model;
   if (draft.effort) frontmatter.effort = draft.effort;

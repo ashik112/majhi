@@ -38,7 +38,7 @@ describe("HomeWatcher", () => {
     watcher.start();
     await writeFile(join(home, "majhi.yaml"), "workspaces: [~/Work]\n");
     await until(() => topics().has("config"));
-    expect(topics()).toEqual(new Set(["config", "orgs", "accounts", "agents"]));
+    expect(topics()).toEqual(new Set(["config", "orgs", "accounts", "agents", "connections"]));
   });
 
   it("emits for agent files, even when the folder does not exist yet", async () => {
@@ -77,6 +77,7 @@ describe("topicsFor", () => {
     expect(topicsFor("agents.update")).toEqual(["agents"]);
     expect(topicsFor("boss.set")).toEqual(["agents", "config"]);
     expect(topicsFor("orgs.create")).toEqual(["orgs", "config"]);
+    expect(topicsFor("connections.remove")).toEqual(["connections", "config", "secrets", "agents"]);
     expect(topicsFor("fs.listDirs")).toEqual([]);
   });
 });

@@ -128,6 +128,10 @@ export class HealthService {
               : "majhi is rebuilding and restarts in a few minutes.",
         };
       }
+      if (id.startsWith("connection:")) {
+        const result = await services.connectionTests.test(id.slice("connection:".length));
+        return { ok: result.ok, detail: result.ok ? `It works again. ${result.detail}` : result.detail };
+      }
       if (id === "host-helper") {
         await hostLink.call("restart", {});
         return { ok: true, detail: "The host helper is restarting. It reconnects in a few seconds." };

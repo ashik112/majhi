@@ -577,10 +577,21 @@ function Permission({
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        <span className="min-w-0 break-words">
-          <span className="text-fg-muted">{item.agent} asks to </span>
-          <span className="text-sm">{toolLabel(item.title)}</span>
-        </span>
+        {item.connection === undefined ? (
+          <span className="min-w-0 break-words">
+            <span className="text-fg-muted">{item.agent} asks to </span>
+            <span className="text-sm">{toolLabel(item.title)}</span>
+          </span>
+        ) : (
+          <span className="flex min-w-0 flex-col gap-1 break-words">
+            <span>
+              <span className="text-fg-muted">{item.agent} wants to change </span>
+              {item.connection.name}
+              <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
+            </span>
+            <code className="font-mono text-sm text-fg-soft">{item.connection.action}</code>
+          </span>
+        )}
       </p>
       <div className={cn(DOCK_ACTIONS, "flex flex-wrap gap-2")}>
         {item.options.map((option) => (

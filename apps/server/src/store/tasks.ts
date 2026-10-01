@@ -2,6 +2,7 @@ import {
   type Attachment,
   type CoordinationMode,
   CoordinationModeSchema,
+  IdSchema,
   isOwnerChat,
   type PausedReason,
   type PendingShip,
@@ -41,6 +42,16 @@ function parsePendingShip(json: string | null): PendingShip | undefined {
 }
 
 const ReadMountsSchema = z.array(ReadMountSchema);
+const ConnectionIdsSchema = z.array(IdSchema);
+
+/** The task's connection ids. A row that does not parse reads as none. */
+function parseConnectionIds(json: string): string[] {
+  try {
+    return ConnectionIdsSchema.catch([]).parse(JSON.parse(json));
+  } catch {
+    return [];
+  }
+}
 
 function parseReadMounts(json: string): ReadMount[] {
   try {
@@ -91,6 +102,7 @@ export class TaskRepo {
           mode: task.mode,
           overrides: JSON.stringify(task.overrides),
           readMounts: JSON.stringify(ReadMountsSchema.parse(task.readMounts ?? [])),
+          connections: JSON.stringify(ConnectionIdsSchema.parse(task.connections ?? [])),
           pendingShip: task.pendingShip === undefined ? null : JSON.stringify(task.pendingShip),
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
@@ -182,6 +194,7 @@ export class TaskRepo {
       mode: CoordinationModeSchema.catch("lead").parse(row.mode),
       overrides: parseOverrides(row.overrides),
       ...(row.readMounts === "[]" ? {} : { readMounts: parseReadMounts(row.readMounts) }),
+      ...(row.connections === "[]" ? {} : { connections: parseConnectionIds(row.connections) }),
       links: links.map((l) => ({
         type: TaskLinkTypeSchema.parse(l.type),
         task: l.other,
@@ -412,6 +425,14 @@ export class TaskRepo {
 
   setMode(id: string, mode: CoordinationMode, at: string): void {
     this.db.update(tasks).set({ mode, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
+  setConnections(id: string, connections: readonly string[], at: string): void {
+    this.db
+      .update(tasks)
+      .set({ connections: JSON.stringify(ConnectionIdsSchema.parse(connections)), updatedAt: at })
+      .where(eq(tasks.id, id))
+      .run();
   }
 
   setReadMounts(id: string, mounts: readonly ReadMount[], at: string): void {

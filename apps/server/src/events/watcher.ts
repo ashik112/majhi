@@ -41,7 +41,9 @@ export class HomeWatcher {
   private attach(): void {
     if (this.stopped) return;
     const homeOk = this.watchDir(this.majhiHome, (name) => {
-      if (name === CONFIG_FILE_NAME || name === null) this.touch("config", "orgs", "accounts", "agents");
+      if (name === CONFIG_FILE_NAME || name === null) {
+        this.touch("config", "orgs", "accounts", "agents", "connections");
+      }
       if (name === AGENTS_DIR_NAME || name === null) {
         this.watchAgents();
         this.touch("agents");

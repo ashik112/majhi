@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AgentLive, ProcessInfo, RoomItem, RoomServerMessage, Task, TaskId } from "@majhi/shared";
 import { z } from "zod";
+import { redactDeep } from "../connections/redact.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
 
 /** How many items a new socket gets. */
@@ -24,6 +25,7 @@ const CommandsFileSchema = z.record(
 );
 
 export class RoomService {
+  private redact: ((task: string, text: string) => string) | undefined;
   private readonly listeners = new Map<string, Set<RoomListener>>();
   private readonly live = new Map<string, Map<string, AgentLive>>();
   /** Each task's background processes, as the process manager last reported them. */
@@ -102,8 +104,18 @@ export class RoomService {
     for (const [id, payload] of held) this.write(task as TaskId, id, payload);
   }
 
+  /**
+   * Replaces what must not be stored or shown, like the secret values a task's runs hold (5.14).
+   * Applied to every item written and to each agent's "now doing" line.
+   */
+  redactWith(redact: (task: string, text: string) => string): void {
+    this.redact = redact;
+  }
+
   private write(task: TaskId, id: string, payload: RoomPayload): RoomItem {
-    const item = this.store.room.upsert(task, id, payload);
+    const redact = this.redact;
+    const clean = redact === undefined ? payload : redactDeep(payload, (text) => redact(task, text));
+    const item = this.store.room.upsert(task, id, clean);
     this.send(task, { type: "item", item });
     for (const listener of this.writeListeners) {
       try {
@@ -126,7 +138,12 @@ export class RoomService {
     return this.store.room.get(task, id);
   }
 
-  setLive(task: TaskId, live: AgentLive): void {
+  setLive(task: TaskId, given: AgentLive): void {
+    const redact = this.redact;
+    const live =
+      redact === undefined || given.nowDoing === undefined
+        ? given
+        : { ...given, nowDoing: redact(task, given.nowDoing) };
     const agents = this.live.get(task) ?? new Map<string, AgentLive>();
     agents.set(live.agent, live);
     this.live.set(task, agents);

@@ -2,6 +2,7 @@
  * The scripted turn and the ACP server of the fake agent. Split from
  * fake-agent.ts so the CLI parts stay small. Erasable TypeScript only.
  */
+import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -212,10 +213,21 @@ async function isBossChat(s: Session): Promise<boolean> {
   }
 }
 
-/** `call: <tool> {json}` lines of a prompt, in order. */
-function callLines(text: string): { tool: string; args: unknown }[] {
-  const calls: { tool: string; args: unknown }[] = [];
+/**
+ * The steps a prompt asks for, in order: `call: <tool> {json}` calls an MCP tool (on majhi-admin, else
+ * the first server; `call: <server>/<tool>` picks one), and `run: <command>` runs a shell command
+ * after asking permission, like an agent's own shell.
+ */
+type Step = { kind: "call"; tool: string; server?: string; args: unknown } | { kind: "run"; command: string };
+
+function promptSteps(text: string): Step[] {
+  const steps: Step[] = [];
   for (const line of text.split("\n")) {
+    const run = /^run:\s+(.+)$/.exec(line.trim());
+    if (run?.[1] !== undefined) {
+      steps.push({ kind: "run", command: run[1] });
+      continue;
+    }
     const m = /^call:\s+(\S+)\s*(.*)$/.exec(line.trim());
     if (m?.[1] === undefined) continue;
     let args: unknown = {};
@@ -224,9 +236,29 @@ function callLines(text: string): { tool: string; args: unknown }[] {
     } catch {
       args = { invalidJson: m[2] };
     }
-    calls.push({ tool: m[1], args });
+    const slash = m[1].indexOf("/");
+    steps.push(
+      slash < 0
+        ? { kind: "call", tool: m[1], args }
+        : { kind: "call", server: m[1].slice(0, slash), tool: m[1].slice(slash + 1), args },
+    );
   }
-  return calls;
+  return steps;
+}
+
+/** Runs a command the way an agent's shell would: in the session's folder, with the agent's environment. */
+function runCommand(command: string, cwd: string): Promise<{ code: number; output: string }> {
+  return new Promise((done) => {
+    execFile(
+      "/bin/sh",
+      ["-c", command],
+      { cwd, env: process.env, timeout: 20_000 },
+      (err, stdout, stderr) => {
+        const code = err === null ? 0 : typeof err.code === "number" ? err.code : 1;
+        done({ code, output: `${stdout}${stderr}`.trim() });
+      },
+    );
+  });
 }
 
 const StoredSession = z.object({
@@ -625,10 +657,65 @@ export function serveAcp(o: ServeOptions): void {
           await say({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
           await say({ type: "resource_link", uri: "https://example.com/spec", name: "Spec sheet" });
           stopReason = "end_turn";
-        } else if (callLines(text).length > 0) {
+        } else if (promptSteps(text).length > 0) {
           const lines: string[] = [];
           let n = 0;
-          for (const { tool, args } of callLines(text)) {
+          let cancelled = false;
+          const signal = s.cancel.signal;
+          // A pause between steps, so a test can stop the turn halfway with Esc.
+          const pause = async (): Promise<boolean> => {
+            if (o.slowMs > 0) {
+              await new Promise<void>((res) => {
+                const t = setTimeout(res, o.slowMs);
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    clearTimeout(t);
+                    res();
+                  },
+                  { once: true },
+                );
+              });
+            }
+            return signal.aborted;
+          };
+          for (const step of promptSteps(text)) {
+            if (await pause()) {
+              cancelled = true;
+              break;
+            }
+            if (step.kind === "run") {
+              const toolCallId = `run-${++n}`;
+              const call = {
+                toolCallId,
+                title: step.command,
+                kind: "execute" as const,
+                rawInput: { command: step.command },
+              };
+              await update(params.sessionId, { sessionUpdate: "tool_call", ...call, status: "pending" });
+              const answer = await conn.requestPermission({
+                sessionId: params.sessionId,
+                toolCall: call,
+                options: [
+                  { optionId: "allow", name: "Allow", kind: "allow_once" },
+                  { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+                  { optionId: "reject", name: "Reject", kind: "reject_once" },
+                ],
+              });
+              const allowed = answer.outcome.outcome === "selected" && answer.outcome.optionId !== "reject";
+              const result = allowed
+                ? await runCommand(step.command, s.cwd)
+                : { code: 1, output: "Permission denied" };
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call_update",
+                toolCallId,
+                status: result.code === 0 ? "completed" : "failed",
+                content: [{ type: "content", content: { type: "text", text: result.output } }],
+              });
+              lines.push(`${step.command}: ${result.output.split("\n", 1)[0] ?? ""}`);
+              continue;
+            }
+            const { tool, args } = step;
             const toolCallId = `mcp-${++n}`;
             await update(params.sessionId, {
               sessionUpdate: "tool_call",
@@ -639,7 +726,10 @@ export function serveAcp(o: ServeOptions): void {
               rawInput: args as never,
             });
             let outcome: { text: string; isError: boolean };
-            const server = s.mcp.find((m) => m.name === "majhi-admin") ?? s.mcp[0];
+            const server =
+              step.server === undefined
+                ? (s.mcp.find((m) => m.name === "majhi-admin") ?? s.mcp[0])
+                : s.mcp.find((m) => m.name === step.server);
             try {
               if (server === undefined) throw new Error("No MCP server was given to this session");
               outcome = await callMcpTool(server, tool, args);
@@ -654,12 +744,14 @@ export function serveAcp(o: ServeOptions): void {
             });
             lines.push(`${tool}: ${outcome.text.split("\n", 1)[0] ?? ""}`);
           }
-          agentText = lines.join("\n");
-          await update(params.sessionId, {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: agentText },
-          });
-          stopReason = "end_turn";
+          agentText = cancelled ? undefined : lines.join("\n");
+          if (agentText !== undefined) {
+            await update(params.sessionId, {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: agentText },
+            });
+          }
+          stopReason = cancelled ? "cancelled" : "end_turn";
         } else if (text.startsWith("echo:") || (await isBossChat(s))) {
           // A session with the admin server is the boss: it echoes, so tests never run the coding script.
           const admin = s.mcp.some((m) => m.name === "majhi-admin");

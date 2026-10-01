@@ -4,7 +4,10 @@ import { errorMessage, UserError } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
 import type { UploadStore } from "./store.ts";
 
-/** `POST /api/uploads`: multipart, field `file`, answered with the `Attachment`. Same Origin rule as commands. */
+/**
+ * `POST /api/uploads`: multipart, field `file`, answered with the `Attachment`. Same Origin rule as
+ * commands. `?for=connection` stores a connection's file, of any type, for connections.setFile.
+ */
 export function uploadRoutes(store: UploadStore): Hono {
   const app = new Hono();
   app.post("/", async (c) => {
@@ -38,6 +41,7 @@ export function uploadRoutes(store: UploadStore): Hono {
         name: file.name,
         mime: file.type,
         data: new Uint8Array(await file.arrayBuffer()),
+        ...(c.req.query("for") === "connection" ? { purpose: "connection" as const } : {}),
       });
       return c.json(attachment);
     } catch (err) {

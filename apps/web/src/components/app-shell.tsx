@@ -32,6 +32,7 @@ import { useServerEvents } from "@/lib/use-server-events";
 const PINNED: ReadonlySet<string> = new Set([
   PAGE_PATH.chats,
   PAGE_PATH.agents,
+  PAGE_PATH.connections,
   PAGE_PATH.usage,
   PAGE_PATH.audit,
   PAGE_PATH.orgs,

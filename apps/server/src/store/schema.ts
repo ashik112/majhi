@@ -26,6 +26,8 @@ export const tasks = sqliteTable("tasks", {
   roomState: text("room_state").notNull().default("{}"),
   /** JSON array of ReadMount: folders mounted read-only into the task's runs. */
   readMounts: text("read_mounts").notNull().default("[]"),
+  /** JSON array of connection ids the task's root agents get beyond its org's (5.14). */
+  connections: text("connections").notNull().default("[]"),
   /** JSON PendingShip: the ship majhi runs once the lead resolves its conflicts. NULL when none. */
   pendingShip: text("pending_ship"),
   createdAt: text("created_at").notNull(),

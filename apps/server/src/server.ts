@@ -117,6 +117,16 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         scopeOf: (task) => services.memoryScopes.agent(task),
         receipts: services.store.usageEvents,
       },
+      connections: {
+        runs: services.runs,
+        config,
+        store: services.store,
+        room: services.room,
+        agents: services.agentStore,
+        refreshBriefs: (task) => services.tasks.refreshBriefs([task]),
+        hostHome: config.paths.hostHome,
+        ...(options.connectionsRemote === undefined ? {} : { remote: options.connectionsRemote }),
+      },
     },
     ...(services.runner === undefined
       ? {}

@@ -28,6 +28,12 @@ import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
+import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
+import { redactSecrets } from "./connections/redact.ts";
+import type { RemoteRunFn } from "./connections/remote.ts";
+import { sweepRunFiles } from "./connections/run-files.ts";
+import { ConnectionService, connectionDir } from "./connections/service.ts";
+import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
@@ -121,6 +127,8 @@ export interface ServiceOptions {
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents, so tests never start a real container. */
   containerDocker?: ContainerDocker;
+  /** Replaces ssh for majhi-connections, so tests never reach a host. */
+  connectionsRemote?: RemoteRunFn;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -129,6 +137,10 @@ export interface Services {
   runtime: AcpRuntime;
   secrets: SecretStore;
   secretService: SecretService;
+  /** Connections of every org: definitions, secrets, files and the last Test of each (5.14). */
+  connections: ConnectionService;
+  /** The Test of each connection, for connections.test and the Health page. */
+  connectionTests: ConnectionTester;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
   /** The boss's tool calls, approvals and secret requests. */
@@ -345,14 +357,35 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => adminTokens.mcpUrl,
     () => containers.available(),
   );
+  // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
+  const connectionFiles = {
+    connectionDir: (id: string) => connectionDir(env.majhiHome, id),
+    browsersPath:
+      sessionOptions.base.PLAYWRIGHT_BROWSERS_PATH ??
+      (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
+  };
+  // No run is alive yet: every connection folder left from before goes.
+  void sweepRunFiles(env.majhiHome).catch(() => undefined);
   const processes = new ProcessManager({
     spawner: sessionOptions.spawner ?? localSpawner,
-    launch: (task, agent) =>
-      processLaunch(
-        { store, options: sessionOptions, secrets, majhiHome: env.majhiHome, agents: agentStore, config },
+    launch: async (task, agent) => {
+      const launched = await processLaunch(
+        {
+          store,
+          options: sessionOptions,
+          secrets,
+          majhiHome: env.majhiHome,
+          agents: agentStore,
+          config,
+          connectionFiles,
+        },
         task,
         agent,
-      ),
+      );
+      // Bound below: the room keeps a process's secret values out too, like a session's.
+      runs.rememberSecrets(task, launched.secrets ?? []);
+      return launched;
+    },
     onChange: (task, list) => {
       room.setProcesses(task, list);
       if (list.some((p) => p.container !== undefined)) events.emit(["containers"]);
@@ -400,6 +433,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     admin: new AdminAccess(adminTokens),
     decisions,
+    connectionFiles,
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
@@ -413,6 +447,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   runs.recover();
+  // What runs held of their connections never reaches the room (5.14).
+  room.redactWith((task, text) => redactSecrets(text, runs.secretsOf(task)));
   const uploads = new UploadStore(env.majhiHome);
   const projects = new ProjectService(config, store.tasks);
   memory.onChange(() => events.emit(["memory"]));
@@ -618,11 +654,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   void resilience
     .startup()
     .catch((err: unknown) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`));
+  const secretService = new SecretService(secrets, config);
+  const connections = new ConnectionService({
+    config,
+    secrets,
+    secretService,
+    uploads,
+    agents: agentStore,
+    majhiHome: env.majhiHome,
+  });
   return {
     config,
     runtime,
     secrets,
-    secretService: new SecretService(secrets, config),
+    secretService,
+    connections,
+    connectionTests: new ConnectionTester({
+      connections,
+      secrets,
+      spawner: sessionOptions.spawner ?? localSpawner,
+      base: sessionOptions.base,
+      // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
+      scratchRoot: async () => {
+        const loaded = await config.load();
+        if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+        return join(loaded.state.config.tasksDir, ".connections");
+      },
+      hostHome: env.hostHome,
+      // The runner image has the browser servers, so a Test there downloads nothing.
+      ...(env.runner.mode === "container"
+        ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
+        : {}),
+    }),
     adminTokens,
     admin,
     agents,

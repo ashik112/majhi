@@ -72,6 +72,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("a", PAGE_PATH.agents, "Go to agents"),
   go("c", PAGE_PATH.chats, "Go to chats"),
   go("u", PAGE_PATH.accounts, "Go to accounts"),
+  go("n", PAGE_PATH.connections, "Go to connections"),
   go("h", PAGE_PATH.usage, "Go to health and usage"),
   go("k", PAGE_PATH.skills, "Go to skills"),
   go("m", PAGE_PATH.memory, "Go to memory"),

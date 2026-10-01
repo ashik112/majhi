@@ -19,6 +19,7 @@ import {
   type Attachment,
   attachmentAllowed,
   attachmentMime,
+  CONNECTION_FILE_MAX_BYTES,
   UPLOAD_MAX_BYTES,
 } from "@majhi/shared";
 import { z } from "zod";
@@ -37,6 +38,8 @@ const MetaSchema = z.object({
   at: z.number(),
   /** The org of the task the file came from. Absent for the owner's uploads and the LOCAL boss chat. */
   org: z.string().optional(),
+  /** A connection's file, like a kubeconfig: any type, and never a task attachment. */
+  purpose: z.literal("connection").optional(),
 });
 type Meta = z.infer<typeof MetaSchema>;
 
@@ -54,15 +57,28 @@ export class UploadStore {
     this.dir = join(majhiHome, "cache", "uploads");
   }
 
-  /** Stores one file. Images are detected by mime type. */
-  async save(input: { name: string; mime: string; data: Uint8Array; org?: string }): Promise<Attachment> {
+  /**
+   * Stores one file. Images are detected by mime type. A connection's file may be of any type, is
+   * at most CONNECTION_FILE_MAX_BYTES and is readable by the owner only.
+   */
+  async save(input: {
+    name: string;
+    mime: string;
+    data: Uint8Array;
+    org?: string;
+    purpose?: "connection";
+  }): Promise<Attachment> {
     const name = safeName(input.name);
-    assertAttachable(name, input.data.byteLength, input.mime);
+    const size = input.data.byteLength;
+    if (input.purpose === "connection") assertConnectionFile(name, size);
+    else assertAttachable(name, size, input.mime);
     const id = randomUUID();
     const mime = input.mime.trim().toLowerCase() || attachmentMime(name) || "application/octet-stream";
     await mkdir(this.dir, { recursive: true });
-    await writeFile(this.dataPath(id), input.data);
-    return this.writeMeta(id, { name, mime, size: input.data.byteLength, at: this.now(), org: input.org });
+    await writeFile(this.dataPath(id), input.data, input.purpose === "connection" ? { mode: 0o600 } : {});
+    const meta: Meta = { name, mime, size, at: this.now(), org: input.org };
+    if (input.purpose !== undefined) meta.purpose = input.purpose;
+    return this.writeMeta(id, meta);
   }
 
   /**
@@ -102,12 +118,12 @@ export class UploadStore {
 
   /** Throws when any of the uploads is missing, so nothing is moved before a later one fails. */
   async assertAll(ids: readonly string[]): Promise<void> {
-    for (const id of ids) await this.meta(id);
+    for (const id of ids) await this.attachmentMeta(id);
   }
 
   /** Moves an upload into `dir` under a free name and returns its attachment. The upload is gone afterwards. */
   async take(id: string, dir: string): Promise<Attachment> {
-    const meta = await this.meta(id);
+    const meta = await this.attachmentMeta(id);
     await mkdir(dir, { recursive: true });
     const name = await freeName(dir, meta.name);
     await moveFile(this.dataPath(id), join(dir, name));
@@ -120,6 +136,19 @@ export class UploadStore {
       size: meta.size,
       path: name,
     };
+  }
+
+  /** Name, size and origin of an upload, for a command that takes it whole, like a connection's file. */
+  async describe(id: string): Promise<{ name: string; size: number; org?: string | undefined }> {
+    const { name, size, org } = await this.meta(id);
+    return { name, size, org };
+  }
+
+  /** Moves an upload's bytes to the path `to`, replacing what is there. The upload is gone afterwards. */
+  async moveTo(id: string, to: string): Promise<void> {
+    await this.meta(id);
+    await moveFile(this.dataPath(id), to);
+    await rm(this.metaPath(id), { force: true });
   }
 
   /** Deletes uploads older than a day. Returns how many. */
@@ -163,6 +192,15 @@ export class UploadStore {
       }
       throw err;
     }
+  }
+
+  /** An upload a task or message may attach: a connection's file never is one. */
+  private async attachmentMeta(id: string): Promise<Meta> {
+    const meta = await this.meta(id);
+    if (meta.purpose === "connection") {
+      throw new UserError(`Upload ${id} is a connection's file and cannot be attached to a task or message.`);
+    }
+    return meta;
   }
 
   private dataPath(id: string): string {
@@ -216,6 +254,16 @@ export function assertAttachable(name: string, size: number, mime: string): void
   }
   if (!attachmentAllowed(name, mime)) {
     throw new UserError(`"${name}" is not an allowed file type. Allowed: ${ATTACHMENT_TYPES_TEXT}.`);
+  }
+}
+
+/** Throws a UserError when a connection's file is empty or over its limit. Any type is fine. */
+export function assertConnectionFile(name: string, size: number): void {
+  if (size === 0) throw new UserError(`"${name}" is empty.`);
+  if (size > CONNECTION_FILE_MAX_BYTES) {
+    throw new UserError(
+      `"${name}" is ${(size / 1024).toFixed(0)} KB. A connection's file can be at most ${CONNECTION_FILE_MAX_BYTES / 1024} KB.`,
+    );
   }
 }
 

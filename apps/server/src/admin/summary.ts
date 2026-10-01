@@ -58,6 +58,18 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "team.add": (i) => `Add ${str(i.agent)} to ${str(i.task)}`,
   "team.remove": (i) => `Remove ${str(i.agent)} from ${str(i.task)}`,
   "processes.stop": (i) => `Stop ${str(i.id)} in ${str(i.task)}`,
+  "connections.create": (i) => `Add ${str(i.type)} connection ${str(i.name) || str(i.id)} to ${str(i.org)}`,
+  "connections.update": (i) => `Change connection ${str(i.id)}`,
+  "connections.remove": (i) => `Remove connection ${str(i.id)}, with its secrets and files`,
+  "connections.setSecret": (i) =>
+    `Set ${str(i.field)} of connection ${str(i.id)}${i.ref ? ` to ${str(i.ref)}` : ""}`,
+  "connections.setFile": (i) => `Set the ${str(i.field)} file of connection ${str(i.id)}`,
+  "connections.allow": (i) => {
+    const actions = Array.isArray(i.allow) ? i.allow.map(str).filter((a) => a !== "") : [];
+    return actions.length === 0
+      ? `Ask the owner for every write on connection ${str(i.id)}`
+      : `Let agents run on connection ${str(i.id)} without asking: ${actions.join("; ")}`;
+  },
   "secrets.remove": (i) => `Delete secret ${str(i.name)}`,
   "secrets.save": (i) => `Save a secret${i.name ? ` as ${str(i.name)}` : ""}`,
   "history.undo": (i) => `Undo change ${str(i.commit).slice(0, 7)}`,

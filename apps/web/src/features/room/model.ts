@@ -257,16 +257,22 @@ export function oneLine(text: string, max = 90): string {
 /** One line for a permission prompt that no longer waits: "Allowed: npm test, by rule". */
 export function permissionSummary(item: PermissionItem): PermissionSummary {
   if (item.state === "pending") return { pending: true };
-  const title = toolLabel(item.title);
+  const title = item.connection === undefined ? toolLabel(item.title) : item.connection.action;
   const short = oneLine(title);
   const full = short === title.trim() ? undefined : title.trim();
   const base = full === undefined ? { short } : { short, full };
   if (item.state === "cancelled") return { pending: false, verdict: "Cancelled", ...base };
   const option = item.options.find((o) => o.id === item.chosen);
   const allowed = option ? option.kind.startsWith("allow") : true;
-  const extra = option?.kind === "allow_always" ? " for this task" : "";
-  const by = item.state === "auto" ? " by rule" : "";
-  return { pending: false, verdict: `${allowed ? "Allowed" : "Denied"}${extra}${by}`, ...base };
+  const extra = option?.kind === "allow_always" && item.connection === undefined ? " for this task" : "";
+  const by =
+    item.state !== "auto"
+      ? ""
+      : item.connection === undefined
+        ? " by rule"
+        : ` by ${item.connection.name}'s allow list`;
+  const write = item.connection === undefined ? "" : ` a change to ${item.connection.name}`;
+  return { pending: false, verdict: `${allowed ? "Allowed" : "Denied"}${write}${extra}${by}`, ...base };
 }
 
 // Touched files -------------------------------------------------------------

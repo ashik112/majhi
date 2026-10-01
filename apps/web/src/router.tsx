@@ -22,6 +22,8 @@ export interface AppSearch {
   org?: string;
   agent?: string;
   account?: string;
+  /** On Connections: the connection shown. */
+  connection?: string;
   /** On Agents: open the new-agent form in this group (root or an org id). */
   create?: string;
   /** A file of the open task, shown in the viewer drawer. */
@@ -57,6 +59,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const org = text(search.org);
   const agent = text(search.agent);
   const account = text(search.account);
+  const connection = text(search.connection);
   const create = text(search.create);
   const file = text(search.file);
   const task = TaskIdSchema.safeParse(search.task).data;
@@ -78,6 +81,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(org ? { org } : {}),
     ...(agent ? { agent } : {}),
     ...(account ? { account } : {}),
+    ...(connection ? { connection } : {}),
     ...(create ? { create } : {}),
     ...(file ? { file } : {}),
     ...(task ? { task } : {}),
@@ -142,6 +146,11 @@ const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.usage,
   component: lazyRouteComponent(() => import("@/pages/health-page"), "HealthPage"),
+});
+const connectionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.connections,
+  component: lazyRouteComponent(() => import("@/pages/connections-page"), "ConnectionsPage"),
 });
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -219,6 +228,7 @@ export const router = createRouter({
     taskRoute,
     agentsRoute,
     accountsRoute,
+    connectionsRoute,
     healthRoute,
     auditRoute,
     skillsRoute,

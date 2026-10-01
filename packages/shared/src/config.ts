@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AccountConfigSchema, IdSchema, OrgConfigSchema } from "./accounts.ts";
+import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
   BudgetsFilePatchSchema,
@@ -58,7 +58,7 @@ export const MajhiConfigSchema = z.strictObject({
   /** The owner's rows of the price table (Phase 2c), in dollars per million tokens. */
   prices: PricesConfigSchema.optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
-  orgs: z.record(IdSchema, OrgConfigSchema).optional(),
+  orgs: OrgsConfigSchema.optional(),
   projects: z.record(IdSchema, ProjectConfigSchema).optional(),
 });
 

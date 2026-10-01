@@ -8,6 +8,7 @@ import {
   dockerSpawner,
   dockerTty,
   MAJHI_HOOKS_DIR,
+  MAJHI_RUN_CONNECTIONS_DIR,
   MountRefused,
   type RunnerConfig,
   removeStaleRunners,
@@ -177,6 +178,34 @@ describe("runner mounts", () => {
     await rm(hooks, { recursive: true });
     await symlink(join(majhiHome, "accounts"), hooks);
     expect(refused({ mounts: [{ path: hooks, readOnly: true }] })).toThrow(MountRefused);
+  });
+});
+
+describe("runMounts and connection files", () => {
+  it("mounts a run's own connection folder read-only and a browser profile, and nothing else of them", async () => {
+    const own = join(majhiHome, MAJHI_RUN_CONNECTIONS_DIR, "session-abc");
+    const profile = join(majhiHome, "connections", "acme-web", "profile");
+    await mkdir(join(own, "nested"), { recursive: true });
+    await mkdir(profile, { recursive: true });
+    const mounts = runMounts(request({ mounts: [{ path: own, readOnly: true }, { path: profile }] }), cfg);
+    expect(mounts).toContainEqual({ path: own, readOnly: true });
+    expect(mounts).toContainEqual({ path: profile });
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    for (const m of [
+      { path: own },
+      { path: join(majhiHome, MAJHI_RUN_CONNECTIONS_DIR), readOnly: true },
+      { path: join(own, "nested"), readOnly: true },
+      { path: join(majhiHome, "run"), readOnly: true },
+      { path: join(majhiHome, "connections", "acme-web"), readOnly: true },
+      { path: join(majhiHome, "connections", "acme-prod", "kubeconfig"), readOnly: true },
+      { path: join(majhiHome, "profile") },
+    ]) {
+      expect(refused({ mounts: [m] }), m.path).toThrow(MountRefused);
+    }
+    // A folder there that leads elsewhere in the config folder.
+    const link = join(majhiHome, MAJHI_RUN_CONNECTIONS_DIR, "session-link");
+    await symlink(join(majhiHome, "accounts"), link);
+    expect(refused({ mounts: [{ path: link, readOnly: true }] })).toThrow(MountRefused);
   });
 });
 

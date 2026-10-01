@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import {
   type AccountView,
   type ConfigState,
+  type ConnectionTestResult,
   collapseHome,
   dockerRuntimeName,
   type HostStatus,
@@ -23,7 +24,7 @@ import type { Services } from "../services.ts";
 const run = promisify(execFile);
 
 export type CheckStatus = "pass" | "warn" | "fail";
-export type CheckGroup = "majhi" | "host" | "ssh" | "accounts" | "disk";
+export type CheckGroup = "majhi" | "host" | "ssh" | "accounts" | "connections" | "disk";
 
 export interface Check {
   /** Stable, like `root:/Users/a/Work`. `health.fix` takes it back. */
@@ -86,8 +87,58 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkRunner(ctx),
     checkSerenaTool(ctx),
     checkAccounts(ctx),
+    checkConnections(ctx),
   ]);
   return groups.flat();
+}
+
+/** Tests that run at once: each may start a runner container. */
+const CONNECTION_TESTS_AT_ONCE = 3;
+
+/**
+ * Each connection's Test (5.14). `doctor` tests every connection. The Health page and the sidebar,
+ * which read the checks every few minutes, only show the last Test: testing would start runner
+ * containers and sign in to clusters, mail and APIs on their own. A row offers its Test as the fix.
+ */
+async function checkConnections(ctx: CheckContext): Promise<Check[]> {
+  const views = await ctx.services.connections.list().catch(() => []);
+  const fresh = new Map<string, ConnectionTestResult>();
+  if (ctx.accounts === "probe") {
+    for (let i = 0; i < views.length; i += CONNECTION_TESTS_AT_ONCE) {
+      const batch = views.slice(i, i + CONNECTION_TESTS_AT_ONCE);
+      await Promise.all(
+        batch.map(async (view) => {
+          const result = await ctx.services.connectionTests.test(view.id).catch((err: unknown) => ({
+            ok: false,
+            detail: firstLine(errorMessage(err)),
+            warnings: [],
+            at: new Date().toISOString(),
+            durationMs: 0,
+          }));
+          fresh.set(view.id, result);
+        }),
+      );
+    }
+  }
+  return views.map((view): Check => {
+    const base = {
+      id: `connection:${view.id}`,
+      group: "connections" as const,
+      name: `${view.name} (${view.org})`,
+    };
+    const result = fresh.get(view.id) ?? view.lastTest;
+    if (view.problems.length > 0) {
+      return { ...base, status: "warn", detail: `Not set up: ${view.problems.join(". ")}.` };
+    }
+    if (result === undefined) {
+      return { ...base, status: "warn", detail: "Not tested since majhi started.", fix: { label: "Test" } };
+    }
+    if (!result.ok) return { ...base, status: "fail", detail: result.detail, fix: { label: "Test again" } };
+    const warning = result.warnings[0];
+    return warning === undefined
+      ? { ...base, status: "pass", detail: result.detail }
+      : { ...base, status: "warn", detail: warning, fix: { label: "Test again" } };
+  });
 }
 
 /** True when the helper is connected and can run Docker, so fixes that need it are on offer. */

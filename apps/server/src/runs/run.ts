@@ -1,5 +1,7 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
 import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId } from "@majhi/shared";
+import type { GateWrite } from "../connections/gate.ts";
+import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
@@ -34,6 +36,8 @@ export interface Carry {
 export interface Pending {
   ask: PermissionAsk;
   resolve: (option: string | undefined) => void;
+  /** Connection writes the prompt is for (5.14), each logged with the owner's answer. */
+  writes?: readonly GateWrite[] | undefined;
 }
 
 export type PauseReason = "offline" | "error" | "limit";
@@ -68,6 +72,8 @@ export class AgentRun {
   decideToken: string | undefined;
   /** majhi-room and majhi-tasks tokens of this session, revoked when it ends. */
   roomTokens: { server: ToolServer; token: string }[] | undefined;
+  /** What this session holds of its connections (5.14). Its folder of files goes when the session ends. */
+  connections: RunConnections | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
   preambleDue = false;
   drive: Promise<void> | undefined;

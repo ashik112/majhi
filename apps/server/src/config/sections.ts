@@ -4,7 +4,7 @@ import {
   AccountConfigSchema,
   IdSchema,
   type OrgConfig,
-  OrgConfigSchema,
+  OrgsConfigSchema,
   PRIVATE,
   PRIVATE_COLOR,
   PRIVATE_NAME,
@@ -28,7 +28,7 @@ export interface ConfigSections {
 }
 
 const SectionsSchema = z.looseObject({
-  orgs: z.record(IdSchema, OrgConfigSchema).optional(),
+  orgs: OrgsConfigSchema.optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   projects: z.record(z.string(), z.unknown()).optional(),
   boss: z.string().trim().min(1).optional(),

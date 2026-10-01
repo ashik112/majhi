@@ -14,6 +14,13 @@ import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
+import {
+  type PreparedRun,
+  prepareRunConnections,
+  type RunConnections,
+  type RunFilesDeps,
+  removeRunFiles,
+} from "../connections/run-files.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { DECIDE_SERVER_NAME } from "../decisions/service.ts";
 import { UserError } from "../errors.ts";
@@ -80,6 +87,8 @@ export interface LaunchDeps {
   rooms?: RoomAccess | undefined;
   /** Serena can start in the runner container (5.9 item 6). Undefined when agents do not run in one. */
   serena?: SerenaLaunch | undefined;
+  /** Where connections keep their files (5.14). Undefined: runs get no connections. */
+  connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath"> | undefined;
 }
 
 export interface Launched {
@@ -99,6 +108,8 @@ export interface Launched {
   /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
   model?: string | undefined;
   effort?: string | undefined;
+  /** What the run holds of its connections, with its own folder of their files. */
+  connections?: RunConnections | undefined;
 }
 
 /**
@@ -124,6 +135,8 @@ export async function launch(
   const ranBefore = resume !== undefined || deps.store.runs.ranBefore(run.task, run.agent);
   const caller = { task: run.task, agent: run.agent };
   const worktrees = task.repos.map((r) => r.worktree ?? join(task.folder, r.project));
+  // Written before gating: a run that holds a connection gets majhi-connections.
+  const held = await heldConnections(deps, task, fm, "session");
   const gated = gateTools(fm, {
     boss,
     teamSize: task.team.length,
@@ -132,6 +145,7 @@ export async function launch(
     containersOn: deps.rooms?.canRunContainers ?? false,
     serena: deps.serena !== undefined,
     hasWorktrees: worktrees.length > 0,
+    holdsConnections: held !== undefined,
   });
   const on = (name: string) => gated.includes(name as GatedTool);
   const admin = on(ADMIN_SERVER_NAME) ? deps.admin?.attach(caller, fm, boss) : undefined;
@@ -154,6 +168,10 @@ export async function launch(
   const mcpServers = [admin?.server, decide?.server, ...(rooms?.servers ?? []), serena].flatMap((s) =>
     s === undefined ? [] : [s],
   );
+  if (held !== undefined) {
+    mcpServers.push(...held.servers);
+    notices.push(...held.problems);
+  }
   let session: AgentSession;
   try {
     session = await deps.runtime.startSession({
@@ -167,13 +185,16 @@ export async function launch(
         ...(await readMounts(deps, task, run.agent, fm.scope)),
         ...(await repoMounts(task, { readOnly: await readOnlyRepos(deps.config, task), guardRefs: true })),
         ...hooksMount(attribution.hooks),
+        ...(held?.mounts ?? []),
       ],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
       ...(mcpServers.length === 0 ? {} : { mcpServers }),
+      ...(held === undefined ? {} : { env: held.env }),
     });
   } catch (err) {
+    if (held !== undefined) await removeRunFiles(held.dir);
     if (admin !== undefined) deps.admin?.revoke(admin.token);
     if (decide !== undefined) deps.decisions?.revoke(decide.token);
     if (rooms !== undefined) deps.rooms?.revoke(rooms.tokens);
@@ -191,7 +212,26 @@ export async function launch(
     notices,
     model,
     effort,
+    ...(held === undefined
+      ? {}
+      : { connections: { dir: held.dir, gate: held.gate, secrets: held.secrets, uses: held.uses } }),
   };
+}
+
+/** The connections this run gets, with their files written. Undefined when it gets none. */
+function heldConnections(
+  deps: Pick<LaunchDeps, "config" | "secrets" | "majhiHome" | "connectionFiles">,
+  task: Task,
+  fm: AgentFrontmatter,
+  kind: "session" | "process",
+): Promise<PreparedRun | undefined> {
+  if (deps.connectionFiles === undefined) return Promise.resolve(undefined);
+  return prepareRunConnections(
+    { config: deps.config, secrets: deps.secrets, majhiHome: deps.majhiHome, ...deps.connectionFiles },
+    task,
+    fm,
+    kind,
+  );
 }
 
 /**
@@ -275,7 +315,7 @@ async function runtimeAccountOf(deps: Pick<LaunchDeps, "secrets" | "majhiHome">,
  * mounts as its session, so a command behaves the same in the agent's shell and in majhi's.
  */
 export async function processLaunch(
-  deps: Pick<LaunchDeps, "store" | "options" | "secrets" | "majhiHome"> & {
+  deps: Pick<LaunchDeps, "store" | "options" | "secrets" | "majhiHome" | "connectionFiles"> & {
     agents: AgentStore;
     config: ConfigService;
   },
@@ -287,15 +327,21 @@ export async function processLaunch(
   const resolved = await resolveAgent(deps, agentId);
   const account = await runtimeAccountOf(deps, resolved);
   const attribution = await gitAttribution(deps, task, agentId);
+  const mounts = [
+    ...(await readMounts(deps, task, agentId, resolved.fm.scope)),
+    ...(await repoMounts(task, { readOnly: await readOnlyRepos(deps.config, task), guardRefs: true })),
+    ...hooksMount(attribution.hooks),
+  ];
+  // A process gets its own copy of the connection files: it may outlive the session.
+  const held = await heldConnections(deps, task, resolved.fm, "process");
   return {
     folder: task.folder,
-    env: buildEnv(account, deps.options.base, attribution.git),
+    env: { ...held?.env, ...buildEnv(account, deps.options.base, attribution.git) },
     account,
-    mounts: [
-      ...(await readMounts(deps, task, agentId, resolved.fm.scope)),
-      ...(await repoMounts(task, { readOnly: await readOnlyRepos(deps.config, task), guardRefs: true })),
-      ...hooksMount(attribution.hooks),
-    ],
+    mounts: [...mounts, ...(held?.mounts ?? [])],
+    ...(held === undefined
+      ? {}
+      : { cleanup: () => removeRunFiles(held.dir), secrets: held.secrets, gate: held.gate }),
   };
 }
 

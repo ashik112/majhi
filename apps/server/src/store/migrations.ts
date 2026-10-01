@@ -469,6 +469,12 @@ ALTER TABLE runs ADD COLUMN tools TEXT;
     name: "task repo writes",
     sql: "ALTER TABLE task_repos ADD COLUMN writes INTEGER NOT NULL DEFAULT 0;",
   },
+  {
+    // The connections a task's root agents get beyond its org's (5.14): named at create, or attached.
+    id: 110,
+    name: "task connections",
+    sql: "ALTER TABLE tasks ADD COLUMN connections TEXT NOT NULL DEFAULT '[]';",
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

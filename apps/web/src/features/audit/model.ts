@@ -95,6 +95,8 @@ const KIND_LABELS: Record<string, string> = {
   ship: "Resolve and merge",
   cleanup: "Cleanup",
   "tasks.start": "Lead start",
+  "connection-write": "Connection write",
+  "connection-attach": "Connection attach",
 };
 
 /** A kind in words when majhi knows it, else as logged (a command name or a tool kind). */

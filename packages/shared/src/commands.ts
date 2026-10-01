@@ -36,6 +36,15 @@ import {
 import { BudgetStatusSchema } from "./budgets.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
+  ConnectionCreateInputSchema,
+  ConnectionSetFileInputSchema,
+  ConnectionSetSecretInputSchema,
+  ConnectionTestResultSchema,
+  ConnectionTypeDefSchema,
+  ConnectionUpdateInputSchema,
+  ConnectionViewSchema,
+} from "./connections.ts";
+import {
   ContainerInfoSchema,
   ContainerNameSchema,
   ImageRefSchema,
@@ -791,6 +800,11 @@ export const commands = {
        * task starts only when the owner approves, whatever the org's `lead_start` says.
        */
       followUpOf: TaskIdSchema.optional(),
+      /**
+       * Connection ids its root agents get beyond the task's org's (5.14), like a cluster of another org
+       * for a task without one. An org agent can only name its own org's.
+       */
+      connections: z.array(IdSchema).max(50).optional(),
     }),
     output: TaskSchema,
   },
@@ -1397,6 +1411,77 @@ export const commands = {
     output: z.object({ removed: IdSchema }),
   },
 
+  // Connections (5.14) ---------------------------------------------------------
+  "connections.types": {
+    risk: "read",
+    summary:
+      "The connection types (kubectl, mcp, ssh, env, mail, browser) and the fields of each: key, kind (secret, text or file), the variable it maps to, whether it is required, and when it counts",
+    input: Empty,
+    output: z.array(ConnectionTypeDefSchema),
+  },
+  "connections.list": {
+    risk: "read",
+    summary:
+      "List connections, of one org or all: type, name, description, which values are set, problems, the agents that list it and the last Test. Never returns a secret",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(ConnectionViewSchema),
+  },
+  "connections.get": {
+    risk: "read",
+    summary: "Show one connection. Text values are shown; for secrets and files only whether each is set",
+    input: ById,
+    output: ConnectionViewSchema,
+  },
+  "connections.create": {
+    risk: "change",
+    summary:
+      "Add a connection to an org: its type, a name, a description (what agents see) and its text values, plus the variables, headers or env entries the type takes. Secrets go through connections.setSecret and files through connections.setFile. connections.types lists the fields. The id is derived from the name when not given, and is unique across orgs",
+    input: ConnectionCreateInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "connections.update": {
+    risk: "change",
+    summary:
+      "Edit a connection's name, description or text values (null clears one). A vars, headers or env list given replaces the old one, and an entry left out is deleted with its secret or file",
+    input: ConnectionUpdateInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "connections.remove": {
+    risk: "destructive",
+    summary:
+      "Remove a connection. Deletes its files and the secrets nothing else uses, and takes it off the agents that list it",
+    input: ById,
+    output: z.object({ removed: IdSchema }),
+  },
+  "connections.setSecret": {
+    risk: "change",
+    summary:
+      "Set a secret field or entry of a connection: the value from the owner's secure input, or a secret: reference already in secrets.age (agents pass only references, from a secret request). The value is stored in secrets.age and never returned",
+    input: ConnectionSetSecretInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "connections.setFile": {
+    risk: "change",
+    summary:
+      "Set a file field or entry of a connection, like a kubeconfig, from an upload id (the page's upload, or uploads.create for a file in your task folder). It is kept owner-only in ~/.majhi/connections/<id>/",
+    input: ConnectionSetFileInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "connections.allow": {
+    risk: "destructive",
+    summary:
+      "Set the exact write actions the org allows on a connection without asking the owner, like `kubectl rollout restart deployment/api`. Agents then change things unasked, so it always needs the owner. An empty list asks for every write",
+    input: z.object({ id: IdSchema, allow: z.array(z.string().trim().min(1).max(500)).max(200) }),
+    output: ConnectionViewSchema,
+  },
+  "connections.test": {
+    risk: "read",
+    summary:
+      "Test a connection the way a run would reach it: kubectl auth can-i --list, an MCP server's tool list, an SSH login, the env test command, an IMAP login and the SMTP greeting, or the browser MCP server starting. Warns when a kubectl identity can change things. Never shows a secret",
+    input: ById,
+    output: ConnectionTestResultSchema,
+  },
+
   // Config history and undo (5.16) --------------------------------------------
   "history.list": {
     risk: "read",
@@ -1528,14 +1613,15 @@ export const commands = {
   // Health and updates (no manual work outside majhi) ------------------------
   "health.run": {
     risk: "read",
-    summary: "Run every doctor check: config, mounts, SSH, CLIs, accounts, disk, host helper",
+    summary:
+      "Run every doctor check: config, mounts, SSH, CLIs, accounts, connections, disk, host helper. Connections show their last Test; connections.test tests one",
     input: Empty,
     output: z.object({
       checkedAt: z.string(),
       checks: z.array(
         z.object({
           id: z.string(),
-          group: z.enum(["majhi", "host", "ssh", "accounts", "disk"]),
+          group: z.enum(["majhi", "host", "ssh", "accounts", "connections", "disk"]),
           label: z.string(),
           /** False only for a failure. A warning is ok, with `level` "warn". */
           ok: z.boolean(),

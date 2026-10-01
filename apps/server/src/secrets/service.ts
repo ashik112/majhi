@@ -55,7 +55,7 @@ export class SecretService {
   }
 
   /** Files of the config folder that name `secret:<name>`. */
-  private async referencedBy(name: string): Promise<string[]> {
+  async referencedBy(name: string): Promise<string[]> {
     const pattern = new RegExp(`secret:${name}(?![a-z0-9-])`);
     const files = [this.config.file];
     const dir = join(this.config.paths.majhiHome, "agents");

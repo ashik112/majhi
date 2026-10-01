@@ -7,11 +7,12 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "config":
       return [queryKeys.config];
     case "orgs":
-      return [queryKeys.orgs];
+      return [queryKeys.orgs, queryKeys.connections];
     case "accounts":
       return [queryKeys.accounts, queryKeys.accountModels];
     case "agents":
-      return [queryKeys.agents];
+      // A connection lists the agents that use it.
+      return [queryKeys.agents, queryKeys.connections];
     case "projects":
       return [queryKeys.projects];
     case "tasks":
@@ -30,6 +31,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.schedules];
     case "triggers":
       return [queryKeys.triggers];
+    case "connections":
+      return [queryKeys.connections];
   }
 }
 
@@ -48,6 +51,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "containers",
   "schedules",
   "triggers",
+  "connections",
 ];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */

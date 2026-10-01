@@ -2,6 +2,8 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { AccountRuntime, RunMount, Spawned, Spawner } from "@majhi/acp";
 import type { ProcessContainer, ProcessInfo, StoppedBy } from "@majhi/shared";
+import { classifyCommand, type GateConnection } from "../connections/gate.ts";
+import { redactSecrets } from "../connections/redact.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { findPort, OutputTail } from "./tail.ts";
 
@@ -23,6 +25,35 @@ export interface ProcessLaunch {
   account: AccountRuntime;
   /** The session's mounts, like each task repo's `.git`. */
   mounts: RunMount[];
+  /** Removes what this launch wrote, like its connection files. Runs once the process has ended. */
+  cleanup?: (() => Promise<void>) | undefined;
+  /** The secret values of its connections, kept out of its output (5.14). */
+  secrets?: readonly { name: string; value: string }[] | undefined;
+  /** What the gate checks a command against: the connections the process holds (5.14). */
+  gate?: readonly GateConnection[] | undefined;
+}
+
+/** A process's output, with the secret values of its connections kept out (5.14). */
+function tailFor(launch: ProcessLaunch | undefined): OutputTail {
+  const tail = new OutputTail();
+  const secrets = launch?.secrets ?? [];
+  if (secrets.length > 0) tail.redactWith((line) => redactSecrets(line, secrets));
+  return tail;
+}
+
+/**
+ * A background process runs without the CLI's permission prompt, so one that would change a
+ * connection is refused: run in the agent's own shell, it asks the owner (5.14).
+ */
+function refuseConnectionWrite(command: string, launch: ProcessLaunch | undefined): void {
+  if (launch?.gate === undefined) return;
+  const verdict = classifyCommand(command, launch.gate);
+  if (verdict.kind !== "write") return;
+  const write = verdict.writes[0];
+  throw new UserError(
+    `This changes ${write?.connection ?? "a connection"} (${write?.why ?? "a write"}). Run it in your own shell instead, so the owner can approve it.`,
+    409,
+  );
 }
 
 export interface ProcessDeps {
@@ -77,6 +108,8 @@ interface Proc {
   managed?: ManagedRun | undefined;
   /** Set while the spawner is starting the child (a runner container can take a while). */
   spawning?: Promise<void> | undefined;
+  /** The current launch's cleanup, run when its child closes. */
+  cleanup?: (() => Promise<void>) | undefined;
 }
 
 /**
@@ -131,6 +164,12 @@ export class ProcessManager {
     const managed = input.managed;
     // A managed run has no runner environment to build, and its folder is the task's own.
     const launch = managed === undefined ? await this.deps.launch(input.task, input.agent) : undefined;
+    try {
+      refuseConnectionWrite(input.command, launch);
+    } catch (err) {
+      await launch?.cleanup?.().catch(() => undefined);
+      throw err;
+    }
     const cwd = launch === undefined ? (input.cwd ?? "") : await containedCwd(launch.folder, input.cwd);
     // Containers have their own limit (`containers.per_task`), kept by the container service.
     const running = this.running(input.task).filter((p) => p.container === undefined);
@@ -164,10 +203,11 @@ export class ProcessManager {
         tail: [],
         ...(managed === undefined ? {} : { container: managed.container }),
       },
-      tail: new OutputTail(),
+      tail: tailFor(launch),
       spawned: undefined,
       closed: Promise.resolve(),
       managed,
+      cleanup: launch?.cleanup,
     };
     const procs = this.tasks.get(input.task) ?? new Map<string, Proc>();
     procs.set(proc.info.id, proc);
@@ -178,9 +218,17 @@ export class ProcessManager {
     } catch (err) {
       procs.delete(proc.info.id);
       this.changed(input.task, true);
+      await this.cleanUp(proc);
       throw new UserError(`majhi could not start it: ${errorMessage(err)}`);
     }
     return this.view(proc);
+  }
+
+  /** Runs and forgets the current launch's cleanup. */
+  private async cleanUp(proc: Proc): Promise<void> {
+    const cleanup = proc.cleanup;
+    proc.cleanup = undefined;
+    await cleanup?.().catch(() => undefined);
   }
 
   /** Stops a running process and waits for it to go. An ended one is returned as it is. */
@@ -195,7 +243,16 @@ export class ProcessManager {
     const proc = this.find(task, id);
     await this.halt(proc, "agent");
     const launch = proc.managed === undefined ? await this.deps.launch(task, agent) : undefined;
+    try {
+      refuseConnectionWrite(proc.info.command, launch);
+    } catch (err) {
+      await launch?.cleanup?.().catch(() => undefined);
+      throw err;
+    }
+    proc.cleanup = launch?.cleanup;
     proc.tail.clear();
+    const secrets = launch?.secrets ?? [];
+    proc.tail.redactWith((line) => redactSecrets(line, secrets));
     proc.info = {
       ...proc.info,
       agent,
@@ -213,6 +270,7 @@ export class ProcessManager {
       const message = `majhi could not start it: ${errorMessage(err)}`;
       proc.tail.note(message);
       this.ended(proc, null, undefined, { quiet: true });
+      await this.cleanUp(proc);
       throw new UserError(message);
     }
     return this.view(proc);
@@ -302,6 +360,7 @@ export class ProcessManager {
           if (error !== undefined) proc.tail.note(`It did not start: ${error}`);
           proc.spawned = undefined;
           this.ended(proc, code, proc.info.stoppedBy);
+          void this.cleanUp(proc);
         }
         done();
       };

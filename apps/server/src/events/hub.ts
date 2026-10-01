@@ -47,9 +47,12 @@ export function topicsFor(command: string): EventTopic[] {
     case "policy":
       return ["config"];
     case "history":
-      return ["config", "orgs", "accounts", "agents", "projects"];
+      return ["config", "orgs", "accounts", "agents", "projects", "connections"];
     case "secrets":
       return ["secrets"];
+    case "connections":
+      // A change is a config commit, may save or delete secrets, and remove edits agent files.
+      return ["connections", "config", "secrets", "agents"];
     case "usage":
       return ["usage", "config"];
     case "memory":
