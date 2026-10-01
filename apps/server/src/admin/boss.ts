@@ -1,16 +1,17 @@
-import type { Task } from "@majhi/shared";
+import { BOSS_CHAT_BRIEF, CHAT_BRIEF, DEFAULT_CHAT_TITLES, isOwnerChat, type Task } from "@majhi/shared";
+import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 
-/** The brief of the boss's chat task. It marks the task; the owner never sees it as a message. */
-export const BOSS_CHAT_BRIEF = "Boss chat";
+export { BOSS_CHAT_BRIEF };
 
-/** True for the LOCAL chat task that holds the owner's conversation with the boss. */
-export function isBossChat(task: Pick<Task, "kind" | "brief" | "org">): boolean {
-  return task.kind === "chat" && task.brief === BOSS_CHAT_BRIEF && task.org === undefined;
-}
+/**
+ * True for any chat the owner has with an agent (the Chats page, Cmd J). Named for the boss chat it
+ * began as: the run, review and memory code treats every such chat as an ongoing conversation.
+ */
+export const isBossChat = isOwnerChat;
 
 /** Added in front of a majhi-admin agent's first prompt in a session. */
 export const ADMIN_PREAMBLE = [
@@ -31,23 +32,46 @@ export interface BossChatDeps {
   config: ConfigService;
   store: Store;
   tasks: TaskService;
+  agents: AgentStore;
 }
 
-/** The boss's chat task: the open one for the current boss, or a new one. */
-export async function openBossChat({ config, store, tasks }: BossChatDeps, fresh = false): Promise<Task> {
-  const { boss } = await config.sections();
+/** A new chat with an agent. An untitled one that was never written in is reused, so New chat does not pile up empty chats. */
+export async function openChat(
+  { config, store, tasks, agents }: BossChatDeps,
+  agent: string,
+): Promise<Task> {
+  const sections = await config.sections();
+  const found = await agents.get(agent);
+  if (found === undefined || !found.ok) throw new UserError(`Agent "${agent}" does not exist or is invalid.`, 404);
+  const { scope } = found.agent.frontmatter;
+  const org = scope === "root" ? undefined : scope;
+  if (org !== undefined && sections.orgs[org] === undefined) {
+    throw new UserError(`Org "${org}" does not exist.`, 409);
+  }
+  for (const summary of store.tasks.list(false)) {
+    if (summary.chat !== true || summary.team[0] !== agent || summary.org !== org) continue;
+    if (DEFAULT_CHAT_TITLES.includes(summary.title)) return tasks.get(summary.id);
+  }
+  return tasks.create({ text: CHAT_BRIEF, kind: "chat", agent, org, attachments: [], start: false });
+}
+
+/**
+ * The boss's current chat: the newest open one, or a new one. With `fresh`, the current one is
+ * archived (done, still listed under its chats) and a new conversation starts.
+ */
+export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<Task> {
+  const { boss } = await deps.config.sections();
   if (boss === undefined) {
     throw new UserError("There is no boss yet. Create a root agent and make it the boss first.", 409);
   }
-  for (const summary of store.tasks.list(false)) {
-    if (summary.kind !== "chat" || summary.org !== undefined || summary.team[0] !== boss) continue;
-    const task = tasks.get(summary.id);
-    if (!isBossChat(task)) continue;
-    if (!fresh) return task;
-    // A new conversation: the current one is archived (done) and stays readable under Past chats.
-    // The owner asked for a new conversation. A boss chat has no repo of its own, so nothing stays behind.
-    await tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
+  // Newest first.
+  for (const summary of deps.store.tasks.list(false)) {
+    if (summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss) continue;
+    const task = deps.tasks.get(summary.id);
+    if (!fresh || DEFAULT_CHAT_TITLES.includes(task.title)) return task;
+    // The owner asked for a new conversation. A chat has no repo of its own, so nothing stays behind.
+    await deps.tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
     break;
   }
-  return tasks.create({ text: BOSS_CHAT_BRIEF, kind: "chat", agent: boss, attachments: [], start: false });
+  return openChat(deps, boss);
 }

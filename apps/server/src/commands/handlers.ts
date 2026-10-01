@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { CommandMeta, CommandName, CommandOutput, commands, Remount, TaskId } from "@majhi/shared";
 import { RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
-import { openBossChat } from "../admin/boss.ts";
+import { openBossChat, openChat } from "../admin/boss.ts";
 import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
@@ -67,6 +67,12 @@ export function createHandlers({
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
+  const chatDeps = () => ({
+    config,
+    store: services.store,
+    tasks: services.tasks,
+    agents: services.agentStore,
+  });
   const adoptDeps = (ctx: CommandContext): AdoptDeps => ({
     readToken: async (via, host) =>
       (await hostLink.call("git.token", { via, host }, GIT_TOKEN_TIMEOUT_MS)).token,
@@ -564,8 +570,9 @@ export function createHandlers({
       services.store.permissions.revoke(input.task, input.kind);
       return allowances(services);
     },
-    "boss.chat": (input) =>
-      openBossChat({ config, store: services.store, tasks: services.tasks }, input.fresh === true),
+    "boss.chat": (input) => openBossChat(chatDeps(), input.fresh === true),
+    "chats.create": (input) => openChat(chatDeps(), input.agent),
+    "chats.rename": async (input) => services.tasks.renameChat(input.id, input.title),
     "cleanup.preview": async (input) =>
       services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
     "cleanup.run": async (input, ctx) =>

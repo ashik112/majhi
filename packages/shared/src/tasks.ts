@@ -232,6 +232,28 @@ export const TaskSchema = z.object({
 });
 export type Task = z.infer<typeof TaskSchema>;
 
+/** The brief of a chat the owner started from the Chats page or Cmd J. It marks the task; it is never shown. */
+export const CHAT_BRIEF = "Chat";
+/** The same marker on chats made before the Chats page. */
+export const BOSS_CHAT_BRIEF = "Boss chat";
+/** What an untitled chat is called until the owner's first message names it. */
+export const DEFAULT_CHAT_TITLES: readonly string[] = [CHAT_BRIEF, BOSS_CHAT_BRIEF];
+
+/** True for a chat with an agent: an ongoing conversation, not a piece of work to review. */
+export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && (task.brief === CHAT_BRIEF || task.brief === BOSS_CHAT_BRIEF);
+}
+
+/** A chat title from the owner's first message: its first line, trimmed and cut to fit. */
+export function chatTitleFrom(text: string): string | undefined {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  if (line === undefined) return undefined;
+  return line.length > 60 ? `${line.slice(0, 57).trimEnd()}...` : line;
+}
+
 /** One row of the task list. */
 export const TaskSummarySchema = TaskSchema.pick({
   id: true,
@@ -254,6 +276,10 @@ export const TaskSummarySchema = TaskSchema.pick({
     .optional(),
   /** Unmet `depends-on` links: the tasks this one waits for (5.4a). */
   waitingOn: z.array(TaskIdSchema),
+  /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
+  chat: z.boolean().optional(),
+  /** A chat that waits for the owner: an approval, a permission, a question. Shown on the board too. */
+  asking: z.boolean().optional(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 

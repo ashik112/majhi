@@ -8,6 +8,9 @@ import {
   AUTO,
   type CoordinationMode,
   canWorkIn,
+  chatTitleFrom,
+  DEFAULT_CHAT_TITLES,
+  isOwnerChat,
   LOCAL_TASK_PREFIX,
   MODE_LABELS,
   OWNER_HANDLE,
@@ -139,6 +142,8 @@ export interface CreateInput {
   /** An investigation: the named repos are mounted read-only, with no branch, worktree or Ship. */
   readOnly?: boolean | undefined;
   agent?: string | undefined;
+  /** The org of a task with no project, like a chat with an org's agent. Projects in the text win. */
+  org?: string | undefined;
   /** The whole team, lead first. */
   team?: string[] | undefined;
   mode?: CoordinationMode | undefined;
@@ -214,9 +219,15 @@ export class TaskService {
   }
 
   list(includeDone: boolean): TaskSummary[] {
-    return this.deps.store.tasks
-      .list(includeDone)
-      .map((t) => ({ ...t, working: this.deps.runs.working(t.id) }));
+    const rows = this.deps.store.tasks.list(includeDone);
+    const waiting = rows.some((t) => t.chat === true && t.status !== "done")
+      ? this.deps.store.room.tasksWaitingOnOwner()
+      : new Set<string>();
+    return rows.map((t) => ({
+      ...t,
+      working: this.deps.runs.working(t.id),
+      ...(t.chat === true && t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
+    }));
   }
 
   get(id: string): Task {
@@ -268,7 +279,7 @@ export class TaskService {
     }
     const parentTask = input.parent === undefined ? undefined : store.tasks.get(input.parent);
     // A child with no repos of its own belongs to its parent's org.
-    const org = parsed.org ?? (parsed.repos.length === 0 ? parentTask?.org : undefined);
+    const org = parsed.org ?? (parsed.repos.length === 0 ? (input.org ?? parentTask?.org) : undefined);
     if (org !== undefined && sections.orgs[org] === undefined) {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
@@ -1294,13 +1305,33 @@ export class TaskService {
     return store.tasks.children(id).filter((c) => store.tasks.get(c)?.status !== "done");
   }
 
+  /** The first message names an untitled chat. */
+  private nameChat(task: Task, text: string): void {
+    if (!isOwnerChat(task) || !DEFAULT_CHAT_TITLES.includes(task.title)) return;
+    const title = chatTitleFrom(text);
+    if (title === undefined) return;
+    this.deps.store.tasks.setText(task.id, title, task.brief, this.now().toISOString());
+    this.deps.room.publishTask(this.get(task.id));
+  }
+
+  /** Renames a chat. The brief stays: it marks the task as a chat. */
+  renameChat(id: string, title: string): Task {
+    const task = this.get(id);
+    if (!isOwnerChat(task)) throw new UserError(`Task ${id} is not a chat.`, 409);
+    this.deps.store.tasks.setText(id, title.trim(), task.brief, this.now().toISOString());
+    const renamed = this.get(id);
+    this.deps.room.publishTask(renamed);
+    this.deps.events.emit(["tasks"]);
+    return renamed;
+  }
+
   /** Opens a done task again: back to review when it has a worktree, else the inbox. */
   async reopen(id: string): Promise<Task> {
     const task = this.get(id);
     if (task.status !== "done") return task;
     const status = task.repos.some((r) => r.worktree !== undefined) ? "review" : "inbox";
     this.deps.store.tasks.setStatus(id, status, undefined, this.now().toISOString());
-    this.note(id, "Reopened.");
+    if (!isOwnerChat(task)) this.note(id, "Reopened.");
     const reopened = this.get(id);
     if (status === "review") this.cards.review(reopened);
     this.deps.room.publishTask(reopened);
@@ -1968,10 +1999,13 @@ export class TaskService {
     mode: "queue" | "interrupt";
     agent?: string | undefined;
   }): Promise<RoomItem> {
-    const task = this.get(input.task);
-    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    let task = this.get(input.task);
     if (input.text.trim() === "" && input.attachments.length === 0)
       throw new UserError("Write a message or attach a file.");
+    // Writing in a finished chat continues it. Other tasks stay done until the owner reopens them.
+    if (task.status === "done" && isOwnerChat(task)) task = await this.reopen(task.id);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    this.nameChat(task, input.text);
     const targets = await this.ownerTargets(task, input.text, input.agent);
     const agent = targets[0];
     if (agent === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);

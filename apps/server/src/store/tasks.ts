@@ -17,6 +17,7 @@ import {
   type TaskSummary,
   type TeamOverride,
   TeamOverrideSchema,
+  isOwnerChat,
 } from "@majhi/shared";
 import { and, asc, desc, eq, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -248,6 +249,7 @@ export class TaskRepo {
       if (kids !== undefined)
         summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
       if (row.org !== null) summary.org = row.org;
+      if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
       if (row.pausedReason !== null)
         summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
       return summary;

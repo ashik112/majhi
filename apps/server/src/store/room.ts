@@ -121,6 +121,21 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /** Tasks with something pending for the owner: an approval, a permission, a secret, a question. One query. */
+  tasksWaitingOnOwner(): Set<string> {
+    const rows = this.db
+      .selectDistinct({ task: roomItems.task })
+      .from(roomItems)
+      .where(
+        and(
+          inArray(roomItems.type, ["approval", "permission", "secret-request", "ask", "choice", "owner-question"]),
+          sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
+        ),
+      )
+      .all();
+    return new Set(rows.map((r) => r.task));
+  }
+
   /** Approval cards that ran a config change and can be undone through this commit. */
   approvalsByCommit(commit: string): RoomItem[] {
     return this.db

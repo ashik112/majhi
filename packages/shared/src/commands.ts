@@ -1314,6 +1314,20 @@ export const commands = {
     output: TaskSchema,
   },
 
+  "chats.create": {
+    risk: "change",
+    summary:
+      "Start a chat with an agent, without a task. An untitled chat that was never written in is reused",
+    input: z.object({ agent: IdSchema }),
+    output: TaskSchema,
+  },
+  "chats.rename": {
+    risk: "change",
+    summary: "Rename a chat",
+    input: z.object({ id: TaskIdSchema, title: z.string().trim().min(1).max(120) }),
+    output: TaskSchema,
+  },
+
   // Cleanup of done tasks ------------------------------------------------------
   "cleanup.preview": {
     risk: "read",

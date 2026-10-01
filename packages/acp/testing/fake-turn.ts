@@ -206,7 +206,7 @@ async function callMcpTool(
 async function isBossChat(s: Session): Promise<boolean> {
   if (!s.mcp.some((m) => m.name === "majhi-admin")) return false;
   try {
-    return (await readFile(join(s.cwd, "TASK.md"), "utf8")).includes("## Brief\n\nBoss chat\n");
+    return /## Brief\n\n(?:Boss chat|Chat)\n/.test(await readFile(join(s.cwd, "TASK.md"), "utf8"));
   } catch {
     return false;
   }

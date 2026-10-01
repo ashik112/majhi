@@ -16,6 +16,8 @@ export const NOT_TOOLS: ReadonlySet<CommandName> = new Set<CommandName>([
   "room.fresh",
   "ssh.unlock",
   "boss.chat",
+  "chats.create",
+  "chats.rename",
 ]);
 
 export const REQUEST_SECRET_TOOL = "majhi_request_secret";
