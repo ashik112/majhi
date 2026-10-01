@@ -401,6 +401,19 @@ CREATE TABLE chat_state (
 );
 `,
   },
+  {
+    // The audit log page lists rows across tasks: each row now carries its org (a task with no org
+    // is in "private", as everywhere else) and a detail line, and the list reads newest first.
+    id: 106,
+    name: "audit org and detail",
+    sql: `
+ALTER TABLE audit ADD COLUMN org TEXT;
+ALTER TABLE audit ADD COLUMN detail TEXT;
+UPDATE audit SET org = (SELECT COALESCE(tasks.org, 'private') FROM tasks WHERE tasks.id = audit.task);
+CREATE INDEX audit_at ON audit (at);
+CREATE INDEX audit_org_at ON audit (org, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

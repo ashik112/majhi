@@ -9,6 +9,7 @@ import {
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
+import { auditDetail } from "../audit.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -157,6 +158,17 @@ export class AdminService {
           });
     if (decision === "run" || rule !== undefined) {
       const done = await this.execute(command, input, meta);
+      if (def.risk !== "read" && rule !== undefined) {
+        this.log(
+          caller.task,
+          caller.agent,
+          command,
+          summarize(command, input),
+          "allow",
+          "rule",
+          done.ok ? undefined : done.error,
+        );
+      }
       if (def.risk !== "read") {
         this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
           ...cardOf(caller.agent, command, input, ask.reason),
@@ -217,6 +229,7 @@ export class AdminService {
     try {
       if (decision === "reject") {
         const rejected = this.update(item, { state: "rejected" });
+        this.audit(item, "deny", "owner");
         await this.notify(item.task, item.agent, {
           text: `The owner rejected: ${item.summary}.`,
           shown: `You rejected: ${lowerFirst(item.summary)}`,
@@ -232,6 +245,7 @@ export class AdminService {
         metaFor(item.agent, item.reason ?? "", item.task),
       );
       this.pending.delete(item.id);
+      this.audit(item, "allow", "owner", done.ok ? undefined : `Failed: ${done.error}`);
       const applied = this.update(item, {
         state: done.ok ? "applied" : "failed",
         ...(done.commit === undefined ? {} : { commit: done.commit }),
@@ -311,6 +325,32 @@ export class AdminService {
       shown: `You did not provide ${item.label}`,
     });
     return this.mustGet(item.task, item.id);
+  }
+
+  /** The owner's answer to an approval card: every approval and rejection is in the audit log. */
+  private audit(item: ApprovalItem, decision: "allow" | "deny", by: "owner", detail?: string): void {
+    this.log(item.task, item.agent, item.command, item.summary, decision, by, detail);
+  }
+
+  private log(
+    task: string,
+    agent: string,
+    kind: string,
+    title: string,
+    decision: "allow" | "deny",
+    by: "owner" | "rule",
+    detail?: string,
+  ): void {
+    this.deps.store.permissions.log({
+      task,
+      agent,
+      kind,
+      title,
+      decision,
+      by,
+      at: new Date().toISOString(),
+      detail: detail === undefined ? undefined : auditDetail(detail),
+    });
   }
 
   /** Marks the approval cards that ran this commit as undone. */

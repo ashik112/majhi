@@ -39,6 +39,9 @@ describe("the boss through the fake adapter", () => {
     expect(approved.body.item).toMatchObject({ state: "applied" });
     await idle();
     expect(await orgIds()).toEqual(["acme", "acme2"]);
+    expect(w.h.majhi.services.store.permissions.audit(w.chat.id)).toMatchObject([
+      { kind: "orgs.create", agent: "boss", decision: "allow", by: "owner", title: "Create org Acme Two" },
+    ]);
 
     // The room says it in words; the boss got the decision with the result in its session and answered it.
     items = await w.items();
@@ -65,6 +68,19 @@ describe("the boss through the fake adapter", () => {
     expect(log.slice(0, 2)).toEqual([
       "boss|agents.create: a reviewer for Acme",
       "boss|orgs.create: the owner wants a second company",
+    ]);
+  });
+
+  it("logs a rejection, and changes nothing", async () => {
+    w = await bossWorld();
+    expect((await say(ORG_CALL)).status).toBe(200);
+    await idle();
+    const [card] = await cards();
+    const rejected = await w.h.cmd("room.approve", { task: w.chat.id, item: card?.id, decision: "reject" });
+    expect(rejected.body.item).toMatchObject({ state: "rejected" });
+    expect(await orgIds()).toEqual(["acme"]);
+    expect(w.h.majhi.services.store.permissions.audit(w.chat.id)).toMatchObject([
+      { kind: "orgs.create", decision: "deny", by: "owner" },
     ]);
   });
 

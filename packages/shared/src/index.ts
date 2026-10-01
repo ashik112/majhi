@@ -1,6 +1,7 @@
 export * from "./accounts.ts";
 export * from "./api.ts";
 export * from "./attribution.ts";
+export * from "./audit.ts";
 export * from "./automation.ts";
 export * from "./cleanup.ts";
 export * from "./commands.ts";

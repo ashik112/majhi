@@ -175,6 +175,15 @@ describe("one task, two repos on two hosts", () => {
     expect(merged.status).toBe(200);
     expect(merged.body).toMatchObject({ merged: ["acme-api", "acme-web"], done: true });
     expect(await mergeCalls()).toEqual(["api", "web"]);
+    // One row per repo for the MR and for the merge on the host, with the MR link.
+    expect(
+      w.h.majhi.services.store.permissions.audit(id).map((r) => [r.kind, r.decision, r.by, r.org, r.detail]),
+    ).toEqual([
+      ["mr", "done", "owner", "acme", "https://github.com/remotes/api/pull/1"],
+      ["mr", "done", "owner", "acme", "https://gitlab.com/remotes/web/-/merge_requests/1"],
+      ["merge", "done", "owner", "acme", "https://github.com/remotes/api/pull/1"],
+      ["merge", "done", "owner", "acme", "https://gitlab.com/remotes/web/-/merge_requests/1"],
+    ]);
     expect(await git(w.remote("api"), "rev-parse", "main")).toBe(
       await git(w.remote("api"), "rev-parse", task.repos[1]?.branch ?? ""),
     );
@@ -307,6 +316,23 @@ describe("merge policies", () => {
     expect((await get(id)).status).toBe("mr");
   });
 
+  it("auto-if-green: a merge the host keeps refusing is logged once, not on every poll", async () => {
+    const id = await reviewed({ policy: "auto-if-green" });
+    must(await cmd("tasks.openMrs", { id }));
+    await passing();
+    await fake.update((s) => {
+      s.mergeFails["remotes/web"] = "Merge conflict in invoices.html";
+    });
+    await tick();
+    await tick();
+    await tick();
+    const merges = w.h.majhi.services.store.permissions.audit(id).filter((r) => r.kind === "merge");
+    expect(merges.map((r) => [r.title, r.decision, r.by])).toEqual([
+      ["Merge of acme-api", "done", "majhi"],
+      ["Merge of acme-web", "failed", "majhi"],
+    ]);
+  });
+
   it("never: majhi does not merge; the poller notices merges done on the host, and I merged it checks first", async () => {
     const id = await reviewed({ policy: "never" });
     must(await cmd("tasks.openMrs", { id }));
@@ -343,6 +369,16 @@ describe("merge policies", () => {
     const res = await cmd("tasks.markMerged", { id, force: true });
     expect(res.body).toMatchObject({ done: true, stillOpen: [] });
     expect((await get(id)).status).toBe("done");
+    // The owner's word, not the host's: the row says so.
+    const merges = w.h.majhi.services.store.permissions.audit(id).filter((r) => r.kind === "merge");
+    expect(merges).toHaveLength(2);
+    for (const row of merges) {
+      expect(row).toMatchObject({
+        decision: "done",
+        by: "owner",
+        detail: "recorded as merged by the owner, not checked with the host",
+      });
+    }
   });
 
   /** Merges the PR of a fake repo the way its host would: moves the base to the head. */

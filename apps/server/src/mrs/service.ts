@@ -19,6 +19,7 @@ import {
   type TaskRepo,
   waitsForOwner,
 } from "@majhi/shared";
+import { logShip } from "../audit.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
@@ -125,11 +126,27 @@ export class MrService {
     this.deps.room.post(task, `${level}:${randomUUID()}`, { type: "system", level, text });
   }
 
+  private audit(
+    task: string,
+    kind: "push" | "mr" | "merge" | "merge+push",
+    who: string,
+    ok: boolean,
+    detail: string,
+    project: string,
+  ): void {
+    logShip(this.deps.store, { task, kind, who, ok, project, detail, at: this.now() });
+  }
+
   /** Says a problem once until it changes or clears. */
   private problem(task: string, key: string, text: string): void {
-    if (this.said.get(`${task}|${key}`) === text) return;
+    if (this.firstTime(task, key, text)) this.note(task, text, "error");
+  }
+
+  /** True the first time this key holds this text for the task, until it is resolved. */
+  private firstTime(task: string, key: string, text: string): boolean {
+    if (this.said.get(`${task}|${key}`) === text) return false;
     this.said.set(`${task}|${key}`, text);
-    this.note(task, text, "error");
+    return true;
   }
 
   /** The problem of this kind is gone: a later one is news again. */
@@ -360,6 +377,10 @@ export class MrService {
 
       for (const r of results)
         this.note(id, `${r.project}: ${r.detail}`, r.outcome === "failed" ? "error" : "info");
+      for (const r of results) {
+        if (r.outcome === "skipped") continue;
+        this.audit(id, "mr", by ?? "owner", r.outcome !== "failed", r.url ?? r.detail, r.project);
+      }
       const anyMr = this.deps.store.tasks.get(id)?.repos.some((r) => r.mr !== undefined) === true;
       if (!failed && anyMr) {
         if (task.status !== "mr") {
@@ -517,7 +538,7 @@ export class MrService {
    * `deleteAfter`, a push that worked everywhere removes the worktrees and local branches; the
    * remote branches stay.
    */
-  async push(id: string, deleteAfter = false): Promise<{ results: ShipResult[]; task: Task }> {
+  async push(id: string, deleteAfter = false, by = "owner"): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(id);
     return this.exclusive(id, async () => {
       const ready = await this.pushReady(task);
@@ -553,6 +574,11 @@ export class MrService {
         }
       }
       for (const r of results) this.note(id, `${r.project}: ${r.detail}`, r.ok ? "info" : "error");
+      for (const { repo, target } of ready) {
+        const r = results.find((x) => x.project === repo.project);
+        if (r === undefined) continue;
+        this.audit(id, "push", by, r.ok, r.ok ? `${target.remote}/${repo.branch}` : r.detail, r.project);
+      }
       if (deleteAfter && results.every((r) => r.ok)) {
         return { results: await this.withDeleted(id, results, heads), task: this.publish(id) };
       }
@@ -645,6 +671,17 @@ export class MrService {
         }
       }
       for (const r of results) this.note(input.id, `${r.project}: ${r.detail}`, r.ok ? "info" : "error");
+      for (const r of results) {
+        const target = ready.find((x) => x.repo.project === r.project)?.target;
+        this.audit(
+          input.id,
+          "merge+push",
+          input.by,
+          r.ok,
+          r.ok ? `${target?.remote ?? "origin"}/${r.into}` : r.detail,
+          r.project,
+        );
+      }
       if (results.every((r) => r.ok)) {
         const into = [...new Set(results.map((r) => r.into))].join(", ");
         const closes =
@@ -972,6 +1009,13 @@ export class MrService {
             state: status.state,
             ci: status.ci,
           });
+          // The merge on the host is a merge: the owner's click or the poller's, whichever asked.
+          // A poll that finds the host still merging logs it once, not on every pass.
+          const who = trigger === "owner" ? "owner" : "majhi";
+          const url = status.url || repo.mr.url;
+          if (status.state === "merged") this.audit(id, "merge", who, true, url, repo.project);
+          else if (this.firstTime(id, `merging:${repo.project}`, url))
+            this.audit(id, "merge", who, true, `${url} (host still merging)`, repo.project);
           if (status.state !== "merged") {
             stoppedAt = {
               project: repo.project,
@@ -985,6 +1029,17 @@ export class MrService {
           this.resolved(id, "merge:");
         } catch (err) {
           stoppedAt = { project: repo.project, reason: errorMessage(err) };
+          // The poller retries on every pass: the same failure is logged once, as the room says it once.
+          const text = `Merging stopped at ${repo.project}: ${errorMessage(err)}`;
+          if (this.said.get(`${id}|merge:${repo.project}`) !== text)
+            this.audit(
+              id,
+              "merge",
+              trigger === "owner" ? "owner" : "majhi",
+              false,
+              errorMessage(err),
+              repo.project,
+            );
           this.problem(
             id,
             `merge:${repo.project}`,
@@ -1033,6 +1088,14 @@ export class MrService {
         if (input.force) {
           this.deps.store.tasks.setMr(input.id, repo.project, { ...repo.mr, state: "merged" });
           this.note(input.id, `${repo.project}: recorded as merged, as the owner said.`);
+          this.audit(
+            input.id,
+            "merge",
+            "owner",
+            true,
+            "recorded as merged by the owner, not checked with the host",
+            repo.project,
+          );
         } else {
           stillOpen.push({ project: repo.project, state: repo.mr.state });
         }

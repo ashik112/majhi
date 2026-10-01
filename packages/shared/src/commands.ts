@@ -24,6 +24,7 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import { AuditListInputSchema, AuditListSchema } from "./audit.ts";
 import {
   AutomationRunSchema,
   ScheduleCreateInputSchema,
@@ -1383,6 +1384,15 @@ export const commands = {
     summary: "Rename a chat",
     input: z.object({ id: TaskIdSchema, title: z.string().trim().min(1).max(120) }),
     output: TaskSchema,
+  },
+
+  // Audit log ------------------------------------------------------------------
+  "audit.list": {
+    risk: "read",
+    summary:
+      "List the audit log, newest first: permission decisions, approvals, pushes, merge requests, merges and cleanups. Filter by org, task, kinds, agent, decision and a date range; page with before",
+    input: AuditListInputSchema,
+    output: AuditListSchema,
   },
 
   // Cleanup of done tasks ------------------------------------------------------

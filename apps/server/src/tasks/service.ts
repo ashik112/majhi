@@ -40,6 +40,7 @@ import {
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { logShip } from "../audit.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -1257,6 +1258,17 @@ export class TaskService {
       );
     }
     for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
+    for (const r of results) {
+      logShip(this.deps.store, {
+        task: task.id,
+        kind: "merge",
+        who: input.by ?? "owner",
+        ok: r.ok,
+        project: r.project,
+        detail: r.ok ? r.into : `${r.into}: ${r.detail}`,
+        at: this.now(),
+      });
+    }
     const clean = results.every((r) => r.ok);
     if (!clean) return { results, task: this.get(task.id) };
     const by = input.by ?? "owner";

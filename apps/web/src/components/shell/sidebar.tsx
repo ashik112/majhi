@@ -31,6 +31,7 @@ const NAV: readonly { page: PageName; label: string }[] = [
   { page: "agents", label: "Agents" },
   { page: "accounts", label: "Accounts" },
   { page: "usage", label: "Health and usage" },
+  { page: "audit", label: "Audit log" },
   { page: "skills", label: "Skills" },
   { page: "memory", label: "Memory" },
   { page: "automations", label: "Automations" },

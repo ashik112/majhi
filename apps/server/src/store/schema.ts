@@ -134,16 +134,24 @@ export const taskCounters = sqliteTable("task_counters", {
   last: integer("last").notNull(),
 });
 
-export const audit = sqliteTable("audit", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  task: text("task").notNull(),
-  agent: text("agent").notNull(),
-  kind: text("kind").notNull(),
-  title: text("title").notNull(),
-  decision: text("decision").notNull(),
-  by: text("by").notNull(),
-  at: text("at").notNull(),
-});
+export const audit = sqliteTable(
+  "audit",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    task: text("task").notNull(),
+    agent: text("agent").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    decision: text("decision").notNull(),
+    by: text("by").notNull(),
+    at: text("at").notNull(),
+    /** The task's org when the row was written. Null only for a row of a task that was already gone. */
+    org: text("org"),
+    /** The target branch, the MR link or the error. */
+    detail: text("detail"),
+  },
+  (t) => [index("audit_at").on(t.at), index("audit_org_at").on(t.org, t.at)],
+);
 
 export const taskAllowances = sqliteTable(
   "task_allowances",

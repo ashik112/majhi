@@ -58,6 +58,8 @@ export class PendingShips {
       by: input.by,
     };
     store.tasks.setPendingShip(task.id, pending);
+    // The owner's click is the approval for the ship that runs later.
+    this.approval(task.id, "allow", input.by, `Approved: ${shipWords(pending)}`, input.into);
     tasks.cards.settle(
       task.id,
       "review",
@@ -83,8 +85,23 @@ export class PendingShips {
 
   /** The owner changed their mind: the lead keeps working, and nothing ships when it is done. */
   cancel(id: string): Task {
-    this.deps.tasks.dropPendingShip(id, "you cancelled it");
+    const dropped = this.deps.tasks.dropPendingShip(id, "you cancelled it");
+    if (dropped !== undefined)
+      this.approval(id, "deny", "owner", `Cancelled: ${shipWords(dropped)}`, dropped.into);
     return this.deps.tasks.get(id);
+  }
+
+  private approval(task: string, decision: "allow" | "deny", who: string, title: string, into: string): void {
+    this.deps.store.permissions.log({
+      task,
+      agent: who,
+      kind: "ship",
+      title,
+      decision,
+      by: "owner",
+      at: this.deps.now().toISOString(),
+      detail: into,
+    });
   }
 
   /** The task reached review. A waiting ship is taken off the task, then run once or explained. */

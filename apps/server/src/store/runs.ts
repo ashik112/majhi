@@ -1,6 +1,7 @@
-import { and, desc, eq, isNotNull, isNull, max } from "drizzle-orm";
+import type { AuditBy, AuditDecision, AuditEntry, AuditList, AuditListInput } from "@majhi/shared";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, type SQL } from "drizzle-orm";
 import type { Db } from "./db.ts";
-import { audit, runs, taskAllowances } from "./schema.ts";
+import { audit, runs, taskAllowances, tasks } from "./schema.ts";
 
 export interface RunRow {
   id: number;
@@ -173,35 +174,77 @@ export interface AuditRow {
   agent: string;
   kind: string;
   title: string;
-  decision: "allow" | "deny" | "cancelled";
-  by: "owner" | "rule" | "lead";
+  decision: AuditDecision;
+  by: AuditBy;
   at: string;
+  /** The task's org. Filled from the task when the writer does not pass it. */
+  org?: string | undefined;
+  /** The target branch, the merge request link or the error. */
+  detail?: string | undefined;
 }
 
-/** Every permission decision, and the "allow for this task" choices. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Every permission decision, the "allow for this task" choices, and what majhi pushed, merged or was approved to do. */
 export class PermissionRepo {
   constructor(private readonly db: Db) {}
 
   log(row: AuditRow): void {
-    this.db.insert(audit).values(row).run();
+    const { org, detail, ...rest } = row;
+    this.db
+      .insert(audit)
+      .values({ ...rest, org: org ?? this.orgOf(row.task) ?? null, detail: detail ?? null })
+      .run();
+  }
+
+  /** The org of a task as the audit log records it: no org is "private". Undefined for a task that is gone. */
+  private orgOf(task: string): string | undefined {
+    const found = this.db.select({ org: tasks.org }).from(tasks).where(eq(tasks.id, task)).get();
+    return found === undefined ? undefined : (found.org ?? "private");
   }
 
   audit(task: string): AuditRow[] {
-    return this.db
+    return this.db.select().from(audit).where(eq(audit.task, task)).orderBy(audit.id).all().map(toRow);
+  }
+
+  /** Rows across all tasks, newest first. `next` is set when older rows are left. */
+  list(input: AuditListInput): AuditList {
+    const limit = input.limit ?? 100;
+    const where: (SQL | undefined)[] = [
+      input.org === undefined ? undefined : eq(audit.org, input.org),
+      input.task === undefined ? undefined : eq(audit.task, input.task),
+      input.kinds === undefined || input.kinds.length === 0 ? undefined : inArray(audit.kind, input.kinds),
+      input.agent === undefined ? undefined : eq(audit.agent, input.agent),
+      input.decision === undefined ? undefined : eq(audit.decision, input.decision),
+      input.from === undefined ? undefined : gte(audit.at, new Date(input.from).toISOString()),
+      input.to === undefined ? undefined : untilEnd(input.to),
+      input.before === undefined ? undefined : lt(audit.id, input.before),
+    ];
+    const rows = this.db
       .select()
       .from(audit)
-      .where(eq(audit.task, task))
-      .orderBy(audit.id)
+      .where(and(...where))
+      .orderBy(desc(audit.id))
+      .limit(limit + 1)
+      .all();
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      entries: page.map((r): AuditEntry => ({ id: r.id, ...toRow(r) })),
+      ...(rows.length > limit && last !== undefined ? { next: last.id } : {}),
+      kinds: this.distinct(audit.kind),
+      agents: this.distinct(audit.agent),
+      orgs: this.distinct(audit.org),
+    };
+  }
+
+  private distinct(column: typeof audit.kind | typeof audit.agent | typeof audit.org): string[] {
+    return this.db
+      .selectDistinct({ value: column })
+      .from(audit)
+      .orderBy(column)
       .all()
-      .map((r) => ({
-        task: r.task,
-        agent: r.agent,
-        kind: r.kind,
-        title: r.title,
-        decision: r.decision as AuditRow["decision"],
-        by: r.by as AuditRow["by"],
-        at: r.at,
-      }));
+      .flatMap((r) => (r.value === null ? [] : [r.value]));
   }
 
   allow(task: string, kind: string): void {
@@ -233,4 +276,26 @@ export class PermissionRepo {
         .get() !== undefined
     );
   }
+}
+
+/** `to` as an upper bound: a date alone covers that whole day. */
+function untilEnd(to: string): SQL {
+  if (!DAY.test(to)) return lte(audit.at, new Date(to).toISOString());
+  const next = new Date(`${to}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return lt(audit.at, next.toISOString());
+}
+
+function toRow(r: Omit<typeof audit.$inferSelect, "id">): AuditRow {
+  return {
+    task: r.task,
+    agent: r.agent,
+    kind: r.kind,
+    title: r.title,
+    decision: r.decision as AuditDecision,
+    by: r.by as AuditBy,
+    at: r.at,
+    ...(r.org === null ? {} : { org: r.org }),
+    ...(r.detail === null ? {} : { detail: r.detail }),
+  };
 }

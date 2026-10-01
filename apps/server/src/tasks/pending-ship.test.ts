@@ -99,6 +99,16 @@ describe("resolve and ship", () => {
     expect(await git(world().repo("api"), "show", "main:shared.txt")).toBe("main side\ntask side");
     const ran = (await notes()).filter((n) => n.includes("majhi will merge into main, as you asked"));
     expect(ran).toHaveLength(1);
+    // The conflict that stopped the first merge, the owner's approval, then the merge that ran.
+    expect(
+      world()
+        .h.majhi.services.store.permissions.audit("ACM-1")
+        .map((r) => [r.kind, r.decision, r.by]),
+    ).toEqual([
+      ["merge", "failed", "owner"],
+      ["ship", "allow", "owner"],
+      ["merge", "done", "owner"],
+    ]);
 
     // Another turn end finds nothing waiting: nothing runs again.
     const main = await tip(world().repo("api"), "main");
@@ -148,6 +158,15 @@ describe("resolve and ship", () => {
     await until(async () => (await get()).status === "review", "review");
     expect(await tip(world().repo("api"), "main")).toBe(main);
     expect(await notes()).toContain("majhi will not merge into main: you cancelled it.");
+    expect(
+      world()
+        .h.majhi.services.store.permissions.audit("ACM-1")
+        .map((r) => [r.kind, r.decision]),
+    ).toEqual([
+      ["merge", "failed"],
+      ["ship", "allow"],
+      ["ship", "deny"],
+    ]);
   });
 
   it("refuses when nothing conflicts any more", async () => {

@@ -37,6 +37,14 @@ export interface AppSearch {
   tab?: string;
   /** On Hub setup: the section shown. */
   section?: string;
+  /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
+  scope?: string;
+  about?: string;
+  who?: string;
+  kinds?: string;
+  decision?: string;
+  from?: string;
+  to?: string;
 }
 
 function text(value: unknown): string | undefined {
@@ -55,6 +63,13 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const project = text(search.project);
   const tab = text(search.tab);
   const section = text(search.section);
+  const scope = text(search.scope);
+  const about = text(search.about);
+  const who = text(search.who);
+  const kinds = text(search.kinds);
+  const decision = text(search.decision);
+  const from = text(search.from);
+  const to = text(search.to);
   return {
     ...(view ? { view } : {}),
     ...(org ? { org } : {}),
@@ -67,6 +82,13 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
     ...(section ? { section } : {}),
+    ...(scope ? { scope } : {}),
+    ...(about ? { about } : {}),
+    ...(who ? { who } : {}),
+    ...(kinds ? { kinds } : {}),
+    ...(decision ? { decision } : {}),
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
   };
 }
 
@@ -116,6 +138,11 @@ const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.usage,
   component: lazyRouteComponent(() => import("@/pages/health-page"), "HealthPage"),
+});
+const auditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.audit,
+  component: lazyRouteComponent(() => import("@/pages/audit-page"), "AuditPage"),
 });
 const skillsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -189,6 +216,7 @@ export const router = createRouter({
     agentsRoute,
     accountsRoute,
     healthRoute,
+    auditRoute,
     skillsRoute,
     memoryRoute,
     automationsRoute,

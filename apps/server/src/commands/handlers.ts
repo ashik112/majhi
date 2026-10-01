@@ -341,7 +341,7 @@ export function createHandlers({
         ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
         : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
-    "tasks.push": (input) => services.mrs.push(input.id, input.deleteAfter),
+    "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
       task: await services.pendingShips.request({ ...input, by: actorName(ctx.meta.actor) }),
     }),
@@ -577,6 +577,7 @@ export function createHandlers({
     "boss.chat": (input) => openBossChat(chatDeps(), input.fresh === true),
     "chats.create": (input) => openChat(chatDeps(), input.agent),
     "chats.rename": async (input) => services.tasks.renameChat(input.id, input.title),
+    "audit.list": async (input) => services.store.permissions.list(input),
     "cleanup.preview": async (input) =>
       services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
     "cleanup.run": async (input, ctx) =>
