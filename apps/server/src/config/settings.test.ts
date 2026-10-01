@@ -24,6 +24,8 @@ describe("mergeSettings", () => {
         allow_destructive_rules: false,
       },
       memory: { auto_threshold: 0.4, review_all: false },
+      cleanup: { after_days: 30 },
+      containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
     });
   });
 
@@ -81,6 +83,23 @@ describe("settings commands", () => {
     // The file still loads: the section is part of the schema.
     expect((await h.cmd("settings.get")).body.commits).toEqual({ attribution: false });
     expect((await h.cmd("settings.set", { commits: { nope: 1 } })).status).toBe(400);
+  });
+
+  it("sets the container limits but never the image list, which only its own command changes", async () => {
+    h = await harness();
+    const set = await h.cmd("settings.set", { containers: { cpus: 0.5, memory: "512m", per_task: 2 } });
+    expect(set.status).toBe(200);
+    expect(set.body.containers).toMatchObject({ cpus: 0.5, memory: "512m", per_task: 2, images: [] });
+    expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("memory: 512m");
+    expect((await h.cmd("settings.set", { containers: { images: ["postgres:16-alpine"] } })).status).toBe(
+      400,
+    );
+    expect((await h.cmd("settings.set", { containers: { memory: "lots" } })).status).toBe(400);
+    expect((await h.cmd("settings.set", { containers: { per_task: 11 } })).status).toBe(400);
+    // A hand-written list in majhi.yaml is read.
+    const file = h.majhi.services.config.file;
+    await writeFile(file, `${await readFile(file, "utf8")}  images: [postgres:16-alpine]\n`);
+    expect((await h.cmd("settings.get")).body.containers.images).toEqual(["postgres:16-alpine"]);
   });
 
   it("reports invalid settings written by hand", async () => {

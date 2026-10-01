@@ -14,6 +14,7 @@ import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import { AccountsUsage } from "./accounts-usage";
 import { ChecksPanel } from "./checks-panel";
+import { CleanupPanel } from "./cleanup-panel";
 import { checksHeadline } from "./model";
 import { useCheckAll } from "./use-check-all";
 
@@ -77,6 +78,7 @@ export function HealthView() {
         )}
       >
         <ChecksPanel onSignIn={(id) => void navigate({ to: PAGE_PATH.accounts, search: { account: id } })} />
+        <CleanupPanel />
         <div className="flex flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-0 min-[1280px]:flex-1 min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div className="flex min-h-0 flex-col gap-3">
             <AccountsUsage

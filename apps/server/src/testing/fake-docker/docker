@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+// A fake `docker` for trying the containers feature without Docker (PRV-53). Put this folder first
+// on PATH and start majhi with MAJHI_RUNNER=container (see README.md here). It keeps what a real
+// docker would keep (networks, volumes, builders, images, containers) in a JSON file, answers the
+// calls majhi makes, and runs `docker run` as a process that stays up until it is removed. A run
+// with --publish serves a small page on a free 127.0.0.1 port, so a preview's owner link opens.
+import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from "node:fs";
+
+const FILE = process.env.FAKE_DOCKER_STATE ?? "/tmp/majhi-fake-docker.json";
+const LOCK = `${FILE}.lock`;
+const args = process.argv.slice(2);
+
+function withState(change) {
+  for (let i = 0; i < 400; i++) {
+    try {
+      mkdirSync(LOCK);
+      break;
+    } catch {
+      spawnSync("sleep", ["0.01"]);
+    }
+  }
+  try {
+    const state = existsSync(FILE)
+      ? JSON.parse(readFileSync(FILE, "utf8"))
+      : { networks: {}, volumes: {}, builders: [], images: [], containers: {} };
+    const out = change(state);
+    writeFileSync(`${FILE}.tmp`, JSON.stringify(state, null, 2));
+    renameSync(`${FILE}.tmp`, FILE);
+    return out;
+  } finally {
+    try {
+      rmdirSync(LOCK);
+    } catch {}
+  }
+}
+
+const fail = (message) => {
+  console.error(message);
+  process.exit(1);
+};
+const flagValues = (list, flag) => list.flatMap((a, i) => (list[i - 1] === flag ? [a] : []));
+const labelsOf = (list) =>
+  Object.fromEntries(flagValues(list, "--label").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+const last = args.at(-1) ?? "";
+const two = `${args[0]} ${args[1]}`;
+const hasLabel = (labels, want) => {
+  const at = want.indexOf("=");
+  return at === -1 ? want in labels : labels[want.slice(0, at)] === want.slice(at + 1);
+};
+const filters = flagValues(args, "--filter").map((f) => f.replace(/^label=/, ""));
+
+function run() {
+  const flagsWithValue = new Set(["--name", "--label", "--network", "--cap-drop", "--cap-add", "--security-opt", "--pids-limit", "--memory", "--cpus", "--publish", "--mount", "--env", "--pull"]);
+  const flags = [];
+  let i = 1;
+  while (args[i]?.startsWith("--")) {
+    flags.push(args[i]);
+    if (flagsWithValue.has(args[i])) flags.push(args[++i]);
+    i++;
+  }
+  const image = args[i];
+  const name = flagValues(flags, "--name")[0];
+  const labels = labelsOf(flags);
+  const networks = flagValues(flags, "--network").map((n) => (n.startsWith("name=") ? n.slice(5).split(",")[0] : n));
+  const publish = flagValues(flags, "--publish")[0];
+  const containerPort = publish === undefined ? undefined : publish.split("::")[1];
+  let page;
+  const start = (hostPort) => {
+    withState((s) => {
+      s.containers[name] = { name, image, labels, networks, pid: process.pid, ports: containerPort ? { [`${containerPort}/tcp`]: hostPort } : {} };
+      for (const n of networks) s.networks[n] ??= { members: [], labels: {} }, s.networks[n].members.push(name);
+    });
+    console.log(`fake docker: ${name} (${image}) started${hostPort ? ` on 127.0.0.1:${hostPort}` : ""}`);
+    setInterval(() => console.log(`fake docker: ${name} is alive`), 15000);
+  };
+  const end = () => {
+    withState((s) => {
+      delete s.containers[name];
+      for (const n of Object.values(s.networks)) n.members = n.members.filter((m) => m !== name);
+    });
+    page?.close();
+    process.exit(0);
+  };
+  process.on("SIGTERM", end);
+  process.on("SIGINT", end);
+  if (containerPort === undefined) return start(undefined);
+  page = createServer((_req, res) => {
+    res.setHeader("content-type", "text/html");
+    res.end(`<!doctype html><title>${name}</title><h1>Preview of ${name}</h1><p>A fake preview, served by the fake docker.</p>`);
+  });
+  page.listen(0, "127.0.0.1", () => start(page.address().port));
+}
+
+function ids(state) {
+  return Object.values(state.containers).filter((c) => filters.every((f) => hasLabel(c.labels, f)));
+}
+
+const verb = ["ps", "port", "rm", "inspect", "run"].includes(args[0]) ? args[0] : two;
+switch (verb) {
+  case "run":
+    run();
+    break;
+  case "ps": {
+    const runnerLabel = filters.includes("majhi.runner=1");
+    const rows = runnerLabel ? [] : withState((s) => ids(s));
+    console.log(rows.map((c) => c.name).join("\n"));
+    break;
+  }
+  case "port": {
+    const c = withState((s) => s.containers[args[1]]);
+    const p = c?.ports?.[args[2]];
+    if (p === undefined) fail(`Error: No public port '${args[2]}' published for ${args[1]}`);
+    console.log(`127.0.0.1:${p}`);
+    break;
+  }
+  case "rm":
+    for (const name of args.filter((a) => !a.startsWith("-"))) {
+      const c = withState((s) => {
+        const found = s.containers[name];
+        delete s.containers[name];
+        for (const n of Object.values(s.networks)) n.members = n.members.filter((m) => m !== name);
+        return found;
+      });
+      if (c?.pid) {
+        try {
+          process.kill(c.pid, "SIGTERM");
+        } catch {}
+      }
+    }
+    break;
+  case "image inspect":
+    if (!withState((s) => s.images.includes(last))) fail(`Error: No such image: ${last}`);
+    console.log("[]");
+    break;
+  case "image rm":
+    withState((s) => void (s.images = s.images.filter((i) => i !== last)));
+    break;
+  case "image ls":
+    console.log(withState((s) => s.images.join("\n")));
+    break;
+  case "buildx inspect":
+    if (!withState((s) => s.builders.includes(last))) fail(`ERROR: no builder "${last}" found`);
+    break;
+  case "buildx create":
+    withState((s) => void s.builders.push(flagValues(args, "--name")[0]));
+    break;
+  case "buildx stop":
+    break;
+  case "buildx rm":
+    withState((s) => void (s.builders = s.builders.filter((b) => b !== last)));
+    break;
+  case "buildx ls":
+    console.log(withState((s) => s.builders.join("\n")));
+    break;
+  case "buildx build": {
+    const tag = flagValues(args, "--tag")[0];
+    for (const line of ["#1 [internal] load build definition from Dockerfile", "#2 [1/2] FROM docker.io/library/node:22", "#3 [2/2] COPY . /app", "#4 exporting to image"]) {
+      console.log(line);
+      spawnSync("sleep", ["0.5"]);
+    }
+    withState((s) => void (s.images.includes(tag) || s.images.push(tag)));
+    console.log(`#5 naming to ${tag} done`);
+    break;
+  }
+  case "network inspect": {
+    if (last === "majhi-runners" || args.includes("majhi-runners")) {
+      console.log("172.30.0.0/16|172.30.0.1 ");
+      break;
+    }
+    const n = withState((s) => s.networks[last]);
+    if (n === undefined) fail(`Error response from daemon: network ${last} not found`);
+    console.log(args.includes("--format") ? n.members.join(" ") : "[]");
+    break;
+  }
+  case "network create":
+    withState((s) => void (s.networks[last] = { members: [], labels: labelsOf(args), internal: args.includes("--internal") }));
+    break;
+  case "network rm":
+    withState((s) => void delete s.networks[last]);
+    break;
+  case "network ls":
+    console.log(withState((s) => Object.keys(s.networks).join("\n")));
+    break;
+  case "network connect":
+    withState((s) => {
+      if (!s.networks[args[2]]) fail("network not found");
+      s.networks[args[2]].members.push(args[3]);
+    });
+    break;
+  case "network disconnect":
+    withState((s) => {
+      const n = s.networks[args.at(-2)];
+      if (n) n.members = n.members.filter((m) => m !== last);
+    });
+    break;
+  case "volume create":
+    withState((s) => void (s.volumes[last] = { labels: labelsOf(args), options: {} }));
+    break;
+  case "volume inspect": {
+    const v = withState((s) => s.volumes[last]);
+    if (v === undefined) fail(`Error response from daemon: get ${last}: no such volume`);
+    console.log(JSON.stringify({ Name: last, Driver: "local", Labels: v.labels, Options: v.options }));
+    break;
+  }
+  case "volume ls":
+    console.log(
+      withState((s) =>
+        Object.entries(s.volumes)
+          .filter(([, v]) => filters.every((f) => hasLabel(v.labels, f)))
+          .map(([name, v]) => (args.includes("--format") ? `${v.labels["majhi.task"]} ${name}` : name))
+          .join("\n"),
+      ),
+    );
+    break;
+  case "volume rm":
+    withState((s) => {
+      for (const name of args.slice(2).filter((a) => !a.startsWith("-"))) delete s.volumes[name];
+    });
+    break;
+  default:
+    fail(`fake docker: does not know "${args.join(" ")}"`);
+}

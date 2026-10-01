@@ -122,6 +122,7 @@ export async function launch(
       options: deps.options,
       cwd: task.folder,
       git: attribution.git,
+      task: task.id,
       mounts: [...(await repoMounts(task)), ...hooksMount(attribution.hooks)],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),

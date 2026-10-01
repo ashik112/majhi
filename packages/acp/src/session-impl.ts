@@ -86,6 +86,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
     account,
     ...(start.mounts === undefined ? {} : { mounts: start.mounts }),
     ...(start.scratch === true ? { scratch: true } : {}),
+    ...(start.task === undefined ? {} : { task: start.task }),
   });
   const { child, cwd } = spawned;
   let stderrTail = "";
