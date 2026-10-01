@@ -32,7 +32,7 @@ export interface GitAttribution {
  * Git settings of every run that has majhi's hooks, in the command-line scope, so they win over the
  * repo's own. An agent's plain `git gc`, `git worktree prune` from gc, or `git reflog expire` then
  * drops nothing: no automatic gc, no pruning of loose objects or of other checkouts' worktree entries
- * (the run cannot see their folders), reflogs kept forever and written for every ref. Explicit
+ * (the run cannot see their folders), refs never packed, reflogs kept forever and written for every ref. Explicit
  * flags (`--prune=now`, `--expire=now`) still win over these.
  */
 export const RUN_GIT_CONFIG: readonly (readonly [key: string, value: string])[] = [
@@ -42,6 +42,9 @@ export const RUN_GIT_CONFIG: readonly (readonly [key: string, value: string])[] 
   ["gc.reflogExpire", "never"],
   ["gc.reflogExpireUnreachable", "never"],
   ["core.logAllRefUpdates", "always"],
+  // Packing refs rewrites every branch, which majhi's ref guard cannot tell from changing them
+  // (git 2.39 reports a create and a delete per ref). A run's gc leaves refs as they are.
+  ["gc.packRefs", "false"],
 ];
 
 /**
