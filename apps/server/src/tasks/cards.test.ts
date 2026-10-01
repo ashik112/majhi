@@ -64,6 +64,32 @@ describe("the review card", () => {
     expect(after.find((c) => c.id === cards[1]?.id)).toMatchObject({ state: "replaced" });
   });
 
+  it("is not posted while an agent's ask is pending, and is posted once it is answered and agents idle", async () => {
+    w = await taskWorld();
+    const { room, tasks } = w.h.majhi.services;
+    agentSays("Which way?");
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
+    // The agent's ask lands during its turn, so the turn ends with the ask pending.
+    room.post("ACM-1", "ask:1", {
+      type: "ask",
+      agent: "acme-builder",
+      questions: [
+        { id: "q1", question: "How should I build it?", options: [{ id: "a", label: "Cheaper" }], freeText: true },
+      ],
+      state: "pending",
+    });
+    await idle();
+    await tasks.agentsIdle("ACM-1");
+    expect(await status()).toBe("running");
+    expect(await ofType("review")).toHaveLength(0);
+
+    const answer = await w.h.cmd("room.answerAsk", { task: "ACM-1", item: "ask:1", answers: { q1: "a" } });
+    expect(answer.status).toBe(200);
+    await idle();
+    expect(await status()).toBe("review");
+    expect((await ofType("review")).filter((c) => c.state === "pending")).toHaveLength(1);
+  });
+
   it("merges from the card once, and refuses a second click", async () => {
     w = await taskWorld();
     await reviewTask("Done.", true);

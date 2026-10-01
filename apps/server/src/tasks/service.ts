@@ -2190,6 +2190,15 @@ export class TaskService {
     return pending;
   }
 
+  /** An ask, choice, approval or permission card of the task still waits for the owner. */
+  private ownerAnswerPending(id: string): boolean {
+    this.deps.room.flush(id);
+    const rooms = this.deps.store.room;
+    return (["ask", "choice", "approval", "permission"] as const).some(
+      (type) => rooms.pendingOfType(id, type).length > 0,
+    );
+  }
+
   private note(task: TaskId, text: string): void {
     this.deps.room.post(task, `info:${randomUUID()}`, { type: "system", level: "info", text });
   }
@@ -2210,6 +2219,9 @@ export class TaskService {
       return;
     }
     if (this.deps.runs.working(id).length > 0) return;
+    // An agent's question to the owner is still open: the task is not ready for review. Answering
+    // it wakes the agent, and the task reaches review when the agents are idle again.
+    if (this.ownerAnswerPending(id)) return;
     // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
     if (this.deps.store.tasks.children(id).length > 0 && !this.deps.store.tasks.childrenDone(id)) return;
     // An agent waits for a background process: it is woken when that ends (5.15).
