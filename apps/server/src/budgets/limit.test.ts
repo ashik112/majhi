@@ -72,7 +72,13 @@ async function lines(id: string): Promise<string[]> {
 }
 
 async function create(text: string, agent?: string): Promise<string> {
-  const res = await w.h.cmd("tasks.create", { text, start: true, ...(agent === undefined ? {} : { agent }) });
+  const project = text.includes(" web ") ? "globex-web" : "acme-api";
+  const res = await w.h.cmd("tasks.create", {
+    text,
+    repos: [{ project, base: "develop" }],
+    start: true,
+    ...(agent === undefined ? {} : { agent }),
+  });
   expect(res.status).toBe(200);
   return res.body.id as string;
 }

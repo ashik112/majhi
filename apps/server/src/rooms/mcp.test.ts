@@ -417,7 +417,12 @@ describe("majhi-tasks", () => {
         aliases: ["web"],
       });
       await h.cmd("orgs.update", { id: "acme", lead_start: "org" });
-      const made = await h.cmd("tasks.create", { text: "fix web", team: ["globex-builder"], start: false });
+      const made = await h.cmd("tasks.create", {
+        text: "fix web",
+        repos: [{ project: "globex-web" }],
+        team: ["globex-builder"],
+        start: false,
+      });
       expect(made.status).toBe(200);
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
       const res = await call(tasks, "GLX-1");

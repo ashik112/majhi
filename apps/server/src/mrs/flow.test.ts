@@ -100,7 +100,7 @@ async function reviewed(setup: Setup = {}) {
   const made = must(
     await cmd("tasks.create", {
       text: "add invoices to web and api",
-      repos: [{ project: "acme-api" }],
+      repos: [{ project: "acme-web" }, { project: "acme-api" }],
       start: true,
     }),
   ) as Task;

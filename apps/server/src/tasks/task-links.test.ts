@@ -16,7 +16,7 @@ const texts = async (task: string) => (await items(task)).map((i: { text?: strin
 describe("tasks.link and tasks.unlink", () => {
   it("refuses self links, a second parent, unknown tasks and cycles with the cycle named", async () => {
     w = await taskWorld();
-    for (const t of ["one api", "two api", "three api"]) await create(t);
+    for (const t of ["one api", "two api", "three api"]) await create(t, { repos: [{ project: "acme-api" }] });
     const self = await w.h.cmd("tasks.link", { task: "ACM-1", type: "depends-on", target: "ACM-1" });
     expect(self.status).toBe(409);
     expect((await w.h.cmd("tasks.link", { task: "ACM-1", type: "parent", target: "ACM-9" })).status).toBe(
@@ -42,8 +42,12 @@ describe("tasks.link and tasks.unlink", () => {
 describe("waiting tasks", () => {
   it("answers 409 on start while waiting, keeps the task ready, and creates without starting", async () => {
     w = await taskWorld();
-    await create("fix api", { start: false });
-    const waiting = await create("fix api later", { start: true, dependsOn: ["ACM-1"] });
+    await create("fix api", { start: false, repos: [{ project: "acme-api" }] });
+    const waiting = await create("fix api later", {
+      start: true,
+      dependsOn: ["ACM-1"],
+      repos: [{ project: "acme-api" }],
+    });
     expect(waiting.status).toBe(200);
     expect(waiting.body.status).toBe("ready");
     expect(w.h.runtime.sessions).toHaveLength(0);
@@ -60,7 +64,7 @@ describe("waiting tasks", () => {
 describe("parents and children", () => {
   it("never closes a parent with open subtasks, and reopens a done task", async () => {
     w = await taskWorld();
-    await create("plan the work on api");
+    await create("plan the work on api", { repos: [{ project: "acme-api" }] });
     await create("part one", { parent: "ACM-1" });
     const refused = await w.h.cmd("tasks.close", { id: "ACM-1" });
     expect(refused.status).toBe(409);
@@ -75,7 +79,7 @@ describe("parents and children", () => {
 
   it("closes the parent when every child is done, and posts an item", async () => {
     w = await taskWorld();
-    await create("plan the work on api");
+    await create("plan the work on api", { repos: [{ project: "acme-api" }] });
     await create("part one", { parent: "ACM-1" });
     await create("part two", { parent: "ACM-1" });
     expect((await summary("ACM-1")).children).toEqual({ total: 2, done: 0 });

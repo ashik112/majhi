@@ -13,7 +13,8 @@ describe("always-allow rules on approval cards", () => {
     const { h } = w;
     const { admin } = h.majhi.services;
     const made = async () =>
-      (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+      (await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false }))
+        .body as { id: string };
     const [one, two, three] = [await made(), await made(), await made()];
     const builder = (task: string) => ({ task, agent: "acme-builder" });
     const cards = async (task: string) =>
@@ -80,7 +81,9 @@ describe("always-allow rules on approval cards", () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const { admin } = h.majhi.services;
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const draft = {
       frontmatter: { scope: "acme", role: "Builder", account: "claude-acme" },
       instructions: "Work.\n",
@@ -124,7 +127,9 @@ describe("always-allow rules on approval cards", () => {
   it("moves an agent's rules on rename, drops them on remove, and lists and revokes CLI allowances", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;
-    const task = (await h.cmd("tasks.create", { text: "fix api", start: false })).body as { id: string };
+    const task = (
+      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
+    ).body as { id: string };
     const rules = async () => (await h.cmd("settings.get")).body.policy.rules;
     const draft = {
       frontmatter: { scope: "acme", role: "Builder", account: "claude-acme" },

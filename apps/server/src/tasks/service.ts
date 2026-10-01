@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, join, sep } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import {
   type AccountStatus,
   type AgentFrontmatter,
@@ -101,7 +101,7 @@ import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
-import { type ShipPlan, type ShipTargets, shipPlan, skippedResult } from "./ship-plan.ts";
+import { type ShipPlan, type ShipTargets, shipPlan, skippedResult, targetRefusal } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
@@ -1412,6 +1412,10 @@ export class TaskService {
         `Nothing to ship: ${repos.length === 1 ? `${repos[0]?.project} has` : "no repo of this task has"} changes since the task started.`,
         409,
       );
+    }
+    for (const { repo, into } of plan.ship) {
+      const refusal = await targetRefusal(repo, into, dirname(task.folder));
+      if (refusal !== undefined) throw new UserError(refusal, 409);
     }
     return plan;
   }

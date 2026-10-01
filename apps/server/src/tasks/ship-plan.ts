@@ -1,6 +1,7 @@
 import type { TaskRepo } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import { localBranchExists, uncommitted } from "../git/git.ts";
+import { checkedOutAt } from "../git/merge.ts";
 import { commitsSinceStart } from "../git/since-start.ts";
 
 /**
@@ -116,4 +117,26 @@ export function skippedResult(repo: TaskRepo): {
 /** The targets of a plan, by project, to hand on to the merge it runs. */
 export function planTargets(plan: ShipPlan): Record<string, string> {
   return Object.fromEntries(plan.ship.map((s) => [s.repo.project, s.into]));
+}
+
+/**
+ * Why `into` must not be a ship target, or undefined when it may: a task branch, or a branch checked
+ * out in a worktree under the tasks folder (another task's), would put this task's work into
+ * another task's branch, where only that task's agents are watched.
+ */
+export async function targetRefusal(
+  repo: TaskRepo,
+  into: string,
+  tasksDir: string,
+): Promise<string | undefined> {
+  // A branch stacked on a dependency's task branch (5.4a) lands there: majhi chose that base itself.
+  if (repo.stack !== undefined && into === repo.stack.branch && into === repo.base) return undefined;
+  if (into.startsWith("task/")) {
+    return `${into} in ${repo.project} is a task branch. Ship into the repo's base or a branch you work on, never a task's branch.`;
+  }
+  const at = (await checkedOutAt(repo.source).catch(() => new Map<string, string>())).get(into);
+  if (at !== undefined && (at === tasksDir || at.startsWith(`${tasksDir}/`))) {
+    return `${into} in ${repo.project} is checked out in a task's worktree (${at}). Ship into the repo's base or a branch you work on.`;
+  }
+  return undefined;
 }

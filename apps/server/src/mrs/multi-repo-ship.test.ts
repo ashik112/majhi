@@ -70,7 +70,7 @@ async function reviewed(changes: string[]): Promise<Task> {
   must(
     await cmd("tasks.create", {
       text: "update api, web and ops",
-      repos: [{ project: "acme-api" }],
+      repos: [{ project: "acme-api" }, { project: "acme-web" }, { project: "acme-ops" }],
       start: true,
     }),
   );

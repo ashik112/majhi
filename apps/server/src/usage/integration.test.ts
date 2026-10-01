@@ -84,6 +84,7 @@ describe("tokens and cost from real turns", () => {
       (
         await h.cmd("tasks.create", {
           text: "add a health endpoint to web from develop",
+          repos: [{ project: "globex-web", base: "develop" }],
           agent: "globex-builder",
           start: true,
         })

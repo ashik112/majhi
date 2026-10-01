@@ -643,6 +643,10 @@ export class MrService {
   async mergeAndPush(input: {
     id: string;
     into?: string | undefined;
+    /** The owner confirmed pushing local commits on a target that are not the task's. */
+    pushLocalCommits?: boolean | undefined;
+    /** The owner confirmed creating a target branch the remote does not have. */
+    createRemoteBranch?: boolean | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
@@ -659,12 +663,33 @@ export class MrService {
       );
       if (input.deleteAfter === true) await this.deps.tasks.assertDeletable(ready.map((r) => r.repo));
       const targets = planTargets(plan);
+      // Every remote target is read before anything merges. A push sends the whole local target,
+      // so commits on it that are not the task's, or a branch the remote does not have, go out
+      // only when the owner confirmed it.
       const behind: { project: string; remote: string; into: string }[] = [];
+      const asks: string[] = [];
       for (const { repo, target } of ready) {
         const into = targets[repo.project] ?? repo.base;
-        if (await this.remoteHasMore(repo.source, target, into))
-          behind.push({ project: repo.project, remote: target.remote, into });
+        const state = await this.remoteState(repo.source, target, into, {
+          branch: repo.branch,
+          subject: `Merge ${task.id}: `,
+        });
+        if (state.behind) behind.push({ project: repo.project, remote: target.remote, into });
+        if (state.missing && input.createRemoteBranch !== true) {
+          asks.push(
+            state.unknown
+              ? `majhi cannot read ${target.remote}/${into} for ${repo.project} from here, so it cannot tell what the push would send. ${CONFIRM_NEW}`
+              : `${target.remote} has no branch ${into} for ${repo.project}. ${CONFIRM_NEW}`,
+          );
+        }
+        if (state.extra.length > 0 && input.pushLocalCommits !== true) {
+          const n = state.extra.length;
+          asks.push(
+            `Your local ${into} in ${repo.project} has ${n} commit${n === 1 ? "" : "s"} that ${target.remote} does not have and that are not this task's: ${state.extra.slice(0, 5).join("; ")}${n > 5 ? "; and more" : ""}. ${CONFIRM_EXTRA}`,
+          );
+        }
       }
+      if (asks.length > 0 && behind.length === 0) throw new UserError(asks.join(" "), 409);
       if (behind.length > 0) {
         const lines = behind.map(
           (b) => `${b.remote}/${b.into} has commits that your local ${b.into} in ${b.project} does not have.`,
@@ -935,20 +960,43 @@ export class MrService {
   }
 
   /**
-   * True when the remote's copy of `branch` has commits the local one lacks, so a push would need a
-   * force. Reads the remote first. A branch the remote does not have yet is fine.
+   * What pushing the local `branch` would do to the remote's: `behind` when the remote has commits
+   * the local one lacks (a push would need a force), `extra` the local commits the remote lacks
+   * (they would go out with the push), `missing` when the push would create the branch. Reads the
+   * remote first. The Mac's https route cannot be read from here: the last fetched copy stands in,
+   * and with none the result is `missing` and `unknown`. The task's own commits are not extra:
+   * those on its branch, and the merge or squash commits majhi made for it (`own.subject`).
    */
-  private async remoteHasMore(source: string, target: PushTarget, branch: string): Promise<boolean> {
-    if (!(await localBranchExists(source, branch))) return false;
-    // The container cannot read an https login, so it cannot look. git itself refuses a non-fast-forward push.
-    if (target.viaHost) return false;
-    if (!(await this.fetchTracking(source, target, branch))) return false;
-    return !(await gitOk(source, [
-      "merge-base",
-      "--is-ancestor",
-      `refs/remotes/${target.remote}/${branch}`,
-      `refs/heads/${branch}`,
-    ]));
+  private async remoteState(
+    source: string,
+    target: PushTarget,
+    branch: string,
+    own: { branch: string; subject: string },
+  ): Promise<{ behind: boolean; extra: string[]; missing: boolean; unknown: boolean }> {
+    const none = { behind: false, extra: [], missing: false, unknown: false };
+    if (!(await localBranchExists(source, branch))) return none;
+    const tracking = `refs/remotes/${target.remote}/${branch}`;
+    if (target.viaHost) {
+      if (!(await gitOk(source, ["show-ref", "--verify", "--quiet", tracking]))) {
+        return { ...none, missing: true, unknown: true };
+      }
+    } else if (!(await this.fetchTracking(source, target, branch))) {
+      return { ...none, missing: true };
+    }
+    const behind = !(await gitOk(source, ["merge-base", "--is-ancestor", tracking, `refs/heads/${branch}`]));
+    const extra = (
+      await git(source, [
+        "log",
+        "--format=%h %s",
+        `${tracking}..refs/heads/${branch}`,
+        "--not",
+        `refs/heads/${own.branch}`,
+      ])
+    )
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "" && !l.slice(l.indexOf(" ") + 1).startsWith(own.subject));
+    return { behind, extra, missing: false, unknown: false };
   }
 
   /** Fetches the remote's `branch` into its tracking ref. False when the remote has no such branch. */
@@ -1375,6 +1423,11 @@ interface PushTarget {
   /** True when `pushUrl` is https and the Mac pushes it with its saved login. */
   viaHost: boolean;
 }
+
+/** The ends of the refusals the owner can confirm past; the Ship panel looks for them. */
+export const CONFIRM_NEW = "Pushing would create it there. Confirm to create it.";
+export const CONFIRM_EXTRA =
+  "Pushing would send them with the task. Push them yourself first, or confirm to send them too.";
 
 type ShipResult = {
   project: string;
