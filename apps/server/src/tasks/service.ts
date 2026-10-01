@@ -883,11 +883,23 @@ export class TaskService {
     if (Object.keys(next).length === 0) delete overrides[input.agent];
     else overrides[input.agent] = next;
     this.deps.store.tasks.setOverrides(task.id, overrides, this.now().toISOString());
-    const live: { model?: string; effort?: string } = {
-      ...(typeof input.model === "string" ? { model: input.model } : {}),
-      ...(typeof input.effort === "string" ? { effort: input.effort } : {}),
+    // An open session switches now to the value that applies. `auto` picks when a session starts,
+    // and a cleared value with nothing in the agent's file leaves the session as it is.
+    const file = (await this.frontmatters()).find((a) => a.id === input.agent);
+    const applies = (value: string | null | undefined, fromFile: string | undefined) => {
+      if (value === undefined) return undefined;
+      const next = value ?? fromFile;
+      return next === AUTO ? undefined : next;
     };
-    const now = await this.deps.runs.applyOptions(task.id, input.agent, live).catch(() => false);
+    const model = applies(input.model, file?.model);
+    const effort = applies(input.effort, file?.effort);
+    const live: { model?: string; effort?: string } = {
+      ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+    };
+    const now =
+      Object.keys(live).length > 0 &&
+      (await this.deps.runs.applyOptions(task.id, input.agent, live).catch(() => false));
     const parts = [
       input.model === undefined ? undefined : `model ${input.model ?? "from its file"}`,
       input.effort === undefined ? undefined : `effort ${input.effort ?? "from its file"}`,
@@ -2091,11 +2103,15 @@ export class TaskService {
     // A task that was never started gets its brief before this message, in the room and in the queue.
     if (starts) {
       const first = await this.firstAgents(task);
-      first.forEach((a, i) => this.deps.runs.queueBrief(task, a, { ownBrief: i > 0 }));
+      for (const [i, a] of first.entries()) this.deps.runs.queueBrief(task, a, { ownBrief: i > 0 });
     }
     // The message shows at once. Starting the task (worktrees, memory, the session) and sending
     // it happen in the background, after earlier messages of this task.
-    const item = this.deps.runs.postOwner(task.id, agent, { text: input.text, attachments, mode: input.mode });
+    const item = this.deps.runs.postOwner(task.id, agent, {
+      text: input.text,
+      attachments,
+      mode: input.mode,
+    });
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
     const id = task.id;

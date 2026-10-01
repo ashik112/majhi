@@ -13,6 +13,8 @@ export interface MenuItem {
   disabled?: boolean;
   /** Marks the current choice in a pick-one list. */
   checked?: boolean;
+  /** Items with a group get its name as a small heading above the first of them. */
+  group?: string;
 }
 
 export interface TriggerProps {
@@ -30,6 +32,7 @@ export function Menu({
   items,
   trigger,
   align = "right",
+  maxHeight,
 }: {
   label: string;
   icon?: ReactNode;
@@ -37,13 +40,21 @@ export function Menu({
   /** Replaces the icon button: gets the props the trigger needs. */
   trigger?: (props: TriggerProps) => ReactNode;
   align?: "left" | "right";
+  /** Taller than the default before it scrolls, for a list that should show whole. */
+  maxHeight?: number;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
   const close = useCallback(() => setOpen(false), []);
-  const { panel, style, container } = useAnchoredPanel({ open, close, trigger: triggerRef, align });
+  const { panel, style, container } = useAnchoredPanel({
+    open,
+    close,
+    trigger: triggerRef,
+    align,
+    ...(maxHeight === undefined ? {} : { maxHeight }),
+  });
 
   useEffect(() => {
     if (open) panel.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
@@ -98,9 +109,21 @@ export function Menu({
               GLASS_STRONG,
             )}
           >
-            {items.map((item) => (
+            {items.map((item, i) => [
+              item.group !== undefined && item.group !== items[i - 1]?.group && (
+                <p
+                  key={`group:${item.group}`}
+                  role="presentation"
+                  className={cn(
+                    "shrink-0 px-2.5 pt-1.5 pb-1 text-xs font-medium tracking-[0.08em] text-fg-faint uppercase",
+                    i > 0 && "mt-1 border-t border-line pt-2",
+                  )}
+                >
+                  {item.group}
+                </p>
+              ),
               <button
-                key={item.label}
+                key={`${item.group ?? ""}:${item.label}`}
                 type="button"
                 {...(item.checked === undefined
                   ? { role: "menuitem" }
@@ -122,8 +145,8 @@ export function Menu({
                   </span>
                 )}
                 <span className="min-w-0 truncate">{item.label}</span>
-              </button>
-            ))}
+              </button>,
+            ])}
           </div>,
           container,
         )}

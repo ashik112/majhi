@@ -20,6 +20,7 @@ export function useAnchoredPanel({
   trigger,
   align = "left",
   matchWidth = false,
+  maxHeight = 288,
 }: {
   open: boolean;
   close: () => void;
@@ -27,6 +28,8 @@ export function useAnchoredPanel({
   align?: "left" | "right";
   /** The panel is at least as wide as the trigger. */
   matchWidth?: boolean;
+  /** The tallest the panel gets before it scrolls, when the window has the room. */
+  maxHeight?: number;
 }): { panel: RefObject<HTMLDivElement | null>; style: CSSProperties; container: Element } {
   const panel = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ ...RESET, visibility: "hidden" });
@@ -44,10 +47,10 @@ export function useAnchoredPanel({
       ...RESET,
       ...(up ? { bottom: window.innerHeight - t.top + 4 } : { top: t.bottom + 4 }),
       ...(align === "right" ? { right: window.innerWidth - t.right } : { left: t.left }),
-      maxHeight: Math.min(288, (up ? above : below) - 4),
+      maxHeight: Math.min(maxHeight, (up ? above : below) - 4),
       ...(matchWidth ? { minWidth: t.width } : {}),
     });
-  }, [open, align, matchWidth, trigger]);
+  }, [open, align, matchWidth, maxHeight, trigger]);
 
   useEffect(() => {
     if (!open) return;
