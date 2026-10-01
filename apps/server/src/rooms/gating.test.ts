@@ -35,6 +35,15 @@ describe("gateTools: the defaults are what agents had before gating", () => {
     );
   });
 
+  it("gives the agents of an ops task majhi-tasks, but not the boss", () => {
+    const ops = { ...ctx, opsTask: true };
+    expect(gateTools(agent(), ops)).toContain("majhi-tasks");
+    expect(gateTools(agent(), ctx)).not.toContain("majhi-tasks");
+    expect(gateTools(agent({ id: "majhi-boss", role: "Lead", scope: "root" }), ops)).not.toContain(
+      "majhi-tasks",
+    );
+  });
+
   it("gives a lone lead of a lead-mode task the room", () => {
     expect(gateTools(agent({ role: "Lead" }), { ...ctx, soloLead: true })).toContain("majhi-room");
   });

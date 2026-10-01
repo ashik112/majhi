@@ -34,6 +34,7 @@ import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
+import { readReport } from "../tasks/report.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -356,6 +357,7 @@ export function createHandlers({
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
+    "tasks.report": async (input) => (await readReport(services.tasks.get(input.id).folder)) ?? null,
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
     "tasks.stop": (input) => services.tasks.stop(input.id),

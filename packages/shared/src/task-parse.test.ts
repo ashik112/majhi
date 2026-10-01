@@ -71,6 +71,36 @@ describe("repos", () => {
   });
 });
 
+describe("kind ops", () => {
+  const kind = (text: string) => parseTaskText(text, ctx).kind;
+
+  it("infers ops for an investigation or an incident", () => {
+    expect(kind("why is the api down in prod")).toBe("ops");
+    expect(kind("Investigate the slow checkout")).toBe("ops");
+    expect(kind("Incident: login errors since 9am")).toBe("ops");
+    expect(kind("outage in eu region")).toBe("ops");
+    expect(kind("debug the queue backlog in production")).toBe("ops");
+    expect(kind("why are the nightly jobs failing")).toBe("ops");
+  });
+
+  it("keeps the repos an investigation names", () => {
+    const p = parseTaskText("why is the api down in prod", ctx);
+    expect(p.repos).toEqual([{ project: "acme-api", match: "api" }]);
+  });
+
+  it("stays code when the code changes", () => {
+    expect(kind("investigate the timeout and fix it in api")).toBe("code");
+    expect(kind("add a health endpoint to api from develop")).toBe("code");
+    expect(kind("incident follow-up: implement retries in api")).toBe("code");
+    expect(kind("why is the api down in prod, on fix/timeouts")).toBe("code");
+  });
+
+  it("stays chat for plain questions", () => {
+    expect(kind("what is a monad")).toBe("chat");
+    expect(kind("why is the sky blue")).toBe("chat");
+  });
+});
+
 describe("orgs", () => {
   it("sets org when every repo shares one", () => {
     expect(parseTaskText("api and web", ctx).org).toBe("acme");

@@ -1,13 +1,14 @@
 import { type KeyboardEvent, useRef } from "react";
 import { cn } from "@/lib/cn";
 
-export type TaskTab = "room" | "changes" | "context" | "memory" | "terminal";
+export type TaskTab = "room" | "changes" | "report" | "context" | "memory" | "terminal";
 
 export const TAB_PANEL_ID = "task-tab-panel";
 
 const LABEL: Record<TaskTab, string> = {
   room: "Room",
   changes: "Changes",
+  report: "Report",
   context: "Context",
   memory: "Memory",
   terminal: "Terminal",

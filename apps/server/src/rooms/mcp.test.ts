@@ -433,6 +433,25 @@ describe("majhi-tasks", () => {
       release();
     });
 
+    it("makes followUpOf add the follow-up link, and keeps a fix task from starting without the owner", async () => {
+      const { h, servers, release } = await world();
+      await h.cmd("orgs.update", { id: "acme", lead_start: "org" });
+      const made = await h.cmd("tasks.create", {
+        text: "fix the health route in api",
+        repos: [{ project: "acme-api" }],
+        followUpOf: "ACM-1",
+        start: false,
+      });
+      expect(made.status).toBe(200);
+      expect(made.body.links).toEqual([{ type: "follow-up", task: "ACM-1" }]);
+      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
+      const res = await call(tasks, "ACM-2");
+      expect(text(res)).toMatch(/Waiting for the owner/);
+      expect(h.majhi.services.store.tasks.get("ACM-2")?.status).not.toBe("running");
+      expect(await cards(h)).toMatchObject([{ state: "pending" }]);
+      release();
+    });
+
     it("asks the owner instead when the setting is off", async () => {
       const { h, servers, release } = await world();
       await h.cmd("tasks.create", {

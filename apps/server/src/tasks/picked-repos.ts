@@ -1,4 +1,4 @@
-import type { ParsedTask } from "@majhi/shared";
+import { type ParsedTask, taskKindOf } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 
 /** One repo a task creator listed on purpose. */
@@ -16,6 +16,7 @@ export interface PickedRepo {
  * picked per repo, and the projects the text named that did not join, to say so in the room.
  */
 export function withPickedRepos(
+  text: string,
   parsed: ParsedTask,
   picked: readonly PickedRepo[] | undefined,
   projects: readonly { id: string; org: string; protected?: boolean }[],
@@ -52,7 +53,9 @@ export function withPickedRepos(
   const warnings = parsed.warnings.filter((w) => !w.startsWith("Repos from more than one org"));
   if (orgs.length > 1) warnings.push(`Repos from more than one org: ${orgs.join(", ")}`);
   const { org: _named, ...rest } = parsed;
-  const out: ParsedTask = { ...rest, repos, kind: repos.length > 0 ? "code" : "chat", warnings };
+  // The kind as the words say it for the repos that joined: an investigation stays ops.
+  const kind = taskKindOf(text, repos.length > 0, parsed.branch);
+  const out: ParsedTask = { ...rest, repos, kind, warnings };
   if (orgs.length === 1 && orgs[0] !== undefined) out.org = orgs[0];
   const mentioned = parsed.repos
     .map((r) => r.project)

@@ -158,7 +158,7 @@ function BranchCard({ task }: { task: Task }) {
           <span className="text-xs text-fg-faint">A chat task has no worktree.</span>
         </div>
       )}
-      {task.repos.length === 0 && task.kind !== "chat" && (
+      {task.repos.length === 0 && task.kind === "code" && (
         <p className="text-sm text-amber">
           No repo yet. Say which repos in the room, like "use api and web".
         </p>
