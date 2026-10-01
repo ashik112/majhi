@@ -56,6 +56,12 @@ const ALWAYS_PROTECTED = [
 
 export class MountRefused extends Error {}
 
+/**
+ * majhi's own git hooks, under its config folder (`<majhiHome>/git-hooks`). They hold only majhi's
+ * scripts, no secret, so a run may mount exactly this folder, and only read-only.
+ */
+export const MAJHI_HOOKS_DIR = "git-hooks";
+
 function inside(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
@@ -75,7 +81,8 @@ function realForms(path: string): string[] {
 
 /**
  * The mounts of one run, checked. Throws `MountRefused` when any would expose majhi's config
- * folder (other than the run's own account home), a protected path, or a folder holding one.
+ * folder (other than the run's own account home and, read-only, majhi's git hooks), a protected
+ * path, or a folder holding one.
  */
 export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const mounts: RunMount[] = [];
@@ -91,13 +98,15 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const protectedPaths = [...majhiHomes, ...cfg.protectedPaths.flatMap(realForms), ...ALWAYS_PROTECTED];
 
   const isOwnHome = (path: string) => ownHomes.includes(path) && accountsDirs.includes(dirname(path));
+  const hooksDirs = majhiHomes.map((h) => resolve(h, MAJHI_HOOKS_DIR));
+  const isHooks = (path: string, m: RunMount) => m.readOnly === true && hooksDirs.includes(path);
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
     for (const path of realForms(m.path)) {
       if (path === "/") throw new MountRefused("A run cannot mount the whole disk.");
       for (const p of protectedPaths) {
         if (inside(p, path)) throw new MountRefused(`A run cannot mount ${path}: it holds ${p}.`);
-        if (inside(path, p) && !(majhiHomes.includes(p) && isOwnHome(path))) {
+        if (inside(path, p) && !(majhiHomes.includes(p) && (isOwnHome(path) || isHooks(path, m)))) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }
       }

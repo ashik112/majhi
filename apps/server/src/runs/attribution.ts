@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { GitAttribution } from "@majhi/acp";
+import { type GitAttribution, MAJHI_HOOKS_DIR } from "@majhi/acp";
 import { agentCommitter, attributionEnabled, TASK_TRAILER } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { DEFAULT_IDENTITY, type Identity } from "./checkpoint.ts";
@@ -49,7 +49,7 @@ exit 0
  * is written only when it differs, and by rename, so a run executing one never reads half a file.
  */
 export async function ensureHooks(majhiHome: string): Promise<string> {
-  const dir = join(majhiHome, "git-hooks");
+  const dir = join(majhiHome, MAJHI_HOOKS_DIR);
   await mkdir(dir, { recursive: true });
   for (const name of HOOKS) {
     const path = join(dir, name);
