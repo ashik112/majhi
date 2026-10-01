@@ -1,0 +1,243 @@
+{
+  "registry": {
+    "orgs": [
+      {
+        "id": "acme",
+        "name": "Acme"
+      },
+      {
+        "id": "globex",
+        "name": "Globex"
+      },
+      {
+        "id": "northwind",
+        "name": "Northwind"
+      }
+    ],
+    "projects": [
+      {
+        "id": "acme-api",
+        "org": "acme",
+        "about": "the orders and billing HTTP API"
+      },
+      {
+        "id": "acme-web",
+        "org": "acme",
+        "about": "the customer web app and checkout"
+      },
+      {
+        "id": "globex-billing",
+        "org": "globex",
+        "about": "the invoices and payments service"
+      },
+      {
+        "id": "globex-mobile",
+        "org": "globex",
+        "about": "the field app for iOS and Android"
+      },
+      {
+        "id": "northwind-etl",
+        "org": "northwind",
+        "about": "nightly data loads into the warehouse"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "org": null,
+      "touched": ["acme-api"],
+      "text": "Tenant only mode expects an X-Tenant header on every request.",
+      "expected": "project:acme-api",
+      "housekeeper": "global"
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Prefer pnpm over npm in every repo.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Globex invoices are always in EUR.",
+      "expected": "org:globex",
+      "housekeeper": "org:globex"
+    },
+    {
+      "org": "acme",
+      "touched": [],
+      "text": "Acme deploys only on Tuesdays and Thursdays.",
+      "expected": "org:acme",
+      "housekeeper": "org:acme"
+    },
+    {
+      "org": "acme",
+      "touched": ["acme-web"],
+      "text": "The checkout page breaks when the cart cookie is older than 30 days; clearing it fixes it.",
+      "expected": "project:acme-web",
+      "housekeeper": null
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Write commit messages in the imperative mood.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": null,
+      "touched": ["globex-mobile"],
+      "text": "The iOS build needs Xcode 17; older versions fail at signing.",
+      "expected": "project:globex-mobile",
+      "housekeeper": "project:globex-mobile"
+    },
+    {
+      "org": "globex",
+      "touched": [],
+      "text": "Globex staging data resets every Sunday night.",
+      "expected": "org:globex",
+      "housekeeper": "org:globex"
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Keep replies short and skip the summary at the end.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": "northwind",
+      "touched": ["northwind-etl"],
+      "text": "The nightly load fails when the warehouse is in maintenance; rerun it after 6 am.",
+      "expected": "project:northwind-etl",
+      "housekeeper": null
+    },
+    {
+      "org": "acme",
+      "touched": [],
+      "text": "Acme's support team must approve any change to refund emails.",
+      "expected": "org:acme",
+      "housekeeper": "org:acme"
+    },
+    {
+      "org": null,
+      "touched": ["acme-api", "acme-web"],
+      "text": "All Acme services log in JSON with a request id.",
+      "expected": "org:acme",
+      "housekeeper": "org:acme"
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Never run database migrations on a Friday.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": "globex",
+      "touched": ["globex-billing"],
+      "text": "Invoice numbers must stay sequential with no gaps.",
+      "expected": "project:globex-billing",
+      "housekeeper": null
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Use tabs, not spaces, in Go code.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": "acme",
+      "touched": ["acme-api"],
+      "text": "Rate limiting is per API key, 100 requests a minute.",
+      "expected": "project:acme-api",
+      "housekeeper": null
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Northwind's contract forbids storing customer data outside the EU.",
+      "expected": "org:northwind",
+      "housekeeper": "org:northwind"
+    },
+    {
+      "org": "northwind",
+      "touched": [],
+      "text": "Northwind wants a short status note every Monday.",
+      "expected": "org:northwind",
+      "housekeeper": null
+    },
+    {
+      "org": null,
+      "touched": ["acme-api"],
+      "text": "I prefer small pull requests over big ones.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": "acme",
+      "touched": ["acme-web"],
+      "text": "The dark mode toggle lives in the settings store, not in the theme file.",
+      "expected": "project:acme-web",
+      "housekeeper": null
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Explain the trade-offs before a big refactor.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": "globex",
+      "touched": ["globex-mobile"],
+      "text": "Push notifications only work on a real device, not in the simulator.",
+      "expected": "project:globex-mobile",
+      "housekeeper": "global"
+    },
+    {
+      "org": "globex",
+      "touched": [],
+      "text": "All Globex repos use GitLab CI, not GitHub Actions.",
+      "expected": "org:globex",
+      "housekeeper": "org:globex"
+    },
+    {
+      "org": null,
+      "touched": ["northwind-etl"],
+      "text": "The slow step of the load is the dedupe query; an index on customer_id fixed it.",
+      "expected": "project:northwind-etl",
+      "housekeeper": null
+    },
+    {
+      "org": "acme",
+      "touched": [],
+      "text": "Acme's product owner signs off on UI copy changes.",
+      "expected": "org:acme",
+      "housekeeper": "org:acme"
+    },
+    {
+      "org": null,
+      "touched": [],
+      "text": "Ask before adding a new dependency.",
+      "expected": "global",
+      "housekeeper": "global"
+    },
+    {
+      "org": null,
+      "touched": ["globex-billing"],
+      "text": "Payment webhooks sometimes arrive twice, so the handler must be idempotent.",
+      "expected": "project:globex-billing",
+      "housekeeper": "project:globex-billing"
+    },
+    {
+      "org": "acme",
+      "touched": ["acme-api"],
+      "text": "Acme runs Postgres 16 everywhere.",
+      "expected": "org:acme",
+      "housekeeper": "org:acme"
+    }
+  ]
+}

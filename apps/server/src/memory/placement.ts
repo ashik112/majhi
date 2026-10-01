@@ -75,9 +75,11 @@ export interface Placement {
 }
 
 /**
- * `override`: a counted answer wins over the Housekeeper's scope. `tiebreak`: the Housekeeper's
- * scope wins when it gave an allowed one; a counted answer is used only when it did not.
- * Set from the eval: see docs/DECISIONS.md, 2026-10-01.
+ * `override`: a counted answer wins; then the Housekeeper's scope; then what was touched.
+ * `tiebreak`: the Housekeeper's scope; then a project or org the conversation clearly touched; a
+ * counted answer only when neither says anything; then the conversation's org, or global.
+ * Set from the eval (Laya right 75% of the times it answered, the Housekeeper 90%, the touched
+ * scope 100% where the Housekeeper gave none): see docs/DECISIONS.md, 2026-10-01.
  */
 export type PlacementPolicy = "override" | "tiebreak";
 export const PLACEMENT_POLICY: PlacementPolicy = "tiebreak";
@@ -238,11 +240,14 @@ function counted(a: Answer | undefined): string | undefined {
 export function placeWithoutModel(registry: Registry, ctx: PlaceContext, fact: FactToPlace): Placement {
   if (fact.proposed !== undefined && ctx.allowed.includes(fact.proposed))
     return { scope: fact.proposed, by: "housekeeper", reason: "the Housekeeper's scope" };
-  return { ...touchedScope(registry, ctx), by: "touched" };
+  return { ...(clearlyTouched(registry, ctx) ?? defaultScope(ctx)), by: "touched" };
 }
 
-/** The narrowest scope the conversation clearly touched: its one project, their shared org, its org, or global. */
-export function touchedScope(registry: Registry, ctx: PlaceContext): { scope: MemoryScope; reason: string } {
+/** The narrowest scope the conversation clearly touched: its one project, or the org of all it touched. */
+export function clearlyTouched(
+  registry: Registry,
+  ctx: PlaceContext,
+): { scope: MemoryScope; reason: string } | undefined {
   const allowed = new Set(ctx.allowed);
   const touched = ctx.touched.filter((p) => allowed.has(projectScope(p)));
   const [only] = touched;
@@ -252,9 +257,44 @@ export function touchedScope(registry: Registry, ctx: PlaceContext): { scope: Me
   const [shared] = [...orgs];
   if (touched.length > 1 && orgs.size === 1 && shared !== undefined && allowed.has(orgScope(shared)))
     return { scope: orgScope(shared), reason: `the org of the projects it worked in, ${shared}` };
-  if (ctx.org !== undefined && allowed.has(orgScope(ctx.org)))
+  return undefined;
+}
+
+/** With nothing else to go on: the conversation's org, or global. */
+export function defaultScope(ctx: PlaceContext): { scope: MemoryScope; reason: string } {
+  if (ctx.org !== undefined && ctx.allowed.includes(orgScope(ctx.org)))
     return { scope: orgScope(ctx.org), reason: `its org, ${ctx.org}` };
   return { scope: GLOBAL_SCOPE, reason: "no org or project in particular" };
+}
+
+/**
+ * The policy applied: `ask` runs the provider, and only when the policy needs it. Shared by the
+ * placer and the eval, so the eval measures what ships.
+ */
+export async function combine(
+  policy: PlacementPolicy,
+  registry: Registry,
+  ctx: PlaceContext,
+  fact: FactToPlace,
+  ask: () => Promise<ProviderPick>,
+): Promise<Placement> {
+  const proposed =
+    fact.proposed !== undefined && ctx.allowed.includes(fact.proposed)
+      ? { scope: fact.proposed, by: "housekeeper" as const, reason: "the Housekeeper's scope" }
+      : undefined;
+  const clear = clearlyTouched(registry, ctx);
+  const touched = clear === undefined ? undefined : { ...clear, by: "touched" as const };
+  const rest = { ...defaultScope(ctx), by: "touched" as const };
+  if (policy === "tiebreak" && (proposed ?? touched) !== undefined) return proposed ?? touched ?? rest;
+  const pick = await ask();
+  if (pick.scope !== undefined)
+    return {
+      scope: pick.scope,
+      by: "decision",
+      reason: `the decision provider (${pick.decisions.map((d) => d.id).join(", ")})`,
+    };
+  const fallback = proposed ?? touched ?? rest;
+  return { ...fallback, reason: `${fallback.reason}; ${pick.why ?? "no decision"}` };
 }
 
 /** What the provider said for one fact: the scope when it counted, and every decision it took. */
@@ -279,20 +319,13 @@ export class Placer {
   async place(ctx: PlaceContext, fact: FactToPlace): Promise<Placement> {
     const registry = await this.deps.registry();
     const policy = this.deps.policy ?? PLACEMENT_POLICY;
-    const fallback = placeWithoutModel(registry, ctx, fact);
-    // The Housekeeper's allowed scope stands under `tiebreak`: no model is asked.
-    if (policy === "tiebreak" && fallback.by === "housekeeper") return fallback;
-    const pick = await this.ask(registry, ctx, fact);
-    const placement: Placement =
-      pick.scope !== undefined
-        ? {
-            scope: pick.scope,
-            by: "decision",
-            reason: `the decision provider (${pick.decisions.map((d) => d.id).join(", ")})`,
-          }
-        : { ...fallback, reason: `${fallback.reason}; ${pick.why ?? "no decision"}` };
+    let pick: ProviderPick | undefined;
+    const placement = await combine(policy, registry, ctx, fact, async () => {
+      pick = await this.ask(registry, ctx, fact);
+      return pick;
+    });
     const fellBack = placement.by !== "decision";
-    for (const d of pick.decisions)
+    for (const d of pick?.decisions ?? [])
       this.deps.decisions.outcome(d.id, {
         text: `Memory scope ${placement.scope}, from ${fellBack ? placement.reason : "this answer"}.`,
         fellBack,

@@ -126,11 +126,14 @@ describe("where a fact goes", () => {
     });
   });
 
-  it("under tiebreak keeps the Housekeeper's allowed scope and asks the provider only without one", async () => {
+  it("under tiebreak keeps the Housekeeper's scope, then what was clearly touched, and asks only without either", async () => {
     const t = placer({ level: answer("everywhere", true) }, "tiebreak");
     expect(
       await t.placer.place(ctx("acme"), { text: "Acme deploys on Tuesdays.", proposed: "org:acme" }),
     ).toMatchObject({ scope: "org:acme", by: "housekeeper" });
+    expect(
+      await t.placer.place(ctx("acme", ["acme-web"]), { text: "The toggle lives in the settings store." }),
+    ).toMatchObject({ scope: "project:acme-web", by: "touched" });
     expect(t.calls).toHaveLength(0);
     expect(await t.placer.place(ctx("acme"), { text: "Prefer small pull requests." })).toMatchObject({
       scope: "global",
