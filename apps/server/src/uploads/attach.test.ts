@@ -42,6 +42,8 @@ const taskMd = (task: Task) => readFile(join(task.folder, "TASK.md"), "utf8");
 describe("attachments by upload id and by path", () => {
   it("puts an upload id and a path in attachments/ and in TASK.md when a task is created", async () => {
     w = await bossWorld({ real: false });
+    // A task that attaches a repo always asks the owner; this one is about attachments.
+    await w.h.cmd("policy.set", { change: "auto" });
     await put(w.chat.folder, "attachments/image.png");
     const owner = await upload("notes.txt", "text/plain", "hello");
     expect(owner.status).toBe(200);
@@ -100,6 +102,7 @@ describe("attachments by upload id and by path", () => {
 
   it("turns a file into an upload with uploads.create and uses the id once", async () => {
     w = await bossWorld({ real: false });
+    await w.h.cmd("policy.set", { change: "auto" });
     await put(w.chat.folder, "attachments/image.png");
     const res = await asBoss("majhi_uploads_create", { path: "attachments/image.png" });
     expect(res.isError).toBe(false);

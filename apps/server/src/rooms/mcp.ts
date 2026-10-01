@@ -15,7 +15,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AdminService } from "../admin/service.ts";
 import { bearerOf } from "../admin/tokens.ts";
-import { toolName } from "../admin/tools.ts";
+import { OWNER_ONLY_INPUTS, toolName } from "../admin/tools.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
@@ -187,8 +187,16 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
 ].map((t) => ({
   ...t,
   command: t.command as CommandName,
-  input: commands[t.command as CommandName].input as unknown as z.ZodObject,
+  input: agentInput(t.command as CommandName),
 }));
+
+/** A command's input as an agent's tool takes it: without the fields only the owner gives (push). */
+export function agentInput(command: CommandName): z.ZodObject {
+  const input = commands[command].input as unknown as z.ZodObject;
+  const hidden = OWNER_ONLY_INPUTS[command] ?? [];
+  if (hidden.length === 0) return input;
+  return z.object(Object.fromEntries(Object.entries(input.shape).filter(([k]) => !hidden.includes(k))));
+}
 
 const ASK_FIELDS = {
   ownerAsked: { type: "boolean", description: "true only if the owner asked for this in the conversation" },

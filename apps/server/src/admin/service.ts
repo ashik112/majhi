@@ -6,6 +6,7 @@ import {
   commands,
   IdSchema,
   isDestructiveCommand,
+  parseTaskText,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -75,6 +76,8 @@ export class AdminService {
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
+      const refused = refuseForAgents(spec.command, input);
+      if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
         ownerAsked: ownerAsked === true,
         reason: typeof reason === "string" ? reason.trim().slice(0, 500) : "",
@@ -145,8 +148,10 @@ export class AdminService {
     const { policy } = await this.deps.config.settings();
     const mode = modeFor(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
+    // An agent's word that the owner asked counts only for low-risk changes.
+    const ownerAsked = ask.ownerAsked && !(await this.alwaysAsks(command, checked.data));
     // A saved rule turns a card that would wait into a run. It is looked up only then.
-    const decision = decideMode(mode, ask.ownerAsked);
+    const decision = decideMode(mode, ownerAsked);
     const rule =
       decision === "run"
         ? undefined
@@ -189,6 +194,37 @@ export class AdminService {
       state: "pending",
     });
     return { text: WAITING_TEXT, isError: false };
+  }
+
+  /**
+   * True for a call whose card shows even when the agent says the owner asked for it (`when-asked`):
+   * see `ALWAYS_ASK`. A task attaches repos when its text names a project; for `tasks.start`, when
+   * the task has repos. Only the owner's own settings (an `auto` mode, a saved rule) skip the card.
+   */
+  private async alwaysAsks(command: CommandName, input: unknown): Promise<boolean> {
+    if (ALWAYS_ASK.has(command)) return true;
+    const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+    if (command === "orgs.update") return SENSITIVE_ORG_FIELDS.some((f) => fields[f] !== undefined);
+    if (command === "tasks.start") {
+      const task = typeof fields.id === "string" ? this.deps.store.tasks.get(fields.id) : undefined;
+      return task === undefined || task.repos.length > 0 || (task.readMounts ?? []).length > 0;
+    }
+    if (command !== "tasks.create" && command !== "tasks.split") return false;
+    const texts =
+      command === "tasks.create"
+        ? [[fields.title, fields.text].filter((t) => typeof t === "string").join("\n\n")]
+        : (Array.isArray(fields.children) ? fields.children : []).map((c: unknown) =>
+            typeof c === "object" && c !== null && typeof (c as { text?: unknown }).text === "string"
+              ? (c as { text: string }).text
+              : "",
+          );
+    const sections = await this.deps.config.sections();
+    const projects = Object.entries(sections.projects).map(([id, p]) => ({
+      id,
+      org: p.org,
+      aliases: p.aliases ?? [],
+    }));
+    return texts.some((text) => parseTaskText(text, { projects, agents: [] }).repos.length > 0);
   }
 
   private requestSecret(caller: AdminCaller, args: Record<string, unknown>): ToolResult {
@@ -463,6 +499,48 @@ function cardOf(agent: string, command: CommandName, input: unknown, reason: str
 
 function secretPayload(item: SecretRequestItem, state: SecretRequestItem["state"]): ApprovalPayload {
   return { type: "secret-request", agent: item.agent, name: item.name, label: item.label, state };
+}
+
+/**
+ * Commands whose card always shows for an agent, whatever it says about the owner asking: they change
+ * where code goes or as whom (git accounts, tokens, identity, remotes), which repos and folders agents
+ * can reach (projects, workspace roots), or another task's branch.
+ */
+const ALWAYS_ASK: ReadonlySet<CommandName> = new Set<CommandName>([
+  "projects.register",
+  "projects.update",
+  "projects.remove",
+  "orgs.useGitLogin",
+  "orgs.useSavedLogin",
+  "orgs.setGitAccount",
+  "orgs.removeGitAccount",
+  "workspaces.set",
+  "tasks.changeBranch",
+]);
+
+/** Fields of `orgs.update` that change git accounts, tokens, identity or what agents may do alone. */
+const SENSITIVE_ORG_FIELDS = [
+  "identity",
+  "commits",
+  "mr_tokens",
+  "git_accounts",
+  "merge",
+  "lead_start",
+] as const;
+
+/**
+ * Why an agent may not make this call at all, or undefined. Agents never push: the owner pushes from
+ * Ship, or an org policy does. Nor do they throw away uncommitted work: removing a task with
+ * uncommitted changes takes the owner's typed confirmation.
+ */
+export function refuseForAgents(command: CommandName, input: Record<string, unknown>): string | undefined {
+  if (command === "tasks.merge" && input.push !== undefined && input.push !== false) {
+    return "Agents never push. Merge without push; the owner pushes from Ship.";
+  }
+  if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
+    return "Agents cannot remove a task with force. Say in the room what should go; the owner removes it.";
+  }
+  return undefined;
 }
 
 function error(text: string): ToolResult {

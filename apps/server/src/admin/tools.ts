@@ -42,11 +42,25 @@ const EXTRA_PROPERTIES = {
   reason: { type: "string", description: "Why you are calling this, in one plain sentence" },
 } as const;
 
+/**
+ * Inputs only the owner gives, left out of an agent's tool: agents never push, and never force a
+ * task's removal over uncommitted work. `refuseForAgents` refuses them if sent anyway.
+ */
+export const OWNER_ONLY_INPUTS: Partial<Record<CommandName, readonly string[]>> = {
+  "tasks.merge": ["push"],
+  "tasks.remove": ["force", "confirm"],
+};
+
 function commandSchema(command: CommandName): AdminTool["inputSchema"] {
   const schema = z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" });
   const { $schema: _dropped, ...rest } = schema as Record<string, unknown>;
-  const properties = (rest.properties ?? {}) as Record<string, unknown>;
-  const required = Array.isArray(rest.required) ? (rest.required as string[]) : [];
+  const hidden = new Set(OWNER_ONLY_INPUTS[command] ?? []);
+  const properties = Object.fromEntries(
+    Object.entries((rest.properties ?? {}) as Record<string, unknown>).filter(([k]) => !hidden.has(k)),
+  );
+  const required = (Array.isArray(rest.required) ? (rest.required as string[]) : []).filter(
+    (k) => !hidden.has(k),
+  );
   return {
     ...rest,
     type: "object",
