@@ -87,7 +87,7 @@ describe("what a task's run mounts", () => {
     const start = w.h.runtime.starts[0];
     const gitDir = join(w.repo("api"), ".git");
     // The project's checkout comes first, read-only: the .git below it stays writable.
-    expect(start?.mounts?.slice(0, 4)).toEqual([
+    expect(start?.mounts).toEqual([
       { path: w.repo("api"), readOnly: true },
       { path: gitDir },
       { path: join(gitDir, "config"), readOnly: true },
