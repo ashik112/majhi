@@ -1,9 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
-import { HOST_HOME, MAJHI_HOME } from "./fixture.ts";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// One server, one majhi.yaml: each test builds on the state the previous one left.
+// From first run. Each test builds on the state the previous one left.
+useHome({ seed: "empty" });
 test.describe.configure({ mode: "serial" });
 
 // Setup now goes on to accounts and the boss. Phase 0 is about roots and repos, so every test after

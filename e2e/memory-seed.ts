@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { openMemoryDb } from "../apps/server/src/memory/db.ts";
 import { MemoryService } from "../apps/server/src/memory/service.ts";
 import { MemoryStore } from "../apps/server/src/memory/store.ts";
-import { E2E_PORT, MAJHI_HOME } from "./fixture.ts";
+import { E2E_PORT, MAJHI_HOME } from "./paths.ts";
 
 const base = `http://127.0.0.1:${E2E_PORT}`;
 

@@ -1,7 +1,14 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test, useHome } from "./fixture.ts";
 
-// The host helper is not running in e2e, so these tests answer host.status, ssh.reload and ssh.unlock
-// themselves. They run after the setup in the earlier specs, so /repos has its roots.
+// The e2e host helper has no SSH keys to report, so these tests answer host.status, ssh.reload and
+// ssh.unlock themselves.
+useHome({ seed: "roots" });
+
+// Setup (an account and a boss) is not what these tests are about: skip it, as the owner can.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));
+});
 const PASSPHRASE = "correct-horse-battery";
 const KEY = "~/.ssh/id_work";
 const WAITING = { loaded: 0, needsPassphrase: [KEY], checkedAt: "2026-09-29T10:00:00.000Z" };
@@ -83,7 +90,7 @@ test("Repos names a git host that took none of the keys", async ({ page }) => {
         info: { ...INFO, ssh: DONE },
         sshHosts: [
           {
-            host: "gitlab-ashik112",
+            host: "gitlab-acme",
             state: "auth-failed",
             detail: "The host did not accept any key ssh offered.",
           },
@@ -93,5 +100,5 @@ test("Repos names a git host that took none of the keys", async ({ page }) => {
   );
   await page.goto("/projects");
   const notice = page.getByRole("region", { name: "majhi cannot reach your git hosts over SSH yet." });
-  await expect(notice).toContainText("gitlab-ashik112 did not accept any SSH key");
+  await expect(notice).toContainText("gitlab-acme did not accept any SSH key");
 });

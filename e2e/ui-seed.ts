@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { serializeAgent } from "../apps/server/src/agents/file.ts";
 import type { Agent } from "../packages/shared/src/index.ts";
-import { HOST_HOME, MAJHI_HOME } from "./fixture.ts";
+import { HOST_HOME, MAJHI_HOME } from "./paths.ts";
 
 const NOW = Date.now();
 /** A time today at `hours` (14.5 is 2:30 PM), so the tables read "resets 2:30 PM" whatever time the shot is taken. */

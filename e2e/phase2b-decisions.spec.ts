@@ -1,18 +1,8 @@
-import { join } from "node:path";
-import { expect, test } from "@playwright/test";
-import { HOST_HOME } from "./fixture.ts";
+import { expect, test, useHome } from "./fixture.ts";
 
-// Own state only: it asks questions and reads the answer. No Laya is installed in the fixture, so
-// the chain skips it and the rules answer, which is what this checks.
-test.beforeAll(async ({ request }) => {
-  // Past first-run, without disturbing roots another spec already saved.
-  const config = await (await request.post("/api/cmd/config.get", { data: {} })).json();
-  if (config.status === "loaded") return;
-  const res = await request.post("/api/cmd/workspaces.set", {
-    data: { workspaces: [join(HOST_HOME, "Work")] },
-  });
-  expect(res.ok(), await res.text()).toBe(true);
-});
+// It asks questions and reads the answer. No Laya is installed in the fixture, so the chain skips it
+// and the rules answer, which is what this checks.
+useHome({ seed: "roots" });
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));

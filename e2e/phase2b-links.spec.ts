@@ -1,7 +1,8 @@
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test, useHome } from "./fixture.ts";
 
-// Builds on phases 1 and 2a: org Acme, its agents and the project "api". Run in order after them.
-test.describe.configure({ mode: "serial" });
+// Org Acme and its agents, plus the project "api".
+useHome({ seed: "team-api" });
 
 async function cmd<T>(request: APIRequestContext, name: string, data: object): Promise<T> {
   const res = await request.post(`/api/cmd/${name}`, { data });
@@ -14,6 +15,7 @@ const status = async (request: APIRequestContext, id: string) =>
   (await cmd<{ status: string }>(request, "tasks.get", { id })).status;
 const dialog = (page: Page) => page.getByRole("dialog", { name: "New task" });
 const card = (page: Page, id: string) => page.locator(`#card-${id}`);
+
 
 /** Adds a task through the dialog. `chips` picks task ids under a group; resolves with the new id. */
 async function addTask(
@@ -41,7 +43,7 @@ async function addTask(
   return taskIdOf(page);
 }
 
-test("a task that depends on another waits, shows it on the board, and starts when it is done", async ({
+test("a task that depends on another waits, shows it on the board, and starts when it is done", { tag: "@smoke" }, async ({
   page,
   request,
 }) => {

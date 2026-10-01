@@ -1,9 +1,10 @@
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, test, useHome } from "./fixture.ts";
 
-// Tokens and cost (Phase 2c). Builds on the earlier phases: Acme's agents have run turns on the
-// Claude fake, which reports tokens and a running cost. This spec adds Northwind with a Codex
-// API-key account (tokens, no cost), prices its model, runs a task, and checks that the page and
-// the boss show the sum of the recorded turns.
+// Tokens and cost (Phase 2c). Acme's lead runs a turn on the Claude fake, which reports tokens and a
+// running cost. This spec adds Northwind with a Codex API-key account (tokens, no cost), prices its
+// model, runs a task, and checks that the page and the boss show the sum of the recorded turns.
+useHome({ seed: "team-api" });
 test.describe.configure({ mode: "serial" });
 
 async function cmd<T>(request: APIRequestContext, name: string, data: object): Promise<T> {
@@ -49,10 +50,14 @@ const money = (usd: number) => (usd <= 0 ? "$0.00" : usd < 0.01 ? "<$0.01" : USD
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 
 test.beforeAll(async ({ request }) => {
-  const orgs = await cmd<{ id: string }[]>(request, "orgs.list", {});
-  if (!orgs.some((o) => o.id === "northwind")) {
-    await cmd(request, "orgs.create", { id: "northwind", name: "Northwind", key: "NW" });
-  }
+  const acme = await cmd<{ id: string }>(request, "tasks.create", {
+    text: "add a readme to api @acme-lead",
+    start: true,
+  });
+  await expect
+    .poll(async () => (await rows(request, { task: acme.id })).length, { timeout: 20_000 })
+    .toBeGreaterThan(0);
+  await cmd(request, "orgs.create", { id: "northwind", name: "Northwind", key: "NW" });
   await cmd(request, "accounts.create", {
     id: "codex-northwind",
     tool: "codex",

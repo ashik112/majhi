@@ -1,11 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
-import { HOST_HOME } from "./fixture.ts";
+import { expect, HOST_HOME, test, useHome } from "./fixture.ts";
 
-// Own server and home: run with `pnpm exec playwright test -c playwright.ops.config.ts` (port 7083).
-// The default suite shares one majhi.yaml across specs, so these stay out of it.
-test.skip(process.env.MAJHI_E2E_PORT !== "7083", "runs only under playwright.ops.config.ts");
+useHome({ seed: "empty" });
 test.describe.configure({ mode: "serial" });
 
 const TASKS_DIR = join(HOST_HOME, "ops-tasks");
@@ -119,8 +116,8 @@ test("the update banner lists the changes and the update reloads on the new comm
   const notice = page.getByRole("region", { name: "Update ready" });
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("2 changes");
-  await expect(notice).toContainText("changes you have not committed");
   await notice.getByRole("button", { name: /Update ready/ }).click();
+  await expect(notice).toContainText("changes you have not committed");
   await expect(notice.getByRole("list", { name: "Changes" })).toContainText(
     "feat(health): checks with fixes",
   );

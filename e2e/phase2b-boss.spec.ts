@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
-import { MAJHI_HOME } from "./fixture.ts";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// Builds on phase 1: the boss (majhi-boss) on a signed-in account and its chat, which the last
-// onboarding step opened. The fake adapter turns "call: <tool> {json}" into a real call to the
-// majhi-admin MCP server, and echoes anything else.
-test.describe.configure({ mode: "serial" });
+// The boss (majhi-boss) on a signed-in account. The fake adapter turns "call: <tool> {json}" into a
+// real call to the majhi-admin MCP server, and echoes anything else.
+useHome({ seed: "team" });
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 
@@ -50,24 +49,13 @@ async function openBoss(page: Page) {
   await expect(drawer(page)).toBeVisible();
 }
 
-test.beforeAll(async ({ request }) => {
-  const agents = await cmd<{ status: string; isBoss?: boolean }[]>(request, "agents.list");
-  if (!agents.some((a) => a.status === "ok" && a.isBoss)) {
-    throw new Error(
-      "This spec needs the boss from phase1.spec.ts. Run the whole suite, not this file alone.",
-    );
-  }
-});
-
-test("Cmd J opens the boss over any page; a change waits for approval, then applies and can be undone", async ({
+test("Cmd J opens the boss over any page; a change waits for approval, then applies and can be undone", { tag: "@smoke" }, async ({
   page,
 }) => {
   await page.goto("/agents");
   await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(drawer(page)).toHaveCount(0);
   await openBoss(page);
-  // The first onboarding message and its echo are already here.
-  await expect(log(page).getByText(/^echo: Hi\. I just finished/)).toBeVisible();
 
   await say(
     page,
@@ -223,14 +211,14 @@ test("Hub setup: sections save on their own; changing the policy asks first", as
 
   await page.getByRole("button", { name: /^Context and limits/ }).click();
   await expect(page).toHaveURL(/section=context/);
-  const limits = page.getByRole("region", { name: "Limits" });
+  const limits = page.getByRole("region", { name: "Limits", exact: true });
   await limits.getByLabel("Agents at once").fill("4");
   await limits.getByRole("button", { name: "Save Limits" }).click();
   await expect(limits.getByRole("status")).toContainText("Saved");
   expect((await cmd<{ limits: { agents_max: number } }>(request, "settings.get")).limits.agents_max).toBe(4);
 
   await page.goto("/setup?section=approvals");
-  const policy = page.getByRole("region", { name: "Approval policy" });
+  const policy = page.getByRole("region", { name: "Approval policy", exact: true });
   await policy.getByLabel("Changes").selectOption("confirm");
   await policy.getByRole("button", { name: "Save Approval policy" }).click();
   const dialog = page.getByRole("dialog", { name: "Change the approval policy?" });
@@ -252,8 +240,5 @@ test("Hub setup: sections save on their own; changing the policy asks first", as
   );
   await expect(drawer(page).getByRole("region", { name: "Approval: Create org Umbrella" })).toBeVisible();
   await page.keyboard.press("Meta+j");
-  // Put both settings back for the specs that follow.
-  await cmd(request, "policy.set", { change: "when-asked" });
-  await cmd(request, "settings.set", { limits: { agents_max: 6 } });
   await shot(page, "hub-setup-settings");
 });

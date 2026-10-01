@@ -1,5 +1,6 @@
 /**
- * Starts majhi and its host helper for Playwright against a throwaway home:
+ * Starts majhi and its host helper for Playwright against a throwaway home (`E2E_ROOT` in paths.ts,
+ * shown here as <tmp>/majhi-e2e):
  *
  *   <tmp>/majhi-e2e/home/Work/alpha-api         GitHub remote, plus a `develop` branch one commit ahead of `main`
  *   <tmp>/majhi-e2e/home/Work/beta-web          GitLab remote over https, on `develop`
@@ -7,7 +8,7 @@
  *   <tmp>/majhi-e2e/home/Projects/delta-app     GitHub remote, so root suggestions have a second entry
  *   <tmp>/majhi-e2e/home/Empty                  no repos, so it is never suggested
  *   <tmp>/majhi-e2e/home/.ssh/config            defines that alias
- *   <tmp>/majhi-e2e/home/.majhi                 empty, so majhi starts in first-run
+ *   <tmp>/majhi-e2e/home/.majhi                 empty, so majhi starts in first-run (or seeded, see home-seed.ts)
  *   <tmp>/majhi-e2e/secrets/key                 throwaway age identity for secrets.age
  *
  * Agent CLIs are fake adapters that start signed out (see @majhi/acp/testing). Once signed in they
@@ -17,7 +18,8 @@
  * and suggests folders but never remounts (`canRemount` is false) and never
  * touches Docker. It reaches the server a moment after `/health` answers.
  *
- * Expects `apps/web/dist` to be built already; the Playwright config builds it first.
+ * The fixture (`fixture.ts`) runs it once per Playwright worker; the screenshot configs run it as their
+ * web server. Expects `apps/web/dist` to be built already; the configs build it first.
  */
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -25,7 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../apps/server/src/secrets/store.ts";
 import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
-import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FILE } from "./fixture.ts";
+import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FILE } from "./paths.ts";
 
 // Keep the owner's own git config (signing, hooks, templates) out of the fixture and the server.
 const gitEnv = {
@@ -73,12 +75,15 @@ writeFileSync(
   "Host bitbucket-acme\n  HostName bitbucket.org\n  User git\n  IdentityFile ~/.ssh/id_acme\n",
 );
 mkdirSync(MAJHI_HOME, { recursive: true });
-// `ui.config.ts` asks for a filled-in home to photograph the pages; the phase specs start empty.
-if (process.env.MAJHI_E2E_SEED === "ui") (await import("./ui-seed.ts")).seedUiHome();
 
 // The age identity lives outside MAJHI_HOME, as it does in the container.
 mkdirSync(dirname(SECRETS_KEY_FILE), { recursive: true });
 writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
+
+// The screenshot configs ask for a filled-in home (`ui`); a spec asks for its own through `useHome`.
+const seed = process.env.MAJHI_E2E_SEED;
+if (seed === "ui") (await import("./ui-seed.ts")).seedUiHome();
+if (seed === "roots" || seed === "team" || seed === "team-api") await (await import("./home-seed.ts")).seedHome(seed);
 
 // Fake adapters start signed out, so the login flow is real. Three models and three efforts
 // make the editor's lists worth choosing from.
@@ -88,9 +93,13 @@ const fakes = {
   // Usage the fakes report once signed in: 5h 42 %, week 18 %, plus an Opus window.
   usage: { fiveHourPct: 42, weekPct: 18, opusPct: 30, plan: "max" },
 };
-// A short pause between the steps of a turn lets the tests see the plan pinned and the tools running;
-// Codex is slow enough to stop a turn halfway with Esc.
-const SLOW_MS = { claude: 250, codex: 600 } as const;
+// A pause between the steps of a turn lets a test see the plan pinned and the tools running, or stop a
+// turn halfway with Esc. The fixture sets it per spec file (`useHome`), 0 unless the spec asks; a server
+// started on its own keeps the old pauses.
+const SLOW_MS = {
+  claude: Number(process.env.MAJHI_E2E_SLOW_CLAUDE ?? 250),
+  codex: Number(process.env.MAJHI_E2E_SLOW_CODEX ?? 600),
+} as const;
 const command = (tool: "claude" | "codex") => {
   const { command, args } = fakeAdapter(tool, { ...fakes, slowMs: SLOW_MS[tool] });
   return JSON.stringify([command, ...args]);

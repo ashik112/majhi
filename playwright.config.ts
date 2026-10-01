@@ -1,19 +1,23 @@
 import { defineConfig, devices } from "@playwright/test";
-import { E2E_PORT } from "./e2e/fixture.ts";
-
-const baseURL = `http://127.0.0.1:${E2E_PORT}`;
 
 export default defineConfig({
   testDir: "e2e",
-  // The tests share one server and one majhi.yaml, and run in order.
+  testMatch: /\.spec\.ts$/,
+  // The web app is built once; every worker then starts its own server with its own home and port
+  // (`e2e/fixture.ts`). Spec files run side by side. Inside a file, tests run in order unless the
+  // file opts into parallel mode.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
-  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
+  // Several servers, browsers and fake agents share the machine, so a step can take a moment longer.
+  expect: { timeout: 10_000 },
   reporter: "list",
   use: {
-    baseURL,
     trace: "retain-on-failure",
+    // No looping motion (the working lamp's sweep, shimmers): headless Chromium paints it in software,
+    // and a few pages doing that at once starve the servers.
+    reducedMotion: "reduce",
   },
   projects: [
     {
@@ -25,13 +29,4 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: "pnpm --filter @majhi/web build && pnpm exec tsx e2e/start-server.ts",
-    url: `${baseURL}/health`,
-    // Every run starts from a fresh first-run home, so never attach to a server left running.
-    reuseExistingServer: false,
-    timeout: 120_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
 });

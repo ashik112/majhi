@@ -1,10 +1,11 @@
 import { rmSync, writeFileSync } from "node:fs";
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
-import { OFFLINE_FILE } from "./fixture.ts";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { expect, OFFLINE_FILE, test, useHome } from "./fixture.ts";
 
-// The run manager (SPEC 5.7, 5.13, 5.17). Builds on phases 1 and 2a: org Acme with the project
-// "api", acme-lead (edit and shell) and acme-reviewer (no perms, so its `npm test` asks and its
-// turn stays open) on claude-acme-1. Run in order after them.
+// The run manager (SPEC 5.7, 5.13, 5.17). Org Acme with the project "api", acme-lead (edit and
+// shell) and acme-reviewer (edit only, so its `npm test` asks and its turn stays open) on
+// claude-acme-1.
+useHome({ seed: "team-api" });
 test.describe.configure({ mode: "serial" });
 
 async function cmd<T>(request: APIRequestContext, name: string, data: object): Promise<T> {
@@ -42,13 +43,6 @@ test.beforeAll(async ({ request }) => {
   await setPerms(request, "acme-lead", ["edit", "shell"]);
   // Without shell the reviewer's `npm test` asks, so its turn stays open.
   await setPerms(request, "acme-reviewer", ["edit"]);
-});
-
-test.afterAll(async ({ request }) => {
-  rmSync(OFFLINE_FILE, { force: true });
-  await request.post("/api/cmd/settings.set", {
-    data: { context: { compact_at: 0.8, compact_target: 0.4 }, limits: { per_account: 2 } },
-  });
 });
 
 test("a compaction shows in the room as one quiet line, and Fresh session carries a note", async ({
