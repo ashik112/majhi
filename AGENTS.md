@@ -20,6 +20,7 @@ You are building majhi, a local, dockerized workspace for running AI coding agen
 - TypeScript strict, no `any` without a comment explaining why.
 - zod schemas at every boundary (HTTP, WebSocket, files on disk, ACP messages, MCP tools). Shared schemas live in `packages/shared`.
 - Small modules with clear names. No framework magic that hides control flow.
+- Database migrations: never edit or renumber one that shipped. Before handing work back, merge main and make sure your new migration ids come after every id on main; majhi refuses to start when two migrations share an id.
 - Tests only for crucial logic: security (secrets, auth, sandboxing, path containment), anything that can lose or corrupt data (git, worktrees, migrations, config writes), money and limits, and core state machines (task status, runs, approvals). No tests for UI layout, copy, styling or simple wiring. Keep the fake ACP agent in `packages/acp/testing` so tests never spend tokens.
 - While working, run typecheck and only the tests of the files you touched. Never run `sh scripts/ci.sh` or the whole e2e suite from a task: they run once, at the end of a phase. Web changes get typecheck only; there are no web unit tests. Copy, text and styling changes need nothing beyond typecheck.
 - Examples, test data, fixtures and docs use only generic sample names (Acme, Globex, Northwind, `/Users/owner`). Never write the owner's real companies, clients, projects, repos or paths into the repo.

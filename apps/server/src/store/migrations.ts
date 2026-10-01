@@ -404,16 +404,42 @@ CREATE TABLE chat_state (
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
+/** Two migrations share an id, in this build or between this build and the database. */
+export class MigrationConflict extends Error {}
+
+/**
+ * Applies the migrations not applied yet, each in its own transaction, and records it. A migration
+ * is known by its id and its name: when the database already holds an id under another name, two
+ * branches used the same id and one of them would be skipped without a trace, so this refuses.
+ */
 export function migrate(db: Database.Database, migrations: readonly Migration[] = MIGRATIONS): number[] {
+  const seen = new Map<number, string>();
+  for (const m of migrations) {
+    const other = seen.get(m.id);
+    if (other !== undefined) {
+      throw new MigrationConflict(
+        `Migrations "${other}" and "${m.name}" both use id ${m.id}. Give one of them the next free id.`,
+      );
+    }
+    seen.set(m.id, m.name);
+  }
   db.exec(
     "CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)",
   );
-  const applied = new Set(
+  const applied = new Map(
     db
-      .prepare("SELECT id FROM migrations")
+      .prepare("SELECT id, name FROM migrations")
       .all()
-      .map((row) => (row as { id: number }).id),
+      .map((row) => [(row as { id: number }).id, (row as { name: string }).name] as const),
   );
+  for (const [id, name] of applied) {
+    const ours = seen.get(id);
+    if (ours !== undefined && ours !== name) {
+      throw new MigrationConflict(
+        `The database applied migration ${id} as "${name}", but this build's migration ${id} is "${ours}". Two branches used the same id: give this build's migration the next free id.`,
+      );
+    }
+  }
   const record = db.prepare("INSERT INTO migrations (id, name, applied_at) VALUES (?, ?, ?)");
   const done: number[] = [];
   for (const m of [...migrations].sort((a, b) => a.id - b.id)) {

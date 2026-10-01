@@ -2,7 +2,7 @@ import type { Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { type RoomPayload, Store } from "./index.ts";
-import { MIGRATIONS, type Migration, migrate } from "./migrations.ts";
+import { MIGRATIONS, type Migration, MigrationConflict, migrate } from "./migrations.ts";
 
 function task(id: string, patch: Partial<Task> = {}): Task {
   return {
@@ -44,6 +44,17 @@ describe("migrations", () => {
       { id: 2, name: "second" },
       { id: 3, name: "third" },
     ]);
+  });
+
+  it("refuses two migrations with the same id, in the build or against the database", () => {
+    const db = new Database(":memory:");
+    const a: Migration = { id: 1, name: "add the widgets table", sql: "CREATE TABLE widgets (id INTEGER);" };
+    const b: Migration = { id: 1, name: "add the gadgets table", sql: "CREATE TABLE gadgets (id INTEGER);" };
+    expect(() => migrate(db, [a, b])).toThrow(MigrationConflict);
+    expect(migrate(db, [a])).toEqual([1]);
+    // Another branch shipped its own migration 1: this build must not skip it silently.
+    expect(() => migrate(db, [b])).toThrow(/applied migration 1 as "add the widgets table"/);
+    expect(migrate(db, [a])).toEqual([]);
   });
 
   it("rolls a failing migration back and does not record it", () => {
