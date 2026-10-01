@@ -59,6 +59,7 @@ import { Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import type { LinkOptions } from "./tasks/links.ts";
+import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
@@ -130,6 +131,7 @@ export interface Services {
   mrs: MrService;
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
+  pendingShips: PendingShips;
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
@@ -400,6 +402,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await promotion.release(task);
     },
     onRemoving: (task) => promotion.release(task),
+    // Bound below: the merge requests service is built after the task service.
+    onReview: (id) => pendingShips.reviewReached(id),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -422,6 +426,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const coordinator = new RoomCoordinator({
     store,
     room,
@@ -466,6 +471,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tasks,
     mrs,
     cardActions: new CardActions({ tasks, mrs, room }),
+    pendingShips,
     cleanup: new CleanupService({ store, room, events, projects }),
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,

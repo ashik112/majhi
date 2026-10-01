@@ -12,6 +12,7 @@ import {
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
+  type PendingShip,
   type PlanMember,
   type ProcessInfo,
   parseMentions,
@@ -19,6 +20,7 @@ import {
   type RoomItem,
   type RoomSearchHit,
   type ShipOption,
+  shipWords,
   type Task,
   type TaskId,
   type TaskKind,
@@ -112,6 +114,8 @@ export interface TaskDeps {
   onDone?: (task: Task) => void | Promise<void>;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
+  /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
+  onReview?: (id: string) => Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -613,6 +617,7 @@ export class TaskService {
     await this.deps.processes?.stopTask(id);
     await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
+    this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
@@ -978,6 +983,7 @@ export class TaskService {
     await this.deps.processes?.stopTask(id);
     await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
+    this.deps.store.tasks.setPendingShip(id, undefined);
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     this.cards.settle(id, "review", "Marked done", opts.by ?? "owner");
     this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
@@ -1723,6 +1729,19 @@ export class TaskService {
     return related;
   }
 
+  /**
+   * Forgets the ship waiting for the lead, saying why in the room, and returns it. Undefined when
+   * none was waiting.
+   */
+  dropPendingShip(id: string, why: string): PendingShip | undefined {
+    const pending = this.deps.store.tasks.takePendingShip(id);
+    if (pending === undefined) return undefined;
+    this.note(id as TaskId, `majhi will not ${shipWords(pending)}: ${why}.`);
+    this.deps.room.publishTask(this.get(id));
+    this.deps.events.emit(["tasks"]);
+    return pending;
+  }
+
   private note(task: TaskId, text: string): void {
     this.deps.room.post(task, `info:${randomUUID()}`, { type: "system", level: "info", text });
   }
@@ -1758,6 +1777,9 @@ export class TaskService {
     this.deps.room.publishTask(reviewed);
     this.deps.events.emit(["tasks"]);
     await this.statusChanged(id);
+    await this.deps
+      .onReview?.(id)
+      .catch((err: unknown) => this.warn(id, `Could not ship: ${errorMessage(err)}`));
   }
 
   /**
@@ -1792,6 +1814,8 @@ export class TaskService {
   async pausedByRuns(id: string, reason: "offline" | "error"): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
+    // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
+    if (reason === "error") this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     const paused = this.get(id);
     this.cards.paused(paused, reason);

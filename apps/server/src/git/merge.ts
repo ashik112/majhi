@@ -125,6 +125,33 @@ export async function mergeBranch(req: MergeRequest): Promise<MergeOutcome> {
   }
 }
 
+/**
+ * The files that would conflict if `branch` merged into `into` now, from `git merge-tree`, which
+ * touches no checkout and no ref. Empty when it merges cleanly.
+ */
+export async function mergeConflicts(source: string, branch: string, into: string): Promise<string[]> {
+  try {
+    await git(source, [
+      "merge-tree",
+      "--write-tree",
+      "--name-only",
+      "--no-messages",
+      `refs/heads/${into}`,
+      `refs/heads/${branch}`,
+    ]);
+    return [];
+  } catch (err) {
+    // Exit 1 is "conflicts": the tree id, then one conflicted file per line. Anything else failed.
+    if (!(err instanceof GitError) || err.exitCode !== 1) throw err;
+    const files = err.stdout
+      .split("\n")
+      .slice(1)
+      .map((f) => f.trim())
+      .filter((f) => f !== "");
+    return [...new Set(files)];
+  }
+}
+
 /** Files git left unmerged in a checkout, after a merge, squash or rebase stopped. */
 async function unmerged(checkout: string): Promise<string[]> {
   return (await git(checkout, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
@@ -197,7 +224,7 @@ async function squashIn(checkout: string, req: MergeRequest, head: string): Prom
 
 function failed(err: unknown, conflicts: string[]): MergeOutcome {
   if (conflicts.length > 0) {
-    return { ok: false, reason: `Conflicts in ${listed(conflicts)}. Nothing was merged.`, conflicts };
+    return { ok: false, reason: `Nothing was merged. Conflicts in ${listed(conflicts)}.`, conflicts };
   }
   return { ok: false, reason: err instanceof GitError ? err.message : String(err) };
 }
@@ -254,7 +281,7 @@ async function rebaseAndForward(req: MergeRequest): Promise<MergeOutcome> {
         if (conflicts.length > 0) {
           return {
             ok: false,
-            reason: `Rebasing ${branch} onto ${into} hit conflicts in ${listed(conflicts)}. Nothing was merged.`,
+            reason: `Nothing was merged. Rebasing ${branch} onto ${into} hit conflicts in ${listed(conflicts)}.`,
             conflicts,
           };
         }

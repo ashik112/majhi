@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { git } from "./git.ts";
-import { mergeBranch } from "./merge.ts";
+import { mergeBranch, mergeConflicts } from "./merge.ts";
 
 const who = { name: "Owner", email: "owner@example.com" };
 let root: string;
@@ -111,7 +111,7 @@ describe("mergeBranch with squash", () => {
     const branchBefore = await tip(repo, "task/x");
     const out = await mergeBranch({ ...request("main"), method: "squash" });
     expect(out).toMatchObject({ ok: false, conflicts: ["b.txt"] });
-    expect(out.ok ? "" : out.reason).toBe("Conflicts in b.txt. Nothing was merged.");
+    expect(out.ok ? "" : out.reason).toBe("Nothing was merged. Conflicts in b.txt.");
     expect(await tip(repo, "main")).toBe(mainBefore);
     expect(await tip(repo, "task/x")).toBe(branchBefore);
     expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
@@ -161,7 +161,7 @@ describe("mergeBranch with rebase", () => {
     const out = await mergeBranch({ ...request("main"), method: "rebase" });
     expect(out).toMatchObject({ ok: false, conflicts: ["b.txt"] });
     expect(out.ok ? "" : out.reason).toBe(
-      "Rebasing task/x onto main hit conflicts in b.txt. Nothing was merged.",
+      "Nothing was merged. Rebasing task/x onto main hit conflicts in b.txt.",
     );
     expect(await tip(repo, "main")).toBe(mainBefore);
     expect(await tip(repo, "task/x")).toBe(branchBefore);
@@ -178,5 +178,20 @@ describe("mergeBranch with rebase", () => {
     expect(await mergeBranch({ ...request("main"), method: "rebase" })).toMatchObject({ ok: false });
     expect(await tip(repo, "task/x")).toBe(branchBefore);
     expect(await readFile(join(repo, "a.txt"), "utf8")).toBe("owner edit");
+  });
+});
+
+describe("mergeConflicts", () => {
+  it("lists the files that would conflict, and none once the task branch has the target in it", async () => {
+    await commit(repo, "b.txt", "main side");
+    const mainBefore = await tip(repo, "main");
+    expect(await mergeConflicts(repo, "task/x", "main")).toEqual(["b.txt"]);
+    // It touched nothing.
+    expect(await tip(repo, "main")).toBe(mainBefore);
+    expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
+
+    await git(task(), ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "main"]).catch(() => "");
+    await commit(task(), "b.txt", "both sides");
+    expect(await mergeConflicts(repo, "task/x", "main")).toEqual([]);
   });
 });

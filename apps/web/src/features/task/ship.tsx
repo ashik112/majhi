@@ -1,4 +1,4 @@
-import type { MergeMethod, ShipFix, ShipOption, Task } from "@majhi/shared";
+import { type MergeMethod, type ShipFix, type ShipOption, shipWords, type Task } from "@majhi/shared";
 import { ArrowRight, ChevronDown, GitBranch, GitMerge, LoaderCircle, Wrench } from "lucide-react";
 import {
   type CSSProperties,
@@ -534,9 +534,16 @@ function ShipPanel({
             ))}
           </ul>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {conflicted.length > 0 && lead !== undefined && (
-              <ResolveButton task={task} lead={lead} conflicted={conflicted} />
-            )}
+            {conflicted.length > 0 &&
+              lead !== undefined &&
+              (chosen === "merge" || chosen === "mergePush") && (
+                <ResolveButton
+                  task={task}
+                  lead={lead}
+                  ship={{ action: chosen, into, method }}
+                  deleteAfter={deleteAfter}
+                />
+              )}
             <Button size="sm" onClick={onClose}>
               Close
             </Button>
@@ -548,40 +555,32 @@ function ShipPanel({
   );
 }
 
-/** What the lead is asked to do about the conflicts, in plain words. */
-function resolveText(task: Task, lead: string, conflicted: readonly ShipResult[]): string {
-  const lines = conflicted.map((r) => {
-    const repo = task.repos.find((x) => x.project === r.project);
-    const where = task.repos.length > 1 ? ` in ${r.project}` : "";
-    return `${repo?.branch ?? "The task branch"}${where} conflicts with ${r.into} in ${(r.conflicts ?? []).join(", ")}.`;
-  });
-  const into = [...new Set(conflicted.map((r) => r.into))].join(", ");
-  return `@${lead} Shipping hit conflicts. ${lines.join(" ")} Nothing was merged. Merge ${into} into your branch, resolve the conflicts, and commit.`;
-}
-
-/** Sends the conflicts to the lead in the room. A done task is opened again first, so the agent can work. */
+/**
+ * One click: majhi asks the lead to resolve the conflicts, run the checks and commit, then runs this
+ * same ship by itself when the lead is done. A done task is opened again first.
+ */
 function ResolveButton({
   task,
   lead,
-  conflicted,
+  ship,
+  deleteAfter,
 }: {
   task: Task;
   lead: string;
-  conflicted: readonly ShipResult[];
+  ship: { action: "merge" | "mergePush"; into: string; method: MergeMethod };
+  deleteAfter: boolean;
 }) {
   const after = useAfterTaskChange();
   const [state, setState] = useState<{ kind: "idle" | "sending" | "sent" } | { kind: "error"; text: string }>(
-    {
-      kind: "idle",
-    },
+    { kind: "idle" },
   );
+  const words = shipWords(ship);
 
   async function send() {
     setState({ kind: "sending" });
     try {
-      if (task.status === "done") await cmd("tasks.reopen", { id: task.id });
-      await cmd("room.send", { task: task.id, text: resolveText(task, lead, conflicted), mode: "queue" });
-      await after();
+      const out = await cmd("tasks.resolveShip", { id: task.id, ...ship, deleteAfter });
+      await after(out.task);
       setState({ kind: "sent" });
     } catch (err) {
       setState({ kind: "error", text: describeError(err) });
@@ -590,8 +589,8 @@ function ResolveButton({
 
   if (state.kind === "sent") {
     return (
-      <span className="mr-auto text-sm text-fg-muted">
-        Sent to <span className="font-mono">@{lead}</span>.
+      <span className="mr-auto text-sm text-fg-muted text-pretty">
+        Sent to <span className="font-mono">@{lead}</span>. majhi will {words} when it is done.
       </span>
     );
   }
@@ -606,12 +605,59 @@ function ResolveButton({
         size="sm"
         variant="primary"
         disabled={state.kind === "sending"}
-        title={task.status === "done" ? "Opens the task again and asks the agent" : undefined}
+        title={`Asks @${lead} to resolve the conflicts and commit, then majhi will ${words}`}
         onClick={() => void send()}
       >
         {state.kind === "sending" && <LoaderCircle aria-hidden="true" className="animate-spin" />}
-        Resolve with <span className="font-mono">@{lead}</span>
+        Resolve and {words}
       </Button>
     </>
+  );
+}
+
+/** The ship majhi runs once the lead has resolved the conflicts, with Cancel. Nothing when none waits. */
+export function PendingShipLine({ task }: { task: Task }) {
+  const after = useAfterTaskChange();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const pending = task.pendingShip;
+  if (pending === undefined) return null;
+
+  async function cancel() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const out = await cmd("tasks.cancelShip", { id: task.id });
+      await after(out.task);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const words = shipWords(pending);
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="flex items-start gap-1.5 text-xs text-fg-muted text-pretty">
+        <GitMerge aria-hidden="true" className="mt-px size-3.5 shrink-0 text-fg-faint" />
+        <span className="min-w-0">
+          Will {words} when <span className="font-mono">@{pending.lead}</span> resolves the conflicts.{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void cancel()}
+            className="cursor-pointer text-blue underline-offset-2 hover:underline disabled:cursor-default disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </span>
+      </p>
+      {error && (
+        <p role="alert" className="text-xs text-red text-pretty">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

@@ -20,13 +20,17 @@ export function actorName(actor: Actor | undefined): string {
 export class OwnerCards {
   constructor(private readonly deps: { store: Store; room: RoomService; now: () => Date }) {}
 
-  /** "Ready for review", with the lead that "Ask for changes" addresses. */
-  review(task: Task): RoomItem {
+  /**
+   * "Ready for review", with the lead that "Ask for changes" addresses, and `why` when majhi meant
+   * to ship the task itself and could not.
+   */
+  review(task: Task, why?: string): RoomItem {
     this.replace(task.id, "review");
     const id = `review:${randomUUID()}`;
     this.deps.room.post(task.id, id, {
       type: "review",
       ...(task.team[0] === undefined ? {} : { lead: task.team[0] }),
+      ...(why === undefined ? {} : { why }),
       state: "pending",
     });
     return this.must(task.id, id);
@@ -90,6 +94,12 @@ export class OwnerCards {
 function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPayload {
   const end = outcome === undefined ? {} : { outcome };
   return card.type === "review"
-    ? { type: "review", ...(card.lead === undefined ? {} : { lead: card.lead }), state, ...end }
+    ? {
+        type: "review",
+        ...(card.lead === undefined ? {} : { lead: card.lead }),
+        ...(card.why === undefined ? {} : { why: card.why }),
+        state,
+        ...end,
+      }
     : { type: "paused", reason: card.reason, state, ...end };
 }

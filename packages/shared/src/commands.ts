@@ -103,6 +103,7 @@ import {
 } from "./settings.ts";
 import {
   CardActionSchema,
+  MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
@@ -167,10 +168,6 @@ const MergeResultSchema = z.object({
   /** The files that conflicted, when a merge stopped on conflicts. Nothing was merged. */
   conflicts: z.array(z.string()).optional(),
 });
-
-/** How a merge lands the task branch: a merge commit, one squashed commit, or a rebase and fast-forward. */
-export const MergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
-export type MergeMethod = z.infer<typeof MergeMethodSchema>;
 
 /** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
 export const ShipFixSchema = z.discriminatedUnion("page", [
@@ -786,6 +783,25 @@ export const commands = {
       "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
     input: z.object({ id: TaskIdSchema, deleteAfter: z.boolean().default(false) }),
     output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
+  },
+  "tasks.resolveShip": {
+    risk: "outbound",
+    summary:
+      "A merge (or merge and push) stopped on conflicts: ask the task's lead to bring the target into the task branch, resolve the conflicts, run the checks and commit, then run that same ship by itself when the lead's turn ends and the branch merges cleanly. It runs once; if it still cannot, the task goes back to review with the reason. A done task is opened again first",
+    input: z.object({
+      id: TaskIdSchema,
+      action: z.enum(["merge", "mergePush"]),
+      into: LocalBranchSchema,
+      method: MergeMethodSchema.default("merge"),
+      deleteAfter: z.boolean().default(false),
+    }),
+    output: z.object({ task: TaskSchema }),
+  },
+  "tasks.cancelShip": {
+    risk: "change",
+    summary: "Forget the ship majhi was to run once the lead resolves the conflicts. The lead keeps working",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ task: TaskSchema }),
   },
   // Merge requests (5.5) ------------------------------------------------------
   "tasks.diff": {

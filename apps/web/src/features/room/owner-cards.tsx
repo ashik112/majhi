@@ -115,6 +115,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
           <span className="text-fg-muted">The agents are done and wait for you.</span>
         </span>
       </p>
+      {item.why !== undefined && <p className="pl-6 text-sm text-amber text-pretty">{item.why}</p>}
       <div className="flex flex-wrap items-center gap-2 pl-6">
         {task.repos.length > 0 && <Ship task={task} run={run} lead={lead} align="left" variant="primary" />}
         <Button

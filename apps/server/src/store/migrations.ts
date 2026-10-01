@@ -290,6 +290,15 @@ INSERT INTO room_search (rowid, text)
 SELECT rowid, ${searchText("room_items")} FROM room_items WHERE type IN (${SEARCHABLE});
 `,
   },
+  {
+    // A ship that stopped on conflicts and waits for the lead to resolve them (JSON, a
+    // PendingShip). Existing rows get NULL: nothing pending.
+    id: 100,
+    name: "ship waiting for the lead to resolve conflicts",
+    sql: `
+ALTER TABLE tasks ADD COLUMN pending_ship TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

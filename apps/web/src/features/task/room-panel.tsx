@@ -14,6 +14,7 @@ import { AgentRow } from "./agent-row";
 import { ChangeAgent } from "./change-agent";
 import { agentState, agentsBusy } from "./model";
 import { ProcessesCard } from "./processes-card";
+import { PendingShipLine } from "./ship";
 import { AddAgent, MemberMenu, ModePicker } from "./team-controls";
 
 /** The right column of the task view: who is in the room, the branch, the changes. */
@@ -143,6 +144,7 @@ function BranchCard({ task }: { task: Task }) {
           )}
         </div>
       ))}
+      <PendingShipLine task={task} />
       {task.repos.length === 0 && task.kind === "chat" && (
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-fg-faint">Task folder</span>

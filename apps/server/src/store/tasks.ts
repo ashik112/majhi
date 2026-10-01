@@ -3,6 +3,8 @@ import {
   type CoordinationMode,
   CoordinationModeSchema,
   type PausedReason,
+  type PendingShip,
+  PendingShipSchema,
   type RepoMr,
   type Task,
   type TaskId,
@@ -23,6 +25,17 @@ import { attachments, taskCounters, taskLinks, taskRepos, tasks } from "./schema
 
 const TeamSchema = z.array(z.string());
 const OverridesSchema = z.record(z.string(), TeamOverrideSchema);
+
+/** A stored pending ship, or undefined when there is none or it no longer parses. */
+function parsePendingShip(json: string | null): PendingShip | undefined {
+  if (json === null) return undefined;
+  try {
+    const parsed = PendingShipSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function parseOverrides(json: string): Record<string, TeamOverride> {
   try {
@@ -63,6 +76,7 @@ export class TaskRepo {
           team: JSON.stringify(task.team),
           mode: task.mode,
           overrides: JSON.stringify(task.overrides),
+          pendingShip: task.pendingShip === undefined ? null : JSON.stringify(task.pendingShip),
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
         })
@@ -119,6 +133,7 @@ export class TaskRepo {
       .where(eq(attachments.task, id))
       .orderBy(asc(attachments.pos))
       .all();
+    const pending = parsePendingShip(row.pendingShip);
     return TaskSchema.parse({
       id: row.id,
       title: row.title,
@@ -153,6 +168,7 @@ export class TaskRepo {
         ...(l.when === null ? {} : { when: l.when }),
       })),
       attachments: files.map(attachmentFromRow),
+      ...(pending === undefined ? {} : { pendingShip: pending }),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -396,6 +412,31 @@ export class TaskRepo {
       .set({ roomState: JSON.stringify(state) })
       .where(eq(tasks.id, id))
       .run();
+  }
+
+  /** The ship waiting for the lead, if any. */
+  pendingShip(id: string): PendingShip | undefined {
+    const row = this.db.select({ v: tasks.pendingShip }).from(tasks).where(eq(tasks.id, id)).get();
+    return parsePendingShip(row?.v ?? null);
+  }
+
+  /** Sets or clears (undefined) the ship waiting for the lead. */
+  setPendingShip(id: string, pending: PendingShip | undefined): void {
+    this.db
+      .update(tasks)
+      .set({ pendingShip: pending === undefined ? null : JSON.stringify(PendingShipSchema.parse(pending)) })
+      .where(eq(tasks.id, id))
+      .run();
+  }
+
+  /**
+   * Clears the ship waiting for the lead and returns it, or undefined when none was set. A ship
+   * taken this way is gone before it runs, so one click runs it at most once.
+   */
+  takePendingShip(id: string): PendingShip | undefined {
+    const pending = this.pendingShip(id);
+    if (pending !== undefined) this.setPendingShip(id, undefined);
+    return pending;
   }
 
   /** Records the dependency branch a repo is stacked on, and the commit it sits on now. */

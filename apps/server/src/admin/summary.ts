@@ -40,6 +40,9 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
     }`,
   "tasks.push": (i) =>
     `Push the branch of ${str(i.id)}${i.deleteAfter === true ? ", then delete the local branch and worktree" : ""}`,
+  "tasks.resolveShip": (i) =>
+    `Ask the lead of ${str(i.id)} to resolve the conflicts with ${str(i.into)}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
+  "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
   "tasks.openMrs": (i) => `Open merge requests for ${str(i.id)}`,
   "tasks.mergeMrs": (i) => `Merge the merge requests of ${str(i.id)}`,
   "tasks.markMerged": (i) => `Record the merge requests of ${str(i.id)} as merged`,
