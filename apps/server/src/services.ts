@@ -87,6 +87,8 @@ export interface ServiceOptions {
   hostLink?: HostLink;
   /** Replaces the network probe, so tests can go offline. Default: from `MAJHI_NET_PROBE`. */
   probe?: Probe;
+  /** The clock of agent runs and the network watch, so tests can let time pass. */
+  runClock?: () => Date;
   /** Replaces `docker network inspect` for the runner network. */
   runnerInspect?: Inspect;
   /** Replaces the `gh` and `glab` programs, the Bitbucket API and the process runner, so tests never reach a real host. */
@@ -339,6 +341,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onTurnEnd: (turn) => coordinator.turnEnded(turn),
     onCheckpoint: (task) => void tasks.restackOnto(task).catch(() => undefined),
     onNetworkError: () => void resilience.networkError().catch(() => undefined),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   runs.recover();
   const uploads = new UploadStore(env.majhiHome);
@@ -481,6 +484,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     probe: options.probe ?? probeFromSetting(env.netProbe),
     ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
+    runners: runner.runner,
+    ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
   options.hostLink?.onWake(() => void resilience.wake().catch(() => undefined));
   void resilience

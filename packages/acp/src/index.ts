@@ -102,6 +102,7 @@ export {
   MAJHI_HOOKS_DIR,
   MountRefused,
   type RunnerConfig,
+  type RunnerSpawner,
   removeStaleRunners,
   runMounts,
   type TtyLaunch,

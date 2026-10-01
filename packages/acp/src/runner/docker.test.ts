@@ -10,7 +10,9 @@ import {
   MAJHI_HOOKS_DIR,
   MountRefused,
   type RunnerConfig,
+  removeStaleRunners,
   runMounts,
+  SPAWNER_LABEL,
 } from "./docker.ts";
 
 let root: string;
@@ -230,6 +232,103 @@ if (process.argv[2] === "run") process.stdin.pipe(process.stdout);
       ready: () => Promise.reject(new Error("no subnet")),
     });
     await expect(spawner(request())).rejects.toThrow("no subnet");
+  });
+});
+
+/** A docker CLI that keeps containers and their labels in a file: run, ps -a with label filters, rm -f. */
+async function statefulDocker(): Promise<{
+  cli: string;
+  containers: () => Promise<Record<string, Record<string, string>>>;
+  add: (name: string, labels: Record<string, string>) => Promise<void>;
+}> {
+  const state = join(root, "containers.json");
+  const cli = join(root, "docker");
+  await writeFile(state, "{}");
+  await writeFile(
+    cli,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const file = ${JSON.stringify(state)};
+const args = process.argv.slice(2);
+const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
+const write = (s) => fs.writeFileSync(file, JSON.stringify(s));
+const values = (flag) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
+if (args[0] === "run") {
+  const s = read();
+  s[values("--name")[0]] = Object.fromEntries(values("--label").map((l) => l.split("=")));
+  write(s);
+  process.stdin.pipe(process.stdout);
+} else if (args[0] === "ps") {
+  const want = values("--filter").map((f) => f.slice("label=".length).split("="));
+  for (const [name, labels] of Object.entries(read()))
+    if (want.every(([k, v]) => labels[k] === v)) console.log(name);
+} else if (args[0] === "rm") {
+  const s = read();
+  for (const name of args.slice(2)) delete s[name];
+  write(s);
+}
+`,
+  );
+  await chmod(cli, 0o755);
+  const containers = async () =>
+    JSON.parse(await readFile(state, "utf8")) as Record<string, Record<string, string>>;
+  return {
+    cli,
+    containers,
+    async add(name, labels) {
+      await writeFile(state, JSON.stringify({ ...(await containers()), [name]: labels }));
+    },
+  };
+}
+
+async function waitFor(check: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 300; i++) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error("timed out");
+}
+
+describe("runner containers converge to one per live run", () => {
+  it("removes the container when its docker CLI dies without a kill", async () => {
+    const docker = await statefulDocker();
+    const spawner = dockerSpawner({ ...cfg, docker: docker.cli });
+    const run = await spawner(request());
+    await waitFor(async () => Object.keys(await docker.containers()).length === 1);
+    expect(spawner.live()).toHaveLength(1);
+    run.child.kill("SIGKILL");
+    await waitFor(async () => Object.keys(await docker.containers()).length === 0);
+    expect(spawner.live()).toEqual([]);
+  });
+
+  it("prunes its own containers that no live run holds, and never another majhi's or a terminal", async () => {
+    const docker = await statefulDocker();
+    const spawner = dockerSpawner({ ...cfg, docker: docker.cli });
+    const run = await spawner(request());
+    await waitFor(async () => Object.keys(await docker.containers()).length === 1);
+    const [liveName] = spawner.live();
+    if (liveName === undefined) throw new Error("no live run");
+    const mine = (await docker.containers())[liveName]?.[SPAWNER_LABEL];
+    expect(mine).toMatch(/^[0-9a-f]{12}$/);
+    await docker.add("majhi-run-leaked", { "majhi.runner": "1", [SPAWNER_LABEL]: mine ?? "" });
+    await docker.add("majhi-run-other", { "majhi.runner": "1", [SPAWNER_LABEL]: "0123456789ab" });
+    await docker.add("majhi-term-shell", { "majhi.runner": "1" });
+
+    expect(await spawner.prune()).toEqual(["majhi-run-leaked"]);
+    expect(Object.keys(await docker.containers()).sort()).toEqual(
+      [liveName, "majhi-run-other", "majhi-term-shell"].sort(),
+    );
+    run.kill();
+    await waitFor(async () => !(liveName in (await docker.containers())));
+  });
+
+  it("removes every runner container at server start, and nothing else", async () => {
+    const docker = await statefulDocker();
+    await docker.add("majhi-run-a", { "majhi.runner": "1", "majhi.task": "ACM-1" });
+    await docker.add("majhi-run-b", { "majhi.runner": "1", [SPAWNER_LABEL]: "0123456789ab" });
+    await docker.add("acme-db", { "majhi.service": "1" });
+    await removeStaleRunners({ docker: docker.cli, cliEnv: cfg.cliEnv });
+    expect(Object.keys(await docker.containers())).toEqual(["acme-db"]);
   });
 });
 

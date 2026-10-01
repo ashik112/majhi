@@ -30,6 +30,7 @@ export interface WorldOptions {
   links?: LinkOptions;
   hostLink?: HostLink;
   probe?: Probe;
+  runClock?: () => Date;
   mrHosts?: MrHostOptions;
   containerDocker?: ContainerDocker;
 }
@@ -46,6 +47,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.hostLink === undefined ? {} : { hostLink: options.hostLink }),
     ...(options.probe === undefined ? {} : { probe: options.probe }),
+    ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
     ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
   });
