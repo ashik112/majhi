@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type GitAttribution, MAJHI_HOOKS_DIR } from "@majhi/acp";
@@ -55,7 +56,8 @@ export async function ensureHooks(majhiHome: string): Promise<string> {
     const path = join(dir, name);
     const current = await readFile(path, "utf8").catch(() => undefined);
     if (current === SCRIPT) continue;
-    const temp = `${path}.${process.pid}.tmp`;
+    // Unique per write: two runs starting at once must not rename the same temporary file.
+    const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temp, SCRIPT, { mode: 0o755 });
     await chmod(temp, 0o755);
     await rename(temp, path);
