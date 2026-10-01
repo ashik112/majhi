@@ -307,7 +307,8 @@ export class TaskService {
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
     const investigation = input.readOnly === true || input.kind === "ops";
     const kind = input.kind ?? (investigation && parsed.kind === "code" ? "ops" : parsed.kind);
-    if (kind === "code" && parsed.repos.length === 0 && picks.refused.length > 0) {
+    // Every repo listed was protected and left out: nothing is left to make the task about.
+    if (parsed.repos.length === 0 && picks.refused.length > 0) {
       throw new UserError(
         `${picks.refused.join(", ")} ${picks.refused.length === 1 ? "is" : "are"} protected: only the owner can add ${picks.refused.length === 1 ? "it" : "them"} to a task.`,
         409,
