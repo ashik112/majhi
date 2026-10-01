@@ -28,7 +28,13 @@ export interface ShipResult {
   ok: boolean;
   detail: string;
   conflicts?: string[] | undefined;
+  /** No change in this repo since the task started: nothing was done in it. */
+  skipped?: boolean | undefined;
+  /** Merged locally, but the push failed. */
+  notPushed?: boolean | undefined;
 }
+/** Where the changed repos ship: one branch for all, or one per repo. */
+export type ShipTarget = { into: string } | { targets: Record<string, string> };
 export interface ShipChoices {
   /** For merge and mergePush. */
   method: MergeMethod;
@@ -38,7 +44,7 @@ export interface ShipChoices {
 /** Runs one Ship action: straight through its command, or through a review card's button. */
 export type RunShip = (
   action: ShipAction,
-  into: string,
+  target: ShipTarget,
   choices: ShipChoices,
 ) => Promise<{ results?: ShipResult[] | undefined }>;
 
@@ -101,11 +107,11 @@ function placeNear(button: HTMLElement, align: "left" | "right"): CSSProperties 
  */
 export function useDirectShip(task: Task): RunShip {
   const after = useAfterTaskChange();
-  return async (action, into, { method, deleteAfter }) => {
+  return async (action, target, { method, deleteAfter }) => {
     if (action === "merge" || action === "mergePush") {
       const out = await cmd("tasks.merge", {
         id: task.id,
-        into,
+        ...target,
         done: task.status === "review",
         push: action === "mergePush",
         method,
@@ -119,12 +125,12 @@ export function useDirectShip(task: Task): RunShip {
       await after(out.task);
       return out;
     }
-    const out = await cmd("tasks.openMrs", { id: task.id, into });
+    const out = await cmd("tasks.openMrs", { id: task.id, ...target });
     await after(out.task);
     return {
       results: out.repos.map((r) => ({
         project: r.project,
-        into,
+        into: "targets" in target ? (target.targets[r.project] ?? "") : target.into,
         ok: r.outcome !== "failed",
         detail: r.detail,
       })),
@@ -223,9 +229,9 @@ export function Ship({
   );
 }
 
-/** The task branch, or each repo's when they differ, in mono. */
-function SourceBranches({ task }: { task: Task }) {
-  const names = [...new Set(task.repos.map((r) => r.branch))];
+/** The task branch of the repos that ship, or each repo's when they differ, in mono. */
+function SourceBranches({ repos }: { repos: readonly { project: string; branch: string }[] }) {
+  const names = [...new Set(repos.map((r) => r.branch))];
   if (names.length <= 1) {
     const name = names[0] ?? "";
     return (
@@ -240,7 +246,7 @@ function SourceBranches({ task }: { task: Task }) {
   }
   return (
     <ul className="m-0 flex min-w-0 flex-[3] list-none flex-col gap-1 p-0">
-      {task.repos.map((r) => (
+      {repos.map((r) => (
         <li
           key={r.project}
           title={`${r.project}: ${r.branch}`}
@@ -298,7 +304,17 @@ function ShipPanel({
   const options = useShipOptions(task, true);
   const branches = useTaskBranches(task.id, true);
   const base = options.data?.base ?? task.repos[0]?.base ?? "main";
+  // Ship sends only the repos the task changed; the rest are skipped and listed.
+  const changed =
+    options.data?.changed ?? task.repos.map((r) => ({ project: r.project, base: r.base, branch: r.branch }));
+  const unchanged = options.data?.unchanged ?? [];
+  // Repos on different bases each get their own target, their base by default.
+  const perRepo = new Set(changed.map((r) => r.base)).size > 1;
   const [into, setInto] = useState(base);
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const targets = Object.fromEntries(changed.map((r) => [r.project, picked[r.project] ?? r.base]));
+  const target: ShipTarget = perRepo ? { targets } : { into };
+  const intoText = perRepo ? [...new Set(Object.values(targets))].join(", ") : into;
   const [chosen, setChosen] = useState<ShipAction>();
   const [method, setMethod] = useState<MergeMethod>(savedMethod);
   const [deleteAfter, setDeleteAfter] = useState(false);
@@ -314,33 +330,33 @@ function ShipPanel({
   );
   const request = options.data?.host === "github" ? "pull request" : "merge request";
   const closes = task.status === "review";
-  const branch = [...new Set(task.repos.map((r) => r.branch))].join(", ");
+  const branch = [...new Set(changed.map((r) => r.branch))].join(", ");
   const created = task.repos.some((r) => r.createdBranch);
 
   const verb = method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge";
   const how =
     method === "squash"
-      ? `One new commit on ${into}. The task branch stays as it is.`
+      ? `One new commit on ${intoText}. The task branch stays as it is.`
       : method === "rebase"
-        ? `Replays the task's commits on top of ${into}, then fast-forwards ${into}. It never rewrites ${into}.`
+        ? `Replays the task's commits on top of ${intoText}, then fast-forwards ${intoText}. It never rewrites ${intoText}.`
         : "Fast-forward when it can, else a merge commit.";
   const landing =
     method === "rebase"
-      ? `Rebase ${branch} onto ${into}, then fast-forward ${into}`
-      : `${verb} ${branch} into ${into}`;
+      ? `Rebase ${branch} onto ${intoText}, then fast-forward ${intoText}`
+      : `${verb} ${branch} into ${intoText}`;
 
   const labels: Record<ShipAction, { title: string; hint: string; confirm: string; summary: string }> = {
     merge: {
-      title: `Merge into ${into}`,
+      title: `Merge into ${intoText}`,
       hint: "In your checkout. Nothing is pushed.",
       confirm: verb,
       summary: `${landing} in your checkout${closes ? ", and mark the task done" : ""}. Nothing is pushed.`,
     },
     mergePush: {
-      title: `Merge into ${into} and push ${into}`,
-      hint: `Then pushes ${into} to the remote. Never forced.`,
+      title: `Merge into ${intoText} and push ${intoText}`,
+      hint: `Then pushes ${intoText} to the remote. Never forced.`,
       confirm: `${verb} and push`,
-      summary: `${landing}, then push ${into}${closes ? ", and mark the task done" : ""}. Refused if the remote's ${into} has commits yours lacks.`,
+      summary: `${landing}, then push ${intoText}${closes ? ", and mark the task done" : ""}. Refused if the remote's ${intoText} has commits yours lacks.`,
     },
     push: {
       title: "Push the task branch",
@@ -349,18 +365,33 @@ function ShipPanel({
       summary: `Push ${branch} to the remote. No ${request} is opened.`,
     },
     mr: {
-      title: `Push and open a ${request} into ${into}`,
+      title: `Push and open a ${request} into ${intoText}`,
       hint: "One per repo. Nothing merges yet.",
       confirm: `Open ${request}`,
-      summary: `Push ${branch} and open a ${request} into ${into} for each repo.`,
+      summary: `Push ${branch} and open a ${request} into ${intoText} for each repo.`,
     },
   };
 
   function optionOf(action: ShipAction): ShipOption | undefined {
     const o = options.data?.[action];
     if (o === undefined) return undefined;
-    if (o.ok && MERGES.includes(action) && !local.includes(into)) {
-      return { ok: false, why: `${into} is not a local branch. Pick a local one to merge into.` };
+    if (o.ok && MERGES.includes(action)) {
+      const missing = perRepo
+        ? changed.find((r) => {
+            const own = branches.data?.find((b) => b.project === r.project);
+            const name = targets[r.project] ?? r.base;
+            return own !== undefined && name !== own.base && !own.branches.includes(name);
+          })
+        : undefined;
+      if (missing !== undefined) {
+        return {
+          ok: false,
+          why: `${targets[missing.project]} is not a local branch in ${missing.project}. Pick a local one to merge into.`,
+        };
+      }
+      if (!perRepo && !local.includes(into)) {
+        return { ok: false, why: `${into} is not a local branch. Pick a local one to merge into.` };
+      }
     }
     return o;
   }
@@ -371,7 +402,7 @@ function ShipPanel({
     setBehind(undefined);
     const deleting = deleteAfter && action !== "mr";
     try {
-      const out = await run(action, into, { method, deleteAfter: deleting });
+      const out = await run(action, target, { method, deleteAfter: deleting });
       const list = out.results ?? [];
       // A clean run closes; the room says what merged and, with "delete after", what was deleted.
       if (list.length > 0 && list.every((r) => r.ok) && action !== "push") onClose();
@@ -379,7 +410,7 @@ function ShipPanel({
     } catch (err) {
       const message = describeError(err);
       const remote = REMOTE_AHEAD.exec(message)?.[1];
-      if (remote !== undefined) setBehind({ remote, into });
+      if (remote !== undefined) setBehind({ remote, into: intoText });
       setError(message);
     } finally {
       setBusy(false);
@@ -391,7 +422,7 @@ function ShipPanel({
     setBusy(true);
     setError(undefined);
     try {
-      const out = await cmd("tasks.updateTarget", { id: task.id, into });
+      const out = await cmd("tasks.updateTarget", { id: task.id, ...target });
       const refused = out.results.filter((r) => !r.ok);
       if (refused.length > 0) {
         setBehind(undefined);
@@ -410,6 +441,7 @@ function ShipPanel({
   }
 
   const conflicted = (results ?? []).filter((r) => (r.conflicts ?? []).length > 0);
+  const notPushed = (results ?? []).filter((r) => r.notPushed === true);
 
   // In a portal: a room that scrolls, or content-visibility on a room item, would clip it.
   return createPortal(
@@ -421,38 +453,83 @@ function ShipPanel({
       style={place}
       className="z-50 flex flex-col gap-3 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
     >
-      <div className="flex items-start gap-2">
-        <SourceBranches task={task} />
-        <ArrowRight role="img" aria-label="into" className="mt-2 size-4 shrink-0 text-fg-faint" />
-        <Select
-          aria-label="Target branch"
-          value={into}
-          disabled={busy}
-          onChange={(e) => {
-            setInto(e.target.value);
-            setResults(undefined);
-          }}
-          title={into}
-          className="h-8 min-w-0 flex-[2] font-mono text-sm"
-        >
-          <optgroup label="Local">
-            {local.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </optgroup>
-          {remote.length > 0 && (
-            <optgroup label="Remote only">
-              {remote.map((b) => (
+      {perRepo ? (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
+          {changed.map((r) => {
+            const own = branches.data?.find((b) => b.project === r.project);
+            const names = [...new Set([r.base, ...(own?.branches ?? [])])];
+            const value = targets[r.project] ?? r.base;
+            return (
+              <li key={r.project} className="flex items-center gap-2">
+                <span
+                  title={`${r.project}: ${r.branch}`}
+                  className="flex h-8 min-w-0 flex-[3] items-center gap-1.5 rounded-md border border-line-strong bg-sunken px-2.5 text-sm"
+                >
+                  <span className="shrink-0 text-fg-faint">{r.project}</span>
+                  <span className="min-w-0 truncate font-mono text-fg">{r.branch}</span>
+                </span>
+                <ArrowRight role="img" aria-label="into" className="size-4 shrink-0 text-fg-faint" />
+                <Select
+                  aria-label={`Target branch for ${r.project}`}
+                  value={value}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPicked((p) => ({ ...p, [r.project]: next }));
+                    setResults(undefined);
+                  }}
+                  title={value}
+                  className="h-8 min-w-0 flex-[2] font-mono text-sm"
+                >
+                  {names.map((b) => (
+                    <option key={b} value={b}>
+                      {b === r.base ? `${b} (base)` : b}
+                    </option>
+                  ))}
+                </Select>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="flex items-start gap-2">
+          <SourceBranches repos={changed} />
+          <ArrowRight role="img" aria-label="into" className="mt-2 size-4 shrink-0 text-fg-faint" />
+          <Select
+            aria-label="Target branch"
+            value={into}
+            disabled={busy}
+            onChange={(e) => {
+              setInto(e.target.value);
+              setResults(undefined);
+            }}
+            title={into}
+            className="h-8 min-w-0 flex-[2] font-mono text-sm"
+          >
+            <optgroup label="Local">
+              {local.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
               ))}
             </optgroup>
-          )}
-        </Select>
-      </div>
+            {remote.length > 0 && (
+              <optgroup label="Remote only">
+                {remote.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </Select>
+        </div>
+      )}
+      {unchanged.length > 0 && (
+        <p className="text-xs text-fg-faint text-pretty">
+          No changes, skipped: <span className="font-mono">{unchanged.join(", ")}</span>.
+        </p>
+      )}
       {options.isError && (
         <p role="alert" className="text-sm text-red text-pretty">
           {describeError(options.error)}
@@ -579,20 +656,37 @@ function ShipPanel({
         <div className="flex flex-col gap-2.5 border-t border-line pt-3">
           <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
             {results.map((r) => (
-              <li key={r.project} className={cn(r.ok ? "text-green" : "text-red", "text-pretty")}>
-                {task.repos.length > 1 && <span className="font-mono">{r.project}: </span>}
+              <li
+                key={r.project}
+                className={cn(r.skipped ? "text-fg-faint" : r.ok ? "text-green" : "text-red", "text-pretty")}
+              >
+                {results.length > 1 && <span className="font-mono">{r.project}: </span>}
                 {r.detail}
               </li>
             ))}
           </ul>
+          {notPushed.length > 0 && (
+            <p className="text-sm text-fg-muted text-pretty">
+              Merged in your checkout, not pushed:{" "}
+              <span className="font-mono">{notPushed.map((r) => `${r.project} (${r.into})`).join(", ")}</span>
+              . Nothing was undone. Fix the cause, then push again.
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {notPushed.length > 0 && chosen === "mergePush" && (
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => void confirm("mergePush")}>
+                {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+                Push again
+              </Button>
+            )}
             {conflicted.length > 0 &&
               lead !== undefined &&
               (chosen === "merge" || chosen === "mergePush") && (
                 <ResolveButton
                   task={task}
                   lead={lead}
-                  ship={{ action: chosen, into, method }}
+                  ship={{ action: chosen, into: intoText, method }}
+                  target={target}
                   deleteAfter={deleteAfter}
                 />
               )}
@@ -615,11 +709,13 @@ function ResolveButton({
   task,
   lead,
   ship,
+  target,
   deleteAfter,
 }: {
   task: Task;
   lead: string;
   ship: { action: "merge" | "mergePush"; into: string; method: MergeMethod };
+  target: ShipTarget;
   deleteAfter: boolean;
 }) {
   const after = useAfterTaskChange();
@@ -631,7 +727,13 @@ function ResolveButton({
   async function send() {
     setState({ kind: "sending" });
     try {
-      const out = await cmd("tasks.resolveShip", { id: task.id, ...ship, deleteAfter });
+      const out = await cmd("tasks.resolveShip", {
+        id: task.id,
+        action: ship.action,
+        method: ship.method,
+        ...target,
+        deleteAfter,
+      });
       await after(out.task);
       setState({ kind: "sent" });
     } catch (err) {
