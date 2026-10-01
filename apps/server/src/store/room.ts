@@ -1,4 +1,4 @@
-import { type RoomItem, RoomItemSchema, type TaskId } from "@majhi/shared";
+import { type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
@@ -155,6 +155,35 @@ export class RoomRepo {
     return before;
   }
 
+  /**
+   * Room items whose text has every word of `query` (the last one as a prefix, so a search works
+   * while it is typed), best match first. `org` limits it to that org's tasks.
+   */
+  search(query: string, limit: number, org?: string): RoomSearchHit[] {
+    const match = matchQuery(query);
+    if (match === undefined) return [];
+    const rows = this.db.all<SearchRow>(sql`
+      SELECT r.task AS task, t.title AS title, t.org AS org, r.id AS item, r.type AS type, r.at AS at,
+        coalesce(json_extract(r.payload, '$.agent'), json_extract(r.payload, '$.from')) AS agent,
+        snippet(room_search, 0, ${MARK_START}, ${MARK_END}, '…', 14) AS snippet
+      FROM room_search
+      JOIN room_items r ON r.rowid = room_search.rowid
+      JOIN tasks t ON t.id = r.task
+      WHERE room_search MATCH ${match} ${org === undefined ? sql`` : sql`AND t.org = ${org}`}
+      ORDER BY room_search.rank, r.at DESC
+      LIMIT ${limit}`);
+    return rows.map((row) => ({
+      task: row.task,
+      taskTitle: row.title,
+      org: row.org,
+      item: row.item,
+      type: row.type,
+      ...(row.agent === null ? {} : { agent: row.agent }),
+      at: row.at,
+      snippet: snippetParts(row.snippet),
+    }));
+  }
+
   private nextAt(task: string): string {
     let last = this.lastAt.get(task);
     if (last === undefined) {
@@ -197,3 +226,40 @@ const readable = (row: typeof roomItems.$inferSelect): RoomItem[] => {
   const item = toItem(row);
   return item === undefined ? [] : [item];
 };
+
+interface SearchRow {
+  task: string;
+  title: string;
+  org: string | null;
+  item: string;
+  type: RoomSearchHit["type"];
+  at: string;
+  agent: string | null;
+  snippet: string;
+}
+
+/** Bracket the matched words in a snippet. They are control characters, which no message holds. */
+const MARK_START = "\u0002";
+const MARK_END = "\u0003";
+
+/** An FTS5 query from typed words: each word quoted, all required, the last one a prefix. Undefined when there are none. */
+export function matchQuery(text: string): string | undefined {
+  const words =
+    text
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.slice(0, 12) ?? [];
+  if (words.length === 0) return undefined;
+  return words.map((w, i) => (i === words.length - 1 ? `"${w}"*` : `"${w}"`)).join(" ");
+}
+
+/** A snippet with marked words as parts, matched words flagged. */
+export function snippetParts(snippet: string): RoomSearchHit["snippet"] {
+  const parts: RoomSearchHit["snippet"] = [];
+  snippet.split(MARK_START).forEach((chunk, i) => {
+    const [hit, rest] = i === 0 ? [undefined, chunk] : chunk.split(MARK_END);
+    if (hit !== undefined && hit !== "") parts.push({ text: hit, hit: true });
+    if (rest !== undefined && rest !== "") parts.push({ text: rest, hit: false });
+  });
+  return parts;
+}

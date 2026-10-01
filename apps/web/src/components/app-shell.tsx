@@ -10,6 +10,7 @@ import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
+import { Palette } from "@/features/search/palette";
 import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
@@ -53,7 +54,7 @@ export function AppShell() {
 /** The sidebar, the banner that appears when something needs the owner, and the page. */
 function Frame() {
   const newTask = useNewTask();
-  const { helpOpen, setHelpOpen } = useShortcuts(newTask.open);
+  const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
   useAdoptOrgParam();
   const { org } = useOrgFilter();
   const tasks = useTasks().data;
@@ -100,6 +101,7 @@ function Frame() {
       {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
       {peek !== undefined && drawerTask === undefined && <AgentDrawer id={peek} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+      {paletteOpen && <Palette onClose={() => setPaletteOpen(false)} />}
     </div>
   );
 }

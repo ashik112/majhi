@@ -21,6 +21,7 @@ export interface Shortcut {
 }
 
 export const SHORTCUTS: readonly Shortcut[] = [
+  { keys: "Cmd K", what: "Search tasks, messages and tool output (Ctrl K elsewhere)" },
   { keys: "n", what: "New task" },
   { keys: "g b", what: "Go to the board" },
   { keys: "g a", what: "Go to agents" },

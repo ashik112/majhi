@@ -63,7 +63,7 @@ describe("store", () => {
     expect(store.raw.pragma("foreign_keys", { simple: true })).toBe(1);
     const names = store.raw
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_search\\_%' ESCAPE '\\' ORDER BY name",
       )
       .all()
       .map((r) => (r as { name: string }).name);
@@ -73,6 +73,7 @@ describe("store", () => {
       "decisions",
       "migrations",
       "room_items",
+      "room_search",
       "runs",
       "task_allowances",
       "task_counters",
@@ -303,5 +304,69 @@ describe("merge request state on task repos", () => {
       store.close();
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("room search", () => {
+  function seeded(): Store {
+    const store = new Store(":memory:");
+    store.tasks.insert(task("ACME-2"));
+    store.tasks.insert(task("GLOBEX-1", { org: "globex" }));
+    return store;
+  }
+  const words = (hit: { snippet: { text: string; hit: boolean }[] }, flag: boolean) =>
+    hit.snippet.filter((p) => p.hit === flag).map((p) => p.text);
+
+  it("finds messages and tool output across tasks, marks the matched words, and scopes to an org", () => {
+    const store = seeded();
+    store.room.upsert("ACME-2", "m1", { type: "agent", agent: "builder", text: "The migration is ready" });
+    store.room.upsert("ACME-2", "t1", {
+      type: "tool",
+      agent: "builder",
+      toolCallId: "c1",
+      title: "Run tests",
+      kind: "execute",
+      status: "completed",
+      locations: [],
+      content: [{ type: "terminal", output: "2 failed: migrations.test.ts" }],
+    });
+    store.room.upsert("GLOBEX-1", "m2", { type: "system", level: "info", text: "Migration finished" });
+    store.room.upsert("GLOBEX-1", "th", { type: "thought", agent: "lead", text: "migration secret plan" });
+
+    const all = store.room.search("migrat", 10);
+    expect(all.map((h) => `${h.task}/${h.item}`).sort()).toEqual(["ACME-2/m1", "ACME-2/t1", "GLOBEX-1/m2"]);
+    const tool = all.find((h) => h.item === "t1");
+    expect(tool).toMatchObject({ type: "tool", agent: "builder", taskTitle: "Title ACME-2", org: "acme" });
+    expect(words(tool as never, true)).toEqual(["migrations"]);
+    expect(store.room.search("migrat", 10, "globex").map((h) => h.item)).toEqual(["m2"]);
+    expect(store.room.search("migration ready", 10).map((h) => h.item)).toEqual(["m1"]);
+    expect(store.room.search("!!", 10)).toEqual([]);
+  });
+
+  it("follows edits, and forgets an item or a whole task when it goes", () => {
+    const store = seeded();
+    store.room.upsert("ACME-2", "m1", { type: "agent", agent: "builder", text: "drafting" });
+    store.room.upsert("ACME-2", "m1", { type: "agent", agent: "builder", text: "finished the parser" });
+    expect(store.room.search("drafting", 10)).toEqual([]);
+    expect(store.room.search("parser", 10)).toHaveLength(1);
+    store.tasks.remove("ACME-2");
+    expect(store.room.search("parser", 10)).toEqual([]);
+  });
+
+  it("indexes the items that existed before the migration", () => {
+    const db = new Database(":memory:");
+    migrate(
+      db,
+      MIGRATIONS.filter((m) => m.id < 90),
+    );
+    db.prepare(
+      "INSERT INTO tasks (id, title, brief, kind, status, folder, team, created_at, updated_at) VALUES ('ACME-2', 't', 'b', 'code', 'inbox', '/t', '[]', 'x', 'x')",
+    ).run();
+    db.prepare(
+      "INSERT INTO room_items (task, id, seq, type, payload, at) VALUES ('ACME-2', 'm1', 1, 'owner', ?, 'x')",
+    ).run(JSON.stringify({ text: "please fix the flaky test" }));
+    migrate(db);
+    const rows = db.prepare("SELECT rowid FROM room_search WHERE room_search MATCH 'flaky'").all();
+    expect(rows).toHaveLength(1);
   });
 });

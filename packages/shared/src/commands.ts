@@ -106,6 +106,8 @@ import {
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
+  RoomSearchHitSchema,
+  RoomSearchInputSchema,
   TaskIdSchema,
   TaskKindSchema,
   TaskSchema,
@@ -873,6 +875,13 @@ export const commands = {
       limit: z.number().int().min(1).max(500).default(100),
     }),
     output: z.object({ items: z.array(RoomItemSchema), more: z.boolean() }),
+  },
+  "room.search": {
+    risk: "read",
+    summary:
+      "Full-text search over the messages, handoffs, system lines and tool output of every task's room, best match first",
+    input: RoomSearchInputSchema,
+    output: z.array(RoomSearchHitSchema),
   },
   "room.files": {
     risk: "read",

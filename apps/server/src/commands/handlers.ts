@@ -250,6 +250,7 @@ export function createHandlers({
     }),
     "tasks.plan": (input) => services.tasks.plan(input.id),
     "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
+    "room.search": async (input) => services.tasks.searchRooms(input.query, input.limit, input.org),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
     "processes.stop": async (input) => {
       services.tasks.get(input.task);

@@ -7,6 +7,19 @@ export interface Migration {
   sql: string;
 }
 
+/** The item types the room search indexes, as an SQL list (see SEARCHABLE_ITEM_TYPES in shared). */
+const SEARCHABLE = "'owner', 'agent', 'handoff', 'system', 'tool'";
+
+/** SQL for the text of a room item in `row` (a table name, or `new`): a message's text, or a tool's title and output. */
+function searchText(row: string): string {
+  return `CASE ${row}.type
+    WHEN 'tool' THEN coalesce(json_extract(${row}.payload, '$.title'), '') || char(10) || coalesce(
+      (SELECT group_concat(coalesce(json_extract(c.value, '$.text'), json_extract(c.value, '$.output'), json_extract(c.value, '$.newText'), ''), char(10))
+       FROM json_each(${row}.payload, '$.content') AS c), '')
+    ELSE coalesce(json_extract(${row}.payload, '$.text'), '')
+  END`;
+}
+
 /**
  * Applied in order at startup and tracked in the `migrations` table. Never
  * edit one that shipped: add the next.
@@ -245,6 +258,36 @@ ALTER TABLE task_repos ADD COLUMN mr_number INTEGER;
 ALTER TABLE task_repos ADD COLUMN mr_state TEXT;
 ALTER TABLE task_repos ADD COLUMN ci_state TEXT;
 ALTER TABLE task_repos ADD COLUMN pushed_at TEXT;
+`,
+  },
+  {
+    // Full-text search over the rooms (PRV-35). \`room_search\` holds the text of messages, handoffs,
+    // system lines and tool output, one row per room item, with the item's rowid. Triggers keep it
+    // in step on insert, update and delete (a task's removal cascades to its items, so it does too).
+    id: 90,
+    name: "full-text index over room messages and tool output",
+    sql: `
+CREATE VIRTUAL TABLE room_search USING fts5 (text, tokenize = 'porter unicode61');
+
+CREATE TRIGGER room_search_insert AFTER INSERT ON room_items
+WHEN new.type IN (${SEARCHABLE})
+BEGIN
+  INSERT INTO room_search (rowid, text) VALUES (new.rowid, ${searchText("new")});
+END;
+
+CREATE TRIGGER room_search_update AFTER UPDATE ON room_items
+BEGIN
+  DELETE FROM room_search WHERE rowid = old.rowid;
+  INSERT INTO room_search (rowid, text) SELECT new.rowid, ${searchText("new")} WHERE new.type IN (${SEARCHABLE});
+END;
+
+CREATE TRIGGER room_search_delete AFTER DELETE ON room_items
+BEGIN
+  DELETE FROM room_search WHERE rowid = old.rowid;
+END;
+
+INSERT INTO room_search (rowid, text)
+SELECT rowid, ${searchText("room_items")} FROM room_items WHERE type IN (${SEARCHABLE});
 `,
   },
 ];
