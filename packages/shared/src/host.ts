@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LayaStatusSchema } from "./decisions.ts";
+import { EditorAppSchema } from "./settings.ts";
 
 /**
  * The host helper (`apps/host`) runs natively on the owner's machine and does
@@ -121,6 +122,9 @@ export const LayaDecideResultSchema = z.object({
 });
 export type LayaDecideResult = z.infer<typeof LayaDecideResultSchema>;
 
+/** Longest path the editor jobs take. */
+export const EDITOR_PATH_MAX = 4096;
+
 export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({
     id: z.string(),
@@ -152,6 +156,16 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("decide"),
     params: z.object({ state: z.string(), questions: z.record(z.string(), LayaQuestionSchema) }),
   }),
+  /** Open a file, worktree or project folder in the owner's editor. `line` only applies to a file. */
+  z.object({
+    id: z.string(),
+    method: z.literal("editor.open"),
+    params: z.object({
+      app: EditorAppSchema,
+      path: z.string().min(1).max(EDITOR_PATH_MAX),
+      line: z.number().int().min(1).optional(),
+    }),
+  }),
   /**
    * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
    * must never be logged, stored or echoed in an error, on either side.
@@ -177,6 +191,7 @@ export const HostResultSchemas = {
     dirty: z.boolean(),
     changes: z.array(z.string()).max(20),
   }),
+  "editor.open": z.object({ opened: z.literal(true) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),
   "decisions.status": LayaStatusSchema,

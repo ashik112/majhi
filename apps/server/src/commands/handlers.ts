@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { openBossChat } from "../admin/boss.ts";
 import { sameRule } from "../admin/policy.ts";
 import type { ConfigService } from "../config/service.ts";
+import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
@@ -127,6 +128,20 @@ export function createHandlers({
       hostLink.noteSsh(ssh);
       await sshHosts?.refresh().catch(() => undefined);
       return ssh;
+    },
+
+    "editor.open": async (input) => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+      const { workspaces, tasksDir } = loaded.state.config;
+      const path = await editorPath(input.path, [...workspaces, tasksDir, ...loaded.projectPaths]);
+      const { editor } = await config.settings();
+      await hostLink.call("editor.open", {
+        app: editor.app,
+        path,
+        ...(input.line === undefined ? {} : { line: input.line }),
+      });
+      return { app: editor.app, path };
     },
 
     "fs.listDirs": (input) =>
@@ -379,6 +394,7 @@ export function createHandlers({
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
+        ...(input.editor === undefined ? {} : { editor: input.editor }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
       };

@@ -1,4 +1,4 @@
-import { collapseHome, type Settings } from "@majhi/shared";
+import { collapseHome, EDITOR_LABEL, type Settings } from "@majhi/shared";
 import { MessageSquare } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { AppearanceControls } from "@/components/shell/appearance";
@@ -30,6 +30,7 @@ import { reopenOnboarding } from "@/onboarding/reopen";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
+import { EditorSection } from "./editor-panel";
 import { HistorySection } from "./history-panel";
 import { MemorySection } from "./memory-panel";
 import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } from "./model";
@@ -166,6 +167,7 @@ export function SetupView() {
     approvals:
       s &&
       `Changes: ${s.policy.change === "auto" ? "run alone" : s.policy.change === "confirm" ? "always ask" : "when asked"}`,
+    editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
     history: "Undo any change",
@@ -247,6 +249,9 @@ export function SetupView() {
               </WithSettings>
               <RulesPanel />
             </>
+          )}
+          {section === "editor" && (
+            <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
           )}
           {section === "containers" && <ContainersSection />}
           {section === "appearance" && (

@@ -23,6 +23,7 @@ describe("mergeSettings", () => {
         allow_destructive_rules: false,
       },
       memory: { auto_threshold: 0.4, review_all: false },
+      editor: { app: "vscode" },
       cleanup: { after_days: 30 },
       containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
     });
@@ -49,6 +50,17 @@ describe("settings commands", () => {
     expect(order.body.error).toContain("compact_target must be lower");
     const unknown = await h.cmd("settings.set", { limits: { nope: 1 } });
     expect(unknown.status).toBe(400);
+  });
+
+  it("saves the editor choice to majhi.yaml, reads it back, and refuses an unknown editor", async () => {
+    h = await harness();
+    expect((await h.cmd("settings.get", {})).body.editor).toEqual({ app: "vscode" });
+    const set = await h.cmd("settings.set", { editor: { app: "cursor" } });
+    expect(set.status).toBe(200);
+    expect(set.body.editor).toEqual({ app: "cursor" });
+    expect((await h.cmd("settings.get", {})).body.editor).toEqual({ app: "cursor" });
+    expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("app: cursor");
+    expect((await h.cmd("settings.set", { editor: { app: "vim" } })).status).toBe(400);
   });
 
   it("changes the memory section, keeps the rest of it, and refuses bad values and unknown agents", async () => {

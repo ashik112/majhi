@@ -7,11 +7,12 @@
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { release } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { HostInfo, LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
+import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
 import { runJob } from "./jobs.ts";
 import { createLaya } from "./laya.ts";
@@ -102,6 +103,15 @@ async function main(): Promise<void> {
     env: { ...process.env, PATH: path },
     log,
   });
+  const editorOpen = createEditorOpener({
+    run: runCommand,
+    path,
+    home: config.home,
+    platform: process.platform,
+    find: findExecutable,
+    kind: pathKind,
+    isExecutable: async (file) => (await findExecutable(basename(file), dirname(file))) !== undefined,
+  });
   const laya = createLaya({
     majhiHome: config.majhiHome,
     home: config.home,
@@ -158,6 +168,7 @@ async function main(): Promise<void> {
     suggestRoots: () => suggestRoots(config.home),
     remount,
     sshReload: () => ssh.reload(),
+    editorOpen,
     versionChanges: async (params: { from: string }) => {
       if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");
       const repo = await readRepo(gitContext);

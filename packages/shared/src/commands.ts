@@ -44,6 +44,7 @@ import {
 } from "./decisions.ts";
 import {
   DirListingSchema,
+  EDITOR_PATH_MAX,
   HostResultSchemas,
   HostStatusSchema,
   SSH_PASSPHRASE_MAX,
@@ -94,6 +95,8 @@ import {
   CleanupPatchSchema,
   ContainersPatchSchema,
   ContextPatchSchema,
+  EditorAppSchema,
+  EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
   PolicyPatchSchema,
@@ -261,6 +264,17 @@ export const commands = {
         .refine((p) => !/[\r\n\0]/.test(p), "A passphrase cannot hold a line break"),
     }),
     output: SshStatusSchema,
+  },
+  "editor.open": {
+    risk: "change",
+    summary:
+      "Open a file, a task's worktree or a project folder in the owner's editor (VS Code or Cursor, chosen in settings) through the host helper. The path must be inside a workspace root or the tasks folder",
+    input: z.object({
+      path: z.string().trim().min(1).max(EDITOR_PATH_MAX),
+      /** Jump to this line. Only for a file. */
+      line: z.number().int().min(1).optional(),
+    }),
+    output: z.object({ app: EditorAppSchema, path: z.string() }),
   },
   "fs.listDirs": {
     risk: "read",
@@ -1094,13 +1108,14 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room, memory, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
+      "Change context budget, limits, resume, room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
+      editor: EditorPatchSchema.optional(),
       cleanup: CleanupPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
     }),

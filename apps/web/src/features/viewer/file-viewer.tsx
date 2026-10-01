@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Copy, ExternalLink, RefreshCw, X } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/segmented";
@@ -211,6 +212,9 @@ function Viewer({
             <Copy aria-hidden="true" />
             Copy path
           </Button>
+          {fileRef.kind !== "repo" && (
+            <OpenInEditor path={path.startsWith("/") ? path : `${folder}/${path}`} />
+          )}
           <Button asChild size="sm" variant="secondary">
             <a href={url} target="_blank" rel="noopener noreferrer">
               <ExternalLink aria-hidden="true" />
