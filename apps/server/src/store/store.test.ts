@@ -70,17 +70,20 @@ describe("store", () => {
     expect(names).toEqual([
       "attachments",
       "audit",
+      "automation_runs",
       "decisions",
       "migrations",
       "room_items",
       "room_search",
       "runs",
+      "schedules",
       "task_allowances",
       "task_counters",
       "task_links",
       "task_plans",
       "task_repos",
       "tasks",
+      "triggers",
       "turns",
     ]);
   });

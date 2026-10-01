@@ -127,6 +127,8 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.usageSweeper.start();
       services.mrPoller.start();
       services.resilience.start();
+      services.automation.scheduler.start();
+      services.automation.triggerEngine.start();
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,
