@@ -1,7 +1,6 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
 import { ATTACHMENT_ACCEPT, canWorkIn, type Task } from "@majhi/shared";
-import { useMutation } from "@tanstack/react-query";
-import { KeyRound, Paperclip, Square } from "lucide-react";
+import { KeyRound, Paperclip } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -18,20 +17,23 @@ import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeSecret, SECRET_WARNING } from "@/features/boss/model";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
-import { type ApiRequestError, cmd } from "@/lib/api";
+import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
 import { useTask } from "@/lib/task-queries";
 import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
 import {
+  addressedAgent,
   applyCompletion,
   composerKey,
   detectTrigger,
   filterCommands,
   isBusy,
-  isWorking,
+  pendingOwnerItem,
   type Trigger,
 } from "./model";
+import { ModelPicker } from "./model-picker";
 
 interface PopupOption {
   key: string;
@@ -40,7 +42,10 @@ interface PopupOption {
   note?: string | undefined;
 }
 
-const MAX_HEIGHT = 8 * 20 + 16;
+/** About eight lines of 22px text plus the field's padding. */
+const MAX_HEIGHT = 8 * 22 + 10;
+/** Numbers the messages shown before the server stored them. */
+let pendingCount = 0;
 
 /** Agents a mention can name: the team first, then the org's agents who may join. Boss excluded. */
 function agentMatches(
@@ -64,13 +69,17 @@ export function Composer({
   taskId,
   agents,
   onSent,
+  onDrop,
   onCancel,
   cancelling,
   draft,
 }: {
   taskId: string;
   agents: readonly AgentLive[];
+  /** Puts an item in the room: the message as sent at once, then the stored one. */
   onSent: (item: RoomItem) => void;
+  /** Takes the message shown at once out again, when the stored one replaces it or sending failed. */
+  onDrop: (id: string) => void;
   onCancel: () => void;
   cancelling: boolean;
   /** Text a card button puts in the box, like "@lead ". A new `n` applies it again. */
@@ -89,7 +98,6 @@ export function Composer({
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);
   const busy = isBusy(agents);
-  const working = agents.some((a) => isWorking(a));
   const commands = agents[0]?.commands ?? [];
   const trigger = detectTrigger(text, caret);
   const popupTrigger = trigger && trigger.start !== dismissed ? trigger : null;
@@ -133,20 +141,42 @@ export function Composer({
       : "No agents or files match.";
   const activeIndex = Math.min(active, Math.max(0, options.length - 1));
 
-  const send = useMutation<{ item: RoomItem }, ApiRequestError, "queue" | "interrupt">({
-    mutationFn: (mode) =>
-      cmd("room.send", { task: taskId, text, attachments: attachmentIds(attachments.items), mode }),
-    onSuccess: ({ item }) => {
-      onSent(item);
-      setText("");
-      setCaret(0);
-      attachments.clear();
-    },
-    onError: (error) => toast("Could not send", { detail: error.message, tone: "error" }),
-  });
-
   const hasContent = text.trim() !== "" || attachmentIds(attachments.items).length > 0;
-  const canSend = hasContent && !attachments.uploading && !send.isPending;
+  const canSend = hasContent && !attachments.uploading;
+  const addressed = task ? addressedAgent(text, task.team) : undefined;
+  // One action in one place: Stop while the agent works and the box is empty, else Send.
+  const stops = busy && !hasContent;
+
+  /** Shows the message and clears the box at once; the server stores it and starts the agent after. */
+  function send(mode: "queue" | "interrupt") {
+    if (!canSend) return;
+    const sentText = text;
+    const sentFiles = attachments.items;
+    pendingCount += 1;
+    const pending = pendingOwnerItem(
+      taskId,
+      sentText,
+      sentFiles.flatMap((f) => (f.attachment ? [f.attachment] : [])),
+      pendingCount,
+    );
+    onSent(pending);
+    setText("");
+    setCaret(0);
+    attachments.clear();
+    cmd("room.send", { task: taskId, text: sentText, attachments: attachmentIds(sentFiles), mode }).then(
+      ({ item }) => {
+        onDrop(pending.id);
+        onSent(item);
+      },
+      (error: unknown) => {
+        onDrop(pending.id);
+        // Put the message back for another try, unless the owner already wrote something new.
+        setText((current) => (current === "" ? sentText : current));
+        attachments.restore(sentFiles);
+        toast("Could not send", { detail: describeError(error), tone: "error" });
+      },
+    );
+  }
 
   // Grow with the text, up to about eight lines.
   // biome-ignore lint/correctness/useExhaustiveDependencies: resize whenever the text changes
@@ -218,11 +248,11 @@ export function Composer({
         break;
       case "send":
         event.preventDefault();
-        if (canSend) send.mutate("queue");
+        send("queue");
         break;
       case "interrupt":
         event.preventDefault();
-        if (canSend) send.mutate("interrupt");
+        send("interrupt");
         break;
       default:
         // Newline is the textarea's own; cancel is handled by the room around it.
@@ -238,7 +268,7 @@ export function Composer({
   }
 
   return (
-    <div {...dropProps} className="relative flex flex-col gap-1.5">
+    <div {...dropProps} className="@container relative flex flex-col gap-1.5">
       {dragging && <DropHint />}
       <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
       {secretInText && (
@@ -282,11 +312,12 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2 rounded-[10px] border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover focus-within:border-accent">
+        <div className="flex items-end gap-1 rounded-xl border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover has-[textarea:focus]:border-accent">
           <Button
             variant="ghost"
             size="icon"
             aria-label="Attach a file or image"
+            title="Attach a file or image"
             onClick={() => fileInput.current?.click()}
           >
             <Paperclip aria-hidden="true" />
@@ -312,7 +343,7 @@ export function Composer({
             aria-autocomplete={popupOpen ? "list" : undefined}
             aria-controls={popupOpen ? listId : undefined}
             aria-activedescendant={popupOpen ? `${listId}-${activeIndex}` : undefined}
-            placeholder="Talk to the room. @ for agents and files, / for commands."
+            placeholder={task?.kind === "chat" && addressed ? `Message @${addressed}` : "Talk to the room"}
             spellCheck={false}
             onChange={(event) => {
               setText(event.target.value);
@@ -322,46 +353,57 @@ export function Composer({
             onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            className="max-h-[176px] min-h-[34px] min-w-0 flex-1 resize-none bg-transparent px-1 py-[7px] text-body text-fg outline-none placeholder:text-fg-faint"
+            style={{ maxHeight: MAX_HEIGHT }}
+            className="min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[5px] text-body text-fg outline-none placeholder:truncate placeholder:text-fg-faint"
           />
-          {working && (
-            <Button variant="secondary" disabled={cancelling} onClick={onCancel} title="Stop this turn (Esc)">
-              <Square aria-hidden="true" className="fill-current" />
+          {task && addressed && <ModelPicker task={task} agent={addressed} />}
+          {stops ? (
+            <Button
+              variant="secondary"
+              className="h-8 w-16 px-0"
+              disabled={cancelling}
+              onClick={onCancel}
+              title="Stop this turn (Esc)"
+            >
               Stop
             </Button>
-          )}
-          {busy && hasContent && (
-            <Button variant="secondary" disabled={!canSend} onClick={() => send.mutate("interrupt")}>
-              Stop and send
+          ) : (
+            <Button
+              variant="primary"
+              className="h-8 w-16 px-0"
+              disabled={!canSend}
+              onClick={() => send("queue")}
+              title={
+                busy ? `Queue for the next turn. ${MOD_KEY} Enter stops the agent and sends now.` : undefined
+              }
+            >
+              Send
             </Button>
           )}
-          <Button
-            variant="primary"
-            size="lg"
-            className="text-body"
-            disabled={!canSend}
-            onClick={() => send.mutate("queue")}
-          >
-            Send
-          </Button>
         </div>
       </div>
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-faint">
+      {/* Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset. */}
+      <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-[47px] text-xs whitespace-nowrap text-fg-faint">
         <span>
           <Kbd>Enter</Kbd> {busy ? "queues" : "sends"}
         </span>
         <span>
           <Kbd>Shift Enter</Kbd> new line
         </span>
-        {busy && (
+        {busy ? (
           <span>
-            <Kbd>{MOD_KEY} Enter</Kbd> stop and send
+            <Kbd>Esc</Kbd> stops
           </span>
-        )}
-        {working && (
-          <span className="text-amber">
-            <Kbd>Esc</Kbd> to stop
-          </span>
+        ) : (
+          // Only where there is room for them on one line.
+          <>
+            <span className="hidden @[34rem]:inline">
+              <Kbd>@</Kbd> mention
+            </span>
+            <span className="hidden @[34rem]:inline">
+              <Kbd>/</Kbd> commands
+            </span>
+          </>
         )}
       </p>
     </div>

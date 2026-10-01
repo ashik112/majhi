@@ -60,7 +60,20 @@ export function useAttachments() {
     [],
   );
   const clear = useCallback(() => setItems([]), []);
-  return { items, add, remove, clear, uploading: items.some((item) => item.state === "uploading") };
+  /** Puts back chips that were cleared, when nothing new was added since. */
+  const restore = useCallback(
+    (previous: readonly PendingAttachment[]) =>
+      setItems((list) => (list.length === 0 ? [...previous] : list)),
+    [],
+  );
+  return {
+    items,
+    add,
+    remove,
+    clear,
+    restore,
+    uploading: items.some((item) => item.state === "uploading"),
+  };
 }
 
 /**

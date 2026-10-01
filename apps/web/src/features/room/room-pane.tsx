@@ -86,6 +86,7 @@ export function RoomPane({
         taskId={task.id}
         agents={state.agents}
         onSent={(item) => dispatch({ type: "local", item })}
+        onDrop={(id) => dispatch({ type: "drop", id })}
         onCancel={() => cancel.mutate()}
         cancelling={cancel.isPending}
         draft={draft}
