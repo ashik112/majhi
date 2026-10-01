@@ -392,7 +392,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -413,6 +413,8 @@ export const commands = {
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
       merge: OrgConfigSchema.shape.merge.nullable().optional(),
+      /** Which tasks a lead may start without asking. null goes back to `children`. */
+      lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
     }),
     output: OrgViewSchema,

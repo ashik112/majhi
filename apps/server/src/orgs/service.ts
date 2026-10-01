@@ -1,5 +1,12 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
-import { DEFAULT_MERGE_POLICY, LEGACY_PERSONAL, type OrgConfig, type OrgView, PRIVATE } from "@majhi/shared";
+import {
+  DEFAULT_LEAD_START,
+  DEFAULT_MERGE_POLICY,
+  LEGACY_PERSONAL,
+  type OrgConfig,
+  type OrgView,
+  PRIVATE,
+} from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { renameOrgInConfig, writeOrg } from "../config/write.ts";
@@ -65,6 +72,7 @@ export class OrgService {
       "tiers",
       "team",
       "merge",
+      "lead_start",
       "mr_tokens",
     ] as const) {
       const value = patch[field];
@@ -135,6 +143,7 @@ function view(
     accountCount: accounts.filter((a) => a.org === id).length,
     agentCount: agentScopes.filter((s) => s === id).length,
     merge: org.merge ?? DEFAULT_MERGE_POLICY,
+    leadStart: org.lead_start ?? DEFAULT_LEAD_START,
   };
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;

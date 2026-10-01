@@ -3,6 +3,7 @@ import {
   type CommandName,
   canWorkIn,
   commands,
+  DEFAULT_LEAD_START,
   parseTaskText,
   type TeamPlan,
   TeamPlanSchema,
@@ -16,6 +17,7 @@ import type { AdminService } from "../admin/service.ts";
 import { bearerOf } from "../admin/tokens.ts";
 import { toolName } from "../admin/tools.ts";
 import type { AgentStore } from "../agents/store.ts";
+import type { ConfigService } from "../config/service.ts";
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
@@ -25,6 +27,7 @@ import { processesServer } from "../processes/mcp.ts";
 import type { ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import { leadMayStart } from "../tasks/lead-start.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   CONTAINERS_PATH,
@@ -121,13 +124,19 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
     command: "tasks.split",
     description:
-      "Split a task into subtasks, in order. A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for.",
+      "Split a task into subtasks, in order. A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
+  },
+  {
+    name: "start",
+    command: "tasks.start",
+    description:
+      "Start a task: create its worktrees and wake its agent. Your org's setting says which tasks you may start without asking the owner (by default your subtasks); for any other, the owner gets an approval card. A task that waits on an unfinished dependency does not start early: it starts by itself when they are done.",
   },
   {
     name: "update",
@@ -200,6 +209,7 @@ export interface RoomMcpDeps {
   access: RoomAccess;
   coordinator: RoomCoordinator;
   admin: AdminService;
+  config: ConfigService;
   room: RoomService;
   store: Store;
   agents: AgentStore;
@@ -409,6 +419,10 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           }));
         return ok(JSON.stringify(rows, null, 2));
       }
+      if (tool.command === "tasks.start") {
+        const started = await leadStart(deps, caller, args);
+        if (started !== undefined) return started;
+      }
       const result = await deps.admin.call(caller, toolName(tool.command), args);
       return result.isError ? fail(result.text) : ok(result.text);
     } catch (err) {
@@ -416,6 +430,68 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     }
   });
   return server;
+}
+
+/**
+ * A lead starting a task. When the org's `lead_start` allows it, the task starts at once with an
+ * `applied` card, a row in the audit, and a note in the target's room. Undefined means the call
+ * goes the normal way, to an approval card; another org is refused here.
+ */
+async function leadStart(
+  deps: RoomMcpDeps,
+  caller: ToolCaller,
+  args: Record<string, unknown>,
+): Promise<Result | undefined> {
+  const id = typeof args.id === "string" ? args.id : undefined;
+  const callerTask = deps.store.tasks.get(caller.task);
+  const target = id === undefined ? undefined : deps.store.tasks.get(id);
+  if (id === undefined || callerTask === undefined || target === undefined) return undefined;
+  const sections = await deps.config.sections();
+  const check = leadMayStart({
+    callerTask,
+    callerAgent: caller.agent,
+    target: { ...target, parent: target.links.find((l) => l.type === "parent")?.task },
+    setting:
+      (callerTask.org === undefined ? undefined : sections.orgs[callerTask.org]?.lead_start) ??
+      DEFAULT_LEAD_START,
+  });
+  if (!check.ok) return check.hard ? fail(check.why) : undefined;
+  if ("running" in check) return ok(`${id} is already running.`);
+
+  const waiting = deps.store.tasks.unmetDependencies(id);
+  const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+  const result = await deps.admin.runAllowed(
+    caller,
+    "tasks.start",
+    { id },
+    {
+      reason,
+      accept: (e) => waiting.length > 0 && e.startsWith("Waiting on"),
+      accepted: `Waiting on ${waiting.join(", ")}. It starts by itself when they are done.`,
+    },
+  );
+  // Held by a dependency or not, the owner can see that a lead did this.
+  const title =
+    waiting.length === 0
+      ? `Started by @${caller.agent} from ${caller.task}`
+      : `@${caller.agent} started it from ${caller.task}; waiting on ${waiting.join(", ")}`;
+  if (!result.isError) {
+    deps.store.permissions.log({
+      task: id,
+      agent: caller.agent,
+      kind: "tasks.start",
+      title,
+      decision: "allow",
+      by: "lead",
+      at: new Date().toISOString(),
+    });
+    deps.room.post(id as never, `info:${crypto.randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: title,
+    });
+  }
+  return result.isError ? fail(result.text) : ok(result.text);
 }
 
 async function frontmatter(agents: AgentStore, id: string): Promise<AgentFrontmatter | undefined> {

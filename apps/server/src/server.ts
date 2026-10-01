@@ -89,6 +89,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       access: services.roomAccess,
       coordinator: services.coordinator,
       admin: services.admin,
+      config,
       room: services.room,
       store: services.store,
       agents: services.agentStore,

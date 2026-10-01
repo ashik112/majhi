@@ -238,7 +238,8 @@ export function createHandlers({
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
-    "tasks.start": (input) => services.tasks.start(input.id),
+    "tasks.start": (input, ctx) =>
+      services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input, ctx) =>

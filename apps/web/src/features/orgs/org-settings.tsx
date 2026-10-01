@@ -230,6 +230,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
+          <Field
+            label="Leads can start tasks"
+            hint="Without asking you. A task that waits on another still waits for it."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.leadStart}
+                onChange={(e) => set({ leadStart: e.target.value as OrgDraft["leadStart"] })}
+              >
+                <option value="children">Their subtasks</option>
+                <option value="org">Any task in the org</option>
+                <option value="off">Off</option>
+              </Select>
+            )}
+          </Field>
           <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
             <legend className="mb-1.5 p-0 text-sm text-fg-faint">Color</legend>
             <div className="flex h-[34px] items-center gap-2">

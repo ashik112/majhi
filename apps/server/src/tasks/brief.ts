@@ -138,7 +138,7 @@ function relatedLines(r: Related): string[] {
   if (r.children.length > 0) {
     out.push(
       "",
-      "You drive the children to the end. majhi starts each one when it is safe next to the running tasks (files and account limits) and tells you when one is ready for review. Review it, then close it with the majhi-tasks close tool once its work is shipped: merge it first with the merge tool if you have the Merge permission. A child with commits not merged, pushed or in a pull request cannot be closed by an agent: leave it in review for the owner. Ask what can start with the plan tool. When every child is done, this task closes with a report.",
+      "You drive the children to the end. majhi starts each one when it is safe next to the running tasks (files and account limits) and tells you when one is ready for review. Review it, then close it with the majhi-tasks close tool once its work is shipped: merge it first with the merge tool if you have the Merge permission. A child with commits not merged, pushed or in a pull request cannot be closed by an agent: leave it in review for the owner. Ask what can start with the plan tool. Start a child yourself with the start tool; if it waits on an unfinished dependency it starts by itself when that is done. When every child is done, this task closes with a report.",
     );
   }
   return out;
