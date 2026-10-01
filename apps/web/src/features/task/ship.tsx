@@ -15,6 +15,7 @@ import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { GitLoginOffer } from "@/features/orgs/git-login-offer";
 import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -465,6 +466,11 @@ function ShipPanel({
               {o?.ok === false && o.fix !== undefined && !repeated && (
                 <span className="px-2.5 pb-1">
                   <FixLink fix={o.fix} onGo={onClose} />
+                  {o.fix.page === "orgs" && action === "mr" && (
+                    <span className="mt-1 flex flex-col gap-1">
+                      <GitLoginOffer org={o.fix.org} orgName={o.fix.org} host={options.data?.host} />
+                    </span>
+                  )}
                 </span>
               )}
             </li>

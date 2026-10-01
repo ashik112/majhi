@@ -259,7 +259,12 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             {errors.color && <p className="text-sm text-red">{errors.color}</p>}
           </fieldset>
         </div>
-        <MrSettings draft={draft} error={errors.mrTokens} onChange={set} />
+        <MrSettings
+          org={{ id: org.id, name: org.name }}
+          draft={draft}
+          error={errors.mrTokens}
+          onChange={set}
+        />
         {failure && (
           <p role="alert" className="text-sm text-red text-pretty">
             {failure}

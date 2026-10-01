@@ -234,3 +234,31 @@ export function useSaveSecret() {
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.secrets }),
   });
 }
+
+/** The accounts this Mac is logged in as per git host (gh, glab, SSH keys). Never holds a token. */
+export function useGitLogins() {
+  return useQuery<CommandOutput<"git.logins">, ApiRequestError>({
+    queryKey: ["git-logins"],
+    queryFn: () => cmd("git.logins", {}),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** Saves a gh or glab login as one org's token for its host. */
+export function useUseGitLogin() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"orgs.useGitLogin">, ApiRequestError, CommandInput<"orgs.useGitLogin">>({
+    mutationFn: (input) => cmd("orgs.useGitLogin", input),
+    onSuccess: () => refresh(client, queryKeys.orgs, queryKeys.secrets, queryKeys.tasks),
+  });
+}
+
+/** How a project pushes its MR remote over SSH. */
+export function usePushRoute(id: string) {
+  return useQuery<CommandOutput<"projects.pushRoute">, ApiRequestError>({
+    queryKey: [...queryKeys.projects, "push-route", id],
+    queryFn: () => cmd("projects.pushRoute", { id }),
+    retry: false,
+  });
+}

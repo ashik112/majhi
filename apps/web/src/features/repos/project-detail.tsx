@@ -25,6 +25,7 @@ import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
+import { usePushRoute } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
 import {
@@ -285,6 +286,7 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
   const [choice, setChoice] = useState<MrRemoteChoice>(initial);
   const { state, setState, save } = useSectionSave(project);
   const known = repo ?? stubRepo(project);
+  const route = usePushRoute(project.id);
   const dirty = choice.name !== initial.name || choice.host !== initial.host || choice.ssh !== initial.ssh;
   // Opened from a link that points here (Ship's "Fix it in Projects"): show the SSH alias at once.
   const [section, setSection] = useSearchParam("section");
@@ -344,6 +346,32 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
             </li>
           ))}
         </ul>
+      )}
+      {route.data && (route.data.label !== undefined || route.data.choices.length > 0) && (
+        <div className="flex flex-col gap-1.5 text-sm">
+          {route.data.label !== undefined && <p className="m-0 text-fg-soft">{route.data.label}</p>}
+          {route.data.state !== "auto" && route.data.state !== "picked" && route.data.choices.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-fg-faint">Push with:</span>
+              {route.data.choices.map((c) => (
+                <Button
+                  key={`${c.alias ?? ""}:${c.account}`}
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={state.kind === "saving"}
+                  onClick={() => {
+                    const ssh = c.alias ?? route.data?.host ?? "";
+                    const remotes = buildRemotes(project.remotes, { ...choice, ssh });
+                    if (remotes !== undefined) save({ remotes });
+                  }}
+                >
+                  {c.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       <div className="grid gap-3 @[460px]:grid-cols-2 @[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         <Field label="Open MRs against" hint="Default: origin.">
