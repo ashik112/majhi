@@ -58,6 +58,9 @@ export const taskRepos = sqliteTable(
     /** `none`, `pending`, `passing` or `failing`. */
     ciState: text("ci_state"),
     pushedAt: text("pushed_at"),
+    /** The branch tip majhi merged, and the branch it merged into. */
+    shippedHead: text("shipped_head"),
+    shippedInto: text("shipped_into"),
     /** The commit the branch was cut from. Null on tasks made before it was recorded. */
     startCommit: text("start_commit"),
     /** A protected project the owner let agents write in, for this task. */

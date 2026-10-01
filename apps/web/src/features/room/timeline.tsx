@@ -1,11 +1,26 @@
 import type { RoomItem } from "@majhi/shared";
 import { ArrowDown } from "lucide-react";
-import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
-import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
+import {
+  type ItemContext,
+  NotesRow,
+  OWNER_CARD_TYPES,
+  PinnedPlan,
+  RoomItemView,
+  rowDomId,
+} from "./items";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
 import type { OwnerContext } from "./owner-cards";
@@ -42,14 +57,22 @@ export function Timeline({
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const [unseen, setUnseen] = useState(false);
-  const previous = useRef<{ count: number; last: string | undefined; height: number } | null>(null);
+  const previous = useRef<{
+    count: number;
+    last: string | undefined;
+    height: number;
+  } | null>(null);
 
   const plans = useMemo(() => pinnedPlans(state.items), [state.items]);
   const list = useRef<HTMLOListElement>(null);
   // Pinned plans are drawn above the log, not in it.
   const rows = useMemo(() => {
     const pinnedIds = new Set(plans.map((p) => p.id));
-    return rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
+    return rowsOf(
+      state.items.filter(
+        (item) => !waitsForOwner(item) && !pinnedIds.has(item.id),
+      ),
+    );
   }, [state.items, plans]);
   const beats = useMemo(() => rows.map(beatOf), [rows]);
 
@@ -61,14 +84,19 @@ export function Timeline({
     if (!windowed || !hasRows) return;
     let second = 0;
     const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => startTransition(() => setWindowed(false)));
+      second = requestAnimationFrame(() =>
+        startTransition(() => setWindowed(false)),
+      );
     });
     return () => {
       cancelAnimationFrame(first);
       cancelAnimationFrame(second);
     };
   }, [windowed, hasRows]);
-  const from = windowed && focusItem === undefined ? Math.max(0, rows.length - FIRST_PAINT_ROWS) : 0;
+  const from =
+    windowed && focusItem === undefined
+      ? Math.max(0, rows.length - FIRST_PAINT_ROWS)
+      : 0;
   const heightBefore = useRef(0);
   heightBefore.current = scroller.current?.scrollHeight ?? 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the older rows join
@@ -101,7 +129,9 @@ export function Timeline({
   const pinnedKey = plans.map((p) => p.id).join("\n");
   // Per row, only what that row shows: the model of an agent's message, the task for the cards that act on it.
   // An agent's status line changes on every tool call; a row that took the whole list would redraw each time.
-  const modelKey = state.agents.map((a) => `${a.agent}=${a.model ?? ""}`).join("\n");
+  const modelKey = state.agents
+    .map((a) => `${a.agent}=${a.model ?? ""}`)
+    .join("\n");
   const modelOf = useMemo(
     () =>
       new Map(
@@ -110,7 +140,10 @@ export function Timeline({
           .filter((line) => line !== "")
           .map((line) => {
             const at = line.indexOf("=");
-            return [line.slice(0, at), line.slice(at + 1) || undefined] as const;
+            return [
+              line.slice(0, at),
+              line.slice(at + 1) || undefined,
+            ] as const;
           }),
       ),
     [modelKey],
@@ -143,7 +176,11 @@ export function Timeline({
     } else if (before.last !== last || state.items.length !== before.count) {
       setUnseen(true);
     }
-    previous.current = { count: state.items.length, last, height: el.scrollHeight };
+    previous.current = {
+      count: state.items.length,
+      last,
+      height: el.scrollHeight,
+    };
   });
 
   const onScroll = useCallback(() => {
@@ -158,7 +195,8 @@ export function Timeline({
   // biome-ignore lint/correctness/useExhaustiveDependencies: run again after each page of items
   useEffect(() => {
     const el = scroller.current;
-    if (el && state.more && el.scrollHeight <= el.clientHeight) void onLoadOlder();
+    if (el && state.more && el.scrollHeight <= el.clientHeight)
+      void onLoadOlder();
   }, [state.more, state.items.length, onLoadOlder]);
 
   function toBottom() {
@@ -202,7 +240,10 @@ export function Timeline({
     onFocused?.();
   }, [focusItem, state.loaded, state.more, rowOf, onLoadOlder, onFocused]);
 
-  const waiting = useMemo(() => dockItems(state.items), [state.items]);
+  const waiting = useMemo(
+    () => dockItems(state.items, owner?.task.status),
+    [state.items, owner?.task.status],
+  );
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -223,17 +264,29 @@ export function Timeline({
         tabIndex={0}
         className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 scroll-fade focus-visible:outline-none"
       >
-        {state.more && <p className="text-center text-xs text-fg-faint">Loading earlier messages</p>}
+        {state.more && (
+          <p className="text-center text-xs text-fg-faint">
+            Loading earlier messages
+          </p>
+        )}
         {!state.loaded && state.items.length === 0 && (
           <p className="m-auto text-sm text-fg-faint">Connecting to the room</p>
         )}
         {state.loaded && state.items.length === 0 && (
-          <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
+          <p className="m-auto text-sm text-fg-faint">
+            Nothing yet. Messages and tool calls show up here.
+          </p>
         )}
-        <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
+        <ol
+          ref={list}
+          className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0"
+        >
           {rows.slice(from).map((row, j) => {
             const i = from + j;
-            const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
+            const gap = gapAbove(
+              i === 0 ? undefined : beats[i - 1],
+              beats[i] ?? "line",
+            );
             return row.kind === "notes" ? (
               <NotesRow
                 key={row.key}
@@ -283,11 +336,18 @@ export function Timeline({
           <span className="flex items-center gap-2 px-0.5 text-sm font-medium text-lamp-needs">
             <Lamp state="needs" size={7} />
             Needs you
-            {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
+            {waiting.length > 1 && (
+              <span className="tnum font-mono text-xs">{waiting.length}</span>
+            )}
           </span>
           <ol className="m-0 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-0">
             {waiting.map((item: RoomItem) => (
-              <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
+              <RoomItemView
+                key={item.id}
+                item={item}
+                ctx={ctx}
+                {...rowProps(item)}
+              />
             ))}
           </ol>
         </section>
@@ -300,18 +360,42 @@ export function Timeline({
  * What the dock shows: the items that wait for the owner. An open question comes first and hides
  * "Ready for review", so two primary buttons never compete and the answer is asked for first.
  */
-function dockItems(items: readonly RoomItem[]): RoomItem[] {
-  const waiting = items.filter(waitsForOwner);
+function dockItems(
+  items: readonly RoomItem[],
+  status: string | undefined,
+): RoomItem[] {
+  // A card that draws nothing for the task's state (a pause on a task that is not paused, a reply
+  // row on a task in review or done) must not leave an empty box in the dock.
+  const draws = (i: RoomItem) =>
+    i.type === "paused"
+      ? status === undefined || status === "paused"
+      : i.type === "owner-question"
+        ? status === undefined ||
+          (status !== "done" && (i.choices.length > 0 || status !== "review"))
+        : true;
+  const waiting = items.filter((i) => waitsForOwner(i) && draws(i));
   const asked = waiting.some(
-    (i) => ANSWERS.has(i.type) || (i.type === "owner-question" && i.choices.length > 0),
+    (i) =>
+      ANSWERS.has(i.type) ||
+      (i.type === "owner-question" && i.choices.length > 0),
   );
   const shown = asked ? waiting.filter((i) => i.type !== "review") : waiting;
-  const rank = (i: RoomItem) => (ANSWERS.has(i.type) ? 0 : i.type === "review" || i.type === "paused" ? 2 : 1);
+  const rank = (i: RoomItem) =>
+    ANSWERS.has(i.type)
+      ? 0
+      : i.type === "review" || i.type === "paused"
+        ? 2
+        : 1;
   return [...shown].sort((a, b) => rank(a) - rank(b));
 }
 
 /** Items that are a question to the owner. */
-const ANSWERS: ReadonlySet<RoomItem["type"]> = new Set(["ask", "choice", "approval", "permission"]);
+const ANSWERS: ReadonlySet<RoomItem["type"]> = new Set([
+  "ask",
+  "choice",
+  "approval",
+  "permission",
+]);
 
 /** Items that wait for the owner's answer: shown in the "Needs you" dock, not in the log. */
 function waitsForOwner(item: RoomItem): boolean {

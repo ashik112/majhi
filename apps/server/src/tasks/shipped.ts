@@ -8,6 +8,7 @@ const MAX_SQUASH_FILES = 500;
 /**
  * Commits on a task branch that are nowhere else. Zero when the work is shipped:
  * - its merge request is open or merged;
+ * - majhi merged the branch itself and it is still at the tip it merged (any method);
  * - the branch is gone, or has nothing past its base;
  * - another branch has its tip (merged into the base or any local branch that is not a task's),
  *   or a remote-tracking ref has it (pushed, as of the last fetch);
@@ -23,6 +24,7 @@ export async function unshippedCommits(repo: TaskRepo): Promise<number> {
   if (!(await localBranchExists(cwd, repo.branch))) return 0;
   const own = `refs/heads/${repo.branch}`;
   const tip = (await git(cwd, ["rev-parse", own])).trim();
+  if (repo.shipped?.head === tip) return 0;
 
   const holders = (
     await git(cwd, ["for-each-ref", "--contains", tip, "--format=%(refname)", "refs/heads", "refs/remotes"])

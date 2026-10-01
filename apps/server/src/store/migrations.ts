@@ -475,6 +475,12 @@ ALTER TABLE runs ADD COLUMN tools TEXT;
     name: "task connections",
     sql: "ALTER TABLE tasks ADD COLUMN connections TEXT NOT NULL DEFAULT '[]';",
   },
+  {
+    // The branch tip majhi merged, and where: a squash leaves none of the branch commits behind.
+    id: 111,
+    name: "task repo shipped head",
+    sql: "ALTER TABLE task_repos ADD COLUMN shipped_head TEXT; ALTER TABLE task_repos ADD COLUMN shipped_into TEXT;",
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

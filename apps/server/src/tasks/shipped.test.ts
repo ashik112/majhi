@@ -8,11 +8,18 @@ import { taskWorld, type World } from "../testing/world.ts";
 let w: World;
 afterEach(() => w?.cleanup());
 
-const AGENT = { actor: { kind: "agent", id: "acme-builder" }, reason: "the subtask is reviewed" };
+const AGENT = {
+  actor: { kind: "agent", id: "acme-builder" },
+  reason: "the subtask is reviewed",
+};
 const idle = () => w.h.majhi.services.runs.idle();
-const task = async () => (await w.h.cmd("tasks.get", { id: "ACM-1" })).body as Task;
+const task = async () =>
+  (await w.h.cmd("tasks.get", { id: "ACM-1" })).body as Task;
 const reviewCard = async () =>
-  ((await w.h.cmd("room.items", { task: "ACM-1", limit: 200 })).body.items as RoomItem[]).find(
+  (
+    (await w.h.cmd("room.items", { task: "ACM-1", limit: 200 })).body
+      .items as RoomItem[]
+  ).find(
     (i): i is Extract<RoomItem, { type: "review" }> => i.type === "review",
   );
 
@@ -20,14 +27,23 @@ const reviewCard = async () =>
 async function reviewTask(write: boolean): Promise<string> {
   w.h.runtime.onSession = (session) => {
     session.script = async (t) => {
-      if (write) await writeFile(join(w.taskDir("ACM-1"), "acme-api", "work.txt"), "work\n");
+      if (write)
+        await writeFile(
+          join(w.taskDir("ACM-1"), "acme-api", "work.txt"),
+          "work\n",
+        );
       t.emit({ type: "text", messageId: "m", text: "Done." });
       return "end_turn";
     };
   };
   expect(
-    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
-      .status,
+    (
+      await w.h.cmd("tasks.create", {
+        text: "fix api",
+        repos: [{ project: "acme-api" }],
+        start: true,
+      })
+    ).status,
   ).toBe(200);
   await idle();
   const t = await task();
@@ -42,20 +58,33 @@ describe("closing a task with work not shipped", () => {
     const expected = `acme-api: 1 commit on ${branch} is not merged, pushed or in a pull request.`;
 
     const options = await w.h.cmd("tasks.shipOptions", { id: "ACM-1" });
-    expect(options.body.done).toEqual({ ok: true, unshipped: [{ project: "acme-api", branch, commits: 1 }] });
+    expect(options.body.done).toEqual({
+      ok: true,
+      unshipped: [{ project: "acme-api", branch, commits: 1 }],
+    });
 
     const refused = await w.h.cmd("tasks.close", { id: "ACM-1" });
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe(`${expected} Close it anyway to leave the commits on the branch.`);
+    expect(refused.body.error).toBe(
+      `${expected} Close it anyway to leave the commits on the branch.`,
+    );
     expect((await task()).status).toBe("review");
 
-    const kept = await w.h.cmd("tasks.close", { id: "ACM-1", unshipped: "keep" });
+    const kept = await w.h.cmd("tasks.close", {
+      id: "ACM-1",
+      unshipped: "keep",
+    });
     expect(kept.status).toBe(200);
     expect((await task()).status).toBe("done");
     expect((await reviewCard())?.state).toBe("settled");
-    expect((await reviewCard())?.outcome).toMatchObject({ text: "Marked done", by: "owner" });
+    expect((await reviewCard())?.outcome).toMatchObject({
+      text: "Marked done",
+      by: "owner",
+    });
     // The commits stay on the branch.
-    expect(await git(w.repo("api"), "ls-tree", "--name-only", branch)).toContain("work.txt");
+    expect(
+      await git(w.repo("api"), "ls-tree", "--name-only", branch),
+    ).toContain("work.txt");
   });
 
   it("asks the same of the review card's Mark done", async () => {
@@ -63,7 +92,12 @@ describe("closing a task with work not shipped", () => {
     await reviewTask(true);
     const card = await reviewCard();
     const act = (extra: object) =>
-      w.h.cmd("room.cardAction", { task: "ACM-1", item: card?.id, action: "done", ...extra });
+      w.h.cmd("room.cardAction", {
+        task: "ACM-1",
+        item: card?.id,
+        action: "done",
+        ...extra,
+      });
     expect((await act({})).status).toBe(409);
     expect((await act({ unshipped: "keep" })).status).toBe(200);
     expect((await task()).status).toBe("done");
@@ -91,9 +125,14 @@ describe("closing a task with work not shipped", () => {
   it("records the agent that closes a task with nothing to ship", async () => {
     w = await taskWorld();
     await reviewTask(false);
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(200);
+    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(
+      200,
+    );
     expect((await task()).status).toBe("done");
-    expect((await reviewCard())?.outcome).toMatchObject({ text: "Marked done", by: "acme-builder" });
+    expect((await reviewCard())?.outcome).toMatchObject({
+      text: "Marked done",
+      by: "acme-builder",
+    });
   });
 });
 
@@ -109,8 +148,12 @@ describe("work counts as shipped", () => {
     const repo = w.repo("api");
     await git(repo, "merge", "--squash", branch);
     await git(repo, "commit", "--quiet", "-m", "squashed");
-    expect((await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done).toEqual({ ok: true });
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(200);
+    expect(
+      (await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done,
+    ).toEqual({ ok: true });
+    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(
+      200,
+    );
   });
 
   it("when the branch is cherry-picked into its base", async () => {
@@ -125,12 +168,22 @@ describe("work counts as shipped", () => {
     const branch = await reviewTask(true);
     const repo = w.repo("api");
     await git(repo, "push", "--quiet", "origin", branch);
-    expect((await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done).toEqual({ ok: true });
+    expect(
+      (await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done,
+    ).toEqual({ ok: true });
 
     await writeFile(join(w.taskDir("ACM-1"), "acme-api", "more.txt"), "more\n");
     await git(join(w.taskDir("ACM-1"), "acme-api"), "add", ".");
-    await git(join(w.taskDir("ACM-1"), "acme-api"), "commit", "--quiet", "-m", "more");
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(409);
+    await git(
+      join(w.taskDir("ACM-1"), "acme-api"),
+      "commit",
+      "--quiet",
+      "-m",
+      "more",
+    );
+    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(
+      409,
+    );
   });
 
   it("when majhi pushed it to a URL and nothing was committed since", async () => {
@@ -139,11 +192,21 @@ describe("work counts as shipped", () => {
     // A push to a URL leaves no remote-tracking ref: majhi's own record of the push says it.
     await git(w.repo("api"), "push", "--quiet", w.remote("api"), branch);
     const { store } = w.h.majhi.services;
-    store.tasks.setPushed("ACM-1", "acme-api", new Date(Date.now() + 2_000).toISOString());
-    expect((await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done).toEqual({ ok: true });
+    store.tasks.setPushed(
+      "ACM-1",
+      "acme-api",
+      new Date(Date.now() + 2_000).toISOString(),
+    );
+    expect(
+      (await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done,
+    ).toEqual({ ok: true });
 
     // Committed after the push: the push is moved back a minute instead of dating the commit.
-    store.tasks.setPushed("ACM-1", "acme-api", new Date(Date.now() - 60_000).toISOString());
+    store.tasks.setPushed(
+      "ACM-1",
+      "acme-api",
+      new Date(Date.now() - 60_000).toISOString(),
+    );
     const tree = join(w.taskDir("ACM-1"), "acme-api");
     await writeFile(join(tree, "more.txt"), "more\n");
     await git(tree, "add", ".");
@@ -160,6 +223,90 @@ describe("work counts as shipped", () => {
       state: "open",
       ci: "pending",
     });
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(200);
+    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(
+      200,
+    );
+  });
+});
+
+describe("a merge by majhi counts as shipped", () => {
+  /** The branch appends to README.md; main prepends to it, so both changed the file. */
+  async function divergeOnSharedFile() {
+    const tree = join(w.taskDir("ACM-1"), "acme-api");
+    await writeFile(join(tree, "README.md"), "# api\nbranch line\n");
+    await git(tree, "add", ".");
+    await git(tree, "commit", "--quiet", "-m", "branch readme");
+    const repo = w.repo("api");
+    await writeFile(join(repo, "README.md"), "main line\n# api\n");
+    await git(repo, "commit", "--quiet", "-am", "main readme");
+  }
+
+  for (const method of ["squash", "merge", "rebase"] as const) {
+    it(`closes after a ${method} while main changed the same file`, async () => {
+      w = await taskWorld();
+      await reviewTask(true);
+      await divergeOnSharedFile();
+      const merged = await w.h.cmd("tasks.merge", {
+        id: "ACM-1",
+        into: "main",
+        done: true,
+        method,
+      });
+      expect(merged.status).toBe(200);
+      console.log(
+        await git(w.repo("api"), "log", "--oneline", "--all", "--graph"),
+        await git(join(w.taskDir("ACM-1"), "acme-api"), "status", "--short"),
+      );
+      expect((await task()).status).toBe("done");
+      expect((await reviewCard())?.outcome?.text).toBe(
+        "Merged into main and marked done",
+      );
+    });
+  }
+
+  it("still counts after delete-after removed the branch", async () => {
+    w = await taskWorld();
+    await reviewTask(true);
+    await divergeOnSharedFile();
+    const merged = await w.h.cmd("tasks.merge", {
+      id: "ACM-1",
+      into: "main",
+      done: true,
+      method: "squash",
+      deleteAfter: true,
+    });
+    expect(merged.status).toBe(200);
+    expect((await task()).status).toBe("done");
+  });
+
+  it("says the task is still open when it has open subtasks", async () => {
+    w = await taskWorld();
+    await reviewTask(true);
+    const sub = await w.h.cmd("tasks.create", {
+      text: "sub",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
+    expect(sub.status).toBe(200);
+    const id = (sub.body as { id: string }).id;
+    expect(
+      (
+        await w.h.cmd("tasks.link", {
+          task: id,
+          type: "parent",
+          target: "ACM-1",
+        })
+      ).status,
+    ).toBe(200);
+    const merged = await w.h.cmd("tasks.merge", {
+      id: "ACM-1",
+      into: "main",
+      done: true,
+    });
+    expect(merged.status).toBe(200);
+    expect((await task()).status).toBe("review");
+    expect((await reviewCard())?.outcome?.text).toBe(
+      "Merged into main; still open because its subtasks are not done",
+    );
   });
 });

@@ -180,6 +180,8 @@ export const TaskRepoSchema = z.object({
   mergeOrder: z.number().int().nonnegative().optional(),
   /** When the branch was last pushed for an MR. */
   pushedAt: z.string().optional(),
+  /** The branch tip majhi itself merged, and the branch it went into. Squash merges keep no commits. */
+  shipped: z.object({ head: z.string(), into: z.string() }).optional(),
   /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
   startCommit: z.string().optional(),
   /** A protected project the owner let agents write in, for this task. Else agents get it read-only. */

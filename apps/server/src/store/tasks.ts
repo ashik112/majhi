@@ -128,6 +128,8 @@ export class TaskRepo {
             mrState: r.mr?.state ?? null,
             ciState: r.mr?.ci ?? null,
             pushedAt: r.pushedAt ?? null,
+            shippedHead: r.shipped?.head ?? null,
+            shippedInto: r.shipped?.into ?? null,
             startCommit: r.startCommit ?? null,
             writes: r.writes === true,
           })
@@ -184,6 +186,9 @@ export class TaskRepo {
           : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
         ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
         ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
+        ...(r.shippedHead === null || r.shippedInto === null
+          ? {}
+          : { shipped: { head: r.shippedHead, into: r.shippedInto } }),
         ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
         ...(r.writes ? { writes: true } : {}),
         ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
@@ -595,6 +600,15 @@ export class TaskRepo {
     this.db
       .update(taskRepos)
       .set({ pushedAt: at })
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
+  /** majhi merged the branch at `head` into `into`. */
+  setShipped(task: string, project: string, head: string, into: string): void {
+    this.db
+      .update(taskRepos)
+      .set({ shippedHead: head, shippedInto: into })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
   }
