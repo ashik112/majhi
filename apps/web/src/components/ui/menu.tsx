@@ -43,7 +43,7 @@ export function Menu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
   const close = useCallback(() => setOpen(false), []);
-  const { panel, style } = useAnchoredPanel({ open, close, trigger: triggerRef, align });
+  const { panel, style, container } = useAnchoredPanel({ open, close, trigger: triggerRef, align });
 
   useEffect(() => {
     if (open) panel.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
@@ -88,6 +88,7 @@ export function Menu({
         createPortal(
           <div
             ref={panel}
+            popover="manual"
             id={id}
             role="menu"
             aria-label={label}
@@ -124,7 +125,7 @@ export function Menu({
               </button>
             ))}
           </div>,
-          document.body,
+          container,
         )}
     </div>
   );

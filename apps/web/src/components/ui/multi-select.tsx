@@ -44,7 +44,7 @@ export function MultiSelect({
   const listId = useId();
 
   const close = useCallback(() => setOpen(false), []);
-  const { panel, style } = useAnchoredPanel({ open, close, trigger: button, matchWidth: true });
+  const { panel, style, container } = useAnchoredPanel({ open, close, trigger: button, matchWidth: true });
 
   useEffect(() => {
     if (open) panel.current?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')?.focus();
@@ -106,6 +106,7 @@ export function MultiSelect({
         createPortal(
           <div
             ref={panel}
+            popover="manual"
             id={listId}
             role="menu"
             aria-label={label}
@@ -150,7 +151,7 @@ export function MultiSelect({
               </button>
             )}
           </div>,
-          document.body,
+          container,
         )}
     </div>
   );
