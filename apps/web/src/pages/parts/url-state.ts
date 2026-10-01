@@ -1,7 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { AppSearch } from "@/router";
 
-type SearchName = "agent" | "account" | "org" | "create" | "project" | "tab" | "section";
+type SearchName = "agent" | "account" | "org" | "create" | "project" | "tab" | "section" | "item";
 
 /** A search param of the current URL, and a setter that keeps the others and replaces history. */
 export function useSearchParam(name: SearchName): [string | undefined, (value: string | undefined) => void] {

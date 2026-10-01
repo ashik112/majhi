@@ -115,6 +115,7 @@ export {
   type PromptBlock,
   type SessionEvent,
   type SessionStart,
+  type StdioServerSpec,
   startSession,
 } from "./session.ts";
 export { localSpawner, type RunMount, type Spawned, type Spawner, type SpawnRequest } from "./spawn.ts";

@@ -1,6 +1,6 @@
 import { type AccountView, currentOrgId, type OrgView, type ToolInfo } from "@majhi/shared";
 import { FileWarning, Plus, X } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DetailPane, ListDetail, ListPane, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
@@ -43,6 +43,14 @@ export function AccountsView() {
   const [linked, setLinked] = useSearchParam("account");
   /** The org a new account goes to, while the add form is open. `""` lets the form pick. */
   const [adding, setAdding] = useState<string>();
+  // The palette's "Add account" opens the form through ?create=<org>, or ?create=1 to let the form pick.
+  const [createParam, setCreateParam] = useSearchParam("create");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run when the param appears, then clear it
+  useEffect(() => {
+    if (createParam === undefined) return;
+    setAdding(createParam === "1" ? "" : createParam);
+    setCreateParam(undefined);
+  }, [createParam]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
   const all = accounts.data ?? [];

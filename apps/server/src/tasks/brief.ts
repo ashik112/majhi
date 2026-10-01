@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { type Attachment, MODE_LABELS, type Task } from "@majhi/shared";
 import { hasRelated, type Related } from "./relations.ts";
-import { type TeamFacts, teamFactsLines } from "./team-facts.ts";
+import { leadPlanLines, type TeamFacts, teamFactsLines } from "./team-facts.ts";
 
 export interface BriefAgent {
   id: string;
@@ -31,7 +31,8 @@ export function outboundRules(perms: readonly string[]): string[] {
 }
 
 /**
- * `TASK.md`: short on purpose. The agent reads it first. `agent` is the lead; with a `team` of
+ * `TASK.md`: short on purpose. The agent reads it first. Sections that stay the same come first and
+ * the ones that change (related tasks, team facts, memory) come last. `agent` is the lead; with a `team` of
  * more than one, a Team section says who is in it and how they hand work to each other. `facts`
  * (a lead-mode task only) adds what the lead needs to staff the work, and how it plans.
  */
@@ -89,12 +90,10 @@ export function renderTaskMd(
     );
     for (const m of reads) lines.push(`- \`${m.path}\`${m.agent === undefined ? "" : ` (@${m.agent})`}`);
   }
-  if (related !== undefined && hasRelated(related)) lines.push("", ...relatedLines(related));
   if (multi) lines.push("", ...teamLines(task, members), "");
   else lines.push("", "## Agent", "", agent === undefined ? "None yet." : `@${agent.id} (${agent.role})`, "");
-  if (facts !== undefined && task.mode === "lead" && task.kind !== "chat")
-    lines.push(...teamFactsLines(facts), "");
-  if (memory.trim() !== "") lines.push("## Memory", "", memory.trim(), "");
+  const leadFacts = facts !== undefined && task.mode === "lead" && task.kind !== "chat" ? facts : undefined;
+  if (leadFacts) lines.push(...leadPlanLines(leadFacts.lead), "");
   if (task.kind === "chat") lines.push(...rememberLines(), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
@@ -119,7 +118,24 @@ export function renderTaskMd(
     "- Org rules: none set yet.",
     "",
   );
+  // What changes while the task runs goes last, so the text above stays the same between reads
+  // and a provider's prompt cache can reuse it (SPEC 5.9 item 7).
+  if (related !== undefined && hasRelated(related)) lines.push(...relatedLines(related), "");
+  if (leadFacts) lines.push(...teamFactsLines(leadFacts), "");
+  if (memory.trim() !== "") lines.push("## Memory", "", memory.trim(), "");
   return lines.join("\n");
+}
+
+/** The body of one `## ` section of a TASK.md, without its heading. Empty when there is none. */
+export function sectionOf(md: string, heading: string): string {
+  const lines = md.split("\n");
+  const start = lines.indexOf(`## ${heading}`);
+  if (start < 0) return "";
+  const end = lines.findIndex((l, i) => i > start && l.startsWith("## "));
+  return lines
+    .slice(start + 1, end < 0 ? undefined : end)
+    .join("\n")
+    .trim();
 }
 
 /** What a chat agent does when the owner says to remember something. */

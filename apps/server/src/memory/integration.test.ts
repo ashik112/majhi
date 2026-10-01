@@ -53,7 +53,9 @@ async function world() {
 
   const servers: Record<string, McpServerSpec[]> = {};
   h.runtime.onSession = (session, start) => {
-    servers[basename(start.account.home)] = start.mcpServers ?? [];
+    servers[basename(start.account.home)] = (start.mcpServers ?? []).filter(
+      (m): m is McpServerSpec => m.type === "http",
+    );
     // The turn stays open, so the session's tokens stay valid until the test ends.
     session.script = async (turn) => {
       await turn.untilCancelled();

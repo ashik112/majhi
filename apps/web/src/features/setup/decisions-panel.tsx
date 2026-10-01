@@ -396,7 +396,8 @@ function JevKey({ status }: { status: DecisionsStatus }) {
   );
 }
 
-function AskBox() {
+/** Ask the decision model typed questions about some text (5.12). Also behind the palette's command. */
+export function AskBox() {
   const ask = useAskDecision();
   const toast = useToast();
   const [state, setState] = useState("");

@@ -11,8 +11,8 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { HOST_LABEL } from "@/lib/hosts";
 import { useRenameOrg, useSaveSecret, useUpdateOrg } from "@/lib/studio-queries";
-import { checkOrgDraft, draftFromOrg, MR_HOSTS, type OrgDraft, type OrgErrors } from "./model";
 import { GitAccounts } from "./git-accounts";
+import { checkOrgDraft, draftFromOrg, MR_HOSTS, type OrgDraft, type OrgErrors } from "./model";
 import { MrSettings } from "./mr-settings";
 
 /**

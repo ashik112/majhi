@@ -22,6 +22,14 @@ export function useTools() {
   });
 }
 
+/** The MCP servers the agent's latest run attached, or null when no run recorded them. */
+export function useAgentAttached(id: string) {
+  return useQuery<CommandOutput<"agents.attached">, ApiRequestError>({
+    queryKey: [...queryKeys.agents, "attached", id],
+    queryFn: () => cmd("agents.attached", { id }),
+  });
+}
+
 export function useOrgs() {
   return useQuery<OrgView[], ApiRequestError>({
     queryKey: queryKeys.orgs,

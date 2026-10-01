@@ -69,6 +69,23 @@ export function useUsageTurns(filters: UsageFilters = {}, limit = 50, enabled = 
   });
 }
 
+/** Where one task's tokens went (SPEC 5.9): the token receipt. */
+export function useTaskReceipt(task: string) {
+  return useQuery<CommandOutput<"usage.receipt">, ApiRequestError>({
+    queryKey: [...queryKeys.usage, "receipt", task],
+    queryFn: () => cmd("usage.receipt", { task }),
+  });
+}
+
+/** Where one agent's tokens went across tasks in a range. */
+export function useAgentReceipt(agent: string, range: UsageRange = "month") {
+  const tz = localTimeZone();
+  return useQuery<CommandOutput<"usage.agentReceipt">, ApiRequestError>({
+    queryKey: [...queryKeys.usage, "agent-receipt", agent, range, tz],
+    queryFn: () => cmd("usage.agentReceipt", { agent, range, tz }),
+  });
+}
+
 const pricesKey = [...queryKeys.usage, "prices"] as const;
 
 /** The price table: majhi's defaults and the owner's rows. */

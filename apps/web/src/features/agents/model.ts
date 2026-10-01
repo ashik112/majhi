@@ -157,6 +157,8 @@ export interface AgentDraft {
   tier: TierPatch;
   where: string[];
   perms: Perm[];
+  /** Server names to add and `-name` to turn a default off (see `TOOL_CATALOG`). */
+  tools: string[];
   fallback: string | undefined;
   instructions: string;
 }
@@ -173,12 +175,13 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     tier: f.tier ?? {},
     where: f.where,
     perms: f.perms,
+    tools: f.tools,
     fallback: f.fallback,
     instructions: agent.instructions,
   };
 }
 
-/** The `agents.update` input: the draft laid over the file's other fields (skills, tools, ...), which the editor does not touch. */
+/** The `agents.update` input: the draft laid over the file's other fields (skills, connections, ...), which the editor does not touch. */
 export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
   const {
     id: _id,
@@ -196,6 +199,7 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
     account: draft.account,
     where: draft.where,
     perms: draft.perms,
+    tools: draft.tools,
   };
   if (draft.model) frontmatter.model = draft.model;
   if (draft.effort) frontmatter.effort = draft.effort;

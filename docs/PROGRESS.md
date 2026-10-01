@@ -1,5 +1,74 @@
 # Progress
 
+## Phase 9 plan (PRV-24)
+
+Branch `task/prv-24-phase-9-token-receipts-and-polish`, from `main`. SPEC 5.9, 5.12, 5.13 and section 7, Phase 9. Part 1 (server-heavy, the hardware builder) is below; the palette, shortcuts and performance pass follow after it, and PRV-40 (budgets), PRV-41 (audit log) and PRV-42 (phone access) run as child tasks.
+
+Part 1, in this order, one small commit per step:
+
+1. **Token receipts.** Migration 108 adds `usage_events` (the brief size once per task, the TASK.md memory section, each `majhi-memory.recall` result, each compaction with before, after and native or handoff) and `runs.tools`. `usage.receipt` (one task) and `usage.agentReceipt` (one agent, a date range) in `packages/shared`, so the boss gets them as tools. The math is a pure function in `usage/receipt.ts`: totals and the cache hit rate `cache_read / (input + cache_read)`, or "not reported" when the agent reported no cache numbers; cost and the split per agent come from the `turns` rows already there; decisions that replaced an LLM call are the logged decisions of the task that a local or hosted provider answered and the gate accepted. Web: a Context tab in the task view and the agent receipt in the agent drawer.
+2. **Tool gating.** One function turns the role defaults plus the agent's `tools` list into the attached servers. A `-name` entry in `tools` turns a default off (`-majhi-decide`). Today's rules are the defaults, so no agent loses a tool. `runs.tools` records what each run attached; the Studio agent editor shows it.
+3. **Serena.** A stdio MCP server per task worktree for roles that edit code, gated by step 2. The package, launch command and the runner image change are checked first and written to `docs/DECISIONS.md`. A Health check says whether it is there.
+4. **Cache-friendly prompts.** Audit of `runs/prompt.ts`, `runs/handoff.ts`, `runs/wake.ts` and `tasks/brief.ts`: stable text first, volatile text last. TASK.md's "Team facts" block (it carries an "As of" time) moves behind the stable sections. The measure is the cache hit rate in the receipt; before and after go in this file.
+
+Tests: the receipt math, the migration, the gating function. Typecheck, plus the tests of the files touched.
+
+### Part 1 done (token receipts, tool gating, Serena, cache-friendly prompts)
+
+What works:
+
+- **Receipts.** `usage.receipt` (a task) and `usage.agentReceipt` (an agent, a range) are commands, so the boss has them as tools. A task receipt has: brief size at the first prompt (estimated, once per task), the TASK.md memory section and each `majhi-memory.recall` result (estimated), input, output, reasoning, cache read and write, the cache hit rate `cache_read / (input + cache_read)` ("Not reported" when no cache number came in), cost with the split per agent, compactions (before, after, native or handoff, with the reason) and the decisions a local or hosted provider answered that the gate accepted (the `acp` stand-in and the rules do not count). Migration 108 adds `usage_events` and `runs.tools`. Web: a Context tab in the task view (context meter per agent, receipt, attachments, skills of the team) and the agent's receipt for the month in the agent drawer.
+- **Tool gating.** `gateTools` (`rooms/gating.ts`) is the only place that decides which MCP servers a run gets. The defaults are the old rules, unchanged. In an agent's `tools`, `-majhi-decide` turns a default off and a bare name adds one. Each run records what it attached (`runs.tools`, command `agents.attached`); Studio's agent editor has a Tools section with Default, Add and Off per server and shows the latest run's list. The boss keeps `majhi-admin`.
+- **Serena 1.7.0.** Stdio MCP server per run for builders with a worktree, when agents run in runner containers. Runner image installs it under `/opt/serena`. Health and `make doctor` have a "Serena" check (a warning, with Rebuild majhi). Choice and launch command in `docs/DECISIONS.md`.
+- **Cache-friendly prompts.** TASK.md now ends with Related tasks, Team facts (its "As of" line) and Memory; "How the lead plans" is fixed text and moved up with the rules. Handoff prompts open with their fixed rules. A note majhi builds repeats only the Brief instead of all of TASK.md, which the fresh prompt already carries.
+
+Cache, before and after. A real hit rate needs real runs, and none are recorded where this was built, so there is no before and after hit rate yet; the receipt will show it from the next runs. What was measured is the stable start of TASK.md: two renders of the same task a while apart (the clock, the limits, a related task's status and one recalled fact differ) share 300 of 3,717 characters before (8%) and 3,424 of 3,717 after (92%). A provider cache can only reuse that shared start, and only in a fresh session of the same agent (a rotation, a handoff, a restart): inside one session the conversation already is the prefix. Compare the hit rate of tasks before and after this branch once a few have run.
+
+How to try it: open a task, then its Context tab; click an agent mention for the drawer; Studio > Agents > an agent > Tools. `usage.receipt` from the boss: "show the token receipt of PRV-24".
+
+Left and known issues:
+
+- The runner image was not built here (no Docker), and Serena was not run inside it. It was installed with uv and driven over MCP stdio on a Linux machine (21 tools, 14 with memories and onboarding off, about 20,000 characters of tool descriptions a session). Serena downloads each language's server on first use, so the first use needs network. Build the image and run one builder task before relying on it.
+- For a Claude agent on a task with several repos, Serena covers the first repo only (its `claude-code` context has no `activate_project`).
+- Receipts start at this change: tasks started before it have no brief size, and their compactions are only in the room. Sizes of what majhi adds are character counts divided by four.
+- The receipts migration is numbered 108 so it does not clash with PRV-41 (106) and PRV-40 (107).
+- `admin/boss.test.ts` and `usage/integration.test.ts` fail now and then with `ENOTEMPTY` while removing their temp folder (a background write during teardown). It is not from this branch: `boss.test.ts` failed 7 of 10 runs on `main` (a75aa4da).
+- Not done in part 1: the palette, keyboard shortcuts and the performance pass of Phase 9.
+
+### Part 2 done (palette, shortcuts, performance pass)
+
+What works:
+
+- **Command palette** (`Cmd/Ctrl K`). Search stays: tasks, and anything said or run in a room. Memory facts join it. Commands match on their name and filter as you type: New task, Add account, New agent, Install skill from link, Search memory, Swap an agent in this task (only on a task page), Resume paused runs, Go to task, Open the audit log, Budgets and alerts, Manage workspace roots, Ask the decision model, Reopen onboarding, Open the boss. They reuse what exists: the New task dialog, the add-account form (`/accounts?create=`), the new-agent form (`/agents?create=`), `team.swap` and `tasks.update`, `tasks.start`, `/settings/roots`, the decision panel's ask form and the onboarding mailbox. Some open a list of their own (Search memory, Go to task, Swap); Esc or Backspace on an empty field goes back, Esc from the root closes. Arrows, Enter and Esc work throughout.
+- **A room search match** opens its task and scrolls to the message, lighting its row once. Older pages load until the row exists (a match 5,990 messages back took 11 s, in view, address cleared).
+- **Shortcuts** come from one table (`features/shell/shortcuts.ts`); the handlers and the `?` list both read it. New: `]` and `[` for the next and previous open task (board order), `a` to approve (clicks the review card's main button: Ship opens its panel, or Mark done for a task with no repos), `g l` for the audit log. `Cmd/Ctrl Enter` sends from the message box (it stops a working agent first), and `Cmd/Ctrl K`, `Cmd/Ctrl J` and send are the only keys that work while typing in a field. The list shows every key, grouped.
+- **Performance.** Two causes, both in the room. Every row took the whole agent list and the task in its context, so each message or status change redrew every row (markdown and code highlighting made that the cost: 6 updates spent 2.2 s in the highlighter and the garbage collector). Rows now take only what they show. And a long room drew its 200 newest rows before anything showed: a room over 60 rows now draws its newest 40 first and the rest a frame later.
+
+Measured with `scripts/perf.ts` (the built server with no agents, a headless browser, rooms of 40, 600 and 6,000 items; one Linux container with other work on it, so single runs vary by about a third; medians of 8):
+
+| | Before | After | Target |
+|---|---|---|---|
+| Server RSS, idle after start | 156 MB | 151 to 164 MB | under 200 |
+| Server RSS, after opening three tasks | 183 MB | 178 to 204 MB over several runs | under 200 |
+| Task switch, room of 40 (reopened) | 80 ms | 62 to 76 ms | under 100 |
+| Task switch, room of 600 | 182 ms | 60 ms | under 100 |
+| Task switch, room of 6,000 | 111 ms (first open 199 ms) | 74 to 78 ms (first open 53 to 77 ms) | under 100 |
+| Room update, room of 6,000 | 148 ms (worst 308) | 15 ms (worst 37) | under 50 |
+| Room update, after 1,550 rows are loaded | 529 ms (worst 822) | 20 to 24 ms (worst 35) | under 50 |
+
+Run it with `pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm exec tsx scripts/perf.ts` (add `PROFILE=1` for the heaviest functions during updates).
+
+How to try it: press `Cmd/Ctrl K` and type "acc", "memory" or a word from a room; press `?`; on a task press `]`; open a task in review and press `a`.
+
+Phase 9 as a whole: token receipts, tool gating, Serena and cache-friendly prompts (part 1); the palette, shortcuts and the performance pass (part 2); budgets with alerts (PRV-40), the audit log page (PRV-41) and phone access on the local network (PRV-42, not started) are child tasks.
+
+Left and known issues:
+
+- Server memory after opening tasks sits at the 200 MB line (178 to 204 MB), and reached 211 MB after the script made the server try to start an agent. It is not clearly under the target; nothing was changed for it.
+- "Install skill from link" only opens the Skills page: skills are Phase 6 and the page's install field is still disabled. The command works once that lands.
+- A match far back in a long room loads older pages 100 at a time, so it takes seconds.
+- `mrs/flow.test.ts` ("a task closed with merge requests not merged") fails on `main` (`b9c85f24`) and on this branch alike; it is not from Phase 9.
+
 ## PRV-40: Budgets and alerts (built, waiting for owner review)
 
 Branch `task/prv-40-budgets-and-alerts`, from `main`. Weekly budgets per org and per account, built on the Phase 2c `turns` table. The choices are in `docs/DECISIONS.md` (2026-10-01, Weekly budgets).

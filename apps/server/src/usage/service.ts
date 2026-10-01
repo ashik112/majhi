@@ -1,8 +1,11 @@
 import {
+  type AgentReceipt,
+  cacheHitRate,
   DECISIONS_TASK,
   EMPTY_TOTALS,
   type Price,
   type PriceRow,
+  type TaskReceipt,
   type TurnRow,
   type UsageBreakdown,
   type UsageDay,
@@ -15,13 +18,17 @@ import {
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { writePrice } from "../config/write.ts";
 import { UserError } from "../errors.ts";
+import type { UsageEvents } from "./events.ts";
 import { priceRows, readPrices } from "./prices.ts";
 import { addDays, dayBounds, defaultTimeZone, localDay, rangeDays } from "./ranges.ts";
+import { agentContext, agentsOf, compactionsOf, contextOf, decisionsOf, sumTotals } from "./receipt.ts";
 import { addRow, type TurnQuery, type UsageRepo } from "./repo.ts";
 
 export interface UsageServiceDeps {
   repo: UsageRepo;
   config: ConfigService;
+  /** What majhi put into contexts, for the receipts. */
+  events?: UsageEvents;
   /** Days follow this zone when a caller names none. Default: `TZ`, else the runtime's. */
   defaultTz?: string;
   now?: () => Date;
@@ -118,6 +125,71 @@ export class UsageService {
 
   turns(filters: UsageFilters, limit: number): TurnRow[] {
     return this.deps.repo.list({ filters }, limit);
+  }
+
+  /** Where one task's tokens went (SPEC 5.9). */
+  receipt(task: string): TaskReceipt {
+    const events = this.deps.events;
+    if (events === undefined) throw new UserError("Token receipts are not available.", 501);
+    const groups = this.deps.repo.groups("agent", { filters: { task } }, 100);
+    const agents = agentsOf(groups);
+    const totals = sumTotals(agents.map((a) => a.totals));
+    const rows = events.forTask(task);
+    return {
+      task,
+      title: events.title(task),
+      context: contextOf(rows),
+      totals,
+      cacheHitRate: cacheHitRate(totals),
+      agents,
+      compactions: compactionsOf(rows),
+      decisions: decisionsOf(events.decisionsForTask(task)),
+    };
+  }
+
+  /** Where one agent's tokens went across tasks, for a range. */
+  agentReceipt(input: {
+    agent: string;
+    range: UsageRange;
+    from?: string | undefined;
+    to?: string | undefined;
+    tz?: string | undefined;
+  }): AgentReceipt {
+    const events = this.deps.events;
+    if (events === undefined) throw new UserError("Token receipts are not available.", 501);
+    const tz = input.tz ?? this.defaultTz;
+    let span: { from: string; to: string } | undefined;
+    if (input.from !== undefined || input.to !== undefined) {
+      if (input.from === undefined || input.to === undefined)
+        throw new UserError("Give both from and to, or a range.", 400);
+      if (input.from > input.to) throw new UserError("from must not be after to.", 400);
+      span = { from: input.from, to: input.to };
+    } else span = rangeDays(input.range, this.today(tz));
+    const q = this.query({ agent: input.agent }, span, tz);
+    const bounds = { start: q.start, end: q.end };
+    const totals = this.deps.repo.totals(q);
+    const rows = events.forAgent(input.agent, bounds);
+    return {
+      agent: input.agent,
+      tz,
+      ...(span === undefined ? {} : { from: span.from, to: span.to }),
+      totals,
+      cacheHitRate: cacheHitRate(totals),
+      tasks: events.taskCount(input.agent, bounds),
+      topTasks: this.deps.repo
+        .groups("task", q, 10)
+        .filter((t) => t.key !== null)
+        .map((t) => ({
+          task: t.key ?? "",
+          title: label("task", t.key, t.title),
+          totals: t.totals,
+          cacheHitRate: cacheHitRate(t.totals),
+        })),
+      context: agentContext(rows),
+      compactions: compactionsOf(rows).length,
+      nativeCompactions: compactionsOf(rows).filter((c) => c.method === "native").length,
+      decisions: decisionsOf(events.decisionsForAgent(input.agent, bounds)),
+    };
   }
 
   async prices(): Promise<{ checked: string; rows: PriceRow[] }> {

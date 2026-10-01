@@ -255,7 +255,7 @@ function LimitLine({
 }
 
 /** A thin bar: how much of the agent's context window is in use. */
-function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
+export function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
   const percent = Math.round(share * 100);
   return (
     <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>

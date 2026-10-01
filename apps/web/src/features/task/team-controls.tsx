@@ -12,8 +12,9 @@ import { useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 const MODES: CoordinationMode[] = ["lead", "pipeline", "review-loop"];
 
 /** Agents that may join the task and are not on it yet, the org's own first. */
-function useCandidates(task: Task) {
+export function useCandidates(task: Pick<Task, "org" | "team"> | undefined) {
   const index = useAgentIndex();
+  if (task === undefined) return [];
   return [...index.values()]
     .filter((a) => !a.isBoss && canWorkIn(a, task.org) && !task.team.includes(a.id))
     .toSorted(

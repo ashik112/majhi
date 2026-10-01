@@ -61,7 +61,7 @@ async function world() {
   const servers: Record<string, McpServerSpec[]> = {};
   h.runtime.onSession = (session, start) => {
     const agent = basename(start.account.home) === "codex-acme" ? "acme-lead" : "acme-builder";
-    servers[agent] = start.mcpServers ?? [];
+    servers[agent] = (start.mcpServers ?? []).filter((m): m is McpServerSpec => m.type === "http");
     session.script = async (turn) => {
       const list = prompts[agent] ?? [];
       prompts[agent] = list;

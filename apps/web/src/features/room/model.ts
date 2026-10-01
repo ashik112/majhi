@@ -10,6 +10,7 @@ import {
   type Task,
   type ToolContent,
 } from "@majhi/shared";
+import { isSendPress } from "@/features/shell/shortcuts";
 
 // Room state ----------------------------------------------------------------
 
@@ -526,7 +527,7 @@ export function composerKey(
   if (state.popupOpen && !event.metaKey && !event.ctrlKey) return "none";
   if (event.shiftKey) return "newline";
   if (!state.hasContent) return "none";
-  if (event.metaKey || event.ctrlKey) return state.busy ? "interrupt" : "send";
+  if (isSendPress(event)) return state.busy ? "interrupt" : "send";
   return "send";
 }
 

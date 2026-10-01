@@ -140,6 +140,7 @@ export function Ship({
   lead,
   align = "right",
   variant = "secondary",
+  primaryAction = false,
 }: {
   task: Task;
   run: RunShip;
@@ -147,6 +148,8 @@ export function Ship({
   lead?: string | undefined;
   align?: "left" | "right";
   variant?: "primary" | "secondary";
+  /** The task's one main action, which the approve shortcut clicks. */
+  primaryAction?: boolean;
 }) {
   const [place, setPlace] = useState<CSSProperties>();
   const open = place !== undefined;
@@ -189,6 +192,7 @@ export function Ship({
         ref={trigger}
         size="sm"
         variant={variant}
+        {...(primaryAction ? { "data-primary-action": "" } : {})}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}

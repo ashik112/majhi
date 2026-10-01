@@ -333,3 +333,97 @@ export const PriceRowSchema = z.object({
   checked: z.string().optional(),
 });
 export type PriceRow = z.infer<typeof PriceRowSchema>;
+
+/**
+ * Cache hit rate: the share of input tokens served from the cache, `cache_read / (input +
+ * cache_read)`. Null when the agent reported no cache numbers at all, so "0%" never means "unknown".
+ */
+export function cacheHitRate(t: Pick<UsageTotals, "inputTokens" | "cacheReadTokens" | "cacheWriteTokens">) {
+  if (t.cacheReadTokens === 0 && t.cacheWriteTokens === 0) return null;
+  const denominator = t.inputTokens + t.cacheReadTokens;
+  return denominator === 0 ? null : t.cacheReadTokens / denominator;
+}
+
+const Rate = z.number().min(0).max(1).nullable();
+
+/** A compaction as the receipt shows it. `reason` is how the context event ended up here (`threshold`'s native or handoff, a rotation, a fresh session, a recovery). */
+export const ReceiptCompactionSchema = z.object({
+  at: z.string(),
+  agent: z.string(),
+  method: z.enum(["native", "handoff"]),
+  reason: z.enum(["native", "handoff", "rotation", "fresh", "recovery"]),
+  /** Tokens in the context before and after, when known. */
+  before: Count.nullable(),
+  after: Count.nullable(),
+});
+export type ReceiptCompaction = z.infer<typeof ReceiptCompactionSchema>;
+
+/** Sizes of what majhi put into the context, in estimated tokens (4 characters each). */
+export const ReceiptContextSchema = z.object({
+  /** TASK.md when the brief was first sent, once per task. Null before the first prompt. */
+  briefTokens: Count.nullable(),
+  /** The Memory section of TASK.md at that time. */
+  memoryTokens: Count,
+  /** The results of `majhi-memory.recall` calls. */
+  recallTokens: Count,
+  recalls: Count,
+  /** Always true today: majhi counts characters, the agent does not report these. */
+  estimated: z.literal(true),
+});
+export type ReceiptContext = z.infer<typeof ReceiptContextSchema>;
+
+export const ReceiptDecisionsSchema = z.object({
+  /** Decisions a local or hosted provider answered and the gate accepted: each one an LLM call saved. */
+  replaced: Count,
+  /** Every decision logged for the task. */
+  total: Count,
+});
+export type ReceiptDecisions = z.infer<typeof ReceiptDecisionsSchema>;
+
+export const ReceiptAgentSchema = z.object({
+  agent: z.string(),
+  totals: UsageTotalsSchema,
+  cacheHitRate: Rate,
+});
+export type ReceiptAgent = z.infer<typeof ReceiptAgentSchema>;
+
+/** Where one task's tokens went (SPEC 5.9). */
+export const TaskReceiptSchema = z.object({
+  task: z.string(),
+  title: z.string().nullable(),
+  context: ReceiptContextSchema,
+  totals: UsageTotalsSchema,
+  /** Null: "not reported". */
+  cacheHitRate: Rate,
+  /** The split per agent, most expensive first. */
+  agents: z.array(ReceiptAgentSchema),
+  compactions: z.array(ReceiptCompactionSchema),
+  decisions: ReceiptDecisionsSchema,
+});
+export type TaskReceipt = z.infer<typeof TaskReceiptSchema>;
+
+/** One agent across tasks in a date range. */
+export const AgentReceiptSchema = z.object({
+  agent: z.string(),
+  tz: z.string(),
+  from: DaySchema.optional(),
+  to: DaySchema.optional(),
+  totals: UsageTotalsSchema,
+  cacheHitRate: Rate,
+  /** Tasks the agent spent tokens in. */
+  tasks: Count,
+  /** Its most expensive tasks, at most 10. */
+  topTasks: z.array(
+    z.object({
+      task: z.string(),
+      title: z.string().nullable(),
+      totals: UsageTotalsSchema,
+      cacheHitRate: Rate,
+    }),
+  ),
+  context: ReceiptContextSchema.omit({ briefTokens: true }).extend({ briefTokens: Count }),
+  compactions: Count,
+  nativeCompactions: Count,
+  decisions: ReceiptDecisionsSchema,
+});
+export type AgentReceipt = z.infer<typeof AgentReceiptSchema>;

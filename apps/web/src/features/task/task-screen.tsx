@@ -1,4 +1,4 @@
-import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import { setPendingPermission } from "@/lib/attention";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTask } from "@/lib/task-queries";
+import type { AppSearch } from "@/router";
+import { ContextTab } from "./context-tab";
 import { briefBody, firstPendingPermission } from "./model";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
@@ -34,11 +36,28 @@ function TaskView({ taskId }: { taskId: string }) {
   const task = useTask(taskId);
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
-  const { file } = useSearch({ from: "/t/$taskId" });
+  const { file, item } = useSearch({ from: "/t/$taskId" });
+  const navigate = useNavigate();
+  // A search match opened this task: the room scrolls to it, then the address forgets it.
+  const clearItem = useCallback(() => {
+    void navigate({
+      to: ".",
+      search: (prev: AppSearch): AppSearch => {
+        const { item: _shown, ...rest } = prev;
+        return rest;
+      },
+      replace: true,
+    });
+  }, [navigate]);
   const [tab, setTab] = useState<TaskTab>("room");
   const showChanges = useCallback(() => setTab("changes"), []);
   const facts = useFacts();
   const record = useTaskRecord(taskId);
+
+  // A search match lives in the room, whichever tab was open.
+  useEffect(() => {
+    if (item !== undefined) setTab("room");
+  }, [item]);
 
   // The shell's banner points at a prompt waiting in this room.
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
@@ -106,6 +125,7 @@ function TaskView({ taskId }: { taskId: string }) {
   const tabs: TaskTab[] = [
     "room",
     ...(data.repos.length > 0 ? (["changes"] as const) : []),
+    "context",
     ...(memoryTab ? (["memory"] as const) : []),
     "terminal",
   ];
@@ -133,11 +153,14 @@ function TaskView({ taskId }: { taskId: string }) {
               dispatch={room.dispatch}
               loadOlder={room.loadOlder}
               onShowChanges={showChanges}
+              focusItem={shown === "room" ? item : undefined}
+              onFocused={clearItem}
             />
           </div>
           {shown === "changes" && data.repos.length > 0 && (
             <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
           )}
+          {shown === "context" && <ContextTab task={data} agents={room.state.agents} />}
           {shown === "memory" && <TaskMemory task={data} />}
           {shown === "terminal" && <TaskTerminal task={data} />}
         </div>

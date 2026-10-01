@@ -1,23 +1,32 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentSession, buildEnv, type RunMount, type RuntimeOptions } from "@majhi/acp";
+import {
+  type AgentSession,
+  buildEnv,
+  type RunMount,
+  type RuntimeOptions,
+  type StdioServerSpec,
+} from "@majhi/acp";
 import type { AccountConfig, AgentFrontmatter, Task, TeamOverride } from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
-import type { AdminAccess } from "../admin/access.ts";
+import { ADMIN_SERVER_NAME, type AdminAccess } from "../admin/access.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { Decisions } from "../decisions/api.ts";
+import { DECIDE_SERVER_NAME } from "../decisions/service.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { ProcessLaunch } from "../processes/manager.ts";
 import type { RoomAccess, ToolServer } from "../rooms/access.ts";
+import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../tasks/read-mounts.ts";
 import { gitAttribution } from "./attribution.ts";
+import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
 
 /** An agent file and the account it runs on, checked. */
 export interface ResolvedAgent {
@@ -69,6 +78,8 @@ export interface LaunchDeps {
   decisions?: Decisions | undefined;
   /** majhi-room and majhi-tasks (Phase 3). */
   rooms?: RoomAccess | undefined;
+  /** Serena can start in the runner container (5.9 item 6). Undefined when agents do not run in one. */
+  serena?: SerenaLaunch | undefined;
 }
 
 export interface Launched {
@@ -81,6 +92,10 @@ export interface Launched {
   adminToken?: string | undefined;
   decideToken?: string | undefined;
   roomTokens?: { server: ToolServer; token: string }[] | undefined;
+  /** The MCP servers the session was given, by name (recorded on the run). */
+  tools: string[];
+  /** Things the room should hear about this start, such as a tool left out. */
+  notices: string[];
   /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
   model?: string | undefined;
   effort?: string | undefined;
@@ -107,14 +122,35 @@ export async function launch(
   const effort = fm.effort === "auto" ? undefined : fm.effort;
   const resume = run.freshNext ? undefined : deps.store.runs.lastSessionId(run.task, run.agent);
   const ranBefore = resume !== undefined || deps.store.runs.ranBefore(run.task, run.agent);
-  const admin = deps.admin?.attach({ task: run.task, agent: run.agent }, fm, boss);
-  const decide = deps.decisions?.attachTool(run.task, run.agent);
-  const rooms = deps.rooms?.attach({ task: run.task, agent: run.agent }, fm, {
-    teamSize: task.team.length,
+  const caller = { task: run.task, agent: run.agent };
+  const worktrees = task.repos.map((r) => r.worktree ?? join(task.folder, r.project));
+  const gated = gateTools(fm, {
     boss,
+    teamSize: task.team.length,
     soloLead: task.mode === "lead" && task.kind !== "chat" && task.team[0] === run.agent && !isBossChat(task),
+    containersOn: deps.rooms?.canRunContainers ?? false,
+    serena: deps.serena !== undefined,
+    hasWorktrees: worktrees.length > 0,
   });
-  const mcpServers = [admin?.server, decide?.server, ...(rooms?.servers ?? [])].flatMap((s) =>
+  const on = (name: string) => gated.includes(name as GatedTool);
+  const admin = on(ADMIN_SERVER_NAME) ? deps.admin?.attach(caller, fm, boss) : undefined;
+  const decide = on(DECIDE_SERVER_NAME) ? deps.decisions?.attachTool(run.task, run.agent) : undefined;
+  const rooms = deps.rooms?.attach(caller, gated);
+  const notices: string[] = [];
+  let serena: StdioServerSpec | undefined;
+  const firstWorktree = worktrees[0];
+  if (on(SERENA_SERVER_NAME) && deps.serena !== undefined && firstWorktree !== undefined) {
+    // A worktree the owner removed by hand must not stop the start: the agent just has no Serena.
+    if (
+      await keepSerenaOutOfGit(firstWorktree).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      serena = serenaServer(deps.serena, firstWorktree, agent.account.tool);
+    }
+  }
+  const mcpServers = [admin?.server, decide?.server, ...(rooms?.servers ?? []), serena].flatMap((s) =>
     s === undefined ? [] : [s],
   );
   let session: AgentSession;
@@ -150,6 +186,8 @@ export async function launch(
     adminToken: admin?.token,
     decideToken: decide?.token,
     roomTokens: rooms?.tokens,
+    tools: mcpServers.map((m) => m.name),
+    notices,
     model,
     effort,
   };

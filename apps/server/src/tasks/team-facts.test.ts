@@ -373,7 +373,7 @@ describe("the TASK.md sections", () => {
 
   it("writes a lead-mode task's members, joinable agents and running tasks", () => {
     const facts = buildTeamFacts(input({ agents: [lead, builder, reviewer], accounts, running }));
-    expect(teamFactsLines(facts).slice(0, 15)).toEqual([
+    expect(teamFactsLines(facts)).toEqual([
       "## Team facts",
       "",
       "As of 11:05 UTC. majhi rewrites this each time it wakes @acme-lead.",
@@ -387,8 +387,6 @@ describe("the TASK.md sections", () => {
       "Running now:",
       "- ACM-3 Faster scroll: @acme-lead on claude-acme. Changed in web: apps/web/a.ts, apps/web/b.ts and 3 more. Overlap with this task: little.",
       "- ACM-4 Retry runs: @acme-builder on claude-globex. Its brief names in api: apps/server/src/runs (nothing changed yet). Overlap with this task: unknown.",
-      "",
-      "## How the lead plans",
     ]);
   });
 
@@ -396,7 +394,7 @@ describe("the TASK.md sections", () => {
     const text = teamFactsLines(buildTeamFacts(input({ accounts }))).join("\n");
     expect(text).toContain("Running now: nothing else.");
     expect(text).not.toContain("Could join");
-    expect(text).toContain("## How the lead plans");
+    expect(text).not.toContain("## How the lead plans");
   });
 
   it("words an account that cannot be used", () => {
@@ -511,8 +509,7 @@ describe("recent plans", () => {
       "- ACM-5 Add health endpoint (builders, reviewer): @acme-builder 1.2M tokens ($1.40), @acme-lead 310k tokens ($2.10).",
       "- ACM-4 (builders, reviewer): @acme-lead 900 tokens.",
     ]);
-    expect(lines[at + 3]).toBe("");
-    expect(lines[at + 4]).toBe("## How the lead plans");
+    expect(lines).toHaveLength(at + 3);
   });
 
   it("leaves the block out when there are none, and out of the wake block", () => {

@@ -283,7 +283,10 @@ export function runningFactsOf(
 // ---------------------------------------------------------------------------
 // TASK.md
 
-/** The TASK.md sections: Team facts, then How the lead plans. */
+/**
+ * The TASK.md "Team facts" section. It changes every time the lead wakes (the clock, the limits
+ * left, what runs), so TASK.md puts it after the sections that do not.
+ */
 export function teamFactsLines(f: TeamFacts): string[] {
   const lines = [
     "## Team facts",
@@ -301,18 +304,21 @@ export function teamFactsLines(f: TeamFacts): string[] {
   if (f.past.length > 0) {
     lines.push("", "Recent plans, with the tokens each agent used:", ...f.past.map(pastLine));
   }
-  lines.push(
-    "",
+  return lines;
+}
+
+/** The TASK.md "How the lead plans" section: fixed text, so it sits with the stable sections. */
+export function leadPlanLines(lead: string): string[] {
+  return [
     "## How the lead plans",
     "",
-    `@${f.lead}: choose the cheapest way that gets this done well, and say why.`,
+    `@${lead}: choose the cheapest way that gets this done well, and say why.`,
     "",
     '- Your first reply states the plan in a few lines: who does what, in which order, and why that is cheaper or faster. For example "the builder on a cheaper model writes the code, I review", or "small change, I do it myself". Record it with the majhi-room record_plan tool before you start the work: the room shows it as a plan line, and majhi keeps it with the tokens each agent used.',
     "- Rules of thumb, not limits: give bulk implementation to cheaper agents; keep expensive models for planning and review; split large work into child tasks so turns stay short; run independent parts in parallel on different accounts when their limits allow. Doing it alone is right when handing over would cost more than the work.",
     "- Do not give a long job to an agent whose account is nearly out.",
     "- The owner may reply to change the plan. Follow the new plan, and record it again with record_plan.",
-  );
-  return lines;
+  ];
 }
 
 function memberLine(m: MemberFacts): string {

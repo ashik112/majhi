@@ -165,7 +165,8 @@ describe("Related tasks section", () => {
     expect(md).toContain("- Waits for GLX-412: Auth. Waits until it is merged (now running).");
     expect(md).not.toContain("task/glx-412-auth");
     expect(md).toContain("- Child GLX-420: Sub (done)");
-    expect(md.indexOf("## Related tasks")).toBeLessThan(md.indexOf("## Agent"));
+    // What changes while the task runs comes after the fixed sections.
+    expect(md.indexOf("## Rules")).toBeLessThan(md.indexOf("## Related tasks"));
   });
 
   it("keeps an agent with merge permission from moving the base branch, and push with the owner", () => {
@@ -200,6 +201,16 @@ describe("Team facts section", () => {
     expect(md).toContain("record it again with record_plan.");
     expect(md.indexOf("## Team\n")).toBeLessThan(md.indexOf("## Team facts"));
     expect(md.indexOf("## How the lead plans")).toBeLessThan(md.indexOf("## Rules"));
+  });
+
+  it("comes after the fixed sections, with the memory last, so the start of the file does not change", () => {
+    const md = renderTaskMd(task, team[0], "Acme", undefined, team, facts, "- a recalled fact");
+    expect(md.indexOf("## Rules")).toBeLessThan(md.indexOf("## Team facts"));
+    expect(md.indexOf("## Team facts")).toBeLessThan(md.indexOf("## Memory"));
+    const later = { ...facts, at: "2026-09-30T15:40:00.000Z" };
+    const other = renderTaskMd(task, team[0], "Acme", undefined, team, later, "- another fact");
+    const shared = md.slice(0, md.indexOf("## Team facts"));
+    expect(other.startsWith(shared)).toBe(true);
   });
 
   it("is left out without facts, in pipeline mode and for a chat task", () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AgentToolRefSchema } from "./agent-tools.ts";
 import { AttentionEventSchema } from "./notify.ts";
 import { CommitsPatchSchema, ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
@@ -180,7 +181,7 @@ export const AgentFrontmatterSchema = z.strictObject({
   /** Org ids the agent may work in, or `[anywhere]`. */
   where: z.array(OrgIdSchema).min(1).default(["anywhere"]),
   perms: z.array(PermSchema).default([]),
-  tools: z.array(IdSchema).default([]),
+  tools: z.array(AgentToolRefSchema).default([]),
   connections: z.array(IdSchema).default([]),
   skills: z.array(z.string().trim().min(1)).default([]),
   fallback: IdSchema.optional(),

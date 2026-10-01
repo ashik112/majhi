@@ -99,7 +99,35 @@ describe("store", () => {
       "tasks",
       "triggers",
       "turns",
+      "usage_events",
     ]);
+  });
+
+  it("keeps token receipt events per task: one brief, deleted with the task, and a tools column on runs", () => {
+    const store = new Store(":memory:");
+    store.tasks.insert(task("ACME-1"));
+    const e = store.usageEvents;
+    expect(e.recordBrief("ACME-1", "builder", "2026-01-01T00:00:00.000Z", 900, 120)).toBe(true);
+    expect(e.recordBrief("ACME-1", "reviewer", "2026-01-01T00:01:00.000Z", 1500, 300)).toBe(false);
+    e.recordRecall("ACME-1", "builder", "2026-01-01T00:02:00.000Z", 80);
+    e.recordCompaction({
+      task: "ACME-1",
+      agent: "builder",
+      at: "2026-01-01T00:03:00.000Z",
+      method: "native",
+    });
+    expect(e.forTask("ACME-1").map((r) => [r.kind, r.agent, r.tokens])).toEqual([
+      ["brief", "builder", 900],
+      ["memory", "builder", 120],
+      ["recall", "builder", 80],
+      ["compaction", "builder", null],
+    ]);
+    // A task that does not exist has no receipt to keep, and does not throw.
+    expect(e.recordBrief("ACME-9", "builder", "2026-01-01T00:00:00.000Z", 1, 1)).toBe(false);
+    const columns = store.raw.prepare("PRAGMA table_info(runs)").all() as { name: string }[];
+    expect(columns.map((c) => c.name)).toContain("tools");
+    store.raw.prepare("DELETE FROM tasks WHERE id = 'ACME-1'").run();
+    expect(e.forTask("ACME-1")).toEqual([]);
   });
 
   it("uses WAL on a file database", async () => {

@@ -17,6 +17,7 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
   RemountSchema,
@@ -141,10 +142,12 @@ import {
   TriggerViewSchema,
 } from "./triggers.ts";
 import {
+  AgentReceiptSchema,
   DaySchema,
   PriceKeySchema,
   PriceRowSchema,
   PriceSchema,
+  TaskReceiptSchema,
   TimeZoneSchema,
   TurnRowSchema,
   UsageBreakdownSchema,
@@ -599,6 +602,8 @@ export const commands = {
           where: z.array(IdSchema).min(1),
           // Not the frontmatter's own field: that one defaults to [] and would wipe perms in a patch.
           perms: z.array(PermSchema),
+          // Names to add, and `-name` to turn a default off. See TOOL_CATALOG.
+          tools: z.array(AgentToolRefSchema),
           fallback: IdSchema.nullable(),
         })
         .partial()
@@ -610,6 +615,13 @@ export const commands = {
         .optional(),
     }),
     output: AgentEntrySchema,
+  },
+  "agents.attached": {
+    risk: "read",
+    summary:
+      "The MCP servers the agent's latest run attached, with the task and time. Null when it has not run since majhi started recording them",
+    input: z.object({ id: IdSchema }),
+    output: AttachedToolsSchema.nullable(),
   },
   "agents.duplicate": {
     risk: "change",
@@ -1725,6 +1737,26 @@ export const commands = {
       limit: z.number().int().min(1).max(500).default(50),
     }),
     output: z.array(TurnRowSchema),
+  },
+  "usage.receipt": {
+    risk: "read",
+    summary:
+      "Where one task's tokens went: the brief size at the start, recalled memory size, input, output and reasoning tokens, cache read and write and the cache hit rate, cost and its split per agent, compactions (before and after, native or handoff) and the decisions that replaced an LLM call. Sizes of what majhi added are estimated",
+    input: z.object({ task: TaskIdSchema }),
+    output: TaskReceiptSchema,
+  },
+  "usage.agentReceipt": {
+    risk: "read",
+    summary:
+      "Where one agent's tokens went across tasks, for a range or the days from and to (inclusive): totals, cache hit rate, its most expensive tasks, compactions and decisions that replaced an LLM call",
+    input: z.object({
+      agent: IdSchema,
+      range: UsageRangeSchema.default("month"),
+      from: DaySchema.optional(),
+      to: DaySchema.optional(),
+      tz: TimeZoneSchema.optional(),
+    }),
+    output: AgentReceiptSchema,
   },
   "usage.prices": {
     risk: "read",

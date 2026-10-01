@@ -20,6 +20,7 @@ import type {
   PromptBlock,
   SessionEvent,
   SessionStart,
+  StdioServerSpec,
 } from "./session.ts";
 import { localSpawner } from "./spawn.ts";
 import { getTool } from "./tools/index.ts";
@@ -32,7 +33,15 @@ const MAX_BUFFERED = 200;
 type PermissionHandler = (ask: PermissionAsk, signal: AbortSignal) => Promise<string | undefined>;
 type StopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled";
 
-function toMcp(s: McpServerSpec): McpServer {
+function toMcp(s: McpServerSpec | StdioServerSpec): McpServer {
+  if (s.type === "stdio") {
+    return {
+      name: s.name,
+      command: s.command,
+      args: s.args,
+      env: Object.entries(s.env).map(([name, value]) => ({ name, value })),
+    };
+  }
   return {
     type: "http",
     name: s.name,

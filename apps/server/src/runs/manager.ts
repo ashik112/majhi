@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getTool, type PromptBlock, type RuntimeOptions, type SessionEvent } from "@majhi/acp";
 import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
 import { durationMs } from "@majhi/shared";
@@ -20,12 +22,14 @@ import { WorktreeLocks } from "../rooms/locks.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { sectionOf } from "../tasks/brief.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
 import { diffStat } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
+  estimateText,
   estimateTokens,
   isContextError,
   isRecoveryStop,
@@ -44,6 +48,7 @@ import { PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
+import type { SerenaLaunch } from "./serena.ts";
 import { wakePlan } from "./wake.ts";
 
 export const BRIEF_ITEM_ID = "brief";
@@ -71,6 +76,8 @@ export interface RunDeps {
   decisions?: Decisions;
   /** majhi-room for team members and majhi-tasks for leads (Phase 3). */
   rooms?: RoomAccess;
+  /** Serena can start in the runner container (5.9 item 6); absent when agents do not run in one. */
+  serena?: SerenaLaunch;
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
@@ -941,12 +948,29 @@ export class RunManager {
     return true;
   }
 
+  /** The size of TASK.md as the agent is first pointed at it, for the task's token receipt. Recorded once per task. */
+  private async noteBrief(run: AgentRun, task: Task): Promise<void> {
+    try {
+      const md = await readFile(join(task.folder, "TASK.md"), "utf8");
+      this.deps.store.usageEvents.recordBrief(
+        task.id,
+        run.agent,
+        this.now().toISOString(),
+        estimateText(md),
+        estimateText(sectionOf(md, "Memory")),
+      );
+    } catch {
+      // No TASK.md to measure: the receipt shows the brief as not recorded.
+    }
+  }
+
   private async blocksFor(run: AgentRun, entry: QueueEntry): Promise<PromptBlock[] | undefined> {
     const task = this.deps.store.tasks.get(run.task);
     if (task === undefined) return undefined;
     switch (entry.kind) {
       case "brief":
         run.needsBrief = false;
+        await this.noteBrief(run, task);
         return briefBlocks({ folder: task.folder, attachments: task.attachments });
       case "resume": {
         const { checkpoint } = this.deps.store.runs.lastCheckpoint(run.task);
@@ -985,7 +1009,10 @@ export class RunManager {
           .page(run.task, 40)
           .items.filter((i) => i.id !== item.id && i.type !== "context");
         const needsBrief = run.needsBrief && run.carry === undefined;
-        if (needsBrief) run.needsBrief = false;
+        if (needsBrief) {
+          run.needsBrief = false;
+          await this.noteBrief(run, task);
+        }
         return [
           {
             type: "text",
@@ -1014,7 +1041,10 @@ export class RunManager {
           text: item.text,
           needsBrief: run.needsBrief && run.carry === undefined,
         });
-        if (built.briefSent) run.needsBrief = false;
+        if (built.briefSent) {
+          run.needsBrief = false;
+          await this.noteBrief(run, task);
+        }
         return built.blocks;
       }
     }
@@ -1152,6 +1182,8 @@ export class RunManager {
         effort: session.models.defaultEffort ?? opened.effort,
         at: this.now().toISOString(),
       });
+      deps.store.runs.setTools(run.runId, opened.tools);
+      for (const line of opened.notices) this.live.system(run, "warn", line);
       run.mapper = new ItemMapper(
         run.agent,
         run.runId,

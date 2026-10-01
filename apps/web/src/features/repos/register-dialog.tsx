@@ -82,163 +82,172 @@ export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => v
   }
 
   return (
-    <Modal label={`Register ${repo.name}`} onClose={onClose} className="w-[480px]">
+    <Modal label={`Register ${repo.name}`} onClose={onClose} className="flex w-[480px] flex-col open:flex">
       <form
-        className="flex flex-col gap-4 p-5"
+        className="flex max-h-[calc(100dvh-32px)] min-h-0 flex-col"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex shrink-0 flex-col gap-1 border-b border-line-strong px-5 py-3.5">
           <h2 className="text-md font-semibold">Register {repo.name}</h2>
           <p className="truncate font-mono text-sm text-fg-faint" title={repo.path}>
             {repo.path}
           </p>
         </div>
-
-        <Field label="Org" error={submitted ? orgProblem : undefined}>
-          {(props) => (
-            <Select {...props} value={chosenOrg} onChange={(event) => setOrg(event.target.value)}>
-              <option value="">Choose an org</option>
-              {orgList.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field
-          label="Project id"
-          hint="Names the repo in the task box and in branch names."
-          error={submitted ? idProblem : undefined}
-        >
-          {(props) => (
-            <Input
-              {...props}
-              value={id}
-              onChange={(event) => setId(event.target.value.trim())}
-              className="font-mono"
-            />
-          )}
-        </Field>
-
-        <Field
-          label="Aliases"
-          hint="Other words for it in the task box, like backend or api. Enter adds one."
-          error={submitted ? aliasProblem : undefined}
-        >
-          {(props) => (
-            <ChipsInput
-              {...props}
-              label="Aliases"
-              value={aliases}
-              onChange={setAliases}
-              placeholder="backend"
-            />
-          )}
-        </Field>
-
-        <Field label="Base branch (optional)" hint="Default: the org's base, then the repo's default branch.">
-          {(props) => (
-            <Input
-              {...props}
-              value={base}
-              onChange={(event) => setBase(event.target.value)}
-              placeholder={repo.branch ?? "main"}
-              className="font-mono"
-            />
-          )}
-        </Field>
-
-        <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-          <legend className="mb-1.5 p-0 text-sm text-fg-faint">Merge requests</legend>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Open MRs against" hint="Default: origin.">
-              {(props) => (
-                <Select
-                  {...props}
-                  value={choice.name}
-                  onChange={(event) => setChoice({ ...choice, name: event.target.value })}
-                >
-                  {remoteNames(repo, undefined).map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="Host" hint="Auto reads it from the remote's URL.">
-              {(props) => (
-                <Select
-                  {...props}
-                  value={choice.host}
-                  onChange={(event) => {
-                    const parsed = MrHostSchema.safeParse(event.target.value);
-                    setChoice({ ...choice, host: parsed.success ? parsed.data : "" });
-                  }}
-                >
-                  <option value="">Auto</option>
-                  {MrHostSchema.options.map((host: MrHost) => (
-                    <option key={host} value={host}>
-                      {HOST_LABEL[host]}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          </div>
-          <Field label="SSH alias" hint="A Host from your SSH config. Pushes go through it.">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4 scroll-fade">
+          <Field label="Org" error={submitted ? orgProblem : undefined}>
             {(props) => (
-              <SshAliasPicker
-                fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
-                value={choice.ssh}
-                onChange={(ssh) => setChoice({ ...choice, ssh })}
-                suggested={repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
+              <Select {...props} value={chosenOrg} onChange={(event) => setOrg(event.target.value)}>
+                <option value="">Choose an org</option>
+                {orgList.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field
+            label="Project id"
+            hint="Names the repo in the task box and in branch names."
+            error={submitted ? idProblem : undefined}
+          >
+            {(props) => (
+              <Input
+                {...props}
+                value={id}
+                onChange={(event) => setId(event.target.value.trim())}
+                className="font-mono"
               />
             )}
           </Field>
-          {others.filter((p) => p.id !== id).length > 0 && (
-            <fieldset className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
-              <legend className="mb-1 p-0 text-sm text-fg-faint">Depends on</legend>
-              {others
-                .filter((p) => p.id !== id)
-                .map((p) => (
-                  <label key={p.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={dependsOn.includes(p.id)}
-                      onChange={(event) =>
-                        setDependsOn(
-                          event.target.checked ? [...dependsOn, p.id] : dependsOn.filter((d) => d !== p.id),
-                        )
-                      }
-                    />
-                    <span className="font-mono">{p.id}</span>
-                  </label>
-                ))}
-              <span className="text-xs text-fg-faint">
-                When a task changes both, the one it depends on merges first.
-              </span>
-            </fieldset>
-          )}
-        </fieldset>
 
-        {failure && (
-          <p
-            role="alert"
-            className="rounded-md border border-red-line bg-red-wash px-3 py-2 text-base text-red text-pretty"
+          <Field
+            label="Aliases"
+            hint="Other words for it in the task box, like backend or api. Enter adds one."
+            error={submitted ? aliasProblem : undefined}
           >
-            {failure}
-          </p>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={busy}>
-            Register
-          </Button>
+            {(props) => (
+              <ChipsInput
+                {...props}
+                label="Aliases"
+                value={aliases}
+                onChange={setAliases}
+                placeholder="backend"
+              />
+            )}
+          </Field>
+
+          <Field
+            label="Base branch (optional)"
+            hint="Default: the org's base, then the repo's default branch."
+          >
+            {(props) => (
+              <Input
+                {...props}
+                value={base}
+                onChange={(event) => setBase(event.target.value)}
+                placeholder={repo.branch ?? "main"}
+                className="font-mono"
+              />
+            )}
+          </Field>
+
+          <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+            <legend className="mb-1.5 p-0 text-sm text-fg-faint">Merge requests</legend>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Open MRs against" hint="Default: origin.">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={choice.name}
+                    onChange={(event) => setChoice({ ...choice, name: event.target.value })}
+                  >
+                    {remoteNames(repo, undefined).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Host" hint="Auto reads it from the remote's URL.">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={choice.host}
+                    onChange={(event) => {
+                      const parsed = MrHostSchema.safeParse(event.target.value);
+                      setChoice({ ...choice, host: parsed.success ? parsed.data : "" });
+                    }}
+                  >
+                    <option value="">Auto</option>
+                    {MrHostSchema.options.map((host: MrHost) => (
+                      <option key={host} value={host}>
+                        {HOST_LABEL[host]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <Field label="SSH alias" hint="A Host from your SSH config. Pushes go through it.">
+              {(props) => (
+                <SshAliasPicker
+                  fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
+                  value={choice.ssh}
+                  onChange={(ssh) => setChoice({ ...choice, ssh })}
+                  suggested={repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
+                />
+              )}
+            </Field>
+            {others.filter((p) => p.id !== id).length > 0 && (
+              <fieldset className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
+                <legend className="mb-1 p-0 text-sm text-fg-faint">Depends on</legend>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  {others
+                    .filter((p) => p.id !== id)
+                    .map((p) => (
+                      <label key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={dependsOn.includes(p.id)}
+                          onChange={(event) =>
+                            setDependsOn(
+                              event.target.checked
+                                ? [...dependsOn, p.id]
+                                : dependsOn.filter((d) => d !== p.id),
+                            )
+                          }
+                        />
+                        <span className="truncate font-mono" title={p.id}>
+                          {p.id}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+                <span className="text-xs text-fg-faint">
+                  When a task changes both, the one it depends on merges first.
+                </span>
+              </fieldset>
+            )}
+          </fieldset>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3 border-t border-line-strong px-5 py-3">
+          {failure && (
+            <p role="alert" className="min-w-0 flex-1 text-sm text-red text-pretty">
+              {failure}
+            </p>
+          )}
+          <div className="ml-auto flex shrink-0 gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={busy}>
+              Register
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

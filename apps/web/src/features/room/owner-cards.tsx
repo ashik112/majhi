@@ -127,10 +127,13 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       </p>
       {item.why !== undefined && <p className="pl-6 text-sm text-amber text-pretty">{item.why}</p>}
       <div className="flex flex-wrap items-center gap-2 pl-6">
-        {task.repos.length > 0 && <Ship task={task} run={run} lead={lead} align="left" variant="primary" />}
+        {task.repos.length > 0 && (
+          <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />
+        )}
         <Button
           size="sm"
           variant={task.repos.length > 0 ? "secondary" : "primary"}
+          {...(task.repos.length > 0 ? {} : { "data-primary-action": "" })}
           disabled={done.isPending || doneOption?.ok === false}
           title={doneOption?.ok === false ? doneOption.why : "Mark the task done. Nothing is merged."}
           onClick={() => (unshipped.length > 0 ? setConfirming(true) : done.mutate(false))}
