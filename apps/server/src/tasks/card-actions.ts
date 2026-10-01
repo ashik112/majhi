@@ -21,7 +21,10 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    /** For done: the owner confirmed closing with work not shipped. */
+    unshipped?: "keep" | undefined;
     by: string;
+    agent: boolean;
   }): Promise<{ item: RoomItem; results?: Result[] }> {
     const key = `${input.task}\u0000${input.item}`;
     if (this.acting.has(key)) throw new UserError("That card is already being handled.", 409);
@@ -38,7 +41,10 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    /** For done: the owner confirmed closing with work not shipped. */
+    unshipped?: "keep" | undefined;
     by: string;
+    agent: boolean;
   }): Promise<{ item: RoomItem; results?: Result[] }> {
     const { tasks, mrs, room } = this.deps;
     const card = room.get(input.task, input.item);
@@ -61,7 +67,12 @@ export class CardActions {
 
     switch (input.action) {
       case "done":
-        await tasks.close(task.id, { whenSubtasksOpen: "refuse", by: input.by });
+        await tasks.close(task.id, {
+          whenSubtasksOpen: "refuse",
+          by: input.by,
+          agent: input.agent,
+          whenUnshipped: input.unshipped ?? "refuse",
+        });
         return { item: current() };
       case "merge": {
         const out = await tasks.merge({ id: task.id, into: input.into, done: true, by: input.by });

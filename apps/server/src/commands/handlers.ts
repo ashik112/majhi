@@ -211,7 +211,12 @@ export function createHandlers({
     "tasks.start": (input) => services.tasks.start(input.id),
     "tasks.stop": (input) => services.tasks.stop(input.id),
     "tasks.update": (input) => services.tasks.update(input),
-    "tasks.close": (input) => services.tasks.close(input.id),
+    "tasks.close": (input, ctx) =>
+      services.tasks.close(input.id, {
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+        whenUnshipped: input.unshipped ?? "refuse",
+      }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": ({ push, ...input }, ctx) =>
       push
@@ -350,7 +355,12 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
-    "room.cardAction": (input, ctx) => services.cardActions.act({ ...input, by: actorName(ctx.meta.actor) }),
+    "room.cardAction": (input, ctx) =>
+      services.cardActions.act({
+        ...input,
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+      }),
     "room.answerQuestion": async (input) => ({
       item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
     }),

@@ -134,8 +134,8 @@ describe("memory.promote", () => {
     const first = (await promote(f.id)).body as { task: string };
     expect(memory.get(f.id)?.promoted).toBe(first.task);
 
-    // Closed by hand, not merged: the fact can be promoted again, and the log says why.
-    expect((await h.cmd("tasks.close", { id: first.task })).status).toBe(200);
+    // Closed by hand, not merged (the owner confirms): the fact can be promoted again, and the log says why.
+    expect((await h.cmd("tasks.close", { id: first.task, unshipped: "keep" })).status).toBe(200);
     expect(memory.get(f.id)?.promoted).toBeUndefined();
     const released = memory.events({ fact: f.id }).find((e) => e.action === "unpromoted");
     expect(released?.reason).toContain("closed without being merged");

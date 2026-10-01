@@ -144,7 +144,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "close",
     command: "tasks.close",
     description:
-      "Mark a subtask done once you reviewed what it delivered. The tasks waiting for it can then start, and the parent closes when every subtask is done.",
+      "Mark a subtask done once you reviewed what it delivered and its work is shipped: merged, pushed or in a pull request. Refused while its branch has commits that are not, whatever you pass: merge it first with the merge tool if you have the Merge permission (a push or a pull request needs the owner's approval or an org policy), or leave it in review for the owner to ship or close. The tasks waiting for it can then start, and the parent closes when every subtask is done.",
   },
   {
     name: "merge",

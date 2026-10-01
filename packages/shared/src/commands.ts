@@ -174,6 +174,20 @@ const MergeResultSchema = z.object({
 export const ShipOptionSchema = z.object({ ok: z.boolean(), why: z.string().optional() });
 export type ShipOption = z.infer<typeof ShipOptionSchema>;
 
+/** One repo of a task whose branch has commits that are not merged, pushed or in a pull request. */
+export const UnshippedRepoSchema = z.object({
+  project: IdSchema,
+  branch: z.string(),
+  /** Commits on the branch that are nowhere else. */
+  commits: z.number().int().nonnegative(),
+  /** Set when git could not say: the branch counts as not shipped. */
+  problem: z.string().optional(),
+});
+export type UnshippedRepo = z.infer<typeof UnshippedRepoSchema>;
+
+/** Closing a task that has work not shipped: the owner confirms it with `keep`. */
+export const UnshippedChoiceSchema = z.literal("keep");
+
 /** `tasks.shipOptions`: what Ship and the review card may do now. */
 export const ShipOptionsSchema = z.object({
   /** The first repo's base: the default target. */
@@ -188,8 +202,8 @@ export const ShipOptionsSchema = z.object({
   push: ShipOptionSchema,
   /** Push the task branch and open a merge request. */
   mr: ShipOptionSchema,
-  /** Mark the task done. */
-  done: ShipOptionSchema,
+  /** Mark the task done. `unshipped` lists the repos whose commits would stay behind on their branch. */
+  done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -720,8 +734,13 @@ export const commands = {
   },
   "tasks.close": {
     risk: "change",
-    summary: "Mark a task done. Worktrees stay until removed",
-    input: z.object({ id: TaskIdSchema }),
+    summary:
+      "Mark a task done. Worktrees stay until removed. Refused while a repo has commits that are not merged, pushed or in a pull request, unless the owner confirms with unshipped: keep. An agent can never close such a task",
+    input: z.object({
+      id: TaskIdSchema,
+      /** The owner confirmed closing with work not shipped: the commits stay on the branch. Agents are refused anyway. */
+      unshipped: UnshippedChoiceSchema.optional(),
+    }),
     output: TaskSchema,
   },
   "tasks.terminal.open": {
@@ -1025,6 +1044,8 @@ export const commands = {
       action: CardActionSchema,
       /** For merge: the local branch to merge into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** For done: the owner confirmed closing with work not shipped. */
+      unshipped: UnshippedChoiceSchema.optional(),
     }),
     output: z.object({
       item: RoomItemSchema,

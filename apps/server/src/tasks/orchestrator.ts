@@ -248,7 +248,7 @@ export class Orchestrator {
       lead,
       [
         `${child.id} "${child.title}" is ready for review (branches: ${child.repos.map((r) => r.branch).join(", ") || "none"}).`,
-        `Review what it delivered in its worktree under ${child.folder}. If it is good, close it with the majhi-tasks close tool so the tasks waiting for it can start. If not, say what to fix in ${child.id}'s room.`,
+        `Review what it delivered in its worktree under ${child.folder}. If it is good, ship it (merge it with the merge tool if you have the Merge permission) and close it with the majhi-tasks close tool so the tasks waiting for it can start. Work not merged, pushed or in a pull request cannot be closed by an agent: leave it in review for the owner. If not, say what to fix in ${child.id}'s room.`,
         `Still open in ${parent.id}: ${open.join(", ") || "nothing"}. The next subtasks start by themselves once the overlap and limits check allows it. When all are done, ${parent.id} closes with a report.`,
       ].join("\n"),
     );
