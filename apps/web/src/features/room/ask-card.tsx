@@ -1,7 +1,7 @@
 import type { RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Check, PencilLine, ShieldQuestion } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
@@ -54,6 +54,11 @@ export function PendingAsk({ item }: { item: Ask }) {
     return () => clearTimeout(timer);
     // The timer belongs to one pick; a rerender must not restart it.
     // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  }, [sending]);
+
+  const status = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (sending !== undefined) status.current?.scrollIntoView({ block: "nearest" });
   }, [sending]);
 
   const busy = send.isPending || sending !== undefined;
@@ -157,7 +162,7 @@ export function PendingAsk({ item }: { item: Ask }) {
         </div>
       ))}
       {single && sending !== undefined && (
-        <p className="flex items-center gap-2 pl-6 text-sm text-fg-muted">
+        <p ref={status} className="flex items-center gap-2 pl-6 text-sm text-fg-muted">
           <span className="min-w-0 flex-1 truncate">
             {send.isPending ? "Sending" : "Sending in 5 seconds"}: {sending.label}
           </span>
