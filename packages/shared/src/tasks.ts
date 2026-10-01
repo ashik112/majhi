@@ -121,8 +121,10 @@ export type MergeMethod = z.infer<typeof MergeMethodSchema>;
  */
 export const PendingShipSchema = z.object({
   action: z.enum(["merge", "mergePush"]),
-  /** The local branch to merge into. */
+  /** The local branch to merge into, or the targets joined for display when `targets` is set. */
   into: z.string(),
+  /** The branch each repo merges into, by project. */
+  targets: z.record(z.string(), z.string()).optional(),
   method: MergeMethodSchema,
   deleteAfter: z.boolean(),
   /** The agent asked to resolve the conflicts. */

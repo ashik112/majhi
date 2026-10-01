@@ -4,7 +4,15 @@ import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { TaskService } from "./service.ts";
 
-type Result = { project: string; into: string; ok: boolean; detail: string; conflicts?: string[] };
+type Result = {
+  project: string;
+  into: string;
+  ok: boolean;
+  detail: string;
+  conflicts?: string[] | undefined;
+  skipped?: boolean | undefined;
+  notPushed?: boolean | undefined;
+};
 
 /**
  * The buttons on a review or paused card (`room.cardAction`). Refused when the card was already
@@ -21,6 +29,7 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -43,6 +52,7 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -82,6 +92,7 @@ export class CardActions {
         const out = await tasks.merge({
           id: task.id,
           into: input.into,
+          targets: input.targets,
           done: true,
           by: input.by,
           method: input.method,
@@ -93,6 +104,7 @@ export class CardActions {
         const out = await mrs.mergeAndPush({
           id: task.id,
           into: input.into,
+          targets: input.targets,
           done: true,
           by: input.by,
           method: input.method,
@@ -105,12 +117,12 @@ export class CardActions {
         return { item: current(), results: out.results };
       }
       case "mr": {
-        const out = await mrs.open(task.id, input.into, input.by);
+        const out = await mrs.open(task.id, { into: input.into, targets: input.targets }, input.by);
         return {
           item: current(),
           results: out.repos.map((r) => ({
             project: r.project,
-            into: input.into ?? options.base ?? "",
+            into: input.targets?.[r.project] ?? input.into ?? options.base ?? "",
             ok: r.outcome !== "failed",
             detail: r.detail,
           })),

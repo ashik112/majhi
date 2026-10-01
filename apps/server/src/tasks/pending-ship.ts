@@ -8,8 +8,10 @@ import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "./service.ts";
+import { planTargets, type ShipTargets } from "./ship-plan.ts";
 
 type ShipResult = { project: string; ok: boolean; detail: string; conflicts?: string[] | undefined };
+type Conflict = { project: string; branch: string; into: string; files: string[] };
 
 export interface PendingShipDeps {
   store: Store;
@@ -33,7 +35,8 @@ export class PendingShips {
   async request(input: {
     id: string;
     action: PendingShip["action"];
-    into: string;
+    into?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     method: MergeMethod;
     deleteAfter: boolean;
     by: string;
@@ -43,14 +46,19 @@ export class PendingShips {
     const lead = task.team[0];
     if (lead === undefined) throw new UserError(`${task.id} has no agent to resolve the conflicts.`, 409);
     if (task.repos.length === 0) throw new UserError(`${task.id} has no repo to merge.`);
-    const conflicts = await this.conflicts(task, input.into);
+    // Only the repos the task changed ship, each into its own target: the lead never gets a
+    // conflict in a repo the task did not touch.
+    const targets = planTargets(await tasks.shipPlan(task, input));
+    const conflicts = await this.conflicts(task, targets);
+    const into = [...new Set(Object.values(targets))].join(", ");
     if (input.method !== "rebase" && conflicts.every((c) => c.files.length === 0)) {
-      throw new UserError(`Nothing conflicts with ${input.into} now. Ship again.`, 409);
+      throw new UserError(`Nothing conflicts with ${into} now. Ship again.`, 409);
     }
     if (task.status === "done") task = await tasks.reopen(task.id);
     const pending: PendingShip = {
       action: input.action,
-      into: input.into,
+      into,
+      targets,
       method: input.method,
       deleteAfter: input.deleteAfter,
       lead,
@@ -59,7 +67,7 @@ export class PendingShips {
     };
     store.tasks.setPendingShip(task.id, pending);
     // The owner's click is the approval for the ship that runs later.
-    this.approval(task.id, "allow", input.by, `Approved: ${shipWords(pending)}`, input.into);
+    this.approval(task.id, "allow", input.by, `Approved: ${shipWords(pending)}`, into);
     tasks.cards.settle(
       task.id,
       "review",
@@ -110,9 +118,12 @@ export class PendingShips {
     const pending = store.tasks.takePendingShip(id);
     if (pending === undefined) return;
     this.publish(id);
+    // Older pending ships have one `into` and no targets.
+    const pick: ShipTargets =
+      pending.targets === undefined ? { into: pending.into } : { targets: pending.targets };
     const input = {
       id,
-      into: pending.into,
+      ...pick,
       done: true,
       by: pending.by,
       method: pending.method,
@@ -148,20 +159,22 @@ export class PendingShips {
         return `@${pending.lead} left uncommitted changes in ${repo.project}, so its checks may not pass`;
       }
     }
-    const files = (await this.conflicts(task, pending.into)).flatMap((c) => c.files);
+    const pick: ShipTargets =
+      pending.targets === undefined ? { into: pending.into } : { targets: pending.targets };
+    const targets = planTargets(await this.deps.tasks.shipPlan(task, pick));
+    const files = (await this.conflicts(task, targets)).flatMap((c) => c.files);
     if (files.length > 0) return `Still conflicts in ${listed(files)}`;
     return undefined;
   }
 
-  /** Per repo, the files that conflict with `into` now. */
-  private async conflicts(
-    task: Task,
-    into: string,
-  ): Promise<{ project: string; branch: string; files: string[] }[]> {
-    const out: { project: string; branch: string; files: string[] }[] = [];
+  /** Per repo that ships (those in `targets`), the files that conflict with its target now. */
+  private async conflicts(task: Task, targets: Readonly<Record<string, string>>): Promise<Conflict[]> {
+    const out: Conflict[] = [];
     for (const repo of task.repos) {
+      const into = targets[repo.project];
+      if (into === undefined) continue;
       const files = await mergeConflicts(repo.source, repo.branch, into);
-      out.push({ project: repo.project, branch: repo.branch, files });
+      out.push({ project: repo.project, branch: repo.branch, into, files });
     }
     return out;
   }
@@ -198,22 +211,23 @@ function failure(failed: readonly ShipResult[]): string {
 }
 
 /** What the lead is asked to do, in plain words. */
-function askText(
-  task: Task,
-  pending: PendingShip,
-  conflicts: readonly { project: string; branch: string; files: string[] }[],
-): string {
-  const { into, lead } = pending;
+function askText(task: Task, pending: PendingShip, conflicts: readonly Conflict[]): string {
+  const { lead } = pending;
   const where = (c: { project: string }) => (task.repos.length > 1 ? ` in ${c.project}` : "");
-  const lines = conflicts
-    .filter((c) => c.files.length > 0)
-    .map((c) => `${c.branch}${where(c)} conflicts with ${into} in ${listed(c.files)}.`);
+  const hit = conflicts.filter((c) => c.files.length > 0);
+  const lines = hit.map((c) => `${c.branch}${where(c)} conflicts with ${c.into} in ${listed(c.files)}.`);
+  const targets = [...new Set((hit.length > 0 ? hit : conflicts).map((c) => c.into))];
+  const into = targets.length === 1 ? (targets[0] ?? pending.into) : "each repo's target named above";
+  const only =
+    task.repos.length > 1 && hit.length > 0
+      ? ` Only ${hit.map((c) => c.project).join(", ")} ${hit.length === 1 ? "needs" : "need"} this; leave the other repos as they are.`
+      : "";
   const integrate =
     pending.method === "rebase"
-      ? `Rebase your branch onto ${into}, resolve each conflict keeping what both sides meant, and finish the rebase.`
-      : `Merge ${into} into your branch, resolve each conflict keeping what both sides meant, and commit the merge.`;
+      ? `Rebase your branch onto ${into}, resolve each conflict keeping what both sides meant, and finish the rebase.${only}`
+      : `Merge ${into} into your branch, resolve each conflict keeping what both sides meant, and commit the merge.${only}`;
   return [
-    `@${lead} Shipping hit conflicts with ${into}. Nothing was merged.${lines.length > 0 ? ` ${lines.join(" ")}` : ""}`,
+    `@${lead} Shipping hit conflicts with ${pending.into}. Nothing was merged.${lines.length > 0 ? ` ${lines.join(" ")}` : ""}`,
     integrate,
     "Then run typecheck and the tests of the files you touched. If a check fails and you cannot fix it, do not commit: say what failed.",
     `When you are done, majhi will ${shipWords(pending)} by itself.`,

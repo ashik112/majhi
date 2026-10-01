@@ -188,6 +188,12 @@ const LocalBranchSchema = z
   .refine((b) => !b.includes(".."), "Not a branch name")
   .max(200);
 
+/**
+ * The branch each repo ships into, by project. Repos not named here ship into `into` when given and
+ * the repos share one base (or their base is `into`), else into their own base.
+ */
+const ShipTargetsSchema = z.record(IdSchema, LocalBranchSchema);
+
 /** What a local merge or a push did in one repo of a task. */
 const MergeResultSchema = z.object({
   project: IdSchema,
@@ -196,6 +202,10 @@ const MergeResultSchema = z.object({
   detail: z.string(),
   /** The files that conflicted, when a merge stopped on conflicts. Nothing was merged. */
   conflicts: z.array(z.string()).optional(),
+  /** The repo has no change since the task started, so nothing was done in it. */
+  skipped: z.boolean().optional(),
+  /** Merged into the local target, but the push failed: Push again sends it. */
+  notPushed: z.boolean().optional(),
 });
 
 /** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
@@ -229,8 +239,12 @@ export const UnshippedChoiceSchema = z.literal("keep");
 
 /** `tasks.shipOptions`: what Ship and the review card may do now. */
 export const ShipOptionsSchema = z.object({
-  /** The first repo's base: the default target. */
+  /** The first changed repo's base: the default target. */
   base: z.string().optional(),
+  /** The repos with changes since the task started, each with its base: the ones Ship sends. */
+  changed: z.array(z.object({ project: IdSchema, base: z.string(), branch: z.string() })).optional(),
+  /** The repos with no change since the task started: every Ship action skips them. */
+  unchanged: z.array(IdSchema).optional(),
   /** The first repo's MR host, so the UI can say PR or MR. */
   host: MrHostSchema.optional(),
   /** Merge into a local branch. Nothing is pushed. */
@@ -916,9 +930,11 @@ export const commands = {
       "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push). method picks a merge commit, one squashed commit, or a rebase of the task branch and a fast-forward; the target is never rewritten, and a conflict changes nothing. With deleteAfter, a clean run removes the worktree and the local branch majhi created",
     input: z.object({
       id: TaskIdSchema,
-      /** The branch to merge into. Default: each repo's base branch. */
+      /** The branch to merge into. Default: each repo's base branch. With repos on different bases, only repos whose base it is. */
       into: LocalBranchSchema.optional(),
-      /** Only this repo of the task. Default: every repo. */
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      /** Only this repo of the task. Default: every repo with changes. */
       project: IdSchema.optional(),
       done: z.boolean().default(false),
       /** Push the merged branch afterwards. */
@@ -948,7 +964,9 @@ export const commands = {
       id: TaskIdSchema,
       /** The branch to update. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
-      /** Only this repo of the task. Default: every repo. */
+      /** The branch to update, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      /** Only this repo of the task. Default: every repo with changes. */
       project: IdSchema.optional(),
     }),
     output: z.object({ results: z.array(MergeResultSchema) }),
@@ -982,7 +1000,9 @@ export const commands = {
     input: z.object({
       id: TaskIdSchema,
       action: z.enum(["merge", "mergePush"]),
-      into: LocalBranchSchema,
+      into: LocalBranchSchema.optional(),
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
       method: MergeMethodSchema.default("merge"),
       deleteAfter: z.boolean().default(false),
     }),
@@ -1024,6 +1044,8 @@ export const commands = {
       id: TaskIdSchema,
       /** The branch the merge requests go into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** The branch the merge requests go into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
     }),
     output: OpenMrsResultSchema,
   },
@@ -1263,6 +1285,8 @@ export const commands = {
       action: CardActionSchema,
       /** For merge: the local branch to merge into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** For merge, mergePush and mr: the target per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
       /** For merge and mergePush. Default `merge`. */
       method: MergeMethodSchema.optional(),
       /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */

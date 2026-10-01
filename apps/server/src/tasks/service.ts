@@ -52,6 +52,7 @@ import {
   localBranches,
   type MergeMethod,
   type MergeOutcome,
+  mergeBlocker,
   mergeBranch,
   remoteBranches,
 } from "../git/merge.ts";
@@ -99,6 +100,7 @@ import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
+import { type ShipPlan, type ShipTargets, shipPlan, skippedResult } from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
@@ -1194,13 +1196,16 @@ export class TaskService {
   }
 
   /**
-   * Merges the task branch into a local branch (its base, or `into`) in each repo's checkout, the
-   * way `method` says. Refused while an agent of the task works or its worktree has uncommitted
-   * changes. Never pushes. With `deleteAfter`, a clean merge removes the worktree and the branch.
+   * Merges the task branch into a local branch in each changed repo's checkout (its base, or the
+   * target picked for it), the way `method` says. Repos with no change are skipped. All or nothing:
+   * every repo is checked first (committed, target there, no conflict), and one that cannot merge
+   * stops them all before any merges. Refused while an agent of the task works. Never pushes. With
+   * `deleteAfter`, a clean merge removes the worktree and the branch of each merged repo.
    */
   async merge(input: {
     id: string;
     into?: string | undefined;
+    targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
     by?: string | undefined;
@@ -1216,28 +1221,81 @@ export class TaskService {
         409,
       );
     }
-    const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
-    if (repos.length === 0) throw new UserError(`${task.id} has no repo to merge.`);
-    if (input.deleteAfter === true) await this.assertDeletable(repos);
+    const plan = await this.shipPlan(task, input);
+    if (input.deleteAfter === true) await this.assertDeletable(plan.ship.map((s) => s.repo));
     const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
     const identity = org?.identity ?? DEFAULT_IDENTITY;
-    const results: {
+    type Result = {
       project: string;
       into: string;
       ok: boolean;
       detail: string;
       conflicts?: string[];
-    }[] = [];
-    const heads = new Map<string, string>();
-    for (const repo of repos) {
-      const into = input.into ?? repo.base;
+      skipped?: boolean;
+    };
+    const skipped: Result[] = plan.unchanged.map(skippedResult);
+    const by = input.by ?? "owner";
+    const report = (results: Result[]) => {
+      for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
+      for (const r of results) {
+        if (r.skipped === true) continue;
+        logShip(this.deps.store, {
+          task: task.id,
+          kind: "merge",
+          who: by,
+          ok: r.ok,
+          project: r.project,
+          detail: r.ok ? r.into : `${r.into}: ${r.detail}`,
+          at: this.now(),
+        });
+      }
+    };
+
+    // Check every repo before merging any, so one that cannot merge leaves the others untouched.
+    const blocked = new Map<string, { reason: string; conflicts?: string[] }>();
+    for (const { repo, into } of plan.ship) {
       const dirty = repo.worktree === undefined ? [] : await uncommitted(repo.worktree).catch(() => []);
-      if (dirty.some((l) => !l.startsWith("??"))) {
+      const blocker = dirty.some((l) => !l.startsWith("??"))
+        ? { reason: "The task's worktree has uncommitted changes. Ask the agent to commit them first." }
+        : await mergeBlocker(repo.source, repo.branch, into).catch((err: unknown) => ({
+            reason: errorMessage(err),
+          }));
+      if (blocker !== undefined) blocked.set(repo.project, blocker);
+    }
+    if (blocked.size > 0) {
+      const names = [...blocked.keys()].join(", ");
+      const results: Result[] = plan.ship.map(({ repo, into }) => {
+        const b = blocked.get(repo.project);
+        if (b === undefined) {
+          return {
+            project: repo.project,
+            into,
+            ok: false,
+            detail: `Not merged: ${names} cannot merge, so nothing was merged.`,
+          };
+        }
+        return {
+          project: repo.project,
+          into,
+          ok: false,
+          detail: b.conflicts === undefined ? b.reason : `Nothing was merged. ${b.reason}`,
+          ...(b.conflicts === undefined ? {} : { conflicts: b.conflicts }),
+        };
+      });
+      report(results);
+      return { results: [...results, ...skipped], task: this.get(task.id) };
+    }
+
+    const results: Result[] = [];
+    const heads = new Map<string, string>();
+    let stopped: string | undefined;
+    for (const { repo, into } of plan.ship) {
+      if (stopped !== undefined) {
         results.push({
           project: repo.project,
           into,
           ok: false,
-          detail: `The task's worktree has uncommitted changes. Ask the agent to commit them first.`,
+          detail: `Not tried: ${stopped} failed first.`,
         });
         continue;
       }
@@ -1250,34 +1308,36 @@ export class TaskService {
         scratch: join(task.folder, ".merge", repo.project),
         method: input.method,
       }).catch((err: unknown): MergeOutcome => ({ ok: false, reason: errorMessage(err) }));
-      if (outcome.ok) heads.set(repo.project, outcome.head);
-      results.push(
-        outcome.ok
-          ? { project: repo.project, into, ok: true, detail: mergedDetail(repo.branch, into, outcome.how) }
-          : {
-              project: repo.project,
-              into,
-              ok: false,
-              detail: outcome.reason,
-              ...(outcome.conflicts === undefined ? {} : { conflicts: outcome.conflicts }),
-            },
-      );
-    }
-    for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
-    for (const r of results) {
-      logShip(this.deps.store, {
-        task: task.id,
-        kind: "merge",
-        who: input.by ?? "owner",
-        ok: r.ok,
-        project: r.project,
-        detail: r.ok ? r.into : `${r.into}: ${r.detail}`,
-        at: this.now(),
+      if (outcome.ok) {
+        heads.set(repo.project, outcome.head);
+        results.push({
+          project: repo.project,
+          into,
+          ok: true,
+          detail: mergedDetail(repo.branch, into, outcome.how),
+        });
+        continue;
+      }
+      stopped = repo.project;
+      results.push({
+        project: repo.project,
+        into,
+        ok: false,
+        detail: outcome.reason,
+        ...(outcome.conflicts === undefined ? {} : { conflicts: outcome.conflicts }),
       });
     }
-    const clean = results.every((r) => r.ok);
-    if (!clean) return { results, task: this.get(task.id) };
-    const by = input.by ?? "owner";
+    report(results);
+    const merged = results.filter((r) => r.ok);
+    if (stopped !== undefined) {
+      if (merged.length > 0) {
+        this.warn(
+          task.id,
+          `${stopped} did not merge after the checks passed. Already merged, not pushed: ${merged.map((r) => `${r.project} into ${r.into}`).join(", ")}. They stay merged in your checkout.`,
+        );
+      }
+      return { results: [...results, ...skipped], task: this.get(task.id) };
+    }
     const closes = input.done && this.openSubtasks(task.id).length === 0;
     const into = [...new Set(results.map((r) => r.into))].join(", ");
     if (input.settle !== false)
@@ -1285,15 +1345,43 @@ export class TaskService {
     const after = input.done
       ? await this.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by })
       : this.get(task.id);
-    if (input.deleteAfter !== true) return { results, task: after };
+    if (input.deleteAfter !== true) return { results: [...results, ...skipped], task: after };
     const deleted = await this.deleteAfterShip(task.id, heads);
     return {
-      results: results.map((r) => {
-        const extra = deleted.get(r.project);
-        return extra === undefined ? r : { ...r, detail: `${r.detail} ${extra}` };
-      }),
+      results: [
+        ...results.map((r) => {
+          const extra = deleted.get(r.project);
+          return extra === undefined ? r : { ...r, detail: `${r.detail} ${extra}` };
+        }),
+        ...skipped,
+      ],
       task: this.get(task.id),
     };
+  }
+
+  /**
+   * What a ship sends: the task's repos with changes (only `project` when given), each with its
+   * target, and the unchanged ones it skips. Refused when no repo has a change.
+   */
+  async shipPlan(
+    task: Task,
+    pick: ShipTargets & { project?: string | undefined },
+  ): Promise<ShipPlan> {
+    const repos = task.repos.filter((r) => pick.project === undefined || r.project === pick.project);
+    if (repos.length === 0) {
+      throw new UserError(
+        pick.project === undefined ? `${task.id} has no repo.` : `${pick.project} is not a repo of ${task.id}.`,
+        409,
+      );
+    }
+    const plan = await shipPlan(repos, pick, task.repos);
+    if (plan.ship.length === 0) {
+      throw new UserError(
+        `Nothing to ship: ${repos.length === 1 ? `${repos[0]?.project} has` : "no repo of this task has"} changes since the task started.`,
+        409,
+      );
+    }
+    return plan;
   }
 
   /**

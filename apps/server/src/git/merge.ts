@@ -152,6 +152,33 @@ export async function mergeConflicts(source: string, branch: string, into: strin
   }
 }
 
+/**
+ * Why `branch` cannot merge into `into` now, or undefined when it can. Reads only: no checkout, no
+ * ref moves. Checks the branches exist, the checkout that has `into` holds no tracked changes, and
+ * `git merge-tree` finds no conflict. A rebase can still stop on a commit the merge-tree check
+ * passes; that case is reported when it happens.
+ */
+export async function mergeBlocker(
+  source: string,
+  branch: string,
+  into: string,
+): Promise<{ reason: string; conflicts?: string[] } | undefined> {
+  if (!(await gitOk(source, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]))) {
+    return { reason: `The branch ${branch} does not exist.` };
+  }
+  if (!(await gitOk(source, ["rev-parse", "--verify", "--quiet", `refs/heads/${into}`]))) {
+    return { reason: `There is no local branch ${into} to merge into.` };
+  }
+  if (await gitOk(source, ["merge-base", "--is-ancestor", branch, into])) return undefined;
+  const at = (await checkedOutAt(source)).get(into);
+  if (at !== undefined && (await trackedChanges(at))) {
+    return { reason: `${at} has uncommitted changes on ${into}. Commit or stash them, then merge again.` };
+  }
+  const conflicts = await mergeConflicts(source, branch, into);
+  if (conflicts.length > 0) return { reason: `Conflicts with ${into} in ${listed(conflicts)}.`, conflicts };
+  return undefined;
+}
+
 /** Files git left unmerged in a checkout, after a merge, squash or rebase stopped. */
 async function unmerged(checkout: string): Promise<string[]> {
   return (await git(checkout, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))

@@ -376,7 +376,8 @@ export function createHandlers({
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),
     "tasks.setMergeOrder": (input) => services.mrs.setOrder(input.id, input.order),
-    "tasks.openMrs": (input, ctx) => services.mrs.open(input.id, input.into, actorName(ctx.meta.actor)),
+    "tasks.openMrs": (input, ctx) =>
+      services.mrs.open(input.id, { into: input.into, targets: input.targets }, actorName(ctx.meta.actor)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
     "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),
