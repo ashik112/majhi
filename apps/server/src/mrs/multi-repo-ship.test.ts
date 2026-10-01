@@ -67,7 +67,13 @@ async function reviewed(changes: string[]): Promise<Task> {
       return "end_turn";
     };
   };
-  must(await cmd("tasks.create", { text: "update api, web and ops", start: true }));
+  must(
+    await cmd("tasks.create", {
+      text: "update api, web and ops",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    }),
+  );
   await w.h.majhi.services.runs.idle();
   await until(async () => (await cmd("tasks.get", { id: "ACM-1" })).body.status === "review", "review");
   const task = (await cmd("tasks.get", { id: "ACM-1" })).body as Task;

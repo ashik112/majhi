@@ -22,7 +22,11 @@ describe("the built-in Private org", () => {
     expect(
       (await w.h.cmd("projects.register", { id: "notes", org: "private", path: "~/Work/notes" })).status,
     ).toBe(200);
-    const task = await w.h.cmd("tasks.create", { text: "tidy notes", start: false });
+    const task = await w.h.cmd("tasks.create", {
+      text: "tidy notes",
+      repos: [{ project: "notes" }],
+      start: false,
+    });
     expect(task.status).toBe(200);
     expect(task.body).toMatchObject({ id: "PRV-1", org: "private" });
     expect(orgKeys({ private: { name: "Private" }, prv: { name: "Prvco" } }).get("prv")).toBe("PRV2");

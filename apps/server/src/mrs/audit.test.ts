@@ -28,7 +28,9 @@ async function reviewed(): Promise<void> {
       return "end_turn";
     };
   };
-  expect((await cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true })).status,
+  ).toBe(200);
   await w.h.majhi.services.runs.idle();
   expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
 }

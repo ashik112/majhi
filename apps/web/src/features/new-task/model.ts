@@ -57,29 +57,13 @@ export function typedText({ title, details }: Draft): string {
   return [title.trim(), details.trim()].filter((part) => part !== "").join("\n\n");
 }
 
-/**
- * The `text` for `tasks.create`. The server reads repos and the base branch from the words, so a
- * project chosen with a chip that the words do not name goes in a closing `Repos:` line.
- */
-export function composeTaskText(draft: Draft, picked: readonly string[], named: readonly string[]): string {
-  const missing = picked.filter((id) => !named.includes(id));
-  const text = typedText(draft);
-  return missing.length === 0 ? text : `${text}\n\nRepos: ${missing.join(", ")}`;
-}
-
-/** The projects the words name (by id or alias), in order. */
+/** The projects the words name (by id or alias), in order. Only a suggestion: naming attaches nothing. */
 export function namedProjects(parsed: ParsedTask | null): string[] {
   return parsed ? parsed.repos.map((r) => r.project) : [];
 }
 
-/** Chosen projects: what the words name plus what was clicked. Naming one in the words locks it on. */
-export function chosenProjects(named: readonly string[], picked: readonly string[]): string[] {
-  return [...new Set([...named, ...picked])];
-}
-
-/** Toggling a chip: clicking a project the words name changes nothing. */
-export function togglePicked(picked: readonly string[], named: readonly string[], id: string): string[] {
-  if (named.includes(id)) return [...picked];
+/** Toggling a chip: on when off, off when on. Only chips pick the task's repos. */
+export function togglePicked(picked: readonly string[], id: string): string[] {
   return picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
 }
 

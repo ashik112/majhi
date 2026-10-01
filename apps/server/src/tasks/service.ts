@@ -96,6 +96,7 @@ import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
@@ -151,6 +152,8 @@ export interface TaskDeps {
 
 export interface CreateInput {
   text: string;
+  /** The repos the task changes, picked on purpose. Names in the text attach nothing. */
+  repos?: readonly PickedRepo[] | undefined;
   /** A separate short title: it becomes the first line, and `text` the description. */
   title?: string | undefined;
   kind?: TaskKind | undefined;
@@ -274,10 +277,16 @@ export class TaskService {
     const stored = await this.deps.agents.list();
     const agents = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
 
-    const parsed = parseTaskText(input.text, {
-      projects: projects.map((p) => ({ id: p.id, org: p.org, aliases: p.aliases })),
-      agents: agents.map((a) => ({ id: a.id })),
-    });
+    // Only the repos picked on purpose join the task. Names in the text attach nothing.
+    const picks = withPickedRepos(
+      parseTaskText(input.text, {
+        projects: projects.map((p) => ({ id: p.id, org: p.org, aliases: p.aliases })),
+        agents: agents.map((a) => ({ id: a.id })),
+      }),
+      input.repos,
+      projects,
+    );
+    const parsed = picks.parsed;
     const orgs = new Set(parsed.repos.map((r) => projects.find((p) => p.id === r.project)?.org));
     if (orgs.size > 1) {
       throw new UserError(
@@ -288,7 +297,7 @@ export class TaskService {
     const investigation = input.readOnly === true || input.kind === "ops";
     const kind = input.kind ?? (investigation && parsed.kind === "code" ? "ops" : parsed.kind);
     if (kind === "code" && parsed.repos.length === 0) {
-      throw new UserError("A code task needs a project. Name one in the text, or change the kind.");
+      throw new UserError("A code task needs a project. Pick the repos it changes, or change the kind.");
     }
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     for (const other of [...dependsOn, ...(input.parent === undefined ? [] : [input.parent])]) {
@@ -335,7 +344,7 @@ export class TaskService {
             fallback: agent,
             mode: input.mode,
           });
-    const repos = investigation ? [] : await this.planRepos(id, parsed, projects);
+    const repos = investigation ? [] : await this.planRepos(id, parsed, projects, picks.bases);
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
@@ -384,6 +393,12 @@ export class TaskService {
     }
 
     for (const w of parsed.warnings) this.warn(id, w);
+    if (picks.mentioned.length > 0) {
+      this.note(
+        id,
+        `Named in the text but not part of this task: ${picks.mentioned.join(", ")}. Agents can read ${picks.mentioned.length === 1 ? "it" : "them"}; nothing there gets a branch or ships.`,
+      );
+    }
     if (picked.line !== undefined) this.note(id, picked.line);
     if (input.parent !== undefined) await this.linksChanged([input.parent]);
     let task = this.get(id);
@@ -551,19 +566,28 @@ export class TaskService {
     id: string,
     parsed: ParsedTask,
     projects: readonly ProjectInfo[],
+    bases: ReadonlyMap<string, string> = new Map(),
   ): Promise<TaskRepo[]> {
     const repos: TaskRepo[] = [];
     for (const match of parsed.repos) {
       const project = projects.find((p) => p.id === match.project);
       if (project === undefined) continue;
       if (!project.exists) throw new UserError(`${project.path} is not a git repo the server can see.`, 409);
-      const base = parsed.base ?? project.base;
+      // The base comes from the creator's pick for this repo or the project, never from prose like
+      // "move off staging". The working branch is always a new task branch, never one that exists:
+      // an agent must not commit on the owner's own branches.
+      const base = bases.get(project.id) ?? project.base;
       if (base === undefined)
         throw new UserError(`Project "${project.id}" has no base branch. Set one on the project.`);
-      const branch = parsed.branch ?? branchName(id, parsed.title);
-      const exists = parsed.branch !== undefined && (await branchExists(project.path, branch));
+      const branch = branchName(id, parsed.title);
+      if (await branchExists(project.path, branch)) {
+        throw new UserError(
+          `${project.id} already has a branch ${branch}. majhi only works on a new task branch: delete or rename that branch, then create the task again.`,
+          409,
+        );
+      }
       // No worktree yet. It will be `<folder>/<project>`, which TASK.md names.
-      repos.push({ project: project.id, source: project.path, base, branch, createdBranch: !exists });
+      repos.push({ project: project.id, source: project.path, base, branch, createdBranch: true });
     }
     return repos;
   }
@@ -662,6 +686,13 @@ export class TaskService {
     const id = task.id;
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) continue;
+      // Agents only ever commit on a task branch, never on a branch the owner works on.
+      if (!repo.branch.startsWith("task/")) {
+        throw new UserError(
+          `${repo.project}: ${repo.branch} is not a task branch. majhi only lets agents work on a new task/ branch. Create the task again.`,
+          409,
+        );
+      }
       const path = join(task.folder, repo.project);
       // A `ready` dependency on the same project: this branch starts from its branch (5.4a).
       const stack = this.stackFor(task, repo.project);
@@ -967,6 +998,7 @@ export class TaskService {
     from?: string | undefined;
     children: {
       text: string;
+      repos?: readonly PickedRepo[] | undefined;
       attachments?: string[] | undefined;
       dependsOn: number[];
       when?: "merged" | "ready" | undefined;
@@ -993,6 +1025,7 @@ export class TaskService {
       made.push(
         await this.create({
           text: child.text,
+          repos: child.repos,
           agent: child.agent,
           attachments: child.attachments ?? [],
           from: input.from,

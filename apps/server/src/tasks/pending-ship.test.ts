@@ -56,7 +56,9 @@ async function conflicted(): Promise<void> {
       return "end_turn";
     };
   };
-  expect((await cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true })).status,
+  ).toBe(200);
   await w.h.majhi.services.runs.idle();
   await until(async () => (await get()).status === "review", "review");
   await writeFile(join(w.repo("api"), "shared.txt"), "main side\n");

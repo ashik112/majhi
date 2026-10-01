@@ -11,7 +11,10 @@ let docker: FakeDocker;
 beforeEach(async () => {
   docker = new FakeDocker();
   w = await taskWorld({ containerDocker: docker });
-  expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
+      .status,
+  ).toBe(200);
 });
 afterEach(() => w?.cleanup());
 

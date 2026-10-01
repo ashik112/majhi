@@ -40,8 +40,24 @@ describe("a ready dependency", () => {
         return "end_turn";
       };
     };
-    expect((await h.cmd("tasks.create", { text: "add the model to api", start: true })).status).toBe(200);
-    expect((await h.cmd("tasks.create", { text: "add the view to api", start: false })).status).toBe(200);
+    expect(
+      (
+        await h.cmd("tasks.create", {
+          text: "add the model to api",
+          repos: [{ project: "acme-api" }],
+          start: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await h.cmd("tasks.create", {
+          text: "add the view to api",
+          repos: [{ project: "acme-api" }],
+          start: false,
+        })
+      ).status,
+    ).toBe(200);
     expect(
       (await h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1", when: "ready" }))
         .status,

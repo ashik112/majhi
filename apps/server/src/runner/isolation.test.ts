@@ -80,6 +80,7 @@ describe("what a task's run mounts", () => {
     w = await taskWorld();
     const created = await w.h.cmd("tasks.create", {
       text: "add a health endpoint to api from develop",
+      repos: [{ project: "acme-api", base: "develop" }],
       start: true,
     });
     expect(created.status).toBe(200);

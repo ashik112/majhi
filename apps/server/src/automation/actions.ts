@@ -7,7 +7,6 @@ import {
   type OverlapPolicy,
   type PausedReason,
   type ProcessInfo,
-  parseTaskText,
   type TaskStatus,
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
@@ -30,6 +29,8 @@ export interface ActionHost {
   /** Creates the task and starts it, as `tasks.create` with `start` does. */
   startTask(input: {
     text: string;
+    /** The one project the task changes. */
+    project: string;
     agent: string | undefined;
     team: string[] | undefined;
   }): Promise<{ id: string }>;
@@ -65,9 +66,9 @@ export function refuseSecrets(...texts: (string | undefined)[]): void {
   }
 }
 
-/** The text a started task gets: the owner's text, and the project named so the task parser finds it. */
+/** The text a started task gets: the owner's title and text. Its repo is passed on its own. */
 export function taskText(action: Extract<AutomationAction, { kind: "task.start" }>): string {
-  return `${action.title}\n\n${action.text}\n\nProject: ${action.project}`;
+  return `${action.title}\n\n${action.text}`;
 }
 
 /**
@@ -107,14 +108,6 @@ export class ActionRunner {
           const agent = await this.host.agent(id);
           if (agent === undefined) throw new UserError(`Agent "${id}" does not exist.`, 404);
           if (!canWorkIn(agent, org)) throw new UserError(`Agent "${id}" may not work in org "${org}".`, 409);
-        }
-        // The task parser reads the project from the text. Another project named there would join it.
-        const parsed = parseTaskText(taskText(action), { projects, agents: [] });
-        const named = parsed.repos.map((r) => r.project);
-        if (named.length !== 1 || named[0] !== action.project) {
-          throw new UserError(
-            `The task text names ${named.filter((p) => p !== action.project).join(", ") || "no project"} besides "${action.project}". Name one project only.`,
-          );
         }
         return;
       }
@@ -198,6 +191,7 @@ export class ActionRunner {
       case "task.start": {
         const task = await this.host.startTask({
           text: taskText(action),
+          project: action.project,
           agent: action.agent,
           team: action.team,
         });

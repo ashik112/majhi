@@ -4,7 +4,6 @@ import {
   canWorkIn,
   commands,
   DEFAULT_LEAD_START,
-  parseTaskText,
   type TeamPlan,
   TeamPlanSchema,
 } from "@majhi/shared";
@@ -130,13 +129,13 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
     command: "tasks.split",
     description:
-      "Split a task into subtasks, in order. A subtask can get files in its attachments (a path in your task folder, like attachments/image.png, or an upload id). A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
+      "Split a task into subtasks, in order. Each subtask lists in repos only the projects it will change; names in its text attach nothing. A subtask can get files in its attachments (a path in your task folder, like attachments/image.png, or an upload id). A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
   },
   {
     name: "uploads_create",
@@ -544,32 +543,31 @@ async function refuseOutsideOrg(
     const task = deps.store.tasks.get(id);
     if (task !== undefined && !canWorkIn(fm, task.org)) return `${id} is not in an org @${fm.id} works in.`;
   }
-  const texts =
+  // The repos a new task changes are listed on purpose; names in the text attach nothing.
+  const picks: unknown[] =
     command === "tasks.create"
-      ? [args.text]
+      ? [args.repos]
       : command === "tasks.split" && Array.isArray(args.children)
         ? args.children.map((c) =>
-            typeof c === "object" && c !== null ? (c as { text?: unknown }).text : undefined,
+            typeof c === "object" && c !== null ? (c as { repos?: unknown }).repos : undefined,
           )
         : [];
   const projects = await deps.projects.infos();
-  for (const text of texts) {
-    if (typeof text !== "string") continue;
-    const parsed = parseTaskText(text, {
-      projects: projects.map((p) => ({ id: p.id, org: p.org, aliases: p.aliases })),
-      agents: [],
-    });
+  for (const pick of picks) {
+    const listed = Array.isArray(pick)
+      ? pick.flatMap((r) =>
+          typeof r === "object" && r !== null && typeof (r as { project?: unknown }).project === "string"
+            ? [(r as { project: string }).project]
+            : [],
+        )
+      : [];
+    const orgs = [...new Set(listed.flatMap((id) => projects.find((p) => p.id === id)?.org ?? []))];
+    if (orgs.length > 1) return "Those repos are in more than one org.";
     const parentId = command === "tasks.split" ? args.task : args.parent;
     const parent = typeof parentId === "string" ? deps.store.tasks.get(parentId)?.org : undefined;
-    const org = parsed.org ?? (parsed.repos.length === 0 ? parent : undefined);
-    if (parsed.repos.length > 0 && parsed.org === undefined) return "Those repos are in more than one org.";
-    if (
-      org === undefined &&
-      parsed.repos.length === 0 &&
-      command === "tasks.create" &&
-      parent === undefined
-    ) {
-      return `Name a repo of your org, or give a parent task: @${fm.id} cannot create a task without an org.`;
+    const org = orgs[0] ?? (listed.length === 0 ? parent : undefined);
+    if (org === undefined && listed.length === 0 && command === "tasks.create" && parent === undefined) {
+      return `List a repo of your org in repos, or give a parent task: @${fm.id} cannot create a task without an org.`;
     }
     if (org !== undefined && !canWorkIn(fm, org)) return `@${fm.id} cannot create tasks in "${org}".`;
   }

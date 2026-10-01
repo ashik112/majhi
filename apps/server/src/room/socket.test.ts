@@ -49,7 +49,7 @@ describe("room socket", () => {
     w = await taskWorld();
     const base = await listen();
     await expect(connect(`${base}/api/tasks/ACM-9/room`).opened).rejects.toThrow("HTTP 404");
-    await w.h.cmd("tasks.create", { text: "fix api", start: false });
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false });
     await expect(
       connect(`${base}/api/tasks/ACM-1/room`, { origin: "https://evil.example" }).opened,
     ).rejects.toThrow("HTTP 403");

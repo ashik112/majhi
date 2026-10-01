@@ -1,0 +1,41 @@
+import type { ParsedTask } from "@majhi/shared";
+import { UserError } from "../errors.ts";
+
+/** One repo a task creator listed on purpose. */
+export interface PickedRepo {
+  project: string;
+  base?: string | undefined;
+}
+
+/**
+ * A task's repos are the ones its creator listed: the owner's project chips, or `repos` from the
+ * boss, a lead or an automation. Project names in the text attach nothing, so a brief that says
+ * "read X, do not change it" never gives X a branch. Returns the parse with those repos, the base
+ * picked per repo, and the projects the text named that did not join, to say so in the room.
+ */
+export function withPickedRepos(
+  parsed: ParsedTask,
+  picked: readonly PickedRepo[] | undefined,
+  projects: readonly { id: string; org: string }[],
+): { parsed: ParsedTask; bases: Map<string, string>; mentioned: string[] } {
+  const repos: ParsedTask["repos"] = [];
+  const bases = new Map<string, string>();
+  for (const pick of picked ?? []) {
+    if (!projects.some((p) => p.id === pick.project)) {
+      throw new UserError(`Project "${pick.project}" does not exist.`, 404);
+    }
+    if (repos.some((r) => r.project === pick.project)) continue;
+    repos.push({ project: pick.project, match: pick.project });
+    if (pick.base !== undefined) bases.set(pick.project, pick.base);
+  }
+  const orgs = [
+    ...new Set(repos.flatMap((r) => projects.find((p) => p.id === r.project)?.org ?? [])),
+  ];
+  const warnings = parsed.warnings.filter((w) => !w.startsWith("Repos from more than one org"));
+  if (orgs.length > 1) warnings.push(`Repos from more than one org: ${orgs.join(", ")}`);
+  const { org: _named, ...rest } = parsed;
+  const out: ParsedTask = { ...rest, repos, kind: repos.length > 0 ? "code" : "chat", warnings };
+  if (orgs.length === 1 && orgs[0] !== undefined) out.org = orgs[0];
+  const mentioned = parsed.repos.map((r) => r.project).filter((p) => !repos.some((r) => r.project === p));
+  return { parsed: out, bases, mentioned };
+}

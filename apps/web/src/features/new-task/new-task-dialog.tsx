@@ -27,8 +27,6 @@ import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "
 import { defaultAgentId, eligibleAgents } from "../tasks/model";
 import {
   canAdd,
-  chosenProjects,
-  composeTaskText,
   groupProjects,
   initialProjects,
   linkChoices,
@@ -100,11 +98,17 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   );
   const parsed = useMemo(() => tryParse(deferred, parseCtx), [deferred, parseCtx]);
   const named = namedProjects(parsed);
-  const chosen = chosenProjects(named, picked);
+  // Only the chips attach repos. Projects the words name are offered, never added by themselves.
+  const chosen = picked;
+  const mentioned = named.filter((id) => !chosen.includes(id));
   const chosenOrg = projects.data?.find((p) => chosen.includes(p.id))?.org ?? filterOrg;
   const kind = chosen.length > 0 ? "code" : "chat";
-  // What the server will read: the words plus the chips. Its warnings (an unknown @agent, repos from two orgs) show as they are.
-  const warnings = tryParse(composeTaskText(draft, chosen, named), parseCtx)?.warnings ?? [];
+  // The parser's warnings about the words (an unknown @agent). Repos come from the chips alone.
+  const orgsChosen = new Set(chosen.map((id) => projects.data?.find((p) => p.id === id)?.org));
+  const warnings = [
+    ...(parsed?.warnings ?? []).filter((w) => !w.startsWith("Repos from")),
+    ...(orgsChosen.size > 1 ? [`Repos from more than one org: ${[...orgsChosen].join(", ")}`] : []),
+  ];
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);
   const orgName = orgs.find((o) => o.id === chosenOrg)?.name;
@@ -116,7 +120,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
     setFailure(undefined);
     create.mutate(
       {
-        text: composeTaskText(draft, chosen, named),
+        text: typedText(draft),
+        repos: chosen.map((project) => ({ project })),
         attachments: attachmentIds(attachments.items),
         start,
         ...linkFields(parent[0], dependsOn),
@@ -193,11 +198,6 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             autoComplete="off"
             className={cn(FIELD, "h-11 px-3.5 text-md placeholder:text-fg-faint")}
           />
-          {parsed?.base && (
-            <p className="text-xs text-fg-muted">
-              Branches from <span className="font-mono text-fg">{parsed.base}</span>
-            </p>
-          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -278,8 +278,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
                     mono
                     pressed={on}
                     className="h-[34px] text-sm"
-                    title={named.includes(project.id) ? "Named in the title or details" : undefined}
-                    onClick={() => setPicked(togglePicked(picked, named, project.id))}
+                    onClick={() => setPicked(togglePicked(picked, project.id))}
                   >
                     {project.id}
                   </ChoiceChip>
@@ -287,6 +286,22 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
               })}
             </div>
           ))}
+          {mentioned.length > 0 && (
+            <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
+              Mentioned:
+              {mentioned.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPicked([...picked, id])}
+                  className="cursor-pointer font-mono text-blue underline-offset-2 hover:underline"
+                >
+                  Add {id}
+                </button>
+              ))}
+              <span>Only picked projects get a branch. Agents can read the others.</span>
+            </p>
+          )}
           {projects.data && projects.data.length > 0 && chosen.length === 0 && (
             <p className="text-sm text-fg-muted">
               No project chosen: this becomes a chat task, with no worktree.

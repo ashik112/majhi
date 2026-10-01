@@ -50,7 +50,9 @@ async function startWith(command: string, wait: boolean): Promise<World> {
       return first(turn);
     };
   };
-  expect((await h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
+  expect(
+    (await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true })).status,
+  ).toBe(200);
   await until(() => h.runtime.sessions[0]?.prompts.length === 1, "the first turn");
   await h.majhi.services.runs.idle();
   return w;

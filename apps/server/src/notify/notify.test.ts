@@ -14,7 +14,10 @@ const SETTLED = SETTLE_MS + COLLECT_MS + 10;
 
 async function setup(settings = NotificationsSettingsSchema.parse({})): Promise<void> {
   w = await taskWorld();
-  expect((await w.h.cmd("tasks.create", { text: "fix api", start: false })).status).toBe(200);
+  expect(
+    (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false }))
+      .status,
+  ).toBe(200);
   const { store, room } = w.h.majhi.services;
   const hub = new EventHub();
   sent = [];

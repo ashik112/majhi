@@ -127,7 +127,12 @@ describe("an agent reads the folder a message mentions", () => {
   it("mounts it read-only for that agent and says so in the room", async () => {
     await readWorld();
     await w.addRepo("billing");
-    await must("tasks.create", { text: "look at the api repo", readOnly: true, start: false });
+    await must("tasks.create", {
+      text: "look at the api repo",
+      repos: [{ project: "acme-api" }],
+      readOnly: true,
+      start: false,
+    });
     const asked = `why does @${w.repo("billing")} fail? Also @${w.repo("ledger")} and @${join(w.h.dir, "outside")}.`;
     await must("room.send", { task: "ACM-1", text: asked });
     // The send returns at once; the grants come with its delivery.
@@ -154,6 +159,7 @@ describe("an investigation task", () => {
     await readWorld();
     const created = (await must("tasks.create", {
       text: "why does the api health check fail? repo api",
+      repos: [{ project: "acme-api" }],
       readOnly: true,
       start: true,
     })) as { id: string; kind: string; repos: unknown[]; readMounts?: { path: string }[] };
@@ -190,7 +196,12 @@ describe("registered projects in every run", () => {
       frontmatter: { scope: "root", role: "Root", account: "claude-acme", perms: ["shell"] },
       instructions: "Run things.\n",
     });
-    await must("tasks.create", { text: "look at the api repo", readOnly: true, start: true });
+    await must("tasks.create", {
+      text: "look at the api repo",
+      repos: [{ project: "acme-api" }],
+      readOnly: true,
+      start: true,
+    });
     await w.h.majhi.services.runs.idle("ACM-1");
     const own = w.h.runtime.starts.at(-1)?.mounts ?? [];
     expect(own).toContainEqual({ path: w.repo("api"), readOnly: true });

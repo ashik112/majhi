@@ -35,7 +35,7 @@ describe("the run manager with the fake ACP adapter", () => {
     try {
       await realWorld();
       w.h.env.runtime.base = baseEnv({ ...process.env, SSH_AUTH_SOCK: "/run/ssh-agent.sock" });
-      await w.h.cmd("tasks.create", { text: "fix api", start: true });
+      await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
       await w.h.majhi.services.runs.idle();
       await w.h.cmd("room.send", { task: "ACM-1", text: "report-env" });
       await w.h.majhi.services.runs.idle();
@@ -52,7 +52,7 @@ describe("the run manager with the fake ACP adapter", () => {
     w = await taskWorld({ agent: { perms: ["edit"] } });
     w.h.env.runtime.adapters = { claude: fakeAdapter("claude", { signedIn: true }) };
     w.h.runtime.startSession = (start) => startSession(start);
-    await w.h.cmd("tasks.create", { text: "fix api", start: true });
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
     await until(() => live()?.status === "waiting", "the permission prompt");
     const pending = (await items()).find((i) => i.type === "permission") as Extract<
       RoomItem,
@@ -85,7 +85,10 @@ describe("the run manager with the fake ACP adapter", () => {
       opened++;
       return startSession(start);
     };
-    expect((await w.h.cmd("tasks.create", { text: "fix api", start: false })).status).toBe(200);
+    expect(
+      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false }))
+        .status,
+    ).toBe(200);
 
     const first = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: one" });
     const second = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: two" });

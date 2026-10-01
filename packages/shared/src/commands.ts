@@ -194,6 +194,23 @@ const LocalBranchSchema = z
  */
 const ShipTargetsSchema = z.record(IdSchema, LocalBranchSchema);
 
+/**
+ * The repos a new task changes, picked on purpose: each gets a branch and a worktree. Project
+ * names in the task text attach nothing; agents can read every registered project without it.
+ */
+const TaskReposSchema = z
+  .array(
+    z.object({
+      project: IdSchema,
+      /** The branch it starts from. Default: the project's base. */
+      base: LocalBranchSchema.optional(),
+    }),
+  )
+  .max(20)
+  .describe(
+    "The projects this task will change, each with an optional base branch. Only these get a branch and a worktree. Naming a project in the text attaches nothing, and every registered project is readable without being listed here: list only the repos the task must change",
+  );
+
 /** What a local merge or a push did in one repo of a task. */
 const MergeResultSchema = z.object({
   project: IdSchema,
@@ -728,15 +745,18 @@ export const commands = {
   },
   "tasks.create": {
     risk: "change",
-    summary: "Create a task from the task box text. With start, create worktrees and start the agent",
+    summary:
+      "Create a task. repos lists the projects it changes: only those get a branch and a worktree; project names in the text attach nothing. With start, create worktrees and start the agent",
     input: z.object({
       text: z.string().trim().min(1).max(20_000),
+      /** The repos the task changes. Default: none, a chat task. */
+      repos: TaskReposSchema.optional(),
       /** A short title. Without it, the first line of `text` is the title and the rest the description. */
       title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
       /**
-       * An investigation: the repos the text names are mounted read-only. No branch, no worktree, no
+       * An investigation: the repos listed in repos are mounted read-only. No branch, no worktree, no
        * Changes and no Ship. `kind: "ops"` does the same.
        */
       readOnly: z.boolean().optional(),
@@ -818,8 +838,10 @@ export const commands = {
       children: z
         .array(
           z.object({
-            /** Task box text for the child: what to do, which repos. */
+            /** Task box text for the child: what to do. */
             text: z.string().trim().min(1).max(20_000),
+            /** The repos the child changes. Default: none. */
+            repos: TaskReposSchema.optional(),
             /** Positions of earlier children this one waits for. */
             dependsOn: z.array(z.number().int().min(0).max(19)).max(20).default([]),
             /** When a dependency counts as met. `ready` stacks this child's branch on the dependency's. */

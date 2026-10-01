@@ -73,6 +73,7 @@ async function world() {
   };
   const res = await h.cmd("tasks.create", {
     text: "add a health endpoint to api",
+    repos: [{ project: "acme-api" }],
     team: ["acme-lead", "acme-builder"],
     start: true,
   });
@@ -233,7 +234,10 @@ describe("majhi-processes", () => {
     expect(h.majhi.services.processes.running("ACM-1").map((p) => p.agent)).toEqual(["acme-lead"]);
     expect(text(await tool.callTool({ name: "list", arguments: {} }))).toContain("p1 `sleep 30`");
     // Another task's processes are out of reach: ids are per task.
-    expect((await h.cmd("tasks.create", { text: "tidy api", start: false })).status).toBe(200);
+    expect(
+      (await h.cmd("tasks.create", { text: "tidy api", repos: [{ project: "acme-api" }], start: false }))
+        .status,
+    ).toBe(200);
     await h.majhi.services.processes.start({
       task: "ACM-2",
       agent: "acme-lead",
@@ -335,7 +339,14 @@ describe("majhi-tasks", () => {
     it("starts a subtask at once, with an applied card, a note and an audit row", async () => {
       const { h, servers, release } = await world();
       expect(
-        (await h.cmd("tasks.create", { text: "add the route to api", parent: "ACM-1", start: false })).status,
+        (
+          await h.cmd("tasks.create", {
+            text: "add the route to api",
+            repos: [{ project: "acme-api" }],
+            parent: "ACM-1",
+            start: false,
+          })
+        ).status,
       ).toBe(200);
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
       const res = await call(tasks, "ACM-2");
@@ -356,9 +367,15 @@ describe("majhi-tasks", () => {
 
     it("keeps a subtask with an unfinished dependency from starting, and starts it when ready", async () => {
       const { h, servers, release } = await world();
-      await h.cmd("tasks.create", { text: "add the route to api", parent: "ACM-1", start: false });
+      await h.cmd("tasks.create", {
+        text: "add the route to api",
+        repos: [{ project: "acme-api" }],
+        parent: "ACM-1",
+        start: false,
+      });
       await h.cmd("tasks.create", {
         text: "add the test to api",
+        repos: [{ project: "acme-api" }],
         parent: "ACM-1",
         dependsOn: ["ACM-2"],
         start: false,
@@ -413,7 +430,12 @@ describe("majhi-tasks", () => {
 
     it("asks the owner instead when the setting is off", async () => {
       const { h, servers, release } = await world();
-      await h.cmd("tasks.create", { text: "add the route to api", parent: "ACM-1", start: false });
+      await h.cmd("tasks.create", {
+        text: "add the route to api",
+        repos: [{ project: "acme-api" }],
+        parent: "ACM-1",
+        start: false,
+      });
       expect((await h.cmd("orgs.update", { id: "acme", lead_start: "off" })).status).toBe(200);
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
       const res = await call(tasks, "ACM-2");
