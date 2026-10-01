@@ -102,8 +102,8 @@ export function ChatsScreen() {
             <MessagesSquare aria-hidden="true" className="size-6 text-fg-faint" />
             <h1 className="text-md font-semibold">Chat with an agent</h1>
             <p className="text-base text-fg-muted text-pretty">
-              Pick a chat on the left, or start one. A chat is just a conversation. The agent can make a
-              task when you ask for one.
+              Pick a chat on the left, or start one. A chat is just a conversation. The agent can make a task
+              when you ask for one.
             </p>
             {bossId !== undefined && (
               <Button variant="primary" disabled={newChat.isPending} onClick={() => start(bossId)}>

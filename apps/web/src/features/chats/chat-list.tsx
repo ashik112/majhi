@@ -43,7 +43,9 @@ export function ChatList({
   now: number;
 }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const selectedAgent = groups.flatMap((g) => g.agents).find((a) => a.chats.some((c) => c.id === selected))?.id;
+  const selectedAgent = groups
+    .flatMap((g) => g.agents)
+    .find((a) => a.chats.some((c) => c.id === selected))?.id;
   return (
     <nav
       aria-label="Chats"
@@ -99,10 +101,7 @@ export function ChatList({
                     onToggle={() =>
                       setOpen((prev) => ({
                         ...prev,
-                        [agent.id]: !(
-                          prev[agent.id] ??
-                          (agent.id === selectedAgent || agent.entry.isBoss)
-                        ),
+                        [agent.id]: !(prev[agent.id] ?? (agent.id === selectedAgent || agent.entry.isBoss)),
                       }))
                     }
                     selected={selected}
@@ -239,10 +238,16 @@ function ChatRow({
         type="button"
         aria-current={active ? "true" : undefined}
         onClick={onOpen}
-        className={cn(ROW, "min-h-[38px] flex-col justify-center gap-px px-2 py-1 pr-8", active && ROW_SELECTED)}
+        className={cn(
+          ROW,
+          "min-h-[38px] flex-col justify-center gap-px px-2 py-1 pr-8",
+          active && ROW_SELECTED,
+        )}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className={cn("min-w-0 truncate text-base", active ? "text-fg" : "text-fg-soft")}>{title}</span>
+          <span className={cn("min-w-0 truncate text-base", active ? "text-fg" : "text-fg-soft")}>
+            {title}
+          </span>
           {chat.asking === true && (
             <>
               <Lamp state="needs" size={6} className="shrink-0" />

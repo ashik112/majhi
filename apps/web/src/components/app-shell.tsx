@@ -26,7 +26,12 @@ import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
 
 /** Pages that lay out their own panes to fit the viewport. */
-const PINNED: ReadonlySet<string> = new Set([PAGE_PATH.chats, PAGE_PATH.agents, PAGE_PATH.usage, PAGE_PATH.orgs]);
+const PINNED: ReadonlySet<string> = new Set([
+  PAGE_PATH.chats,
+  PAGE_PATH.agents,
+  PAGE_PATH.usage,
+  PAGE_PATH.orgs,
+]);
 
 export function AppShell() {
   useServerEvents();

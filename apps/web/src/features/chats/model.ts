@@ -1,5 +1,5 @@
 import { type AgentEntry, DEFAULT_CHAT_TITLES, type OrgView, type TaskSummary } from "@majhi/shared";
-import { type AgentGroup, entryId, groupAgents, type OkAgent } from "@/features/agents/model";
+import { type AgentGroup, entryId, groupAgents, INVALID_GROUP, type OkAgent } from "@/features/agents/model";
 
 /** The name a chat shows: its title, or "New chat" until the first message names it. */
 export function chatTitle(chat: Pick<TaskSummary, "title">): string {
@@ -50,7 +50,7 @@ export function chatGroups(input: {
       if (q !== "" && !nameHit && chats.length === 0) continue;
       agents.push({ entry, id, chats, asking: all.some((c) => c.asking === true) });
     }
-    if (agents.length > 0 || q === "") out.push({ group, agents });
+    if (agents.length > 0 || (q === "" && group.scope !== INVALID_GROUP)) out.push({ group, agents });
   }
   return out;
 }

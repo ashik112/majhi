@@ -57,7 +57,13 @@ describe("chats with agents", () => {
     expect(after?.title).toBe("first question");
     // A finished code task still refuses messages.
     const task = (
-      await w.h.cmd("tasks.create", { text: "Plain task", kind: "chat", agent: "boss", attachments: [], start: false })
+      await w.h.cmd("tasks.create", {
+        text: "Plain task",
+        kind: "chat",
+        agent: "boss",
+        attachments: [],
+        start: false,
+      })
     ).body;
     await w.h.cmd("tasks.close", { id: task.id, by: "owner", whenUnshipped: "keep" });
     expect((await say(task.id, "hello")).status).toBe(409);

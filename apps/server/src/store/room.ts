@@ -128,7 +128,14 @@ export class RoomRepo {
       .from(roomItems)
       .where(
         and(
-          inArray(roomItems.type, ["approval", "permission", "secret-request", "ask", "choice", "owner-question"]),
+          inArray(roomItems.type, [
+            "approval",
+            "permission",
+            "secret-request",
+            "ask",
+            "choice",
+            "owner-question",
+          ]),
           sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
         ),
       )

@@ -11,8 +11,8 @@ import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
-import { ChatsScreen } from "@/features/chats/chats-screen";
 import { BoardScreen } from "@/features/board/board-screen";
+import { ChatsScreen } from "@/features/chats/chats-screen";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
 import { TaskScreen } from "@/features/task/task-screen";
 import { PAGE_PATH } from "@/lib/pages";
@@ -89,7 +89,11 @@ const boardRoute = createRoute({
   path: PAGE_PATH.board,
   component: BoardScreen,
 });
-const chatsRoute = createRoute({ getParentRoute: () => rootRoute, path: PAGE_PATH.chats, component: ChatsScreen });
+const chatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.chats,
+  component: ChatsScreen,
+});
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chats/$taskId",

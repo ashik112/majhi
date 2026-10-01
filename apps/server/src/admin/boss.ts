@@ -36,13 +36,11 @@ export interface BossChatDeps {
 }
 
 /** A new chat with an agent. An untitled one that was never written in is reused, so New chat does not pile up empty chats. */
-export async function openChat(
-  { config, store, tasks, agents }: BossChatDeps,
-  agent: string,
-): Promise<Task> {
+export async function openChat({ config, store, tasks, agents }: BossChatDeps, agent: string): Promise<Task> {
   const sections = await config.sections();
   const found = await agents.get(agent);
-  if (found === undefined || !found.ok) throw new UserError(`Agent "${agent}" does not exist or is invalid.`, 404);
+  if (found === undefined || !found.ok)
+    throw new UserError(`Agent "${agent}" does not exist or is invalid.`, 404);
   const { scope } = found.agent.frontmatter;
   const org = scope === "root" ? undefined : scope;
   if (org !== undefined && sections.orgs[org] === undefined) {

@@ -14,11 +14,11 @@ import { useRoom } from "@/features/room/use-room";
 import { firstPendingPermission } from "@/features/task/model";
 import { useAgentIndex } from "@/lib/agent-index";
 import { setPendingPermission } from "@/lib/attention";
+import { useRenameChat } from "@/lib/chat-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
-import { useRenameChat } from "@/lib/chat-queries";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTask } from "@/lib/task-queries";
 import { chatTitle } from "./model";
@@ -56,7 +56,12 @@ export function ChatView({
   }
   if (!task.data) {
     return (
-      <div role="status" aria-busy="true" aria-label="Loading the chat" className="flex flex-1 flex-col gap-3">
+      <div
+        role="status"
+        aria-busy="true"
+        aria-label="Loading the chat"
+        className="flex flex-1 flex-col gap-3"
+      >
         <Skeleton className="h-14 w-full rounded-2xl" />
         <Skeleton className="h-20 w-2/3 rounded-lg" />
       </div>
@@ -99,14 +104,18 @@ function OpenChat({
   const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
   useEffect(() => {
     setPendingPermission(
-      pending ? { task: task.id, agent: pending.agent, elementId: permissionDomId(pending.itemId) } : undefined,
+      pending
+        ? { task: task.id, agent: pending.agent, elementId: permissionDomId(pending.itemId) }
+        : undefined,
     );
     return () => setPendingPermission(undefined);
   }, [pending, task.id]);
 
   const detail = [
     info?.role,
-    info === undefined ? undefined : `${info.account} · ${info.model ?? "default model"}${info.effort ? ` ${info.effort}` : ""}`,
+    info === undefined
+      ? undefined
+      : `${info.account} · ${info.model ?? "default model"}${info.effort ? ` ${info.effort}` : ""}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -139,7 +148,8 @@ function OpenChat({
       </header>
       {empty && (
         <p className="shrink-0 px-1 text-sm text-fg-faint text-pretty">
-          Just chatting: nothing here becomes a task unless you ask {agent ? `@${agent}` : "the agent"} to make one.
+          Just chatting: nothing here becomes a task unless you ask {agent ? `@${agent}` : "the agent"} to
+          make one.
         </p>
       )}
       <RoomPane task={task} state={room.state} dispatch={room.dispatch} loadOlder={room.loadOlder} />
@@ -207,7 +217,10 @@ function Title({
       className="group flex min-w-0 items-center gap-1.5 self-start rounded-md text-left"
     >
       <h1 className="min-w-0 truncate text-md font-semibold">{chatTitle(task)}</h1>
-      <Pencil aria-hidden="true" className="size-3 shrink-0 text-fg-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+      <Pencil
+        aria-hidden="true"
+        className="size-3 shrink-0 text-fg-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+      />
     </button>
   );
 }

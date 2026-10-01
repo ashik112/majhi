@@ -2,6 +2,7 @@ import {
   type Attachment,
   type CoordinationMode,
   CoordinationModeSchema,
+  isOwnerChat,
   type PausedReason,
   type PendingShip,
   PendingShipSchema,
@@ -17,7 +18,6 @@ import {
   type TaskSummary,
   type TeamOverride,
   TeamOverrideSchema,
-  isOwnerChat,
 } from "@majhi/shared";
 import { and, asc, desc, eq, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
