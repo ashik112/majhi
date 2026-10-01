@@ -19,6 +19,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { MEMORY_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
+import { estimateText } from "../runs/context.ts";
+import type { UsageEvents } from "../usage/events.ts";
 import { capFacts, factLine, TASK_MEMORY_CHARS } from "./recall.ts";
 import type { MemoryService } from "./service.ts";
 
@@ -36,6 +38,8 @@ export interface MemoryMcpDeps {
   memory: MemoryService;
   /** Resolved on every call, so a project added or moved to another org counts at once. */
   scopeOf: (task: string) => Promise<AgentScope | undefined>;
+  /** Where the size of each recall result goes, for the task's token receipt. */
+  receipts?: Pick<UsageEvents, "recordRecall">;
 }
 
 const TOOLS = [
@@ -108,7 +112,14 @@ export function memoryServer(caller: ToolCaller, deps: MemoryMcpDeps): Server {
           const hits = await deps.memory.search(args.query, { scopes });
           const facts = capFacts(hits.map((h) => h.fact));
           deps.memory.noteUse(caller.task, facts);
-          return ok(facts.length === 0 ? "No facts found." : facts.map(factLine).join("\n"));
+          const text = facts.length === 0 ? "No facts found." : facts.map(factLine).join("\n");
+          deps.receipts?.recordRecall(
+            caller.task,
+            caller.agent,
+            new Date().toISOString(),
+            estimateText(text),
+          );
+          return ok(text);
         }
         case "propose": {
           const args = MemoryProposeToolSchema.parse(parsed.data);

@@ -306,6 +306,10 @@ export function createHandlers({
     "agents.update": (input, ctx) => agents.update(input.id, input, ctx.command, ctx.meta),
     "agents.edit": (input, ctx) =>
       agents.edit(input.id, { set: input.set, instructions: input.instructions }, ctx.command, ctx.meta),
+    "agents.attached": async (input) => {
+      const last = services.store.runs.lastTools(input.id);
+      return last === undefined ? null : { agent: input.id, ...last };
+    },
     "agents.duplicate": (input, ctx) => agents.duplicate(input.id, input.newId, ctx.command, ctx.meta),
     "agents.remove": async (input, ctx) => {
       await agents.remove(input.id, ctx.command, ctx.meta);
@@ -652,6 +656,8 @@ export function createHandlers({
     "usage.summary": async (input) => services.usage.summary(input.filters, input.tz),
     "usage.breakdown": async (input) => services.usage.breakdown(input),
     "usage.turns": async (input) => services.usage.turns(input.filters, input.limit),
+    "usage.receipt": async (input) => services.usage.receipt(input.task),
+    "usage.agentReceipt": async (input) => services.usage.agentReceipt(input),
     "usage.prices": () => services.usage.prices(),
     "usage.setPrice": async (input, ctx) => {
       await requireConfigFile(config);

@@ -12,6 +12,7 @@ const run = promisify(execFile);
 const CHECK_TIMEOUT_MS = 120_000;
 const PROBE_ACCOUNT = "_runner-check";
 const MARKER = ".runner-check";
+const SERENA_PROBE_ACCOUNT = "_serena-check";
 const IMAGE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 /**
@@ -97,6 +98,62 @@ export async function checkRunnerIsolation(input: RunnerCheckInput): Promise<Run
     return { ok: false, detail: out || "The runner check gave no answer." };
   } catch (err) {
     return { ok: false, ...explain(err, cfg.image) };
+  } finally {
+    await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Serena (5.9 item 6) must start in the runner: a throwaway runner, started like an agent run,
+ * asks the installed `serena` for its version. A runner image built before Serena was added
+ * answers "not found", which Rebuild majhi fixes.
+ */
+export async function checkSerena(
+  input: Pick<RunnerCheckInput, "runner" | "majhiHome" | "docker"> & { command: string },
+): Promise<RunnerVerdict> {
+  const cfg: RunnerConfig = input.runner.config;
+  const docker =
+    input.docker ??
+    ((args: string[], env: Record<string, string>) =>
+      run(cfg.docker ?? "docker", args, { env, timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 }));
+  const probeHome = join(input.majhiHome, "accounts", SERENA_PROBE_ACCOUNT);
+  try {
+    await cfg.ready?.();
+    await mkdir(probeHome, { recursive: true, mode: 0o700 });
+    const args = dockerRunArgs(
+      {
+        command: {
+          command: "sh",
+          args: [
+            "-c",
+            'test -x "$1" || { echo "not installed"; exit 3; }; "$1" --version 2>&1 | tail -n 1',
+            "sh",
+            input.command,
+          ],
+        },
+        env: { PATH: IMAGE_PATH, HOME: probeHome },
+        cwd: "/tmp",
+        scratch: true,
+        account: { tool: "claude", home: probeHome },
+      },
+      cfg,
+      `majhi-run-serena-${Date.now().toString(36)}`,
+    );
+    const { stdout } = await docker(args, { ...cfg.cliEnv, DOCKER_CONFIG: "/tmp/majhi-docker" });
+    const out = stdout.trim().split("\n").pop() ?? "";
+    return out === ""
+      ? { ok: false, detail: "Serena gave no answer in the runner." }
+      : { ok: true, detail: `${out} starts in the runner` };
+  } catch (err) {
+    const said = explain(err, cfg.image);
+    if (said.detail === "not installed") {
+      return {
+        ok: false,
+        detail: "Serena is not in the runner image, so agents work without it.",
+        rebuild: true,
+      };
+    }
+    return { ok: false, ...said };
   } finally {
     await rm(probeHome, { recursive: true, force: true }).catch(() => undefined);
   }

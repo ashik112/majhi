@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { pressMatches, shortcut } from "@/features/shell/shortcuts";
 
 interface BossControls {
   open: boolean;
@@ -18,8 +19,8 @@ export function BossProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.isComposing || event.altKey || event.shiftKey) return;
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "j") return;
+      const press = shortcut("boss").press;
+      if (press === undefined || !pressMatches(press, event)) return;
       event.preventDefault();
       setOpen((v) => !v);
     }

@@ -116,6 +116,8 @@ export const runs = sqliteTable(
     stopReason: text("stop_reason"),
     model: text("model"),
     effort: text("effort"),
+    /** The MCP servers this run attached, a JSON array of names. Null for runs made before it was recorded. */
+    tools: text("tools"),
     /** 1 while a turn runs, and after a turn was cut (crash, shutdown, offline) until it continues. */
     inFlight: integer("in_flight").notNull().default(0),
     /** The last checkpoint number this run committed, 0 for none. */

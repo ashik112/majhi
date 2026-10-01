@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { UsageEvents } from "../usage/events.ts";
 import { ChatStateRepo } from "./chat-state.ts";
 import { createDb } from "./db.ts";
 import { PlanRepo } from "./plans.ts";
@@ -22,6 +23,8 @@ export class Store {
   readonly permissions: PermissionRepo;
   readonly plans: PlanRepo;
   readonly chats: ChatStateRepo;
+  /** What majhi put into contexts, for the token receipts. */
+  readonly usageEvents: UsageEvents;
   private readonly sqlite: Database.Database;
 
   constructor(file: string) {
@@ -33,6 +36,7 @@ export class Store {
     this.permissions = new PermissionRepo(db);
     this.plans = new PlanRepo(db);
     this.chats = new ChatStateRepo(sqlite);
+    this.usageEvents = new UsageEvents(sqlite);
   }
 
   static open(majhiHome: string): Store {

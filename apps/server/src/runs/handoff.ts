@@ -1,6 +1,7 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RoomItem } from "@majhi/shared";
+import { sectionOf } from "../tasks/brief.ts";
 
 /**
  * Handoff notes (SPEC 5.13): what carries a task from a full session to a fresh one. The agent
@@ -130,7 +131,11 @@ export function durableNote(s: DurableState): string {
     "",
     "## Original task",
     "",
-    trimMiddle(s.taskMd.trim() || "TASK.md could not be read. See the task folder.", BUDGET.taskMd),
+    // The fresh prompt carries TASK.md whole, so the note repeats only the brief.
+    trimMiddle(
+      sectionOf(s.taskMd, "Brief") || s.taskMd.trim() || "TASK.md could not be read. See the task folder.",
+      BUDGET.taskMd,
+    ),
     "",
     "## Done",
     "",

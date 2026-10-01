@@ -45,6 +45,34 @@ export class RunRepo {
     return row.id;
   }
 
+  /** The MCP servers a run attached. */
+  setTools(id: number, tools: readonly string[]): void {
+    this.db
+      .update(runs)
+      .set({ tools: JSON.stringify(tools) })
+      .where(eq(runs.id, id))
+      .run();
+  }
+
+  /** What the agent's newest run with a record attached, with the task and time it started. */
+  lastTools(agent: string): { task: string; at: string; tools: string[] } | undefined {
+    const row = this.db
+      .select({ task: runs.task, at: runs.startedAt, tools: runs.tools })
+      .from(runs)
+      .where(and(eq(runs.agent, agent), isNotNull(runs.tools)))
+      .orderBy(desc(runs.id))
+      .limit(1)
+      .get();
+    if (row?.tools == null) return undefined;
+    try {
+      const tools: unknown = JSON.parse(row.tools);
+      if (!Array.isArray(tools)) return undefined;
+      return { task: row.task, at: row.at, tools: tools.filter((t): t is string => typeof t === "string") };
+    } catch {
+      return undefined;
+    }
+  }
+
   end(id: number, stopReason: string, at: string): void {
     this.db
       .update(runs)

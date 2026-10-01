@@ -19,7 +19,7 @@ export interface SessionStart {
   cwd: string;
   git?: GitAttribution;
   /** MCP servers to attach (Phase 2b adds majhi-admin for the boss). */
-  mcpServers?: McpServerSpec[];
+  mcpServers?: (McpServerSpec | StdioServerSpec)[];
   /** Resume this ACP session id with session/load when the agent supports it. */
   resume?: string;
   model?: string;
@@ -35,6 +35,15 @@ export interface SessionStart {
 }
 
 export type McpServerSpec = { type: "http"; name: string; url: string; headers: Record<string, string> };
+
+/** A server the agent CLI starts itself as a subprocess, in its own runner container. */
+export type StdioServerSpec = {
+  type: "stdio";
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+};
 
 export type SessionEvent =
   | { type: "text"; messageId: string; text: string } // appended chunk

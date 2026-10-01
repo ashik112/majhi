@@ -26,9 +26,15 @@ export interface HandoffInput {
 /** Asked of a reviewer so its verdict can be read without a model. */
 export const VERDICT_ASK = "End your reply with APPROVED, or with CHANGES NEEDED and what to fix.";
 
+/** What every handoff prompt says first. Fixed text, so it is the same in every one. */
+export const HANDOFF_RULES = [
+  "Your reply is posted to the room. To hand work on, mention the agent by its @name. Mention @owner only when you need the owner. With nothing to hand on, mention no one: a message without a mention wakes nobody.",
+  "Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
+].join("\n");
+
 /**
  * The prompt that wakes an agent another agent handed work to (SPEC 5.3): the message that did
- * it, a pointer to TASK.md, a short room summary and the diff stat. Not the whole chat: the agent
+ * it, a pointer to TASK.md, a short room summary and the diff stat, after the fixed rules. Not the whole chat: the agent
  * can read more of the room with majhi-room `read_recent`.
  */
 export function handoffPrompt(input: HandoffInput): string {
@@ -40,7 +46,11 @@ export function handoffPrompt(input: HandoffInput): string {
           ? `@${input.from} finished a round of work. Review it.`
           : `@${input.from} reviewed your work and asks for changes. Fix them.`
         : `@${input.from} handed this to you in the room.`;
+  // The fixed text comes first, then what is new in this handoff: the same opening every time is
+  // what a provider's prompt cache can reuse (SPEC 5.9 item 7).
   const lines = [
+    ...(input.to.role === "Reviewer" ? [HANDOFF_RULES, VERDICT_ASK] : [HANDOFF_RULES]),
+    "",
     `${why} You are @${input.to.id} (${input.to.role}) in task ${input.task}.`,
     "",
     `@${input.from} wrote:`,
@@ -55,12 +65,7 @@ export function handoffPrompt(input: HandoffInput): string {
     input.diffStat.trim() === ""
       ? "No changes in the worktrees yet."
       : `Changes so far:\n${input.diffStat.trimEnd()}`,
-    "",
-    "Your reply is posted to the room. To hand work on, mention the agent (for example @" +
-      `${input.from}). Mention @owner only when you need the owner. With nothing to hand on, mention no one: a message without a mention wakes nobody.`,
-    "Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
   );
-  if (input.to.role === "Reviewer") lines.push(VERDICT_ASK);
   return lines.join("\n");
 }
 

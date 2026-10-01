@@ -7,6 +7,10 @@ import {
   MODEL_TIER_LABEL,
   ModelTierSchema,
   type OrgView,
+  TOOL_CATALOG,
+  type ToolSetting,
+  toolSetting,
+  withToolSetting,
 } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check } from "lucide-react";
@@ -21,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
-import { useAccountModels, useTools, useUpdateAgent } from "@/lib/studio-queries";
+import { useAccountModels, useAgentAttached, useTools, useUpdateAgent } from "@/lib/studio-queries";
 import {
   type AgentDraft,
   accountsForScope,
@@ -44,6 +48,7 @@ const SECTIONS = {
   role: ["role", "account", "where"],
   model: ["model", "effort", "models", "tier"],
   perms: ["perms"],
+  tools: ["tools"],
   fallback: ["fallback"],
   instructions: ["instructions"],
 } as const satisfies Record<string, readonly (keyof AgentDraft)[]>;
@@ -160,6 +165,12 @@ export function AgentSettings({
         draft={view("perms")}
         onChange={(patch) => change("perms", patch)}
         {...sectionProps("perms")}
+      />
+      <ToolsSection
+        agent={entry.agent.frontmatter.id}
+        draft={view("tools")}
+        onChange={(patch) => change("tools", patch)}
+        {...sectionProps("tools")}
       />
       <FallbackSection
         draft={view("fallback")}
@@ -449,6 +460,48 @@ function PermsSection({ draft, onChange, ...section }: SectionProps) {
           />
         ))}
       </div>
+    </SettingsSection>
+  );
+}
+
+const TOOL_SETTINGS = [
+  { value: "default", label: "Default" },
+  { value: "added", label: "Add" },
+  { value: "off", label: "Off" },
+] as const satisfies readonly { value: ToolSetting; label: string }[];
+
+/** Which MCP servers the agent gets: the role decides, and the agent can add one or turn a default off. */
+function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { agent: string }) {
+  const attached = useAgentAttached(agent).data;
+  return (
+    <SettingsSection
+      title="Tools"
+      note="The MCP servers a run attaches. Each is on or off by its role's rule; Add gives one the role does not get, Off takes a default away."
+      {...section}
+    >
+      <ul className="flex flex-col gap-2">
+        {TOOL_CATALOG.map((tool) => (
+          <li key={tool.name} className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="font-mono text-base">{tool.name}</div>
+              <div className="text-sm text-fg-muted text-pretty">
+                {tool.summary}. {tool.rule}.
+              </div>
+            </div>
+            <Segmented
+              label={`${tool.name} setting`}
+              value={toolSetting(draft.tools, tool.name)}
+              segments={TOOL_SETTINGS}
+              onChange={(setting) => onChange({ tools: withToolSetting(draft.tools, tool.name, setting) })}
+            />
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-sm text-fg-muted text-pretty">
+        {attached
+          ? `Latest run (${attached.task}) attached: ${attached.tools.length === 0 ? "nothing" : attached.tools.join(", ")}.`
+          : "No run has recorded its tools yet."}
+      </p>
     </SettingsSection>
   );
 }

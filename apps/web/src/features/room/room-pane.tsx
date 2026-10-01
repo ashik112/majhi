@@ -15,6 +15,8 @@ export function RoomPane({
   dispatch,
   loadOlder,
   onShowChanges,
+  focusItem,
+  onFocused,
 }: {
   task: Task;
   state: RoomState;
@@ -22,6 +24,9 @@ export function RoomPane({
   loadOlder: () => Promise<void>;
   /** Opens the Changes tab. */
   onShowChanges?: (() => void) | undefined;
+  /** A search match to scroll to, and what to do once it was shown. */
+  focusItem?: string | undefined;
+  onFocused?: (() => void) | undefined;
 }) {
   const toast = useToast();
   // Text a card button puts in the composer; `n` changes on every click.
@@ -81,6 +86,8 @@ export function RoomPane({
         answering={answer.isPending ? answer.variables?.item : undefined}
         task={{ id: task.id, folder: task.folder }}
         owner={owner}
+        focusItem={focusItem}
+        onFocused={onFocused}
       />
       <Composer
         taskId={task.id}

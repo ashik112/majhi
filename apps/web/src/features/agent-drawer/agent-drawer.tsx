@@ -3,11 +3,32 @@ import { X } from "lucide-react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { SectionLabel } from "@/components/ui/section-label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AgentDetails } from "@/features/task/agent-row";
+import { AgentReceiptView } from "@/features/usage/receipt-view";
 import { useAgentIndex } from "@/lib/agent-index";
+import { describeError } from "@/lib/errors";
 import { useAccounts } from "@/lib/studio-queries";
+import { useAgentReceipt } from "@/lib/usage-queries";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
+
+/** The agent's token receipt for this month, across its tasks. */
+function AgentReceiptSection({ agent }: { agent: string }) {
+  const receipt = useAgentReceipt(agent, "month");
+  return (
+    <section
+      aria-label={`Token receipt of @${agent}`}
+      className="mt-4 flex flex-col gap-2 border-t border-line pt-3"
+    >
+      <SectionLabel>Token receipt, this month</SectionLabel>
+      {receipt.isError && <p className="m-0 text-sm text-red">{describeError(receipt.error)}</p>}
+      {receipt.isPending && <Skeleton className="h-32 w-full rounded-lg" />}
+      {receipt.data && <AgentReceiptView receipt={receipt.data} label="this month" />}
+    </section>
+  );
+}
 
 /** An agent's details in a drawer over any page, opened by `?peek=<id>` from a mention in a message. */
 export function AgentDrawer({ id }: { id: string }) {
@@ -56,6 +77,7 @@ export function AgentDrawer({ id }: { id: string }) {
         ) : (
           <p className="text-sm text-fg-faint">No agent @{id}.</p>
         )}
+        {info && <AgentReceiptSection agent={id} />}
       </div>
     </Modal>
   );

@@ -16,7 +16,8 @@ import {
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
-import { checkRunnerIsolation } from "../runner/check.ts";
+import { checkRunnerIsolation, checkSerena } from "../runner/check.ts";
+import { SERENA_COMMAND } from "../runs/serena.ts";
 import type { Services } from "../services.ts";
 
 const run = promisify(execFile);
@@ -83,6 +84,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkSecrets(ctx.services),
     checkTools(ctx),
     checkRunner(ctx),
+    checkSerenaTool(ctx),
     checkAccounts(ctx),
   ]);
   return groups.flat();
@@ -412,6 +414,30 @@ async function checkRunner(ctx: CheckContext): Promise<Check[]> {
     ...(verdict.rebuild ? { fix: { label: "Rebuild majhi" } } : {}),
   };
   ctx.toolCache?.set("runner", { at: now(), check });
+  return [check];
+}
+
+/**
+ * Serena in the runner (5.9 item 6): agents that edit code get it as a tool. A warning, not a
+ * failure: without it they work with whole files. Only when agents run in runners, and kept for a
+ * while like the isolation check.
+ */
+async function checkSerenaTool(ctx: CheckContext): Promise<Check[]> {
+  const runner = ctx.services.runner;
+  if (runner === undefined) return [];
+  const now = ctx.now ?? Date.now;
+  const cached = ctx.toolCache?.get("serena");
+  if (cached !== undefined && now() - cached.at < TOOL_CACHE_MS) return [cached.check];
+  const verdict = await checkSerena({ runner, majhiHome: ctx.env.majhiHome, command: SERENA_COMMAND });
+  const check: Check = {
+    id: "serena",
+    group: "majhi",
+    name: "Serena",
+    status: verdict.ok ? "pass" : "warn",
+    detail: verdict.detail,
+    ...(verdict.rebuild ? { fix: { label: "Rebuild majhi" } } : {}),
+  };
+  ctx.toolCache?.set("serena", { at: now(), check });
   return [check];
 }
 

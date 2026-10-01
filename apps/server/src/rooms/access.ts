@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
-import type { AgentFrontmatter } from "@majhi/shared";
 
 export const ROOM_SERVER_NAME = "majhi-room";
 export const TASKS_SERVER_NAME = "majhi-tasks";
@@ -16,6 +15,15 @@ export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
 export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers";
+
+/** The servers RoomAccess issues, in the order a session lists them. */
+const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
+  { key: "room", name: ROOM_SERVER_NAME, path: ROOM_PATH },
+  { key: "tasks", name: TASKS_SERVER_NAME, path: TASKS_PATH },
+  { key: "processes", name: PROCESSES_SERVER_NAME, path: PROCESSES_PATH },
+  { key: "containers", name: CONTAINERS_SERVER_NAME, path: CONTAINERS_PATH },
+  { key: "memory", name: MEMORY_SERVER_NAME, path: MEMORY_PATH },
+];
 
 /** Who a token belongs to: one agent session in one task. */
 export interface ToolCaller {
@@ -47,12 +55,9 @@ export class ToolTokens {
 }
 
 /**
- * Which sessions get `majhi-room`, `majhi-tasks`, `majhi-processes` and `majhi-memory` (SPEC 5.1, 5.3, 5.4a,
- * 5.15): `majhi-room` for every agent in a team of two or more, for the lead of a lead-mode task
- * even alone (it can bring in agents that could join), or with it in its `tools`;
- * `majhi-tasks` for leads and root agents, or with it in its `tools`. The boss has every command
- * through majhi-admin already. `majhi-processes` and `majhi-memory` for every session, and
- * `majhi-containers` for every session when majhi can run containers.
+ * Tokens and server entries for the majhi MCP servers next to majhi-admin: room, tasks, processes,
+ * memory and containers (SPEC 5.1, 5.3, 5.4a, 5.15). Which ones a session gets is decided in one
+ * place, `gateTools` (`./gating.ts`); this issues what it was told to.
  */
 export class RoomAccess {
   readonly room = new ToolTokens();
@@ -70,43 +75,27 @@ export class RoomAccess {
     private readonly containersOn: () => boolean = () => false,
   ) {}
 
+  /** Whether majhi can run containers now. */
+  get canRunContainers(): boolean {
+    return this.containersOn();
+  }
+
+  /** A token and an entry for each of `wanted` (server names like `majhi-room`); other names are not ours. */
   attach(
     caller: ToolCaller,
-    agent: Pick<AgentFrontmatter, "id" | "role" | "scope" | "tools">,
-    context: {
-      teamSize: number;
-      boss: string | undefined;
-      /** The agent is the first of a lead-mode task that is not a chat. */
-      soloLead?: boolean;
-    },
+    wanted: readonly string[],
   ): { tokens: { server: ToolServer; token: string }[]; servers: McpServerSpec[] } {
     const out: { tokens: { server: ToolServer; token: string }[]; servers: McpServerSpec[] } = {
       tokens: [],
       servers: [],
     };
     const base = this.mcpUrl().replace(/\/mcp$/, "");
-    if (context.teamSize > 1 || context.soloLead === true || agent.tools.includes(ROOM_SERVER_NAME)) {
-      const token = this.room.issue(caller);
-      out.tokens.push({ server: "room", token });
-      out.servers.push(spec(ROOM_SERVER_NAME, `${base}${ROOM_PATH}`, token));
+    for (const server of SERVERS) {
+      if (!wanted.includes(server.name)) continue;
+      const token = this[server.key].issue(caller);
+      out.tokens.push({ server: server.key, token });
+      out.servers.push(spec(server.name, `${base}${server.path}`, token));
     }
-    const lead = agent.role === "Lead" || agent.scope === "root";
-    if (agent.id !== context.boss && (lead || agent.tools.includes(TASKS_SERVER_NAME))) {
-      const token = this.tasks.issue(caller);
-      out.tokens.push({ server: "tasks", token });
-      out.servers.push(spec(TASKS_SERVER_NAME, `${base}${TASKS_PATH}`, token));
-    }
-    const token = this.processes.issue(caller);
-    out.tokens.push({ server: "processes", token });
-    out.servers.push(spec(PROCESSES_SERVER_NAME, `${base}${PROCESSES_PATH}`, token));
-    if (this.containersOn()) {
-      const containersToken = this.containers.issue(caller);
-      out.tokens.push({ server: "containers", token: containersToken });
-      out.servers.push(spec(CONTAINERS_SERVER_NAME, `${base}${CONTAINERS_PATH}`, containersToken));
-    }
-    const memoryToken = this.memory.issue(caller);
-    out.tokens.push({ server: "memory", token: memoryToken });
-    out.servers.push(spec(MEMORY_SERVER_NAME, `${base}${MEMORY_PATH}`, memoryToken));
     return out;
   }
 

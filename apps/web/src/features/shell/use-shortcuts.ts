@@ -1,17 +1,47 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { buildColumns } from "@/features/board/model";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
+import { useTasks } from "@/lib/task-queries";
 import { CHORD_MS, resolveShortcut } from "./shortcuts";
 
 function typingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return true;
-  return target.closest('dialog, [role="menu"], [role="listbox"]') !== null;
+  return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+}
+
+function insideOverlay(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('dialog, [role="menu"], [role="listbox"]') !== null;
+}
+
+/** The ids of the open tasks in board order: the order `]` and `[` walk. */
+export function openTaskIds(tasks: Parameters<typeof buildColumns>[0], org: string | undefined): string[] {
+  return buildColumns(tasks, { org, query: "" })
+    .filter((c) => c.id !== "done")
+    .flatMap((c) => c.tasks.map((t) => t.id));
+}
+
+/** The id after (or before) `current` in `ids`, wrapping around. Undefined when there is nothing to go to. */
+export function neighbour(
+  ids: readonly string[],
+  current: string | undefined,
+  step: 1 | -1,
+): string | undefined {
+  if (ids.length === 0) return undefined;
+  const at = current === undefined ? -1 : ids.indexOf(current);
+  if (at < 0) return step === 1 ? ids[0] : ids.at(-1);
+  return ids[(at + step + ids.length) % ids.length];
+}
+
+/** Opens the review card's main button, the way a click does, so its own choices still follow. */
+function approve(): void {
+  document.querySelector<HTMLElement>("[data-primary-action]")?.click();
 }
 
 /**
- * Global keys: Cmd K the palette, `n` new task, `g` then a letter to go to a page, `?` for the list. Ignored while the
- * owner types or a dialog or menu is open. Returns the state of the shortcuts dialog.
+ * Global keys, all read from the table in `shortcuts.ts`. Ignored while the owner types in a
+ * field or a dialog or menu is open, except the ones the table marks as working there.
+ * Returns the state of the shortcuts list and the palette.
  */
 export function useShortcuts(onNewTask: () => void): {
   helpOpen: boolean;
@@ -21,42 +51,65 @@ export function useShortcuts(onNewTask: () => void): {
 } {
   const navigate = useNavigate();
   const { org } = useOrgFilter();
+  const tasks = useTasks().data;
+  const { taskId } = useParams({ strict: false }) as { taskId?: string };
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const goAt = useRef(0);
-  const latest = useRef({ onNewTask, org });
-  latest.current = { onNewTask, org };
+  const latest = useRef({ onNewTask, org, tasks, taskId });
+  latest.current = { onNewTask, org, tasks, taskId };
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // Cmd or Ctrl K opens the palette from anywhere, fields included.
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+      const typing = typingTarget(event.target);
+      // Presses that work in fields are checked first; the others wait for a free keyboard.
+      const afterG = Date.now() - goAt.current < CHORD_MS;
+      const action = resolveShortcut(event, afterG, typing);
+      if (action.id === "none") {
+        goAt.current = 0;
+        return;
+      }
+      if (action.id === "palette") {
         event.preventDefault();
         setPaletteOpen(true);
         return;
       }
-      if (event.defaultPrevented || typingTarget(event.target)) return;
-      const afterG = Date.now() - goAt.current < CHORD_MS;
-      const action = resolveShortcut(event, afterG);
+      // The boss chat and the message box handle their own keys (`boss-context.tsx`, `composer.tsx`).
+      if (action.id === "boss" || action.id === "send") return;
+      if (event.defaultPrevented || insideOverlay(event.target)) return;
       goAt.current = 0;
-      switch (action.type) {
+      const { onNewTask: newTask, org: filter, tasks: list, taskId: current } = latest.current;
+      switch (action.id) {
         case "wait-for-go":
           goAt.current = Date.now();
           break;
-        case "go":
-          event.preventDefault();
-          void navigate({ to: action.to, search: orgSearch(latest.current.org) });
-          break;
         case "new-task":
           event.preventDefault();
-          latest.current.onNewTask();
+          newTask();
           break;
         case "help":
           event.preventDefault();
           setHelpOpen(true);
           break;
-        case "none":
+        case "next-task":
+        case "prev-task": {
+          if (current === undefined) break;
+          const to = neighbour(openTaskIds(list ?? [], filter), current, action.id === "next-task" ? 1 : -1);
+          if (to === undefined || to === current) break;
+          event.preventDefault();
+          void navigate({ to: "/t/$taskId", params: { taskId: to }, search: orgSearch(filter) });
           break;
+        }
+        case "approve":
+          if (current === undefined) break;
+          event.preventDefault();
+          approve();
+          break;
+        default:
+          if (action.go) {
+            event.preventDefault();
+            void navigate({ to: action.go, search: orgSearch(filter) });
+          }
       }
     }
     window.addEventListener("keydown", onKeyDown);

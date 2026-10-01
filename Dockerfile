@@ -65,6 +65,17 @@ RUN apt-get update \
   && npx -y playwright@1.63.0 install --with-deps chromium \
   && chmod -R a+rX /opt/ms-playwright \
   && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache
+# Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
+# runner, one per task worktree (`apps/server/src/runs/serena.ts`). Installed with uv, which is
+# mounted for this step only and not left in the image. Python 3.13 and the package live under
+# /opt/serena, readable by the owner's uid. Pinned: raise `serena-agent` here and SERENA_VERSION in
+# `runs/serena.ts` together. Serena downloads the language server of each language on first use,
+# into the account's home, so the first use of a language needs network.
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/uv \
+  UV_TOOL_DIR=/opt/serena/tools UV_TOOL_BIN_DIR=/opt/serena/bin UV_PYTHON_INSTALL_DIR=/opt/serena/python \
+  UV_COMPILE_BYTECODE=1 uv tool install -p 3.13 serena-agent==1.7.0 \
+  && chmod -R a+rX /opt/serena \
+  && /opt/serena/bin/serena --version
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +

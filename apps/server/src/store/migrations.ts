@@ -438,6 +438,31 @@ CREATE TABLE budget_resumes (
 CREATE INDEX turns_account_at ON turns (account, at);
 `,
   },
+  {
+    // Token receipts (SPEC 5.9): what majhi put into a context, one row per event. `brief` once
+    // per task (the unique index), `memory` is its Memory section, `recall` a majhi-memory.recall
+    // result, `compaction` a context event (`tokens` before, `after_tokens` after, `method` as in the room). Sizes are estimates. `runs.tools`
+    // lists the MCP servers a run attached (JSON array).
+    id: 108,
+    name: "token receipt events and attached tools",
+    sql: `
+CREATE TABLE usage_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  task TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+  agent TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('brief', 'memory', 'recall', 'compaction')),
+  tokens INTEGER,
+  after_tokens INTEGER,
+  method TEXT
+);
+CREATE INDEX usage_events_task ON usage_events (task, kind);
+CREATE INDEX usage_events_agent_at ON usage_events (agent, at);
+CREATE UNIQUE INDEX usage_events_brief ON usage_events (task) WHERE kind = 'brief';
+CREATE UNIQUE INDEX usage_events_memory ON usage_events (task) WHERE kind = 'memory';
+ALTER TABLE runs ADD COLUMN tools TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

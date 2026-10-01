@@ -72,6 +72,7 @@ import { processLaunch, repoMounts } from "./runs/launch.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
+import { SERENA_COMMAND } from "./runs/serena.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -308,7 +309,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRecorded: () => events.emit(["usage"]),
     afterRecord: (turn) => budgets.afterTurn(turn),
   });
-  const usageService = new UsageService({ repo: usageRepo, config });
+  const usageService = new UsageService({ repo: usageRepo, config, events: store.usageEvents });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
   const layaDocker =
     options.layaDocker ??
@@ -399,6 +400,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     admin: new AdminAccess(adminTokens),
     decisions,
+    ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),

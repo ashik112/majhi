@@ -421,6 +421,17 @@
       transform: translateX(330%);
     }
   }
+  /* A search match in a room: the row lights up once, so the eye finds it. */
+  @keyframes found {
+    0%,
+    60% {
+      background-color: color-mix(in srgb, var(--c-accent) 22%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
   @keyframes fade-in {
     from {
       opacity: 0;
@@ -1094,4 +1105,9 @@
 }
 .hljs-strong {
   font-weight: 700;
+}
+
+[data-found] {
+  border-radius: var(--radius-md, 8px);
+  animation: found 2.4s ease-out;
 }

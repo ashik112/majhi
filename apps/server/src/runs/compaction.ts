@@ -77,7 +77,7 @@ export class Compaction {
         if (res.ok) await run.waitUsage(seq, USAGE_WAIT_MS);
         if (res.ok && run.usageSeq > seq && reachedTarget(run.usage, budget)) {
           this.live.set(run, { nowDoing: undefined });
-          return this.live.context(run, { method: "native", before, after: run.usage?.used });
+          return this.contextEvent(run, { method: "native", before, after: run.usage?.used });
         }
       }
     }
@@ -105,7 +105,7 @@ export class Compaction {
     run.turns = 0;
     run.usage = undefined;
     this.live.set(run, { usage: undefined, turns: 0, nowDoing: undefined });
-    return this.live.context(run, {
+    return this.contextEvent(run, {
       method: why === "threshold" ? "handoff" : why,
       before,
       after: estimateText(freshPrompt(built.carry)),
@@ -149,7 +149,7 @@ export class Compaction {
     );
     run.carry = built.carry;
     run.freshNext = true;
-    return this.live.context(run, {
+    return this.contextEvent(run, {
       method: "fresh",
       after: estimateText(freshPrompt(built.carry)),
       note: built.path,
@@ -168,11 +168,24 @@ export class Compaction {
       "the previous session could not be loaded",
     );
     run.carry = built.carry;
-    this.live.context(run, {
+    this.contextEvent(run, {
       method: "recovery",
       note: built.path,
       after: estimateText(freshPrompt(built.carry)),
     });
+  }
+
+  /** The room's context line, and the same event kept for the task's token receipt. */
+  private contextEvent(run: AgentRun, event: Parameters<RunLive["context"]>[1]): RoomItem {
+    this.deps.store.usageEvents.recordCompaction({
+      task: run.task,
+      agent: run.agent,
+      at: new Date().toISOString(),
+      method: event.method,
+      before: event.before,
+      after: event.after,
+    });
+    return this.live.context(run, event);
   }
 
   /** Sends majhi's own prompt (compact, handoff request). The reply is collected, not shown in the room. */

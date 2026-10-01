@@ -1,15 +1,18 @@
 import type { RoomItem } from "@majhi/shared";
 import { ArrowDown } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
-import { type ItemContext, NotesRow, PinnedPlan, RoomItemView } from "./items";
+import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
 import type { OwnerContext } from "./owner-cards";
 import { beatOf, gapAbove, rowsOf } from "./rows";
+
+/** Rows drawn on the first paint of a long room. */
+const FIRST_PAINT_ROWS = 40;
 
 /**
  * The room's messages. Stays pinned to the bottom while new items arrive, unless the owner scrolled
@@ -22,6 +25,8 @@ export function Timeline({
   answering,
   task,
   owner,
+  focusItem,
+  onFocused,
 }: {
   state: RoomState;
   onLoadOlder: () => Promise<void>;
@@ -29,6 +34,10 @@ export function Timeline({
   answering: string | undefined;
   task: { id: string; folder: string };
   owner?: OwnerContext | undefined;
+  /** A search match to scroll to: older pages are loaded until it is there. */
+  focusItem?: string | undefined;
+  /** The match was shown, or cannot be (it is not in this room any more). */
+  onFocused?: (() => void) | undefined;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -43,6 +52,31 @@ export function Timeline({
     return rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
   }, [state.items, plans]);
   const beats = useMemo(() => rows.map(beatOf), [rows]);
+
+  // Opening a long room draws the newest rows first and the rest a moment later, so the room is
+  // on screen in the time of a short one. The rest joins above, with the view kept where it was.
+  const [windowed, setWindowed] = useState(true);
+  const hasRows = rows.length > 0;
+  useEffect(() => {
+    if (!windowed || !hasRows) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => startTransition(() => setWindowed(false)));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [windowed, hasRows]);
+  const from = windowed && focusItem === undefined ? Math.max(0, rows.length - FIRST_PAINT_ROWS) : 0;
+  const heightBefore = useRef(0);
+  heightBefore.current = scroller.current?.scrollHeight ?? 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the older rows join
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (windowed || !el || pinned.current) return;
+    el.scrollTop += el.scrollHeight - heightBefore.current;
+  }, [windowed]);
 
   // Rows off screen start at an estimated height and take their real one once drawn, and a
   // message can grow while it streams. While the view is at the bottom, it stays there, so the last
@@ -62,16 +96,37 @@ export function Timeline({
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, []);
+  // The ids of the pinned plans as one string: `plans` is a new array whenever any item arrives, and
+  // a context that changed with it would redraw every row of the room on every message.
+  const pinnedKey = plans.map((p) => p.id).join("\n");
+  // Per row, only what that row shows: the model of an agent's message, the task for the cards that act on it.
+  // An agent's status line changes on every tool call; a row that took the whole list would redraw each time.
+  const modelKey = state.agents.map((a) => `${a.agent}=${a.model ?? ""}`).join("\n");
+  const modelOf = useMemo(
+    () =>
+      new Map(
+        modelKey
+          .split("\n")
+          .filter((line) => line !== "")
+          .map((line) => {
+            const at = line.indexOf("=");
+            return [line.slice(0, at), line.slice(at + 1) || undefined] as const;
+          }),
+      ),
+    [modelKey],
+  );
+  const rowProps = (item: RoomItem) => ({
+    liveModel: item.type === "agent" ? modelOf.get(item.agent) : undefined,
+    owner: OWNER_CARD_TYPES.has(item.type) ? owner : undefined,
+  });
   const ctx = useMemo<ItemContext>(
     () => ({
-      agents: state.agents,
-      pinned: new Set(plans.map((p) => p.id)),
+      pinned: new Set(pinnedKey === "" ? [] : pinnedKey.split("\n")),
       onPermission,
       answering,
       task: { id: task.id, folder: task.folder, onLoad: onMediaLoad },
-      owner,
     }),
-    [state.agents, plans, onPermission, answering, task.id, task.folder, onMediaLoad, owner],
+    [pinnedKey, onPermission, answering, task.id, task.folder, onMediaLoad],
   );
 
   // After every render that changed the items: stay at the bottom, keep the view when older
@@ -114,6 +169,39 @@ export function Timeline({
     setUnseen(false);
   }
 
+  // Scroll to a search match. The room holds the newest page; older ones load until the item is
+  // in the list, then its row is centered and lit once.
+  const rowOf = useMemo(() => {
+    const byItem = new Map<string, string>();
+    for (const row of rows) {
+      if (row.kind === "item") byItem.set(row.item.id, row.key);
+      else for (const item of row.items) byItem.set(item.id, row.key);
+    }
+    return byItem;
+  }, [rows]);
+  const loadingFocus = useRef(false);
+  useEffect(() => {
+    if (focusItem === undefined || !state.loaded) return;
+    const key = rowOf.get(focusItem);
+    if (key === undefined) {
+      if (state.more && !loadingFocus.current) {
+        loadingFocus.current = true;
+        void onLoadOlder().finally(() => {
+          loadingFocus.current = false;
+        });
+      } else if (!state.more) onFocused?.();
+      return;
+    }
+    const el = document.getElementById(rowDomId(key));
+    if (!el) return;
+    pinned.current = false;
+    el.scrollIntoView({ block: "center" });
+    el.removeAttribute("data-found");
+    void el.offsetWidth;
+    el.setAttribute("data-found", "");
+    onFocused?.();
+  }, [focusItem, state.loaded, state.more, rowOf, onLoadOlder, onFocused]);
+
   const waiting = useMemo(() => state.items.filter(waitsForOwner), [state.items]);
 
   return (
@@ -143,12 +231,26 @@ export function Timeline({
           <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
         )}
         <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
-          {rows.map((row, i) => {
+          {rows.slice(from).map((row, j) => {
+            const i = from + j;
             const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
             return row.kind === "notes" ? (
-              <NotesRow key={row.key} quiet={row.quiet} at={row.items[0]?.at ?? ""} className={gap} />
+              <NotesRow
+                key={row.key}
+                rowKey={row.key}
+                quiet={row.quiet}
+                at={row.items[0]?.at ?? ""}
+                className={gap}
+              />
             ) : (
-              <RoomItemView key={row.key} item={row.item} ctx={ctx} className={gap} />
+              <RoomItemView
+                key={row.key}
+                item={row.item}
+                ctx={ctx}
+                {...rowProps(row.item)}
+                className={gap}
+                inLog
+              />
             );
           })}
         </ol>
@@ -185,7 +287,7 @@ export function Timeline({
           </span>
           <ol className="m-0 flex flex-col gap-2.5 p-0">
             {waiting.map((item: RoomItem) => (
-              <RoomItemView key={item.id} item={item} ctx={ctx} />
+              <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
             ))}
           </ol>
         </section>

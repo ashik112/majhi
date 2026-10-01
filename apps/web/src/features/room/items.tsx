@@ -39,40 +39,59 @@ export function permissionDomId(itemId: string): string {
   return `perm-${itemId}`;
 }
 
+/** The id of a log row, so a search match can scroll to it. `key` is the row's key (the item id, or the first note of a folded line). */
+export function rowDomId(key: string): string {
+  return `room-row-${key}`;
+}
+
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
 export interface ItemContext {
-  agents: readonly AgentLive[];
   /** Ids of plan items shown pinned at the top, which the timeline skips. */
   pinned: ReadonlySet<string>;
   onPermission: (item: string, option: string) => void;
   answering: string | undefined;
   /** The task, so agent text can link to its files. */
   task: TaskFiles;
-  /** The whole task and the room's hooks, for the review, paused and question cards. */
-  owner?: OwnerContext | undefined;
 }
+
+/** Item types that act on the whole task, and so get the owner context. The others never see it, so a change to the task does not redraw them. */
+export const OWNER_CARD_TYPES: ReadonlySet<RoomItem["type"]> = new Set([
+  "review",
+  "paused",
+  "owner-question",
+]);
 
 /** One room item. Wrapped so a long room paints only what is on screen. */
 export const RoomItemView = memo(function RoomItemView({
   item,
   ctx,
+  liveModel,
+  owner,
   className,
+  inLog = false,
 }: {
   item: RoomItem;
   ctx: ItemContext;
+  /** The model its agent runs, for an agent message. A string, so the row stays as it is while the agent's status changes. */
+  liveModel?: string | undefined;
+  /** The whole task and the room's hooks, for the review, paused and question cards only. */
+  owner?: OwnerContext | undefined;
+  /** Drawn in the log (not the "Needs you" dock), so it carries a row id. */
+  inLog?: boolean;
   /** The space above it, from the row before. */
   className?: string | undefined;
 }) {
   if (item.type === "plan" && ctx.pinned.has(item.id)) return null;
   return (
     <li
+      {...(inLog ? { id: rowDomId(item.id) } : {})}
       className={cn(
         "animate-fade-in list-none [contain-intrinsic-size:auto_40px] [content-visibility:auto]",
         className,
       )}
     >
-      <ItemBody item={item} ctx={ctx} />
+      <ItemBody item={item} ctx={ctx} liveModel={liveModel} owner={owner} />
     </li>
   );
 });
@@ -81,14 +100,16 @@ export const RoomItemView = memo(function RoomItemView({
 export const NotesRow = memo(function NotesRow({
   quiet,
   at,
+  rowKey,
   className,
 }: {
   quiet: Quiet;
   at: string;
+  rowKey: string;
   className?: string | undefined;
 }) {
   return (
-    <li className={cn("animate-fade-in list-none", className)}>
+    <li id={rowDomId(rowKey)} className={cn("animate-fade-in list-none", className)}>
       <QuietLine quiet={quiet} at={at} />
     </li>
   );
@@ -208,14 +229,22 @@ export function QuietLine({
   );
 }
 
-function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
+function ItemBody({
+  item,
+  ctx,
+  liveModel,
+  owner,
+}: {
+  item: RoomItem;
+  ctx: ItemContext;
+  liveModel: string | undefined;
+  owner: OwnerContext | undefined;
+}) {
   switch (item.type) {
     case "owner":
       return <OwnerMessage item={item} />;
     case "agent":
-      return (
-        <AgentMessage item={item} live={ctx.agents.find((a) => a.agent === item.agent)} task={ctx.task} />
-      );
+      return <AgentMessage item={item} model={liveModel} task={ctx.task} />;
     case "thought":
       return <Thought item={item} />;
     case "tool":
@@ -241,11 +270,11 @@ function ItemBody({ item, ctx }: { item: RoomItem; ctx: ItemContext }) {
     case "team-plan":
       return <TeamPlanLine item={item} />;
     case "review":
-      return <ReviewCard item={item} owner={ctx.owner} />;
+      return <ReviewCard item={item} owner={owner} />;
     case "paused":
-      return <PausedCard item={item} owner={ctx.owner} />;
+      return <PausedCard item={item} owner={owner} />;
     case "owner-question":
-      return <QuestionActions item={item} owner={ctx.owner} />;
+      return <QuestionActions item={item} owner={owner} />;
   }
 }
 
@@ -378,15 +407,15 @@ function OwnerMessage({ item }: { item: Of<"owner"> }) {
 /** An agent's message: avatar, handle and model, then its text unboxed at a readable measure. */
 function AgentMessage({
   item,
-  live,
+  model,
   task,
 }: {
   item: Of<"agent">;
-  live: AgentLive | undefined;
+  model: string | undefined;
   task: TaskFiles;
 }) {
   const info = useAgentIndex().get(item.agent);
-  const meta = [info?.account, live?.model ?? info?.model].filter(Boolean).join(" · ");
+  const meta = [info?.account, model ?? info?.model].filter(Boolean).join(" · ");
   return (
     <article aria-label={`@${item.agent}`} className="flex gap-2.5">
       <AgentAvatar id={item.agent} size={24} />
