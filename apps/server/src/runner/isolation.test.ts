@@ -90,6 +90,8 @@ describe("what a task's run mounts", () => {
       { path: gitDir },
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
+      // majhi's own hooks (commit attribution), the one folder of its home a run may read.
+      { path: join(w.h.env.majhiHome, "git-hooks"), readOnly: true },
     ]);
     expect(existsSync(join(gitDir, "hooks"))).toBe(true);
 
