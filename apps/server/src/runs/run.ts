@@ -51,7 +51,10 @@ export class AgentRun {
   turning = false;
   /** The loop sent its last prompt and is handing back: not working any more, though `turning` is still set. */
   settling = false;
+  /** Set when a cancel arrives while the session is still opening: the loop sends nothing once it opens. */
   cancelBeforePrompt = false;
+  /** A prompt is open on the session: sent, and no answer yet. */
+  prompting = false;
   needsBrief = false;
   /** Stop reason of the last finished turn. */
   lastStop: string | undefined;
