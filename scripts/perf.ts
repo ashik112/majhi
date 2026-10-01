@@ -105,6 +105,7 @@ async function startServer(): Promise<{ pid: number; stop: () => void }> {
       HOST_HOME,
       MAJHI_HOME,
       MAJHI_VERSION: "perf",
+      MAJHI_RUNNER: "local",
       MAJHI_SECRETS_KEY_FILE: SECRETS_KEY_FILE,
     },
     stdio: ["ignore", "ignore", "inherit"],

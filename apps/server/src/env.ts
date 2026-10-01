@@ -56,8 +56,11 @@ const EnvSchema = z.object({
   MAJHI_LAYA_URL: z.url().optional(),
   /** Its container, which majhi starts on the first question and stops when idle. */
   MAJHI_LAYA_CONTAINER: z.string().trim().min(1).optional(),
-  /** Where agent sessions run: `local` (next to majhi, for tests and development) or `container` (a runner container per run). */
-  MAJHI_RUNNER: z.enum(["local", "container"]).default("local"),
+  /**
+   * Where agent sessions run: `container` (a runner container per run, the default) or `local` (next
+   * to majhi, with majhi's own file access: only for tests and development, and only when set).
+   */
+  MAJHI_RUNNER: z.enum(["local", "container"]).default("container"),
   MAJHI_RUNNER_IMAGE: z.string().trim().min(1).default("majhi-runner:dev"),
   MAJHI_RUNNER_NETWORK: z.string().trim().min(1).default("majhi-runners"),
   /** `uid:gid` agents run as, the owner's. */

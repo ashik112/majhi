@@ -112,6 +112,8 @@ Object.assign(process.env, gitEnv, {
   HOST_HOME,
   MAJHI_HOME,
   MAJHI_VERSION: "e2e",
+  // Agents are the fake ACP agent, run next to majhi: e2e has no runner image.
+  MAJHI_RUNNER: "local",
   MAJHI_SECRETS_KEY_FILE: SECRETS_KEY_FILE,
   MAJHI_ADAPTER_CLAUDE: command("claude"),
   MAJHI_ADAPTER_CODEX: command("codex"),

@@ -22,6 +22,12 @@ describe("parseEnv", () => {
     });
   });
 
+  it("runs agents in runner containers unless MAJHI_RUNNER=local is set", () => {
+    expect(parseEnv(base).runner.mode).toBe("container");
+    expect(parseEnv({ ...base, MAJHI_RUNNER: "" }).runner.mode).toBe("container");
+    expect(parseEnv({ ...base, MAJHI_RUNNER: "local" }).runner.mode).toBe("local");
+  });
+
   it("reads the baked-in commit, and says dev when the image was built without one", () => {
     expect(parseEnv({ ...base, MAJHI_COMMIT: "abc1234" }).commit).toBe("abc1234");
     expect(parseEnv({ ...base, MAJHI_COMMIT: "" }).commit).toBe("dev");

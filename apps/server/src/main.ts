@@ -15,6 +15,12 @@ try {
   process.exit(1);
 }
 
+if (env.runner.mode === "local") {
+  console.warn(
+    "majhi: MAJHI_RUNNER=local. Agents run next to majhi, with its access to files and git, not in a runner container per run. Use it only for tests and development.",
+  );
+}
+
 const hostLink = new HostLink();
 const majhi = createMajhi(env, { hostLink });
 const server = serve({ fetch: majhi.app.fetch, hostname: env.host, port: env.port, createServer }, (info) => {
