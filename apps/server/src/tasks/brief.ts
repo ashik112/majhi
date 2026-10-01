@@ -102,6 +102,7 @@ export function renderTaskMd(
     "## Rules",
     "",
     "- Work inside the worktrees above. Commit on the task branch.",
+    "- To change another task's branch, use the majhi-tasks change_task_branch tool. Never commit, update-ref or reset there with git: majhi refuses it, and that task's worktree would not follow.",
     // In a team the rules hold for everyone, so only what every member may do is allowed.
     ...outboundRules(multi ? sharedPerms(members) : (agent?.perms ?? [])),
     multi

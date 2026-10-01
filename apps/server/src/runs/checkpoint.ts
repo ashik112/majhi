@@ -90,6 +90,28 @@ export async function commitAll(worktree: string, message: string, by: CommitBy)
   );
 }
 
+/**
+ * Commits only `paths` (from the worktree's top, taken literally) with `message`. Returns the new
+ * commit, or undefined when those files already held that content and there was nothing to commit.
+ */
+export async function commitPaths(
+  worktree: string,
+  paths: readonly string[],
+  message: string,
+  by: CommitBy,
+): Promise<string | undefined> {
+  const literal = { env: { GIT_LITERAL_PATHSPECS: "1" } };
+  await git(worktree, [...quiet(), "add", "--", ...paths], literal);
+  const staged = await git(worktree, ["diff", "--cached", "--name-only", "--", ...paths], literal);
+  if (staged.trim() === "") return undefined;
+  await git(
+    worktree,
+    [...quiet(), "commit", "--quiet", "--no-verify", "--message", messageFor(message, by), "--", ...paths],
+    { env: { ...asEnv(by).env, ...literal.env } },
+  );
+  return (await git(worktree, ["rev-parse", "HEAD"])).trim();
+}
+
 export interface CheckpointResult {
   /** Projects that got a commit. */
   committed: string[];

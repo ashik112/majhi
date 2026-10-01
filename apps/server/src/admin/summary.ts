@@ -46,6 +46,10 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.resolveShip": (i) =>
     `Ask the lead of ${str(i.id)} to resolve the conflicts with ${str(i.into)}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
   "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
+  "tasks.changeBranch": (i) => {
+    const n = Array.isArray(i.files) ? i.files.length : 0;
+    return `Commit ${n} file${n === 1 ? "" : "s"} to the branch of ${str(i.task)}: ${firstLine(str(i.message))}`;
+  },
   "tasks.openMrs": (i) => `Open merge requests for ${str(i.id)}`,
   "tasks.mergeMrs": (i) => `Merge the merge requests of ${str(i.id)}`,
   "tasks.markMerged": (i) => `Record the merge requests of ${str(i.id)} as merged`,

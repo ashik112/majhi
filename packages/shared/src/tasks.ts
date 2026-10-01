@@ -241,6 +241,59 @@ export const TaskSchema = z.object({
 });
 export type Task = z.infer<typeof TaskSchema>;
 
+/**
+ * Why a path given for another task's repo is refused, or undefined when it stays inside the repo:
+ * relative, forward slashes, no `.` or `..` part, no empty part, and never into `.git`.
+ */
+export function repoPathProblem(path: string): string | undefined {
+  if (path.includes("\0")) return "has a NUL byte";
+  if (path.includes("\\")) return "uses a backslash; use forward slashes";
+  if (path.startsWith("/") || /^[A-Za-z]:/.test(path)) return "is absolute; give it from the repo root";
+  const parts = path.split("/");
+  if (parts.some((p) => p === "" || p === ".")) return "has an empty or . part";
+  if (parts.includes("..")) return "leaves the repo (..)";
+  if (parts.some((p) => p.toLowerCase() === ".git")) return "is inside .git";
+  return undefined;
+}
+
+/** One file of a `tasks.changeBranch`: its path from the repo root and its whole new content. */
+export const BranchFileSchema = z.object({
+  path: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .superRefine((path, ctx) => {
+      const problem = repoPathProblem(path);
+      if (problem !== undefined) ctx.addIssue({ code: "custom", message: `${path} ${problem}` });
+    }),
+  content: z.string().max(512 * 1024),
+});
+export type BranchFile = z.infer<typeof BranchFileSchema>;
+
+export const ChangeBranchInputSchema = z.object({
+  /** The task whose branch changes. */
+  task: TaskIdSchema,
+  /** Which repo of that task. Needed when it has more than one. */
+  project: IdSchema.optional(),
+  files: z
+    .array(BranchFileSchema)
+    .min(1)
+    .max(50)
+    .refine((files) => new Set(files.map((f) => f.path)).size === files.length, "Each path only once"),
+  message: z.string().trim().min(1).max(2000),
+});
+export type ChangeBranchInput = z.infer<typeof ChangeBranchInputSchema>;
+
+export const ChangeBranchResultSchema = z.object({
+  task: TaskIdSchema,
+  project: IdSchema,
+  branch: z.string(),
+  commit: z.string(),
+  files: z.array(z.string()),
+});
+export type ChangeBranchResult = z.infer<typeof ChangeBranchResultSchema>;
+
 /** The brief of a chat the owner started from the Chats page or Cmd J. It marks the task; it is never shown. */
 export const CHAT_BRIEF = "Chat";
 /** The same marker on chats made before the Chats page. */

@@ -24,6 +24,7 @@ const HOOKS = [
   "post-rewrite",
   "post-checkout",
   "pre-push",
+  "reference-transaction",
 ] as const;
 
 /**
@@ -33,14 +34,46 @@ const HOOKS = [
  * with `--local` because majhi's override sits in the command-line scope, else in the git folder.
  * A relative path is from the worktree's top, where hooks run. The repo's hooks stay read-only for
  * the agent (5.15).
+ *
+ * `reference-transaction` keeps a run off other tasks' branches. Every task worktree shares the
+ * repo's git folder, so a commit, `update-ref` or `branch -f` from one task could move another
+ * task's `task/<id>-...` branch while that worktree's index and files stay behind. With the locks
+ * taken ("prepared", where a non-zero exit aborts), it refuses any change to `refs/heads/task/*`
+ * that is not the run's own task (`MAJHI_TASK`). Every line counts: git reports a deletion and a
+ * `verify` alike (new value all zeros), so a harmless line cannot be told apart. Without
+ * `MAJHI_TASK` (the owner's git, majhi's own) nothing is refused. The input is kept and passed on
+ * to the repo's own hook of that name.
  */
 const SCRIPT = `#!/bin/sh
 name=$(basename "$0")
 if [ "$name" = prepare-commit-msg ] && [ -n "$MAJHI_TASK" ]; then
   git interpret-trailers --in-place --if-exists doNothing --trailer "${TASK_TRAILER}: $MAJHI_TASK" "$1" || exit 1
 fi
+if [ "$name" = reference-transaction ]; then
+  input=$(cat)
+  if [ "$1" = prepared ] && [ -n "$MAJHI_TASK" ]; then
+    own="refs/heads/task/$(printf '%s' "$MAJHI_TASK" | tr '[:upper:]' '[:lower:]')"
+    # The patterns open with "(" so that a shell reading this inside $( ) does not end it early.
+    other=$(printf '%s\\n' "$input" | while read -r _old _new ref; do
+      case "$ref" in
+        ("$own" | "$own"-*) ;;
+        (refs/heads/task/*) printf '%s\\n' "\${ref#refs/heads/}" ;;
+      esac
+    done | head -n 1)
+    if [ -n "$other" ]; then
+      id=$(printf '%s' "$other" | sed -n 's|^task/\\([a-z][a-z0-9]*-[0-9][0-9]*\\).*|\\1|p' | tr '[:lower:]' '[:upper:]')
+      echo "majhi: $other is the branch of another task\${id:+ ($id)}, not of $MAJHI_TASK. Do not change it with git: its worktree would not follow and its agents would undo the change. Use the majhi-tasks change_task_branch tool, which commits inside that task's own worktree." >&2
+      exit 1
+    fi
+  fi
+fi
 repo_hooks=$(git config --local --get core.hooksPath)
 [ -n "$repo_hooks" ] || repo_hooks="$(git rev-parse --git-common-dir)/hooks"
+if [ "$name" = reference-transaction ]; then
+  [ -x "$repo_hooks/$name" ] || exit 0
+  printf '%s\\n' "$input" | "$repo_hooks/$name" "$@"
+  exit $?
+fi
 if [ -x "$repo_hooks/$name" ]; then exec "$repo_hooks/$name" "$@"; fi
 exit 0
 `;
