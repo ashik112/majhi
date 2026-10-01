@@ -95,7 +95,6 @@ export class RoomCoordinator {
 
     const team = members(task, agents);
     const role = team.find((m) => m.id === turn.agent)?.role;
-    const verdict = await this.verdict(task, turn.agent, role, text, mentions);
     const settings = await this.deps.config.settings();
     // A turn that changed the worktrees is progress, not a loop: the guard counts from zero again.
     const before = store.tasks.roomState(task.id);
@@ -113,11 +112,13 @@ export class RoomCoordinator {
       changed || waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
         ? []
         : await this.quietMentions(task.id, turn.agent, text, named);
+    const routed = mentions.filter((m) => !quiet.includes(m));
+    const verdict = await this.verdict(task, turn.agent, role, text, routed);
     const plan = planTurn({
       mode: task.mode,
       team,
       from: turn.agent,
-      mentions: mentions.filter((m) => !quiet.includes(m)),
+      mentions: routed,
       state,
       limits: {
         maxAgentTurns: await this.maxAgentTurns(task),
