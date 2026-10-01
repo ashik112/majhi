@@ -345,7 +345,9 @@ describe("limits", () => {
         });
     };
     for (const text of ["one on api", "two on api @acme-two", "three on api @acme-three"]) {
-      expect((await w.h.cmd("tasks.create", { text, start: true })).status).toBe(200);
+      expect(
+        (await w.h.cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: true })).status,
+      ).toBe(200);
     }
     const live = (task: string, agent: string) => w.h.majhi.services.room.getLive(task, agent);
     await until(() => live("ACM-3", "acme-three")?.status === "queued", "the queue");
