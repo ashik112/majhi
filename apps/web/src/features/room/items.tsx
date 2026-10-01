@@ -20,6 +20,7 @@ import { linkifyPaths } from "@/features/viewer/model";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { PendingAsk } from "./ask-card";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { DOCK_ACTIONS } from "./dock";
 import { Markdown } from "./markdown";
@@ -645,32 +646,6 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
 }
 
 function AskCard({ item }: { item: Of<"ask"> }) {
-  const toast = useToast();
-  const [answers, setAnswers] = useState<Record<string, string>>(() => {
-    const initial = item.answers ?? {};
-    for (const q of item.questions) {
-      if (!(q.id in initial) && q.default) {
-        initial[q.id] = q.default;
-      }
-    }
-    return initial;
-  });
-  const [answeredVia, setAnsweredVia] = useState<Record<string, "option" | "text">>(() => {
-    const via: Record<string, "option" | "text"> = {};
-    for (const q of item.questions) {
-      const ans = answers[q.id];
-      if (ans) {
-        via[q.id] = q.options.some((o) => o.id === ans) ? "option" : "text";
-      }
-    }
-    return via;
-  });
-
-  const answer = useMutation<unknown, ApiRequestError>({
-    mutationFn: () => cmd("room.answerAsk", { task: item.task, item: item.id, answers }),
-    onError: (error) => toast("Could not answer", { detail: error.message, tone: "error" }),
-  });
-
   if (item.state !== "pending") {
     return (
       <div className="flex flex-col gap-0.5">
@@ -695,102 +670,7 @@ function AskCard({ item }: { item: Of<"ask"> }) {
     );
   }
 
-  const handleOptionClick = (questionId: string, optionId: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
-    setAnsweredVia((prev) => ({ ...prev, [questionId]: "option" }));
-  };
-
-  const handleTextChange = (questionId: string, text: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: text }));
-    setAnsweredVia((prev) => ({ ...prev, [questionId]: "text" }));
-  };
-
-  return (
-    <section
-      aria-label="Question"
-      className="flex max-w-[72ch] flex-col gap-3 rounded-lg border border-blue-line bg-blue-wash px-3.5 py-3"
-    >
-      {item.questions.map((question) => (
-        <div key={question.id} className="flex flex-col gap-2">
-          <p className="flex items-start gap-2 text-base text-fg">
-            <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
-            <span className="min-w-0 break-words">{question.question}</span>
-          </p>
-          {question.options.length === 0 && question.freeText ? (
-            <input
-              type="text"
-              placeholder="Type your answer..."
-              value={answers[question.id] ?? ""}
-              onChange={(e) => handleTextChange(question.id, e.target.value)}
-              disabled={answer.isPending}
-              className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
-            />
-          ) : question.options.length <= 4 ? (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {question.options.map((option) => (
-                  <Button
-                    key={option.id}
-                    size="sm"
-                    variant={answers[question.id] === option.id ? "primary" : "secondary"}
-                    disabled={answer.isPending}
-                    onClick={() => handleOptionClick(question.id, option.id)}
-                  >
-                    {option.label}
-                  </Button>
-                ))}
-              </div>
-              {question.freeText && answeredVia[question.id] !== "option" && (
-                <input
-                  type="text"
-                  placeholder="Or type your own..."
-                  value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
-                  onChange={(e) => handleTextChange(question.id, e.target.value)}
-                  disabled={answer.isPending}
-                  className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <select
-                value={answers[question.id] ?? ""}
-                onChange={(e) => handleOptionClick(question.id, e.target.value)}
-                disabled={answer.isPending}
-                className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none disabled:opacity-50"
-              >
-                <option value="">Select an option...</option>
-                {question.options.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {question.freeText && answeredVia[question.id] !== "option" && (
-                <input
-                  type="text"
-                  placeholder="Or type your own..."
-                  value={answeredVia[question.id] === "text" ? (answers[question.id] ?? "") : ""}
-                  onChange={(e) => handleTextChange(question.id, e.target.value)}
-                  disabled={answer.isPending}
-                  className="rounded-md border border-line-control bg-field px-3 py-2 text-sm text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
-                />
-              )}
-            </>
-          )}
-        </div>
-      ))}
-      <Button
-        size="sm"
-        variant="primary"
-        disabled={answer.isPending || !item.questions.every((q) => q.id in answers)}
-        onClick={() => answer.mutate()}
-        className="self-start"
-      >
-        {answer.isPending ? "Sending..." : "Send"}
-      </Button>
-    </section>
-  );
+  return <PendingAsk item={item} />;
 }
 
 const SYSTEM_ICON = {

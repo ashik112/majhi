@@ -202,7 +202,7 @@ export function Timeline({
     onFocused?.();
   }, [focusItem, state.loaded, state.more, rowOf, onLoadOlder, onFocused]);
 
-  const waiting = useMemo(() => state.items.filter(waitsForOwner), [state.items]);
+  const waiting = useMemo(() => dockItems(state.items), [state.items]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -295,6 +295,23 @@ export function Timeline({
     </div>
   );
 }
+
+/**
+ * What the dock shows: the items that wait for the owner. An open question comes first and hides
+ * "Ready for review", so two primary buttons never compete and the answer is asked for first.
+ */
+function dockItems(items: readonly RoomItem[]): RoomItem[] {
+  const waiting = items.filter(waitsForOwner);
+  const asked = waiting.some(
+    (i) => ANSWERS.has(i.type) || (i.type === "owner-question" && i.choices.length > 0),
+  );
+  const shown = asked ? waiting.filter((i) => i.type !== "review") : waiting;
+  const rank = (i: RoomItem) => (ANSWERS.has(i.type) ? 0 : i.type === "review" || i.type === "paused" ? 2 : 1);
+  return [...shown].sort((a, b) => rank(a) - rank(b));
+}
+
+/** Items that are a question to the owner. */
+const ANSWERS: ReadonlySet<RoomItem["type"]> = new Set(["ask", "choice", "approval", "permission"]);
 
 /** Items that wait for the owner's answer: shown in the "Needs you" dock, not in the log. */
 function waitsForOwner(item: RoomItem): boolean {
