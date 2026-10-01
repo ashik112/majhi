@@ -1,4 +1,4 @@
-import { type ParsedTask, parseTaskText } from "@majhi/shared";
+import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Paperclip, X } from "lucide-react";
 import {
@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentChips } from "@/components/ui/attachment-chips";
+import { AttachmentChips, DropHint } from "@/components/ui/attachment-chips";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Menu } from "@/components/ui/menu";
@@ -23,7 +23,7 @@ import { MOD_KEY } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { useCreateTask, useProjects, useTasks } from "@/lib/task-queries";
-import { attachmentIds, filesFromClipboard, useAttachments } from "@/lib/use-attachments";
+import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
 import { defaultAgentId, eligibleAgents } from "../tasks/model";
 import {
   canAdd,
@@ -64,6 +64,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const toast = useToast();
   const attachments = useAttachments();
+  const { dragging, dropProps } = useFileDrop(attachments.add);
   const titleField = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
@@ -160,8 +161,10 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the shortcut listens for keys bubbling from the fields */}
       <div
         onKeyDown={onKeyDown}
-        className="flex max-h-[calc(100dvh-32px)] flex-col gap-4 overflow-y-auto px-6 py-[22px]"
+        {...dropProps}
+        className="relative flex max-h-[calc(100dvh-32px)] flex-col gap-4 overflow-y-auto px-6 py-[22px]"
       >
+        {dragging && <DropHint />}
         <div className="flex items-center gap-2.5">
           <h2 className="text-[18px] font-semibold">New task</h2>
           <Button
@@ -337,6 +340,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             ref={fileInput}
             type="file"
             multiple
+            accept={ATTACHMENT_ACCEPT}
             hidden
             aria-hidden="true"
             tabIndex={-1}

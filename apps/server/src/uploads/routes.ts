@@ -41,7 +41,9 @@ export function uploadRoutes(store: UploadStore): Hono {
       });
       return c.json(attachment);
     } catch (err) {
-      if (err instanceof UserError) return c.json({ error: err.message } satisfies ApiError, 413);
+      if (err instanceof UserError) {
+        return c.json({ error: err.message } satisfies ApiError, file.size > UPLOAD_MAX_BYTES ? 413 : 400);
+      }
       return c.json({ error: errorMessage(err) } satisfies ApiError, 500);
     }
   });

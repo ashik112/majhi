@@ -316,10 +316,10 @@ export function createHandlers({
 
     "tasks.list": async (input) => services.tasks.list(input.includeDone === true),
     "tasks.get": async (input) => services.tasks.get(input.id),
-    "tasks.create": async (input) => {
+    "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
       const captured = await services.secretService.capture(input.text);
-      const task = await services.tasks.create({ ...input, text: captured.text });
+      const task = await services.tasks.create({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
@@ -356,13 +356,13 @@ export function createHandlers({
       await services.tasks.remove(input.id, input.force === true);
       return { removed: input.id };
     },
-    "tasks.split": async (input) => {
+    "tasks.split": async (input, ctx) => {
       const children = [];
       for (const c of input.children) {
         const captured = await services.secretService.capture(c.text);
         children.push({ ...c, text: captured.text });
       }
-      return { children: await services.tasks.split({ ...input, children }) };
+      return { children: await services.tasks.split({ ...input, children, from: ctx.meta.task }) };
     },
     "team.add": (input) =>
       services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
@@ -373,11 +373,12 @@ export function createHandlers({
     "team.swap": (input) => services.tasks.swapInTeam(input.task, input.agent, input.with),
     "team.set": (input) => services.tasks.setOverride(input),
 
-    "room.send": async (input) => {
+    "uploads.create": (input, ctx) => services.tasks.uploadFile(input.path, ctx.meta.task),
+    "room.send": async (input, ctx) => {
       services.tasks.get(input.task);
       // Secrets are saved and swapped for references before the text reaches an agent or the room.
       const captured = await services.secretService.capture(input.text);
-      const item = await services.tasks.send({ ...input, text: captured.text });
+      const item = await services.tasks.send({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, input.task, captured.saved);
       return { item };
     },

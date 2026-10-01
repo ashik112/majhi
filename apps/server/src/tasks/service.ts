@@ -78,6 +78,13 @@ import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TerminalManager } from "../terminal/manager.ts";
 import { taskTerminalKey } from "../terminal/task-terminal.ts";
+import {
+  type AttachSource,
+  openChecked,
+  planAttachments,
+  resolveTaskFile,
+  takePlanned,
+} from "../uploads/attach.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
@@ -147,7 +154,10 @@ export interface CreateInput {
   /** The whole team, lead first. */
   team?: string[] | undefined;
   mode?: CoordinationMode | undefined;
+  /** Upload ids, or paths of files in the `from` task's folder. */
   attachments: string[];
+  /** The task of the agent that asked. Only it lets `attachments` hold paths. */
+  from?: string | undefined;
   start: boolean;
   /** Makes the new task a child of this one. */
   parent?: string | undefined;
@@ -296,7 +306,7 @@ export class TaskService {
         409,
       );
     }
-    await uploads.assertAll(input.attachments);
+    const planned = await planAttachments(uploads, input.attachments, this.attachSource(input.from), { org });
 
     const key =
       org === undefined ? LOCAL_TASK_PREFIX : (orgKeys(sections.orgs).get(org) ?? LOCAL_TASK_PREFIX);
@@ -329,8 +339,7 @@ export class TaskService {
     }
     try {
       const attachmentsDir = join(folder, "attachments");
-      const files: Attachment[] = [];
-      for (const upload of input.attachments) files.push(await uploads.take(upload, attachmentsDir));
+      const files = await takePlanned(uploads, planned, attachmentsDir);
       const links = await fetchLinks(parsed.links, attachmentsDir, this.deps.links);
 
       const task: Task = {
@@ -918,8 +927,11 @@ export class TaskService {
    */
   async split(input: {
     task: string;
+    /** The task of the agent that asked, for attachments by path. */
+    from?: string | undefined;
     children: {
       text: string;
+      attachments?: string[] | undefined;
       dependsOn: number[];
       when?: "merged" | "ready" | undefined;
       agent?: string | undefined;
@@ -934,6 +946,11 @@ export class TaskService {
           throw new UserError(`Child ${i + 1} can only wait for children before it (got ${d + 1}).`);
       }
     });
+    // Every entry is checked before the first child exists, so a bad one leaves nothing behind.
+    await this.checkAttachments(
+      input.children.flatMap((c) => c.attachments ?? []),
+      input.from,
+    );
     const made: Task[] = [];
     for (const child of input.children) {
       const dependsOn = child.dependsOn.flatMap((d) => (made[d] === undefined ? [] : [made[d].id]));
@@ -941,7 +958,8 @@ export class TaskService {
         await this.create({
           text: child.text,
           agent: child.agent,
-          attachments: [],
+          attachments: child.attachments ?? [],
+          from: input.from,
           start: false,
           parent: parent.id,
           dependsOn,
@@ -1992,10 +2010,42 @@ export class TaskService {
     return this.deps.runs.fresh(task, target);
   }
 
+  /** The folder and org a caller may attach files from, or undefined for the owner's own calls. */
+  private attachSource(from: string | undefined): AttachSource | undefined {
+    const task = from === undefined ? undefined : this.deps.store.tasks.get(from);
+    return task === undefined ? undefined : { task: task.id, folder: task.folder, org: task.org };
+  }
+
+  /**
+   * Checks `attachments` the way creating a task or sending a message will, without changing
+   * anything. `from` is the task of the agent that asked. The approval path calls it before a card
+   * is posted, so a bad entry fails at once and not after the owner approved. The target org is
+   * checked when the command runs.
+   */
+  async checkAttachments(entries: readonly string[], from: string | undefined): Promise<void> {
+    if (entries.length === 0) return;
+    await planAttachments(this.deps.uploads, entries, this.attachSource(from), undefined);
+  }
+
+  /** `uploads.create`: copies a file from the caller's task folder into the upload store. */
+  async uploadFile(path: string, from: string | undefined): Promise<Attachment> {
+    const source = this.attachSource(from);
+    if (source === undefined) {
+      throw new UserError(
+        "uploads.create is for agents: it copies a file from the agent's own task folder. The owner attaches files with the Attach button.",
+      );
+    }
+    const file = await resolveTaskFile(source, path, false);
+    const handle = await openChecked({ kind: "path", entry: path, folder: source.folder, ...file });
+    return this.deps.uploads.saveFile({ handle, name: file.name, org: source.org });
+  }
+
   async send(input: {
     task: string;
     text: string;
     attachments: string[];
+    /** The task of the agent that asked. Only it lets `attachments` hold paths. */
+    from?: string | undefined;
     mode: "queue" | "interrupt";
     agent?: string | undefined;
   }): Promise<RoomItem> {
@@ -2009,13 +2059,17 @@ export class TaskService {
     const targets = await this.ownerTargets(task, input.text, input.agent);
     const agent = targets[0];
     if (agent === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
-    await this.deps.uploads.assertAll(input.attachments);
-    const attachments: Attachment[] = [];
-    for (const upload of input.attachments) {
-      attachments.push(await this.deps.uploads.take(upload, join(task.folder, "attachments")));
-    }
+    const planned = await planAttachments(
+      this.deps.uploads,
+      input.attachments,
+      this.attachSource(input.from),
+      { org: task.org },
+    );
+    const attachments = await takePlanned(this.deps.uploads, planned, join(task.folder, "attachments"));
     if (attachments.length > 0) {
       this.deps.store.tasks.addAttachments(task.id, attachments);
+      // TASK.md lists them, so every agent in the task can find the files.
+      await this.refreshBriefs([task.id]);
       this.deps.room.publishTask(this.get(task.id));
     }
     await this.grantMentionedReads(task, targets, input.text);

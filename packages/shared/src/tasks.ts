@@ -708,3 +708,68 @@ export type RoomServerMessage = z.infer<typeof RoomServerMessageSchema>;
  * are deleted after a day.
  */
 export const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+/** File types that can be attached, by extension (lowercase, no dot), with the mime type each is sent as. */
+export const ATTACHMENT_TYPES = {
+  images: { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" },
+  documents: { pdf: "application/pdf" },
+  text: {
+    txt: "text/plain",
+    md: "text/markdown",
+    csv: "text/csv",
+    json: "application/json",
+    log: "text/plain",
+    yaml: "application/yaml",
+    yml: "application/yaml",
+    xml: "application/xml",
+    html: "text/html",
+    diff: "text/x-diff",
+    patch: "text/x-diff",
+  },
+  archives: { zip: "application/zip" },
+} as const;
+
+const ATTACHMENT_EXTENSIONS: Record<string, string> = Object.assign({}, ...Object.values(ATTACHMENT_TYPES));
+
+/** The allowed types in words, for error messages. */
+export const ATTACHMENT_TYPES_TEXT =
+  "images (png, jpeg, gif, webp), pdf, text (txt, md, csv, json, log, yaml, xml, html, diff, patch) and zip";
+
+/** For an `<input accept>`: the allowed extensions. */
+export const ATTACHMENT_ACCEPT = Object.keys(ATTACHMENT_EXTENSIONS)
+  .map((ext) => `.${ext}`)
+  .join(",");
+
+/** The lowercase extension of a file name, without the dot. Empty when there is none. */
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+}
+
+/** The mime type for an allowed file name, or undefined when its extension is not allowed. */
+export function attachmentMime(name: string): string | undefined {
+  return ATTACHMENT_EXTENSIONS[extensionOf(name)];
+}
+
+/**
+ * True when the extension is allowed and the mime type the sender gave fits it. A missing mime
+ * type or `application/octet-stream` passes (browsers leave it empty for .md and .log); a
+ * mismatch like `text/html` on a .png does not.
+ */
+export function attachmentAllowed(name: string, mime = ""): boolean {
+  const expected = attachmentMime(name);
+  if (expected === undefined) return false;
+  const given = mime.trim().toLowerCase();
+  if (given === "" || given === "application/octet-stream" || given === expected) return true;
+  const ext = extensionOf(name);
+  if (ext in ATTACHMENT_TYPES.images || ext === "pdf") return false;
+  if (ext === "zip") return given === "application/x-zip-compressed" || given === "application/x-zip";
+  // Text types: browsers and OSes disagree on the exact mime type of a .yaml or .diff.
+  return (
+    given.startsWith("text/") ||
+    given === "application/json" ||
+    given.endsWith("+json") ||
+    given.endsWith("xml") ||
+    given.endsWith("yaml")
+  );
+}

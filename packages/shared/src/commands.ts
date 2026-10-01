@@ -114,6 +114,7 @@ import {
   SettingsSchema,
 } from "./settings.ts";
 import {
+  AttachmentSchema,
   CardActionSchema,
   MergeMethodSchema,
   ProjectConfigSchema,
@@ -698,8 +699,17 @@ export const commands = {
       team: z.array(IdSchema).min(1).max(12).optional(),
       /** How the team takes turns. Default: from the team the decision provider picked, else `lead`. */
       mode: CoordinationModeSchema.optional(),
-      /** Upload ids from POST /api/uploads. */
-      attachments: z.array(z.string()).max(20).default([]),
+      /**
+       * Upload ids (from POST /api/uploads or uploads.create), or paths of files in your own task
+       * folder, like attachments/image.png. A path is copied; the original stays.
+       */
+      attachments: z
+        .array(z.string())
+        .max(20)
+        .default([])
+        .describe(
+          "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png (copied, the original stays)",
+        ),
       start: z.boolean(),
       /** Makes the new task a child of this one (5.4a). */
       parent: TaskIdSchema.optional(),
@@ -768,6 +778,14 @@ export const commands = {
             /** When a dependency counts as met. `ready` stacks this child's branch on the dependency's. */
             when: z.enum(["merged", "ready"]).optional(),
             agent: IdSchema.optional(),
+            /** Upload ids, or paths of files in your own task folder (like attachments/image.png). */
+            attachments: z
+              .array(z.string())
+              .max(20)
+              .default([])
+              .describe(
+                "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png",
+              ),
           }),
         )
         .min(1)
@@ -997,6 +1015,18 @@ export const commands = {
     output: z.object({ removed: TaskIdSchema }),
   },
 
+  // Uploads -----------------------------------------------------------------
+  "uploads.create": {
+    risk: "read",
+    summary:
+      "Turn a file in your own task folder into an upload id you can pass in attachments (tasks.create, tasks.split). Takes a path like attachments/image.png. Copies the file; the original stays. Uploads are kept for 24 hours",
+    input: z.object({
+      /** Relative to your task folder, or absolute inside it. */
+      path: z.string().trim().min(1).max(1000),
+    }),
+    output: AttachmentSchema,
+  },
+
   // Room --------------------------------------------------------------------
   "room.send": {
     risk: "change",
@@ -1004,7 +1034,17 @@ export const commands = {
     input: z.object({
       task: TaskIdSchema,
       text: z.string().max(100_000),
-      attachments: z.array(z.string()).max(20).default([]),
+      /**
+       * Upload ids (from POST /api/uploads or uploads.create), or paths of files in your own task
+       * folder, like attachments/image.png. A path is copied; the original stays.
+       */
+      attachments: z
+        .array(z.string())
+        .max(20)
+        .default([])
+        .describe(
+          "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png (copied, the original stays)",
+        ),
       /** `interrupt` stops the current turn and sends at once. */
       mode: z.enum(["queue", "interrupt"]).default("queue"),
       /** Default: the agent @mentioned in the text, else the task's first agent. */
@@ -1796,6 +1836,11 @@ export type CommandOutput<N extends CommandName> = z.infer<(typeof commands)[N][
 export const CommandMetaSchema = z.object({
   actor: ActorSchema.default({ kind: "owner" }),
   reason: z.string().max(500).optional(),
+  /**
+   * The task the calling agent runs in. Set by majhi on the MCP and admin paths only; the HTTP
+   * route drops it from the header, so an owner's call never has one.
+   */
+  task: z.string().optional(),
 });
 export type CommandMeta = z.infer<typeof CommandMetaSchema>;
 
