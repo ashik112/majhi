@@ -596,7 +596,7 @@ describe("a task closed with merge requests not merged", () => {
     must(await cmd("tasks.close", { id }));
     expect((await get(id)).status).toBe("done");
     const paused = await get(waiting.id);
-    expect(paused).toMatchObject({ status: "paused", pausedReason: "owner" });
+    expect(paused).toMatchObject({ status: "paused", pausedReason: "blocked" });
     expect(
       (await notes(waiting.id)).some((n) =>
         n.includes(`${id} was closed, but its merge requests are not merged`),

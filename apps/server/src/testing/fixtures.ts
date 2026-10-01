@@ -49,7 +49,8 @@ export async function makeRepo(
 /** A fresh temp folder, with symlinks resolved so paths compare equal. Returns it and a cleanup. */
 export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), "majhi-test-")));
-  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  // Retries: a run or process ending in the background can still write a file while the folder goes.
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }) };
 }
 
 /** A server environment rooted in a temp folder. The secrets key file lives outside the majhi home, as in production. */

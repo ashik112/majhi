@@ -55,6 +55,7 @@ export class Promotion {
     }
     const task = await this.deps.tasks.createChange({
       text: `Add memory fact ${fact.id} to AGENTS.md in ${project.id}`,
+      project: project.id,
       message: `docs: add a fact to AGENTS.md\n\n${fact.text}`,
       change: async (repo) => {
         const file = join(repo.worktree, "AGENTS.md");

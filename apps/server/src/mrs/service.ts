@@ -47,7 +47,7 @@ import type { HostGit } from "./hostGit.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
 import { nextMerge, type RepoMrState } from "./policy.ts";
-import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
+import { commitsAhead, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
 import {
   chooseRoute,
@@ -324,14 +324,17 @@ export class MrService {
         try {
           const target = await this.targetOf(ctx);
           const worktree = ctx.repo.worktree as string;
-          await pushBranch({
+          const push = {
             worktree,
             remote: ctx.remote,
             branch: ctx.repo.branch,
             url: ctx.pushUrl,
             viaHost: this.hostPusher(ctx.viaHost, worktree),
             reloadKeys: this.deps.reloadKeys,
-          });
+          };
+          // A branch the remote already has at this tip is not pushed again.
+          const current = await remoteHasTip(push);
+          if (!current) await pushBranch(push);
           this.deps.store.tasks.setPushed(id, project, this.now().toISOString());
           const existing = this.deps.store.tasks.get(id)?.repos.find((r) => r.project === project)?.mr;
           if (existing !== undefined && existing.state === "open") {
@@ -340,7 +343,9 @@ export class MrService {
               project,
               outcome: "updated",
               url: existing.url,
-              detail: `Pushed ${ctx.repo.branch}; the merge request is already open.`,
+              detail: current
+                ? `${ctx.repo.branch} is already up to date on ${ctx.remote}, and the merge request is open.`
+                : `Pushed ${ctx.repo.branch}; the merge request is already open.`,
             });
             continue;
           }
@@ -1015,7 +1020,13 @@ export class MrService {
     return { behind, extra, missing: false, unknown: false };
   }
 
-  /** Fetches the remote's `branch` into its tracking ref. False when the remote has no such branch. */
+  /**
+   * Fetches the remote's `branch` into its tracking ref. False when the remote has no such branch.
+   * Forced (`+`) on purpose: the tracking ref must be what the remote has now, also after a rewrite
+   * there. A plain fetch would refuse and leave a stale ref that still names commits the remote
+   * dropped, which is the unsafe direction for "is this pushed" and for the check that follows.
+   * Local branches never move here, and the old value stays in the ref's reflog.
+   */
   private async fetchTracking(source: string, target: PushTarget, branch: string): Promise<boolean> {
     const tracking = `refs/remotes/${target.remote}/${branch}`;
     const from = target.pushUrl ?? target.remote;

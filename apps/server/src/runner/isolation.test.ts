@@ -93,6 +93,9 @@ describe("what a task's run mounts", () => {
       { path: gitDir },
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
+      // Other checkouts' worktree entries, but the run's own.
+      { path: join(gitDir, "worktrees"), readOnly: true },
+      { path: join(gitDir, "worktrees", "acme-api") },
       // Branches, remote-tracking refs and tags, but majhi's task branches.
       { path: join(gitDir, "refs", "heads"), readOnly: true },
       { path: join(gitDir, "refs", "heads", "task") },
@@ -121,6 +124,8 @@ describe("what a task's run mounts", () => {
       gitDir,
       join(gitDir, "config"),
       join(gitDir, "hooks"),
+      join(gitDir, "worktrees"),
+      join(gitDir, "worktrees", "acme-api"),
       join(gitDir, "refs", "heads"),
       join(gitDir, "refs", "heads", "task"),
       join(gitDir, "refs", "remotes"),

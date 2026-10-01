@@ -1,4 +1,4 @@
-import { GitError, git, gitOk } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, GitError, git, gitOk } from "../git/git.ts";
 import { isSshAuthFailure } from "../git/worktrees.ts";
 
 /** Pushing takes longer than the default git timeout. */
@@ -77,6 +77,34 @@ export async function pushBranch(req: PushRequest): Promise<void> {
     throw asPush(err);
   }
   await tracked(req, tip);
+}
+
+/**
+ * True when the remote's branch already is the local tip, so a push would change nothing. Read with
+ * `ls-remote`, which writes nothing on the remote; the tracking branch is moved to the tip, as a push
+ * would. False when it cannot tell (an https route through the Mac, a remote that does not answer):
+ * the caller then pushes as before.
+ */
+export async function remoteHasTip(req: PushRequest): Promise<boolean> {
+  if (req.viaHost !== undefined && req.url !== undefined) return false;
+  const ref = `refs/heads/${req.branch}`;
+  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", ref]).then(
+    (s) => s.trim(),
+    () => undefined,
+  );
+  if (tip === undefined) return false;
+  const listed = await git(req.worktree, ["ls-remote", req.url ?? req.remote, ref], {
+    timeoutMs: FETCH_TIMEOUT_MS,
+  }).catch(() => "");
+  const remote = listed
+    .split("\n")
+    .map((line) => line.split("\t"))
+    .find(([, name]) => name === ref)?.[0];
+  if (remote !== tip) return false;
+  await git(req.worktree, ["update-ref", `refs/remotes/${req.remote}/${req.branch}`, tip]).catch(
+    () => undefined,
+  );
+  return true;
 }
 
 /**

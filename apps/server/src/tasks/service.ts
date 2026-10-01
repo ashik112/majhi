@@ -1236,10 +1236,17 @@ export class TaskService {
    */
   async createChange(input: {
     text: string;
+    /** The repo the change is made in. Named explicitly: text never attaches a repo. */
+    project: string;
     message: string;
     change: (repo: { project: string; worktree: string }) => Promise<void>;
   }): Promise<Task> {
-    const created = await this.create({ text: input.text, attachments: [], start: false });
+    const created = await this.create({
+      text: input.text,
+      repos: [{ project: input.project }],
+      attachments: [],
+      start: false,
+    });
     const task = this.get(created.id);
     try {
       await this.ensureWorktrees(task);

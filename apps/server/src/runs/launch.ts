@@ -1,5 +1,5 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   type AgentSession,
   buildEnv,
@@ -329,29 +329,47 @@ export async function repoMounts(
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
     );
-    if (options.guardRefs === true) mounts.push(...(await refMounts(gitDir, repo.branch)));
+    if (options.guardRefs === true) mounts.push(...(await guardMounts(gitDir, repo.worktree, repo.branch)));
   }
   return mounts;
 }
 
 /**
- * A run's refs: branches, remote-tracking refs and tags read-only, but `refs/heads/task`, where
- * majhi's task branches live. majhi's hooks refuse every other ref change git makes in a transaction,
- * but git writes the branch of a `git branch -C` (copy) without one, so the hooks never see it; a
- * read-only folder refuses it, and a hand-written ref file too. A packed ref changes as a new loose
- * file, so it is covered the same way. A repo whose working branch the owner named outside `task/`
- * keeps only the hooks: that branch must stay writable.
+ * What a run may not write in the shared git folder, read-only:
+ * - `worktrees`, but the run's own entry. A run sees only its own worktree, so a `git worktree
+ *   prune` there would delete the entry of every other checkout (the owner's, other tasks'), and
+ *   with it their HEAD and index.
+ * - `refs/heads`, `refs/remotes` and `refs/tags`, but `refs/heads/task`, where majhi's task branches
+ *   live. majhi's hooks refuse every other ref change git makes in a transaction, but git writes the
+ *   branch of a `git branch -C` (copy) without one, so the hooks never see it; a read-only folder
+ *   refuses it, and a hand-written ref file too. A packed ref changes as a new loose file, so it is
+ *   covered the same way. A repo whose working branch the owner named outside `task/` keeps only the
+ *   hooks for its refs: that branch must stay writable.
  */
-async function refMounts(gitDir: string, branch: string): Promise<RunMount[]> {
-  if (!branch.startsWith("task/")) return [];
+async function guardMounts(gitDir: string, worktree: string, branch: string): Promise<RunMount[]> {
+  const mounts: RunMount[] = [];
+  const own = await worktreeEntry(worktree);
+  if (own !== undefined && dirname(own) === join(gitDir, "worktrees")) {
+    mounts.push({ path: join(gitDir, "worktrees"), readOnly: true }, { path: own });
+  }
+  if (!branch.startsWith("task/")) return mounts;
   const refs = join(gitDir, "refs");
   for (const dir of [join(refs, "heads", "task"), join(refs, "remotes"), join(refs, "tags")]) {
     await mkdir(dir, { recursive: true });
   }
-  return [
+  mounts.push(
     { path: join(refs, "heads"), readOnly: true },
     { path: join(refs, "heads", "task") },
     { path: join(refs, "remotes"), readOnly: true },
     { path: join(refs, "tags"), readOnly: true },
-  ];
+  );
+  return mounts;
+}
+
+/** The worktree's own entry in the repo's git folder, from its `.git` file. Undefined when unreadable. */
+async function worktreeEntry(worktree: string): Promise<string | undefined> {
+  const text = await readFile(join(worktree, ".git"), "utf8").catch(() => undefined);
+  const path = /^gitdir: (.+)$/m.exec(text ?? "")?.[1]?.trim();
+  if (path === undefined || path === "") return undefined;
+  return isAbsolute(path) ? path : resolve(worktree, path);
 }

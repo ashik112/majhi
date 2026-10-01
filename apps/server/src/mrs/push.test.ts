@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
+import { commitsAhead, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -99,5 +99,26 @@ describe("remoteUrl and commitsAhead", () => {
     await git(work, "fetch", "--quiet", "origin");
     expect(await commitsAhead(work, "main", "origin", "task/x")).toBe(1);
     expect(await commitsAhead(work, "main", "origin", "main")).toBe(0);
+  });
+});
+
+describe("remoteHasTip", () => {
+  it("is true only when the remote's branch is the local tip, and then moves the tracking branch", async () => {
+    const { dir, work, bare } = await repo();
+    await git(work, "remote", "add", "origin", bare);
+    const req = { worktree: work, remote: "origin", branch: "task/x" };
+    expect(await remoteHasTip(req)).toBe(false);
+    await git(work, "push", "--quiet", "origin", "task/x");
+    await git(work, "update-ref", "-d", "refs/remotes/origin/task/x");
+    expect(await remoteHasTip(req)).toBe(true);
+    expect(await git(work, "rev-parse", "refs/remotes/origin/task/x")).toBe(
+      await git(work, "rev-parse", "HEAD"),
+    );
+    await writeFile(join(work, "c.txt"), "c\n");
+    await git(work, "add", ".");
+    await git(work, "commit", "--quiet", "-m", "more");
+    expect(await remoteHasTip(req)).toBe(false);
+    // A remote that does not answer cannot tell: push as before.
+    expect(await remoteHasTip({ ...req, url: join(dir, "missing.git") })).toBe(false);
   });
 });
