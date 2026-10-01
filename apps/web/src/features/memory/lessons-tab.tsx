@@ -76,7 +76,13 @@ export function LessonsTab({
         >
           <ul aria-label="Lessons waiting for review" className="m-0 flex list-none flex-col p-0">
             {pending.map((fact) => (
-              <FactRow key={fact.id} fact={fact} orgNames={orgNames} ownScope={ownScope} />
+              <FactRow
+                key={fact.id}
+                fact={fact}
+                orgNames={orgNames}
+                projectOrgs={projectOrgs}
+                ownScope={ownScope}
+              />
             ))}
           </ul>
         </DetailSection>
@@ -114,7 +120,13 @@ export function LessonsTab({
         ) : (
           <ul aria-label="Active lessons" className="m-0 flex list-none flex-col p-0">
             {active.map((fact) => (
-              <FactRow key={fact.id} fact={fact} orgNames={orgNames} ownScope={ownScope} />
+              <FactRow
+                key={fact.id}
+                fact={fact}
+                orgNames={orgNames}
+                projectOrgs={projectOrgs}
+                ownScope={ownScope}
+              />
             ))}
           </ul>
         )}

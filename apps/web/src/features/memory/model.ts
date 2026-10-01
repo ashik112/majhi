@@ -30,6 +30,32 @@ export function scopeText(scope: string, orgNames: ReadonlyMap<string, string>):
   return `${kind === "org" ? "Org" : "Project"} ${scopeLabel(scope, orgNames)}`;
 }
 
+/** What a fact is, in two words: what the owner said, a debugging playbook, or a lesson an agent learned. */
+export function kindLabel(fact: Pick<Fact, "kind" | "source">): string {
+  if (fact.kind === "playbook") return "Debugging";
+  if (fact.kind === "statement" || fact.source === "owner") return "Owner said";
+  return "Lesson";
+}
+
+/** Every scope a fact can be moved to: global, each org, each project under its org. */
+export function scopeOptions(
+  orgNames: ReadonlyMap<string, string>,
+  projectOrgs: ProjectOrgs,
+): { scope: string; label: string }[] {
+  const orgs = [...new Set([...orgNames.keys(), ...projectOrgs.values()])].sort();
+  return [
+    { scope: "global", label: "Global: applies everywhere" },
+    ...orgs.flatMap((org) => [
+      { scope: `org:${org}`, label: `Org ${orgNames.get(org) ?? org}` },
+      ...[...projectOrgs]
+        .filter(([, o]) => o === org)
+        .map(([p]) => p)
+        .sort()
+        .map((p) => ({ scope: `project:${p}`, label: `Project ${p} (${orgNames.get(org) ?? org})` })),
+    ]),
+  ];
+}
+
 export function scopeKind(scope: string): "global" | "org" | "project" {
   return parseScope(scope)?.kind ?? "global";
 }
@@ -77,6 +103,8 @@ export function actionLabel(event: MemoryEvent): string {
       return "To AGENTS.md";
     case "unpromoted":
       return "Released";
+    case "edited":
+      return "Edited";
   }
 }
 
@@ -88,7 +116,13 @@ export function actorLabel(event: MemoryEvent): string {
   return event.actor === "owner" ? "You" : event.actor;
 }
 
-const PROVIDERS: Record<string, string> = { laya: "Laya", jev: "Jev", acp: "stand-in agent", rules: "rules" };
+const PROVIDERS: Record<string, string> = {
+  laya: "Laya",
+  jev: "Jev",
+  acp: "stand-in agent",
+  rules: "rules",
+  owner: "you said it",
+};
 export function providerLabel(provider: string): string {
   return PROVIDERS[provider] ?? provider;
 }

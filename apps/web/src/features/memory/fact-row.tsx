@@ -17,9 +17,10 @@ import {
   usePromoteFact,
   useRejectFact,
 } from "@/lib/memory-queries";
-import { scopeKind, scopeText } from "./model";
+import { EditFactDialog } from "./fact-edit";
+import { kindLabel, type ProjectOrgs, scopeKind, scopeText } from "./model";
 
-type Confirm = "forget" | "promote";
+type Confirm = "forget" | "promote" | "edit";
 
 /**
  * One fact: its words, where it holds, where it came from and how often tasks got it, with the
@@ -29,10 +30,13 @@ type Confirm = "forget" | "promote";
 export function FactRow({
   fact,
   orgNames,
+  projectOrgs,
   ownScope,
 }: {
   fact: Fact;
   orgNames: ReadonlyMap<string, string>;
+  /** Which org each project belongs to, for moving the fact. */
+  projectOrgs: ProjectOrgs;
   /** The scope of the row it is listed under: its badge is left out when the fact has that scope. */
   ownScope?: string;
 }) {
@@ -52,10 +56,18 @@ export function FactRow({
   return (
     <li className="flex flex-col gap-1.5 border-t border-line py-3 first:border-t-0">
       <div className="flex items-start gap-3">
-        <p className="m-0 min-w-0 flex-1 text-body text-fg text-pretty [overflow-wrap:anywhere]">
+        <p className="m-0 min-w-0 flex-1 whitespace-pre-line text-body text-fg text-pretty [overflow-wrap:anywhere]">
           {fact.text}
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Edit: ${fact.text}`}
+            onClick={() => setConfirm("edit")}
+          >
+            Edit
+          </Button>
           {pending ? (
             <>
               <Button
@@ -109,6 +121,7 @@ export function FactRow({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-faint">
+        <Badge tone={fact.source === "owner" ? "green" : "neutral"}>{kindLabel(fact)}</Badge>
         {fact.scope !== ownScope && (
           <Badge tone={scopeKind(fact.scope) === "global" ? "blue" : "neutral"}>
             {scopeText(fact.scope, orgNames)}
@@ -142,6 +155,14 @@ export function FactRow({
           Used in {plural(fact.use_count, "task")}
         </span>
       </div>
+      {confirm === "edit" && (
+        <EditFactDialog
+          fact={fact}
+          orgNames={orgNames}
+          projectOrgs={projectOrgs}
+          onClose={() => setConfirm(undefined)}
+        />
+      )}
       {confirm === "forget" && (
         <ConfirmDialog
           title="Forget this fact?"

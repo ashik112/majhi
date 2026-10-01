@@ -91,6 +91,7 @@ export function useThreads(
 function useMemoryMutation<
   N extends
     | "memory.approve"
+    | "memory.edit"
     | "memory.reject"
     | "memory.forget"
     | "memory.pin"
@@ -118,6 +119,7 @@ function useMemoryMutation<
 }
 
 export const useApproveFact = () => useMemoryMutation("memory.approve", "Owner approved a fact");
+export const useEditFact = () => useMemoryMutation("memory.edit", "Owner edited a fact");
 export const useRejectFact = () => useMemoryMutation("memory.reject", "Owner rejected a fact");
 export const useForgetFact = () => useMemoryMutation("memory.forget", "Owner forgot a fact");
 export const usePinFact = () => useMemoryMutation("memory.pin", "Owner changed a fact's pin");
