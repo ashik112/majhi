@@ -164,7 +164,7 @@ export async function launch(
       mounts: [
         // Read-only checkouts first: a task repo's own .git below one stays writable.
         ...(await readMounts(deps, task, run.agent, fm.scope)),
-        ...(await repoMounts(task)),
+        ...(await repoMounts(task, await readOnlyRepos(deps.config, task))),
         ...hooksMount(attribution.hooks),
       ],
       ...(resume === undefined ? {} : { resume }),
@@ -237,6 +237,21 @@ export async function readMounts(
   return mounts;
 }
 
+/**
+ * The task's repos of protected projects that the owner did not let agents write in for this
+ * task. Their worktrees are mounted read-only in agent runs.
+ */
+export async function readOnlyRepos(config: ConfigService, task: Task): Promise<Set<string>> {
+  const loaded = await config.load();
+  if (loaded.state.status !== "loaded") return new Set();
+  const projects = (await config.sections()).projects;
+  return new Set(
+    task.repos
+      .filter((r) => projects[r.project]?.protected === true && r.writes !== true)
+      .map((r) => r.project),
+  );
+}
+
 /** majhi's hooks folder, read-only, for a run that has them. */
 function hooksMount(hooks: string | undefined): RunMount[] {
   return hooks === undefined ? [] : [{ path: hooks, readOnly: true }];
@@ -277,7 +292,7 @@ export async function processLaunch(
     account,
     mounts: [
       ...(await readMounts(deps, task, agentId, resolved.fm.scope)),
-      ...(await repoMounts(task)),
+      ...(await repoMounts(task, await readOnlyRepos(deps.config, task))),
       ...hooksMount(attribution.hooks),
     ],
   };
@@ -288,10 +303,16 @@ export async function processLaunch(
  * its objects and refs. `config` and `hooks` are read-only, so a run cannot plant a hook or a
  * command in the config that the owner's own git would later run on the host.
  */
-export async function repoMounts(task: Task): Promise<RunMount[]> {
+export async function repoMounts(task: Task, readOnly: ReadonlySet<string> = new Set()): Promise<RunMount[]> {
   const mounts: RunMount[] = [];
   for (const repo of task.repos) {
     if (repo.worktree === undefined) continue;
+    // A protected project agents may not write in: its worktree is read-only, and its .git is not
+    // mounted writable, so no commit or ref can be made there.
+    if (readOnly.has(repo.project)) {
+      mounts.push({ path: repo.worktree, readOnly: true });
+      continue;
+    }
     const gitDir = join(repo.source, ".git");
     if (!(await isDirectory(gitDir))) continue;
     // A read-only mount needs the folder to exist, or the run could create it and add hooks.

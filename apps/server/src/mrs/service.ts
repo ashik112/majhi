@@ -33,6 +33,8 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  HELD,
+  heldResult,
   NO_CHANGES,
   planTargets,
   type ShipTargets,
@@ -453,6 +455,11 @@ export class MrService {
         plans.push({ ctx, skip: NO_CHANGES });
         continue;
       }
+      // majhi never pushes a protected repo for a merge request: it ships only alone, by the owner.
+      if (ctx.project.protected) {
+        plans.push({ ctx, skip: HELD });
+        continue;
+      }
       if (repo.worktree === undefined) {
         throw new UserError(`${project} has no worktree, so there is nothing to push.`);
       }
@@ -498,8 +505,13 @@ export class MrService {
   async shipOptions(id: string): Promise<ShipOptions> {
     const task = this.deps.tasks.get(id);
     const local = await this.deps.tasks.reviewOptions(id);
-    // Ship sends only the repos with changes; the rest are listed as skipped.
-    const { changed, unchanged } = await splitChanged(task.repos);
+    // Ship sends only the repos with changes; the rest are listed as skipped. Protected ones are
+    // listed apart: each ships only alone.
+    const split = await splitChanged(task.repos);
+    const guarded = new Set((await this.deps.projects.infos()).filter((p) => p.protected).map((p) => p.id));
+    const changed = split.changed.filter((r) => !guarded.has(r.project));
+    const held = split.changed.filter((r) => guarded.has(r.project));
+    const { unchanged } = split;
     const base = changed[0]?.base ?? local.base;
     const push = await this.option(async () => {
       const ready = await this.pushReady(task, changed);
@@ -543,6 +555,7 @@ export class MrService {
       ...(host === undefined ? {} : { host }),
       changed: changed.map((r) => ({ project: r.project, base: r.base, branch: r.branch })),
       unchanged: unchanged.map((r) => r.project),
+      protected: held.map((r) => ({ project: r.project, base: r.base, branch: r.branch })),
       merge: local.merge,
       mergePush: local.merge.ok ? push : local.merge,
       push,
@@ -610,7 +623,7 @@ export class MrService {
         if (r === undefined) continue;
         this.audit(id, "push", by, r.ok, r.ok ? `${target.remote}/${repo.branch}` : r.detail, r.project);
       }
-      const skipped = plan.unchanged.map(skippedResult);
+      const skipped = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
       if (deleteAfter && results.every((r) => r.ok)) {
         return {
           results: [...(await this.withDeleted(id, results, heads)), ...skipped],
@@ -647,6 +660,8 @@ export class MrService {
     pushLocalCommits?: boolean | undefined;
     /** The owner confirmed creating a target branch the remote does not have. */
     createRemoteBranch?: boolean | undefined;
+    /** The owner typed this protected repo's name to ship it alone. */
+    confirmProtected?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
@@ -704,6 +719,7 @@ export class MrService {
         id: input.id,
         targets,
         project: input.project,
+        confirmProtected: input.confirmProtected,
         done: false,
         by: input.by,
         settle: false,
@@ -763,8 +779,8 @@ export class MrService {
           "error",
         );
       }
-      const skipped = plan.unchanged.map(skippedResult);
-      if (results.every((r) => r.ok)) {
+      const skipped = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
+      if (results.every((r) => r.ok) && plan.held.length === 0) {
         const into = [...new Set(results.map((r) => r.into))].join(", ");
         const closes =
           input.done &&
@@ -1172,8 +1188,18 @@ export class MrService {
         }
         const repo = fresh.repos.find((r) => r.project === decision.project);
         if (repo?.mr === undefined) break;
+        const ctx0 = await this.context(repo).catch(() => undefined);
+        if (ctx0?.project.protected === true) {
+          // No merge policy merges a protected repo: the owner merges it on the host.
+          stoppedAt = {
+            project: repo.project,
+            reason: `${repo.project} is protected, so majhi never merges it. Merge it on the host yourself, then choose I merged it.`,
+          };
+          this.problem(id, `stop:${repo.project}`, `Merging stopped at ${repo.project}: ${stoppedAt.reason}`);
+          break;
+        }
         try {
-          const ctx = await this.context(repo);
+          const ctx = ctx0 ?? (await this.context(repo));
           const target = await this.targetOf(ctx);
           await ctx.client.merge(target, repo.mr.number);
           const status = await ctx.client.status(target, repo.mr.number);

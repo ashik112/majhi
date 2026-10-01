@@ -26,7 +26,7 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   // Ship while some of its work is not merged or pushed.
   const shippable = [options.data?.merge, options.data?.push].some((o) => o?.ok === true);
   // No repo changed since the task started: nothing to ship, so no Ship.
-  const nothing = options.data?.changed?.length === 0;
+  const nothing = options.data?.changed?.length === 0 && (options.data?.protected ?? []).length === 0;
   const canShip =
     hasTree && !nothing && (done ? shippable : !["inbox", "ready", "running"].includes(task.status));
   const fail = (title: string) => (error: ApiRequestError) =>

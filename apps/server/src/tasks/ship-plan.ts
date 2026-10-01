@@ -23,6 +23,8 @@ export interface ShipPlan {
   ship: { repo: TaskRepo; into: string }[];
   /** Repos with no change since the task started. */
   unchanged: TaskRepo[];
+  /** Changed repos of protected projects, left out: each ships only alone, with its name typed. */
+  held: TaskRepo[];
 }
 
 export const NO_CHANGES = "No changes since the task started, skipped.";
@@ -100,6 +102,7 @@ export async function shipPlan(
   return {
     ship: changed.map((repo) => ({ repo, into: targets.get(repo.project) ?? repo.base })),
     unchanged,
+    held: [],
   };
 }
 
@@ -112,6 +115,46 @@ export function skippedResult(repo: TaskRepo): {
   detail: string;
 } {
   return { project: repo.project, into: repo.base, ok: true, skipped: true, detail: NO_CHANGES };
+}
+
+export const HELD =
+  "Protected: not shipped with the others. Ship it alone from its own row in Ship, typing its name.";
+
+/** The result line for a protected repo a ship left out. */
+export function heldResult(repo: TaskRepo): {
+  project: string;
+  into: string;
+  ok: true;
+  skipped: true;
+  detail: string;
+} {
+  return { project: repo.project, into: repo.base, ok: true, skipped: true, detail: HELD };
+}
+
+/**
+ * Takes the protected repos out of a plan, unless the call ships exactly one of them alone
+ * (`project`) and carries its name typed by the owner (`confirm`). Throws when nothing is left.
+ */
+export function holdProtected(
+  plan: ShipPlan,
+  guarded: ReadonlySet<string>,
+  pick: { project?: string | undefined; confirmProtected?: string | undefined },
+): ShipPlan {
+  const held = plan.ship.filter((s) => guarded.has(s.repo.project)).map((s) => s.repo);
+  if (held.length === 0) return plan;
+  const alone = pick.project !== undefined && plan.ship.length === 1 && held[0]?.project === pick.project;
+  if (alone && pick.confirmProtected === pick.project) return plan;
+  const ship = plan.ship.filter((s) => !guarded.has(s.repo.project));
+  if (ship.length === 0) {
+    const names = held.map((r) => r.project).join(", ");
+    throw new UserError(
+      alone
+        ? `${names} is protected. Type its name to ship it.`
+        : `${names} ${held.length === 1 ? "is" : "are"} protected and never ships with other repos or by itself. Ship ${held.length === 1 ? "it" : "each"} alone from its own row in Ship, typing its name.`,
+      409,
+    );
+  }
+  return { ...plan, ship, held: [...plan.held, ...held] };
 }
 
 /** The targets of a plan, by project, to hand on to the merge it runs. */

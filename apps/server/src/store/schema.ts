@@ -58,6 +58,8 @@ export const taskRepos = sqliteTable(
     pushedAt: text("pushed_at"),
     /** The commit the branch was cut from. Null on tasks made before it was recorded. */
     startCommit: text("start_commit"),
+    /** A protected project the owner let agents write in, for this task. */
+    writes: integer("writes", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.task, t.project] })],
 );

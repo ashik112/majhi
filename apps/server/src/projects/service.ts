@@ -15,6 +15,7 @@ import { defaultBranch, isGitRepo } from "../git/git.ts";
 import { MergeOrderCycle, type ProjectGraph, pathBetween } from "../mrs/order.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import type { TaskRepo } from "../store/tasks.ts";
+import { looksLikeInfra } from "./infra.ts";
 
 /** How long a repo's default branch is reused. */
 export const BASE_CACHE_MS = 30_000;
@@ -38,6 +39,8 @@ export interface UpdateInput {
   remotes?: Record<string, RemoteConfig> | null | undefined;
   links?: ProjectLink[] | null | undefined;
   commits?: CommitsPatch | null | undefined;
+  /** Absent: keep. */
+  protected?: boolean | undefined;
 }
 
 /** A registered project with everything a task needs from it. */
@@ -54,11 +57,14 @@ export interface ProjectInfo {
   links: ProjectLink[];
   /** The project's own `commits.attribution`, when it overrides the org's. */
   commits: CommitsPatch | undefined;
+  /** Infra or otherwise sensitive: see ProjectConfig.protected. */
+  protected: boolean;
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
 export class ProjectService {
   private readonly defaults = new Map<string, { at: number; branch: string | undefined }>();
+  private readonly infra = new Map<string, { at: number; value: boolean }>();
 
   constructor(
     private readonly config: ConfigService,
@@ -67,7 +73,14 @@ export class ProjectService {
   ) {}
 
   async list(): Promise<ProjectView[]> {
-    return (await this.infos()).map(toView);
+    return Promise.all(
+      (await this.infos()).map(async (p) => {
+        const view = toView(p);
+        // Offered, never applied by itself: the owner protects it with one click.
+        if (!p.protected && p.exists && (await this.infraHint(p))) view.looksLikeInfra = true;
+        return view;
+      }),
+    );
   }
 
   /** Every project, resolved. Empty until majhi.yaml loads. */
@@ -93,6 +106,7 @@ export class ProjectService {
           remotes: project.remotes ?? {},
           links: project.links ?? [],
           commits: project.commits,
+          protected: project.protected === true,
         };
         return info;
       }),
@@ -173,6 +187,8 @@ export class ProjectService {
       if (input.commits === null || Object.keys(input.commits).length === 0) delete project.commits;
       else project.commits = input.commits;
     }
+    if (input.protected === true) project.protected = true;
+    else if (input.protected === false) delete project.protected;
     await this.config.change({ command, meta, summary: `updated project ${input.id}` }, () =>
       writeProject(this.config.file, input.id, project),
     );
@@ -189,6 +205,16 @@ export class ProjectService {
     await this.config.change({ command, meta, summary: `removed project ${id}` }, () =>
       removeProjectEntry(this.config.file, id),
     );
+  }
+
+  /** `looksLikeInfra`, read again at most every BASE_CACHE_MS per project. */
+  private async infraHint(p: ProjectInfo): Promise<boolean> {
+    const key = `${p.id}\u0000${p.path}\u0000${p.aliases.join(",")}`;
+    const hit = this.infra.get(key);
+    if (hit !== undefined && this.now() - hit.at < BASE_CACHE_MS) return hit.value;
+    const value = await looksLikeInfra(p.id, p.aliases, p.path);
+    this.infra.set(key, { at: this.now(), value });
+    return value;
   }
 
   private async repoDefault(path: string): Promise<string | undefined> {
@@ -209,6 +235,7 @@ function toView(p: ProjectInfo): ProjectView {
     exists: p.exists,
     remotes: p.remotes,
     links: p.links,
+    protected: p.protected,
   };
   if (p.base !== undefined) view.base = p.base;
   if (p.commits !== undefined) view.commits = p.commits;

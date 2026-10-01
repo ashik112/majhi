@@ -327,7 +327,16 @@ export function createHandlers({
 
     "projects.list": () => services.projects.list(),
     "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
-    "projects.update": (input, ctx) => services.projects.update(input, ctx.command, ctx.meta),
+    "projects.update": async (input, ctx) => {
+      // Protection is the owner's guard on their infra: an agent may turn it on, never off.
+      if (input.protected === false && ctx.meta.actor.kind === "agent") {
+        const current = (await services.projects.infos()).find((p) => p.id === input.id);
+        if (current?.protected === true) {
+          throw new UserError(`Only the owner can turn protection off for ${input.id}.`, 409);
+        }
+      }
+      return services.projects.update(input, ctx.command, ctx.meta);
+    },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       return { removed: input.id };
@@ -338,7 +347,12 @@ export function createHandlers({
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
       const captured = await services.secretService.capture(input.text);
-      const task = await services.tasks.create({ ...input, text: captured.text, from: ctx.meta.task });
+      const task = await services.tasks.create({
+        ...input,
+        text: captured.text,
+        from: ctx.meta.task,
+        byOwner: ctx.meta.actor.kind === "owner",
+      });
       noteSecrets(services, task.id, captured.saved);
       return task;
     },
@@ -354,6 +368,9 @@ export function createHandlers({
       }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
+      if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
+        throw new UserError("Only the owner can ship a protected repo.", 409);
+      }
       if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
         throw new UserError(
           "Only the owner can confirm pushing commits that are not the task's, or creating a branch on the remote.",

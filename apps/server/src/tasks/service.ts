@@ -101,7 +101,15 @@ import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import { describeCycle, findCycle, NO_RELATED, type Related, type RelatedTask } from "./relations.ts";
-import { type ShipPlan, type ShipTargets, shipPlan, skippedResult, targetRefusal } from "./ship-plan.ts";
+import {
+  heldResult,
+  holdProtected,
+  type ShipPlan,
+  type ShipTargets,
+  shipPlan,
+  skippedResult,
+  targetRefusal,
+} from "./ship-plan.ts";
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
@@ -154,6 +162,8 @@ export interface CreateInput {
   text: string;
   /** The repos the task changes, picked on purpose. Names in the text attach nothing. */
   repos?: readonly PickedRepo[] | undefined;
+  /** The owner asked: only then may a protected project join, and agents write in it. */
+  byOwner?: boolean | undefined;
   /** A separate short title: it becomes the first line, and `text` the description. */
   title?: string | undefined;
   kind?: TaskKind | undefined;
@@ -285,6 +295,7 @@ export class TaskService {
       }),
       input.repos,
       projects,
+      input.byOwner === true,
     );
     const parsed = picks.parsed;
     const orgs = new Set(parsed.repos.map((r) => projects.find((p) => p.id === r.project)?.org));
@@ -296,6 +307,12 @@ export class TaskService {
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
     const investigation = input.readOnly === true || input.kind === "ops";
     const kind = input.kind ?? (investigation && parsed.kind === "code" ? "ops" : parsed.kind);
+    if (kind === "code" && parsed.repos.length === 0 && picks.refused.length > 0) {
+      throw new UserError(
+        `${picks.refused.join(", ")} ${picks.refused.length === 1 ? "is" : "are"} protected: only the owner can add ${picks.refused.length === 1 ? "it" : "them"} to a task.`,
+        409,
+      );
+    }
     if (kind === "code" && parsed.repos.length === 0) {
       throw new UserError("A code task needs a project. Pick the repos it changes, or change the kind.");
     }
@@ -344,7 +361,11 @@ export class TaskService {
             fallback: agent,
             mode: input.mode,
           });
-    const repos = investigation ? [] : await this.planRepos(id, parsed, projects, picks.bases);
+    const repos = investigation
+      ? []
+      : (await this.planRepos(id, parsed, projects, picks.bases)).map((r) =>
+          picks.writes.has(r.project) ? { ...r, writes: true } : r,
+        );
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
@@ -393,6 +414,12 @@ export class TaskService {
     }
 
     for (const w of parsed.warnings) this.warn(id, w);
+    if (picks.refused.length > 0) {
+      this.warn(
+        id,
+        `Left out ${picks.refused.join(", ")}: ${picks.refused.length === 1 ? "it is" : "they are"} protected, so only you can add ${picks.refused.length === 1 ? "it" : "them"} to a task. Agents can still read ${picks.refused.length === 1 ? "it" : "them"}.`,
+      );
+    }
     if (picks.mentioned.length > 0) {
       this.note(
         id,
@@ -1240,6 +1267,8 @@ export class TaskService {
     into?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
+    /** The owner typed this protected repo's name to ship it alone. */
+    confirmProtected?: string | undefined;
     done: boolean;
     by?: string | undefined;
     /** False: the caller settles the review card itself (a merge that also pushes). */
@@ -1266,7 +1295,7 @@ export class TaskService {
       conflicts?: string[];
       skipped?: boolean;
     };
-    const skipped: Result[] = plan.unchanged.map(skippedResult);
+    const skipped: Result[] = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
     const by = input.by ?? "owner";
     const report = (results: Result[]) => {
       for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
@@ -1371,11 +1400,13 @@ export class TaskService {
       }
       return { results: [...results, ...skipped], task: this.get(task.id) };
     }
-    const closes = input.done && this.openSubtasks(task.id).length === 0;
+    // A protected repo left out still has work to ship: the task stays open for it.
+    const done = input.done && plan.held.length === 0;
+    const closes = done && this.openSubtasks(task.id).length === 0;
     const into = [...new Set(results.map((r) => r.into))].join(", ");
-    if (input.settle !== false)
+    if (input.settle !== false && plan.held.length === 0)
       this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
-    const after = input.done
+    const after = done
       ? await this.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by })
       : this.get(task.id);
     if (input.deleteAfter !== true) return { results: [...results, ...skipped], task: after };
@@ -1396,7 +1427,10 @@ export class TaskService {
    * What a ship sends: the task's repos with changes (only `project` when given), each with its
    * target, and the unchanged ones it skips. Refused when no repo has a change.
    */
-  async shipPlan(task: Task, pick: ShipTargets & { project?: string | undefined }): Promise<ShipPlan> {
+  async shipPlan(
+    task: Task,
+    pick: ShipTargets & { project?: string | undefined; confirmProtected?: string | undefined },
+  ): Promise<ShipPlan> {
     const repos = task.repos.filter((r) => pick.project === undefined || r.project === pick.project);
     if (repos.length === 0) {
       throw new UserError(
@@ -1406,13 +1440,15 @@ export class TaskService {
         409,
       );
     }
-    const plan = await shipPlan(repos, pick, task.repos);
-    if (plan.ship.length === 0) {
+    const found = await shipPlan(repos, pick, task.repos);
+    if (found.ship.length === 0) {
       throw new UserError(
         `Nothing to ship: ${repos.length === 1 ? `${repos[0]?.project} has` : "no repo of this task has"} changes since the task started.`,
         409,
       );
     }
+    const guarded = new Set((await this.deps.projects.infos()).filter((p) => p.protected).map((p) => p.id));
+    const plan = holdProtected(found, guarded, pick);
     for (const { repo, into } of plan.ship) {
       const refusal = await targetRefusal(repo, into, dirname(task.folder));
       if (refusal !== undefined) throw new UserError(refusal, 409);

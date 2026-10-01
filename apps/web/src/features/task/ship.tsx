@@ -1,5 +1,5 @@
 import { type MergeMethod, type ShipFix, type ShipOption, shipWords, type Task } from "@majhi/shared";
-import { ArrowRight, ChevronDown, GitBranch, GitMerge, LoaderCircle, Wrench } from "lucide-react";
+import { ArrowRight, ChevronDown, GitBranch, GitMerge, LoaderCircle, Lock, Wrench } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent,
@@ -318,6 +318,9 @@ function ShipPanel({
   const changed =
     options.data?.changed ?? task.repos.map((r) => ({ project: r.project, base: r.base, branch: r.branch }));
   const unchanged = options.data?.unchanged ?? [];
+  // Protected repos never ship with the others: each has its own row and ships alone.
+  const guarded = options.data?.protected ?? [];
+  const others = changed.length > 0;
   // Repos on different bases each get their own target, their base by default.
   const perRepo = new Set(changed.map((r) => r.base)).size > 1;
   const [into, setInto] = useState(base);
@@ -474,7 +477,7 @@ function ShipPanel({
       style={place}
       className="z-50 flex flex-col gap-3 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
     >
-      {perRepo ? (
+      {!others ? null : perRepo ? (
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {changed.map((r) => {
             const own = branches.data?.find((b) => b.project === r.project);
@@ -551,66 +554,83 @@ function ShipPanel({
           No changes, skipped: <span className="font-mono">{unchanged.join(", ")}</span>.
         </p>
       )}
+      {guarded.map((g) => (
+        <ProtectedRow
+          key={g.project}
+          task={task}
+          repo={g}
+          method={method}
+          disabled={busy}
+          onResults={(list) => {
+            setChosen(undefined);
+            setResults(list);
+          }}
+        />
+      ))}
       {options.isError && (
         <p role="alert" className="text-sm text-red text-pretty">
           {describeError(options.error)}
         </p>
       )}
-      <ul className="m-0 flex list-none flex-col gap-1 p-0">
-        {ACTIONS.map((action, i) => {
-          const o = optionOf(action);
-          const label = labels[action];
-          const disabled = o === undefined || !o.ok || busy;
-          // One reason that blocks several actions (no SSH alias) is said once, with its fix.
-          const repeated = o?.ok === false && ACTIONS.slice(0, i).some((a) => optionOf(a)?.why === o.why);
-          return (
-            <li key={action} className="flex flex-col">
-              <button
-                type="button"
-                aria-disabled={disabled}
-                aria-pressed={chosen === action}
-                onClick={() => {
-                  if (disabled) return;
-                  setChosen(action);
-                  setResults(undefined);
-                  setError(undefined);
-                }}
-                className={cn(
-                  "flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-1.5 text-left",
-                  chosen === action ? "border-accent-line bg-accent-wash" : "border-transparent",
-                  disabled ? "cursor-default" : "cursor-pointer hover:bg-raised",
-                )}
-              >
-                <span className={cn("text-base", disabled ? "text-fg-faint" : "text-fg")}>{label.title}</span>
-                <span
+      {others && (
+        <ul className="m-0 flex list-none flex-col gap-1 p-0">
+          {ACTIONS.map((action, i) => {
+            const o = optionOf(action);
+            const label = labels[action];
+            const disabled = o === undefined || !o.ok || busy;
+            // One reason that blocks several actions (no SSH alias) is said once, with its fix.
+            const repeated = o?.ok === false && ACTIONS.slice(0, i).some((a) => optionOf(a)?.why === o.why);
+            return (
+              <li key={action} className="flex flex-col">
+                <button
+                  type="button"
+                  aria-disabled={disabled}
+                  aria-pressed={chosen === action}
+                  onClick={() => {
+                    if (disabled) return;
+                    setChosen(action);
+                    setResults(undefined);
+                    setError(undefined);
+                  }}
                   className={cn(
-                    "text-xs text-pretty",
-                    o?.ok === false && !repeated ? "text-amber" : "text-fg-faint",
+                    "flex w-full flex-col items-start gap-0.5 rounded-md border px-2.5 py-1.5 text-left",
+                    chosen === action ? "border-accent-line bg-accent-wash" : "border-transparent",
+                    disabled ? "cursor-default" : "cursor-pointer hover:bg-raised",
                   )}
                 >
-                  {o === undefined
-                    ? "Checking..."
-                    : o.ok
-                      ? label.hint
-                      : repeated
-                        ? "Same reason as above."
-                        : o.why}
-                </span>
-              </button>
-              {o?.ok === false && o.fix !== undefined && !repeated && (
-                <span className="px-2.5 pb-1">
-                  <FixLink fix={o.fix} onGo={onClose} />
-                  {o.fix.page === "orgs" && action === "mr" && (
-                    <span className="mt-1 flex flex-col gap-1">
-                      <GitLoginOffer org={o.fix.org} orgName={o.fix.org} host={options.data?.host} />
-                    </span>
-                  )}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                  <span className={cn("text-base", disabled ? "text-fg-faint" : "text-fg")}>
+                    {label.title}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-xs text-pretty",
+                      o?.ok === false && !repeated ? "text-amber" : "text-fg-faint",
+                    )}
+                  >
+                    {o === undefined
+                      ? "Checking..."
+                      : o.ok
+                        ? label.hint
+                        : repeated
+                          ? "Same reason as above."
+                          : o.why}
+                  </span>
+                </button>
+                {o?.ok === false && o.fix !== undefined && !repeated && (
+                  <span className="px-2.5 pb-1">
+                    <FixLink fix={o.fix} onGo={onClose} />
+                    {o.fix.page === "orgs" && action === "mr" && (
+                      <span className="mt-1 flex flex-col gap-1">
+                        <GitLoginOffer org={o.fix.org} orgName={o.fix.org} host={options.data?.host} />
+                      </span>
+                    )}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {chosen !== undefined && results === undefined && (
         <div className="flex flex-col gap-2.5 border-t border-line pt-3">
           {MERGES.includes(chosen) && (
@@ -728,6 +748,92 @@ function ShipPanel({
       )}
     </section>,
     document.body,
+  );
+}
+
+/**
+ * A protected repo (infra): never shipped with the others. The owner ships it alone, into its
+ * base, and must type its name first. The server refuses it without that name.
+ */
+function ProtectedRow({
+  task,
+  repo,
+  method,
+  disabled,
+  onResults,
+}: {
+  task: Task;
+  repo: { project: string; base: string; branch: string };
+  method: MergeMethod;
+  disabled: boolean;
+  onResults: (results: ShipResult[]) => void;
+}) {
+  const after = useAfterTaskChange();
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const ready = typed.trim() === repo.project && !busy && !disabled;
+
+  async function ship(push: boolean) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const out = await cmd("tasks.merge", {
+        id: task.id,
+        project: repo.project,
+        targets: { [repo.project]: repo.base },
+        confirmProtected: typed.trim(),
+        done: false,
+        push,
+        method,
+        deleteAfter: false,
+        pushLocalCommits: false,
+        createRemoteBranch: false,
+      });
+      await after(out.task);
+      setTyped("");
+      onResults(out.results);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-amber-line bg-amber-wash px-2.5 py-2">
+      <p className="flex items-start gap-1.5 text-sm text-fg text-pretty">
+        <Lock aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-amber" />
+        <span className="min-w-0">
+          <span className="font-mono">{repo.project}</span> is protected. It never ships with the others. To
+          ship <span className="font-mono">{repo.branch}</span> into{" "}
+          <span className="font-mono">{repo.base}</span> alone, type its name.
+        </span>
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={`Type ${repo.project} to ship it`}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={repo.project}
+          spellCheck={false}
+          autoComplete="off"
+          className="h-8 min-w-0 flex-1 rounded-md border border-line-control bg-field px-2.5 font-mono text-sm text-fg placeholder:text-fg-faint"
+        />
+        <Button size="sm" variant="secondary" disabled={!ready} onClick={() => void ship(false)}>
+          Merge
+        </Button>
+        <Button size="sm" variant="secondary" disabled={!ready} onClick={() => void ship(true)}>
+          {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+          Merge and push
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-red text-pretty">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

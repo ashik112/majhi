@@ -51,6 +51,12 @@ export const ProjectConfigSchema = z.looseObject({
   links: z.array(ProjectLinkSchema).optional(),
   /** Overrides the org's and majhi's `commits.attribution` for this project (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /**
+   * Infra or otherwise sensitive (gitops, terraform, deploy). majhi never adds it to a task by
+   * itself, agents get it read-only unless the owner allows writes for a task, and it ships only
+   * alone, when the owner types its name.
+   */
+  protected: z.boolean().optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -70,6 +76,10 @@ export const ProjectViewSchema = z.object({
   mrRemote: z.string().optional(),
   /** This project's own `commits.attribution`, when it overrides the org's. */
   commits: CommitsPatchSchema.optional(),
+  /** See ProjectConfig.protected. */
+  protected: z.boolean().default(false),
+  /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
+  looksLikeInfra: z.boolean().optional(),
 });
 export type ProjectView = z.infer<typeof ProjectViewSchema>;
 
@@ -172,6 +182,8 @@ export const TaskRepoSchema = z.object({
   pushedAt: z.string().optional(),
   /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
   startCommit: z.string().optional(),
+  /** A protected project the owner let agents write in, for this task. Else agents get it read-only. */
+  writes: z.boolean().optional(),
   /** Set once the MR is open. */
   mr: RepoMrSchema.optional(),
 });

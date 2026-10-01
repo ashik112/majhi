@@ -204,6 +204,8 @@ const TaskReposSchema = z
       project: IdSchema,
       /** The branch it starts from. Default: the project's base. */
       base: LocalBranchSchema.optional(),
+      /** Owner only, for a protected project: let agents write in it for this task. */
+      writes: z.boolean().optional(),
     }),
   )
   .max(20)
@@ -262,6 +264,8 @@ export const ShipOptionsSchema = z.object({
   changed: z.array(z.object({ project: IdSchema, base: z.string(), branch: z.string() })).optional(),
   /** The repos with no change since the task started: every Ship action skips them. */
   unchanged: z.array(IdSchema).optional(),
+  /** Changed repos of protected projects: never in a ship with others, each ships alone when the owner types its name. */
+  protected: z.array(z.object({ project: IdSchema, base: z.string(), branch: z.string() })).optional(),
   /** The first repo's MR host, so the UI can say PR or MR. */
   host: MrHostSchema.optional(),
   /** Merge into a local branch. Nothing is pushed. */
@@ -711,10 +715,10 @@ export const commands = {
   "projects.update": {
     risk: "change",
     summary:
-      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects and agent attribution in commits. null removes remotes, links or the attribution override",
+      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects, agent attribution in commits and whether it is protected (only the owner turns protection off). null removes remotes, links or the attribution override",
     input: z
       .object({ id: IdSchema })
-      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true }).shape)
+      .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true, protected: true }).shape)
       .extend({
         remotes: ProjectConfigSchema.shape.remotes.nullable().optional(),
         links: ProjectConfigSchema.shape.links.nullable().optional(),
@@ -965,6 +969,8 @@ export const commands = {
       pushLocalCommits: z.boolean().default(false),
       /** Owner only. With push: create the target branch on the remote when it has none. */
       createRemoteBranch: z.boolean().default(false),
+      /** Owner only. A protected repo ships only alone (project set to it) with its name typed here. */
+      confirmProtected: z.string().optional(),
       /** Default `merge`: fast-forward when it can, else a merge commit. */
       method: MergeMethodSchema.optional(),
       /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
