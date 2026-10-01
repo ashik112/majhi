@@ -127,7 +127,4 @@ TypeScript end to end, zod at every boundary, and a fake ACP agent so tests neve
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE).
-
-- Free for personal use: learning, hobby projects, your own side projects that earn nothing.
-- Commercial use needs a paid license. That includes freelance and client work, use at a company, and selling or hosting majhi. Contact [@ashik112](https://github.com/ashik112).
+[PolyForm Noncommercial 1.0.0](LICENSE). Contact [@ashik112](https://github.com/ashik112).
