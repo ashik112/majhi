@@ -92,7 +92,13 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
     await say("Building the new image. This takes a few minutes");
     // The runner image too: agents run in it (it is never started by compose).
-    await step("build", ["compose", "--profile", "runner", "build"], BUILD_TIMEOUT_MS);
+    await buildWithRetries(
+      () => step("build", ["compose", "--profile", "runner", "build"], BUILD_TIMEOUT_MS),
+      {
+        say,
+        sleep: options.sleep ?? defaultSleep,
+      },
+    );
 
     try {
       await ensureSecretsKey(options, env, say);
@@ -221,4 +227,40 @@ async function crashReason(step: Step): Promise<string | undefined> {
     .map((l) => l.replace(/^[\w.-]+\s+\|\s?/, "").trim())
     .filter((l) => l !== "");
   return [...lines].reverse().find((l) => /error|exception|failed|cannot|refused/i.test(l));
+}
+
+/** Waits before the 2nd and 3rd try of a build that failed because the network did not answer. */
+export const BUILD_RETRY_MS = [15_000, 45_000] as const;
+
+/** A build error from the network, not from the code: DNS, TLS, timeouts, resets. */
+export function looksLikeNetwork(message: string): boolean {
+  return /no such host|TLS handshake timeout|i\/o timeout|connection reset|connection refused|network is unreachable|failed to fetch oauth token|failed to do request|temporary failure in name resolution|EAI_AGAIN|ETIMEDOUT/i.test(
+    message,
+  );
+}
+
+/** Runs the build, trying again on network errors; the last error says so in plain words. */
+async function buildWithRetries(
+  build: () => Promise<unknown>,
+  deps: { say: (text: string) => Promise<void>; sleep: (ms: number) => Promise<void> },
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await build();
+      return;
+    } catch (err) {
+      const message = errorMessage(err);
+      if (!looksLikeNetwork(message)) throw err;
+      const wait = BUILD_RETRY_MS[attempt];
+      if (wait === undefined) {
+        throw new Error(
+          `build failed: Docker Hub could not be reached after ${attempt + 1} tries. Check your internet connection, then update again.\n${message}`,
+        );
+      }
+      await deps.say(
+        `Docker Hub did not answer. Trying again in ${Math.round(wait / 1000)} seconds (${attempt + 2} of ${BUILD_RETRY_MS.length + 1})`,
+      );
+      await deps.sleep(wait);
+    }
+  }
 }
