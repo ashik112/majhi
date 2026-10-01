@@ -398,7 +398,7 @@ export class AdminService {
 /** The `attachments` a command's input carries, for the check before its card is posted. */
 function attachmentsOf(command: CommandName, input: unknown): string[] {
   const data = input as { attachments?: string[]; children?: { attachments?: string[] }[] };
-  if (command === "tasks.create") return data.attachments ?? [];
+  if (command === "tasks.create" || command === "room.send") return data.attachments ?? [];
   if (command === "tasks.split") return (data.children ?? []).flatMap((c) => c.attachments ?? []);
   return [];
 }

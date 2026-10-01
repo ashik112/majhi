@@ -1029,8 +1029,17 @@ export const commands = {
     input: z.object({
       task: TaskIdSchema,
       text: z.string().max(100_000),
-      /** Upload ids from POST /api/uploads. */
-      attachments: z.array(z.string()).max(20).default([]),
+      /**
+       * Upload ids (from POST /api/uploads or uploads.create), or paths of files in your own task
+       * folder, like attachments/image.png. A path is copied; the original stays.
+       */
+      attachments: z
+        .array(z.string())
+        .max(20)
+        .default([])
+        .describe(
+          "Files to attach: an upload id, or the path of a file in your own task folder like attachments/image.png (copied, the original stays)",
+        ),
       /** `interrupt` stops the current turn and sends at once. */
       mode: z.enum(["queue", "interrupt"]).default("queue"),
       /** Default: the agent @mentioned in the text, else the task's first agent. */

@@ -1,6 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import {
+  copyFile,
+  type FileHandle,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { basename, join } from "node:path";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   ATTACHMENT_TYPES_TEXT,
   type Attachment,
@@ -53,16 +66,15 @@ export class UploadStore {
   }
 
   /**
-   * Copies the file at `path` into the store without reading it into memory. The caller checked
-   * that the path is a regular file it may use.
+   * Copies an open, already checked file into the store and closes the handle. The copy stops
+   * with the size error when more than the limit comes through, so a file that grew after it was
+   * checked cannot fill the disk.
    */
-  async saveFile(input: { path: string; name: string; org?: string | undefined }): Promise<Attachment> {
+  async saveFile(input: { handle: FileHandle; name: string; org?: string | undefined }): Promise<Attachment> {
     const name = safeName(input.name);
-    const size = (await stat(input.path)).size;
-    assertAttachable(name, size, "");
     const id = randomUUID();
     await mkdir(this.dir, { recursive: true });
-    await copyFile(input.path, this.dataPath(id));
+    const size = await copyFromHandle(input.handle, this.dataPath(id), name);
     return this.writeMeta(id, {
       name,
       mime: attachmentMime(name) ?? "application/octet-stream",
@@ -159,6 +171,39 @@ export class UploadStore {
 
   private metaPath(id: string): string {
     return join(this.dir, `${id}.json`);
+  }
+}
+
+/**
+ * Streams an open file to `to` (which must not exist) and closes the handle. Returns the bytes
+ * copied. Throws the size error as soon as more than the limit has come through, and removes the
+ * partial copy on any failure.
+ */
+export async function copyFromHandle(handle: FileHandle, to: string, name: string): Promise<number> {
+  let copied = 0;
+  const limit = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      copied += chunk.length;
+      try {
+        assertAttachable(name, copied, "");
+        done(null, chunk);
+      } catch (err) {
+        done(err as Error);
+      }
+    },
+  });
+  try {
+    await pipeline(
+      handle.createReadStream({ autoClose: false }),
+      limit,
+      createWriteStream(to, { flags: "wx" }),
+    );
+    return copied;
+  } catch (err) {
+    await rm(to, { force: true });
+    throw err;
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 

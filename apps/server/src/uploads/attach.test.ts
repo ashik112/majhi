@@ -1,8 +1,11 @@
-import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { tempDir } from "../testing/fixtures.ts";
+import { type AttachSource, planAttachments, takePlanned } from "./attach.ts";
+import { UploadStore } from "./store.ts";
 
 let w: BossWorld;
 afterEach(() => w?.cleanup());
@@ -248,5 +251,63 @@ describe("attachment errors", () => {
     );
     expect(uploadsCreate.status).toBe(400);
     expect(uploadsCreate.body.error).toContain("is for agents");
+  });
+});
+
+describe("a file swapped after it was checked", () => {
+  async function setup() {
+    const { dir, cleanup } = await tempDir();
+    const folder = join(dir, "LOCAL-1");
+    const source: AttachSource = { task: "LOCAL-1", folder, org: undefined };
+    const secret = join(dir, "other-task", "key.txt");
+    await mkdir(join(dir, "other-task"), { recursive: true });
+    await writeFile(secret, "secret");
+    await mkdir(join(folder, "attachments"), { recursive: true });
+    await writeFile(join(folder, "attachments", "notes.txt"), "notes");
+    const uploads = new UploadStore(dir);
+    const into = join(dir, "LOCAL-2", "attachments");
+    return { dir, folder, source, secret, uploads, into, cleanup };
+  }
+
+  it("refuses a file replaced by a symlink to a file outside the folder", async () => {
+    const t = await setup();
+    try {
+      const planned = await planAttachments(t.uploads, ["attachments/notes.txt"], t.source, undefined);
+      const path = join(t.folder, "attachments", "notes.txt");
+      await rm(path);
+      await symlink(t.secret, path);
+      await expect(takePlanned(t.uploads, planned, t.into)).rejects.toThrow(
+        "changed while it was being attached",
+      );
+      await expect(stat(join(t.into, "notes.txt"))).rejects.toThrow();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("refuses a folder replaced by a symlink to a folder outside", async () => {
+    const t = await setup();
+    try {
+      const planned = await planAttachments(t.uploads, ["attachments/notes.txt"], t.source, undefined);
+      await writeFile(join(t.dir, "other-task", "notes.txt"), "stolen");
+      await rename(join(t.folder, "attachments"), join(t.folder, "attachments-old"));
+      await symlink(join(t.dir, "other-task"), join(t.folder, "attachments"));
+      await expect(takePlanned(t.uploads, planned, t.into)).rejects.toThrow("is outside your task folder");
+      await expect(stat(join(t.into, "notes.txt"))).rejects.toThrow();
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("stops copying a file that grew past the limit after it was checked", async () => {
+    const t = await setup();
+    try {
+      const planned = await planAttachments(t.uploads, ["attachments/notes.txt"], t.source, undefined);
+      await appendFile(join(t.folder, "attachments", "notes.txt"), new Uint8Array(20 * 1024 * 1024 + 1));
+      await expect(takePlanned(t.uploads, planned, t.into)).rejects.toThrow("over the limit of 20 MB");
+      await expect(stat(join(t.into, "notes.txt"))).rejects.toThrow();
+    } finally {
+      await t.cleanup();
+    }
   });
 });

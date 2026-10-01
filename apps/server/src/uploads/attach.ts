@@ -1,9 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { type FileHandle, mkdir, open, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Attachment, attachmentMime } from "@majhi/shared";
 import { errorCode, UserError } from "../errors.ts";
-import { assertAttachable, freeName, safeName, UPLOAD_ID, type UploadStore } from "./store.ts";
+import {
+  assertAttachable,
+  copyFromHandle,
+  freeName,
+  safeName,
+  UPLOAD_ID,
+  type UploadStore,
+} from "./store.ts";
 
 /** The task a caller works in: the only folder it may attach files from. */
 export interface AttachSource {
@@ -21,10 +29,16 @@ export interface AttachTarget {
 /** One entry of `attachments`, checked and ready to move or copy in. */
 export type PlannedAttachment =
   | { kind: "upload"; id: string }
-  | { kind: "path"; real: string; name: string; size: number };
+  | { kind: "path"; entry: string; folder: string; real: string; name: string; size: number };
 
 const HOW =
   "Attachments take an upload id (from majhi_uploads_create or the owner's Attach button) or a path to a file in your own task folder, like attachments/image.png.";
+
+function outsideError(entry: string, folder: string): UserError {
+  return new UserError(
+    `"${entry}" is outside your task folder (${folder}). You can only attach files from your own task folder. Copy the file into it, then pass its path there, like attachments/image.png.`,
+  );
+}
 
 function inOrg(org: string | undefined): string {
   return org === undefined ? "with no org" : `in org ${org}`;
@@ -51,10 +65,7 @@ export async function resolveTaskFile(
         ? `"${entry}" is not an upload id or a file in your task folder (${source.folder}). ${HOW}`
         : `"${entry}" is not a file in your task folder (${source.folder}). Pass a path to a file in your own task folder, like attachments/image.png.`,
     );
-  const outside = () =>
-    new UserError(
-      `"${entry}" is outside your task folder (${source.folder}). You can only attach files from your own task folder. Copy the file into it, then pass its path there, like attachments/image.png.`,
-    );
+  const outside = () => outsideError(entry, source.folder);
   let root: string;
   try {
     root = await realpath(source.folder);
@@ -78,6 +89,40 @@ export async function resolveTaskFile(
   const name = safeName(basename(real));
   assertAttachable(name, info.size, "");
   return { real, name, size: info.size };
+}
+
+/**
+ * Opens the file a path attachment resolved to, at the moment it is copied. The agent shares the
+ * folder, so it can swap the file for a symlink between the check and the copy. The file is opened
+ * without following a link at the end, and the path is resolved again: it must still lie inside
+ * the folder and be the very file that was opened (same device and inode), a regular one. The
+ * caller reads from the returned handle, never from the path.
+ */
+export async function openChecked(item: Extract<PlannedAttachment, { kind: "path" }>): Promise<FileHandle> {
+  const changed = () =>
+    new UserError(
+      `"${item.entry}" changed while it was being attached. Pass a regular file in your task folder, not a link.`,
+    );
+  let handle: FileHandle;
+  try {
+    handle = await open(item.real, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (err) {
+    if (["ELOOP", "ENOENT", "ENOTDIR"].includes(errorCode(err) ?? "")) throw changed();
+    throw err;
+  }
+  try {
+    const opened = await handle.stat();
+    const now = await realpath(item.real).catch(() => {
+      throw changed();
+    });
+    if (!inside(now, await realpath(item.folder))) throw outsideError(item.entry, item.folder);
+    const named = await stat(now);
+    if (!opened.isFile() || named.dev !== opened.dev || named.ino !== opened.ino) throw changed();
+    return handle;
+  } catch (err) {
+    await handle.close().catch(() => undefined);
+    throw err;
+  }
 }
 
 /**
@@ -122,7 +167,7 @@ export async function planAttachments(
         `"${entry}" is in task ${source.task}, which is in org ${source.org}, so it cannot be attached to a task ${inOrg(target.org)}. Files stay inside their org.`,
       );
     }
-    planned.push({ kind: "path", ...file });
+    planned.push({ kind: "path", entry, folder: source.folder, ...file });
   }
   return planned;
 }
@@ -139,16 +184,17 @@ export async function takePlanned(
       out.push(await uploads.take(item.id, dir));
       continue;
     }
+    const handle = await openChecked(item);
     await mkdir(dir, { recursive: true });
     const path = await freeName(dir, item.name);
-    await copyFile(item.real, join(dir, path));
+    const size = await copyFromHandle(handle, join(dir, path), item.name);
     const mime = attachmentMime(item.name) ?? "application/octet-stream";
     out.push({
       id: randomUUID(),
       kind: mime.startsWith("image/") ? "image" : "file",
       name: item.name,
       mime,
-      size: item.size,
+      size,
       path,
     });
   }

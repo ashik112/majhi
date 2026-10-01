@@ -72,7 +72,13 @@ import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TerminalManager } from "../terminal/manager.ts";
 import { taskTerminalKey } from "../terminal/task-terminal.ts";
-import { type AttachSource, planAttachments, resolveTaskFile, takePlanned } from "../uploads/attach.ts";
+import {
+  type AttachSource,
+  openChecked,
+  planAttachments,
+  resolveTaskFile,
+  takePlanned,
+} from "../uploads/attach.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
@@ -1930,7 +1936,8 @@ export class TaskService {
       );
     }
     const file = await resolveTaskFile(source, path, false);
-    return this.deps.uploads.saveFile({ path: file.real, name: file.name, org: source.org });
+    const handle = await openChecked({ kind: "path", entry: path, folder: source.folder, ...file });
+    return this.deps.uploads.saveFile({ handle, name: file.name, org: source.org });
   }
 
   async send(input: {
