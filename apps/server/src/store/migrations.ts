@@ -369,6 +369,15 @@ CREATE TABLE triggers (
 CREATE INDEX triggers_org ON triggers (org);
 `,
   },
+  {
+    // The commit a task's new branch started from. Rows made before it have none: majhi then falls
+    // back to the base branch's newest copy that the task branch contains.
+    id: 103,
+    name: "task repo start commit",
+    sql: `
+ALTER TABLE task_repos ADD COLUMN start_commit TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

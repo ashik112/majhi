@@ -45,7 +45,8 @@ const wt = (name: string) => join(dir, "tasks", "T-1", name);
 describe("createWorktree", () => {
   it("makes a new branch from the base and does not touch the source checkout", async () => {
     const result = await createWorktree({ source, base: "develop", branch: "task/t-1-x", path: wt("api") });
-    expect(result).toEqual({ createdBranch: true, warnings: [] });
+    expect(result).toMatchObject({ createdBranch: true, warnings: [] });
+    expect(result.startCommit).toBe(await testGit(wt("api"), "rev-parse", "HEAD"));
     expect(await readFile(join(wt("api"), "b.txt"), "utf8")).toBe("b\n");
     expect((await testGit(wt("api"), "symbolic-ref", "--short", "HEAD")).trim()).toBe("task/t-1-x");
     expect(await testGit(source, "symbolic-ref", "--short", "HEAD")).toBe("main");

@@ -33,6 +33,8 @@ export interface WorktreeRequest {
 
 export interface WorktreeResult {
   createdBranch: boolean;
+  /** The commit a new branch was cut from. Absent when the branch already existed. */
+  startCommit?: string;
   /** Things the owner should know, like a fetch that failed while offline. */
   warnings: string[];
 }
@@ -98,7 +100,8 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   }
   const baseRef = await resolveBase(source, remote, base);
   await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
-  return { createdBranch: true, warnings };
+  const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
+  return { createdBranch: true, startCommit, warnings };
 }
 
 /** ssh's way of saying no key it had was accepted, or the host could not be verified. */

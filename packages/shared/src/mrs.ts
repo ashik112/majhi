@@ -99,7 +99,9 @@ export const RepoDiffSchema = z.object({
   project: IdSchema,
   base: z.string(),
   branch: z.string(),
-  /** The branch's commits since it left the base, newest first. */
+  /** What the changes are measured from: the ref's name and the commit. Absent when it could not be read. */
+  since: z.object({ label: z.string(), commit: z.string() }).optional(),
+  /** The branch's commits since the task started, newest first. */
   commits: z.array(RepoCommitSchema).default([]),
   files: z.array(RepoDiffFileSchema),
   /** Files past the cap that are not listed. */

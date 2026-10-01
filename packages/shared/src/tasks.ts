@@ -157,6 +157,8 @@ export const TaskRepoSchema = z.object({
   mergeOrder: z.number().int().nonnegative().optional(),
   /** When the branch was last pushed for an MR. */
   pushedAt: z.string().optional(),
+  /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
+  startCommit: z.string().optional(),
   /** Set once the MR is open. */
   mr: RepoMrSchema.optional(),
 });

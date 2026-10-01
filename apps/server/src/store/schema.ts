@@ -54,6 +54,8 @@ export const taskRepos = sqliteTable(
     /** `none`, `pending`, `passing` or `failing`. */
     ciState: text("ci_state"),
     pushedAt: text("pushed_at"),
+    /** The commit the branch was cut from. Null on tasks made before it was recorded. */
+    startCommit: text("start_commit"),
   },
   (t) => [primaryKey({ columns: [t.task, t.project] })],
 );

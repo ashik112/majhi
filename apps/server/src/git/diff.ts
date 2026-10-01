@@ -2,6 +2,7 @@ import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { agentOfCommitter, type RepoCommit, type RepoDiff, type RepoDiffFile } from "@majhi/shared";
 import { git, listUntracked, localBranchExists } from "./git.ts";
+import { changeBase } from "./since-start.ts";
 
 /** Files listed per repo, and patch text kept per file. Past these the owner reads the diff on the host. */
 export const MAX_DIFF_FILES = 300;
@@ -23,11 +24,18 @@ const DIFF_ARGS = [
 ];
 const READ = { maxBufferBytes: MAX_GIT_OUTPUT_BYTES };
 
-type Repo = { project: string; source: string; base: string; branch: string; worktree?: string | undefined };
+type Repo = {
+  project: string;
+  source: string;
+  base: string;
+  branch: string;
+  worktree?: string | undefined;
+  startCommit?: string | undefined;
+};
 
 /**
- * What a task repo changed against its base: the branch's commits since it left the base, plus
- * uncommitted and new files while the worktree exists. The patches are git's own. Before the task
+ * What a task repo changed since it started (`changeBase`: the commit its branch was cut from, not
+ * the local base, which can lag): the branch's commits, plus uncommitted and new files while the worktree exists. The patches are git's own. Before the task
  * first starts, a missing branch is simply not made yet: no changes, not an error.
  */
 export async function repoDiff(
@@ -43,7 +51,8 @@ export async function repoDiff(
       return { ...head, ...empty, error: "The branch is gone, so there is nothing to show." };
     }
     const tip = repo.worktree === undefined ? repo.branch : "HEAD";
-    const mergeBase = (await git(cwd, ["merge-base", repo.base, tip])).trim();
+    const since = await changeBase(cwd, repo, tip);
+    const mergeBase = since.commit;
     const target = repo.worktree === undefined ? [mergeBase, repo.branch] : [mergeBase];
     const names = parseRaw(await git(cwd, [...DIFF_ARGS, "--raw", "-z", ...target], READ));
     const patches = splitPatches(await git(cwd, [...DIFF_ARGS, ...target], READ));
@@ -62,7 +71,14 @@ export async function repoDiff(
       uncommitted = (await git(repo.worktree, ["status", "--porcelain"])).trim() !== "";
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
-    return { ...head, commits, files: withinBudget(files), omitted, uncommitted };
+    return {
+      ...head,
+      since: { label: since.label, commit: since.commit },
+      commits,
+      files: withinBudget(files),
+      omitted,
+      uncommitted,
+    };
   } catch (err) {
     return { ...head, ...empty, error: err instanceof Error ? err.message : String(err) };
   }

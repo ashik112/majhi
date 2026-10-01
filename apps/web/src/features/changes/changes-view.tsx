@@ -22,7 +22,7 @@ export function ChangesView({ task, onSent }: { task: Task; onSent: (item: RoomI
     <section aria-label="Changes" className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto">
       <div className="flex items-center gap-2">
         <p className="text-sm text-fg-muted">
-          Each repo against its base branch: commits and uncommitted work together.
+          Each repo since this task started: commits and uncommitted work together.
         </p>
         <Button
           size="sm"
@@ -63,7 +63,9 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <h2 className="font-mono text-sm font-semibold">{repo.project}</h2>
         <span className="font-mono text-xs text-fg-faint">
-          {repo.branch} against {repo.base}
+          {repo.since === undefined
+            ? `${repo.branch} against ${repo.base}`
+            : `Changes since this task started (from ${repo.since.label} at ${repo.since.commit.slice(0, 7)})`}
         </span>
         <span className="tnum ml-auto flex gap-2 font-mono text-xs">
           <span className="text-fg-muted">{plural(totals.files, "file")}</span>
@@ -90,7 +92,7 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
       )}
       {repo.error && <p className="text-sm text-red text-pretty">{repo.error}</p>}
       {!repo.error && repo.files.length === 0 && (
-        <p className="text-sm text-fg-faint">No changes against {repo.base}.</p>
+        <p className="text-sm text-fg-faint">No changes since this task started.</p>
       )}
       {repo.files.map((file) => (
         <FileDiff
