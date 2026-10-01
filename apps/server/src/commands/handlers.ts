@@ -598,6 +598,8 @@ export function createHandlers({
     },
     "memory.list": async (input) => services.memory.list(input),
     "memory.add": (input, ctx) => services.memory.add(input, ctx.meta.actor),
+    "memory.edit": async (input, ctx) =>
+      services.memory.edit(input.id, { text: input.text, scope: input.scope }, ctx.meta.actor),
     "memory.approve": async (input, ctx) => services.memory.approve(input.id, ctx.meta.actor, input.reason),
     "memory.reject": async (input, ctx) => services.memory.reject(input.id, ctx.meta.actor, input.reason),
     "memory.forget": async (input, ctx) => services.memory.forget(input.id, ctx.meta.actor, input.reason),

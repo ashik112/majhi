@@ -143,4 +143,16 @@ CREATE TABLE memory_meta (
 );
 `,
   },
+  {
+    id: 4,
+    name: "what kind a fact is and who it comes from",
+    sql: `
+-- lesson (an agent learned it), statement (the owner said it), playbook (how a problem was debugged).
+ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'lesson';
+-- agent (inferred) or owner (the owner's own words).
+ALTER TABLE facts ADD COLUMN source TEXT NOT NULL DEFAULT 'agent';
+-- Facts the owner added by hand are the owner's own words.
+UPDATE facts SET kind = 'statement', source = 'owner' WHERE agent = 'owner';
+`,
+  },
 ];

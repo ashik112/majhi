@@ -1,4 +1,12 @@
-import type { Fact, FactStatus, MemoryAction, MemoryEvent, MemoryScope } from "@majhi/shared";
+import type {
+  Fact,
+  FactKind,
+  FactSource,
+  FactStatus,
+  MemoryAction,
+  MemoryEvent,
+  MemoryScope,
+} from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { EMBEDDING_DIMS } from "./migrations.ts";
 
@@ -6,6 +14,8 @@ interface FactRow {
   id: number;
   text: string;
   scope: string;
+  kind: string;
+  source: string;
   task: string | null;
   agent: string | null;
   status: string;
@@ -36,6 +46,10 @@ interface EventRow {
 export interface NewFact {
   text: string;
   scope: MemoryScope;
+  /** Default: lesson. */
+  kind?: FactKind | undefined;
+  /** Default: agent. */
+  source?: FactSource | undefined;
   task?: string | undefined;
   agent?: string | undefined;
   status: FactStatus;
@@ -71,7 +85,7 @@ export interface NewEvent {
 export const MIN_SIMILARITY = 0.25;
 
 const COLUMNS =
-  "id, text, scope, task, agent, status, pinned, promoted, use_count, created_at, valid_from, valid_to, duplicate_of, decided_by";
+  "id, text, scope, kind, source, task, agent, status, pinned, promoted, use_count, created_at, valid_from, valid_to, duplicate_of, decided_by";
 
 /** Words of a text as an FTS5 query: each one quoted, joined by OR. Undefined when there are none. */
 export function ftsQuery(text: string, maxTerms = 48): string | undefined {
@@ -100,12 +114,14 @@ export class MemoryStore {
     const row = this.db.transaction(() => {
       const info = this.db
         .prepare(
-          `INSERT INTO facts (text, scope, task, agent, status, pinned, created_at, valid_from, duplicate_of, decided_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO facts (text, scope, kind, source, task, agent, status, pinned, created_at, valid_from, duplicate_of, decided_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           fact.text,
           fact.scope,
+          fact.kind ?? "lesson",
+          fact.source ?? "agent",
           fact.task ?? null,
           fact.agent ?? null,
           fact.status,
@@ -197,6 +213,20 @@ export class MemoryStore {
          WHERE id = ?`,
       )
       .run(status, decidedBy, status, status, id);
+  }
+
+  /** New words or a new scope for a fact. New words replace its keyword entry and drop its vector, to be embedded again. */
+  edit(id: number, patch: { text?: string | undefined; scope?: MemoryScope | undefined }): void {
+    this.db.transaction(() => {
+      if (patch.scope !== undefined)
+        this.db.prepare("UPDATE facts SET scope = ? WHERE id = ?").run(patch.scope, id);
+      if (patch.text !== undefined) {
+        this.db.prepare("UPDATE facts SET text = ? WHERE id = ?").run(patch.text, id);
+        this.db.prepare("DELETE FROM facts_fts WHERE rowid = ?").run(BigInt(id));
+        this.db.prepare("INSERT INTO facts_fts (rowid, text) VALUES (?, ?)").run(BigInt(id), patch.text);
+        this.db.prepare("DELETE FROM facts_vec WHERE rowid = ?").run(BigInt(id));
+      }
+    })();
   }
 
   setDuplicateOf(id: number, of: number | null): void {
@@ -491,6 +521,8 @@ function toFact(r: FactRow): Fact {
     id: r.id,
     text: r.text,
     scope: r.scope,
+    kind: (r.kind === "statement" || r.kind === "playbook" ? r.kind : "lesson") as FactKind,
+    source: (r.source === "owner" ? "owner" : "agent") as FactSource,
     ...(r.task === null ? {} : { task: r.task }),
     ...(r.agent === null ? {} : { agent: r.agent }),
     status: r.status as FactStatus,

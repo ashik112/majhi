@@ -3,6 +3,8 @@ import {
   detectSecrets,
   type Fact,
   type FactHit,
+  type FactKind,
+  type FactSource,
   type FactStatus,
   type MemoryAction,
   type MemoryEvent,
@@ -157,17 +159,23 @@ export class MemoryService {
     scope: MemoryScope;
     task: string;
     agent: string;
+    kind?: FactKind | undefined;
+    source?: FactSource | undefined;
+    /** Why it went where it did, for the log. */
+    reason?: string | undefined;
   }): Promise<Fact> {
     refuseSecrets(input.text);
     const fact = this.store.insert({
       text: input.text,
       scope: input.scope,
+      kind: input.kind,
+      source: input.source,
       task: input.task,
       agent: input.agent,
       status: "pending",
       at: this.at(),
     });
-    this.log(fact, "proposed", `housekeeper:${input.agent}`);
+    this.log(fact, "proposed", `housekeeper:${input.agent}`, input.reason);
     await this.index(fact);
     return this.mustGet(fact.id);
   }
@@ -179,6 +187,7 @@ export class MemoryService {
     const fact = this.store.insert({
       text: input.text,
       scope: input.scope,
+      ...(who === "owner" ? { kind: "statement" as const, source: "owner" as const } : {}),
       agent: who === "owner" ? "owner" : who.slice("agent:".length),
       status: "active",
       pinned: input.pinned,
@@ -220,6 +229,31 @@ export class MemoryService {
   /** Retires an active fact: valid to is set, and it is no longer recalled. */
   forget(id: number, actor: Actor, reason?: string): Fact {
     return this.move(id, ["active"], "retired", "retired", actor, reason);
+  }
+
+  /**
+   * The owner's edit: new words, a new scope, or both. Logged with what changed; the status stays.
+   * New words are checked for secrets and embedded again.
+   */
+  async edit(
+    id: number,
+    patch: { text?: string | undefined; scope?: MemoryScope | undefined },
+    actor: Actor,
+  ): Promise<Fact> {
+    const fact = this.mustGet(id);
+    const text = patch.text === undefined || patch.text === fact.text ? undefined : patch.text;
+    const scope = patch.scope === undefined || patch.scope === fact.scope ? undefined : patch.scope;
+    if (text === undefined && scope === undefined) return fact;
+    if (text !== undefined) refuseSecrets(text);
+    this.store.edit(id, { text, scope });
+    const changes = [
+      scope === undefined ? undefined : `Moved from ${fact.scope} to ${scope}.`,
+      text === undefined ? undefined : `New words, was: "${fact.text}"`,
+    ].filter((c) => c !== undefined);
+    this.log(fact, "edited", actorName(actor), changes.join(" "));
+    const edited = this.mustGet(id);
+    if (text !== undefined) await this.index(edited);
+    return edited;
   }
 
   pin(id: number, pinned: boolean, actor: Actor): Fact {

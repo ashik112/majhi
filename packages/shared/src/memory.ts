@@ -35,11 +35,24 @@ export const FactStatusSchema = z.enum(["pending", "active", "retired", "rejecte
 export type FactStatus = z.infer<typeof FactStatusSchema>;
 
 export const FactIdSchema = z.number().int().positive();
+
+/**
+ * What a fact is: `lesson`, a gotcha an agent learned; `statement`, a rule, expectation or fact the
+ * owner said; `playbook`, how a problem was debugged (symptom, what was checked, cause, fix).
+ */
+export const FactKindSchema = z.enum(["lesson", "statement", "playbook"]);
+export type FactKind = z.infer<typeof FactKindSchema>;
+
+/** Who it comes from: the owner's own words, or what an agent or the Housekeeper inferred. */
+export const FactSourceSchema = z.enum(["agent", "owner"]);
+export type FactSource = z.infer<typeof FactSourceSchema>;
 export type FactId = z.infer<typeof FactIdSchema>;
 
 /** A fact is one or two sentences. */
 export const MAX_FACT_CHARS = 500;
 export const FactTextSchema = z.string().trim().min(3).max(MAX_FACT_CHARS);
+/** A debugging playbook is four short parts in one fact, so it may be longer. */
+export const MAX_PLAYBOOK_CHARS = 900;
 
 /** What recall puts in TASK.md and returns to an agent: about 500 tokens at 4 characters each. */
 export const RECALL_TOKENS = 500;
@@ -49,6 +62,8 @@ export const FactSchema = z.object({
   id: FactIdSchema,
   text: z.string(),
   scope: MemoryScopeSchema,
+  kind: FactKindSchema.default("lesson"),
+  source: FactSourceSchema.default("agent"),
   /** The task it was learned in. */
   task: TaskIdSchema.optional(),
   /** The agent that proposed it, `owner` when the owner added it. */
@@ -80,6 +95,7 @@ export const MemoryActionSchema = z.enum([
   "duplicate",
   "promoted",
   "unpromoted",
+  "edited",
 ]);
 export type MemoryAction = z.infer<typeof MemoryActionSchema>;
 
@@ -133,6 +149,15 @@ export const MemoryAddInputSchema = z.object({
   scope: MemoryScopeSchema,
   pinned: z.boolean().default(false),
 });
+
+/** The owner edits a fact's words or moves it to another scope. */
+export const MemoryEditInputSchema = z
+  .object({
+    id: FactIdSchema,
+    text: z.string().trim().min(3).max(MAX_PLAYBOOK_CHARS).optional(),
+    scope: MemoryScopeSchema.optional(),
+  })
+  .refine((v) => v.text !== undefined || v.scope !== undefined, "Give a new text or a new scope");
 
 export const MemoryDecideInputSchema = z.object({
   id: FactIdSchema,

@@ -68,6 +68,7 @@ import {
   MemoryBulkDecideInputSchema,
   MemoryBulkDecideOutputSchema,
   MemoryDecideInputSchema,
+  MemoryEditInputSchema,
   MemoryEventSchema,
   MemoryEventsInputSchema,
   MemoryExtractInputSchema,
@@ -1525,6 +1526,13 @@ export const commands = {
     risk: "change",
     summary: "Add an active fact in a scope (global, org:<id> or project:<id>), as the owner",
     input: MemoryAddInputSchema,
+    output: FactSchema,
+  },
+  "memory.edit": {
+    risk: "change",
+    summary:
+      "Edit a fact's words, or move it to another scope (global, org:<id> or project:<id>). Logged with what changed",
+    input: MemoryEditInputSchema,
     output: FactSchema,
   },
   "memory.approve": {
