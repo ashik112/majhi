@@ -32,12 +32,17 @@ majhi turns that into a desk you can run all day:
 
 | | |
 |---|---|
-| **Hand off work in one sentence** | "Fix the export timeout in the API, from develop." The lead agent plans, splits the work, assigns builders and a reviewer, and reports back. |
+| **Hand off work in one sentence** | "Fix the export timeout in the API, from develop." The lead agent plans, splits the work, assigns builders and a reviewer, and reports back. Not every task needs code: start a plain chat, or an investigation that ends in a report. |
 | **Ship from one card** | Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts get fixed with one click. |
+| **Watch and steer live** | See the plan, every step and every file change as it happens. Stop a turn, queue a message, open a terminal, or open any file in VS Code or Cursor. Comment on lines of a diff and send them back as one review. |
+| **Work across repos** | One task can span several repos, with linked pull requests merged in the right order. Big tasks split into subtasks that wait for each other. |
+| **Previews and services** | Agents build and run your app and its databases in their own containers, so you can open a live preview of each task. |
+| **Automate the routine** | Schedules like "weekdays at 9:00" and triggers that react to what happens, to start tasks or wake agents without you. |
+| **It learns your codebase** | Lasting facts from each task are kept per repo and recalled in the next one, so agents stop relearning the same things. |
 | **Run everything by asking** | The boss agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
 | **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
 | **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your Mac's GPU, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
-| **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. |
+| **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. Long sessions compact before they fill up, so costs do not climb. |
 | **Never lose work** | Unshipped commits are counted before any task can close. Updates roll back on their own if something breaks. |
 
 ## Smart where it counts, cheap everywhere else
