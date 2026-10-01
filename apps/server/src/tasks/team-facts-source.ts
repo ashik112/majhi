@@ -81,6 +81,7 @@ export class TeamFactsSource {
       tierOf: (fm) => resolveTier(fm.role, fm.tier, orgTiers?.[fm.role], settings?.tiers[fm.role]),
       running: (await attempt(() => this.running(task, lead, all))) ?? [],
       past: (await attempt(async () => this.past(task, lead, Object.keys(sections?.orgs ?? {})))) ?? [],
+      removed: store.tasks.roomState(task.id).removed ?? [],
     });
   }
 

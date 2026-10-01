@@ -83,6 +83,20 @@ export class AdminService {
     }
   }
 
+  /**
+   * A command that majhi itself asks for on an agent's behalf, like allowing an image a service
+   * needs. It goes through the approval policy as any call of that agent: a rule or an `auto`
+   * mode runs it at once, otherwise a card waits (the text is `WAITING_TEXT`).
+   */
+  request(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    reason: string,
+  ): Promise<ToolResult> {
+    return this.callCommand(caller, command, input, { ownerAsked: false, reason });
+  }
+
   private async callCommand(
     caller: AdminCaller,
     command: CommandName,

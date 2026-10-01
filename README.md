@@ -127,4 +127,4 @@ TypeScript end to end, zod at every boundary, and a fake ACP agent so tests neve
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE).
+[PolyForm Noncommercial 1.0.0](LICENSE). Contact [@ashik112](https://github.com/ashik112).

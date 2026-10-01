@@ -1,4 +1,4 @@
-import type { CommandOutput } from "@majhi/shared";
+import type { CommandInput, CommandOutput } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -31,6 +31,25 @@ export function useFixCheck() {
         client.invalidateQueries({ queryKey: queryKeys.hostStatus }),
       ]);
     },
+  });
+}
+
+/** Done tasks old enough for cleanup, and what a cleanup would do to each. Read again on every press. */
+export function usePreviewCleanup() {
+  return useMutation<CommandOutput<"cleanup.preview">, ApiRequestError, number>({
+    mutationFn: (days) => cmd("cleanup.preview", { days }),
+  });
+}
+
+/** Cleans up the chosen tasks. The server checks each one again. */
+export function useRunCleanup() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"cleanup.run">, ApiRequestError, { tasks: string[]; days: number }>({
+    mutationFn: (input) =>
+      cmd("cleanup.run", input as CommandInput<"cleanup.run">, {
+        reason: "Owner confirmed a cleanup of done tasks",
+      }),
+    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.tasks }),
   });
 }
 

@@ -28,6 +28,8 @@ export interface SessionStart {
   mounts?: RunMount[];
   /** `cwd` is a throwaway folder (the decision stand-in): a runner container uses its own. */
   scratch?: boolean;
+  /** The task the session belongs to: its runner joins the task's service network. */
+  task?: string;
   /** How long `cancel()` waits for the turn to end. Default 10 s. */
   cancelTimeoutMs?: number;
 }

@@ -19,6 +19,11 @@ export interface SpawnRequest {
   mounts?: RunMount[];
   /** `cwd` is a throwaway folder: a runner uses its own instead of mounting one. */
   scratch?: boolean;
+  /**
+   * The task this run belongs to, like `PRV-53`. A runner labels its container with it
+   * (`majhi.task`) and joins the task's own networks, where its service containers run.
+   */
+  task?: string;
 }
 
 export interface RunMount {

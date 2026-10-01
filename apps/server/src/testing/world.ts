@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { vi } from "vitest";
+import type { ContainerDocker } from "../containers/service.ts";
 import type { HostLink } from "../host/link.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
@@ -30,6 +31,7 @@ export interface WorldOptions {
   hostLink?: HostLink;
   probe?: Probe;
   mrHosts?: MrHostOptions;
+  containerDocker?: ContainerDocker;
 }
 
 /**
@@ -45,6 +47,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.hostLink === undefined ? {} : { hostLink: options.hostLink }),
     ...(options.probe === undefined ? {} : { probe: options.probe }),
     ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
+    ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
   });
   const world: World = {
     h,

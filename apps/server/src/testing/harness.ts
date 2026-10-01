@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { COMMAND_META_HEADER } from "@majhi/shared";
+import type { ContainerDocker } from "../containers/service.ts";
 import type { ServerEnv } from "../env.ts";
 import type { HostLink } from "../host/link.ts";
 import { type Embedder, HashEmbedder } from "../memory/embedder.ts";
@@ -42,6 +43,8 @@ export interface HarnessOptions {
   mrHosts?: MrHostOptions;
   /** Replaces the deterministic fake embedder. */
   embedder?: Embedder;
+  /** Replaces the docker CLI of the containers majhi runs for agents. */
+  containerDocker?: ContainerDocker;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -73,6 +76,7 @@ function build(
     ...(hostLink === undefined ? {} : { hostLink }),
     ...(probe === undefined ? {} : { probe }),
     ...(mrHosts === undefined ? {} : { mrHosts }),
+    ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
   });
   const h: Harness = {
     dir,

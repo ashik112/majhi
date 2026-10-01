@@ -104,6 +104,8 @@ export interface FactsInput {
   tierOf: (fm: AgentFrontmatter) => Tier;
   running: readonly RunningFacts[];
   past?: readonly PastPlan[];
+  /** Agents the owner took off the team: a mention does not bring them back, so they are not offered. */
+  removed?: readonly string[];
 }
 
 /** At most this many agents that could join, and running tasks, and files per project. */
@@ -126,7 +128,13 @@ export function buildTeamFacts(input: FactsInput): TeamFacts {
     return status !== undefined && !UNUSABLE.has(status);
   };
   const joinable = agents
-    .filter((a) => !task.team.includes(a.id) && a.id !== input.boss && canWorkIn(a, task.org))
+    .filter(
+      (a) =>
+        !task.team.includes(a.id) &&
+        a.id !== input.boss &&
+        !(input.removed ?? []).includes(a.id) &&
+        canWorkIn(a, task.org),
+    )
     .sort(
       (a, b) =>
         Number(!usable(a)) - Number(!usable(b)) ||

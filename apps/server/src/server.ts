@@ -1,7 +1,9 @@
 import type { Hono } from "hono";
+import { WAITING_TEXT } from "./admin/service.ts";
 import { createDispatcher } from "./commands/dispatch.ts";
 import { createHandlers, requestRemount } from "./commands/handlers.ts";
 import type { ServerEnv } from "./env.ts";
+import { UserError } from "./errors.ts";
 import { topicsFor } from "./events/hub.ts";
 import { HealthService } from "./health/service.ts";
 import { HostLink } from "./host/link.ts";
@@ -92,6 +94,23 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       agents: services.agentStore,
       projects: services.projects,
       processes: services.processes,
+      ...(services.containers.available()
+        ? {
+            containers: {
+              containers: services.containers,
+              askImage: async (caller: { task: string; agent: string }, image: string) => {
+                const result = await services.admin.request(
+                  caller,
+                  "containers.images.allow",
+                  { image },
+                  `A service container needs the image ${image}.`,
+                );
+                if (result.isError) throw new UserError(result.text);
+                return result.text === WAITING_TEXT ? ("pending" as const) : ("allowed" as const);
+              },
+            },
+          }
+        : {}),
       memory: { memory: services.memory, scopeOf: (task) => services.memoryScopes.agent(task) },
     },
     ...(services.runner === undefined

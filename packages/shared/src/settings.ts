@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 
 /**
  * Runtime settings in majhi.yaml that the owner or the boss can change live
@@ -80,6 +81,17 @@ export const RoomSettingsSchema = z.strictObject({
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomPatchSchema = z.strictObject(roomFields).partial();
 
+/** Cleanup of done tasks. */
+const cleanupFields = {
+  /** Tasks done for longer than this many days are offered for cleanup. */
+  after_days: z.number().int().min(1).max(3650),
+};
+export const CleanupSettingsSchema = z.strictObject({
+  after_days: cleanupFields.after_days.default(30),
+});
+export type CleanupSettings = z.infer<typeof CleanupSettingsSchema>;
+export const CleanupPatchSchema = z.strictObject(cleanupFields).partial();
+
 /** Memory curation (5.6). */
 const memoryFields = {
   /**
@@ -124,6 +136,35 @@ const editorFields = { app: EditorAppSchema };
 export const EditorSettingsSchema = z.strictObject({ app: editorFields.app.default("vscode") });
 export type EditorSettings = z.infer<typeof EditorSettingsSchema>;
 export const EditorPatchSchema = z.strictObject(editorFields).partial();
+/** Containers majhi runs for agents: previews and test services (PRV-53). */
+const containersFields = {
+  /** Service images the owner allowed. Changed only by `containers.images.allow` and `.remove`. */
+  images: z.array(ImageRefSchema).max(100),
+  /** CPUs per preview or service container. */
+  cpus: ContainerCpusSchema,
+  /** Memory per preview or service container. */
+  memory: ContainerMemorySchema,
+  /** Previews and services running at once in one task. */
+  per_task: z.number().int().min(1).max(10),
+  /** CPUs of the preview builder. */
+  build_cpus: ContainerCpusSchema,
+  /** Memory of the preview builder. */
+  build_memory: ContainerMemorySchema,
+};
+export const ContainersSettingsSchema = z.strictObject({
+  images: containersFields.images.default([]),
+  cpus: containersFields.cpus.default(1),
+  memory: containersFields.memory.default("2g"),
+  per_task: containersFields.per_task.default(3),
+  build_cpus: containersFields.build_cpus.default(2),
+  build_memory: containersFields.build_memory.default("4g"),
+});
+export type ContainersSettings = z.infer<typeof ContainersSettingsSchema>;
+/** What majhi.yaml may hold and what majhi writes: the limits and the image list. */
+export const ContainersFilePatchSchema = z.strictObject(containersFields).partial();
+/** What `settings.set` accepts: the limits, never `images`, so every new image goes through its own card. */
+export const ContainersPatchSchema = ContainersFilePatchSchema.omit({ images: true });
+export type ContainersPatch = z.infer<typeof ContainersPatchSchema>;
 
 /** How the boss's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
@@ -194,5 +235,7 @@ export const SettingsSchema = z.object({
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
   editor: EditorSettingsSchema,
+  cleanup: CleanupSettingsSchema,
+  containers: ContainersSettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

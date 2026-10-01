@@ -24,6 +24,15 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
+import {
+  ContainerInfoSchema,
+  ContainerNameSchema,
+  ImageRefSchema,
+  PreviewBuildInputSchema,
+  PreviewRunInputSchema,
+  ServiceStartInputSchema,
+} from "./containers.ts";
 import {
   DecideRequestSchema,
   DecisionPatchSchema,
@@ -83,6 +92,8 @@ import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
+  CleanupPatchSchema,
+  ContainersPatchSchema,
   ContextPatchSchema,
   EditorAppSchema,
   EditorPatchSchema,
@@ -890,6 +901,55 @@ export const commands = {
     output: z.object({ process: ProcessInfoSchema }),
   },
 
+  // Containers for agents (PRV-53) ----------------------------------------------
+  "containers.list": {
+    risk: "read",
+    summary:
+      "Running previews and service containers majhi runs for agents, across tasks or for one task, and whether containers are available",
+    input: z.object({ task: TaskIdSchema.optional() }),
+    output: z.object({
+      available: z.boolean(),
+      reason: z.string().optional(),
+      containers: z.array(ContainerInfoSchema),
+    }),
+  },
+  "containers.images.allow": {
+    risk: "change",
+    summary: "Allow an image for service containers that majhi runs for agents",
+    input: z.object({ image: ImageRefSchema }),
+    output: z.object({ images: z.array(ImageRefSchema) }),
+  },
+  "containers.images.remove": {
+    risk: "change",
+    summary: "Stop allowing an image for service containers. Running ones keep running until stopped",
+    input: z.object({ image: ImageRefSchema }),
+    output: z.object({ images: z.array(ImageRefSchema) }),
+  },
+  "containers.preview.build": {
+    risk: "change",
+    summary: "Build the image of a task's repo as its preview, on the task's own builder",
+    input: PreviewBuildInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ process: ProcessInfoSchema }),
+  },
+  "containers.preview.run": {
+    risk: "change",
+    summary: "Run the task's preview image on a free port, with a throwaway folder and nothing of the host",
+    input: PreviewRunInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
+  },
+  "containers.services.start": {
+    risk: "change",
+    summary: "Start a service container (like postgres) for a task's tests, from an image the owner allowed",
+    input: ServiceStartInputSchema.extend({ task: TaskIdSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
+  },
+  "containers.stop": {
+    risk: "change",
+    summary: "Stop the preview of a task (name preview) or one of its service containers",
+    input: z.object({ task: TaskIdSchema, name: ContainerNameSchema }),
+    output: z.object({ container: ContainerInfoSchema }),
+  },
+
   // Task links (5.4a) ---------------------------------------------------------
   "tasks.link": {
     risk: "change",
@@ -1039,7 +1099,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, room, memory or editor settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor). Policy changes use policy.set",
+      "Change context budget, limits, resume, room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, container cpus, memory, per_task). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -1047,6 +1107,8 @@ export const commands = {
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),
+      cleanup: CleanupPatchSchema.optional(),
+      containers: ContainersPatchSchema.optional(),
     }),
     output: SettingsSchema,
   },
@@ -1084,6 +1146,22 @@ export const commands = {
     summary: "Open the boss chat, created on first use. With fresh, archive it and start a new conversation",
     input: z.object({ fresh: z.boolean().optional() }),
     output: TaskSchema,
+  },
+
+  // Cleanup of done tasks ------------------------------------------------------
+  "cleanup.preview": {
+    risk: "read",
+    summary:
+      "List done tasks older than N days (default: the cleanup.after_days setting) with the worktrees, merged task branches and room items a cleanup would remove, and what it would skip and why",
+    input: z.object({ days: z.number().int().min(1).max(3650).optional() }),
+    output: CleanupPreviewSchema,
+  },
+  "cleanup.run": {
+    risk: "destructive",
+    summary:
+      "Clean up the listed done tasks: remove clean worktrees, delete merged task branches and delete room items, keeping one note. Checks each task again and never forces. Dirty worktrees and unmerged branches are kept",
+    input: CleanupRunInputSchema,
+    output: CleanupReportSchema,
   },
 
   // Health and updates (no manual work outside majhi) ------------------------

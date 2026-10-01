@@ -545,6 +545,17 @@ majhi replaces the agent CLIs for everything, not only repo work.
 - **Background processes.** Quick commands run in the agent's own shell. Anything slow or long-running (test suites, builds, dev servers, watchers) the agent starts through the `majhi-processes` MCP tool (`start`, `list`, `output`, `stop`, `restart`), so majhi owns the process. The ACP adapters majhi ships do not use client terminals, so majhi does not rely on them (DECISIONS.md, 2026-09-30). A process runs with the session's environment and mounts, in a folder inside the task folder. With `wait` (the default), when it exits by itself majhi wakes the agent that started it with the exit code and the last lines of output, and a task in review runs again; while it runs, the task stays running and the room shows "Waiting for" it. `wait: false` is for servers and watchers. Processes show in a Processes card in the task view: name, command, running time, port, output tail, and a Stop button or the exit code. Agents are told what is already running so they do not start a second copy. Stopping or closing the task stops its processes; at most 5 run at once per task.
 - **CLI parity.** Slash commands the agent advertises over ACP work from the composer. `@file` mentions autocomplete from the task's worktrees. Pasted images and files attach. Any past session can be resumed. An embedded terminal opens in the task folder, and any file path opens in the owner's editor.
 
+#### Containers for agents
+
+Agents run without Docker on purpose (the socket is root on the Mac). When they need containers (to build and try a branch of majhi itself, or a database for tests), majhi runs them from a short list of actions, never a raw socket. The `majhi-containers` MCP tool (on for every session when majhi runs in Docker) has `preview_build`, `preview_run`, `preview_stop`, `service_start`, `service_stop`, `list` and `logs`. The boss and the Hub have the same actions as `containers.*` commands.
+
+- **Preview.** `preview_build` builds a repo's Dockerfile as `majhi-preview-<task>` on the task's own BuildKit builder, as a process that wakes the agent when it ends. `preview_run` runs it with a throwaway folder and nothing of the host, on the runner network, with one port on `127.0.0.1` for the owner's link.
+- **Services.** `service_start` runs an allowed image (postgres, redis) on a per-task internal network that only that task's runners join, with only named volumes majhi creates for the task. A port is never published.
+- **Images.** A new image asks the owner once through an approval card (`containers.images.allow`), and PRV-49's always-allow rules apply. `settings.get` lists the allowed images.
+- **Limits.** `containers` in `majhi.yaml`: `cpus`, `memory`, `per_task`, `build_cpus`, `build_memory`.
+- **Processes.** Each container is a majhi process: the Processes card, `majhi-processes output`, Stop and waking the agent work as for any process.
+- **Cleanup.** Stopping a task removes its containers and network and keeps its volumes. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start.
+
 ### 5.16 The boss and the control plane
 
 The owner can run majhi by talking to one agent. The boss sets things up, changes them, runs tasks and debugs, the way the owner would use a CLI agent today, but with access to all of majhi.
@@ -593,7 +604,8 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 - API keys are injected only into runs on the account they belong to, never logged, and never written to TASK.md or the room.
 - The Jev decision provider sends task text to a hosted API. It is off by default and must be enabled by the owner.
 - Config changes and folder moves follow the boss's approval policy (5.16). Every change is a commit in `~/.majhi`, and every approval is logged in the audit table.
-- Secrets pasted into a chat are stored in `secrets.age` and replaced with a reference before any agent sees them (5.16).
+- Secrets pasted into a chat are stored in `secrets.age` and replaced with a reference before any agent sees them (5.16)
+- Containers majhi runs for agents (5.15) never get a bind mount, the Docker socket, `~/.majhi`, the secrets key or `~/.ssh`: every docker call is built by majhi from checked values and refused unless each flag is on an allow list.
 
 ---
 

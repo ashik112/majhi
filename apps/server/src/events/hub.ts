@@ -49,6 +49,8 @@ export function topicsFor(command: string): EventTopic[] {
       return ["usage", "config"];
     case "memory":
       return ["memory"];
+    case "containers":
+      return ["containers", "config"];
     default:
       return [];
   }
