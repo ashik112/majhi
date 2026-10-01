@@ -223,7 +223,10 @@ describe("offline", () => {
       return start(s);
     };
     expect((await w.h.cmd("tasks.create", { text: "fix api", start: true })).status).toBe(200);
-    await until(() => w.h.majhi.services.room.getLive("ACM-1", "acme-builder")?.status === "starting", "the start");
+    await until(
+      () => w.h.majhi.services.room.getLive("ACM-1", "acme-builder")?.status === "starting",
+      "the start",
+    );
     await failFor(kit, 45_000);
     expect(w.h.majhi.services.resilience.network.online).toBe(false);
     await backOnline(kit);
