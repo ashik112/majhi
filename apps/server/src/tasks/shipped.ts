@@ -54,6 +54,20 @@ export async function unshippedCommits(repo: TaskRepo): Promise<number> {
     ]);
     return Number(out.trim()) || 0;
   }
+  return aheadOf(cwd, upstreams, tip);
+}
+
+/**
+ * Commits of `tip` that `base` (the local branch or a remote's copy) does not have: by ancestry, a
+ * patch-equivalent commit (`git cherry`: rebased or cherry-picked) or a squash. Zero when it is in;
+ * undefined when the repo has no such base.
+ */
+export async function aheadOfBase(cwd: string, base: string, tip: string): Promise<number | undefined> {
+  const upstreams = await baseRefs(cwd, base);
+  return upstreams.length === 0 ? undefined : aheadOf(cwd, upstreams, tip);
+}
+
+async function aheadOf(cwd: string, upstreams: readonly string[], tip: string): Promise<number> {
   let fewest = Number.POSITIVE_INFINITY;
   for (const upstream of upstreams) {
     const cherry = await git(cwd, ["cherry", upstream, tip]);

@@ -36,6 +36,7 @@ import { Housekeeper } from "./memory/housekeeper.ts";
 import { Promotion } from "./memory/promote.ts";
 import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
+import { landedNow } from "./memory/task-git.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
@@ -201,6 +202,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const store = Store.open(env.majhiHome);
   const memory = createMemory(env.majhiHome, options.embedder);
+  memory.project.setLanded(async (task, repo) => {
+    const found = store.tasks
+      .get(task)
+      ?.repos.find((r) => r.project === repo.project && r.branch === repo.branch);
+    return found === undefined ? undefined : landedNow(found, repo.head);
+  });
   const memoryScopes = new TaskScopes(store, config);
   const room = new RoomService(store, join(env.majhiHome, "cache", "agent-commands.json"));
   const agents = new AgentService(config, agentStore, cache, accounts, Date.now, {

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { TaskRepo } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { git, makeRepo } from "../testing/fixtures.ts";
-import { repoFacts } from "./task-git.ts";
+import { landedNow, repoFacts } from "./task-git.ts";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -82,5 +82,25 @@ describe("what git says about a finished task's branch", () => {
 
     const gone = await repoFacts(task("task/acm-9"), start);
     expect(gone).toMatchObject({ repo: { commits: 0, merged: false }, problem: "The branch is gone." });
+  });
+});
+
+describe("whether a finished task's branch is in its base now", () => {
+  it("says no before a merge, yes after a squash merge, and still yes once the branch is gone", async () => {
+    const { path, commit, task } = await repo();
+    await git(path, "checkout", "--quiet", "-b", "task/acm-1");
+    await commit("health.ts", "export const ok = true;\n", "feat: health check");
+    await commit("docs/PROGRESS.md", "# Progress\n", "docs: progress");
+    const head = await git(path, "rev-parse", "--short", "HEAD");
+    await git(path, "checkout", "--quiet", "main");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(false);
+
+    await git(path, "merge", "--squash", "task/acm-1");
+    await git(path, "commit", "--quiet", "-m", "squashed");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(true);
+
+    await git(path, "branch", "-D", "task/acm-1");
+    expect(await landedNow(task("task/acm-1"), head)).toBe(true);
+    expect(await landedNow(task("task/acm-1"), undefined)).toBe(false);
   });
 });

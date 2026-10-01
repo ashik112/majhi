@@ -492,7 +492,7 @@ export function createHandlers({
     }),
     "memory.records": async (input) =>
       services.memory.project.records({ query: input.query, project: input.project, limit: input.limit }),
-    "memory.record": async (input) => services.memory.project.record(input.task) ?? null,
+    "memory.record": async (input) => (await services.memory.project.recordNow(input.task)) ?? null,
     "memory.brief": async (input) => services.memory.project.brief(input.project),
     "memory.restoreBrief": async (input) =>
       services.memory.project.restoreBrief(input.project, input.version),
