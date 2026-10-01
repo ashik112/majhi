@@ -39,6 +39,11 @@ export async function remoteUrl(repo: string, remote: string): Promise<string> {
  * failure the keys are reloaded once and the push is tried again.
  */
 export async function pushBranch(req: PushRequest): Promise<void> {
+  // Read before the push: if the branch moves meanwhile, the tracking branch lags, never leads.
+  const tip = await git(req.worktree, ["rev-parse", "--verify", "--quiet", `refs/heads/${req.branch}`]).then(
+    (s) => s.trim(),
+    () => undefined,
+  );
   const args = [
     "push",
     "--quiet",
@@ -47,7 +52,7 @@ export async function pushBranch(req: PushRequest): Promise<void> {
   ];
   try {
     await git(req.worktree, args, { timeoutMs: PUSH_TIMEOUT_MS });
-    return;
+    return await tracked(req, tip);
   } catch (err) {
     const first = asPush(err);
     if (!isSshAuthFailure(first.message) || req.reloadKeys === undefined) throw first;
@@ -58,6 +63,18 @@ export async function pushBranch(req: PushRequest): Promise<void> {
   } catch (err) {
     throw asPush(err);
   }
+  await tracked(req, tip);
+}
+
+/**
+ * A push to the alias URL does not move the remote's tracking branch the way a push to the remote
+ * does. Moves it, so "is this pushed" reads the truth until the next fetch.
+ */
+async function tracked(req: PushRequest, tip: string | undefined): Promise<void> {
+  if (req.url === undefined || tip === undefined) return;
+  await git(req.worktree, ["update-ref", `refs/remotes/${req.remote}/${req.branch}`, tip]).catch(
+    () => undefined,
+  );
 }
 
 function asPush(err: unknown): PushProblem {

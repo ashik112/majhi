@@ -164,10 +164,27 @@ const MergeResultSchema = z.object({
   into: z.string(),
   ok: z.boolean(),
   detail: z.string(),
+  /** The files that conflicted, when a merge stopped on conflicts. Nothing was merged. */
+  conflicts: z.array(z.string()).optional(),
 });
 
+/** How a merge lands the task branch: a merge commit, one squashed commit, or a rebase and fast-forward. */
+export const MergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
+export type MergeMethod = z.infer<typeof MergeMethodSchema>;
+
+/** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
+export const ShipFixSchema = z.discriminatedUnion("page", [
+  z.object({ page: z.literal("projects"), project: IdSchema }),
+  z.object({ page: z.literal("orgs"), org: IdSchema }),
+]);
+export type ShipFix = z.infer<typeof ShipFixSchema>;
+
 /** One action: allowed now, or why not and where to fix it. */
-export const ShipOptionSchema = z.object({ ok: z.boolean(), why: z.string().optional() });
+export const ShipOptionSchema = z.object({
+  ok: z.boolean(),
+  why: z.string().optional(),
+  fix: ShipFixSchema.optional(),
+});
 export type ShipOption = z.infer<typeof ShipOptionSchema>;
 
 /** `tasks.shipOptions`: what Ship and the review card may do now. */
@@ -721,7 +738,7 @@ export const commands = {
   "tasks.merge": {
     risk: "outbound",
     summary:
-      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push)",
+      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push). method picks a merge commit, one squashed commit, or a rebase of the task branch and a fast-forward; the target is never rewritten, and a conflict changes nothing. With deleteAfter, a clean run removes the worktree and the local branch majhi created",
     input: z.object({
       id: TaskIdSchema,
       /** The branch to merge into. Default: each repo's base branch. */
@@ -731,6 +748,10 @@ export const commands = {
       done: z.boolean().default(false),
       /** Push the merged branch afterwards. */
       push: z.boolean().default(false),
+      /** Default `merge`: fast-forward when it can, else a merge commit. */
+      method: MergeMethodSchema.optional(),
+      /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
+      deleteAfter: z.boolean().default(false),
     }),
     output: z.object({
       results: z.array(MergeResultSchema),
@@ -762,8 +783,8 @@ export const commands = {
   "tasks.push": {
     risk: "outbound",
     summary:
-      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused",
-    input: z.object({ id: TaskIdSchema }),
+      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
+    input: z.object({ id: TaskIdSchema, deleteAfter: z.boolean().default(false) }),
     output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
   },
   // Merge requests (5.5) ------------------------------------------------------
@@ -1006,6 +1027,10 @@ export const commands = {
       action: CardActionSchema,
       /** For merge: the local branch to merge into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** For merge and mergePush. Default `merge`. */
+      method: MergeMethodSchema.optional(),
+      /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */
+      deleteAfter: z.boolean().optional(),
     }),
     output: z.object({
       item: RoomItemSchema,

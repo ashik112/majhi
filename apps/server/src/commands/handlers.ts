@@ -203,7 +203,7 @@ export function createHandlers({
         ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
         : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
-    "tasks.push": (input) => services.mrs.push(input.id),
+    "tasks.push": (input) => services.mrs.push(input.id, input.deleteAfter),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
     "tasks.mergeOrder": (input) => services.mrs.order(input.id),

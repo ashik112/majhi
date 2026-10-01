@@ -72,7 +72,8 @@ describe("mergeBranch", () => {
 
 const tip = async (cwd: string, ref: string) => (await git(cwd, ["rev-parse", ref])).trim();
 const task = () => join(root, "task");
-const exists = (cwd: string, path: string) => git(cwd, ["rev-parse", "--git-path", path]).then((p) => p.trim());
+const exists = (cwd: string, path: string) =>
+  git(cwd, ["rev-parse", "--git-path", path]).then((p) => p.trim());
 
 describe("mergeBranch with squash", () => {
   it("adds one commit on the target with the message and leaves the task branch as it was", async () => {

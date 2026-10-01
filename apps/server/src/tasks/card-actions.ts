@@ -1,10 +1,10 @@
-import type { CardAction, RoomItem } from "@majhi/shared";
+import type { CardAction, MergeMethod, RoomItem } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { TaskService } from "./service.ts";
 
-type Result = { project: string; into: string; ok: boolean; detail: string };
+type Result = { project: string; into: string; ok: boolean; detail: string; conflicts?: string[] };
 
 /**
  * The buttons on a review or paused card (`room.cardAction`). Refused when the card was already
@@ -21,6 +21,8 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    method?: MergeMethod | undefined;
+    deleteAfter?: boolean | undefined;
     by: string;
   }): Promise<{ item: RoomItem; results?: Result[] }> {
     const key = `${input.task}\u0000${input.item}`;
@@ -38,6 +40,8 @@ export class CardActions {
     item: string;
     action: CardAction;
     into?: string | undefined;
+    method?: MergeMethod | undefined;
+    deleteAfter?: boolean | undefined;
     by: string;
   }): Promise<{ item: RoomItem; results?: Result[] }> {
     const { tasks, mrs, room } = this.deps;
@@ -64,15 +68,29 @@ export class CardActions {
         await tasks.close(task.id, { whenSubtasksOpen: "refuse", by: input.by });
         return { item: current() };
       case "merge": {
-        const out = await tasks.merge({ id: task.id, into: input.into, done: true, by: input.by });
+        const out = await tasks.merge({
+          id: task.id,
+          into: input.into,
+          done: true,
+          by: input.by,
+          method: input.method,
+          deleteAfter: input.deleteAfter,
+        });
         return { item: current(), results: out.results };
       }
       case "mergePush": {
-        const out = await mrs.mergeAndPush({ id: task.id, into: input.into, done: true, by: input.by });
+        const out = await mrs.mergeAndPush({
+          id: task.id,
+          into: input.into,
+          done: true,
+          by: input.by,
+          method: input.method,
+          deleteAfter: input.deleteAfter,
+        });
         return { item: current(), results: out.results };
       }
       case "push": {
-        const out = await mrs.push(task.id);
+        const out = await mrs.push(task.id, input.deleteAfter === true);
         return { item: current(), results: out.results };
       }
       case "mr": {

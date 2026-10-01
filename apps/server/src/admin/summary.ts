@@ -33,10 +33,13 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.close": (i) => `Mark ${str(i.id)} done`,
   "tasks.reopen": (i) => `Reopen ${str(i.id)}`,
   "tasks.merge": (i) =>
-    `Merge ${str(i.id)} into ${str(i.into) || "its base"}${i.push === true ? " and push" : ""}${
-      i.done === true ? ", then mark it done" : ""
+    `${i.method === "squash" ? "Squash" : i.method === "rebase" ? "Rebase and merge" : "Merge"} ${str(i.id)} into ${
+      str(i.into) || "its base"
+    }${i.push === true ? " and push" : ""}${i.done === true ? ", then mark it done" : ""}${
+      i.deleteAfter === true ? ", then delete the local branch and worktree" : ""
     }`,
-  "tasks.push": (i) => `Push the branch of ${str(i.id)}`,
+  "tasks.push": (i) =>
+    `Push the branch of ${str(i.id)}${i.deleteAfter === true ? ", then delete the local branch and worktree" : ""}`,
   "tasks.openMrs": (i) => `Open merge requests for ${str(i.id)}`,
   "tasks.mergeMrs": (i) => `Merge the merge requests of ${str(i.id)}`,
   "tasks.markMerged": (i) => `Record the merge requests of ${str(i.id)} as merged`,
