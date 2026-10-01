@@ -66,7 +66,8 @@ export function looksLikeNote(text: string): boolean {
 export function itemLine(item: RoomItem): string | undefined {
   switch (item.type) {
     case "owner":
-      return item.text.trim() === "" ? undefined : `Owner: ${item.text.trim()}`;
+      // A queued message is not part of the story yet (it comes as its own prompt), a removed one never is.
+      return item.text.trim() === "" || item.queued || item.removed === true ? undefined : `Owner: ${item.text.trim()}`;
     case "agent":
       return item.text.trim() === "" ? undefined : `@${item.agent}: ${item.text.trim()}`;
     case "tool":

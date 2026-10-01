@@ -1196,6 +1196,18 @@ export const commands = {
     input: z.object({ task: TaskIdSchema, agent: IdSchema.optional() }),
     output: z.object({ cancelled: z.array(IdSchema) }),
   },
+  "room.sendNow": {
+    risk: "change",
+    summary: "Send a queued message now: stops its agent's current turn and sends this message first",
+    input: z.object({ task: TaskIdSchema, item: z.string().min(1).max(200) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
+  "room.unqueue": {
+    risk: "change",
+    summary: "Remove a queued message before it is sent. The agent never gets it",
+    input: z.object({ task: TaskIdSchema, item: z.string().min(1).max(200) }),
+    output: z.object({ item: RoomItemSchema }),
+  },
   "room.permission": {
     risk: "change",
     summary: "Answer a permission prompt",

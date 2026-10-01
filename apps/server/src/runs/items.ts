@@ -175,13 +175,14 @@ type PermissionPayload = Extract<RoomPayload, { type: "permission" }>;
 /** An owner item's own fields with some replaced, to write it back. */
 export function ownerPayload(
   item: Extract<RoomItem, { type: "owner" }>,
-  patch: Partial<Pick<OwnerPayload, "queued">>,
+  patch: Partial<Pick<OwnerPayload, "queued" | "removed">>,
 ): OwnerPayload {
   return {
     type: "owner",
     text: item.text,
     attachments: item.attachments,
     queued: patch.queued ?? item.queued,
+    ...((patch.removed ?? item.removed) === true ? { removed: true } : {}),
     ...(item.to === undefined ? {} : { to: item.to }),
   };
 }

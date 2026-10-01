@@ -21,7 +21,7 @@ import { type HeldSecret, redactSecrets } from "../connections/redact.ts";
 import { type RunConnections, removeRunFiles } from "../connections/run-files.ts";
 import type { Decisions } from "../decisions/api.ts";
 import { readDecisionSettings } from "../decisions/settings.ts";
-import { errorMessage } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import { noticeText, sameRun, splitCurrent } from "../processes/notices.ts";
 import { runningLine } from "../processes/text.ts";
 import type { RoomService } from "../room/service.ts";
@@ -209,6 +209,15 @@ export class RunManager {
       this.resumeRun(run, "the task was resumed");
       return;
     }
+    // Resume during a turn has nothing to restart: say so, so the owner knows why nothing changes.
+    if (run.turning && run.session !== undefined && !run.settling && !run.closing) {
+      const waiting = run.queue.some((e) => e.kind === "owner");
+      this.live.system(
+        run,
+        "info",
+        `@${agent} is still working on its turn.${waiting ? " Your queued messages go when it ends." : ""}`,
+      );
+    }
     run.held = false;
     this.live.refreshQueued(run);
     // Nothing queued: an empty loop would hand the task back for review before the owner's message lands.
@@ -291,15 +300,13 @@ export class RunManager {
     also: readonly string[],
   ): Promise<void> {
     const run = this.runFor(task, agent);
-    const interrupt = run.turning && mode === "interrupt";
-    if (!hasOwnerEntry(run, itemId)) {
-      if (interrupt) run.queue.unshift({ kind: "owner", itemId });
-      else run.queue.push({ kind: "owner", itemId });
+    if (mode === "interrupt") await this.sendFirst(run, itemId);
+    else {
+      if (!hasOwnerEntry(run, itemId)) run.queue.push({ kind: "owner", itemId });
+      run.held = false;
+      this.live.refreshQueued(run);
+      void this.drive(run);
     }
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (interrupt) await this.cancelRun(run);
-    void this.drive(run);
     for (const other of also) {
       if (other === agent) continue;
       const extra = this.runFor(task, other);
@@ -308,6 +315,62 @@ export class RunManager {
       this.live.refreshQueued(extra);
       void this.drive(extra);
     }
+  }
+
+  /**
+   * "Send now" on a queued owner message: it moves to the front of each queue it waits in, and an
+   * agent in the middle of a turn stops it, so the message goes at once. Refused once it was sent.
+   */
+  async sendNow(task: Task["id"], itemId: string): Promise<RoomItem> {
+    const item = this.queuedOwner(task, itemId);
+    if (item.to !== undefined) this.runFor(task, item.to);
+    const holders = this.holders(task, itemId);
+    if (holders.length === 0) throw new UserError("That message is not waiting for any agent.", 409);
+    await Promise.all(holders.map((run) => this.sendFirst(run, itemId)));
+    return item;
+  }
+
+  /** "Remove" on a queued owner message: no agent gets it, and the room shows it as removed. */
+  unqueue(task: Task["id"], itemId: string): RoomItem {
+    const item = this.queuedOwner(task, itemId);
+    if (item.to !== undefined) this.runFor(task, item.to);
+    for (const run of this.holders(task, itemId)) {
+      run.queue = run.queue.filter((e) => !(e.kind === "owner" && e.itemId === itemId));
+      this.live.refreshQueued(run);
+    }
+    this.deps.room.post(task, itemId, ownerPayload(item, { queued: false, removed: true }));
+    const stored = this.deps.room.get(task, itemId);
+    if (stored === undefined) throw new Error("The message was not stored");
+    return stored;
+  }
+
+  /** The owner message, while it still waits for its agent's turn. */
+  private queuedOwner(task: Task["id"], itemId: string): Extract<RoomItem, { type: "owner" }> {
+    const item = this.deps.room.get(task, itemId);
+    if (item === undefined || item.type !== "owner") throw new UserError("That message does not exist.", 404);
+    if (item.removed === true) throw new UserError("That message was removed.", 409);
+    if (!item.queued) throw new UserError("That message was already sent.", 409);
+    return item;
+  }
+
+  /** Runs of the task with this owner message in their queue. */
+  private holders(task: Task["id"], itemId: string): AgentRun[] {
+    return [...this.runs.values()].filter((r) => r.task === task && hasOwnerEntry(r, itemId));
+  }
+
+  /**
+   * Puts an owner message first in the run's queue and sends it as soon as it can: a turn in
+   * progress is cancelled for it. A session still opening sends it first anyway, so nothing is
+   * cancelled then (a cancel before the first prompt would hold the queue, this message too).
+   */
+  private async sendFirst(run: AgentRun, itemId: string): Promise<void> {
+    run.queue = run.queue.filter((e) => !(e.kind === "owner" && e.itemId === itemId));
+    run.queue.unshift({ kind: "owner", itemId });
+    run.held = false;
+    run.cancelBeforePrompt = false;
+    this.live.refreshQueued(run);
+    if (run.turning && run.session !== undefined && !run.settling) await this.cancelRun(run);
+    void this.drive(run);
   }
 
   /**
@@ -907,7 +970,7 @@ export class RunManager {
     session: NonNullable<AgentRun["session"]>,
     blocks: PromptBlock[],
   ): Promise<string | undefined> {
-    this.setLive(run, { status: "working", nowDoing: undefined });
+    this.setLive(run, { status: "working", nowDoing: undefined, turnAt: this.now().toISOString() });
     run.mapper?.beginTurn();
     this.markTurn(run, true);
     let stopReason: string;
@@ -1084,7 +1147,7 @@ export class RunManager {
       }
       case "owner": {
         const item = this.deps.room.get(run.task, entry.itemId);
-        if (item === undefined || item.type !== "owner") return undefined;
+        if (item === undefined || item.type !== "owner" || item.removed === true) return undefined;
         if (item.queued) this.deps.room.post(item.task, item.id, ownerPayload(item, { queued: false }));
         const built = await ownerBlocks({
           folder: task.folder,
@@ -1161,7 +1224,7 @@ export class RunManager {
     else if (stopReason === "max_turn_requests")
       this.live.system(run, "warn", `@${run.agent} stopped: it reached its turn limit.`);
     else if (stopReason === "refusal") this.live.system(run, "warn", `@${run.agent} declined to continue.`);
-    this.setLive(run, { nowDoing: undefined });
+    this.setLive(run, { nowDoing: undefined, turnAt: undefined });
   }
 
   /** A turn starts (busy) or ends. Ending with `clear` means it finished: nothing to continue after a crash. */

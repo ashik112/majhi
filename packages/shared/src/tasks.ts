@@ -547,6 +547,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     attachments: z.array(AttachmentSchema),
     /** Sent while the agent was busy: waits for its next turn. */
     queued: z.boolean(),
+    /** The owner took it out of the queue before it was sent: the agent never got it. */
+    removed: z.boolean().optional(),
     /** The agent it went to. */
     to: IdSchema.optional(),
   }),
@@ -778,6 +780,8 @@ export const AgentLiveSchema = z.object({
   nowDoing: z.string().optional(),
   /** When the agent last sent anything (text, thought, tool call), sent at most every few seconds. */
   activeAt: z.string().optional(),
+  /** When the current turn started, while it runs. */
+  turnAt: z.string().optional(),
   /** Messages waiting for its next turn. */
   queued: z.number().int().nonnegative(),
   usage: z.object({ used: z.number().nonnegative(), size: z.number().positive() }).optional(),

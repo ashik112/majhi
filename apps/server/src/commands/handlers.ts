@@ -490,6 +490,14 @@ export function createHandlers({
       return { item };
     },
     "room.cancel": async (input) => ({ cancelled: await services.tasks.cancel(input.task, input.agent) }),
+    "room.sendNow": async (input) => {
+      services.tasks.get(input.task);
+      return { item: await services.runs.sendNow(input.task, input.item) };
+    },
+    "room.unqueue": async (input) => {
+      services.tasks.get(input.task);
+      return { item: services.runs.unqueue(input.task, input.item) };
+    },
     "room.permission": async (input) => ({
       item: services.tasks.answerPermission(input.task, input.item, input.option),
     }),
