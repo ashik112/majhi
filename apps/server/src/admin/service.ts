@@ -115,7 +115,7 @@ export class AdminService {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for ${command}.\n${details.join("\n")}`);
     }
-    const done = await this.execute(command, input, metaFor(caller.agent, ask.reason));
+    const done = await this.execute(command, input, metaFor(caller.agent, ask.reason, caller.task));
     const held = !done.ok && ask.accept?.(done.error) === true;
     this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
       ...cardOf(caller.agent, command, input, ask.reason),
@@ -139,9 +139,11 @@ export class AdminService {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for ${command}.\n${details.join("\n")}`);
     }
+    // A bad attachment fails now, not after the owner approved the card.
+    await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const { policy } = await this.deps.config.settings();
     const mode = modeFor(policy, command, def.risk);
-    const meta = metaFor(caller.agent, ask.reason);
+    const meta = metaFor(caller.agent, ask.reason, caller.task);
     // A saved rule turns a card that would wait into a run. It is looked up only then.
     const decision = decideMode(mode, ask.ownerAsked);
     const rule =
@@ -227,7 +229,7 @@ export class AdminService {
       const done = await this.execute(
         item.command as CommandName,
         input,
-        metaFor(item.agent, item.reason ?? ""),
+        metaFor(item.agent, item.reason ?? "", item.task),
       );
       this.pending.delete(item.id);
       const applied = this.update(item, {
@@ -393,10 +395,18 @@ export class AdminService {
   }
 }
 
+/** The `attachments` a command's input carries, for the check before its card is posted. */
+function attachmentsOf(command: CommandName, input: unknown): string[] {
+  const data = input as { attachments?: string[]; children?: { attachments?: string[] }[] };
+  if (command === "tasks.create") return data.attachments ?? [];
+  if (command === "tasks.split") return (data.children ?? []).flatMap((c) => c.attachments ?? []);
+  return [];
+}
+
 type ApprovalPayload = Parameters<RoomService["post"]>[2];
 
-function metaFor(agent: string, reason: string): CommandMeta {
-  return { actor: { kind: "agent", id: agent }, ...(reason === "" ? {} : { reason }) };
+function metaFor(agent: string, reason: string, task: string): CommandMeta {
+  return { actor: { kind: "agent", id: agent }, task, ...(reason === "" ? {} : { reason }) };
 }
 
 function cardOf(agent: string, command: CommandName, input: unknown, reason: string) {

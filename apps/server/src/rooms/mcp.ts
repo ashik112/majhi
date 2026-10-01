@@ -106,6 +106,12 @@ const ROOM_TOOLS: Tool[] = [
     }),
   },
   {
+    name: "uploads_create",
+    description:
+      "Turn a file in your own task folder (like attachments/image.png) into an upload id. Pass the id in the attachments of tasks_create or tasks_split, or give the file path itself there. Copies the file; the original stays. Allowed: images, pdf, text files, zip, up to 20 MB. The id is kept for 24 hours and can be used once.",
+    input: z.object({ path: z.string().trim().min(1).max(1000) }),
+  },
+  {
     name: "record_plan",
     description:
       "Record your plan for this task: who does what, in which order, and why that is cheaper or faster. The room shows it as a plan line, and majhi keeps it on the task with the tokens each agent used, so later plans can be compared. Call it again when the plan changes, for example after the owner replies.",
@@ -124,13 +130,19 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
     command: "tasks.split",
     description:
-      "Split a task into subtasks, in order. A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
+      "Split a task into subtasks, in order. A subtask can get files in its attachments (a path in your task folder, like attachments/image.png, or an upload id). A subtask can wait for earlier ones (dependsOn: their positions, from 0). when: ready stacks its branch on the one it waits for. The subtasks do not start by themselves: to start one, use start.",
+  },
+  {
+    name: "uploads_create",
+    command: "uploads.create",
+    description:
+      "Turn a file in your own task folder (like attachments/image.png) into an upload id for attachments. Copies the file; the original stays. Allowed: images, pdf, text files, zip, up to 20 MB. The id is kept for 24 hours and can be used once. You can also pass the path itself in attachments.",
   },
   {
     name: "start",
@@ -353,6 +365,10 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
               args.text as string,
             ),
           );
+        case "uploads_create": {
+          const made = await deps.admin.call(caller, toolName("uploads.create"), { path: args.path });
+          return made.isError ? fail(made.text) : ok(made.text);
+        }
         case "record_plan":
           return ok(await deps.tasks.recordPlan(caller.task, caller.agent, args as TeamPlan));
         case "ask": {

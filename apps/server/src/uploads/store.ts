@@ -1,14 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { type Attachment, UPLOAD_MAX_BYTES } from "@majhi/shared";
+import {
+  ATTACHMENT_TYPES_TEXT,
+  type Attachment,
+  attachmentAllowed,
+  attachmentMime,
+  UPLOAD_MAX_BYTES,
+} from "@majhi/shared";
 import { z } from "zod";
 import { errorCode, UserError } from "../errors.ts";
 
 /** Unused uploads are deleted after this long. */
 export const UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-const UPLOAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const UPLOAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 const MetaSchema = z.object({
@@ -16,6 +22,8 @@ const MetaSchema = z.object({
   mime: z.string(),
   size: z.number(),
   at: z.number(),
+  /** The org of the task the file came from. Absent for the owner's uploads and the LOCAL boss chat. */
+  org: z.string().optional(),
 });
 type Meta = z.infer<typeof MetaSchema>;
 
@@ -34,18 +42,50 @@ export class UploadStore {
   }
 
   /** Stores one file. Images are detected by mime type. */
-  async save(input: { name: string; mime: string; data: Uint8Array }): Promise<Attachment> {
-    if (input.data.byteLength > UPLOAD_MAX_BYTES) {
-      throw new UserError(`That file is larger than ${UPLOAD_MAX_BYTES / 1024 / 1024} MB.`);
-    }
-    const id = randomUUID();
+  async save(input: { name: string; mime: string; data: Uint8Array; org?: string }): Promise<Attachment> {
     const name = safeName(input.name);
-    const mime = input.mime.trim().toLowerCase() || "application/octet-stream";
+    assertAttachable(name, input.data.byteLength, input.mime);
+    const id = randomUUID();
+    const mime = input.mime.trim().toLowerCase() || attachmentMime(name) || "application/octet-stream";
     await mkdir(this.dir, { recursive: true });
     await writeFile(this.dataPath(id), input.data);
-    const meta: Meta = { name, mime, size: input.data.byteLength, at: this.now() };
+    return this.writeMeta(id, { name, mime, size: input.data.byteLength, at: this.now(), org: input.org });
+  }
+
+  /**
+   * Copies the file at `path` into the store without reading it into memory. The caller checked
+   * that the path is a regular file it may use.
+   */
+  async saveFile(input: { path: string; name: string; org?: string | undefined }): Promise<Attachment> {
+    const name = safeName(input.name);
+    const size = (await stat(input.path)).size;
+    assertAttachable(name, size, "");
+    const id = randomUUID();
+    await mkdir(this.dir, { recursive: true });
+    await copyFile(input.path, this.dataPath(id));
+    return this.writeMeta(id, {
+      name,
+      mime: attachmentMime(name) ?? "application/octet-stream",
+      size,
+      at: this.now(),
+      org: input.org,
+    });
+  }
+
+  private async writeMeta(id: string, meta: Meta): Promise<Attachment> {
     await writeFile(this.metaPath(id), JSON.stringify(meta));
-    return { id, kind: IMAGE_MIMES.has(mime) ? "image" : "file", name, mime, size: meta.size };
+    return {
+      id,
+      kind: IMAGE_MIMES.has(meta.mime) ? "image" : "file",
+      name: meta.name,
+      mime: meta.mime,
+      size: meta.size,
+    };
+  }
+
+  /** The org the upload came from (undefined for the owner's), or a UserError when it is gone. */
+  async orgOf(id: string): Promise<string | undefined> {
+    return (await this.meta(id)).org;
   }
 
   /** Throws when any of the uploads is missing, so nothing is moved before a later one fails. */
@@ -105,7 +145,9 @@ export class UploadStore {
       return MetaSchema.parse(JSON.parse(await readFile(this.metaPath(id), "utf8")));
     } catch (err) {
       if (errorCode(err) === "ENOENT") {
-        throw new UserError(`Upload ${id} is gone. Attach the file again.`);
+        throw new UserError(
+          `Upload ${id} is gone: uploads are kept for 24 hours and each one can be used once. Upload the file again (the Attach button, or majhi_uploads_create for a file in your task folder).`,
+        );
       }
       throw err;
     }
@@ -117,6 +159,18 @@ export class UploadStore {
 
   private metaPath(id: string): string {
     return join(this.dir, `${id}.json`);
+  }
+}
+
+/** Throws a UserError that says what is wrong with the file and what is allowed. */
+export function assertAttachable(name: string, size: number, mime: string): void {
+  if (size > UPLOAD_MAX_BYTES) {
+    throw new UserError(
+      `"${name}" is ${(size / 1024 / 1024).toFixed(1)} MB, over the limit of ${UPLOAD_MAX_BYTES / 1024 / 1024} MB. Attach a smaller file.`,
+    );
+  }
+  if (!attachmentAllowed(name, mime)) {
+    throw new UserError(`"${name}" is not an allowed file type. Allowed: ${ATTACHMENT_TYPES_TEXT}.`);
   }
 }
 

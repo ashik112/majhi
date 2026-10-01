@@ -120,7 +120,7 @@ describe("majhi-room", () => {
     const { h, servers, prompts, release } = await world();
     const room = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-room"));
     const names = (await room.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(["ask", "mention", "post", "read_recent", "record_plan"]);
+    expect(names).toEqual(["ask", "mention", "post", "read_recent", "record_plan", "uploads_create"]);
 
     const recent = text(await room.callTool({ name: "read_recent", arguments: { limit: 5 } }));
     expect(recent).toMatch(/^Room of ACM-1, newest first:/);
@@ -263,6 +263,7 @@ describe("majhi-tasks", () => {
       "split",
       "start",
       "update",
+      "uploads_create",
     ]);
     const args = {
       task: "ACM-1",

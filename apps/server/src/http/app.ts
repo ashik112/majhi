@@ -79,7 +79,11 @@ export function createApp(deps: AppDeps): Hono {
         return c.json({ error: "The request body is not valid JSON" } satisfies ApiError, 400);
       }
     }
-    const result = await deps.dispatch(c.req.param("name"), input, c.req.header(COMMAND_META_HEADER));
+    const result = await deps.dispatch(
+      c.req.param("name"),
+      input,
+      withoutTask(c.req.header(COMMAND_META_HEADER)),
+    );
     return result.ok ? c.json(result.output) : c.json(result.error, result.status);
   });
 
@@ -117,4 +121,20 @@ function remoteAddress(env: unknown): string | undefined {
   const incoming = (env as { incoming?: { socket?: { remoteAddress?: unknown } } }).incoming;
   const address = incoming?.socket?.remoteAddress;
   return typeof address === "string" ? address : undefined;
+}
+
+/**
+ * The meta header without a `task`. Only majhi sets the calling task, on the MCP and admin paths,
+ * so a call over HTTP has none and cannot attach files by path.
+ */
+export function withoutTask(header: string | undefined): string | undefined {
+  if (header === undefined) return undefined;
+  try {
+    const meta: unknown = JSON.parse(header);
+    if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return header;
+    const { task: _task, ...rest } = meta as Record<string, unknown>;
+    return JSON.stringify(rest);
+  } catch {
+    return header;
+  }
 }

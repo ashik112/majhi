@@ -40,8 +40,8 @@ describe("UploadStore", () => {
 
   it("refuses files over 20 MB", async () => {
     await expect(
-      store.save({ name: "big", mime: "", data: new Uint8Array(20 * 1024 * 1024 + 1) }),
-    ).rejects.toThrow("larger than 20 MB");
+      store.save({ name: "big.txt", mime: "", data: new Uint8Array(20 * 1024 * 1024 + 1) }),
+    ).rejects.toThrow("over the limit of 20 MB");
   });
 
   it("removes uploads older than a day and keeps newer ones", async () => {
@@ -56,7 +56,7 @@ describe("UploadStore", () => {
 
   it("removes a meta file that cannot be read by its age on disk", async () => {
     const orphan = join(store.dir, "9b2f3c1e-0000-4000-8000-000000000000.json");
-    await store.save({ name: "a", mime: "", data: data("a") });
+    await store.save({ name: "a.txt", mime: "", data: data("a") });
     await writeFile(orphan, "not json");
     const long = new Date(now - UPLOAD_MAX_AGE_MS - 5000);
     await utimes(orphan, long, long);
