@@ -1,6 +1,6 @@
 import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Paperclip, X } from "lucide-react";
+import { ChevronDown, Lock, Paperclip, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -16,6 +16,7 @@ import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
@@ -68,6 +69,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  // Protected projects the owner lets agents write in for this task. Off: read-only.
+  const [writes, setWrites] = useState<string[]>([]);
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
   const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [parent, setParent] = useState<string[]>([]);
@@ -121,7 +124,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
     create.mutate(
       {
         text: typedText(draft),
-        repos: chosen.map((project) => ({ project })),
+        repos: chosen.map((project) => ({ project, ...(writes.includes(project) ? { writes: true } : {}) })),
         attachments: attachmentIds(attachments.items),
         start,
         ...linkFields(parent[0], dependsOn),
@@ -279,13 +282,33 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
                     pressed={on}
                     className="h-[34px] text-sm"
                     onClick={() => setPicked(togglePicked(picked, project.id))}
+                    title={
+                      project.protected
+                        ? "Protected: agents get it read-only unless you allow writes"
+                        : undefined
+                    }
                   >
+                    {project.protected && <Lock aria-hidden="true" className="size-3 text-amber" />}
                     {project.id}
                   </ChoiceChip>
                 );
               })}
             </div>
           ))}
+          {chosen
+            .filter((id) => projects.data?.find((p) => p.id === id)?.protected === true)
+            .map((id) => (
+              <div key={id} className="flex flex-col">
+                <Switch
+                  label={`Let agents write in ${id} for this task`}
+                  checked={writes.includes(id)}
+                  onChange={(on) => setWrites(on ? [...writes, id] : writes.filter((w) => w !== id))}
+                />
+                <span className="text-xs text-fg-faint text-pretty">
+                  {id} is protected. Off: agents read it only. It ships only alone, after you type its name.
+                </span>
+              </div>
+            ))}
           {mentioned.length > 0 && (
             <p className="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
               Mentioned:
