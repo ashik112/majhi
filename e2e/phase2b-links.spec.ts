@@ -27,6 +27,8 @@ async function addTask(
   await page.keyboard.press("n");
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("textbox", { name: "Title" }).fill(title);
+  // Naming a project only offers it: the click adds it.
+  await dialog(page).getByRole("button", { name: "Add api", exact: true }).click();
   for (const id of opts.dependsOn ?? []) {
     await dialog(page).getByRole("button", { name: "Choose depends on" }).click();
     await page.getByRole("menuitemradio", { name: new RegExp(`^${id}`) }).click();

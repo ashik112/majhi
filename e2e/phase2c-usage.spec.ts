@@ -52,6 +52,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screensh
 test.beforeAll(async ({ request }) => {
   const acme = await cmd<{ id: string }>(request, "tasks.create", {
     text: "add a readme to api @acme-lead",
+    repos: [{ project: "api" }],
     start: true,
   });
   await expect
@@ -94,6 +95,7 @@ test("after runs on two orgs, the totals per org, project, agent and model are t
 }) => {
   const task = await cmd<{ id: string }>(request, "tasks.create", {
     text: "add a health endpoint to web @northwind-builder",
+    repos: [{ project: "web" }],
     start: true,
   });
   await expect

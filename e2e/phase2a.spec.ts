@@ -120,14 +120,18 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   page,
   request,
 }) => {
-  // Typing everything in the title still works: the project chip and the base follow the words.
+  // A project named in the words is offered, never added by itself: one click adds it.
   await openNewTask(page, "add a health endpoint to api from develop");
   const dialog = newTaskDialog(page);
   await expect(dialog.getByRole("button", { name: "api", exact: true })).toHaveAttribute(
     "aria-pressed",
+    "false",
+  );
+  await dialog.getByRole("button", { name: "Add api" }).click();
+  await expect(dialog.getByRole("button", { name: "api", exact: true })).toHaveAttribute(
+    "aria-pressed",
     "true",
   );
-  await expect(dialog.getByText("Branches from develop")).toBeVisible();
   await expect(dialog.getByRole("button", { name: /^Agent: @acme-lead/ })).toBeVisible();
   await shot(page, "task-screen");
 
@@ -141,7 +145,7 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   await expect(log.getByText("add a health endpoint to api from develop")).toBeVisible();
   await expect(log.getByText(/@acme-lead started on claude-acme-1/)).toBeVisible();
   // The fixture remote does not exist, so the fetch fails; the task starts from the local copy.
-  await expect(log.getByText(/Could not fetch develop from origin/)).toBeVisible();
+  await expect(log.getByText(/Could not fetch \S+ from origin/)).toBeVisible();
   const plan = room(page).getByRole("region", { name: "Plan of acme-lead" });
   await expect(plan).toBeVisible();
   await expect(plan).toContainText("Read the project");
@@ -169,7 +173,8 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   // On disk.
   apiTask = await getTask(request, apiTaskId);
   const repo = apiTask.repos[0];
-  expect(repo).toMatchObject({ project: "api", base: "develop" });
+  // The base is the project's, never a branch named in the words.
+  expect(repo).toMatchObject({ project: "api" });
   expect(apiTask.folder.endsWith(`/${apiTaskId}`)).toBe(true);
   const worktree = join(apiTask.folder, "api");
   expect(repo?.worktree).toBe(worktree);

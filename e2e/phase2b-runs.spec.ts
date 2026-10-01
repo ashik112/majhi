@@ -15,7 +15,7 @@ async function cmd<T>(request: APIRequestContext, name: string, data: object): P
 }
 
 const createTask = async (request: APIRequestContext, text: string) =>
-  (await cmd<{ id: string }>(request, "tasks.create", { text, start: true })).id;
+  (await cmd<{ id: string }>(request, "tasks.create", { text, repos: [{ project: "api" }], start: true })).id;
 const status = async (request: APIRequestContext, id: string) =>
   cmd<{ status: string; pausedReason?: string }>(request, "tasks.get", { id });
 
