@@ -48,7 +48,7 @@ export async function splitChanged(
 ): Promise<{ changed: TaskRepo[]; unchanged: TaskRepo[] }> {
   const changed: TaskRepo[] = [];
   const unchanged: TaskRepo[] = [];
-  for (const repo of repos) (await repoChanged(repo) ? changed : unchanged).push(repo);
+  for (const repo of repos) ((await repoChanged(repo)) ? changed : unchanged).push(repo);
   return { changed, unchanged };
 }
 

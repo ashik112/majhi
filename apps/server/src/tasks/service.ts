@@ -1363,14 +1363,13 @@ export class TaskService {
    * What a ship sends: the task's repos with changes (only `project` when given), each with its
    * target, and the unchanged ones it skips. Refused when no repo has a change.
    */
-  async shipPlan(
-    task: Task,
-    pick: ShipTargets & { project?: string | undefined },
-  ): Promise<ShipPlan> {
+  async shipPlan(task: Task, pick: ShipTargets & { project?: string | undefined }): Promise<ShipPlan> {
     const repos = task.repos.filter((r) => pick.project === undefined || r.project === pick.project);
     if (repos.length === 0) {
       throw new UserError(
-        pick.project === undefined ? `${task.id} has no repo.` : `${pick.project} is not a repo of ${task.id}.`,
+        pick.project === undefined
+          ? `${task.id} has no repo.`
+          : `${pick.project} is not a repo of ${task.id}.`,
         409,
       );
     }

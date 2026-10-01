@@ -920,7 +920,8 @@ export class MrService {
     if (task.repos.length === 0) throw new UserError("The task has no repo.", 409);
     if (this.deps.working(task.id))
       throw new UserError("An agent is working. Wait for its turn to end.", 409);
-    if (repos.length === 0) throw new UserError("Nothing to ship: no repo has changes since the task started.", 409);
+    if (repos.length === 0)
+      throw new UserError("Nothing to ship: no repo has changes since the task started.", 409);
     const out: { repo: TaskRepo; target: PushTarget }[] = [];
     for (const repo of repos) {
       if (repo.worktree === undefined)
@@ -1009,7 +1010,14 @@ export class MrService {
         }
         const detail = outcome.ok ? outcome.detail : outcome.reason;
         results.push({ project: repo.project, into, ok: outcome.ok, detail });
-        this.audit(input.id, "update", input.by, outcome.ok, `${target.remote}/${into}: ${detail}`, repo.project);
+        this.audit(
+          input.id,
+          "update",
+          input.by,
+          outcome.ok,
+          `${target.remote}/${into}: ${detail}`,
+          repo.project,
+        );
       }
       return { results };
     });
