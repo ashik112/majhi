@@ -1,6 +1,6 @@
 import type { AccountView, CardOutcome, RoomItem, Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw } from "lucide-react";
+import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
@@ -24,6 +24,8 @@ export interface OwnerContext {
   compose: (text: string) => void;
   /** Opens the Changes tab, when the task has repos. */
   showChanges?: (() => void) | undefined;
+  /** Agents in the middle of a turn, with the id of their oldest queued owner message. */
+  turning?: readonly { agent: string; queuedItem: string | undefined }[] | undefined;
 }
 
 function byName(by: string): string {
@@ -196,10 +198,18 @@ export function PausedCard({ item, owner }: { item: Of<"paused">; owner: OwnerCo
     );
   }
   if (owner === undefined || owner.task.status !== "paused") return null;
-  return <PendingPause item={item} task={owner.task} />;
+  return <PendingPause item={item} task={owner.task} turning={owner.turning ?? []} />;
 }
 
-function PendingPause({ item, task }: { item: Of<"paused">; task: Task }) {
+function PendingPause({
+  item,
+  task,
+  turning,
+}: {
+  item: Of<"paused">;
+  task: Task;
+  turning: NonNullable<OwnerContext["turning"]>;
+}) {
   const toast = useToast();
   const after = useAfterTaskChange();
   const resume = useMutation<unknown, ApiRequestError>({
@@ -226,7 +236,48 @@ function PendingPause({ item, task }: { item: Of<"paused">; task: Task }) {
         </Button>
         {item.reason !== "owner" && item.reason !== "offline" && <PauseFixes task={task} />}
       </div>
+      {turning.map((t) => (
+        <StillWorking key={t.agent} task={task.id} agent={t.agent} queuedItem={t.queuedItem} />
+      ))}
     </section>
+  );
+}
+
+/** On a paused card: an agent is still in its turn, so Resume changes nothing for it yet. */
+function StillWorking({
+  task,
+  agent,
+  queuedItem,
+}: {
+  task: string;
+  agent: string;
+  queuedItem: string | undefined;
+}) {
+  const toast = useToast();
+  const sendNow = useMutation<unknown, ApiRequestError, string>({
+    mutationFn: (item) => cmd("room.sendNow", { task, item }),
+    onError: (error) => toast("Could not send it now", { detail: describeError(error), tone: "error" }),
+  });
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-6 text-sm text-fg-muted">
+      <span>
+        @{agent} is still working on its turn.
+        {queuedItem !== undefined && " Your queued message goes when it ends."}
+      </span>
+      {queuedItem !== undefined && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5"
+          disabled={sendNow.isPending}
+          title={`Stop @${agent}'s current turn and send your oldest queued message now`}
+          onClick={() => sendNow.mutate(queuedItem)}
+        >
+          <SendHorizontal aria-hidden="true" />
+          Send now
+        </Button>
+      )}
+    </p>
   );
 }
 

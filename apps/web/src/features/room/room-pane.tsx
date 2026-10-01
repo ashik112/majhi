@@ -32,9 +32,31 @@ export function RoomPane({
   // Text a card button puts in the composer; `n` changes on every click.
   const [draft, setDraft] = useState<{ text: string; n: number }>();
   const compose = useCallback((text: string) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 })), []);
+  // Agents in the middle of a turn, each with its oldest queued message, as one string so the
+  // cards redraw only when that changes, not on every tool call.
+  const turningKey = state.agents
+    .filter((a) => a.status === "working")
+    .map((a) => {
+      const queued = state.items.find(
+        (i) => i.type === "owner" && i.queued && (i.to ?? task.team[0]) === a.agent,
+      );
+      return `${a.agent}=${queued?.id ?? ""}`;
+    })
+    .join("\n");
   const owner = useMemo<OwnerContext>(
-    () => ({ task, compose, showChanges: onShowChanges }),
-    [task, compose, onShowChanges],
+    () => ({
+      task,
+      compose,
+      showChanges: onShowChanges,
+      turning: turningKey
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => {
+          const at = line.indexOf("=");
+          return { agent: line.slice(0, at), queuedItem: line.slice(at + 1) || undefined };
+        }),
+    }),
+    [task, compose, onShowChanges, turningKey],
   );
   const busy = isBusy(state.agents);
 

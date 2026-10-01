@@ -148,8 +148,14 @@ export function Timeline({
       ),
     [modelKey],
   );
+  // A queued message shows what its agent is doing, so only queued rows follow the live state.
+  const lead = owner?.task.team[0];
   const rowProps = (item: RoomItem) => ({
     liveModel: item.type === "agent" ? modelOf.get(item.agent) : undefined,
+    waitingOn:
+      item.type === "owner" && item.queued
+        ? state.agents.find((a) => a.agent === (item.to ?? lead))
+        : undefined,
     owner: OWNER_CARD_TYPES.has(item.type) ? owner : undefined,
   });
   const ctx = useMemo<ItemContext>(

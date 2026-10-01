@@ -114,7 +114,10 @@ describe("queued owner messages", () => {
     expect(await systems()).toContain("@acme-builder gets a fresh session when this turn ends.");
     // The turn is cut: the run pauses and the task with it.
     g.fail(new Error("fetch failed"));
-    await until(async () => (await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status === "paused", "the pause");
+    await until(
+      async () => (await w.h.cmd("tasks.get", { id: "ACM-1" })).body.status === "paused",
+      "the pause",
+    );
     expect(deliveries("queued one")).toBe(0);
     first.script = async () => "end_turn";
     expect((await w.h.cmd("tasks.start", { id: "ACM-1" })).status).toBe(200);
@@ -165,10 +168,7 @@ describe("queued owner messages", () => {
       (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true }))
         .status,
     ).toBe(200);
-    await until(
-      () => services().room.getLive("ACM-1", "acme-builder")?.status === "starting",
-      "the start",
-    );
+    await until(() => services().room.getLive("ACM-1", "acme-builder")?.status === "starting", "the start");
     expect((await send("queued one")).body.item.queued).toBe(true);
     const one = await owner("queued one");
     expect((await w.h.cmd("room.sendNow", { task: "ACM-1", item: one.id })).status).toBe(200);

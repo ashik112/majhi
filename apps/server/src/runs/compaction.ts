@@ -85,6 +85,7 @@ export class Compaction {
     // Hand off. The agent writes the note unless its session is past saving.
     let note: string | undefined;
     if (why !== "recovery" && run.session !== undefined && !run.exited) {
+      this.live.set(run, { nowDoing: "Writing a handoff note for its fresh session" });
       const res = await this.internalPrompt(run, HANDOFF_REQUEST);
       if (res.ok && looksLikeNote(res.text)) note = res.text.trim();
     }

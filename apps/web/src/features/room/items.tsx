@@ -8,6 +8,7 @@ import {
   GitCompareArrows,
   ListChecks,
   Paperclip,
+  SendHorizontal,
   ShieldQuestion,
   TriangleAlert,
 } from "lucide-react";
@@ -20,8 +21,11 @@ import { linkifyPaths } from "@/features/viewer/model";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { PendingAsk } from "./ask-card";
+import { describeError } from "@/lib/errors";
+import { formatAgo } from "@/lib/format";
+import { useNow } from "@/lib/use-now";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
+import { PendingAsk } from "./ask-card";
 import { DOCK_ACTIONS } from "./dock";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
@@ -68,6 +72,7 @@ export const RoomItemView = memo(function RoomItemView({
   item,
   ctx,
   liveModel,
+  waitingOn,
   owner,
   className,
   inLog = false,
@@ -76,6 +81,8 @@ export const RoomItemView = memo(function RoomItemView({
   ctx: ItemContext;
   /** The model its agent runs, for an agent message. A string, so the row stays as it is while the agent's status changes. */
   liveModel?: string | undefined;
+  /** For a queued owner message only: the live state of the agent it waits for. */
+  waitingOn?: AgentLive | undefined;
   /** The whole task and the room's hooks, for the review, paused and question cards only. */
   owner?: OwnerContext | undefined;
   /** Drawn in the log (not the "Needs you" dock), so it carries a row id. */
@@ -92,7 +99,7 @@ export const RoomItemView = memo(function RoomItemView({
         className,
       )}
     >
-      <ItemBody item={item} ctx={ctx} liveModel={liveModel} owner={owner} />
+      <ItemBody item={item} ctx={ctx} liveModel={liveModel} waitingOn={waitingOn} owner={owner} />
     </li>
   );
 });
@@ -234,16 +241,18 @@ function ItemBody({
   item,
   ctx,
   liveModel,
+  waitingOn,
   owner,
 }: {
   item: RoomItem;
   ctx: ItemContext;
   liveModel: string | undefined;
+  waitingOn: AgentLive | undefined;
   owner: OwnerContext | undefined;
 }) {
   switch (item.type) {
     case "owner":
-      return <OwnerMessage item={item} />;
+      return <OwnerMessage item={item} waitingOn={waitingOn} />;
     case "agent":
       return <AgentMessage item={item} model={liveModel} task={ctx.task} />;
     case "thought":
@@ -360,7 +369,7 @@ function ContextLine({ item }: { item: Of<"context"> }) {
 }
 
 /** The owner's side of the conversation: a light bubble in the same column as the agents. */
-function OwnerMessage({ item }: { item: Of<"owner"> }) {
+function OwnerMessage({ item, waitingOn }: { item: Of<"owner">; waitingOn: AgentLive | undefined }) {
   // What majhi once wrote as the owner (an approval, a choice) reads as the plain line it is.
   const notice = ownerNotice(item);
   if (notice) return <QuietLine quiet={notice} at={item.at} />;
@@ -376,17 +385,19 @@ function OwnerMessage({ item }: { item: Of<"owner"> }) {
         <div className="flex h-6 items-center gap-2">
           <span className="text-base font-semibold text-fg">You</span>
           <Stamp at={item.at} />
-          {item.queued && <span className="text-sm text-fg-faint">Queued for the agent's next turn</span>}
+          {item.removed === true && <span className="text-sm text-fg-faint">Removed, not sent</span>}
         </div>
         <div
           className={cn(
             MEASURE,
             "w-fit rounded-lg bg-raised px-3 py-2 text-body whitespace-pre-wrap break-words text-fg",
             item.queued && "opacity-70",
+            item.removed === true && "text-fg-faint line-through opacity-60",
           )}
         >
           <TaskRefText text={item.text} />
         </div>
+        {item.queued && <QueuedNote item={item} live={waitingOn} />}
         {item.attachments.length > 0 && (
           <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
             {item.attachments.map((a) => (
@@ -402,6 +413,75 @@ function OwnerMessage({ item }: { item: Of<"owner"> }) {
         )}
       </div>
     </article>
+  );
+}
+
+/** Why a queued message has not gone yet, from the live state of the agent it waits for. */
+function waitingText(agent: string, live: AgentLive | undefined, now: number): string {
+  switch (live?.status) {
+    case "working":
+      return live.turnAt === undefined
+        ? `Waiting for @${agent}'s current turn`
+        : `Waiting for @${agent}'s current turn (started ${formatAgo(live.turnAt, now)})`;
+    case "starting":
+      return `Waiting for @${agent} to start`;
+    case "queued":
+      return `Waiting for a free slot for @${agent}`;
+    case "waiting":
+      return live.nowDoing === undefined
+        ? `Waiting for @${agent}`
+        : `Waiting for @${agent}: ${live.nowDoing}`;
+    case "paused":
+      return `Waiting: @${agent} is paused`;
+    case "error":
+      return `Waiting: @${agent} stopped with an error`;
+    default:
+      return `Queued for @${agent}'s next turn`;
+  }
+}
+
+/** Under a queued message: what it waits for, and Send now or Remove. */
+function QueuedNote({ item, live }: { item: Of<"owner">; live: AgentLive | undefined }) {
+  const toast = useToast();
+  const now = useNow(30_000);
+  const agent = item.to ?? live?.agent ?? "the agent";
+  const sendNow = useMutation<unknown, ApiRequestError>({
+    mutationFn: () => cmd("room.sendNow", { task: item.task, item: item.id }),
+    onError: (error) => toast("Could not send it now", { detail: describeError(error), tone: "error" }),
+  });
+  const remove = useMutation<unknown, ApiRequestError>({
+    mutationFn: () => cmd("room.unqueue", { task: item.task, item: item.id }),
+    onError: (error) => toast("Could not remove it", { detail: describeError(error), tone: "error" }),
+  });
+  const busy = sendNow.isPending || remove.isPending;
+  const turning = live?.status === "working";
+  return (
+    <div className="flex min-w-0 items-center gap-1 text-sm text-fg-faint">
+      <span aria-live="polite" className="mr-1 min-w-0 text-pretty">
+        {waitingText(agent, live, now)}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 shrink-0 px-1.5"
+        disabled={busy}
+        title={turning ? `Stop @${agent}'s current turn and send this message now` : "Send this message now"}
+        onClick={() => sendNow.mutate()}
+      >
+        <SendHorizontal aria-hidden="true" />
+        Send now
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 shrink-0 px-1.5"
+        disabled={busy}
+        title="Take it out of the queue. The agent never gets it."
+        onClick={() => remove.mutate()}
+      >
+        Remove
+      </Button>
+    </div>
   );
 }
 

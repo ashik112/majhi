@@ -57,7 +57,8 @@ export function AgentRow({
   const detailsId = useId();
   const tick = useNow(live?.status === "working" ? 5_000 : 60_000);
   const quiet = silentFor(live, tick);
-  const line = quiet === undefined ? nowDoingLine(live) : `Thinking, nothing new for ${quiet}`;
+  // A turn with nothing new on screen for a while still says what it is in: the tool, or thinking.
+  const line = quiet === undefined ? nowDoingLine(live) : `${live?.nowDoing ?? "Thinking"}, ${quiet}`;
   const idle = line === "Idle";
   return (
     <div className="flex flex-col border-t border-line-strong pt-1">
@@ -75,17 +76,29 @@ export function AgentRow({
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="truncate font-mono text-sm font-medium">@{id}</span>
             </span>
-            {/* State first, then what it is doing: the row keeps one height while the agent works. */}
+            {/*
+              State first, then what it is doing: the row keeps one height while the agent works.
+              While it is doing something, that line takes the place of the role and the state
+              word (the lamp on the avatar shows the state), so it is never cut to nothing.
+            */}
             <span aria-live="polite" className="flex min-w-0 items-baseline gap-1.5 text-xs">
-              {info && <span className="shrink-0 text-fg-faint">{info.role} ·</span>}
-              <span className={cn("min-w-0 truncate", STATE_TEXT[state.tone])}>{state.label}</span>
-              {!idle && (
-                <span title={line} className="min-w-0 truncate text-fg-faint">
-                  · {line}
+              {idle ? (
+                <>
+                  {info && <span className="shrink-0 text-fg-faint">{info.role} ·</span>}
+                  <span className={cn("min-w-0 truncate", STATE_TEXT[state.tone])}>{state.label}</span>
+                </>
+              ) : (
+                <span
+                  title={`${state.label}: ${line}`}
+                  className={cn("min-w-[6.5rem] truncate", STATE_TEXT[state.tone])}
+                >
+                  {line}
                 </span>
               )}
               {live && live.queued > 0 && (
-                <span className="tnum shrink-0 whitespace-nowrap text-fg-faint">· {live.queued} queued</span>
+                <span className="tnum min-w-0 truncate whitespace-nowrap text-fg-faint">
+                  · {live.queued} queued
+                </span>
               )}
               {/* Limits sit on this line, so the name above keeps the full width. */}
               {account?.usage && (
@@ -104,13 +117,22 @@ export function AgentRow({
   );
 }
 
-/** Only while working: how long the agent has sent nothing, once that passes 20 seconds. */
+/**
+ * Only while working: how long the agent has sent nothing, once that passes 20 seconds. Counted
+ * from its last event, or from the start of the turn when that is later (a turn that has said
+ * nothing yet).
+ */
 function silentFor(live: AgentLive | undefined, now: number): string | undefined {
-  if (live?.status !== "working" || live.activeAt === undefined) return undefined;
-  const ms = now - Date.parse(live.activeAt);
+  if (live?.status !== "working") return undefined;
+  const since = Math.max(
+    live.activeAt === undefined ? 0 : Date.parse(live.activeAt),
+    live.turnAt === undefined ? 0 : Date.parse(live.turnAt),
+  );
+  if (since === 0) return undefined;
+  const ms = now - since;
   if (!(ms > 20_000)) return undefined;
   const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)} min`;
 }
 
 /** The open row: the account's limits, then context, model, effort, permissions and fallback. */
