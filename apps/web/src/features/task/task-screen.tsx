@@ -135,7 +135,9 @@ function TaskView({ taskId }: { taskId: string }) {
               onShowChanges={showChanges}
             />
           </div>
-          {shown === "changes" && data.repos.length > 0 && <ChangesView task={data} />}
+          {shown === "changes" && data.repos.length > 0 && (
+            <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
+          )}
           {shown === "memory" && <TaskMemory task={data} />}
           {shown === "terminal" && <TaskTerminal task={data} />}
         </div>
