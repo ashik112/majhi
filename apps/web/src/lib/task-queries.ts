@@ -1,6 +1,7 @@
 import type { CommandInput, CommandOutput, ProjectView, Task, TaskSummary } from "@majhi/shared";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { needsOwner } from "@/features/board/model";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -14,8 +15,8 @@ export function useProjects(enabled = true) {
   });
 }
 
-/** Chats live in Chats. On the board and in counts they show only while they wait for the owner. */
-const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || t.asking === true);
+/** Chats live in Chats. On the board and in counts they show only while they need the owner: they ask, are paused or ready for review. */
+const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || needsOwner(t));
 const onlyChats = (list: TaskSummary[]) => list.filter((t) => t.chat === true);
 
 /** Every task, done ones included: the list collapses the done group itself. Chats show only when they need you. */

@@ -77,3 +77,10 @@ export function useStartUpdate() {
     onSettled: () => client.invalidateQueries({ queryKey: opsKeys.version }),
   });
 }
+
+/** Sends a test notification to the Mac and the open tabs, as the saved settings allow. */
+export function useSendTestNotification() {
+  return useMutation<CommandOutput<"notify.test">, ApiRequestError, undefined>({
+    mutationFn: () => cmd("notify.test", {}, { reason: "Owner pressed Send a test notification" }),
+  });
+}

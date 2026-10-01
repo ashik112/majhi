@@ -3,7 +3,7 @@ export const SETUP_GROUPS = [
   { label: "Setup", sections: ["overview", "roots", "ssh"] },
   {
     label: "How majhi works",
-    sections: ["decisions", "memory", "context", "teams", "approvals", "containers"],
+    sections: ["decisions", "memory", "context", "teams", "approvals", "notifications", "containers"],
   },
   { label: "More", sections: ["editor", "appearance", "history"] },
 ] as const;
@@ -21,6 +21,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   context: "Context and limits",
   teams: "Teams",
   approvals: "Approvals",
+  notifications: "Notifications",
   editor: "Editor",
   containers: "Containers",
   appearance: "Appearance",
@@ -37,6 +38,8 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
   teams: "How long agents in a room may pass work around without you.",
   approvals: "What the boss may do on its own.",
+  notifications:
+    "A Mac banner and a browser notification when an agent needs you: approvals, questions, stops.",
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",

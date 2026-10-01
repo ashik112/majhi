@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { dockerTty, localSpawner } from "@majhi/acp";
+import {
+  isOwnerChat,
+  NotificationsSettingsSchema,
+  UPDATE_STATUS_FILE,
+  UpdateStatusSchema,
+} from "@majhi/shared";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
@@ -48,6 +55,7 @@ import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
+import { Notifier } from "./notify/service.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { ProjectService } from "./projects/service.ts";
@@ -149,6 +157,8 @@ export interface Services {
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
+  /** One notification for each thing that needs the owner: a Mac banner and a browser notice. */
+  notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
   /** Previews and service containers majhi runs for agents (PRV-53). */
@@ -466,6 +476,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     setTitle: (id, title) => tasks.autoTitleChat(id, title),
   });
+  const notifier = new Notifier({
+    subject: (id) => {
+      const task = store.tasks.get(id);
+      return task === undefined ? undefined : { id: task.id, title: task.title, chat: isOwnerChat(task) };
+    },
+    item: (task, id) => store.room.get(task, id),
+    settings: async () => {
+      try {
+        return (await config.settings()).notifications;
+      } catch {
+        return NotificationsSettingsSchema.parse({});
+      }
+    },
+    events,
+    ...(options.hostLink === undefined
+      ? {}
+      : {
+          mac: async (notice) => {
+            await options.hostLink?.call("notify", notice);
+          },
+        }),
+  });
+  room.onWrite((task, item) => notifier.observe(task, item));
+  const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
+  updateWatch.unref();
   const chatSweep = setInterval(() => void chatMemory?.sweep().catch(() => undefined), CHAT_SWEEP_MS);
   chatSweep.unref();
   const promotion = new Promotion({ memory, tasks, projects, config });
@@ -555,6 +590,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cardActions: new CardActions({ tasks, mrs, room }),
     pendingShips,
     cleanup: new CleanupService({ store, room, events, projects }),
+    notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     containers,
@@ -570,6 +606,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     close: async () => {
       resilience.stop();
       clearInterval(chatSweep);
+      clearInterval(updateWatch);
+      notifier.close();
       automation.scheduler.stop();
       automation.triggerEngine.stop();
       layaDocker?.close();
@@ -620,4 +658,23 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         id,
       ),
   };
+}
+
+const UPDATE_WATCH_MS = 30_000;
+/** A failed update older than this belongs to an earlier run of majhi, and is not news. */
+const UPDATE_NEWS_MS = 10 * 60_000;
+
+/** Tells the owner once when the helper's update failed, from the status file it writes. */
+async function watchUpdate(majhiHome: string, notifier: Notifier): Promise<void> {
+  try {
+    const parsed = UpdateStatusSchema.safeParse(
+      JSON.parse(await readFile(join(majhiHome, UPDATE_STATUS_FILE), "utf8")),
+    );
+    if (!parsed.success || parsed.data.state !== "failed") return;
+    const started = Date.parse(parsed.data.startedAt);
+    if (!(Date.now() - started < UPDATE_NEWS_MS)) return;
+    notifier.updateFailed(parsed.data.startedAt, parsed.data.error ?? "see Health for the reason");
+  } catch {
+    // No status file yet, or an unreadable one: nothing to tell.
+  }
 }

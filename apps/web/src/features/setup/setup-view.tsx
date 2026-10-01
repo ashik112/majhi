@@ -34,6 +34,7 @@ import { EditorSection } from "./editor-panel";
 import { HistorySection } from "./history-panel";
 import { MemorySection } from "./memory-panel";
 import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } from "./model";
+import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
 import { isSetupSection, SECTION_ABOUT, SECTION_TITLE, SETUP_GROUPS, type SetupSection } from "./sections";
 import { ApprovalsSection, ContextSection, TeamsSection } from "./settings-panel";
@@ -167,6 +168,7 @@ export function SetupView() {
     approvals:
       s &&
       `Changes: ${s.policy.change === "auto" ? "run alone" : s.policy.change === "confirm" ? "always ask" : "when asked"}`,
+    notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
@@ -250,6 +252,11 @@ export function SetupView() {
               <RulesPanel />
             </>
           )}
+          {section === "notifications" && (
+            <WithSettings settings={settings}>
+              {(data) => <NotificationsSection saved={data.notifications} />}
+            </WithSettings>
+          )}
           {section === "editor" && (
             <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
           )}
@@ -278,6 +285,11 @@ export function SetupView() {
       )}
     </div>
   );
+}
+
+function notificationsStatus(n: Settings["notifications"]): string {
+  if (!n.mac && !n.browser) return "Off";
+  return n.mac && n.browser ? "Mac and browser" : n.mac ? "Mac" : "Browser";
 }
 
 function containersStatus(data: ReturnType<typeof useContainers>["data"]): string | undefined {

@@ -8,6 +8,7 @@ import {
   EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
+  NotificationsPatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -31,6 +32,7 @@ export const SettingsPatchSchema = z.object({
   memory: MemoryPatchSchema.optional(),
   editor: EditorPatchSchema.optional(),
   cleanup: CleanupPatchSchema.optional(),
+  notifications: NotificationsPatchSchema.optional(),
   containers: ContainersFilePatchSchema.optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
@@ -47,6 +49,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     memory: raw.memory ?? {},
     editor: raw.editor ?? {},
     cleanup: raw.cleanup ?? {},
+    notifications: raw.notifications ?? {},
     containers: raw.containers ?? {},
   });
 }
@@ -79,6 +82,7 @@ export async function readSettings(file: string): Promise<Settings> {
     memory: record.memory,
     editor: record.editor,
     cleanup: record.cleanup,
+    notifications: record.notifications,
     containers: record.containers,
   });
   if (!parsed.success) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
+import { NotifyKindSchema } from "./notify.ts";
 
 /**
  * Runtime settings in majhi.yaml that the owner or the boss can change live
@@ -151,6 +152,45 @@ const editorFields = { app: EditorAppSchema };
 export const EditorSettingsSchema = z.strictObject({ app: editorFields.app.default("vscode") });
 export type EditorSettings = z.infer<typeof EditorSettingsSchema>;
 export const EditorPatchSchema = z.strictObject(editorFields).partial();
+/**
+ * Notifications when something needs the owner: a Mac banner through the host helper, and a browser
+ * notification in an open tab. `muted` lists the kinds that stay quiet. Quiet hours hold every
+ * notification between `quiet_from` and `quiet_to` (24 h clock, in `quiet_tz`).
+ */
+const ClockSchema = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, "Use a time like 22:00");
+const notificationsFields = {
+  mac: z.boolean(),
+  browser: z.boolean(),
+  sound: z.boolean(),
+  muted: z.array(NotifyKindSchema).max(NotifyKindSchema.options.length),
+  quiet_from: ClockSchema,
+  quiet_to: ClockSchema,
+  /** An IANA zone like Europe/Berlin: the browser that saved the hours knows it, the server may not. */
+  quiet_tz: z.string().trim().min(1).max(64),
+};
+export const NotificationsSettingsSchema = z.strictObject({
+  mac: notificationsFields.mac.default(true),
+  browser: notificationsFields.browser.default(true),
+  sound: notificationsFields.sound.default(false),
+  muted: notificationsFields.muted.default([]),
+  quiet_from: notificationsFields.quiet_from.optional(),
+  quiet_to: notificationsFields.quiet_to.optional(),
+  quiet_tz: notificationsFields.quiet_tz.optional(),
+});
+export type NotificationsSettings = z.infer<typeof NotificationsSettingsSchema>;
+/** `null` clears the quiet hours. */
+export const NotificationsPatchSchema = z
+  .strictObject({
+    ...notificationsFields,
+    quiet_from: notificationsFields.quiet_from.nullable(),
+    quiet_to: notificationsFields.quiet_to.nullable(),
+    quiet_tz: notificationsFields.quiet_tz.nullable(),
+  })
+  .partial();
+export type NotificationsPatch = z.infer<typeof NotificationsPatchSchema>;
+/** What majhi.yaml may hold. */
+export const NotificationsFilePatchSchema = z.strictObject(notificationsFields).partial();
+
 /** Containers majhi runs for agents: previews and test services (PRV-53). */
 const containersFields = {
   /** Service images the owner allowed. Changed only by `containers.images.allow` and `.remove`. */
@@ -253,5 +293,6 @@ export const SettingsSchema = z.object({
   editor: EditorSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
+  notifications: NotificationsSettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

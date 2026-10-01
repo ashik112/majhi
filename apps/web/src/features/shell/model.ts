@@ -108,6 +108,7 @@ export type BannerTone = "amber" | "red";
 
 export type BannerAction =
   | { kind: "task"; id: string }
+  | { kind: "chat"; id: string }
   | { kind: "page"; to: PagePath; search?: { account: string } }
   | { kind: "element"; id: string };
 
@@ -136,6 +137,15 @@ export interface BannerInput {
   now: number;
 }
 
+/** A task is named by its id, a chat by its title. */
+function name(task: Pick<TaskSummary, "id" | "title" | "chat">): string {
+  return task.chat === true ? task.title : task.id;
+}
+
+function open(task: Pick<TaskSummary, "id" | "chat">): BannerAction {
+  return task.chat === true ? { kind: "chat", id: task.id } : { kind: "task", id: task.id };
+}
+
 /** The one thing that needs the owner most: limit pauses, errors, a prompt in the open task, then sign-ins. */
 export function deriveBanner(input: BannerInput): Banner | null {
   const found: Omit<Banner, "more">[] = [];
@@ -161,11 +171,40 @@ export function deriveBanner(input: BannerInput): Banner | null {
       found.push({
         key: `error:${task.id}`,
         tone: "red",
-        text: `${task.id} paused after an error.`,
-        actionLabel: `Open ${task.id}`,
-        action: { kind: "task", id: task.id },
+        text: `${name(task)} paused after an error.`,
+        actionLabel: "Open",
+        action: open(task),
+      });
+    } else if (task.pausedReason === "loop") {
+      found.push({
+        key: `loop:${task.id}`,
+        tone: "amber",
+        text: `${name(task)} stopped: the agents were going in circles.`,
+        actionLabel: "Open",
+        action: open(task),
+      });
+    } else if (task.pausedReason === "blocked") {
+      found.push({
+        key: `blocked:${task.id}`,
+        tone: "amber",
+        text: `${name(task)} is blocked and waits for you.`,
+        actionLabel: "Open",
+        action: open(task),
       });
     }
+  }
+
+  // A task or chat with an approval, a secret request or a question open. The task the owner is looking
+  // at shows its own prompt below, so it is not listed twice.
+  for (const task of input.tasks) {
+    if (task.asking !== true || task.status === "done" || task.id === input.permission?.task) continue;
+    found.push({
+      key: `asking:${task.id}`,
+      tone: "amber",
+      text: `${name(task)} is waiting for your answer.`,
+      actionLabel: "Open",
+      action: open(task),
+    });
   }
 
   if (input.permission) {

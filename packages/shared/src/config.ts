@@ -9,6 +9,7 @@ import {
   EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
+  NotificationsFilePatchSchema,
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
@@ -44,6 +45,8 @@ export const MajhiConfigSchema = z.strictObject({
   editor: EditorPatchSchema.optional(),
   /** Cleanup of done tasks: after how many days (PRV-39). */
   cleanup: CleanupPatchSchema.optional(),
+  /** Notifications when something needs the owner. */
+  notifications: NotificationsFilePatchSchema.optional(),
   /** Previews and test services majhi runs for agents (PRV-53): the allowed images and the limits. */
   containers: ContainersFilePatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */

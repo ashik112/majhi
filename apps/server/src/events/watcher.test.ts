@@ -27,7 +27,7 @@ describe("HomeWatcher", () => {
     await cleanup();
   });
 
-  const topics = () => new Set(events.flatMap((e) => e.topics));
+  const topics = () => new Set(events.flatMap((e) => (e.type === "changed" ? e.topics : [])));
   const until = async (check: () => boolean) => {
     for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 50));
     expect(check()).toBe(true);

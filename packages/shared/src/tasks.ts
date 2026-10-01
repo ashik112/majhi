@@ -287,7 +287,10 @@ export const TaskSummarySchema = TaskSchema.pick({
   waitingOn: z.array(TaskIdSchema),
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
-  /** A chat that waits for the owner: an approval, a permission, a question. Shown on the board too. */
+  /**
+   * The task or chat waits for the owner on an item: an approval, a permission, a secret, a question.
+   * It counts under Needs you even while an agent still works. A quiet chat is shown on the board only then.
+   */
   asking: z.boolean().optional(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;

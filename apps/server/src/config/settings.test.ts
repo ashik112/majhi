@@ -23,9 +23,10 @@ describe("mergeSettings", () => {
         rules: [],
         allow_destructive_rules: false,
       },
-      memory: { auto_threshold: 0.4, review_all: false },
+      memory: { auto_threshold: 0.4, review_all: false, chat_idle_minutes: 30 },
       editor: { app: "vscode" },
       cleanup: { after_days: 30 },
+      notifications: { mac: true, browser: true, sound: false, muted: [] },
       containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
     });
   });
@@ -68,17 +69,18 @@ describe("settings commands", () => {
     h = await harness();
     const set = await h.cmd("settings.set", { memory: { auto_threshold: 0.9, review_all: true } });
     expect(set.status).toBe(200);
-    expect(set.body.memory).toEqual({ auto_threshold: 0.9, review_all: true });
+    expect(set.body.memory).toEqual({ auto_threshold: 0.9, review_all: true, chat_idle_minutes: 30 });
     const again = await h.cmd("settings.set", { memory: { housekeeper_model: "a-small-model" } });
     expect(again.body.memory).toEqual({
       auto_threshold: 0.9,
       review_all: true,
+      chat_idle_minutes: 30,
       housekeeper_model: "a-small-model",
     });
     expect(await readFile(h.majhi.services.config.file, "utf8")).toContain("auto_threshold: 0.9");
     // null puts a default back: no model set means the cheapest one.
     const cleared = await h.cmd("settings.set", { memory: { housekeeper_model: null } });
-    expect(cleared.body.memory).toEqual({ auto_threshold: 0.9, review_all: true });
+    expect(cleared.body.memory).toEqual({ auto_threshold: 0.9, review_all: true, chat_idle_minutes: 30 });
     expect(await readFile(h.majhi.services.config.file, "utf8")).not.toContain("housekeeper_model");
     expect((await h.cmd("settings.set", { memory: { auto_threshold: 1.5 } })).status).toBe(400);
     expect((await h.cmd("settings.set", { memory: { housekeeper: "nobody" } })).status).toBe(404);
