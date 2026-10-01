@@ -33,3 +33,21 @@ export function agentScopes(task: ScopeTask, projectOrgs: ProjectOrgs): MemorySc
   for (const [project, org] of projectOrgs) if (org === task.org) scopes.push(projectScope(project));
   return scopes;
 }
+
+/**
+ * Scopes recalled into a chat: what a task of its org gets, plus the projects the chat names or
+ * reads. A project counts only when it belongs to the chat's org; a chat with a root agent (no
+ * org) may use any org's project.
+ */
+export function chatRecallScopes(
+  task: ScopeTask,
+  projectOrgs: ProjectOrgs,
+  mentioned: readonly string[],
+): MemoryScope[] {
+  const scopes = recallScopes(task, projectOrgs);
+  for (const project of mentioned) {
+    const org = projectOrgs.get(project);
+    if (org !== undefined && (task.org === undefined || org === task.org)) scopes.push(projectScope(project));
+  }
+  return [...new Set(scopes)];
+}

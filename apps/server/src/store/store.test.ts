@@ -71,6 +71,7 @@ describe("store", () => {
       "attachments",
       "audit",
       "automation_runs",
+      "chat_state",
       "decisions",
       "migrations",
       "room_items",

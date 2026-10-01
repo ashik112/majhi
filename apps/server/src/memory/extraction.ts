@@ -5,9 +5,12 @@ import { type CurationTask, type Curator, EMPTY_COUNTS } from "./curator.ts";
 import {
   agentSpoke,
   briefPrompt,
+  chatLines,
+  chatPrompt,
   type Housekeeper,
   NoHousekeeper,
   parseBriefReply,
+  parseChatReply,
   parseRecordReply,
   type RecordReply,
   recordPrompt,
@@ -195,6 +198,37 @@ export class Extraction {
         changed.push(p);
     }
     return changed;
+  }
+
+  /**
+   * Reads a stretch of a chat and sends its facts through curation, like a task's lessons. The
+   * facts are scoped to the chat's org (a root chat: global) and to the projects named in it,
+   * never to another org. `onRead` runs once the Housekeeper has answered and before anything is
+   * written, so the caller moves its watermark exactly once: a failure before it leaves the
+   * messages for the next try, a crash after it never reads them again.
+   */
+  async fromChat(
+    task: Task,
+    items: readonly RoomItem[],
+    projects: readonly string[],
+    onRead: () => void,
+  ): Promise<MemoryExtractOutput> {
+    const chat = {
+      id: task.id,
+      org: task.org,
+      projects: task.org === undefined ? [] : projects,
+      title: task.title,
+      agent: task.team[0] ?? "agent",
+    };
+    const { value, agent } = await this.deps.housekeeper.ask(
+      task,
+      chatPrompt({ chat, messages: chatLines(items) }),
+      parseChatReply,
+    );
+    onRead();
+    const counts = await this.deps.curator.curateCandidates(chat, value, agent);
+    this.deps.memory.changed();
+    return counts;
   }
 
   /**

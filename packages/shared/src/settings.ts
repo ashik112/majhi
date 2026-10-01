@@ -121,12 +121,15 @@ const memoryFields = {
     .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "Use an agent id"),
   /** The model it runs on. Default: the cheapest its account offers. */
   housekeeper_model: z.string().trim().min(1).max(100),
+  /** A chat that has had no message for this long is read for memory. */
+  chat_idle_minutes: z.number().int().min(1).max(1440),
 };
 export const MemorySettingsSchema = z.strictObject({
   auto_threshold: memoryFields.auto_threshold.default(0.4),
   review_all: memoryFields.review_all.default(false),
   housekeeper: memoryFields.housekeeper.optional(),
   housekeeper_model: memoryFields.housekeeper_model.optional(),
+  chat_idle_minutes: memoryFields.chat_idle_minutes.default(30),
 });
 export type MemorySettings = z.infer<typeof MemorySettingsSchema>;
 /** `null` puts the default back: the boss as Housekeeper, the cheapest model. */

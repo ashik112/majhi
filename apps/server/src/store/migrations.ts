@@ -387,6 +387,20 @@ ALTER TABLE task_repos ADD COLUMN start_commit TEXT;
 ALTER TABLE tasks ADD COLUMN read_mounts TEXT NOT NULL DEFAULT '[]';
 `,
   },
+  {
+    // What majhi did with a chat: how far memory has read it (the time of the last message read),
+    // who last set its title, and how many owner messages it had then.
+    id: 105,
+    name: "chat memory and title state",
+    sql: `
+CREATE TABLE chat_state (
+  task TEXT PRIMARY KEY REFERENCES tasks (id) ON DELETE CASCADE,
+  extracted_at TEXT,
+  titled_by TEXT,
+  titled_owner_messages INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
