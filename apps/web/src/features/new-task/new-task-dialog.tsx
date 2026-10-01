@@ -1,4 +1,4 @@
-import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText } from "@majhi/shared";
+import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText, type TaskKind } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Paperclip, X } from "lucide-react";
 import {
@@ -49,6 +49,17 @@ function tryParse(text: string, ctx: Parameters<typeof parseTaskText>[1]): Parse
   }
 }
 
+const KINDS: readonly { id: TaskKind; hint: string }[] = [
+  { id: "code", hint: "Changes a project: worktree, branch, review, ship." },
+  { id: "ops", hint: "Investigates with the org's connections and writes a report. Projects are read only." },
+  { id: "chat", hint: "One agent, no project." },
+];
+
+/** A code task needs a project, a chat task has none. An ops task may have either. */
+function kindFits(kind: TaskKind, projects: number): boolean {
+  return kind === "ops" || (kind === "code") === projects > 0;
+}
+
 const FIELD =
   "w-full rounded-[10px] border border-line-control bg-field text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none";
 
@@ -70,6 +81,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  const [kindPick, setKindPick] = useState<TaskKind | undefined>();
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
   const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [parent, setParent] = useState<string[]>([]);
@@ -102,9 +114,12 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const named = namedProjects(parsed);
   const chosen = chosenProjects(named, picked);
   const chosenOrg = projects.data?.find((p) => chosen.includes(p.id))?.org ?? filterOrg;
-  const kind = chosen.length > 0 ? "code" : "chat";
   // What the server will read: the words plus the chips. Its warnings (an unknown @agent, repos from two orgs) show as they are.
-  const warnings = tryParse(composeTaskText(draft, chosen, named), parseCtx)?.warnings ?? [];
+  const composed = tryParse(composeTaskText(draft, chosen, named), parseCtx);
+  const warnings = composed?.warnings ?? [];
+  // The kind the words suggest, until the owner picks one. A pick that no longer fits the projects falls back.
+  const inferred = composed?.kind ?? (chosen.length > 0 ? "code" : "chat");
+  const kind = kindPick !== undefined && kindFits(kindPick, chosen.length) ? kindPick : inferred;
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);
   const orgName = orgs.find((o) => o.id === chosenOrg)?.name;
@@ -119,6 +134,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
         text: composeTaskText(draft, chosen, named),
         attachments: attachmentIds(attachments.items),
         start,
+        ...(kindPick !== undefined && kind === kindPick ? { kind } : {}),
         ...linkFields(parent[0], dependsOn),
         ...(agentOverride ? { agent: agentOverride } : {}),
       },
@@ -253,6 +269,28 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <legend className="mb-2 p-0 text-sm text-fg-faint">Kind</legend>
+          <div className="flex flex-wrap items-center gap-2">
+            {KINDS.map((k) => (
+              <ChoiceChip
+                key={k.id}
+                pressed={kind === k.id}
+                disabled={!kindFits(k.id, chosen.length)}
+                className="h-[34px] text-sm"
+                title={k.hint}
+                onClick={() => setKindPick(k.id)}
+              >
+                {k.id}
+              </ChoiceChip>
+            ))}
+            <span className="text-sm text-fg-muted">
+              {kindPick === undefined ? "Picked from your words. " : ""}
+              {KINDS.find((k) => k.id === kind)?.hint}
+            </span>
+          </div>
+        </fieldset>
+
+        <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm text-fg-faint">Project</legend>
           {projects.isPending && (
             <span className="h-8 animate-shimmer rounded-md bg-raised" aria-hidden="true" />
@@ -289,7 +327,10 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
           ))}
           {projects.data && projects.data.length > 0 && chosen.length === 0 && (
             <p className="text-sm text-fg-muted">
-              No project chosen: this becomes a chat task, with no worktree.
+              No project chosen:{" "}
+              {kind === "ops"
+                ? "this is an ops task, with no worktree."
+                : "this becomes a chat task, with no worktree."}
             </p>
           )}
         </fieldset>

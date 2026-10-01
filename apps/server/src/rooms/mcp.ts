@@ -130,7 +130,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, which repos, how to check it). To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and name the repos to change in text. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
@@ -148,7 +148,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "start",
     command: "tasks.start",
     description:
-      "Start a task: create its worktrees and wake its agent. Your org's setting says which tasks you may start without asking the owner (by default your subtasks); for any other, the owner gets an approval card. A task that waits on an unfinished dependency does not start early: it starts by itself when they are done.",
+      "Start a task: create its worktrees and wake its agent. Your org's setting says which tasks you may start without asking the owner (by default your subtasks); for any other, the owner gets an approval card. A fix task (made with followUpOf) always gets the approval card. A task that waits on an unfinished dependency does not start early: it starts by itself when they are done.",
   },
   {
     name: "update",
@@ -441,17 +441,29 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           }));
         return ok(JSON.stringify(rows, null, 2));
       }
+      // A fix task never starts without the owner: no lead_start, no `auto` mode, no saved rule.
+      let confirm = false;
       if (tool.command === "tasks.start") {
-        const started = await leadStart(deps, caller, args);
-        if (started !== undefined) return started;
+        confirm = isFixTask(deps, args.id);
+        if (!confirm) {
+          const started = await leadStart(deps, caller, args);
+          if (started !== undefined) return started;
+        }
       }
-      const result = await deps.admin.call(caller, toolName(tool.command), args);
+      if (tool.command === "tasks.create" && typeof args.followUpOf === "string") args.start = false;
+      const result = await deps.admin.call(caller, toolName(tool.command), args, { confirm });
       return result.isError ? fail(result.text) : ok(result.text);
     } catch (err) {
       return fail(errorMessage(err));
     }
   });
   return server;
+}
+
+/** A task made as the follow-up of another (an ops task's fix task): it holds a `follow-up` link. */
+function isFixTask(deps: RoomMcpDeps, id: unknown): boolean {
+  const task = typeof id === "string" ? deps.store.tasks.get(id) : undefined;
+  return task?.links.some((l) => l.type === "follow-up") === true;
 }
 
 /**
@@ -537,6 +549,7 @@ async function refuseOutsideOrg(
     args.task,
     args.target,
     args.parent,
+    args.followUpOf,
     ...(Array.isArray(args.dependsOn) ? args.dependsOn : []),
   ];
   for (const id of ids) {

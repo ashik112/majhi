@@ -128,6 +128,7 @@ export async function launch(
     boss,
     teamSize: task.team.length,
     soloLead: task.mode === "lead" && task.kind !== "chat" && task.team[0] === run.agent && !isBossChat(task),
+    opsTask: task.kind === "ops",
     containersOn: deps.rooms?.canRunContainers ?? false,
     serena: deps.serena !== undefined,
     hasWorktrees: worktrees.length > 0,

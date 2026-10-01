@@ -169,6 +169,8 @@ export interface CreateInput {
   parent?: string | undefined;
   /** The new task waits for these. */
   dependsOn?: string[] | undefined;
+  /** Makes the new task a fix task of this one: a `follow-up` link to it. */
+  followUpOf?: string | undefined;
   /** When those count as met. Default `merged`. */
   dependsWhen?: "merged" | "ready" | undefined;
 }
@@ -283,18 +285,25 @@ export class TaskService {
       );
     }
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
-    const investigation = input.readOnly === true || input.kind === "ops";
-    const kind = input.kind ?? (investigation && parsed.kind === "code" ? "ops" : parsed.kind);
+    const kind = input.kind ?? (input.readOnly === true && parsed.kind === "code" ? "ops" : parsed.kind);
+    const investigation = input.readOnly === true || kind === "ops";
     if (kind === "code" && parsed.repos.length === 0) {
       throw new UserError("A code task needs a project. Name one in the text, or change the kind.");
     }
     const dependsOn = [...new Set(input.dependsOn ?? [])];
-    for (const other of [...dependsOn, ...(input.parent === undefined ? [] : [input.parent])]) {
+    const others = [
+      ...dependsOn,
+      ...[input.parent, input.followUpOf].flatMap((t) => (t === undefined ? [] : [t])),
+    ];
+    for (const other of others) {
       if (store.tasks.get(other) === undefined) throw new UserError(`Task ${other} does not exist.`, 404);
     }
     const parentTask = input.parent === undefined ? undefined : store.tasks.get(input.parent);
-    // A child with no repos of its own belongs to its parent's org.
-    const org = parsed.org ?? (parsed.repos.length === 0 ? (input.org ?? parentTask?.org) : undefined);
+    const followedTask = input.followUpOf === undefined ? undefined : store.tasks.get(input.followUpOf);
+    // A child with no repos of its own belongs to its parent's org, a fix task to its ops task's.
+    const org =
+      parsed.org ??
+      (parsed.repos.length === 0 ? (input.org ?? parentTask?.org ?? followedTask?.org) : undefined);
     if (org !== undefined && sections.orgs[org] === undefined) {
       throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
@@ -362,6 +371,7 @@ export class TaskService {
         overrides: {},
         links: [
           ...(input.parent === undefined ? [] : [{ type: "parent" as const, task: input.parent }]),
+          ...(input.followUpOf === undefined ? [] : [{ type: "follow-up" as const, task: input.followUpOf }]),
           ...dependsOn.map((t) => ({
             type: "depends-on" as const,
             task: t,
@@ -383,7 +393,8 @@ export class TaskService {
 
     for (const w of parsed.warnings) this.warn(id, w);
     if (picked.line !== undefined) this.note(id, picked.line);
-    if (input.parent !== undefined) await this.linksChanged([input.parent]);
+    const linked = [input.parent, input.followUpOf].flatMap((t) => (t === undefined ? [] : [t]));
+    if (linked.length > 0) await this.linksChanged(linked);
     let task = this.get(id);
     this.deps.room.publishTask(task);
     // A task that waits stays ready and starts by itself when its dependencies are met.

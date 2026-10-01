@@ -41,12 +41,26 @@ const BRANCH_PHRASE = /(?<![A-Za-z0-9_-])(?:on|branch)(?:\s*:\s*|\s+)([A-Za-z0-9
 const MENTION = /(?<![A-Za-z0-9_@/.-])@([A-Za-z0-9][A-Za-z0-9-]*)(?![A-Za-z0-9_/@-]|\.[A-Za-z0-9])/g;
 const BRANCH_TRAILING = /[.,;:]+$/;
 
+/** An investigation or an incident: no repo to change, something to find out (SPEC 5.15). */
+const OPS_WORDS =
+  /(?<![A-Za-z0-9_-])(?:investigat(?:e|es|ing|ion)|incidents?|outages?|post-?mortems?|root cause)(?![A-Za-z0-9_-])/i;
+const OPS_WHY =
+  /(?<![A-Za-z0-9_-])why\s+(?:is|are|was|were|did|does|do)\b[^.\n]*\b(?:down|failing|failed|broken|slow|erroring|unreachable|crashing|crashed|timing out|returning 5\d\d)\b/i;
+const OPS_DEBUG = /(?<![A-Za-z0-9_-])debug\b[^.\n]*\b(?:in|on)\s+(?:prod|production|staging)\b/i;
+/** With a repo named, these say the code changes. */
+const CHANGE_VERBS =
+  /(?<![A-Za-z0-9_-])(?:fix(?:es|ed|ing)?|add(?:s|ed|ing)?|change|update|build|create|write|rename|remove|delete|migrate|patch|bump|upgrade)(?![A-Za-z0-9_-])/i;
+/** Words that say the code itself changes, which keeps the task `code` whatever else it says. */
+const CODE_WORDS =
+  /(?<![A-Za-z0-9_-])(?:implement(?:s|ed|ing)?|refactor(?:s|ed|ing)?|pull request|merge request|commit(?:s)?|PR)(?![A-Za-z0-9_-])/;
+
 /**
  * Reads the task box text (SPEC 3.1): repos by project id or alias, base
  * branch (`from develop`, `base: main`, `off release/2.1`), working branch
  * (`on feature/x`, `branch fix/y`; must contain a slash), `@agent` mentions,
- * links, and warnings (unknown agents, repos from more than one org). No
- * repo means kind `chat`, with no warning. Pure and fast: it runs on every
+ * links, and warnings (unknown agents, repos from more than one org). A repo
+ * means kind `code`. No repo means kind `ops` for an investigation or an incident
+ * ("why is the api down in prod", "debug ... in prod"), else `chat`, with no warning. Pure and fast: it runs on every
  * keystroke.
  */
 export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
@@ -84,13 +98,25 @@ export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
     repos,
     mentions,
     links: [...new Set(links.map((l) => l.url))],
-    kind: repos.length > 0 ? "code" : "chat",
+    kind: kindOf(text, repos.length > 0, branch),
     warnings,
   };
   if (base !== undefined) parsed.base = base;
   if (branch !== undefined) parsed.branch = branch;
   if (orgs.length === 1 && orgs[0] !== undefined) parsed.org = orgs[0];
   return parsed;
+}
+
+/**
+ * `ops` for an investigation or an incident, `code` when repos are named, else `chat`. Naming a
+ * repo does not make an investigation code ("why is the api down in prod"), but a working branch, a code
+ * word, or a change verb next to a named repo ("fix the timeout in api") does.
+ */
+function kindOf(text: string, hasRepos: boolean, branchNamed: string | undefined): ParsedTask["kind"] {
+  const ops = OPS_WORDS.test(text) || OPS_WHY.test(text) || OPS_DEBUG.test(text);
+  const changes = branchNamed !== undefined || CODE_WORDS.test(text) || (hasRepos && CHANGE_VERBS.test(text));
+  if (ops && !changes) return "ops";
+  return hasRepos ? "code" : "chat";
 }
 
 /** First non-empty line, whitespace trimmed, at most 120 characters. */

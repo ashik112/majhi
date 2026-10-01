@@ -67,6 +67,20 @@ export function useTask(id: string | undefined) {
   });
 }
 
+/**
+ * REPORT.md of a task, or null before the agent writes it. The file has no event, so it is read
+ * again every few seconds while the page is visible.
+ */
+export function useReport(id: string) {
+  return useQuery<CommandOutput<"tasks.report">, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "report", id],
+    queryFn: () => cmd("tasks.report", { id }),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+}
+
 /** Loads a task ahead of a click, so opening it from the board shows the header at once. */
 export function prefetchTask(client: QueryClient, id: string): void {
   void client.prefetchQuery({

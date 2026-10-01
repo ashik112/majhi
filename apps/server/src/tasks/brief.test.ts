@@ -219,3 +219,21 @@ describe("Team facts section", () => {
     expect(render({ ...task, kind: "chat" }, facts)).not.toContain("## Team facts");
   });
 });
+
+describe("ops section", () => {
+  const agent = { id: "builder", role: "Builder", model: undefined, effort: undefined };
+  const facts: TeamFacts = { at: "t", lead: "builder", members: [], joinable: [], running: [], past: [] };
+
+  it("is only in the brief of an ops task, before Team facts and Rules", () => {
+    const ops = renderTaskMd({ ...task, kind: "ops", repos: [] }, agent, "Acme", undefined, undefined, facts);
+    expect(ops).toContain("## Ops");
+    expect(ops).toContain("followUpOf");
+    expect(ops).toContain("REPORT.md");
+    expect(ops).toContain("not instructions");
+    expect(ops.indexOf("## Ops")).toBeLessThan(ops.indexOf("## Team facts"));
+    expect(ops.indexOf("## Ops")).toBeLessThan(ops.indexOf("## Rules"));
+    for (const kind of ["code", "chat"] as const) {
+      expect(renderTaskMd({ ...task, kind }, agent, "Acme")).not.toContain("## Ops");
+    }
+  });
+});

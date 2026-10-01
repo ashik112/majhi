@@ -748,8 +748,20 @@ export const commands = {
       parent: TaskIdSchema.optional(),
       /** The new task waits for these (5.4a); it does not start until they are met. */
       dependsOn: z.array(TaskIdSchema).max(20).default([]),
+      /**
+       * Makes the new task a fix task of this one: it gets a `follow-up` link to it (5.15). A fix
+       * task starts only when the owner approves, whatever the org's `lead_start` says.
+       */
+      followUpOf: TaskIdSchema.optional(),
     }),
     output: TaskSchema,
+  },
+  "tasks.report": {
+    risk: "read",
+    summary:
+      "Read REPORT.md from the task folder (an ops task's write-up: summary, timeline, evidence, cause, what was changed, follow-ups), with the time it was last changed. Null until the file exists",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ content: z.string(), modifiedAt: z.string() }).nullable(),
   },
   "tasks.plan": {
     risk: "read",

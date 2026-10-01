@@ -69,7 +69,13 @@ export class AdminService {
   // Agent calls
 
   /** One MCP tool call. Never throws: problems come back as an error result the agent can read. */
-  async call(caller: AdminCaller, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+  async call(
+    caller: AdminCaller,
+    tool: string,
+    args: Record<string, unknown>,
+    /** `confirm`: always wait for the owner's click, whatever the policy, a saved rule or `ownerAsked` say. */
+    options: { confirm?: boolean } = {},
+  ): Promise<ToolResult> {
     try {
       if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
       const spec = this.tools.get(tool);
@@ -78,6 +84,7 @@ export class AdminService {
       return await this.callCommand(caller, spec.command, input, {
         ownerAsked: ownerAsked === true,
         reason: typeof reason === "string" ? reason.trim().slice(0, 500) : "",
+        confirm: options.confirm === true,
       });
     } catch (err) {
       return error(errorMessage(err));
@@ -132,7 +139,7 @@ export class AdminService {
     caller: AdminCaller,
     command: CommandName,
     input: Record<string, unknown>,
-    ask: { ownerAsked: boolean; reason: string },
+    ask: { ownerAsked: boolean; reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const def = commands[command];
     const checked = def.input.safeParse(input);
@@ -143,12 +150,12 @@ export class AdminService {
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const { policy } = await this.deps.config.settings();
-    const mode = modeFor(policy, command, def.risk);
+    const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
     // A saved rule turns a card that would wait into a run. It is looked up only then.
     const decision = decideMode(mode, ask.ownerAsked);
     const rule =
-      decision === "run"
+      decision === "run" || ask.confirm === true
         ? undefined
         : matchRule(policy, {
             agent: caller.agent,
