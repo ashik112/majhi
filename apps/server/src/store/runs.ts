@@ -174,7 +174,7 @@ export interface AuditRow {
   kind: string;
   title: string;
   decision: "allow" | "deny" | "cancelled";
-  by: "owner" | "rule";
+  by: "owner" | "rule" | "lead";
   at: string;
 }
 

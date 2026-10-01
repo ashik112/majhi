@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_MERGE_POLICY,
   type MarkMergedResult,
+  type MergeMethod,
   type MergeMrsResult,
   type MergeOrder,
   type MergePolicy,
@@ -11,6 +12,7 @@ import {
   type RefreshMrsResult,
   type RemoteConfig,
   type RepoMr,
+  type ShipFix,
   type ShipOption,
   type ShipOptions,
   type Task,
@@ -20,6 +22,7 @@ import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, uncommitted } from "../git/git.ts";
+import type { GitLoginService } from "../git/logins.ts";
 import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -32,15 +35,29 @@ import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from 
 import { nextMerge, type RepoMrState } from "./policy.ts";
 import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
+import { chooseRoute, describeLogin, httpsToSsh, loginsOf, ownerOf, type PushRoute } from "./route.ts";
 
 export interface MrDeps {
+  /** Which accounts the owner's keys log in as per git host. Without it https remotes need an alias. */
+  gitLogins?: Pick<GitLoginService, "list">;
   store: Store;
   config: ConfigService;
   projects: ProjectService;
   secrets: SecretStore;
   room: RoomService;
   events: EventHub;
-  tasks: Pick<TaskService, "get" | "close" | "statusChanged" | "merge" | "reviewOptions" | "cards">;
+  tasks: Pick<
+    TaskService,
+    | "get"
+    | "close"
+    | "statusChanged"
+    | "merge"
+    | "reviewOptions"
+    | "cards"
+    | "doneAndShipped"
+    | "assertDeletable"
+    | "deleteAfterShip"
+  >;
   /** True while an agent of the task works. */
   working: (task: string) => boolean;
   hosts: Record<MrHost, MrHostClient>;
@@ -58,6 +75,24 @@ interface RepoContext {
   pushUrl: string | undefined;
   target: Omit<MrTarget, "token">;
   client: MrHostClient;
+}
+
+/** The host an alias reaches, read from the logins found for it. */
+function aliasHost(
+  alias: string,
+  hosts: readonly { host: string; logins: readonly { alias?: string | undefined }[] }[] | undefined,
+): string | undefined {
+  return hosts?.find((h) => h.logins.some((l) => l.alias === alias))?.host;
+}
+
+/** A refusal the owner fixes on another page: Ship links straight to it. */
+class FixableError extends UserError {
+  constructor(
+    message: string,
+    readonly fix: ShipFix,
+  ) {
+    super(message, 409);
+  }
 }
 
 /** Pushing, opening, watching and merging the MRs of a task's repos (SPEC 5.5). */
@@ -186,7 +221,8 @@ export class MrService {
       );
     }
     const hostName = remoteConfig?.ssh === undefined ? hostNameOf(url) : undefined;
-    const pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
+    let pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
+    if (/^https?:\/\//i.test(pushUrl)) pushUrl = (await this.routeFor(url, undefined)).url ?? pushUrl;
     return {
       repo,
       project,
@@ -418,7 +454,10 @@ export class MrService {
               if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) {
                 const org =
                   (await this.deps.config.sections()).orgs[ctx.project.org]?.name ?? ctx.project.org;
-                throw new UserError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Orgs > ${org}.`);
+                throw new FixableError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Orgs > ${org}.`, {
+                  page: "orgs",
+                  org: ctx.project.org,
+                });
               }
             }
           });
@@ -448,19 +487,26 @@ export class MrService {
       await check();
       return { ok: true };
     } catch (err) {
-      return { ok: false, why: errorMessage(err) };
+      return { ok: false, why: errorMessage(err), ...(err instanceof FixableError ? { fix: err.fix } : {}) };
     }
   }
 
-  /** Pushes each repo's task branch to its MR remote, with no merge request. Never forced. */
-  async push(id: string): Promise<{ results: ShipResult[]; task: Task }> {
+  /**
+   * Pushes each repo's task branch to its MR remote, with no merge request. Never forced. With
+   * `deleteAfter`, a push that worked everywhere removes the worktrees and local branches; the
+   * remote branches stay.
+   */
+  async push(id: string, deleteAfter = false): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(id);
     return this.exclusive(id, async () => {
       const ready = await this.pushReady(task);
+      if (deleteAfter) await this.deps.tasks.assertDeletable(ready.map((r) => r.repo));
       const results: ShipResult[] = [];
+      const heads = new Map<string, string>();
       for (const { repo, target } of ready) {
         const project = repo.project;
         try {
+          heads.set(project, (await git(repo.source, ["rev-parse", `refs/heads/${repo.branch}`])).trim());
           await pushBranch({
             worktree: repo.worktree as string,
             remote: target.remote,
@@ -485,7 +531,23 @@ export class MrService {
         }
       }
       for (const r of results) this.note(id, `${r.project}: ${r.detail}`, r.ok ? "info" : "error");
+      if (deleteAfter && results.every((r) => r.ok)) {
+        return { results: await this.withDeleted(id, results, heads), task: this.publish(id) };
+      }
       return { results, task: this.publish(id) };
+    });
+  }
+
+  /** Deletes the worktrees and local branches after a clean ship, and adds what happened to each result. */
+  private async withDeleted(
+    id: string,
+    results: readonly ShipResult[],
+    heads: ReadonlyMap<string, string>,
+  ): Promise<ShipResult[]> {
+    const deleted = await this.deps.tasks.deleteAfterShip(id, heads);
+    return results.map((r) => {
+      const extra = deleted.get(r.project);
+      return extra === undefined ? r : { ...r, detail: `${r.detail} ${extra}` };
     });
   }
 
@@ -499,6 +561,8 @@ export class MrService {
     project?: string | undefined;
     done: boolean;
     by: string;
+    method?: MergeMethod | undefined;
+    deleteAfter?: boolean | undefined;
   }): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(input.id);
     return this.exclusive(input.id, async () => {
@@ -506,6 +570,7 @@ export class MrService {
         (r) => input.project === undefined || r.repo.project === input.project,
       );
       if (ready.length === 0) throw new UserError(`${task.id} has no repo ${input.project ?? ""}.`);
+      if (input.deleteAfter === true) await this.deps.tasks.assertDeletable(ready.map((r) => r.repo));
       for (const { repo, target } of ready) {
         const into = input.into ?? repo.base;
         if (await this.remoteHasMore(repo.source, target, into)) {
@@ -522,8 +587,14 @@ export class MrService {
         done: false,
         by: input.by,
         settle: false,
+        method: input.method,
       });
       if (!merged.results.every((r) => r.ok)) return merged;
+      // The commit each branch is at once merged: "delete after" removes it only if it stays there.
+      const heads = new Map<string, string>();
+      for (const { repo } of ready) {
+        heads.set(repo.project, (await git(repo.source, ["rev-parse", `refs/heads/${repo.branch}`])).trim());
+      }
       const results: ShipResult[] = [];
       for (const { repo, target } of ready) {
         const into = input.into ?? repo.base;
@@ -570,6 +641,9 @@ export class MrService {
             whenUnshipped: "stay",
             by: input.by,
           });
+        if (input.deleteAfter === true) {
+          return { results: await this.withDeleted(input.id, results, heads), task: this.publish(input.id) };
+        }
       }
       return { results, task: this.publish(input.id) };
     });
@@ -586,23 +660,104 @@ export class MrService {
     const remote = mrRemoteName(project.remotes);
     const url = await remoteUrl(repo.source, remote).catch(() => undefined);
     if (url === undefined)
-      throw new UserError(
+      throw new FixableError(
         `${project.id} has no MR remote: there is no remote named ${remote}. Pick its MR remote in Projects.`,
-        409,
+        { page: "projects", project: project.id },
       );
     const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
     if (/^https?:\/\//i.test(pushUrl)) {
-      throw new UserError(
+      const routed = await this.routeFor(url, undefined);
+      if (routed.url !== undefined) return { remote, pushUrl: routed.url };
+      const fix = { page: "projects", project: project.id } as const;
+      if (routed.route.state === "ambiguous") {
+        const host = hostNameOf(url) ?? "the host";
+        const choices = routed.route.choices.map((c) => describeLogin(host, c)).join(", ");
+        throw new FixableError(
+          `${project.id}'s ${remote} remote is https, and more than one key could push it (${choices}). Pick one in Projects.`,
+          fix,
+        );
+      }
+      throw new FixableError(
         `No SSH alias for ${project.id}'s ${remote} remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.`,
-        409,
+        fix,
       );
     }
     return { remote, pushUrl: pushUrl === url ? undefined : pushUrl };
   }
 
+  /** The SSH route for an https remote, from the keys the Mac's logins show. `url` is the push address when one fits. */
+  private async routeFor(
+    url: string,
+    explicit: string | undefined,
+  ): Promise<{ route: PushRoute; url: string | undefined }> {
+    const host = hostNameOf(url);
+    const found =
+      host === undefined
+        ? undefined
+        : await this.deps.gitLogins?.list().then(
+            (r) => r.hosts,
+            () => undefined,
+          );
+    const route = chooseRoute({
+      explicit,
+      owner: ownerOf(url),
+      logins: host === undefined || found === undefined ? [] : loginsOf(found, host),
+    });
+    if (route.state === "auto") return { route, url: httpsToSsh(url, route.alias) };
+    if (route.state === "picked") return { route, url: httpsToSsh(url, route.alias) };
+    return { route, url: undefined };
+  }
+
+  /** How `project` pushes its MR remote, for the project page. */
+  async pushRoute(id: string): Promise<{
+    host: string | undefined;
+    state: PushRoute["state"] | "ssh";
+    label?: string;
+    choices: Array<{ alias?: string; account: string; label: string }>;
+  }> {
+    const project = await this.deps.projects.get(id);
+    const remote = mrRemoteName(project.remotes);
+    const url = await remoteUrl(project.path, remote).catch(() => undefined);
+    const host = url === undefined ? undefined : hostNameOf(url);
+    if (url === undefined || host === undefined) return { host: undefined, state: "none", choices: [] };
+    const explicit = project.remotes[remote]?.ssh;
+    const https = /^https?:\/\//i.test(url);
+    if (!https && explicit === undefined) return { host, state: "ssh", choices: [] };
+    const { route } = await this.routeFor(url, explicit);
+    const logins = (await this.deps.gitLogins?.list().catch(() => undefined))?.hosts;
+    const hostKey = explicit === undefined ? host : (aliasHost(explicit, logins) ?? host);
+    const choices = (logins === undefined ? [] : loginsOf(logins, hostKey))
+      .filter((l) => l.via === "ssh")
+      .map((l) => ({
+        ...(l.alias === undefined ? {} : { alias: l.alias }),
+        account: l.account,
+        label: describeLogin(hostKey, l),
+      }));
+    if (route.state === "auto") {
+      return {
+        host,
+        state: "auto",
+        label: `Pushes as ${route.account} via ${route.alias ?? hostKey} key`,
+        choices,
+      };
+    }
+    if (route.state === "picked") {
+      const account = choices.find((c) => c.alias === route.alias)?.account;
+      return {
+        host,
+        state: "picked",
+        label:
+          account === undefined ? `Pushes via ${route.alias}` : `Pushes as ${account} via ${route.alias} key`,
+        choices,
+      };
+    }
+    return { host, state: route.state, choices };
+  }
+
   /** Every repo of the task, ready to push its branch: a worktree, all committed, a remote to push to. */
   private async pushReady(task: Task): Promise<{ repo: TaskRepo; target: PushTarget }[]> {
-    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    const shipped = await this.deps.tasks.doneAndShipped(task);
+    if (shipped !== undefined) throw new UserError(shipped, 409);
     if (task.repos.length === 0) throw new UserError("The task has no repo.", 409);
     if (this.deps.working(task.id))
       throw new UserError("An agent is working. Wait for its turn to end.", 409);

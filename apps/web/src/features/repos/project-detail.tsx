@@ -7,7 +7,7 @@ import {
   type Repo,
 } from "@majhi/shared";
 import { CircleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,9 @@ import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
+import { usePushRoute } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
+import { useSearchParam } from "@/pages/parts/url-state";
 import {
   aliasClashes,
   buildRemotes,
@@ -284,7 +286,19 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
   const [choice, setChoice] = useState<MrRemoteChoice>(initial);
   const { state, setState, save } = useSectionSave(project);
   const known = repo ?? stubRepo(project);
+  const route = usePushRoute(project.id);
   const dirty = choice.name !== initial.name || choice.host !== initial.host || choice.ssh !== initial.ssh;
+  // Opened from a link that points here (Ship's "Fix it in Projects"): show the SSH alias at once.
+  const [section, setSection] = useSearchParam("section");
+  const aliasField = useRef<string>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the link lands
+  useEffect(() => {
+    if (section !== "remotes" || aliasField.current === undefined) return;
+    const field = document.getElementById(aliasField.current);
+    field?.scrollIntoView({ block: "center" });
+    field?.focus({ preventScroll: true });
+    setSection(undefined);
+  }, []);
   const set = (patch: Partial<MrRemoteChoice>) => {
     if (state.kind !== "saving") setState(IDLE);
     setChoice((c) => ({ ...c, ...patch }));
@@ -333,6 +347,32 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
           ))}
         </ul>
       )}
+      {route.data && (route.data.label !== undefined || route.data.choices.length > 0) && (
+        <div className="flex flex-col gap-1.5 text-sm">
+          {route.data.label !== undefined && <p className="m-0 text-fg-soft">{route.data.label}</p>}
+          {route.data.state !== "auto" && route.data.state !== "picked" && route.data.choices.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-fg-faint">Push with:</span>
+              {route.data.choices.map((c) => (
+                <Button
+                  key={`${c.alias ?? ""}:${c.account}`}
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={state.kind === "saving"}
+                  onClick={() => {
+                    const ssh = c.alias ?? route.data?.host ?? "";
+                    const remotes = buildRemotes(project.remotes, { ...choice, ssh });
+                    if (remotes !== undefined) save({ remotes });
+                  }}
+                >
+                  {c.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid gap-3 @[460px]:grid-cols-2 @[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         <Field label="Open MRs against" hint="Default: origin.">
           {(props) => (
@@ -369,14 +409,17 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
           hint="A Host from your SSH config. Pushes go through it."
           className="@[460px]:col-span-2 @[760px]:col-span-1"
         >
-          {(props) => (
-            <SshAliasPicker
-              fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
-              value={choice.ssh}
-              onChange={(ssh) => set({ ssh })}
-              suggested={known.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
-            />
-          )}
+          {(props) => {
+            aliasField.current = props.id;
+            return (
+              <SshAliasPicker
+                fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
+                value={choice.ssh}
+                onChange={(ssh) => set({ ssh })}
+                suggested={known.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
+              />
+            );
+          }}
         </Field>
       </div>
     </SaveSection>

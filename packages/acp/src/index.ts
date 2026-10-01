@@ -99,6 +99,7 @@ export {
   dockerRunArgs,
   dockerSpawner,
   dockerTty,
+  MAJHI_HOOKS_DIR,
   MountRefused,
   type RunnerConfig,
   removeStaleRunners,

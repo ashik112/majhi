@@ -24,6 +24,13 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import {
+  AutomationRunSchema,
+  ScheduleCreateInputSchema,
+  ScheduleIdSchema,
+  ScheduleUpdateInputSchema,
+  ScheduleViewSchema,
+} from "./automation.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ContainerInfoSchema,
@@ -45,6 +52,7 @@ import {
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
+  GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
   SSH_PASSPHRASE_MAX,
@@ -107,6 +115,7 @@ import {
 } from "./settings.ts";
 import {
   CardActionSchema,
+  MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
   RoomItemSchema,
@@ -117,6 +126,12 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
+import {
+  TriggerCreateInputSchema,
+  TriggerIdSchema,
+  TriggerUpdateInputSchema,
+  TriggerViewSchema,
+} from "./triggers.ts";
 import {
   DaySchema,
   PriceKeySchema,
@@ -168,10 +183,23 @@ const MergeResultSchema = z.object({
   into: z.string(),
   ok: z.boolean(),
   detail: z.string(),
+  /** The files that conflicted, when a merge stopped on conflicts. Nothing was merged. */
+  conflicts: z.array(z.string()).optional(),
 });
 
+/** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
+export const ShipFixSchema = z.discriminatedUnion("page", [
+  z.object({ page: z.literal("projects"), project: IdSchema }),
+  z.object({ page: z.literal("orgs"), org: IdSchema }),
+]);
+export type ShipFix = z.infer<typeof ShipFixSchema>;
+
 /** One action: allowed now, or why not and where to fix it. */
-export const ShipOptionSchema = z.object({ ok: z.boolean(), why: z.string().optional() });
+export const ShipOptionSchema = z.object({
+  ok: z.boolean(),
+  why: z.string().optional(),
+  fix: ShipFixSchema.optional(),
+});
 export type ShipOption = z.infer<typeof ShipOptionSchema>;
 
 /** One repo of a task whose branch has commits that are not merged, pushed or in a pull request. */
@@ -259,6 +287,37 @@ export const commands = {
       }),
     ),
   },
+  "git.logins": {
+    risk: "read",
+    summary:
+      "The accounts this Mac is logged in as on git hosts: gh and glab logins, and SSH keys per host or alias. Never returns a token",
+    input: z.object({ refresh: z.boolean().optional() }),
+    output: GitLoginsResultSchema,
+  },
+  "orgs.useGitLogin": {
+    risk: "change",
+    summary:
+      "Use this Mac's gh or glab login as the org's token for a git host: the helper reads the token once and it is saved in secrets.age as that org's mr_tokens entry. Never returns the token",
+    input: z.object({
+      id: IdSchema,
+      via: z.enum(["gh", "glab"]),
+      /** The git host name the login was found for, like `github.com`. */
+      host: z.string().min(1).max(255),
+    }),
+    output: z.object({ id: IdSchema, host: MrHostSchema, ref: z.string() }),
+  },
+  "projects.pushRoute": {
+    risk: "read",
+    summary: "How a project pushes its MR remote over SSH, and the keys that could do it",
+    input: z.object({ id: IdSchema }),
+    output: z.object({
+      host: z.string().optional(),
+      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh"]),
+      /** A plain sentence like "Pushes as acme-dev via github.com key". */
+      label: z.string().optional(),
+      choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),
+    }),
+  },
   "ssh.reload": {
     risk: "change",
     summary: "Load the Mac's SSH keys into its agent again and report which need a passphrase",
@@ -333,7 +392,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers or default team. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -354,6 +413,8 @@ export const commands = {
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
       merge: OrgConfigSchema.shape.merge.nullable().optional(),
+      /** Which tasks a lead may start without asking. null goes back to `children`. */
+      lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
     }),
     output: OrgViewSchema,
@@ -759,7 +820,7 @@ export const commands = {
   "tasks.merge": {
     risk: "outbound",
     summary:
-      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push)",
+      "Merge the task branch into a local branch in the project's checkout: its base by default, or any other (dev, staging). With push, then push that branch to the project's MR remote, never forced: refused before merging when the remote's copy has commits the local branch lacks. With done, mark the task done after a clean merge (and push). method picks a merge commit, one squashed commit, or a rebase of the task branch and a fast-forward; the target is never rewritten, and a conflict changes nothing. With deleteAfter, a clean run removes the worktree and the local branch majhi created",
     input: z.object({
       id: TaskIdSchema,
       /** The branch to merge into. Default: each repo's base branch. */
@@ -769,6 +830,10 @@ export const commands = {
       done: z.boolean().default(false),
       /** Push the merged branch afterwards. */
       push: z.boolean().default(false),
+      /** Default `merge`: fast-forward when it can, else a merge commit. */
+      method: MergeMethodSchema.optional(),
+      /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
+      deleteAfter: z.boolean().default(false),
     }),
     output: z.object({
       results: z.array(MergeResultSchema),
@@ -800,9 +865,28 @@ export const commands = {
   "tasks.push": {
     risk: "outbound",
     summary:
-      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused",
-    input: z.object({ id: TaskIdSchema }),
+      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
+    input: z.object({ id: TaskIdSchema, deleteAfter: z.boolean().default(false) }),
     output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
+  },
+  "tasks.resolveShip": {
+    risk: "outbound",
+    summary:
+      "A merge (or merge and push) stopped on conflicts: ask the task's lead to bring the target into the task branch, resolve the conflicts, run the checks and commit, then run that same ship by itself when the lead's turn ends and the branch merges cleanly. It runs once; if it still cannot, the task goes back to review with the reason. A done task is opened again first",
+    input: z.object({
+      id: TaskIdSchema,
+      action: z.enum(["merge", "mergePush"]),
+      into: LocalBranchSchema,
+      method: MergeMethodSchema.default("merge"),
+      deleteAfter: z.boolean().default(false),
+    }),
+    output: z.object({ task: TaskSchema }),
+  },
+  "tasks.cancelShip": {
+    risk: "change",
+    summary: "Forget the ship majhi was to run once the lead resolves the conflicts. The lead keeps working",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ task: TaskSchema }),
   },
   // Merge requests (5.5) ------------------------------------------------------
   "tasks.diff": {
@@ -1044,6 +1128,10 @@ export const commands = {
       action: CardActionSchema,
       /** For merge: the local branch to merge into. Default: each repo's base branch. */
       into: LocalBranchSchema.optional(),
+      /** For merge and mergePush. Default `merge`. */
+      method: MergeMethodSchema.optional(),
+      /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */
+      deleteAfter: z.boolean().optional(),
       /** For done: the owner confirmed closing with work not shipped. */
       unshipped: UnshippedChoiceSchema.optional(),
     }),
@@ -1508,6 +1596,124 @@ export const commands = {
       "Set the price of a model (dollars per million tokens), or remove the owner's row with price null. New turns use it; recorded turns keep their cost",
     input: z.object({ model: PriceKeySchema, price: PriceSchema.nullable() }),
     output: z.object({ checked: z.string(), rows: z.array(PriceRowSchema) }),
+  },
+
+  // Schedules (PRV-63) ----------------------------------------------------------
+  "schedules.list": {
+    risk: "read",
+    summary: "List schedules with their next run time and last run result, optionally for one org",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(ScheduleViewSchema),
+  },
+  "schedules.get": {
+    risk: "read",
+    summary: "Show one schedule with its next run time and last run result",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.runs": {
+    risk: "read",
+    summary: "The run history of a schedule, newest first",
+    input: z.object({ id: ScheduleIdSchema, limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(AutomationRunSchema),
+  },
+  "schedules.create": {
+    risk: "change",
+    summary:
+      "Create a schedule that starts a task, posts to a task's room or runs a command, every N minutes, hours or days, by a cron expression, or once. Give a spec, or a phrase like 'weekdays at 9:00'. The time zone is the caller's, UTC when not sent",
+    input: ScheduleCreateInputSchema,
+    output: ScheduleViewSchema,
+  },
+  "schedules.update": {
+    risk: "change",
+    summary: "Edit a schedule's name, when it runs, its time zone, its action or its overlap rule",
+    input: ScheduleUpdateInputSchema,
+    output: ScheduleViewSchema,
+  },
+  "schedules.pause": {
+    risk: "change",
+    summary: "Pause a schedule: it does not run until it is resumed",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.resume": {
+    risk: "change",
+    summary: "Resume a paused schedule. Missed runs are not replayed",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: ScheduleViewSchema,
+  },
+  "schedules.runNow": {
+    risk: "change",
+    summary:
+      "Run a schedule's action now. The overlap rule applies: with skip, a run is recorded as skipped while the last one still goes",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: AutomationRunSchema,
+  },
+  "schedules.delete": {
+    risk: "destructive",
+    summary: "Delete a schedule and its run history",
+    input: z.object({ id: ScheduleIdSchema }),
+    output: z.object({ removed: ScheduleIdSchema }),
+  },
+
+  // Watch triggers (PRV-63) -----------------------------------------------------
+  "triggers.list": {
+    risk: "read",
+    summary:
+      "List watch triggers with what they watch, their last check and last run result, optionally for one org",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(TriggerViewSchema),
+  },
+  "triggers.get": {
+    risk: "read",
+    summary: "Show one watch trigger with its last check and last run result",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.runs": {
+    risk: "read",
+    summary: "The run history of a watch trigger, newest first",
+    input: z.object({ id: TriggerIdSchema, limit: z.number().int().min(1).max(200).default(50) }),
+    output: z.array(AutomationRunSchema),
+  },
+  "triggers.create": {
+    risk: "change",
+    summary:
+      "Create a watch trigger that starts a task, posts to a task's room or runs a command when something changes: a task's status (done, failed, needs you), a task's merge request, a branch, a file or folder in a project, a process exit, usage over a limit, a URL, or a command's output. settleSeconds is the quiet time a change must hold before it fires, cooldownSeconds the wait after a firing (default 300). {{event}} in the action's text becomes a line about what matched",
+    input: TriggerCreateInputSchema,
+    output: TriggerViewSchema,
+  },
+  "triggers.update": {
+    risk: "change",
+    summary:
+      "Edit a watch trigger's name, what it watches, its action, its overlap rule, check interval, settle time or cooldown",
+    input: TriggerUpdateInputSchema,
+    output: TriggerViewSchema,
+  },
+  "triggers.pause": {
+    risk: "change",
+    summary: "Pause a watch trigger: it stops checking until it is resumed",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.resume": {
+    risk: "change",
+    summary: "Resume a paused watch trigger. Changes made while it was paused do not fire it",
+    input: z.object({ id: TriggerIdSchema }),
+    output: TriggerViewSchema,
+  },
+  "triggers.runNow": {
+    risk: "change",
+    summary:
+      "Run a watch trigger's action now, as a test. The overlap rule applies; the cooldown and what the trigger watches are left alone",
+    input: z.object({ id: TriggerIdSchema }),
+    output: AutomationRunSchema,
+  },
+  "triggers.delete": {
+    risk: "destructive",
+    summary: "Delete a watch trigger and its run history",
+    input: z.object({ id: TriggerIdSchema }),
+    output: z.object({ removed: TriggerIdSchema }),
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

@@ -17,13 +17,15 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
   const toast = useToast();
   const copy = actionCopy(task, yourTurn);
   const ship = useDirectShip(task);
-  const options = useShipOptions(task, copy.kind === "done");
+  const hasTree = task.repos.some((r) => r.worktree !== undefined);
+  const done = task.status === "done";
+  const options = useShipOptions(task, (hasTree && done) || copy.kind === "done");
   const unshipped = options.data?.done.unshipped ?? [];
   const [confirming, setConfirming] = useState(false);
-  // Only once there is work to ship: a worktree exists and no agent is working.
-  const canShip =
-    task.repos.some((r) => r.worktree !== undefined) &&
-    !["inbox", "ready", "running", "done"].includes(task.status);
+  // Only once there is work to ship: a worktree exists and no agent is working. A done task keeps
+  // Ship while some of its work is not merged or pushed.
+  const shippable = [options.data?.merge, options.data?.push].some((o) => o?.ok === true);
+  const canShip = hasTree && (done ? shippable : !["inbox", "ready", "running"].includes(task.status));
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 

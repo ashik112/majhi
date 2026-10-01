@@ -101,6 +101,34 @@ export type MrState = z.infer<typeof MrStateSchema>;
 export const CiStateSchema = z.enum(["none", "pending", "passing", "failing"]);
 export type CiState = z.infer<typeof CiStateSchema>;
 
+/** How a merge lands the task branch: a merge commit, one squashed commit, or a rebase and fast-forward. */
+export const MergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
+export type MergeMethod = z.infer<typeof MergeMethodSchema>;
+
+/**
+ * A ship that stopped on conflicts, which majhi finishes once the lead has resolved them (the
+ * owner's "Resolve and merge" click). Run at most once: majhi clears it before it runs the ship,
+ * and when the lead stops without clean work.
+ */
+export const PendingShipSchema = z.object({
+  action: z.enum(["merge", "mergePush"]),
+  /** The local branch to merge into. */
+  into: z.string(),
+  method: MergeMethodSchema,
+  deleteAfter: z.boolean(),
+  /** The agent asked to resolve the conflicts. */
+  lead: IdSchema,
+  requestedAt: z.string(),
+  by: z.string(),
+});
+export type PendingShip = z.infer<typeof PendingShipSchema>;
+
+/** What a ship does, in a few words: "merge into main", "squash and push main", "rebase onto dev". */
+export function shipWords(ship: Pick<PendingShip, "action" | "into" | "method">): string {
+  if (ship.action === "mergePush") return `${ship.method} and push ${ship.into}`;
+  return ship.method === "rebase" ? `rebase onto ${ship.into}` : `${ship.method} into ${ship.into}`;
+}
+
 /** The merge request of one task repo. */
 export const RepoMrSchema = z.object({
   url: z.string(),
@@ -182,6 +210,8 @@ export const TaskSchema = z.object({
   overrides: z.record(IdSchema, TeamOverrideSchema),
   links: z.array(TaskLinkSchema),
   attachments: z.array(AttachmentSchema),
+  /** A ship majhi runs when the lead has resolved its conflicts. */
+  pendingShip: PendingShipSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -512,6 +542,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     type: z.literal("review"),
     /** Whom "Ask for changes" addresses. */
     lead: IdSchema.optional(),
+    /** Why the task is back in review when majhi expected to ship it: a ship it could not finish. */
+    why: z.string().optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),

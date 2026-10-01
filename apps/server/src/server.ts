@@ -89,6 +89,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       access: services.roomAccess,
       coordinator: services.coordinator,
       admin: services.admin,
+      config,
       room: services.room,
       store: services.store,
       agents: services.agentStore,
@@ -127,6 +128,8 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.usageSweeper.start();
       services.mrPoller.start();
       services.resilience.start();
+      services.automation.scheduler.start();
+      services.automation.triggerEngine.start();
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,

@@ -1,5 +1,6 @@
 import {
   type CommandInput,
+  type LeadStart,
   type MergePolicy,
   type MrHost,
   MrHostSchema,
@@ -29,6 +30,8 @@ export interface OrgDraft {
   commits: "default" | "on" | "off";
   /** When majhi merges the org's MRs. */
   merge: MergePolicy;
+  /** Which tasks a lead may start without asking you. */
+  leadStart: LeadStart;
   /** The saved secret (`secret:<name>`) each host's token is read from; `""` for none. */
   mrTokens: Record<MrHost, string>;
   /** A token typed for a host, saved as a secret when the form is saved. Never shown again. */
@@ -48,6 +51,7 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     resume: org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off",
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     merge: org.merge,
+    leadStart: org.leadStart,
     mrTokens: perHost((host) => org.mrTokens?.[host] ?? ""),
     newTokens: perHost(() => ""),
   };
@@ -119,6 +123,8 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
     input.commits = draft.commits === "default" ? null : { attribution: draft.commits === "on" };
 
   if (draft.merge !== org.merge) input.merge = draft.merge;
+
+  if (draft.leadStart !== org.leadStart) input.lead_start = draft.leadStart;
 
   const tokens = tokenMap(draft.mrTokens);
   const before = tokenMap(perHost((host) => org.mrTokens?.[host] ?? ""));

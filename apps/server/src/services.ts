@@ -12,6 +12,9 @@ import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
+import { createActionHost } from "./automation/host.ts";
+import { type Automation, createAutomation } from "./automation/index.ts";
+import { createWatchHost } from "./automation/triggers/host.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
 import { DockerCli } from "./containers/docker.ts";
@@ -27,6 +30,7 @@ import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import { GitLoginService } from "./git/logins.ts";
 import type { HostLink } from "./host/link.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
@@ -60,6 +64,7 @@ import { Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import type { LinkOptions } from "./tasks/links.ts";
+import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
@@ -129,8 +134,10 @@ export interface Services {
   tasks: TaskService;
   /** Push, open, watch and merge the merge requests of a task (5.5). */
   mrs: MrService;
+  gitLogins: GitLoginService;
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
+  pendingShips: PendingShips;
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
@@ -138,6 +145,8 @@ export interface Services {
   processes: ProcessManager;
   /** Previews and service containers majhi runs for agents (PRV-53). */
   containers: ContainerService;
+  /** Schedules and the action runner they share with watch triggers (PRV-63). */
+  automation: Automation;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -407,6 +416,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await promotion.release(task);
     },
     onRemoving: (task) => promotion.release(task),
+    // Bound below: the merge requests service is built after the task service.
+    onReview: (id) => pendingShips.reviewReached(id),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -417,7 +428,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
     console.error(`Memory cleanup failed: ${errorMessage(err)}`),
   );
+  const gitLogins = new GitLoginService(options.hostLink, async () => (await config.load()).projectPaths);
   const mrs = new MrService({
+    gitLogins,
     store,
     config,
     projects,
@@ -428,6 +441,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
+  });
+  const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
+  const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
+  const automation = createAutomation({
+    db: store.raw,
+    host: actionHost,
+    watch: createWatchHost({ store, processes, projects, usage: usageService, actions: actionHost }),
+    orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
+    changed: () => events.emit(["schedules"]),
+    triggersChanged: () => events.emit(["triggers"]),
   });
   const coordinator = new RoomCoordinator({
     store,
@@ -472,11 +495,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runs,
     tasks,
     mrs,
+    gitLogins,
     cardActions: new CardActions({ tasks, mrs, room }),
+    pendingShips,
     cleanup: new CleanupService({ store, room, events, projects }),
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     containers,
+    automation,
     memory,
     extraction,
     promotion,
@@ -487,6 +513,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      automation.scheduler.stop();
+      automation.triggerEngine.stop();
       layaDocker?.close();
       await runs.closeAll();
       await processes.stopAll();

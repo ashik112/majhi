@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
@@ -17,6 +17,11 @@ afterEach(async () => {
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
 const branch = "task/acm-1-fix-api";
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
+const present = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
 
 /** ACM-1 on api, in review, with one committed change on its branch. */
 async function reviewed(): Promise<void> {
@@ -118,15 +123,20 @@ describe("Ship", () => {
     });
     options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
     expect(options.host).toBe("github");
-    expect(options.mr).toEqual({ ok: false, why: "No GitHub token: add one in Orgs > Acme." });
+    expect(options.mr).toEqual({
+      ok: false,
+      why: "No GitHub token: add one in Orgs > Acme.",
+      fix: { page: "orgs", org: "acme" },
+    });
 
     // An https remote without an SSH alias: nothing can be pushed.
     await git(w.repo("api"), "remote", "set-url", "origin", "https://github.com/acme/api.git");
     options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
     const why =
       "No SSH alias for acme-api's origin remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.";
-    expect(options.push).toEqual({ ok: false, why });
-    expect(options.mergePush).toEqual({ ok: false, why });
+    const fix = { page: "projects", project: "acme-api" };
+    expect(options.push).toEqual({ ok: false, why, fix });
+    expect(options.mergePush).toEqual({ ok: false, why, fix });
     expect(options.merge).toEqual({ ok: true });
     const refused = await cmd("tasks.push", { id: "ACM-1" });
     expect(refused.status).toBe(409);
@@ -140,5 +150,76 @@ describe("Ship", () => {
       remotes: { origin: { host: "github", ssh: "github-acme" } },
     });
     expect((await cmd("tasks.shipOptions", { id: "ACM-1" })).body.push).toEqual({ ok: true });
+  });
+
+  it("squashes into main, marks it done, then deletes the task branch and its worktree", async () => {
+    await reviewed();
+    const res = await cmd("tasks.merge", {
+      id: "ACM-1",
+      into: "main",
+      done: true,
+      method: "squash",
+      deleteAfter: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.results).toMatchObject([{ ok: true }]);
+    expect(res.body.results[0].detail).toBe(
+      `Squashed ${branch} into one commit on main. Not pushed. Deleted ${branch} and its worktree.`,
+    );
+    expect(res.body.task.status).toBe("done");
+    expect(res.body.task.repos[0].worktree).toBeUndefined();
+    expect(await git(w.repo("api"), "show", "main:fix.txt")).toBe("fix");
+    expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
+    expect(await present(join(w.taskDir("ACM-1"), "acme-api"))).toBe(false);
+  });
+
+  it("refuses delete after while the worktree has uncommitted files, before merging anything", async () => {
+    await reviewed();
+    await writeFile(join(w.taskDir("ACM-1"), "acme-api", "scratch.txt"), "not committed\n");
+    const before = await tip(w.repo("api"), "main");
+    const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", done: true, deleteAfter: true });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(
+      "acme-api's worktree has uncommitted changes (1 file), so it cannot be deleted. Ask the agent to commit them, or ship without deleting.",
+    );
+    expect(await tip(w.repo("api"), "main")).toBe(before);
+    expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
+    expect(await present(join(w.taskDir("ACM-1"), "acme-api", "scratch.txt"))).toBe(true);
+  });
+
+  it("deletes nothing when the push fails, and keeps the remote branch when it works", async () => {
+    await reviewed();
+    expect((await cmd("tasks.push", { id: "ACM-1" })).status).toBe(200);
+    await pushFromElsewhere(branch);
+    const failed = await cmd("tasks.push", { id: "ACM-1", deleteAfter: true });
+    expect(failed.body.results[0]).toMatchObject({ ok: false });
+    expect(await present(join(w.taskDir("ACM-1"), "acme-api"))).toBe(true);
+    expect(await git(w.repo("api"), "branch", "--list", branch)).not.toBe("");
+
+    // Back in step with the remote: the agent's commit goes on top of theirs, then the push works.
+    const tree = join(w.taskDir("ACM-1"), "acme-api");
+    await git(tree, "pull", "--quiet", "--no-rebase", "--no-edit", "origin", branch);
+    const pushed = await cmd("tasks.push", { id: "ACM-1", deleteAfter: true });
+    expect(pushed.body.results[0]).toMatchObject({ ok: true });
+    expect(pushed.body.results[0].detail).toContain(`Deleted ${branch} and its worktree.`);
+    expect(await present(tree)).toBe(false);
+    expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
+    expect(await git(w.remote("api"), "branch", "--list", branch)).not.toBe("");
+  });
+
+  it("keeps Ship open on a done task until its work is pushed, without reopening it", async () => {
+    await reviewed();
+    const { store } = w.h.majhi.services;
+    store.tasks.setStatus("ACM-1", "done", undefined, new Date().toISOString());
+    let options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
+    expect(options).toMatchObject({ merge: { ok: true }, mergePush: { ok: true }, push: { ok: true } });
+
+    const res = await cmd("tasks.push", { id: "ACM-1" });
+    expect(res.body.results[0]).toMatchObject({ ok: true });
+    expect(res.body.task.status).toBe("done");
+    options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
+    const why = "ACM-1 is done, and its work is merged or pushed.";
+    expect(options.merge).toEqual({ ok: false, why });
+    expect(options.push).toEqual({ ok: false, why });
   });
 });

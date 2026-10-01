@@ -7,6 +7,7 @@ import {
   dockerRunArgs,
   dockerSpawner,
   dockerTty,
+  MAJHI_HOOKS_DIR,
   MountRefused,
   type RunnerConfig,
   runMounts,
@@ -156,6 +157,24 @@ describe("runner mounts", () => {
     await symlink(majhiHome, link);
     expect(refused({ mounts: [{ path: link }] })).toThrow(MountRefused);
     expect(refused({ cwd: link })).toThrow(MountRefused);
+  });
+
+  it("mounts majhi's own git hooks folder read-only, and nothing else inside the config folder", async () => {
+    const hooks = join(majhiHome, MAJHI_HOOKS_DIR);
+    await mkdir(join(hooks, "nested"), { recursive: true });
+    const mounts = runMounts(request({ mounts: [{ path: hooks, readOnly: true }] }), cfg);
+    expect(mounts).toContainEqual({ path: hooks, readOnly: true });
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    // Writable, a folder inside it, or a path that only climbs out of it.
+    expect(refused({ mounts: [{ path: hooks }] })).toThrow(MountRefused);
+    expect(refused({ mounts: [{ path: join(hooks, "nested"), readOnly: true }] })).toThrow(MountRefused);
+    expect(refused({ mounts: [{ path: join(hooks, "..", "accounts"), readOnly: true }] })).toThrow(
+      MountRefused,
+    );
+    // A symlink named like it that leads elsewhere in the config folder.
+    await rm(hooks, { recursive: true });
+    await symlink(join(majhiHome, "accounts"), hooks);
+    expect(refused({ mounts: [{ path: hooks, readOnly: true }] })).toThrow(MountRefused);
   });
 });
 

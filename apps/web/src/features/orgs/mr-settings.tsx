@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { HOST_LABEL } from "@/lib/hosts";
 import { useSecrets } from "@/lib/studio-queries";
+import { GitLoginOffer } from "./git-login-offer";
 import { MR_HOSTS, type OrgDraft } from "./model";
 
 const POLICY_HINT: Record<MergePolicy, string> = {
@@ -14,10 +15,12 @@ const POLICY_HINT: Record<MergePolicy, string> = {
 
 /** The org's merge policy and where each MR host's token comes from. Tokens are saved secrets, never shown. */
 export function MrSettings({
+  org,
   draft,
   error,
   onChange,
 }: {
+  org: { id: string; name: string };
   draft: OrgDraft;
   error: string | undefined;
   onChange: (patch: Partial<OrgDraft>) => void;
@@ -45,6 +48,11 @@ export function MrSettings({
           </Select>
         )}
       </Field>
+      <GitLoginOffer
+        org={org.id}
+        orgName={org.name}
+        onUsed={(host, ref) => onChange({ mrTokens: { ...draft.mrTokens, [host]: ref } })}
+      />
       <div className="flex flex-col gap-1.5">
         <span className="text-sm text-fg-faint">
           Host tokens. Pick a saved secret, or paste a new token and majhi saves it as one.

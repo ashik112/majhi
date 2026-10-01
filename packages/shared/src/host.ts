@@ -122,6 +122,25 @@ export const LayaDecideResultSchema = z.object({
 });
 export type LayaDecideResult = z.infer<typeof LayaDecideResultSchema>;
 
+/** One way the Mac can act as an account on a git host. Never holds a token. */
+export const GitLoginSchema = z.object({
+  via: z.enum(["gh", "glab", "ssh"]),
+  /** The `Host` alias of ~/.ssh/config for `ssh`. Absent for a key used with the host name itself. */
+  alias: z.string().optional(),
+  account: z.string(),
+});
+export type GitLogin = z.infer<typeof GitLoginSchema>;
+
+export const GitHostLoginsSchema = z.object({
+  /** Lowercase host name, like `github.com`. */
+  host: z.string(),
+  logins: z.array(GitLoginSchema),
+});
+export type GitHostLogins = z.infer<typeof GitHostLoginsSchema>;
+
+export const GitLoginsResultSchema = z.object({ hosts: z.array(GitHostLoginsSchema) });
+export type GitLoginsResult = z.infer<typeof GitLoginsResultSchema>;
+
 /** Longest path the editor jobs take. */
 export const EDITOR_PATH_MAX = 4096;
 
@@ -166,6 +185,21 @@ export const HostJobSchema = z.discriminatedUnion("method", [
       line: z.number().int().min(1).optional(),
     }),
   }),
+  /** Which accounts `gh`, `glab` and the SSH keys are logged in as, per git host. Reads no token. */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.logins"),
+    params: z.object({ extraHosts: z.array(z.string().max(255)).max(50) }),
+  }),
+  /**
+   * Reads the token of a `gh` or `glab` login. Only the owner's "Use it" click may send it, and the
+   * result must go straight into one org's secrets: never logged, cached or echoed.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.token"),
+    params: z.object({ via: z.enum(["gh", "glab"]), host: z.string().min(1).max(255) }),
+  }),
   /**
    * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
    * must never be logged, stored or echoed in an error, on either side.
@@ -192,6 +226,8 @@ export const HostResultSchemas = {
     changes: z.array(z.string()).max(20),
   }),
   "editor.open": z.object({ opened: z.literal(true) }),
+  "git.logins": GitLoginsResultSchema,
+  "git.token": z.object({ token: z.string().min(1) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),
   "decisions.status": LayaStatusSchema,

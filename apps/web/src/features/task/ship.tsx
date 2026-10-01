@@ -1,5 +1,5 @@
-import type { ShipOption, Task } from "@majhi/shared";
-import { ChevronDown, GitMerge, LoaderCircle } from "lucide-react";
+import { type MergeMethod, type ShipFix, type ShipOption, shipWords, type Task } from "@majhi/shared";
+import { ArrowRight, ChevronDown, GitBranch, GitMerge, LoaderCircle, Wrench } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent,
@@ -11,7 +11,11 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { PageLink } from "@/components/ui/page-link";
+import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { GitLoginOffer } from "@/features/orgs/git-login-offer";
 import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -23,13 +27,50 @@ export interface ShipResult {
   into: string;
   ok: boolean;
   detail: string;
+  conflicts?: string[] | undefined;
+}
+export interface ShipChoices {
+  /** For merge and mergePush. */
+  method: MergeMethod;
+  /** For merge, mergePush and push. */
+  deleteAfter: boolean;
 }
 /** Runs one Ship action: straight through its command, or through a review card's button. */
-export type RunShip = (action: ShipAction, into: string) => Promise<{ results?: ShipResult[] | undefined }>;
+export type RunShip = (
+  action: ShipAction,
+  into: string,
+  choices: ShipChoices,
+) => Promise<{ results?: ShipResult[] | undefined }>;
 
 const ACTIONS: readonly ShipAction[] = ["merge", "mergePush", "push", "mr"];
-const PANEL_WIDTH = 400;
+const MERGES: readonly ShipAction[] = ["merge", "mergePush"];
+const PANEL_WIDTH = 440;
 const GAP = 16;
+const METHOD_KEY = "majhi.ship.method";
+
+const METHODS = [
+  { value: "merge", label: "Merge commit" },
+  { value: "squash", label: "Squash" },
+  { value: "rebase", label: "Rebase" },
+] as const satisfies readonly { value: MergeMethod; label: string }[];
+
+/** The method picked last time, in this browser. */
+function savedMethod(): MergeMethod {
+  try {
+    const saved = localStorage.getItem(METHOD_KEY);
+    return METHODS.find((m) => m.value === saved)?.value ?? "merge";
+  } catch {
+    return "merge";
+  }
+}
+
+function saveMethod(method: MergeMethod): void {
+  try {
+    localStorage.setItem(METHOD_KEY, method);
+  } catch {
+    // Private windows and blocked storage: the choice lasts until the panel closes.
+  }
+}
 
 /**
  * Where the panel goes: fixed to the viewport so a scrolling room never clips it, below the button
@@ -45,28 +86,33 @@ function placeNear(button: HTMLElement, align: "left" | "right"): CSSProperties 
   const below = window.innerHeight - r.bottom - GAP;
   const above = r.top - GAP;
   const vertical =
-    below >= 440 || below >= above
+    below >= 480 || below >= above
       ? { top: r.bottom + 4, maxHeight: below - 4 }
       : { bottom: window.innerHeight - r.top + 4, maxHeight: above - 4 };
   return { position: "fixed", left, width, ...vertical };
 }
 
-/** Ship straight through the task commands (the header). A merge from review marks the task done. */
+/**
+ * Ship straight through the task commands (the header). A merge from review marks the task done;
+ * a done task stays done and an open one stays open.
+ */
 export function useDirectShip(task: Task): RunShip {
   const after = useAfterTaskChange();
-  return async (action, into) => {
+  return async (action, into, { method, deleteAfter }) => {
     if (action === "merge" || action === "mergePush") {
       const out = await cmd("tasks.merge", {
         id: task.id,
         into,
         done: task.status === "review",
         push: action === "mergePush",
+        method,
+        deleteAfter,
       });
       await after(out.task);
       return out;
     }
     if (action === "push") {
-      const out = await cmd("tasks.push", { id: task.id });
+      const out = await cmd("tasks.push", { id: task.id, deleteAfter });
       await after(out.task);
       return out;
     }
@@ -84,17 +130,21 @@ export function useDirectShip(task: Task): RunShip {
 }
 
 /**
- * Ship: pick a branch, then merge into it locally, merge and push it, push the task branch, or push
- * and open merge requests into it. Each action says why when it cannot run now.
+ * Ship: the task branch into a target branch. Merge it locally (merge commit, squash or rebase),
+ * merge and push, push the task branch, or push and open merge requests. Each action says why when
+ * it cannot run now, with a link to the fix when it is on another page.
  */
 export function Ship({
   task,
   run,
+  lead,
   align = "right",
   variant = "secondary",
 }: {
   task: Task;
   run: RunShip;
+  /** Who gets the conflicts to resolve. Default: the task's first agent. */
+  lead?: string | undefined;
   align?: "left" | "right";
   variant?: "primary" | "secondary";
 }) {
@@ -153,6 +203,7 @@ export function Ship({
           id={id}
           task={task}
           run={run}
+          lead={lead ?? task.team[0]}
           place={place}
           panelRef={panel}
           onClose={() => {
@@ -165,10 +216,66 @@ export function Ship({
   );
 }
 
+/** The task branch, or each repo's when they differ, in mono. */
+function SourceBranches({ task }: { task: Task }) {
+  const names = [...new Set(task.repos.map((r) => r.branch))];
+  if (names.length <= 1) {
+    const name = names[0] ?? "";
+    return (
+      <span
+        title={name}
+        className="flex h-8 min-w-0 flex-[3] items-center gap-1.5 rounded-md border border-line-strong bg-sunken px-2.5"
+      >
+        <GitBranch aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
+        <span className="min-w-0 truncate font-mono text-sm text-fg">{name}</span>
+      </span>
+    );
+  }
+  return (
+    <ul className="m-0 flex min-w-0 flex-[3] list-none flex-col gap-1 p-0">
+      {task.repos.map((r) => (
+        <li
+          key={r.project}
+          title={`${r.project}: ${r.branch}`}
+          className="flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-line-strong bg-sunken px-2.5 text-sm"
+        >
+          <span className="shrink-0 text-fg-faint">{r.project}</span>
+          <span className="min-w-0 truncate font-mono text-fg">{r.branch}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A link to the page where the owner fixes what blocks an action. */
+function FixLink({ fix, onGo }: { fix: ShipFix; onGo: () => void }) {
+  const common = "inline-flex items-center gap-1 text-xs text-blue underline-offset-2 hover:underline";
+  if (fix.page === "projects") {
+    return (
+      <PageLink
+        page="projects"
+        search={{ project: fix.project, section: "remotes" }}
+        className={common}
+        onClick={onGo}
+      >
+        <Wrench aria-hidden="true" className="size-3" />
+        Fix it in Projects: <span className="font-mono">{fix.project}</span>
+      </PageLink>
+    );
+  }
+  return (
+    <PageLink page="orgs" search={{ org: fix.org }} className={common} onClick={onGo}>
+      <Wrench aria-hidden="true" className="size-3" />
+      Fix it in Orgs
+    </PageLink>
+  );
+}
+
 function ShipPanel({
   id,
   task,
   run,
+  lead,
   place,
   panelRef,
   onClose,
@@ -176,6 +283,7 @@ function ShipPanel({
   id: string;
   task: Task;
   run: RunShip;
+  lead: string | undefined;
   place: CSSProperties;
   panelRef: RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -185,6 +293,8 @@ function ShipPanel({
   const base = options.data?.base ?? task.repos[0]?.base ?? "main";
   const [into, setInto] = useState(base);
   const [chosen, setChosen] = useState<ShipAction>();
+  const [method, setMethod] = useState<MergeMethod>(savedMethod);
+  const [deleteAfter, setDeleteAfter] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [results, setResults] = useState<ShipResult[]>();
@@ -194,21 +304,34 @@ function ShipPanel({
     (b) => !local.includes(b),
   );
   const request = options.data?.host === "github" ? "pull request" : "merge request";
-  const done = task.status === "review";
-  const branch = task.repos.map((r) => r.branch).join(", ");
+  const closes = task.status === "review";
+  const branch = [...new Set(task.repos.map((r) => r.branch))].join(", ");
+  const created = task.repos.some((r) => r.createdBranch);
+
+  const verb = method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge";
+  const how =
+    method === "squash"
+      ? `One new commit on ${into}. The task branch stays as it is.`
+      : method === "rebase"
+        ? `Replays the task's commits on top of ${into}, then fast-forwards ${into}. It never rewrites ${into}.`
+        : "Fast-forward when it can, else a merge commit.";
+  const landing =
+    method === "rebase"
+      ? `Rebase ${branch} onto ${into}, then fast-forward ${into}`
+      : `${verb} ${branch} into ${into}`;
 
   const labels: Record<ShipAction, { title: string; hint: string; confirm: string; summary: string }> = {
     merge: {
       title: `Merge into ${into}`,
       hint: "In your checkout. Nothing is pushed.",
-      confirm: "Merge",
-      summary: `Merge ${branch} into ${into} in your checkout${done ? " and mark the task done" : ""}. Nothing is pushed.`,
+      confirm: verb,
+      summary: `${landing} in your checkout${closes ? ", and mark the task done" : ""}. Nothing is pushed.`,
     },
     mergePush: {
       title: `Merge into ${into} and push ${into}`,
       hint: `Then pushes ${into} to the remote. Never forced.`,
-      confirm: "Merge and push",
-      summary: `Merge ${branch} into ${into}, then push ${into}${done ? ", and mark the task done" : ""}. Refused if the remote's ${into} has commits yours lacks.`,
+      confirm: `${verb} and push`,
+      summary: `${landing}, then push ${into}${closes ? ", and mark the task done" : ""}. Refused if the remote's ${into} has commits yours lacks.`,
     },
     push: {
       title: "Push the task branch",
@@ -227,7 +350,7 @@ function ShipPanel({
   function optionOf(action: ShipAction): ShipOption | undefined {
     const o = options.data?.[action];
     if (o === undefined) return undefined;
-    if (o.ok && (action === "merge" || action === "mergePush") && !local.includes(into)) {
+    if (o.ok && MERGES.includes(action) && !local.includes(into)) {
       return { ok: false, why: `${into} is not a local branch. Pick a local one to merge into.` };
     }
     return o;
@@ -236,9 +359,11 @@ function ShipPanel({
   async function confirm(action: ShipAction) {
     setBusy(true);
     setError(undefined);
+    const deleting = deleteAfter && action !== "mr";
     try {
-      const out = await run(action, into);
+      const out = await run(action, into, { method, deleteAfter: deleting });
       const list = out.results ?? [];
+      // A clean run closes; the room says what merged and, with "delete after", what was deleted.
       if (list.length > 0 && list.every((r) => r.ok) && action !== "push") onClose();
       else setResults(list);
     } catch (err) {
@@ -248,6 +373,8 @@ function ShipPanel({
     }
   }
 
+  const conflicted = (results ?? []).filter((r) => (r.conflicts ?? []).length > 0);
+
   // In a portal: a room that scrolls, or content-visibility on a room item, would clip it.
   return createPortal(
     <section
@@ -256,21 +383,21 @@ function ShipPanel({
       role="dialog"
       aria-label={`Ship ${task.id}`}
       style={place}
-      className="z-50 flex flex-col gap-2.5 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
+      className="z-50 flex flex-col gap-3 overflow-y-auto rounded-lg border border-line-bright bg-glass-strong p-3 shadow-pop"
     >
-      <div className="flex items-center gap-2 text-sm">
-        <label htmlFor={`${id}-into`} className="shrink-0 text-fg-muted">
-          Into
-        </label>
+      <div className="flex items-start gap-2">
+        <SourceBranches task={task} />
+        <ArrowRight role="img" aria-label="into" className="mt-2 size-4 shrink-0 text-fg-faint" />
         <Select
-          id={`${id}-into`}
+          aria-label="Target branch"
           value={into}
           disabled={busy}
           onChange={(e) => {
             setInto(e.target.value);
             setResults(undefined);
           }}
-          className="h-8 font-mono text-sm"
+          title={into}
+          className="h-8 min-w-0 flex-[2] font-mono text-sm"
         >
           <optgroup label="Local">
             {local.map((b) => (
@@ -296,12 +423,14 @@ function ShipPanel({
         </p>
       )}
       <ul className="m-0 flex list-none flex-col gap-1 p-0">
-        {ACTIONS.map((action) => {
+        {ACTIONS.map((action, i) => {
           const o = optionOf(action);
           const label = labels[action];
           const disabled = o === undefined || !o.ok || busy;
+          // One reason that blocks several actions (no SSH alias) is said once, with its fix.
+          const repeated = o?.ok === false && ACTIONS.slice(0, i).some((a) => optionOf(a)?.why === o.why);
           return (
-            <li key={action}>
+            <li key={action} className="flex flex-col">
               <button
                 type="button"
                 aria-disabled={disabled}
@@ -319,16 +448,70 @@ function ShipPanel({
                 )}
               >
                 <span className={cn("text-base", disabled ? "text-fg-faint" : "text-fg")}>{label.title}</span>
-                <span className={cn("text-xs text-pretty", o?.ok === false ? "text-amber" : "text-fg-faint")}>
-                  {o === undefined ? "Checking..." : o.ok ? label.hint : o.why}
+                <span
+                  className={cn(
+                    "text-xs text-pretty",
+                    o?.ok === false && !repeated ? "text-amber" : "text-fg-faint",
+                  )}
+                >
+                  {o === undefined
+                    ? "Checking..."
+                    : o.ok
+                      ? label.hint
+                      : repeated
+                        ? "Same reason as above."
+                        : o.why}
                 </span>
               </button>
+              {o?.ok === false && o.fix !== undefined && !repeated && (
+                <span className="px-2.5 pb-1">
+                  <FixLink fix={o.fix} onGo={onClose} />
+                  {o.fix.page === "orgs" && action === "mr" && (
+                    <span className="mt-1 flex flex-col gap-1">
+                      <GitLoginOffer org={o.fix.org} orgName={o.fix.org} host={options.data?.host} />
+                    </span>
+                  )}
+                </span>
+              )}
             </li>
           );
         })}
       </ul>
       {chosen !== undefined && results === undefined && (
-        <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+          {MERGES.includes(chosen) && (
+            <div className="flex flex-col gap-1.5">
+              <Segmented
+                label="How to merge"
+                value={method}
+                segments={METHODS}
+                onChange={(next) => {
+                  setMethod(next);
+                  saveMethod(next);
+                }}
+                className="self-start"
+              />
+              <p className="text-xs text-fg-faint text-pretty">{how}</p>
+            </div>
+          )}
+          {chosen !== "mr" && (
+            <div className="flex flex-col">
+              <Switch
+                label="Delete the task branch and its worktree after"
+                checked={deleteAfter}
+                disabled={busy}
+                onChange={setDeleteAfter}
+              />
+              {deleteAfter && (
+                <p className="text-xs text-fg-faint text-pretty">
+                  {created
+                    ? "Only once it all worked. A worktree with uncommitted changes stops the action."
+                    : `Only the worktree: majhi did not create ${branch}, so it stays.`}
+                  {chosen === "push" && " The remote branch stays."}
+                </p>
+              )}
+            </div>
+          )}
           <p className="text-sm text-fg-muted text-pretty">{labels[chosen].summary}</p>
           {error && (
             <p role="alert" className="text-sm text-red text-pretty">
@@ -347,7 +530,7 @@ function ShipPanel({
         </div>
       )}
       {results !== undefined && (
-        <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
           <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
             {results.map((r) => (
               <li key={r.project} className={cn(r.ok ? "text-green" : "text-red", "text-pretty")}>
@@ -356,12 +539,131 @@ function ShipPanel({
               </li>
             ))}
           </ul>
-          <Button size="sm" className="self-end" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {conflicted.length > 0 &&
+              lead !== undefined &&
+              (chosen === "merge" || chosen === "mergePush") && (
+                <ResolveButton
+                  task={task}
+                  lead={lead}
+                  ship={{ action: chosen, into, method }}
+                  deleteAfter={deleteAfter}
+                />
+              )}
+            <Button size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
       )}
     </section>,
     document.body,
+  );
+}
+
+/**
+ * One click: majhi asks the lead to resolve the conflicts, run the checks and commit, then runs this
+ * same ship by itself when the lead is done. A done task is opened again first.
+ */
+function ResolveButton({
+  task,
+  lead,
+  ship,
+  deleteAfter,
+}: {
+  task: Task;
+  lead: string;
+  ship: { action: "merge" | "mergePush"; into: string; method: MergeMethod };
+  deleteAfter: boolean;
+}) {
+  const after = useAfterTaskChange();
+  const [state, setState] = useState<{ kind: "idle" | "sending" | "sent" } | { kind: "error"; text: string }>(
+    { kind: "idle" },
+  );
+  const words = shipWords(ship);
+
+  async function send() {
+    setState({ kind: "sending" });
+    try {
+      const out = await cmd("tasks.resolveShip", { id: task.id, ...ship, deleteAfter });
+      await after(out.task);
+      setState({ kind: "sent" });
+    } catch (err) {
+      setState({ kind: "error", text: describeError(err) });
+    }
+  }
+
+  if (state.kind === "sent") {
+    return (
+      <span className="mr-auto text-sm text-fg-muted text-pretty">
+        Sent to <span className="font-mono">@{lead}</span>. majhi will {words} when it is done.
+      </span>
+    );
+  }
+  return (
+    <>
+      {state.kind === "error" && (
+        <span role="alert" className="mr-auto text-sm text-red text-pretty">
+          {state.text}
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={state.kind === "sending"}
+        title={`Asks @${lead} to resolve the conflicts and commit, then majhi will ${words}`}
+        onClick={() => void send()}
+      >
+        {state.kind === "sending" && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+        Resolve and {words}
+      </Button>
+    </>
+  );
+}
+
+/** The ship majhi runs once the lead has resolved the conflicts, with Cancel. Nothing when none waits. */
+export function PendingShipLine({ task }: { task: Task }) {
+  const after = useAfterTaskChange();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const pending = task.pendingShip;
+  if (pending === undefined) return null;
+
+  async function cancel() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const out = await cmd("tasks.cancelShip", { id: task.id });
+      await after(out.task);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const words = shipWords(pending);
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="flex items-start gap-1.5 text-xs text-fg-muted text-pretty">
+        <GitMerge aria-hidden="true" className="mt-px size-3.5 shrink-0 text-fg-faint" />
+        <span className="min-w-0">
+          Will {words} when <span className="font-mono">@{pending.lead}</span> resolves the conflicts.{" "}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void cancel()}
+            className="cursor-pointer text-blue underline-offset-2 hover:underline disabled:cursor-default disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </span>
+      </p>
+      {error && (
+        <p role="alert" className="text-xs text-red text-pretty">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

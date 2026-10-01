@@ -12,6 +12,7 @@ import {
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
+  type PendingShip,
   type PlanMember,
   type ProcessInfo,
   parseMentions,
@@ -20,6 +21,7 @@ import {
   type RoomSearchHit,
   type ShipOption,
   type ShipOptions,
+  shipWords,
   type Task,
   type TaskId,
   type TaskKind,
@@ -39,7 +41,13 @@ import type { EventHub } from "../events/hub.ts";
 import { writeFileAtomic } from "../fs.ts";
 import { repoDiff } from "../git/diff.ts";
 import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
-import { localBranches, type MergeOutcome, mergeBranch, remoteBranches } from "../git/merge.ts";
+import {
+  localBranches,
+  type MergeMethod,
+  type MergeOutcome,
+  mergeBranch,
+  remoteBranches,
+} from "../git/merge.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -69,6 +77,7 @@ import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
+import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { TaskPlanner } from "./planner.ts";
@@ -108,6 +117,8 @@ export interface TaskDeps {
   onDone?: (task: Task) => void | Promise<void>;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
+  /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
+  onReview?: (id: string) => Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -609,6 +620,7 @@ export class TaskService {
     await this.deps.processes?.stopTask(id);
     await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
+    this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       this.deps.store.tasks.setStatus(id, "paused", "owner", this.now().toISOString());
     }
@@ -999,6 +1011,7 @@ export class TaskService {
     await this.deps.processes?.stopTask(id);
     await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
+    this.deps.store.tasks.setPendingShip(id, undefined);
     this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
     this.cards.settle(id, "review", "Marked done", opts.by ?? "owner");
     this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
@@ -1049,8 +1062,9 @@ export class TaskService {
   }
 
   /**
-   * Merges the task branch into a local branch (its base, or `into`) in each repo's checkout.
-   * Refused while an agent of the task works or its worktree has uncommitted changes. Never pushes.
+   * Merges the task branch into a local branch (its base, or `into`) in each repo's checkout, the
+   * way `method` says. Refused while an agent of the task works or its worktree has uncommitted
+   * changes. Never pushes. With `deleteAfter`, a clean merge removes the worktree and the branch.
    */
   async merge(input: {
     id: string;
@@ -1060,6 +1074,8 @@ export class TaskService {
     by?: string | undefined;
     /** False: the caller settles the review card itself (a merge that also pushes). */
     settle?: boolean | undefined;
+    method?: MergeMethod | undefined;
+    deleteAfter?: boolean | undefined;
   }) {
     const task = this.get(input.id);
     if (this.deps.runs.working(task.id).length > 0) {
@@ -1070,9 +1086,17 @@ export class TaskService {
     }
     const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
     if (repos.length === 0) throw new UserError(`${task.id} has no repo to merge.`);
+    if (input.deleteAfter === true) await this.assertDeletable(repos);
     const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
     const identity = org?.identity ?? DEFAULT_IDENTITY;
-    const results: { project: string; into: string; ok: boolean; detail: string }[] = [];
+    const results: {
+      project: string;
+      into: string;
+      ok: boolean;
+      detail: string;
+      conflicts?: string[];
+    }[] = [];
+    const heads = new Map<string, string>();
     for (const repo of repos) {
       const into = input.into ?? repo.base;
       const dirty = repo.worktree === undefined ? [] : await uncommitted(repo.worktree).catch(() => []);
@@ -1092,19 +1116,19 @@ export class TaskService {
         identity,
         message: `Merge ${task.id}: ${task.title}`,
         scratch: join(task.folder, ".merge", repo.project),
+        method: input.method,
       }).catch((err: unknown): MergeOutcome => ({ ok: false, reason: errorMessage(err) }));
+      if (outcome.ok) heads.set(repo.project, outcome.head);
       results.push(
         outcome.ok
-          ? {
+          ? { project: repo.project, into, ok: true, detail: mergedDetail(repo.branch, into, outcome.how) }
+          : {
               project: repo.project,
               into,
-              ok: true,
-              detail:
-                outcome.how === "already merged"
-                  ? `${repo.branch} is already in ${into}.`
-                  : `Merged ${repo.branch} into ${into} (${outcome.how}). Not pushed.`,
-            }
-          : { project: repo.project, into, ok: false, detail: outcome.reason },
+              ok: false,
+              detail: outcome.reason,
+              ...(outcome.conflicts === undefined ? {} : { conflicts: outcome.conflicts }),
+            },
       );
     }
     for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
@@ -1115,12 +1139,60 @@ export class TaskService {
     const into = [...new Set(results.map((r) => r.into))].join(", ");
     if (input.settle !== false)
       this.cards.settle(task.id, "review", `Merged into ${into}${closes ? " and marked done" : ""}`, by);
-    if (input.done)
-      return {
-        results,
-        task: await this.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by }),
-      };
-    return { results, task: this.get(task.id) };
+    const after = input.done
+      ? await this.close(task.id, { whenSubtasksOpen: "stay", whenUnshipped: "stay", by })
+      : this.get(task.id);
+    if (input.deleteAfter !== true) return { results, task: after };
+    const deleted = await this.deleteAfterShip(task.id, heads);
+    return {
+      results: results.map((r) => {
+        const extra = deleted.get(r.project);
+        return extra === undefined ? r : { ...r, detail: `${r.detail} ${extra}` };
+      }),
+      task: this.get(task.id),
+    };
+  }
+
+  /**
+   * "Delete after" is refused before a ship runs when a worktree holds uncommitted work, untracked
+   * files included, so nothing is merged or pushed that the owner meant to clean up after.
+   */
+  async assertDeletable(repos: readonly TaskRepo[]): Promise<void> {
+    for (const repo of repos) {
+      const refusal = await deleteRefusal(repo);
+      if (refusal !== undefined) throw new UserError(refusal, 409);
+    }
+  }
+
+  /**
+   * After a ship that succeeded: removes each repo's worktree and deletes its local branch when it
+   * is still at the commit that was shipped (`heads`, by project). Says in the room what went and
+   * what stayed, and returns that line by project.
+   */
+  async deleteAfterShip(id: string, heads: ReadonlyMap<string, string>): Promise<Map<string, string>> {
+    const task = this.get(id);
+    const stacked = this.deps.store.tasks.stackedOn(task.id);
+    const out = new Map<string, string>();
+    for (const repo of task.repos) {
+      const head = heads.get(repo.project);
+      if (head === undefined) continue;
+      const done = await deleteAfterShip({
+        repo,
+        head,
+        stacked: stacked.some((s) => s.project === repo.project && s.branch === repo.branch),
+      }).catch((err: unknown) => ({
+        worktreeRemoved: false,
+        branchDeleted: false,
+        detail: `Kept ${repo.branch} and its worktree: ${errorMessage(err)}`,
+      }));
+      if (done.worktreeRemoved) this.deps.store.tasks.clearWorktree(task.id, repo.project);
+      this.note(task.id, `${repo.project}: ${done.detail}`);
+      out.set(repo.project, done.detail);
+    }
+    const current = this.get(task.id);
+    this.deps.room.publishTask(current);
+    this.deps.events.emit(["tasks"]);
+    return out;
   }
 
   /** What each repo of the task changed against its base, as git diffs. */
@@ -1284,8 +1356,41 @@ export class TaskService {
     };
   }
 
+  /**
+   * Why a done task has nothing left to ship, or undefined when it is not done or some of its work
+   * is not shipped: a repo with commits past its base (here and on the remote) that has no open or
+   * merged merge request and was not pushed as it is now. Such a task keeps its Ship actions.
+   */
+  async doneAndShipped(task: Task): Promise<string | undefined> {
+    if (task.status !== "done") return undefined;
+    for (const repo of task.repos) {
+      if (!(await this.workShipped(repo))) return undefined;
+    }
+    return `${task.id} is done, and its work is merged or pushed.`;
+  }
+
+  private async workShipped(repo: TaskRepo): Promise<boolean> {
+    if (repo.mr !== undefined && repo.mr.state !== "closed") return true;
+    if (!(await localBranchExists(repo.source, repo.branch))) return true;
+    const ahead = await commitsAhead(repo.source, repo.base, repo.branch);
+    if (ahead === 0) return true;
+    const project = await this.deps.projects.get(repo.project).catch(() => undefined);
+    const remote = mrRemoteName(project?.remotes);
+    for (const ref of [`refs/remotes/${remote}/${repo.base}`, `refs/remotes/${remote}/${repo.branch}`]) {
+      if (
+        await git(repo.source, ["merge-base", "--is-ancestor", repo.branch, ref]).then(
+          () => true,
+          () => false,
+        )
+      )
+        return true;
+    }
+    return false;
+  }
+
   private async mergeOption(task: Task): Promise<{ ok: boolean; why?: string }> {
-    if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
+    const shipped = await this.doneAndShipped(task);
+    if (shipped !== undefined) return { ok: false, why: shipped };
     if (task.repos.length === 0) return { ok: false, why: "The task has no repo to merge." };
     const trees = task.repos.filter((r) => r.worktree !== undefined);
     if (trees.length === 0) return { ok: false, why: "The task has no worktree yet." };
@@ -1674,6 +1779,19 @@ export class TaskService {
     return related;
   }
 
+  /**
+   * Forgets the ship waiting for the lead, saying why in the room, and returns it. Undefined when
+   * none was waiting.
+   */
+  dropPendingShip(id: string, why: string): PendingShip | undefined {
+    const pending = this.deps.store.tasks.takePendingShip(id);
+    if (pending === undefined) return undefined;
+    this.note(id as TaskId, `majhi will not ${shipWords(pending)}: ${why}.`);
+    this.deps.room.publishTask(this.get(id));
+    this.deps.events.emit(["tasks"]);
+    return pending;
+  }
+
   private note(task: TaskId, text: string): void {
     this.deps.room.post(task, `info:${randomUUID()}`, { type: "system", level: "info", text });
   }
@@ -1709,6 +1827,9 @@ export class TaskService {
     this.deps.room.publishTask(reviewed);
     this.deps.events.emit(["tasks"]);
     await this.statusChanged(id);
+    await this.deps
+      .onReview?.(id)
+      .catch((err: unknown) => this.warn(id, `Could not ship: ${errorMessage(err)}`));
   }
 
   /**
@@ -1743,6 +1864,8 @@ export class TaskService {
   async pausedByRuns(id: string, reason: "offline" | "error"): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
+    // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
+    if (reason === "error") this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     const paused = this.get(id);
     this.cards.paused(paused, reason);
@@ -1826,6 +1949,23 @@ export class TaskService {
     const state = this.deps.store.tasks.roomState(task.id);
     if (state.agentTurns > 0) this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: 0 });
     this.deps.runs.notify(task.id, input.agent, input.text);
+    this.deps.store.tasks.touch(task.id, this.now().toISOString());
+    this.deps.events.emit(["tasks"]);
+  }
+
+  /**
+   * A message from a schedule or trigger to the task's lead. Like an owner message it wakes the
+   * task, but the room shows a plain line saying where it came from, not an owner message.
+   */
+  async postFromScheduler(input: { task: string; text: string; from: string }): Promise<void> {
+    const task = this.get(input.task);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    const lead = task.team[0];
+    if (lead === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
+    this.note(task.id, `Message from scheduler "${input.from}" to @${lead}: ${input.text}`);
+    this.cards.settle(task.id, "review", `Message from scheduler "${input.from}"`, "majhi");
+    if (task.status !== "running") await this.start(task.id);
+    this.deps.runs.notify(task.id, lead, `Scheduled message from "${input.from}": ${input.text}`);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
   }
@@ -1920,5 +2060,23 @@ async function commitsAhead(source: string, base: string, branch: string): Promi
     return Number.isNaN(n) ? undefined : n;
   } catch {
     return undefined;
+  }
+}
+
+/** What a clean merge did, for the room and the Ship panel. */
+function mergedDetail(
+  branch: string,
+  into: string,
+  how: Exclude<MergeOutcome, { ok: false }>["how"],
+): string {
+  switch (how) {
+    case "already merged":
+      return `${branch} is already in ${into}.`;
+    case "squash commit":
+      return `Squashed ${branch} into one commit on ${into}. Not pushed.`;
+    case "rebased":
+      return `Rebased ${branch} onto ${into} and moved ${into} forward. Not pushed.`;
+    default:
+      return `Merged ${branch} into ${into} (${how}). Not pushed.`;
   }
 }

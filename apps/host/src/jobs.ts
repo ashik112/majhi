@@ -1,6 +1,7 @@
 import type {
   DirListing,
   EditorApp,
+  GitLoginsResult,
   HostJob,
   HostReply,
   LayaDecideResult,
@@ -24,6 +25,9 @@ export interface JobHandlers {
   restart(): void;
   /** Throws an error whose message is safe to show. It never holds the passphrase. */
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
+  gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
+  /** Throws an error whose message is safe to show. The token is only ever in the return value. */
+  gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
   layaStatus(): LayaStatus;
   /** Starts the install if needed and returns the state at once. */
   layaInstall(): LayaStatus;
@@ -88,6 +92,12 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
       case "editor.open":
         await handlers.editorOpen(job.params);
         await reply({ id: job.id, ok: true, result: { opened: true } });
+        return;
+      case "git.logins":
+        await reply({ id: job.id, ok: true, result: await handlers.gitLogins(job.params) });
+        return;
+      case "git.token":
+        await reply({ id: job.id, ok: true, result: { token: await handlers.gitToken(job.params) } });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

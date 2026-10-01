@@ -294,6 +294,81 @@ INSERT INTO room_search (rowid, text)
 SELECT rowid, ${searchText("room_items")} FROM room_items WHERE type IN (${SEARCHABLE});
 `,
   },
+  {
+    // A ship that stopped on conflicts and waits for the lead to resolve them (JSON, a
+    // PendingShip). Existing rows get NULL: nothing pending.
+    id: 100,
+    name: "ship waiting for the lead to resolve conflicts",
+    sql: `
+ALTER TABLE tasks ADD COLUMN pending_ship TEXT;
+`,
+  },
+  {
+    // Schedules and their run history (PRV-63). `automation_runs` is shared with watch triggers:
+    // `source_kind` and `source_id` say which schedule or trigger a run belongs to. Times are UTC ISO.
+    // `task_id` is the task a run created, or the task a process runs in; `process_id` is that process.
+    id: 101,
+    name: "schedules and automation runs",
+    sql: `
+CREATE TABLE schedules (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  name TEXT NOT NULL,
+  spec TEXT NOT NULL,
+  time_zone TEXT NOT NULL,
+  action TEXT NOT NULL,
+  overlap TEXT NOT NULL DEFAULT 'skip',
+  paused INTEGER NOT NULL DEFAULT 0,
+  done INTEGER NOT NULL DEFAULT 0,
+  next_run_at TEXT,
+  last_run_id INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX schedules_org ON schedules (org);
+CREATE INDEX schedules_next_run ON schedules (next_run_at);
+CREATE TABLE automation_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_kind TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  org TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  status TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  task_id TEXT,
+  process_id TEXT
+);
+CREATE INDEX automation_runs_source ON automation_runs (source_kind, source_id, id);
+CREATE INDEX automation_runs_status ON automation_runs (status);
+`,
+  },
+  {
+    // Watch triggers (PRV-63). `baseline` is what the trigger last saw, as JSON: it is how a restart
+    // tells what changed while majhi was down. Runs go to `automation_runs`.
+    id: 102,
+    name: "watch triggers",
+    sql: `
+CREATE TABLE triggers (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  name TEXT NOT NULL,
+  watch TEXT NOT NULL,
+  action TEXT NOT NULL,
+  overlap TEXT NOT NULL DEFAULT 'skip',
+  paused INTEGER NOT NULL DEFAULT 0,
+  poll_seconds INTEGER,
+  settle_seconds INTEGER NOT NULL DEFAULT 0,
+  cooldown_seconds INTEGER NOT NULL DEFAULT 300,
+  baseline TEXT,
+  last_fired_at TEXT,
+  last_run_id INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX triggers_org ON triggers (org);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

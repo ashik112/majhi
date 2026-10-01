@@ -97,6 +97,36 @@ export class AdminService {
     return this.callCommand(caller, command, input, { ownerAsked: false, reason });
   }
 
+  /**
+   * Runs a command for an agent at once, whatever the approval policy says, because the caller
+   * checked a rule the owner set (a lead starting a task under `lead_start`). It still leaves an
+   * `applied` card in the agent's room. `accept` names a failure that is not one (a task that
+   * waits on a dependency): the card shows it as applied and the agent gets `accepted` back.
+   */
+  async runAllowed(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    ask: { reason: string; accept?: (error: string) => boolean; accepted?: string },
+  ): Promise<ToolResult> {
+    const def = commands[command];
+    const checked = def.input.safeParse(input);
+    if (!checked.success) {
+      const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input for ${command}.\n${details.join("\n")}`);
+    }
+    const done = await this.execute(command, input, metaFor(caller.agent, ask.reason));
+    const held = !done.ok && ask.accept?.(done.error) === true;
+    this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
+      ...cardOf(caller.agent, command, input, ask.reason),
+      state: done.ok || held ? "applied" : "failed",
+      ...(done.commit === undefined ? {} : { commit: done.commit }),
+      result: done.ok ? lineOf(done.output) : done.error,
+    });
+    if (held) return { text: ask.accepted ?? done.error, isError: false };
+    return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+  }
+
   private async callCommand(
     caller: AdminCaller,
     command: CommandName,

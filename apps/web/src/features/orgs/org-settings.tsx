@@ -230,6 +230,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
+          <Field
+            label="Leads can start tasks"
+            hint="Without asking you. A task that waits on another still waits for it."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.leadStart}
+                onChange={(e) => set({ leadStart: e.target.value as OrgDraft["leadStart"] })}
+              >
+                <option value="children">Their subtasks</option>
+                <option value="org">Any task in the org</option>
+                <option value="off">Off</option>
+              </Select>
+            )}
+          </Field>
           <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
             <legend className="mb-1.5 p-0 text-sm text-fg-faint">Color</legend>
             <div className="flex h-[34px] items-center gap-2">
@@ -259,7 +275,12 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             {errors.color && <p className="text-sm text-red">{errors.color}</p>}
           </fieldset>
         </div>
-        <MrSettings draft={draft} error={errors.mrTokens} onChange={set} />
+        <MrSettings
+          org={{ id: org.id, name: org.name }}
+          draft={draft}
+          error={errors.mrTokens}
+          onChange={set}
+        />
         {failure && (
           <p role="alert" className="text-sm text-red text-pretty">
             {failure}

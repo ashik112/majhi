@@ -38,6 +38,10 @@ describe("pushBranch", () => {
     await pushBranch({ worktree: work, remote: "origin", branch: "task/x", url: bare });
     expect(await git(bare, "rev-parse", "refs/heads/task/x")).toBe(await git(work, "rev-parse", "HEAD"));
     expect(await git(work, "config", "remote.origin.url")).toBe(join(dir, "unreachable.git"));
+    // The tracking branch moves as a push to the remote would move it.
+    expect(await git(work, "rev-parse", "refs/remotes/origin/task/x")).toBe(
+      await git(work, "rev-parse", "HEAD"),
+    );
     expect(await readFile(join(work, ".git", "config"), "utf8")).not.toContain("pushurl");
   });
 

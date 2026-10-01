@@ -11,6 +11,9 @@ export class GitError extends Error {
     message: string,
     readonly args: readonly string[],
     readonly stderr: string,
+    /** What git printed before it failed, and its exit code, when it ran at all. */
+    readonly stdout: string = "",
+    readonly exitCode?: number | undefined,
   ) {
     super(message);
   }
@@ -65,6 +68,12 @@ export async function git(
           : first || `git ${args[0] ?? ""} failed`,
       args,
       stderr,
+      typeof err === "object" && err !== null && "stdout" in err && typeof err.stdout === "string"
+        ? err.stdout
+        : "",
+      typeof err === "object" && err !== null && "code" in err && typeof err.code === "number"
+        ? err.code
+        : undefined,
     );
   }
 }

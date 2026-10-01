@@ -1,5 +1,29 @@
 # Progress
 
+## PRV-63: Scheduler and watch triggers (built, waiting for owner review)
+
+Branch `task/prv-63-scheduler-and-watch-triggers`, from `main`. Choices: the `docs/DECISIONS.md` rows of 2026-10-01 on schedules, triggers and automation.
+
+### What works
+
+- Shared: `automation.ts` (specs, actions, run records, overlap, the phrase parser), `schedule-time.ts` (next runs with croner, used by server and UI), `triggers.ts` (eight watch kinds, poll defaults, `describeWatch`). Commands `schedules.*` and `triggers.*` (list, get, runs: read; create, update, pause, resume, runNow: change; delete: destructive), so the boss gets `majhi_schedules_*` and `majhi_triggers_*`.
+- Server, `apps/server/src/automation/`: `ActionRunner` (org checks on save and on every run, overlap, secret refusal, how a run ends), `RunHistory` (`automation_runs`, shared), the scheduler loop (one timer, catch-up runs a missed schedule once), the trigger engine (baseline, settle, cooldown, one firing per change after a restart). Migrations 101 and 102.
+- Actions: start a task from a template, post to a task's room (wakes its lead), run a command as a process of a task.
+- Web: the Automations page (`/automations`, sidebar, `g t`) with Schedules and Triggers tabs, forms with a live next-runs preview and an explicit time zone, row actions and a run history drawer.
+
+### How to try it
+
+- Automations in the sidebar, New schedule, "weekdays at 9:00", start a task in a project, Run now, open History.
+- Or ask the boss: "every hour, post 'status?' to ACM-4".
+- Screenshots: `e2e/shots.automations.ts` with `playwright.automations.config.ts`.
+
+### Left and known issues
+
+- No dry run for a watch (what it sees now).
+- An explicit `pollSeconds` cannot be cleared back to the default.
+- Usage watches count periods in the server's time zone.
+- Not tried against real accounts or a long-running majhi; the scheduler and triggers are covered by unit tests with a fake clock.
+
 ## PRV-53: Containers for agents, run by majhi (built, waiting for owner review)
 
 Branch `task/prv-53-containers-for-agents-run-by-majhi`, from `main`. Design: `SPEC.md` 5.15 "Containers for agents" and the `docs/DECISIONS.md` rows of 2026-09-30.

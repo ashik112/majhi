@@ -41,6 +41,7 @@ import { useConfig, useRepos, useRescan } from "@/lib/queries";
 import { useOrgs } from "@/lib/studio-queries";
 import { useProjects, useRemoveProject } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
+import { useSearchParam } from "@/pages/parts/url-state";
 import { filterRoots, searchTerms } from "./filter";
 import { ProjectDetail } from "./project-detail";
 import { groupByOrg, projectForPath, projectMatches } from "./project-model";
@@ -89,7 +90,9 @@ function Loaded({ home }: { home: string }) {
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
   const terms = useMemo(() => searchTerms(deferred), [deferred]);
-  const [view, setView] = useState<View>();
+  // A link from elsewhere (Ship's "Fix it in Projects") opens on its project.
+  const [linked] = useSearchParam("project");
+  const [view, setView] = useState<View | undefined>(linked ? { kind: "project", id: linked } : undefined);
   const [registering, setRegistering] = useState<Repo | null>(null);
   const [removing, setRemoving] = useState<ProjectView | null>(null);
   const [removeError, setRemoveError] = useState<string>();
