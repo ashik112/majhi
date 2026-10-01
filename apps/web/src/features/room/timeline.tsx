@@ -275,7 +275,7 @@ export function Timeline({
         <section
           aria-label="Needs you"
           className={cn(
-            "mt-2 flex max-h-[55%] shrink-0 flex-col gap-2 overflow-y-auto rounded-xl p-2.5",
+            "mt-2 flex max-h-[60%] shrink-0 flex-col gap-2 overflow-hidden rounded-xl p-2.5",
             GLASS,
             "border-lamp-needs/30",
           )}
@@ -285,7 +285,7 @@ export function Timeline({
             Needs you
             {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
           </span>
-          <ol className="m-0 flex flex-col gap-2.5 p-0">
+          <ol className="m-0 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-0">
             {waiting.map((item: RoomItem) => (
               <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
             ))}

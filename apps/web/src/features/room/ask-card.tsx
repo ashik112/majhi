@@ -86,7 +86,7 @@ export function PendingAsk({ item }: { item: Ask }) {
     >
       {item.questions.map((q, n) => (
         <div key={q.id} className={cn("flex flex-col gap-2", n > 0 && "border-t border-line pt-3")}>
-          <p className="flex items-start gap-2 text-base text-fg">
+          <p className="sticky top-0 z-10 -mx-3.5 -mt-1 flex items-start gap-2 px-3.5 pt-1 pb-1 text-base text-fg [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
             <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
             <span className="min-w-0 break-words">{q.question}</span>
           </p>
@@ -162,7 +162,7 @@ export function PendingAsk({ item }: { item: Ask }) {
         </div>
       ))}
       {single && sending !== undefined && (
-        <p ref={status} className="flex items-center gap-2 pl-6 text-sm text-fg-muted">
+        <p ref={status} className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-2 rounded-b-lg px-3.5 pt-1.5 pb-3 pl-[34px] text-sm text-fg-muted [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
           <span className="min-w-0 flex-1 truncate">
             {send.isPending ? "Sending" : "Sending in 5 seconds"}: {sending.label}
           </span>
