@@ -1,5 +1,5 @@
 import type { AgentLive, RoomItem } from "@majhi/shared";
-import { canWorkIn, type Task } from "@majhi/shared";
+import { ATTACHMENT_ACCEPT, canWorkIn, type Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { KeyRound, Paperclip, Square } from "lucide-react";
 import {
@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentChips } from "@/components/ui/attachment-chips";
+import { AttachmentChips, DropHint } from "@/components/ui/attachment-chips";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
@@ -22,7 +22,7 @@ import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { useTask } from "@/lib/task-queries";
-import { attachmentIds, filesFromClipboard, useAttachments } from "@/lib/use-attachments";
+import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
 import {
   applyCompletion,
   composerKey,
@@ -81,6 +81,7 @@ export function Composer({
   const fileInput = useRef<HTMLInputElement>(null);
   const listId = useId();
   const attachments = useAttachments();
+  const { dragging, dropProps } = useFileDrop(attachments.add);
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
@@ -237,7 +238,8 @@ export function Composer({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div {...dropProps} className="relative flex flex-col gap-1.5">
+      {dragging && <DropHint />}
       <AttachmentChips items={attachments.items} onRemove={attachments.remove} />
       {secretInText && (
         <p
@@ -293,6 +295,7 @@ export function Composer({
             ref={fileInput}
             type="file"
             multiple
+            accept={ATTACHMENT_ACCEPT}
             hidden
             aria-hidden="true"
             tabIndex={-1}
