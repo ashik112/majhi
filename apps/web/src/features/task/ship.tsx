@@ -42,6 +42,9 @@ export type RunShip = (
   choices: ShipChoices,
 ) => Promise<{ results?: ShipResult[] | undefined }>;
 
+/** The refusal for a local target branch that is behind its remote; the first group is the remote's name. */
+const REMOTE_AHEAD = /^(\S+)\/\S+ has commits that your local \S+ in \S+ does not have\./;
+
 const ACTIONS: readonly ShipAction[] = ["merge", "mergePush", "push", "mr"];
 const MERGES: readonly ShipAction[] = ["merge", "mergePush"];
 const PANEL_WIDTH = 440;
@@ -302,6 +305,8 @@ function ShipPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [results, setResults] = useState<ShipResult[]>();
+  // Set when a push was refused because the remote's branch is ahead of the local one.
+  const [behind, setBehind] = useState<{ remote: string; into: string }>();
 
   const local = [...new Set([base, ...(branches.data ?? []).flatMap((r) => r.branches)])];
   const remote = [...new Set((branches.data ?? []).flatMap((r) => r.remote))].filter(
@@ -363,6 +368,7 @@ function ShipPanel({
   async function confirm(action: ShipAction) {
     setBusy(true);
     setError(undefined);
+    setBehind(undefined);
     const deleting = deleteAfter && action !== "mr";
     try {
       const out = await run(action, into, { method, deleteAfter: deleting });
@@ -371,10 +377,36 @@ function ShipPanel({
       if (list.length > 0 && list.every((r) => r.ok) && action !== "push") onClose();
       else setResults(list);
     } catch (err) {
-      setError(describeError(err));
+      const message = describeError(err);
+      const remote = REMOTE_AHEAD.exec(message)?.[1];
+      if (remote !== undefined) setBehind({ remote, into });
+      setError(message);
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Fast-forwards the local target branch from its remote, then runs the same ship again. */
+  async function updateAndShip(action: ShipAction) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const out = await cmd("tasks.updateTarget", { id: task.id, into });
+      const refused = out.results.filter((r) => !r.ok);
+      if (refused.length > 0) {
+        setBehind(undefined);
+        setError(refused.map((r) => r.detail).join(" "));
+        setBusy(false);
+        return;
+      }
+    } catch (err) {
+      setBehind(undefined);
+      setError(describeError(err));
+      setBusy(false);
+      return;
+    }
+    setBehind(undefined);
+    await confirm(action);
   }
 
   const conflicted = (results ?? []).filter((r) => (r.conflicts ?? []).length > 0);
@@ -526,10 +558,20 @@ function ShipPanel({
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setChosen(undefined)}>
               Back
             </Button>
-            <Button size="sm" variant="primary" disabled={busy} onClick={() => void confirm(chosen)}>
+            <Button
+              size="sm"
+              variant={behind === undefined ? "primary" : "secondary"}
+              disabled={busy}
+              onClick={() => void confirm(chosen)}
+            >
               {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
               {busy ? "Working" : labels[chosen].confirm}
             </Button>
+            {behind !== undefined && !busy && (
+              <Button size="sm" variant="primary" onClick={() => void updateAndShip(chosen)}>
+                Update {behind.into} from {behind.remote} and ship
+              </Button>
+            )}
           </div>
         </div>
       )}

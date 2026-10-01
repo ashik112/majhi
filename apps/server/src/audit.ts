@@ -17,6 +17,7 @@ const SHIP_LABELS = {
   mr: "Merge request for",
   merge: "Merge of",
   "merge+push": "Push after merge of",
+  update: "Update of",
 } as const;
 
 /**
