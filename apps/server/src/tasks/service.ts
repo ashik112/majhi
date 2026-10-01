@@ -48,6 +48,7 @@ import {
   mergeBranch,
   remoteBranches,
 } from "../git/merge.ts";
+import { commitsSinceStart } from "../git/since-start.ts";
 import {
   createWorktree,
   dirtyWorktrees,
@@ -562,7 +563,7 @@ export class TaskService {
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
-        store.tasks.setWorktree(id, repo.project, path, result.createdBranch);
+        store.tasks.setWorktree(id, repo.project, path, result.createdBranch, result.startCommit);
         if (stack !== undefined && result.createdBranch) {
           store.tasks.setBase(id, repo.project, stack.branch);
           store.tasks.setStack(id, repo.project, { ...stack, commit: await headOf(path) });
@@ -1372,7 +1373,7 @@ export class TaskService {
   private async workShipped(repo: TaskRepo): Promise<boolean> {
     if (repo.mr !== undefined && repo.mr.state !== "closed") return true;
     if (!(await localBranchExists(repo.source, repo.branch))) return true;
-    const ahead = await commitsAhead(repo.source, repo.base, repo.branch);
+    const ahead = await commitsSinceStart(repo.source, repo).catch(() => undefined);
     if (ahead === 0) return true;
     const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     const remote = mrRemoteName(project?.remotes);
@@ -1399,7 +1400,7 @@ export class TaskService {
     let known = true;
     let ahead = 0;
     for (const r of trees) {
-      const n = await commitsAhead(r.source, r.base, r.branch);
+      const n = await commitsSinceStart(r.source, r).catch(() => undefined);
       if (n === undefined) known = false;
       else ahead += n;
     }
@@ -2051,16 +2052,6 @@ async function branchExists(source: string, branch: string): Promise<boolean> {
   if (await localBranchExists(source, branch)) return true;
   const remote = await remoteOf(source).catch(() => undefined);
   return remote !== undefined && (await remoteBranchExists(source, remote, branch));
-}
-
-/** Commits on `branch` that `base` does not have, or undefined when git cannot say. */
-async function commitsAhead(source: string, base: string, branch: string): Promise<number | undefined> {
-  try {
-    const n = Number.parseInt((await git(source, ["rev-list", "--count", `${base}..${branch}`])).trim(), 10);
-    return Number.isNaN(n) ? undefined : n;
-  } catch {
-    return undefined;
-  }
 }
 
 /** What a clean merge did, for the room and the Ship panel. */

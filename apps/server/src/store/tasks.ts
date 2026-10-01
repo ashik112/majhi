@@ -101,6 +101,7 @@ export class TaskRepo {
             mrState: r.mr?.state ?? null,
             ciState: r.mr?.ci ?? null,
             pushedAt: r.pushedAt ?? null,
+            startCommit: r.startCommit ?? null,
           })
           .run();
       });
@@ -155,6 +156,7 @@ export class TaskRepo {
           : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
         ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
         ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
+        ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
         ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
           ? {}
           : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
@@ -504,10 +506,16 @@ export class TaskRepo {
     this.db.update(tasks).set({ updatedAt: at }).where(eq(tasks.id, id)).run();
   }
 
-  setWorktree(task: string, project: string, worktree: string, createdBranch: boolean): void {
+  setWorktree(
+    task: string,
+    project: string,
+    worktree: string,
+    createdBranch: boolean,
+    startCommit?: string,
+  ): void {
     this.db
       .update(taskRepos)
-      .set({ worktree, createdBranch })
+      .set({ worktree, createdBranch, ...(startCommit === undefined ? {} : { startCommit }) })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
   }
