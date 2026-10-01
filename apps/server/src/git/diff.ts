@@ -27,14 +27,19 @@ type Repo = { project: string; source: string; base: string; branch: string; wor
 
 /**
  * What a task repo changed against its base: the branch's commits since it left the base, plus
- * uncommitted and new files while the worktree exists. The patches are git's own.
+ * uncommitted and new files while the worktree exists. The patches are git's own. Before the task
+ * first starts, a missing branch is simply not made yet: no changes, not an error.
  */
-export async function repoDiff(repo: Repo): Promise<RepoDiff> {
+export async function repoDiff(
+  repo: Repo,
+  options: { started: boolean } = { started: true },
+): Promise<RepoDiff> {
   const head = { project: repo.project, base: repo.base, branch: repo.branch };
   const empty = { commits: [], files: [], omitted: 0, uncommitted: false };
   try {
     const cwd = repo.worktree ?? repo.source;
     if (repo.worktree === undefined && !(await localBranchExists(repo.source, repo.branch))) {
+      if (!options.started) return { ...head, ...empty };
       return { ...head, ...empty, error: "The branch is gone, so there is nothing to show." };
     }
     const tip = repo.worktree === undefined ? repo.branch : "HEAD";
