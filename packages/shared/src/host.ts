@@ -201,6 +201,29 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ via: z.enum(["gh", "glab"]), host: z.string().min(1).max(255) }),
   }),
   /**
+   * `git push <url> <branch>` from the Mac, so its Keychain or `gh` helper supplies the https login.
+   * Never forces, never prompts. The path is the same on the Mac and in the container.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.push"),
+    params: z.object({
+      path: z.string().min(1).max(4096),
+      url: z.string().min(1).max(2048),
+      branch: z.string().min(1).max(255),
+    }),
+  }),
+  /**
+   * Asks the Mac's git credential helper (`git credential fill`) for the saved https secret of one
+   * host and account. Only the owner's click may send it; the result goes straight to an API check
+   * and then one org's secrets: never logged, cached or echoed.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.credential"),
+    params: z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255) }),
+  }),
+  /**
    * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
    * must never be logged, stored or echoed in an error, on either side.
    */
@@ -228,6 +251,8 @@ export const HostResultSchemas = {
   "editor.open": z.object({ opened: z.literal(true) }),
   "git.logins": GitLoginsResultSchema,
   "git.token": z.object({ token: z.string().min(1) }),
+  "git.push": z.object({ pushed: z.literal(true) }),
+  "git.credential": z.object({ secret: z.string().min(1) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),
   "decisions.status": LayaStatusSchema,

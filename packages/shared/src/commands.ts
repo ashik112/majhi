@@ -306,6 +306,17 @@ export const commands = {
     }),
     output: z.object({ id: IdSchema, host: MrHostSchema, ref: z.string() }),
   },
+  "orgs.useSavedLogin": {
+    risk: "change",
+    summary:
+      "Use the login this Mac saved for an org's git account (Keychain or gh) as that account's token: the helper reads it once, the host's API must accept it, then it is saved in secrets.age for this org only. When it is not a token, nothing is saved and the reason says so. Never returns the secret",
+    input: z.object({
+      id: IdSchema,
+      host: z.string().trim().min(1).max(255),
+      account: z.string().trim().min(1).max(255),
+    }),
+    output: z.object({ saved: z.boolean(), reason: z.string().optional() }),
+  },
   "orgs.setGitAccount": {
     risk: "change",
     summary:
@@ -324,7 +335,11 @@ export const commands = {
   "orgs.removeGitAccount": {
     risk: "change",
     summary: "Remove an org's git account for a host. Its token secret is left in secrets",
-    input: z.object({ id: IdSchema, host: z.string().trim().min(1).max(255), account: z.string().trim().min(1) }),
+    input: z.object({
+      id: IdSchema,
+      host: z.string().trim().min(1).max(255),
+      account: z.string().trim().min(1),
+    }),
     output: OrgViewSchema,
   },
   "projects.pushRoute": {
@@ -333,7 +348,7 @@ export const commands = {
     input: z.object({ id: IdSchema }),
     output: z.object({
       host: z.string().optional(),
-      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh"]),
+      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh", "https"]),
       /** A plain sentence like "Pushes as acme-dev via github.com key". */
       label: z.string().optional(),
       choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),

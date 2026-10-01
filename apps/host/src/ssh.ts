@@ -34,6 +34,8 @@ const DEFAULT_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
 export interface RunOptions {
   env: Record<string, string>;
   timeoutMs: number;
+  /** Written to the program's stdin, then closed. Absent: stdin is closed at once. */
+  input?: string;
 }
 
 /** Never rejects. `code` is null when the command could not start or timed out. */

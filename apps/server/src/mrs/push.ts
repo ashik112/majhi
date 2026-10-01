@@ -18,6 +18,11 @@ export interface PushRequest {
    * config is not changed.
    */
   url?: string | undefined;
+  /**
+   * Pushes `url` from the owner's Mac instead, where its saved https login lives. Set only for an
+   * https route; the SSH retry below does not apply to it.
+   */
+  viaHost?: ((url: string, branch: string) => Promise<void>) | undefined;
   /** Asks the host helper to load the owner's keys again; resolves true when it did. */
   reloadKeys?: (() => Promise<boolean>) | undefined;
 }
@@ -50,6 +55,14 @@ export async function pushBranch(req: PushRequest): Promise<void> {
     req.url ?? req.remote,
     `refs/heads/${req.branch}:refs/heads/${req.branch}`,
   ];
+  if (req.viaHost !== undefined && req.url !== undefined) {
+    try {
+      await req.viaHost(req.url, req.branch);
+    } catch (err) {
+      throw new PushProblem(err instanceof Error ? err.message : String(err));
+    }
+    return await tracked(req, tip);
+  }
   try {
     await git(req.worktree, args, { timeoutMs: PUSH_TIMEOUT_MS });
     return await tracked(req, tip);

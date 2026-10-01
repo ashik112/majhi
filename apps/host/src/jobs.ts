@@ -28,6 +28,10 @@ export interface JobHandlers {
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
+  /** Throws an error whose message is safe to show. */
+  gitPush(params: { path: string; url: string; branch: string }): Promise<void>;
+  /** Throws an error whose message is safe to show. The secret is only ever in the return value. */
+  gitCredential(params: { host: string; username: string }): Promise<string>;
   layaStatus(): LayaStatus;
   /** Starts the install if needed and returns the state at once. */
   layaInstall(): LayaStatus;
@@ -98,6 +102,13 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         return;
       case "git.token":
         await reply({ id: job.id, ok: true, result: { token: await handlers.gitToken(job.params) } });
+        return;
+      case "git.push":
+        await handlers.gitPush(job.params);
+        await reply({ id: job.id, ok: true, result: { pushed: true } });
+        return;
+      case "git.credential":
+        await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

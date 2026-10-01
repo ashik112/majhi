@@ -30,12 +30,21 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { mrTitle, renderMrDescription } from "./description.ts";
+import type { HostGit } from "./hostGit.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
 import { nextMerge, type RepoMrState } from "./policy.ts";
 import { commitsAhead, PushProblem, pushBranch, remoteUrl } from "./push.ts";
 import { hostNameOf, mrHostOf, mrRemoteName, repoSlug, rewriteRemoteUrl } from "./remote.ts";
-import { chooseRoute, describeLogin, httpsToSsh, loginsOf, ownerOf, type PushRoute } from "./route.ts";
+import {
+  chooseRoute,
+  describeLogin,
+  httpsPushUrl,
+  httpsToSsh,
+  loginsOf,
+  ownerOf,
+  type PushRoute,
+} from "./route.ts";
 
 export interface MrDeps {
   /** Which accounts the owner's keys log in as per git host. Without it https remotes need an alias. */
@@ -63,6 +72,8 @@ export interface MrDeps {
   hosts: Record<MrHost, MrHostClient>;
   /** Asks the host helper to load the owner's SSH keys again, after a push or fetch they lacked. */
   reloadKeys?: () => Promise<boolean>;
+  /** Pushes https remotes from the Mac with its saved login. Without it only SSH routes push. */
+  hostGit?: HostGit;
   now?: () => Date;
 }
 
@@ -73,6 +84,8 @@ interface RepoContext {
   remote: string;
   remoteConfig: RemoteConfig | undefined;
   pushUrl: string | undefined;
+  /** True when `pushUrl` is https and the Mac pushes it. */
+  viaHost: boolean;
   target: Omit<MrTarget, "token">;
   client: MrHostClient;
 }
@@ -222,13 +235,19 @@ export class MrService {
     }
     const hostName = remoteConfig?.ssh === undefined ? hostNameOf(url) : undefined;
     let pushUrl = rewriteRemoteUrl(url, remoteConfig?.ssh);
-    if (/^https?:\/\//i.test(pushUrl)) pushUrl = (await this.routeFor(url, undefined, project.org)).url ?? pushUrl;
+    let viaHost = false;
+    if (/^https?:\/\//i.test(pushUrl)) {
+      const routed = await this.routeFor(url, undefined, project.org);
+      pushUrl = routed.url ?? pushUrl;
+      viaHost = routed.route.state === "https";
+    }
     return {
       repo,
       project,
       remote,
       remoteConfig,
       pushUrl: pushUrl === url ? undefined : pushUrl,
+      viaHost,
       target: { host, slug: repoSlug(url), ...(hostName === undefined ? {} : { hostName }) },
       client: this.deps.hosts[host],
     };
@@ -280,6 +299,7 @@ export class MrService {
             remote: ctx.remote,
             branch: ctx.repo.branch,
             url: ctx.pushUrl,
+            viaHost: this.hostPusher(ctx.viaHost, worktree),
             reloadKeys: this.deps.reloadKeys,
           });
           this.deps.store.tasks.setPushed(id, project, this.now().toISOString());
@@ -512,6 +532,7 @@ export class MrService {
             remote: target.remote,
             branch: repo.branch,
             url: target.pushUrl,
+            viaHost: this.hostPusher(target.viaHost, repo.worktree as string),
             reloadKeys: this.deps.reloadKeys,
           });
           this.deps.store.tasks.setPushed(id, project, this.now().toISOString());
@@ -604,6 +625,7 @@ export class MrService {
             remote: target.remote,
             branch: into,
             url: target.pushUrl,
+            viaHost: this.hostPusher(target.viaHost, repo.source),
             reloadKeys: this.deps.reloadKeys,
           });
           results.push({
@@ -667,7 +689,8 @@ export class MrService {
     const pushUrl = rewriteRemoteUrl(url, project.remotes[remote]?.ssh);
     if (/^https?:\/\//i.test(pushUrl)) {
       const routed = await this.routeFor(url, undefined, project.org);
-      if (routed.url !== undefined) return { remote, pushUrl: routed.url };
+      if (routed.url !== undefined)
+        return { remote, pushUrl: routed.url, viaHost: routed.route.state === "https" };
       const fix = { page: "projects", project: project.id } as const;
       if (routed.route.state === "org-missing") {
         throw new FixableError(
@@ -688,7 +711,17 @@ export class MrService {
         fix,
       );
     }
-    return { remote, pushUrl: pushUrl === url ? undefined : pushUrl };
+    return { remote, pushUrl: pushUrl === url ? undefined : pushUrl, viaHost: false };
+  }
+
+  /** The push function for an https route, or undefined for SSH and plain remotes. */
+  private hostPusher(
+    viaHost: boolean,
+    path: string,
+  ): ((url: string, branch: string) => Promise<void>) | undefined {
+    const hostGit = this.deps.hostGit;
+    if (!viaHost || hostGit === undefined) return undefined;
+    return (url, branch) => hostGit.push({ path, url, branch });
   }
 
   /** The SSH route for an https remote, from the keys the Mac's logins show. `url` is the push address when one fits. */
@@ -714,9 +747,11 @@ export class MrService {
       org: bound === undefined ? undefined : { account: bound.account, ssh: bound.ssh },
       owner: ownerOf(url),
       logins: host === undefined || found === undefined ? [] : loginsOf(found, host),
+      httpsOk: this.deps.hostGit?.connected() === true && /^https:\/\//i.test(url),
     });
     if (route.state === "auto") return { route, url: httpsToSsh(url, route.alias) };
     if (route.state === "picked") return { route, url: httpsToSsh(url, route.alias) };
+    if (route.state === "https") return { route, url: httpsPushUrl(url, route.account) };
     return { route, url: undefined };
   }
 
@@ -750,6 +785,14 @@ export class MrService {
         host,
         state: "auto",
         label: `Pushes as ${route.account} via ${route.alias ?? hostKey} key`,
+        choices,
+      };
+    }
+    if (route.state === "https") {
+      return {
+        host,
+        state: "https",
+        label: `Pushes over https from this Mac${route.account === undefined ? "" : ` as ${route.account}`}, with its saved login`,
         choices,
       };
     }
@@ -791,6 +834,8 @@ export class MrService {
    */
   private async remoteHasMore(source: string, target: PushTarget, branch: string): Promise<boolean> {
     if (!(await localBranchExists(source, branch))) return false;
+    // The container cannot read an https login, so it cannot look. git itself refuses a non-fast-forward push.
+    if (target.viaHost) return false;
     const tracking = `refs/remotes/${target.remote}/${branch}`;
     const from = target.pushUrl ?? target.remote;
     const fetch = async (): Promise<string | undefined> => {
@@ -1135,6 +1180,8 @@ interface Plan {
 interface PushTarget {
   remote: string;
   pushUrl: string | undefined;
+  /** True when `pushUrl` is https and the Mac pushes it with its saved login. */
+  viaHost: boolean;
 }
 
 type ShipResult = { project: string; into: string; ok: boolean; detail: string };

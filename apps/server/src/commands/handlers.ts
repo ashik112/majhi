@@ -12,8 +12,9 @@ import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
-import { fetchPublicProfile, setGitAccount } from "../orgs/gitAccount.ts";
+import { fetchPublicProfile, setGitAccount, useSavedLogin } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
+import { classifyHost } from "../scan/remote.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { Services } from "../services.ts";
@@ -160,6 +161,41 @@ export function createHandlers({
         input,
       );
       return viewOf(input.id);
+    },
+
+    "orgs.useSavedLogin": async (input, ctx) => {
+      if (ctx.meta.actor.kind === "agent") {
+        throw new UserError("Only the owner can use the Mac's saved login. Ask them to click it.", 409);
+      }
+      return useSavedLogin(
+        {
+          org: async (id) => {
+            const org = (await config.sections()).orgs[id];
+            return org === undefined
+              ? undefined
+              : { identity: org.identity, accounts: org.git_accounts ?? [] };
+          },
+          readSecret: async (host, account) =>
+            (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret,
+          probe: async (url, headers) =>
+            (await fetch(url, { headers, signal: AbortSignal.timeout(8000), redirect: "error" })).status,
+          saveSecret: (secret) => services.secretService.save(secret),
+          write: async (id, patch) => {
+            const current = (await config.sections()).orgs[id]?.mr_tokens ?? {};
+            await orgs.update(
+              {
+                id,
+                git_accounts: patch.git_accounts,
+                mr_tokens: { ...current, [patch.mr_token.host]: patch.mr_token.ref },
+              },
+              ctx.command,
+              ctx.meta,
+            );
+          },
+        },
+        classifyHost,
+        input,
+      );
     },
 
     "orgs.removeGitAccount": async (input, ctx) => {

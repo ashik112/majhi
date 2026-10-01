@@ -6,6 +6,8 @@ export type PushRoute =
   | { state: "picked"; alias: string }
   | { state: "auto"; account: string; alias?: string }
   | { state: "ambiguous"; choices: GitLogin[] }
+  /** No SSH key fits and the host helper is connected: push over https from the Mac, with its saved login. */
+  | { state: "https"; account?: string }
   /** The project's org binds an account, and no detected SSH key logs in as it. */
   | { state: "org-missing"; account: string }
   | { state: "none" };
@@ -19,10 +21,12 @@ export interface RouteInput {
   owner: string;
   /** Logins of the remote's host. Only `ssh` ones can push. */
   logins: readonly GitLogin[];
+  /** True while the host helper is connected, so an https push from the Mac can work. */
+  httpsOk?: boolean | undefined;
 }
 
 /** The SSH route to push with. Prefers the account that owns the repo's namespace, else the only one. */
-export function chooseRoute({ explicit, org, owner, logins }: RouteInput): PushRoute {
+export function chooseRoute({ explicit, org, owner, logins, httpsOk }: RouteInput): PushRoute {
   if (explicit !== undefined && explicit !== "") return { state: "picked", alias: explicit };
   const ssh = logins.filter((l) => l.via === "ssh");
   if (org !== undefined) {
@@ -32,10 +36,18 @@ export function chooseRoute({ explicit, org, owner, logins }: RouteInput): PushR
         (org.ssh === undefined || (org.ssh === "default" ? l.alias === undefined : l.alias === org.ssh)),
     );
     const first = mine.find((l) => l.alias === undefined) ?? mine[0];
-    if (first === undefined) return { state: "org-missing", account: org.account };
-    return { state: "auto", account: first.account, ...(first.alias === undefined ? {} : { alias: first.alias }) };
+    if (first === undefined) {
+      return httpsOk === true
+        ? { state: "https", account: org.account }
+        : { state: "org-missing", account: org.account };
+    }
+    return {
+      state: "auto",
+      account: first.account,
+      ...(first.alias === undefined ? {} : { alias: first.alias }),
+    };
   }
-  if (ssh.length === 0) return { state: "none" };
+  if (ssh.length === 0) return httpsOk === true ? { state: "https" } : { state: "none" };
   const pick = (candidates: readonly GitLogin[]): PushRoute | undefined => {
     const accounts = new Set(candidates.map((c) => c.account.toLowerCase()));
     if (accounts.size !== 1) return undefined;
@@ -62,6 +74,22 @@ export function httpsToSsh(url: string, alias?: string): string {
   const path = repoSlug(url);
   if (host === undefined || path === "") return url;
   return `git@${alias ?? host}:${path}.git`;
+}
+
+/**
+ * The https address to push from the Mac: any password in the remote is dropped, and the org's
+ * account becomes the user, so the Keychain hands over that account's login. Non-https comes back as is.
+ */
+export function httpsPushUrl(url: string, account?: string): string {
+  if (!/^https:\/\//i.test(url)) return url;
+  try {
+    const u = new URL(url);
+    u.password = "";
+    if (account !== undefined) u.username = account;
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 /** The logins of one host, from a detection result. */

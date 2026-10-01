@@ -42,6 +42,7 @@ import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
 import { landedNow } from "./memory/task-git.ts";
 import { createMemory, TaskScopes } from "./memory/wiring.ts";
+import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
@@ -429,8 +430,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     console.error(`Memory cleanup failed: ${errorMessage(err)}`),
   );
   const gitLogins = new GitLoginService(options.hostLink, async () => (await config.load()).projectPaths);
+  const hostGit =
+    options.hostLink === undefined
+      ? undefined
+      : createHostGit(options.hostLink, async () => {
+          const loaded = await config.load();
+          if (loaded.state.status !== "loaded") return [];
+          return [...loaded.state.config.workspaces, loaded.state.config.tasksDir, ...loaded.projectPaths];
+        });
   const mrs = new MrService({
     gitLogins,
+    ...(hostGit === undefined ? {} : { hostGit }),
     store,
     config,
     projects,

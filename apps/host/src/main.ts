@@ -15,6 +15,7 @@ import { parseHostConfig } from "./config.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
 import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
+import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
     },
     find: (name) => findExecutable(name, path),
   };
+  const gitPushDeps: GitPushDeps = { run: runCommand, home: config.home, path, kind: pathKind };
   // The server resumes turns that stalled while the Mac slept when it sees this change.
   let wokeAt: string | undefined;
   const info = (): HostInfo => {
@@ -203,6 +205,8 @@ async function main(): Promise<void> {
     }),
     gitToken: (params: { via: "gh" | "glab"; host: string }) =>
       readGitToken(gitDeps, params.via, params.host),
+    gitPush: (params: { path: string; url: string; branch: string }) => gitPush(gitPushDeps, params),
+    gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),

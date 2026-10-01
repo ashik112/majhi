@@ -22,7 +22,7 @@ export const runCommand: RunFn = (file, args, options) =>
     };
     const child = spawn(file, [...args], {
       env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       detached: true,
     });
     const timer = setTimeout(() => {
@@ -35,6 +35,9 @@ export const runCommand: RunFn = (file, args, options) =>
     child.stderr.on("data", (chunk: Buffer) => {
       if (stderr.length < MAX_OUTPUT) stderr += chunk.toString("utf8");
     });
+    // Closed at once without input, so nothing can wait on it.
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(options.input);
     child.on("error", () => finish(null));
     child.on("close", (code) => finish(code));
   });

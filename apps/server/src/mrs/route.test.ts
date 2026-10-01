@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseRoute, httpsToSsh, ownerOf } from "./route.ts";
+import { chooseRoute, httpsPushUrl, httpsToSsh, ownerOf } from "./route.ts";
 
 describe("httpsToSsh", () => {
   it("builds the SSH address for each host, keeping subgroups", () => {
@@ -66,7 +66,14 @@ describe("chooseRoute with an org git account", () => {
   const globex = { via: "ssh", alias: "gh-globex", account: "globex-dev" } as const;
 
   it("the org's account wins over the automatic choice", () => {
-    expect(chooseRoute({ explicit: undefined, org: { account: "globex-dev" }, owner: "acme", logins: [acme, globex] })).toEqual({
+    expect(
+      chooseRoute({
+        explicit: undefined,
+        org: { account: "globex-dev" },
+        owner: "acme",
+        logins: [acme, globex],
+      }),
+    ).toEqual({
       state: "auto",
       account: "globex-dev",
       alias: "gh-globex",
@@ -74,19 +81,28 @@ describe("chooseRoute with an org git account", () => {
   });
 
   it("a project's explicit alias wins over the org", () => {
-    expect(chooseRoute({ explicit: "mine", org: { account: "acme-dev" }, owner: "acme", logins: [acme] })).toEqual({
+    expect(
+      chooseRoute({ explicit: "mine", org: { account: "acme-dev" }, owner: "acme", logins: [acme] }),
+    ).toEqual({
       state: "picked",
       alias: "mine",
     });
   });
 
   it("refuses with the account's name when no key logs in as it, or the named route is absent", () => {
-    expect(chooseRoute({ explicit: undefined, org: { account: "globex-dev" }, owner: "x", logins: [acme] })).toEqual({
+    expect(
+      chooseRoute({ explicit: undefined, org: { account: "globex-dev" }, owner: "x", logins: [acme] }),
+    ).toEqual({
       state: "org-missing",
       account: "globex-dev",
     });
     expect(
-      chooseRoute({ explicit: undefined, org: { account: "globex-dev", ssh: "default" }, owner: "x", logins: [globex] }),
+      chooseRoute({
+        explicit: undefined,
+        org: { account: "globex-dev", ssh: "default" },
+        owner: "x",
+        logins: [globex],
+      }),
     ).toEqual({ state: "org-missing", account: "globex-dev" });
   });
 
@@ -95,5 +111,80 @@ describe("chooseRoute with an org git account", () => {
       state: "auto",
       account: "acme-dev",
     });
+  });
+});
+
+describe("https route through the Mac", () => {
+  const acme = { via: "ssh", account: "acme-dev" } as const;
+
+  it("is used for the org's account when no key logs in as it", () => {
+    expect(
+      chooseRoute({
+        explicit: undefined,
+        org: { account: "globex-dev" },
+        owner: "x",
+        logins: [acme],
+        httpsOk: true,
+      }),
+    ).toEqual({
+      state: "https",
+      account: "globex-dev",
+    });
+  });
+
+  it("prefers the org account's SSH route, an explicit alias, and an automatic key over https", () => {
+    expect(
+      chooseRoute({
+        explicit: undefined,
+        org: { account: "acme-dev" },
+        owner: "x",
+        logins: [acme],
+        httpsOk: true,
+      }).state,
+    ).toBe("auto");
+    expect(
+      chooseRoute({ explicit: "mine", org: { account: "zed" }, owner: "x", logins: [], httpsOk: true }),
+    ).toEqual({
+      state: "picked",
+      alias: "mine",
+    });
+    expect(
+      chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [acme], httpsOk: true })
+        .state,
+    ).toBe("auto");
+  });
+
+  it("falls back to https without an account when nothing else fits, and never borrows another org's", () => {
+    expect(
+      chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [], httpsOk: true }),
+    ).toEqual({ state: "https" });
+    expect(
+      chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [], httpsOk: false }),
+    ).toEqual({ state: "none" });
+    expect(
+      chooseRoute({
+        explicit: undefined,
+        org: { account: "globex-dev" },
+        owner: "x",
+        logins: [],
+        httpsOk: false,
+      }),
+    ).toEqual({
+      state: "org-missing",
+      account: "globex-dev",
+    });
+  });
+});
+
+describe("httpsPushUrl", () => {
+  it("sets the account as the user and drops any password", () => {
+    expect(httpsPushUrl("https://github.com/acme/api.git", "acme-dev")).toBe(
+      "https://acme-dev@github.com/acme/api.git",
+    );
+    expect(httpsPushUrl("https://old:pw@github.com/acme/api.git", "acme-dev")).toBe(
+      "https://acme-dev@github.com/acme/api.git",
+    );
+    expect(httpsPushUrl("https://github.com/acme/api.git")).toBe("https://github.com/acme/api.git");
+    expect(httpsPushUrl("git@github.com:acme/api.git", "acme-dev")).toBe("git@github.com:acme/api.git");
   });
 });

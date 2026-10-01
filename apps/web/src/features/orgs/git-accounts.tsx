@@ -4,11 +4,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { describeError } from "@/lib/errors";
-import { useGitLogins, useOrgs, useSetGitAccount, useUpdateOrg } from "@/lib/studio-queries";
+import {
+  useGitLogins,
+  useOrgs,
+  useSetGitAccount,
+  useUpdateOrg,
+  useUseSavedLogin,
+} from "@/lib/studio-queries";
 
 /** Where a host's token is pasted: GitHub and GitLab can adopt a login, Bitbucket and GitLab take a paste. */
 const PASTE_HINT = (host: string) =>
-  host.includes("bitbucket") ? "username:app-password" : host.includes("github") ? "token" : "personal access token";
+  host.includes("bitbucket")
+    ? "username:app-password"
+    : host.includes("github")
+      ? "token"
+      : "personal access token";
 
 /** The git accounts of one org: who it pushes as per host, and whether its key, token and identity are ready. */
 export function GitAccounts({ org }: { org: { id: string; name: string } }) {
@@ -20,21 +30,27 @@ export function GitAccounts({ org }: { org: { id: string; name: string } }) {
   const accounts = view?.gitAccounts ?? [];
   const hosts = logins.data?.hosts ?? [];
   const sshOf = (a: GitAccount) =>
-    hosts.find((h) => h.host === a.host)?.logins.some(
-      (l) =>
-        l.via === "ssh" &&
-        l.account.toLowerCase() === a.account.toLowerCase() &&
-        (a.ssh === undefined || (a.ssh === "default" ? l.alias === undefined : l.alias === a.ssh)),
-    ) === true;
+    hosts
+      .find((h) => h.host === a.host)
+      ?.logins.some(
+        (l) =>
+          l.via === "ssh" &&
+          l.account.toLowerCase() === a.account.toLowerCase() &&
+          (a.ssh === undefined || (a.ssh === "default" ? l.alias === undefined : l.alias === a.ssh)),
+      ) === true;
   // One option per detected account of a host, with the SSH route when it has one.
   const options = hosts.flatMap((h) => {
     const seen = new Set<string>();
     return h.logins.flatMap((l) => {
       const key = `${h.host}\n${l.account}\n${l.via === "ssh" ? (l.alias ?? "") : ""}`;
-      const taken = accounts.some((a) => a.host === h.host && a.account.toLowerCase() === l.account.toLowerCase());
+      const taken = accounts.some(
+        (a) => a.host === h.host && a.account.toLowerCase() === l.account.toLowerCase(),
+      );
       if (seen.has(key) || taken) return [];
       seen.add(key);
-      return [{ key, host: h.host, account: l.account, ssh: l.via === "ssh" ? (l.alias ?? "default") : undefined }];
+      return [
+        { key, host: h.host, account: l.account, ssh: l.via === "ssh" ? (l.alias ?? "default") : undefined },
+      ];
     });
   });
   const run = (fn: () => Promise<unknown>) => {
@@ -75,7 +91,9 @@ export function GitAccounts({ org }: { org: { id: string; name: string } }) {
           onChange={(e) => setPick(e.target.value)}
           className="max-w-sm"
         >
-          <option value="">{options.length === 0 ? "No logins found on this Mac" : "Pick a detected login"}</option>
+          <option value="">
+            {options.length === 0 ? "No logins found on this Mac" : "Pick a detected login"}
+          </option>
           {options.map((o) => (
             <option key={o.key} value={o.key}>
               {o.account} on {o.host}
@@ -133,6 +151,7 @@ function AccountRow({
   const [name, setName] = useState(account.account);
   const [email, setEmail] = useState("");
   const update = useUpdateOrg();
+  const saved = useUseSavedLogin();
   const [failure, setFailure] = useState<string>();
   const tag = (ok: boolean, good: string) => (
     <span className={ok ? "text-green" : "text-amber"}>{ok ? good : ""}</span>
@@ -151,11 +170,30 @@ function AccountRow({
       </div>
       {!sshOk && (
         <p className="m-0 text-sm text-amber">
-          No SSH key on this Mac logs in as {account.account}. Pushes for {org} are refused until one does.
+          No SSH key on this Mac logs in as {account.account}. https remotes push with this Mac's saved login
+          instead.
         </p>
       )}
       {account.token === undefined && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={saved.isPending}
+            onClick={() => {
+              setFailure(undefined);
+              saved.mutate(
+                { id: org, host: account.host, account: account.account },
+                {
+                  onSuccess: (r) => r.saved || setFailure(r.reason),
+                  onError: (e) => setFailure(describeError(e)),
+                },
+              );
+            }}
+          >
+            Use the saved login for {account.host}
+          </Button>
           <Input
             aria-label={`Token for ${account.account}`}
             type="password"
@@ -180,7 +218,12 @@ function AccountRow({
       )}
       {!hasIdentity && (
         <div className="flex flex-wrap items-center gap-2">
-          <Input aria-label="Commit name" value={name} onChange={(e) => setName(e.target.value)} className="max-w-48" />
+          <Input
+            aria-label="Commit name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="max-w-48"
+          />
           <Input
             aria-label="Commit email"
             type="email"

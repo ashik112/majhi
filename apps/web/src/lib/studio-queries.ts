@@ -254,6 +254,19 @@ export function useUseGitLogin() {
   });
 }
 
+/** Uses the Mac's saved https login as an org account's token, when the host's API accepts it. */
+export function useUseSavedLogin() {
+  const client = useQueryClient();
+  return useMutation<
+    CommandOutput<"orgs.useSavedLogin">,
+    ApiRequestError,
+    CommandInput<"orgs.useSavedLogin">
+  >({
+    mutationFn: (input) => cmd("orgs.useSavedLogin", input),
+    onSuccess: () => refresh(client, queryKeys.orgs, queryKeys.secrets),
+  });
+}
+
 /** How a project pushes its MR remote over SSH. */
 export function usePushRoute(id: string) {
   return useQuery<CommandOutput<"projects.pushRoute">, ApiRequestError>({
@@ -267,7 +280,11 @@ export function usePushRoute(id: string) {
 export function useSetGitAccount() {
   const client = useQueryClient();
   const done = () => refresh(client, queryKeys.orgs, queryKeys.secrets);
-  const set = useMutation<CommandOutput<"orgs.setGitAccount">, ApiRequestError, CommandInput<"orgs.setGitAccount">>({
+  const set = useMutation<
+    CommandOutput<"orgs.setGitAccount">,
+    ApiRequestError,
+    CommandInput<"orgs.setGitAccount">
+  >({
     mutationFn: (input) => cmd("orgs.setGitAccount", input),
     onSuccess: done,
   });
