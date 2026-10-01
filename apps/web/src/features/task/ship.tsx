@@ -40,6 +40,10 @@ export interface ShipChoices {
   method: MergeMethod;
   /** For merge, mergePush and push. */
   deleteAfter: boolean;
+  /** For mergePush: the owner confirmed sending local commits on the target that are not the task's. */
+  pushLocalCommits?: boolean | undefined;
+  /** For mergePush: the owner confirmed creating the target branch on the remote. */
+  createRemoteBranch?: boolean | undefined;
 }
 /** Runs one Ship action: straight through its command, or through a review card's button. */
 export type RunShip = (
@@ -47,6 +51,10 @@ export type RunShip = (
   target: ShipTarget,
   choices: ShipChoices,
 ) => Promise<{ results?: ShipResult[] | undefined }>;
+
+/** Refusals the owner can confirm past (the server's CONFIRM_EXTRA and CONFIRM_NEW). */
+const ASKS_EXTRA = "Pushing would send them with the task.";
+const ASKS_NEW = "Pushing would create it there.";
 
 /** The refusal for a local target branch that is behind its remote; the first group is the remote's name. */
 const REMOTE_AHEAD = /^(\S+)\/\S+ has commits that your local \S+ in \S+ does not have\./;
@@ -107,7 +115,7 @@ function placeNear(button: HTMLElement, align: "left" | "right"): CSSProperties 
  */
 export function useDirectShip(task: Task): RunShip {
   const after = useAfterTaskChange();
-  return async (action, target, { method, deleteAfter }) => {
+  return async (action, target, { method, deleteAfter, pushLocalCommits, createRemoteBranch }) => {
     if (action === "merge" || action === "mergePush") {
       const out = await cmd("tasks.merge", {
         id: task.id,
@@ -116,6 +124,8 @@ export function useDirectShip(task: Task): RunShip {
         push: action === "mergePush",
         method,
         deleteAfter,
+        pushLocalCommits: pushLocalCommits === true,
+        createRemoteBranch: createRemoteBranch === true,
       });
       await after(out.task);
       return out;
@@ -323,6 +333,8 @@ function ShipPanel({
   const [results, setResults] = useState<ShipResult[]>();
   // Set when a push was refused because the remote's branch is ahead of the local one.
   const [behind, setBehind] = useState<{ remote: string; into: string }>();
+  // Set when a push would also send commits that are not the task's, or create the target branch.
+  const [asks, setAsks] = useState<{ extra: boolean; create: boolean }>();
 
   const local = [...new Set([base, ...(branches.data ?? []).flatMap((r) => r.branches)])];
   const remote = [...new Set((branches.data ?? []).flatMap((r) => r.remote))].filter(
@@ -396,13 +408,19 @@ function ShipPanel({
     return o;
   }
 
-  async function confirm(action: ShipAction) {
+  async function confirm(action: ShipAction, confirmed?: { extra: boolean; create: boolean }) {
     setBusy(true);
     setError(undefined);
     setBehind(undefined);
+    setAsks(undefined);
     const deleting = deleteAfter && action !== "mr";
     try {
-      const out = await run(action, target, { method, deleteAfter: deleting });
+      const out = await run(action, target, {
+        method,
+        deleteAfter: deleting,
+        pushLocalCommits: confirmed?.extra,
+        createRemoteBranch: confirmed?.create,
+      });
       const list = out.results ?? [];
       // A clean run closes; the room says what merged and, with "delete after", what was deleted.
       if (list.length > 0 && list.every((r) => r.ok) && action !== "push") onClose();
@@ -411,6 +429,9 @@ function ShipPanel({
       const message = describeError(err);
       const remote = REMOTE_AHEAD.exec(message)?.[1];
       if (remote !== undefined) setBehind({ remote, into: intoText });
+      const extra = message.includes(ASKS_EXTRA);
+      const create = message.includes(ASKS_NEW);
+      if (remote === undefined && (extra || create)) setAsks({ extra, create });
       setError(message);
     } finally {
       setBusy(false);
@@ -637,13 +658,22 @@ function ShipPanel({
             </Button>
             <Button
               size="sm"
-              variant={behind === undefined ? "primary" : "secondary"}
+              variant={behind === undefined && asks === undefined ? "primary" : "secondary"}
               disabled={busy}
               onClick={() => void confirm(chosen)}
             >
               {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
               {busy ? "Working" : labels[chosen].confirm}
             </Button>
+            {asks !== undefined && !busy && (
+              <Button size="sm" variant="primary" onClick={() => void confirm(chosen, asks)}>
+                {asks.extra && asks.create
+                  ? "Send those commits, create the branch and ship"
+                  : asks.extra
+                    ? "Send those commits too and ship"
+                    : "Create the branch and ship"}
+              </Button>
+            )}
             {behind !== undefined && !busy && (
               <Button size="sm" variant="primary" onClick={() => void updateAndShip(chosen)}>
                 Update {behind.into} from {behind.remote} and ship

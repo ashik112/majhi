@@ -121,6 +121,7 @@ describe("shipping a task with several repos", () => {
   it("a conflict in one changed repo merges nothing anywhere", async () => {
     await reviewed(["acme-api", "acme-web"]);
     await commitOn(w.repo("web"), "main", "change.txt", "main side\n");
+    await git(w.repo("web"), "push", "--quiet", "origin", "main");
     const api = await tip(w.repo("api"), "main");
     const web = await tip(w.repo("web"), "main");
     const pushed = await tip(w.remote("api"), "main");
@@ -165,6 +166,50 @@ describe("shipping a task with several repos", () => {
     ]);
     expect(await tip(w.remote("web"), "main")).toBe(await tip(w.repo("web"), "main"));
     expect(again.body.task.status).toBe("done");
+  });
+
+  it("does not push the owner's own unpushed commits on the target, or create a branch, unless confirmed", async () => {
+    await reviewed(["acme-api"]);
+    await commitOn(w.repo("api"), "main", "notes.txt", "owner's work\n");
+    const local = await tip(w.repo("api"), "main");
+    const remote = await tip(w.remote("api"), "main");
+
+    const refused = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(
+      /^Your local main in acme-api has 1 commit that origin does not have and that are not this task's: [0-9a-f]+ notes\.txt on main\. Pushing would send them with the task\./,
+    );
+    expect(await tip(w.repo("api"), "main")).toBe(local);
+    expect(await tip(w.remote("api"), "main")).toBe(remote);
+
+    // A target the remote does not have is not created without a yes either.
+    await git(w.repo("api"), "branch", "release", "main");
+    const missing = await cmd("tasks.merge", {
+      id: "ACM-1",
+      into: "release",
+      push: true,
+      pushLocalCommits: true,
+    });
+    expect(missing.status).toBe(409);
+    expect(missing.body.error).toBe(
+      "origin has no branch release for acme-api. Pushing would create it there. Confirm to create it.",
+    );
+    expect(await git(w.remote("api"), "branch", "--list", "release")).toBe("");
+
+    const sent = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, pushLocalCommits: true });
+    expect(sent.status).toBe(200);
+    expect(await git(w.remote("api"), "show", "main:notes.txt")).toBe("owner's work");
+    expect(await git(w.remote("api"), "show", "main:change.txt")).toBe("acme-api change");
+  });
+
+  it("refuses another task's branch as a target", async () => {
+    await reviewed(["acme-api"]);
+    await git(w.repo("api"), "branch", "task/acm-9-other", "main");
+    const res = await cmd("tasks.merge", { id: "ACM-1", into: "task/acm-9-other" });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(
+      "task/acm-9-other in acme-api is a task branch. Ship into the repo's base or a branch you work on, never a task's branch.",
+    );
   });
 
   it("one target covers only the repos on that base; each other repo goes into its own", async () => {

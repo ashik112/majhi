@@ -961,6 +961,10 @@ export const commands = {
       done: z.boolean().default(false),
       /** Push the merged branch afterwards. */
       push: z.boolean().default(false),
+      /** Owner only. With push: also send local commits on the target that the remote lacks and are not the task's. */
+      pushLocalCommits: z.boolean().default(false),
+      /** Owner only. With push: create the target branch on the remote when it has none. */
+      createRemoteBranch: z.boolean().default(false),
       /** Default `merge`: fast-forward when it can, else a merge commit. */
       method: MergeMethodSchema.optional(),
       /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
@@ -1313,6 +1317,10 @@ export const commands = {
       method: MergeMethodSchema.optional(),
       /** For merge, mergePush and push: delete the worktree and local branch after a clean run. */
       deleteAfter: z.boolean().optional(),
+      /** For mergePush: the owner confirmed sending local commits on the target that are not the task's. */
+      pushLocalCommits: z.boolean().optional(),
+      /** For mergePush: the owner confirmed creating the target branch on the remote. */
+      createRemoteBranch: z.boolean().optional(),
       /** For done: the owner confirmed closing with work not shipped. */
       unshipped: UnshippedChoiceSchema.optional(),
     }),

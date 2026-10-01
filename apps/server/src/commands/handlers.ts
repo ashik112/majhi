@@ -353,10 +353,22 @@ export function createHandlers({
         whenUnshipped: input.unshipped ?? "refuse",
       }),
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
-    "tasks.merge": ({ push, ...input }, ctx) =>
-      push
-        ? services.mrs.mergeAndPush({ ...input, by: actorName(ctx.meta.actor) })
-        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
+      if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
+        throw new UserError(
+          "Only the owner can confirm pushing commits that are not the task's, or creating a branch on the remote.",
+          409,
+        );
+      }
+      return push
+        ? services.mrs.mergeAndPush({
+            ...input,
+            pushLocalCommits,
+            createRemoteBranch,
+            by: actorName(ctx.meta.actor),
+          })
+        : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) });
+    },
     "tasks.updateTarget": (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
         throw new UserError(
@@ -369,7 +381,11 @@ export function createHandlers({
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
-      task: await services.pendingShips.request({ ...input, by: actorName(ctx.meta.actor) }),
+      task: await services.pendingShips.request({
+        ...input,
+        by: actorName(ctx.meta.actor),
+        agent: ctx.meta.actor.kind === "agent",
+      }),
     }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),

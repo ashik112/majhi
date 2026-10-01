@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type MergeMethod, type PendingShip, shipWords, type Task, type TaskId } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { uncommitted } from "../git/git.ts";
+import { git, uncommitted } from "../git/git.ts";
 import { mergeConflicts } from "../git/merge.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
@@ -40,6 +40,8 @@ export class PendingShips {
     method: MergeMethod;
     deleteAfter: boolean;
     by: string;
+    /** An agent asked, not the owner: the audit says so. */
+    agent?: boolean | undefined;
   }): Promise<Task> {
     const { store, tasks } = this.deps;
     let task = tasks.get(input.id);
@@ -50,6 +52,7 @@ export class PendingShips {
     // conflict in a repo the task did not touch.
     const targets = planTargets(await tasks.shipPlan(task, input));
     const conflicts = await this.conflicts(task, targets);
+    const heads = await this.heads(task, targets);
     const into = [...new Set(Object.values(targets))].join(", ");
     if (input.method !== "rebase" && conflicts.every((c) => c.files.length === 0)) {
       throw new UserError(`Nothing conflicts with ${into} now. Ship again.`, 409);
@@ -59,6 +62,7 @@ export class PendingShips {
       action: input.action,
       into,
       targets,
+      heads,
       method: input.method,
       deleteAfter: input.deleteAfter,
       lead,
@@ -66,8 +70,15 @@ export class PendingShips {
       by: input.by,
     };
     store.tasks.setPendingShip(task.id, pending);
-    // The owner's click is the approval for the ship that runs later.
-    this.approval(task.id, "allow", input.by, `Approved: ${shipWords(pending)}`, into);
+    // The click is the approval for the ship that runs later, logged as who made it.
+    this.approval(
+      task.id,
+      "allow",
+      input.by,
+      `Approved: ${shipWords(pending)}`,
+      into,
+      input.agent === true ? "agent" : "owner",
+    );
     tasks.cards.settle(
       task.id,
       "review",
@@ -99,14 +110,21 @@ export class PendingShips {
     return this.deps.tasks.get(id);
   }
 
-  private approval(task: string, decision: "allow" | "deny", who: string, title: string, into: string): void {
+  private approval(
+    task: string,
+    decision: "allow" | "deny",
+    who: string,
+    title: string,
+    into: string,
+    by: "owner" | "agent" = "owner",
+  ): void {
     this.deps.store.permissions.log({
       task,
       agent: who,
       kind: "ship",
       title,
       decision,
-      by: "owner",
+      by,
       at: this.deps.now().toISOString(),
       detail: into,
     });
@@ -162,9 +180,31 @@ export class PendingShips {
     const pick: ShipTargets =
       pending.targets === undefined ? { into: pending.into } : { targets: pending.targets };
     const targets = planTargets(await this.deps.tasks.shipPlan(task, pick));
+    // The ship was approved onto the targets as they were; one that moved since is not shipped onto.
+    const now = await this.heads(task, targets);
+    for (const [project, head] of Object.entries(pending.heads ?? {})) {
+      if (now[project] !== undefined && now[project] !== head) {
+        return `${targets[project] ?? "the target"} in ${project} moved since you asked. Look at it and ship again`;
+      }
+    }
     const files = (await this.conflicts(task, targets)).flatMap((c) => c.files);
     if (files.length > 0) return `Still conflicts in ${listed(files)}`;
     return undefined;
+  }
+
+  /** The commit each target is at now, by project. */
+  private async heads(
+    task: Task,
+    targets: Readonly<Record<string, string>>,
+  ): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const repo of task.repos) {
+      const into = targets[repo.project];
+      if (into === undefined) continue;
+      const sha = await git(repo.source, ["rev-parse", `refs/heads/${into}`]).catch(() => "");
+      if (sha.trim() !== "") out[repo.project] = sha.trim();
+    }
+    return out;
   }
 
   /** Per repo that ships (those in `targets`), the files that conflict with its target now. */

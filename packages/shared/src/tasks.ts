@@ -125,6 +125,8 @@ export const PendingShipSchema = z.object({
   into: z.string(),
   /** The branch each repo merges into, by project. */
   targets: z.record(z.string(), z.string()).optional(),
+  /** The commit each target was at when the ship was asked for, by project: a target that moved since is not shipped onto. */
+  heads: z.record(z.string(), z.string()).optional(),
   method: MergeMethodSchema,
   deleteAfter: z.boolean(),
   /** The agent asked to resolve the conflicts. */
@@ -280,7 +282,10 @@ export const ChangeBranchInputSchema = z
     /** Which repo of that task. Needed when it has more than one. */
     project: IdSchema.optional(),
     /** The commit of the target branch the caller read its files from. A branch that moved since is refused. */
-    base: z.string().trim().regex(/^[0-9a-fA-F]{7,40}$/, "base is a commit: 7 to 40 hex characters"),
+    base: z
+      .string()
+      .trim()
+      .regex(/^[0-9a-fA-F]{7,40}$/, "base is a commit: 7 to 40 hex characters"),
     /** Whole files: for new files or full rewrites. */
     files: z
       .array(BranchFileSchema)
@@ -289,7 +294,11 @@ export const ChangeBranchInputSchema = z
       .refine((files) => new Set(files.map((f) => f.path)).size === files.length, "Each path only once")
       .optional(),
     /** A unified diff relative to the repo root: for small edits. */
-    patch: z.string().min(1).max(200 * 1024).optional(),
+    patch: z
+      .string()
+      .min(1)
+      .max(200 * 1024)
+      .optional(),
     message: z.string().trim().min(1).max(2000),
   })
   .refine((v) => (v.files === undefined) !== (v.patch === undefined), "Give exactly one of files or patch");

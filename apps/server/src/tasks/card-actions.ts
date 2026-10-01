@@ -30,6 +30,8 @@ export class CardActions {
     action: CardAction;
     into?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
+    pushLocalCommits?: boolean | undefined;
+    createRemoteBranch?: boolean | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -53,6 +55,8 @@ export class CardActions {
     action: CardAction;
     into?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
+    pushLocalCommits?: boolean | undefined;
+    createRemoteBranch?: boolean | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -101,10 +105,18 @@ export class CardActions {
         return { item: current(), results: out.results };
       }
       case "mergePush": {
+        if ((input.pushLocalCommits === true || input.createRemoteBranch === true) && input.agent) {
+          throw new UserError(
+            "Only the owner can confirm pushing commits that are not the task's, or creating a branch on the remote.",
+            409,
+          );
+        }
         const out = await mrs.mergeAndPush({
           id: task.id,
           into: input.into,
           targets: input.targets,
+          pushLocalCommits: input.pushLocalCommits,
+          createRemoteBranch: input.createRemoteBranch,
           done: true,
           by: input.by,
           method: input.method,
