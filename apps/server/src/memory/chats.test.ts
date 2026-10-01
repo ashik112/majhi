@@ -5,7 +5,7 @@ import { mentionedProjects } from "./chat-projects.ts";
 import { ChatMemory, RETITLE_AFTER } from "./chats.ts";
 import { Extraction } from "./extraction.ts";
 import type { Candidate } from "./housekeeper.ts";
-import { chatRecallScopes } from "./scopes.ts";
+import { chatRecallScopes, writableScopes } from "./scopes.ts";
 
 const SETTINGS = { chat_idle_minutes: 30 } as MemorySettings;
 const LATER = () => new Date(Date.now() + 60 * 60_000);
@@ -147,7 +147,11 @@ describe("memory from chats", () => {
 });
 
 describe("chat memory scopes", () => {
-  it("offers a chat only its own org's scopes, and a root chat only global", async () => {
+  it("offers an org chat only its own org's scopes, and a root chat any org or project", async () => {
+    const projectOrgs = new Map([
+      ["acme-api", "acme"],
+      ["globex-web", "globex"],
+    ]);
     const prompts: string[] = [];
     const seen: { org: string | undefined; projects: readonly string[]; candidates: Candidate[] }[] = [];
     const extraction = new Extraction({
@@ -161,12 +165,17 @@ describe("chat memory scopes", () => {
         },
       } as never,
       curator: {
+        scopesFor: async (t: { org?: string }) => writableScopes(t, projectOrgs, ["acme", "globex"]),
         curateCandidates: async (t: { org?: string; projects: string[] }, c: Candidate[]) => {
           seen.push({ org: t.org, projects: t.projects, candidates: c });
           return {} as MemoryExtractOutput;
         },
       } as never,
       memory: { changed: () => undefined } as never,
+      registry: async () => ({
+        orgs: [{ id: "acme" }, { id: "globex" }],
+        projects: [...projectOrgs].map(([id, org]) => ({ id, org })),
+      }),
     } as never);
     const items = [] as RoomItem[];
     await extraction.fromChat(chat("C-1"), items, ["acme-api"], () => undefined);
@@ -174,8 +183,14 @@ describe("chat memory scopes", () => {
     expect(prompts[0]).toContain("project:acme-api");
     expect(prompts[0]).toContain("org:acme");
     expect(prompts[0]).not.toContain("org:globex");
-    expect(prompts[1]).not.toContain("project:acme-api");
-    expect(seen[1]).toMatchObject({ org: undefined, projects: [] });
+    expect(prompts[0]).not.toContain("project:globex-web");
+    expect(prompts[1]).toContain("project:acme-api");
+    expect(prompts[1]).toContain("org:globex");
+    expect(seen[1]).toMatchObject({ org: undefined, projects: ["acme-api"] });
+    // An older reply's facts are lessons the agent inferred, not the owner's words.
+    expect(seen[0]?.candidates).toEqual([
+      { text: "Staging is called Northwind", scope: "org:globex", kind: "lesson", source: "agent" },
+    ]);
   });
 
   it("recalls project memory in a chat only for projects of its org, root chats for any", () => {
@@ -192,7 +207,9 @@ describe("chat memory scopes", () => {
     expect(chatRecallScopes({ org: undefined, repos: [] }, orgs, mentioned)).toEqual([
       "global",
       "project:acme-api",
+      "org:acme",
       "project:globex-web",
+      "org:globex",
     ]);
   });
 

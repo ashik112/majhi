@@ -5,6 +5,7 @@ import { type CurationTask, type Curator, EMPTY_COUNTS } from "./curator.ts";
 import {
   agentSpoke,
   briefPrompt,
+  type Candidate,
   chatLines,
   chatPrompt,
   type Housekeeper,
@@ -14,11 +15,13 @@ import {
   parseRecordReply,
   type RecordReply,
   recordPrompt,
+  replyFacts,
   roomSources,
   sourceTask,
 } from "./housekeeper.ts";
+import { placeChoices, type Registry } from "./placement.ts";
 import { compactRecord } from "./recall.ts";
-import { headings, OVERVIEW_DOCS, type RepoDocs, readRepoFile } from "./repo-docs.ts";
+import { contentWords, headings, OVERVIEW_DOCS, type RepoDocs, readRepoFile } from "./repo-docs.ts";
 import type { MemoryService } from "./service.ts";
 import { factsText, type RepoFacts, repoFacts } from "./task-git.ts";
 
@@ -43,6 +46,35 @@ export interface ExtractionDeps {
   say: (task: string, level: "info" | "warn", text: string) => void;
   /** Reads git for one repo. Tests may replace it. */
   repoFacts?: (repo: TaskRepo, createdAt: string) => Promise<RepoFacts>;
+  /** The registered orgs and projects, for the scopes the Housekeeper may give. Default: none. */
+  registry?: () => Promise<Registry>;
+}
+
+/** Share of a quote's content words that must be in the owner's own messages for it to count as theirs. */
+export const OWNER_WORDS = 0.6;
+
+/**
+ * True when the owner's messages hold the quote's words: at least `OWNER_WORDS` of them, or all
+ * of a quote of fewer than three. A model can put words in the owner's mouth; this catches it.
+ */
+export function ownerSaid(quote: string, owner: readonly string[]): boolean {
+  const words = [...new Set(contentWords(quote))];
+  if (words.length === 0) return false;
+  const said = new Set(owner.flatMap((t) => contentWords(t)));
+  const share = words.filter((w) => said.has(w)).length / words.length;
+  return words.length < 3 ? share === 1 : share >= OWNER_WORDS;
+}
+
+/** What the owner did not clearly say is an inferred lesson: it waits for review like one. */
+export function checkOwner(candidates: readonly Candidate[], owner: readonly string[]): Candidate[] {
+  return candidates.map((c) =>
+    c.source === "owner" && !ownerSaid(c.text, owner) ? { ...c, kind: "lesson", source: "agent" } : c,
+  );
+}
+
+/** The owner's own words in a room. */
+function ownerLines(items: readonly RoomItem[]): string[] {
+  return items.flatMap((i) => (i.type === "owner" ? [i.text] : []));
 }
 
 /** What the curator needs to know of a task. */
@@ -108,7 +140,8 @@ export class Extraction {
       );
       const read = deps.repoFacts ?? repoFacts;
       const facts = await Promise.all(task.repos.map((r) => read(r, task.createdAt)));
-      const { handbacks, room } = roomSources(deps.room(id));
+      const items = deps.room(id);
+      const { handbacks, room } = roomSources(items);
       const threads = project.threads({ projects, status: "open", limit: 60 });
       const briefs = await Promise.all(
         projects.map(async (p) => {
@@ -119,8 +152,13 @@ export class Extraction {
         }),
       );
       const madeFrom = deps.madeFrom(id);
+      const choices = placeChoices((await deps.registry?.()) ?? { orgs: [], projects: [] }, {
+        allowed: await deps.curator.scopesFor(curation),
+        touched: projects,
+      });
       const prompt = recordPrompt({
         task: sourceTask(task, curation),
+        choices,
         handbacks,
         room,
         git: factsText(facts),
@@ -150,7 +188,8 @@ export class Extraction {
       );
       counts.threads_closed = this.closeThreads(task, reply);
       counts.briefs = this.patchBriefs(task, reply, agent);
-      const lessons = await deps.curator.curateCandidates(curation, reply.lessons, agent);
+      const found = checkOwner(replyFacts(reply), [task.brief, ...ownerLines(items)]);
+      const lessons = await deps.curator.curateCandidates(curation, found, agent);
       const out = { ...lessons, ...pick(counts) };
       deps.memory.changed();
       this.report(id, out);
@@ -201,9 +240,9 @@ export class Extraction {
   }
 
   /**
-   * Reads a stretch of a chat and sends its facts through curation, like a task's lessons. The
-   * facts are scoped to the chat's org (a root chat: global) and to the projects named in it,
-   * never to another org. `onRead` runs once the Housekeeper has answered and before anything is
+   * Reads a stretch of a chat and sends its facts through curation, like a task's lessons. Each fact
+   * gets its own scope: an org chat writes only its org, that org's projects or global; a root chat
+   * (the boss) may write any org or project. `onRead` runs once the Housekeeper has answered and before anything is
    * written, so the caller moves its watermark exactly once: a failure before it leaves the
    * messages for the next try, a crash after it never reads them again.
    */
@@ -216,17 +255,22 @@ export class Extraction {
     const chat = {
       id: task.id,
       org: task.org,
-      projects: task.org === undefined ? [] : projects,
+      projects,
       title: task.title,
       agent: task.team[0] ?? "agent",
     };
+    const choices = placeChoices((await this.deps.registry?.()) ?? { orgs: [], projects: [] }, {
+      allowed: await this.deps.curator.scopesFor(chat),
+      touched: projects,
+    });
     const { value, agent } = await this.deps.housekeeper.ask(
       task,
-      chatPrompt({ chat, messages: chatLines(items) }),
+      chatPrompt({ chat, choices, messages: chatLines(items) }),
       parseChatReply,
     );
     onRead();
-    const counts = await this.deps.curator.curateCandidates(chat, value, agent);
+    const facts = checkOwner(value, ownerLines(items));
+    const counts = await this.deps.curator.curateCandidates(chat, facts, agent);
     this.deps.memory.changed();
     return counts;
   }

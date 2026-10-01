@@ -7,11 +7,11 @@ import {
   type MemorySettings,
   orgScope,
   parseScope,
-  projectScope,
 } from "@majhi/shared";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
 import type { Candidate } from "./housekeeper.ts";
+import type { Placement, Placer } from "./placement.ts";
 import { forbiddenReason } from "./rules.ts";
 import type { MemoryService } from "./service.ts";
 
@@ -24,7 +24,7 @@ export const RELATED_COSINE = 0.75;
 export interface CurationTask {
   id: string;
   org?: string | undefined;
-  /** Every project of the task's repos. */
+  /** Every project of the task's repos; for a chat, the projects it named or read. */
   projects: readonly string[];
 }
 
@@ -42,6 +42,8 @@ export interface CuratorDeps {
    * undefined. A lesson that restates the repo docs is not kept.
    */
   inDocs?: (task: CurationTask | undefined, text: string) => Promise<string | undefined>;
+  /** Decides each extracted fact's scope. Without it a fact keeps the Housekeeper's scope when allowed. */
+  placer?: Pick<Placer, "place">;
 }
 
 export const EMPTY_COUNTS: MemoryExtractOutput = {
@@ -81,7 +83,9 @@ function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScop
 /**
  * Curation of lessons (SPEC 5.6, reworked): what happens to a lesson after an agent proposed it or
  * the Housekeeper wrote it. Every step is logged with its reason, confidence and provider, and can
- * be undone; nothing is deleted. Only global lessons and contradictions wait for the owner.
+ * be undone; nothing is deleted. An agent's proposal waits for the owner only when global or a
+ * contradiction. Of the Housekeeper's facts, what the owner said is kept at once and what it
+ * inferred (lessons, debugging playbooks) waits for review once curation has not dropped it.
  *
  * 1. Rules: a secret or personal data is rejected, whatever a model would say.
  * 2. Repo docs: a lesson the repo's CLAUDE.md, AGENTS.md or README already says is not kept.
@@ -97,6 +101,11 @@ function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScop
 export class Curator {
   constructor(private readonly deps: CuratorDeps) {}
 
+  /** Where facts from the task may go. */
+  scopesFor(task: CurationTask): Promise<readonly MemoryScope[]> {
+    return this.deps.allowed(task);
+  }
+
   /** An agent's proposal, already stored as pending. Never throws: the fact stays pending. */
   async curate(fact: Fact): Promise<void> {
     try {
@@ -106,7 +115,11 @@ export class Curator {
     }
   }
 
-  /** The Housekeeper's lessons for a task, each stored and curated. Resolves what happened to them. */
+  /**
+   * The Housekeeper's facts for a task or a stretch of a chat, each placed in its own scope, stored
+   * and curated. What the owner said is kept at once; what was inferred waits for the owner's
+   * review unless curation drops it. Resolves what happened to them.
+   */
   async curateCandidates(
     task: CurationTask,
     candidates: readonly Candidate[],
@@ -114,13 +127,11 @@ export class Curator {
   ): Promise<MemoryExtractOutput> {
     const counts = { ...EMPTY_COUNTS, candidates: candidates.length };
     const allowed = await this.deps.allowed(task);
-    const fallback: MemoryScope = task.org === undefined ? "global" : orgScope(task.org);
     for (const candidate of candidates) {
-      // A scope the task's agents may not use is not honoured: the fact goes to the task's org.
-      const scope = allowed.includes(candidate.scope) ? candidate.scope : fallback;
       let outcome: Outcome = "pending";
       try {
-        outcome = await this.candidate(task, { text: candidate.text, scope }, agent);
+        const placed = await this.place(task, allowed, candidate, agent);
+        outcome = await this.candidate(task, { ...candidate, scope: placed.scope }, agent, placed);
       } catch (err) {
         console.error(`Memory curation of a candidate failed: ${errorMessage(err)}`);
       }
@@ -134,10 +145,39 @@ export class Curator {
     return counts;
   }
 
+  /**
+   * Where one fact goes, never outside `allowed`: the placer's choice, else the Housekeeper's scope
+   * when allowed, else the task's org (global without one).
+   */
+  private async place(
+    task: CurationTask,
+    allowed: readonly MemoryScope[],
+    candidate: Candidate,
+    agent: string,
+  ): Promise<Placement> {
+    const proposed = candidate.scope;
+    const placed = await this.deps.placer
+      ?.place(
+        { task: task.id, agent, org: task.org, touched: task.projects, allowed },
+        { text: candidate.text, proposed },
+      )
+      .catch(() => undefined);
+    if (placed !== undefined && allowed.includes(placed.scope)) return placed;
+    if (proposed !== undefined && allowed.includes(proposed))
+      return { scope: proposed, by: "housekeeper", reason: "the Housekeeper's scope" };
+    const fallback: MemoryScope = task.org === undefined ? "global" : orgScope(task.org);
+    return {
+      scope: allowed.includes(fallback) ? fallback : "global",
+      by: "touched",
+      reason: "the task's org",
+    };
+  }
+
   private async candidate(
     task: CurationTask,
-    candidate: { text: string; scope: MemoryScope },
+    candidate: Candidate & { scope: MemoryScope },
     agent: string,
+    placed?: Placement,
   ): Promise<Outcome> {
     const { memory } = this.deps;
     // What the rules forbid, or the repo docs already say, is not stored at all.
@@ -153,13 +193,35 @@ export class Curator {
       );
       return "duplicate";
     }
-    const fact = await memory.addCandidate({ ...candidate, task: task.id, agent });
-    return this.run(fact, { checkDuplicate: false, near, docsChecked: true });
+    const fact = await memory.addCandidate({
+      text: candidate.text,
+      scope: candidate.scope,
+      kind: candidate.kind,
+      source: candidate.source,
+      task: task.id,
+      agent,
+      ...(placed === undefined ? {} : { reason: `Scope ${placed.scope}: ${placed.reason}.` }),
+    });
+    // The owner said it: it holds, wherever it goes, without a review.
+    if (candidate.source === "owner") {
+      memory.keep(fact.id, { reason: "The owner said it, so it holds without review.", provider: "owner" });
+      return "kept";
+    }
+    return this.run(fact, { checkDuplicate: false, near, docsChecked: true, review: true });
   }
 
+  /**
+   * `review`: the fact was inferred by the Housekeeper, so curation may drop or merge it but never
+   * keeps it: it waits for the owner.
+   */
   private async run(
     fact: Fact,
-    options: { checkDuplicate: boolean; near?: { fact: Fact; cosine: number }[]; docsChecked?: boolean },
+    options: {
+      checkDuplicate: boolean;
+      near?: { fact: Fact; cosine: number }[];
+      docsChecked?: boolean;
+      review?: boolean;
+    },
   ): Promise<Outcome> {
     const { memory } = this.deps;
     const why = forbiddenReason(fact.text);
@@ -195,13 +257,14 @@ export class Curator {
     const related = near.find(
       (n) => n.fact.status === "active" && n.cosine >= RELATED_COSINE && n.cosine < DUPLICATE_COSINE,
     );
-    return this.decide(fact, related, settings.auto_threshold);
+    return this.decide(fact, related, settings.auto_threshold, options.review === true);
   }
 
   private async decide(
     fact: Fact,
     related: { fact: Fact; cosine: number } | undefined,
     threshold: number,
+    review: boolean,
   ): Promise<Outcome> {
     const { memory, decisions } = this.deps;
     const result = await decisions
@@ -212,6 +275,7 @@ export class Curator {
       })
       .catch(() => undefined);
     if (result === undefined) {
+      if (review) return "pending";
       memory.keep(fact.id, {
         reason:
           "Kept: no provider answered. Only global lessons and contradictions wait for you. Undo drops it.",
@@ -269,6 +333,7 @@ export class Curator {
         return done(`Merged into fact ${related.fact.id}.`, "duplicate");
       }
     }
+    if (review) return done("Waits for the owner's review: inferred, not said by the owner.", "pending");
     const confident = worth?.value === KEEP && worthP !== undefined;
     memory.keep(
       fact.id,
@@ -324,18 +389,4 @@ export function request(fact: Fact, nearest: Fact | undefined): DecideRequestInp
       },
     },
   };
-}
-
-/** Scopes a Housekeeper may write to for a task, as prompt text. */
-export function scopeChoices(task: CurationTask): { scope: MemoryScope; meaning: string }[] {
-  return [
-    ...task.projects.map((p) => ({
-      scope: projectScope(p),
-      meaning: `only true in the repo ${p}`,
-    })),
-    ...(task.org === undefined
-      ? []
-      : [{ scope: orgScope(task.org), meaning: "true across this org's repos and work" }]),
-    { scope: "global" as MemoryScope, meaning: "true everywhere, for every org (rare)" },
-  ];
 }

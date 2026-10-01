@@ -38,6 +38,7 @@ import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
 import { Housekeeper } from "./memory/housekeeper.ts";
+import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
 import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
 import type { MemoryService } from "./memory/service.ts";
@@ -365,6 +366,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       path: resolvePath(p.path, config.paths.hostHome),
       org: p.org,
     }));
+  /** The registered orgs and projects, each project with a line from its brief, for placing facts. */
+  const memoryRegistry = async (): Promise<Registry> => {
+    const sections = await config.sections();
+    return {
+      orgs: Object.entries(sections.orgs).map(([id, o]) => ({ id, name: o.name })),
+      projects: Object.entries(sections.projects).map(([id, p]) => ({
+        id,
+        org: p.org,
+        aliases: p.aliases,
+        about: briefAbout(memory.project.currentBrief(id)?.body),
+      })),
+    };
+  };
   // Curation: agents' proposals and the Housekeeper's lessons take the same path.
   const curator = new Curator({
     memory,
@@ -374,7 +388,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const t = store.tasks.get(id);
       return t === undefined ? undefined : curationTask(t);
     },
-    allowed: async (t) => (await memoryScopes.agent(t.id))?.scopes ?? ["global"],
+    allowed: (t) => memoryScopes.writable(t.id),
+    placer: new Placer({ decisions, registry: memoryRegistry }),
     inDocs: async (t, text) => {
       if (t === undefined) return undefined;
       const paths = (await projectList()).filter((p) => t.projects.includes(p.id)).map((p) => p.path);
@@ -408,6 +423,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           return t === undefined ? [] : [{ id: t.id, title: t.title, status: t.status }];
         }),
     project: async (id) => (await projectList()).find((p) => p.id === id),
+    registry: memoryRegistry,
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   let chatMemory: ChatMemory | undefined;

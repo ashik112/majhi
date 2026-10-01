@@ -270,7 +270,7 @@ describe("candidates from the Housekeeper", () => {
     expect(() => t.memory.undo(event?.id ?? 0, owner)).toThrow(/nothing to undo/);
   });
 
-  it("stores no row for a secret or personal data, and sends a scope the agents may not use to the org", async () => {
+  it("stores no row for a secret or personal data, sends a scope the agents may not use to the org, and leaves inferred facts for review", async () => {
     const t = setup();
     t.box.answers = KEEP;
     const counts = await t.curator.curateCandidates(
@@ -282,8 +282,8 @@ describe("candidates from the Housekeeper", () => {
       ],
       "acme-builder",
     );
-    expect(counts).toMatchObject({ candidates: 3, rejected: 1, kept: 2 });
-    const facts = t.memory.list({ status: "active" });
+    expect(counts).toMatchObject({ candidates: 3, rejected: 1, pending: 2, kept: 0 });
+    const facts = t.memory.list({ status: "pending" });
     expect(facts.map((f) => f.scope).sort()).toEqual(["org:acme", "org:acme"]);
     expect(facts.every((f) => f.agent === "acme-builder" && f.task === "ACM-1")).toBe(true);
     const proposed = t.memory.events({ task: "ACM-1" }).find((e) => e.action === "proposed");

@@ -1,11 +1,12 @@
 import { join } from "node:path";
+import type { MemoryScope } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { Store } from "../store/index.ts";
 import { type MentionableProject, mentionedProjects } from "./chat-projects.ts";
 import { openMemoryDb } from "./db.ts";
 import type { Embedder } from "./embedder.ts";
 import type { AgentScope } from "./mcp.ts";
-import { agentScopes, chatRecallScopes, type ProjectOrgs, recallScopes } from "./scopes.ts";
+import { agentScopes, chatRecallScopes, type ProjectOrgs, recallScopes, writableScopes } from "./scopes.ts";
 import { MemoryService } from "./service.ts";
 import { MemoryStore } from "./store.ts";
 import { TransformersEmbedder } from "./transformers.ts";
@@ -49,6 +50,14 @@ export class TaskScopes {
     const orgs = await this.projectOrgs();
     if (t.kind !== "chat") return recallScopes(t, orgs);
     return chatRecallScopes(t, orgs, await this.mentioned(task));
+  }
+
+  /** Where the Housekeeper's facts from the task may go: its org's scopes, or any for a root task or chat. */
+  async writable(task: string): Promise<MemoryScope[]> {
+    const t = this.store.tasks.get(task);
+    if (t === undefined) return ["global"];
+    const { orgs } = await this.config.sections();
+    return writableScopes(t, await this.projectOrgs(), Object.keys(orgs));
   }
 
   /** For agents: global, the org and every project of the org. */

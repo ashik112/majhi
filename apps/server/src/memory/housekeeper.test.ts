@@ -311,7 +311,7 @@ describe("memory.extract", () => {
     expect((await extract(third.id)).body).toMatchObject({ briefs: [] });
   });
 
-  it("keeps a lesson backed by what happened, and none that the repo docs already say", async () => {
+  it("leaves a lesson backed by what happened for review, and stores none that the repo docs already say", async () => {
     const { h, replies, sessions, task, extract } = await world();
     const repo = w?.repo("api") ?? "";
     await writeFile(
@@ -333,10 +333,10 @@ describe("memory.extract", () => {
       }),
     );
     const out = (await extract(task.id)).body as MemoryExtractOutput;
-    // The rules provider cannot be sure, so the lesson is kept, and the restated rule is not stored.
-    expect(out).toMatchObject({ candidates: 2, in_docs: 1, kept: 1, pending: 0 });
+    // An inferred lesson waits for the owner's review, and the restated rule is not stored.
+    expect(out).toMatchObject({ candidates: 2, in_docs: 1, kept: 0, pending: 1 });
     const facts = h.majhi.services.memory.list({ task: task.id });
-    expect(facts.map((f) => [f.text, f.status])).toEqual([[LESSON.text, "active"]]);
+    expect(facts.map((f) => [f.text, f.status])).toEqual([[LESSON.text, "pending"]]);
     // The docs went into the prompt too.
     expect(JSON.stringify(sessions[0]?.prompts[0])).toContain("Co-Authored-By trailers");
   });

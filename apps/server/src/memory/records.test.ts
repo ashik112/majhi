@@ -165,6 +165,8 @@ describe("the Memory section of TASK.md", () => {
     id: i,
     text: `Lesson ${i}: ${big(6)}`,
     scope: "project:acme-api",
+    kind: "lesson",
+    source: "agent",
     status: "active",
     pinned: false,
     use_count: 0,
@@ -259,7 +261,7 @@ describe("lessons that restate the repo docs", () => {
       ],
       "acme-builder",
     );
-    expect(counts).toMatchObject({ candidates: 2, in_docs: 1, kept: 1 });
+    expect(counts).toMatchObject({ candidates: 2, in_docs: 1, pending: 1 });
     expect(memory.list({}).map((f) => f.text)).toEqual([
       "The orders endpoint times out when the pool is cold; warm it in the test setup.",
     ]);
