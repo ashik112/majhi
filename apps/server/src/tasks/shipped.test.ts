@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RoomItem, Task } from "@majhi/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { git } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -139,7 +139,8 @@ describe("work counts as shipped", () => {
     store.tasks.setPushed("ACM-1", "acme-api", new Date(Date.now() + 2_000).toISOString());
     expect((await w.h.cmd("tasks.shipOptions", { id: "ACM-1" })).body.done).toEqual({ ok: true });
 
-    vi.stubEnv("GIT_COMMITTER_DATE", new Date(Date.now() + 60_000).toISOString());
+    // Committed after the push: the push is moved back a minute instead of dating the commit.
+    store.tasks.setPushed("ACM-1", "acme-api", new Date(Date.now() - 60_000).toISOString());
     const tree = join(w.taskDir("ACM-1"), "acme-api");
     await writeFile(join(tree, "more.txt"), "more\n");
     await git(tree, "add", ".");
