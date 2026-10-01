@@ -312,7 +312,9 @@ export function Composer({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-1 rounded-xl border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover has-[textarea:focus]:border-accent">
+        {/* Narrower than 40rem (the boss drawer, a split room), the text takes the whole first row and
+            the buttons sit under it; the model picker and Send left it a column one word wide. */}
+        <div className="flex flex-wrap items-end gap-1 rounded-xl border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover has-[textarea:focus]:border-accent @[40rem]:flex-nowrap">
           <Button
             variant="ghost"
             size="icon"
@@ -354,36 +356,41 @@ export function Composer({
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             style={{ maxHeight: MAX_HEIGHT }}
-            className="min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[5px] text-body text-fg outline-none placeholder:truncate placeholder:text-fg-faint"
+            className="order-first min-h-8 min-w-0 grow basis-full resize-none bg-transparent px-1.5 py-[5px] text-body text-fg outline-none placeholder:truncate placeholder:text-fg-faint @[40rem]:order-none @[40rem]:basis-0"
           />
-          {task && addressed && <ModelPicker task={task} agent={addressed} />}
-          {stops ? (
-            <Button
-              variant="secondary"
-              className="h-8 w-16 px-0"
-              disabled={cancelling}
-              onClick={onCancel}
-              title="Stop this turn (Esc)"
-            >
-              Stop
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              className="h-8 w-16 px-0"
-              disabled={!canSend}
-              onClick={() => send("queue")}
-              title={
-                busy ? `Queue for the next turn. ${MOD_KEY} Enter stops the agent and sends now.` : undefined
-              }
-            >
-              Send
-            </Button>
-          )}
+          <div className="ml-auto flex min-w-0 items-end gap-1">
+            {task && addressed && <ModelPicker task={task} agent={addressed} />}
+            {stops ? (
+              <Button
+                variant="secondary"
+                className="h-8 w-16 px-0"
+                disabled={cancelling}
+                onClick={onCancel}
+                title="Stop this turn (Esc)"
+              >
+                Stop
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                className="h-8 w-16 px-0"
+                disabled={!canSend}
+                onClick={() => send("queue")}
+                title={
+                  busy
+                    ? `Queue for the next turn. ${MOD_KEY} Enter stops the agent and sends now.`
+                    : undefined
+                }
+              >
+                Send
+              </Button>
+            )}
+          </div>
         </div>
       </div>
-      {/* Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset. */}
-      <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-[47px] text-xs whitespace-nowrap text-fg-faint">
+      {/* Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset.
+          Stacked, the text starts at the box's edge. */}
+      <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-2 text-xs whitespace-nowrap text-fg-faint @[40rem]:pl-[47px]">
         <span>
           <Kbd>Enter</Kbd> {busy ? "queues" : "sends"}
         </span>
