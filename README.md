@@ -1,59 +1,81 @@
 <div align="center">
 
-# majhi
+# majhi <sub><sup>মাঝি</sup></sub>
 
-### Run a team of AI coding agents for every client, from one desk.
+### You steer. The agents row.
 
-Give a task in one sentence. A team of agents plans it, builds it, reviews it, and hands you one card to ship. Each client gets its own agents, accounts, repos and keys, kept fully apart.
+**A desk for running crews of AI coding agents, one crew per client, from a single screen.**<br>
+Say what you want in one sentence. A lead plans it, builders write it, a reviewer checks it,<br>and you get one card to ship. Every client's code, keys and accounts stay in their own boat.
 
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg)](LICENSE)
 ![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex-8a63d2)
+![Runs on](https://img.shields.io/badge/runs-on%20your%20machine-2a64d8)
 ![Status](https://img.shields.io/badge/status-early%20access-f08c00)
 
-<img src="docs/assets/screenshots/board.png" alt="The majhi board with tasks from four clients and every agent's status" width="100%">
+<img src="docs/assets/screenshots/onboarding.png" alt="majhi's first-run journey: a rickshaw-art river at night, the captain steering a boat while robot agents row, each setup step a painted signboard" width="100%">
 
 </div>
 
 ---
 
-*Majhi* (মাঝি) is the boatman who steers while others row. You steer. The agents row.
+On the rivers of Bengal, the *majhi* stands at the back of the boat with the long oar. He does not row. He reads the water, picks the line, and keeps everyone pointed at the ghat.
 
-## Why it exists
+That is the job majhi gives you. AI agents can write real code now, but running them for real work is chaos: a subscription per client, a different git login for each, keys everywhere, and the quiet fear that one client's code ends up in another's repo. majhi turns that into a calm desk. You decide where the boat goes. The crew does the rowing.
 
-AI agents can now write real code. Running them for real work is still a mess: one subscription per client, a different GitHub or GitLab login for each, SSH keys, tokens, and the constant risk of one client's code or secrets ending up in another client's work. Most tools give you one agent in one terminal and leave the rest to you.
+## Meet the crew
 
-majhi turns that into a desk you can run all day:
+| | Who | What they do |
+|:-:|---|---|
+| 🧑‍✈️ | **The captain** | Your second in command. Sets up clients, accounts, agents and repos when you describe them. Answers the crew's questions. With autonomous mode on, runs the whole desk while you sleep. |
+| 👑 | **The lead** | Reads your one sentence, writes the plan, splits the work and hands each piece to the right agent. |
+| 🛠️ | **Builders** | Write the code in their own worktree and container, test it, and commit. |
+| 🔍 | **The reviewer** | Reads every change before it reaches you, and sends it back when it is not good enough. |
 
-- **More work shipped, less babysitting.** Agents work in teams, resume on their own after sleep, network drops or usage limits, and only stop for you when a decision is really yours.
-- **Clients never mix.** Every client is its own sealed workspace: its AI accounts, agents, repos, git identity, tokens, costs and memory. Every agent runs in its own container and sees only its own task.
-- **You stay in control.** Nothing is pushed, merged or sent out without your click, unless you allow it for that client.
+Every agent gets its own emoji, model and account. Mix Claude Code and Codex in one team.
 
-## What you can do
+## What it does
 
-| | |
-|---|---|
-| **Hand off work in one sentence** | "Fix the export timeout in the API, from develop." The lead agent plans, splits the work, assigns builders and a reviewer, and reports back. Not every task needs code: start a plain chat, or an investigation that ends in a report. |
-| **Let it run the desk** | Turn on autonomous mode and the captain works through your backlog like you would: it picks tasks by priority and due date, sets up teams, starts and ships work. It stays inside the daily budget, each client's cap and the account limits you set. It approves routine steps for you, but never force-pushes or moves one client's secrets to another. Pushes and merges stay off for each client until you allow them. Every decision is logged with its reason. Watch it live, guide it, pause or stop it at any time, and read a summary each day. |
-| **Ship from one card** | Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts get fixed with one click. |
-| **Watch and steer live** | See the plan, every step and every file change as it happens. Stop a turn, queue a message, open a terminal, or open any file in VS Code or Cursor. Comment on lines of a diff and send them back as one review. |
-| **Work across repos** | One task can span several repos, with linked pull requests merged in the right order. Big tasks split into subtasks that wait for each other. |
-| **Previews and services** | Agents build and run your app and its databases in their own containers, so you can open a live preview of each task. |
-| **Automate the routine** | Schedules like "weekdays at 9:00" and triggers that react to what happens, to start tasks or wake agents without you. |
-| **Checks after every merge** | After a merge into main, majhi runs the whole e2e suite by itself, at low priority, so nobody waits on it. The result shows on Health and in the room of the task that merged. A break opens one task with the failing specs and the traces. |
-| **It learns your codebase** | Lasting facts from each task are kept per repo and recalled in the next one, so agents stop relearning the same things. |
-| **Run everything by asking** | The captain agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
-| **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
-| **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your Mac's GPU, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
-| **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. Long sessions compact before they fill up, so costs do not climb. |
-| **Never lose work** | Unshipped commits are counted before any task can close. Updates roll back on their own if something breaks. |
+### ⛵ Hand it off in one sentence
+"Fix the export timeout in the API, from develop." That is a whole task. The lead plans, the crew builds and reviews, and you get a report and a branch. Not everything needs code: open a plain chat, or an investigation that ends in a written answer. Big work splits into subtasks that wait for each other, across as many repos as it needs.
+
+### 🌙 Let it sail through the night
+Flip on **autonomous mode** and the captain works your backlog like you would. It picks tasks by priority and due date, forms teams, starts work and ships it. It stays inside a daily budget, each client's cap and the account limits you set, and you choose how big a task it may take and which clients it may touch. Every decision lands in a log with its reason. In the morning there is a summary waiting.
+
+### 🧳 Every client in its own boat
+Each client is a sealed **workspace**: its own AI accounts, agents, repos, git identity, tokens, costs and memory. Agents run in containers and see only their own task. They never get your SSH keys, majhi's own secrets, or another client's anything. Pushes and merges happen only through majhi, after your click, unless you allow them for that client.
+
+### 🚢 Ship from one card
+Merge, squash or rebase into any branch. Push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Several repos ship together or not at all, and linked requests merge in the right order. A conflict is one click to fix. Infra repos can be marked protected so nothing lands there by accident.
+
+### 👀 Watch the water
+See the plan, every step and every file change as it happens. Stop a turn, queue a message for later, open a terminal, or jump into any file in VS Code or Cursor. Comment on lines of a diff and send it all back as one review. Agents build and run your app in their own containers, so every task gets a **live preview**.
+
+### 🔔 It only calls you when it matters
+One bell collects everything that needs you: approvals, questions, decisions, blocked tasks, accounts that need a sign-in. Everything else is handled. You set what needs your click on one page, by kind of work, with presets from careful to hands-off.
+
+### 🧠 It remembers your codebase
+Lasting facts from each task are kept per repo and brought back in the next one, so agents stop relearning the same quirks. A housekeeper keeps that memory tidy.
+
+### ⏰ It runs on a schedule
+"Weekdays at 9:00" or "when a task reaches review": schedules and triggers start tasks or wake agents without you. After every merge into main, majhi runs the full end-to-end suite in the background and opens one task when something breaks.
+
+### 🛟 It does not sink
+Laptop asleep, Wi-Fi gone, usage limit hit, a model refusing a request? Agents pause, resume on their own and pick up where they stopped. A teammate that finishes quietly wakes the lead, so tasks never sit silent. Unshipped commits are counted before anything can close, and updates roll back by themselves if they break.
+
+### 🔑 Bring your own logins
+majhi finds the GitHub, GitLab and Bitbucket logins and SSH keys already on your computer and uses the right one for each client. Clone repos from your accounts, or start a brand new project, straight from the setup journey.
 
 ## Smart where it counts, cheap everywhere else
 
-Most of an agent desk's decisions are small: is this task big or small, which model fits, which team should take it, did the reviewer approve, is this text trying to give the agent orders. Paying a frontier model for each of those adds up.
+An agent desk makes hundreds of small calls a day. Is this task big or small? Which model fits? Which team should take it? Did the reviewer approve? Is this text in a repo trying to give the agent orders? Paying a frontier model for each of those adds up fast.
 
-majhi hands them to **Laya**, an open model that runs on your machine (natively on Apple silicon). It is free, private and fast, and it only acts when its answer clearly beats a guess. Otherwise majhi falls back to simple rules. Every agent can also ask it quick yes/no and pick-one questions instead of spending its own tokens. You can mark any wrong pick, and the cost view shows what it saved.
+majhi hands them to **[Laya](https://github.com/NandhaKishorM/laya)**, a small open model that runs on your own machine (natively on Apple silicon). It is free, private and quick, and it only acts when its answer clearly beats a guess; otherwise plain rules decide. Agents can ask it quick yes or no questions instead of spending their own tokens, and the cost view shows what it saved. The big models only get the work that needs them.
+
+And you always know the bill: tokens, cost and every account's usage window, per client, project and agent. Long sessions compact before they fill up, so costs do not creep.
 
 ## A look inside
+
+<img src="docs/assets/screenshots/board.png" alt="The majhi board with tasks from four clients and every agent's status" width="100%">
 
 <table>
   <tr>
@@ -61,52 +83,52 @@ majhi hands them to **Laya**, an open model that runs on your machine (natively 
     <td width="50%"><img src="docs/assets/screenshots/health.png" alt="Usage and limits for every AI account" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>Every task is a room.</b> Plan, team, progress and branch, live.</sub></td>
+    <td align="center"><sub><b>Every task is a room.</b> Plan, crew, progress and branch, live.</sub></td>
     <td align="center"><sub><b>Limits per account.</b> See them before an agent hits them.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/assets/screenshots/orgs.png" alt="Clients as separate orgs with their own accounts and settings" width="100%"></td>
+    <td width="50%"><img src="docs/assets/screenshots/orgs.png" alt="Clients as separate workspaces with their own accounts and settings" width="100%"></td>
     <td width="50%"><img src="docs/assets/screenshots/new-task.png" alt="Starting a new task" width="100%"></td>
   </tr>
   <tr>
     <td align="center"><sub><b>One workspace per client.</b> Accounts, agents, repos and rules.</sub></td>
-    <td align="center"><sub><b>One box to start work.</b> Pick the project and the team.</sub></td>
+    <td align="center"><sub><b>One box to start work.</b> Pick the project and the crew.</sub></td>
   </tr>
 </table>
 
-## Install
+## Get on board
 
-You need Docker (Docker Desktop or OrbStack) on a Mac.
+You need Docker (Docker Desktop or OrbStack) on a Mac. Linux and Windows (through WSL2) are on the way.
 
 ```sh
 git clone https://github.com/ashik112/majhi.git && cd majhi
 make up    # opens on http://127.0.0.1:7070
 ```
 
-The first screen walks you through your folders, your first AI account and the captain agent. After that, updates are one click.
+The river journey walks you through your project folder, your first AI account, your clients, their git logins, your repos and the captain. After that, updates are one click.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  you((You)) --> boss[Captain agent]
-  boss --> acme & globex
-  subgraph acme [Client: Acme]
+  you((You)) --> captain[🧑‍✈️ Captain]
+  captain --> acme & globex
+  subgraph acme [Workspace: Acme]
     a1[Lead] --> a2[Builders] --> a3[Reviewer]
   end
-  subgraph globex [Client: Globex]
+  subgraph globex [Workspace: Globex]
     g1[Lead] --> g2[Builder]
   end
   a3 -->|Ship| arepo[(Acme repos)]
   g2 -->|Ship| grepo[(Globex repos)]
 ```
 
-Each client is sealed off: its agents run in their own containers with only their own task, account and credentials. majhi runs on your machine. Agents use Claude Code and Codex with the accounts you connect.
+Everything runs on your machine. Each workspace is sealed off: its agents run in their own containers with only their own task, account and credentials. Agents are Claude Code and Codex, signed in with the accounts you connect.
 
 <details>
 <summary><b>For developers</b></summary>
 
-majhi is TypeScript end to end: a Hono server, SQLite and a React app in one Docker compose file, plus a small helper on the Mac for logins, folders and updates. Agents speak the [Agent Client Protocol](https://agentclientprotocol.com).
+majhi is TypeScript end to end: a Hono server, SQLite and a React app in one Docker compose file, plus a small helper on your computer for logins, folders and updates. Agents speak the [Agent Client Protocol](https://agentclientprotocol.com).
 
 ```sh
 pnpm install
@@ -120,7 +142,7 @@ make ci           # everything CI runs
 - [`docs/PROGRESS.md`](docs/PROGRESS.md) and [`docs/DECISIONS.md`](docs/DECISIONS.md): what is built and why
 - [`AGENTS.md`](AGENTS.md): how agents work on this repo
 
-Much of majhi was planned, built, reviewed and merged by agent teams running inside majhi.
+Much of majhi was planned, built, reviewed and merged by agent crews running inside majhi.
 
 </details>
 
