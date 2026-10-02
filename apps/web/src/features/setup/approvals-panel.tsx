@@ -401,8 +401,8 @@ function ChangeList({ changes, groups }: { changes: ModeChange[]; groups: Approv
       className="flex flex-col gap-2 rounded-[10px] border border-accent-line bg-accent-wash p-3"
     >
       <h4 className="text-base font-semibold text-fg">
-        Save changes <span className="font-mono tabular-nums">{changes.length}</span>{" "}
-        {changes.length === 1 ? "command" : "commands"}
+        <span className="font-mono tabular-nums">{changes.length}</span>{" "}
+        {changes.length === 1 ? "command changes" : "commands change"} when you save
       </h4>
       <ul className="flex flex-col gap-2">
         {byGroup.map(({ group, mine, moves }) => (
@@ -424,7 +424,18 @@ function ChangeList({ changes, groups }: { changes: ModeChange[]; groups: Approv
                     <ArrowRight aria-label="to" className="size-3.5 text-fg-faint" />
                     <span className="font-medium text-fg">{MODE_LABEL[head.to]}</span>
                   </span>
-                  <span className="text-fg-muted text-pretty">{list.map((c) => c.label).join(", ")}</span>
+                  <ul className="flex flex-wrap gap-x-1 gap-y-0.5 text-fg-muted">
+                    {list.map((c, i) => (
+                      <li key={c.command} title={c.command}>
+                        {c.label}
+                        {i < list.length - 1 && (
+                          <span aria-hidden="true" className="pl-1 text-fg-dim">
+                            ·
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               );
             })}

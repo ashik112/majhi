@@ -37,7 +37,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
   teams: "How long agents in a room may pass work around without you.",
-  approvals: "What the boss may do on its own.",
+  approvals: "What agents may do without asking you, and what they asked for lately.",
   notifications:
     "A Mac banner and a browser notification when an agent needs you: approvals, questions, stops.",
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
