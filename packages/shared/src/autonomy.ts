@@ -291,6 +291,8 @@ export const AutonomyAnswerInputSchema = z
 export const AutonomyGuideInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),
   keep: z.boolean().default(false),
+  /** The workspace whose lane hears it. Default: the first workspace set to "Runs it". */
+  org: z.string().min(1).max(63).optional(),
 });
 export const AutonomyGuideResultSchema = z.object({
   /** The autonomy chat the message went to. */

@@ -364,18 +364,31 @@ export const DEFAULT_CHAT_TITLES: readonly string[] = [CHAT_BRIEF, BOSS_CHAT_BRI
  * guides it. A chat like the others, but never the owner's Cmd J chat.
  */
 export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
+/**
+ * The brief of a captain lane (SPEC 5.18): the captain's chat for one workspace, where its upkeep
+ * and autonomous mode wake it with that workspace's matters only.
+ */
+export const CAPTAIN_LANE_BRIEF = "Captain lane";
 
 /** True for a chat with an agent: an ongoing conversation, not a piece of work to review. */
 export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
   return (
     task.kind === "chat" &&
-    (task.brief === CHAT_BRIEF || task.brief === BOSS_CHAT_BRIEF || task.brief === AUTONOMY_CHAT_BRIEF)
+    (task.brief === CHAT_BRIEF ||
+      task.brief === BOSS_CHAT_BRIEF ||
+      task.brief === AUTONOMY_CHAT_BRIEF ||
+      task.brief === CAPTAIN_LANE_BRIEF)
   );
 }
 
-/** True for the captain's autonomy chat. */
+/** True for the captain's autonomy chat (before Phase 13) and its lanes: never the owner's Cmd J chat. */
 export function isAutonomyChat(task: Pick<Task, "kind" | "brief">): boolean {
-  return task.kind === "chat" && task.brief === AUTONOMY_CHAT_BRIEF;
+  return task.kind === "chat" && (task.brief === AUTONOMY_CHAT_BRIEF || task.brief === CAPTAIN_LANE_BRIEF);
+}
+
+/** True for a captain lane. */
+export function isCaptainLane(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && task.brief === CAPTAIN_LANE_BRIEF;
 }
 
 /** A chat title from the owner's first message: its first line, trimmed and cut to fit. */

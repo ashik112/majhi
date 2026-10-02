@@ -25,6 +25,7 @@ const USE: Record<DecisionRecord["use"], string> = {
   owner: "Asked here",
   memory: "Memory",
   "task-size": "Task size",
+  captain: "Captain",
 };
 
 /** What the owner can name as right: what the code that asked listed, else the question's options. */

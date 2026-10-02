@@ -49,6 +49,14 @@ import {
 } from "./autonomy.ts";
 import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
+import {
+  CaptainChoreInputSchema,
+  CaptainLogInputSchema,
+  CaptainLogResultSchema,
+  CaptainStatusSchema,
+  CaptainUndoInputSchema,
+  CaptainUndoResultSchema,
+} from "./captain.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectionCreateInputSchema,
@@ -2407,14 +2415,14 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, org caps, per-org push and merge permission, account floors, summary time, time zone, or what it may pick (the largest task size, the orgs it works in). Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: how much the captain does there (level ask, tidy or runs), its daily budget (cap), push and merge, and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.guide": {
     risk: "change",
     summary:
-      "Send the captain a message in its autonomy chat: guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on. Owner only",
+      "Send the captain a message in a workspace's lane (org; default: the first workspace set to Runs it): guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on in every lane. Owner only",
     input: AutonomyGuideInputSchema,
     output: AutonomyGuideResultSchema,
   },
@@ -2430,6 +2438,48 @@ export const commands = {
       "Mark a task Not for autonomous mode (exclude true), so the captain in autonomous mode leaves it alone, or clear the mark. Owner only",
     input: AutonomyExcludeInputSchema,
     output: AutonomyStatusSchema,
+  },
+  // The captain per workspace (5.18) --------------------------------------------
+  "captain.status": {
+    risk: "read",
+    summary:
+      "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also whether Stop the captain is on",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.log": {
+    risk: "read",
+    summary:
+      "The captain's log, newest first: each action with its reason, evidence and whether Undo works, and the recent chore runs with their caps. org narrows it to one workspace",
+    input: CaptainLogInputSchema,
+    output: CaptainLogResultSchema,
+  },
+  "captain.stop": {
+    risk: "change",
+    summary:
+      "Stop the captain: every lane's turn, every upkeep run and autonomous mode stop at once, and nothing of the captain acts on its own until captain.resume. Owner only",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.resume": {
+    risk: "change",
+    summary: "Let the captain act again after Stop the captain, by each workspace's choice. Owner only",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.undo": {
+    risk: "change",
+    summary:
+      "Undo one action of the captain's log: a merge with a revert commit, a config change through the config history, a priority or due date it set, a memory step. Refused for what cannot be undone, like a push. Owner only",
+    input: CaptainUndoInputSchema,
+    output: CaptainUndoResultSchema,
+  },
+  "captain.choreOn": {
+    risk: "change",
+    summary:
+      "Turn an upkeep chore back on in a workspace after two failures in a row turned it off. Owner only",
+    input: CaptainChoreInputSchema,
+    output: CaptainStatusSchema,
   },
   "autonomy.plan": {
     risk: "change",
