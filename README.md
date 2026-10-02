@@ -33,6 +33,7 @@ majhi turns that into a desk you can run all day:
 | | |
 |---|---|
 | **Hand off work in one sentence** | "Fix the export timeout in the API, from develop." The lead agent plans, splits the work, assigns builders and a reviewer, and reports back. Not every task needs code: start a plain chat, or an investigation that ends in a report. |
+| **Let it run the desk** | Turn on autonomous mode and the boss works through your backlog like you would: it picks tasks by priority and due date, sets up teams, starts and ships work. It stays inside the daily budget, each client's cap and the account limits you set. It approves routine steps for you, but never force-pushes or moves one client's secrets to another. Pushes and merges stay off for each client until you allow them. Every decision is logged with its reason. Watch it live, guide it, pause or stop it at any time, and read a summary each day. |
 | **Ship from one card** | Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts get fixed with one click. |
 | **Watch and steer live** | See the plan, every step and every file change as it happens. Stop a turn, queue a message, open a terminal, or open any file in VS Code or Cursor. Comment on lines of a diff and send them back as one review. |
 | **Work across repos** | One task can span several repos, with linked pull requests merged in the right order. Big tasks split into subtasks that wait for each other. |
@@ -74,7 +75,6 @@ majhi hands them to **Laya**, an open model that runs on your machine (natively 
 
 ## Coming next
 
-- **Autonomous mode.** Turn it on and the boss runs the desk like you would: picks work, sets up teams, fixes, builds and researches within the time and budget you set. You watch it live and can stop, pause or guide it at any time.
 - **Background checks on every merge**, with a task opened automatically when something breaks.
 
 ## Install
