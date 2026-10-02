@@ -46,21 +46,24 @@ for (let i = 0; i < 120; i++) {
   await sleep(250);
 }
 const rss = () => /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
-async function capture(label: string) {
+async function capture(label: string, snap = false) {
   process.kill(pid, "SIGWINCH");
   await sleep(1500);
-  process.kill(pid, "SIGUSR2");
-  await sleep(15000);
+  if (snap) {
+    process.kill(pid, "SIGUSR2");
+    await sleep(15000);
+  }
   const reps = readdirSync(OUT).filter((f) => f.startsWith("report")).sort();
   const rep = JSON.parse(readFileSync(join(OUT, reps[reps.length - 1] as string), "utf8"));
   const h = rep.javascriptHeap;
-  console.log(`${label}: RSS ${Number(rss()) / 1024 | 0} MB; heapUsed ${(h.usedMemory / 1e6) | 0} MB heapTotal ${(h.totalMemory / 1e6) | 0} MB; external ${(h.externalMemory / 1e6) | 0} MB; rss(report) ${(rep.resourceUsage.rss / 1e6) | 0}; ${rep.header.nodejsVersion}`);
+  console.log(`${label}: RSS ${Number(rss()) / 1024 | 0} MB; heapUsed ${(h.usedMemory / 1e6) | 0} MB heapTotal ${(h.totalMemory / 1e6) | 0} MB; external ${(h.externalMemory / 1e6) | 0} MB; rss(report) ${(rep.resourceUsage.rss / 1e6) | 0}; spaces ${Object.entries(rep.javascriptHeap.heapSpaces ?? {}).map(([k, v]: [string, any]) => `${k}=${(v.committed_memory / 1e6) | 0}/${(v.used_size / 1e6) | 0}`).join(" ")}`);
   const snaps = readdirSync(OUT).filter((f) => f.endsWith(".heapsnapshot")).sort();
   const last = snaps[snaps.length - 1];
   if (last) { const { renameSync } = await import("node:fs"); renameSync(join(OUT, last), join(OUT, `${label}.heapsnapshot`)); }
 }
 await sleep(5000);
 await capture("idle");
+await sleep(2000);
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${E2E_PORT}` })).newPage();
 for (const { id } of SIZES) {
@@ -72,5 +75,7 @@ for (const { id } of SIZES) {
 }
 await sleep(3000);
 await capture("opened");
+await sleep(5000);
+await capture("opened-later", true);
 await browser.close();
 child.kill();
