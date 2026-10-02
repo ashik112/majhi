@@ -25,6 +25,13 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "boss.chat",
   "chats.create",
   "chats.rename",
+  // Autonomous mode is the owner's switch: the boss never turns it on, widens its limits or guides itself.
+  "autonomy.start",
+  "autonomy.pause",
+  "autonomy.stop",
+  "autonomy.configure",
+  "autonomy.guide",
+  "autonomy.forget",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

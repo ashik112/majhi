@@ -63,6 +63,9 @@ export function topicsFor(command: string): EventTopic[] {
       return ["schedules"];
     case "triggers":
       return ["triggers"];
+    case "autonomy":
+      // Settings and instructions are config commits; the mode and the queue are autonomy's own.
+      return ["autonomy", "config", "tasks"];
     default:
       return [];
   }

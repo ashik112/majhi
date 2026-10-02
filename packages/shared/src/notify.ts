@@ -1,7 +1,15 @@
 import { z } from "zod";
 
 /** What can need the owner. Settings mute these by kind; `test` is only the test button. */
-export const NotifyKindSchema = z.enum(["approval", "question", "secret", "review", "stopped", "update"]);
+export const NotifyKindSchema = z.enum([
+  "approval",
+  "question",
+  "secret",
+  "review",
+  "stopped",
+  "update",
+  "autonomy",
+]);
 export type NotifyKind = z.infer<typeof NotifyKindSchema>;
 
 export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
@@ -11,6 +19,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   review: "Ready for review",
   stopped: "Stopped or stuck",
   update: "Update failed",
+  autonomy: "Autonomous mode's daily summary",
 };
 
 /**

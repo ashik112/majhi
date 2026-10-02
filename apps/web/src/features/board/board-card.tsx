@@ -3,9 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { memo } from "react";
 import { AvatarStack } from "@/components/ui/avatar-stack";
+import { Badge } from "@/components/ui/badge";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { UsageBar } from "@/components/ui/usage-bar";
+import { dueText, PRIORITY_WORD } from "@/features/autonomy/model";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { orgSearch } from "@/lib/org-filter";
@@ -111,6 +113,7 @@ export const BoardCard = memo(function BoardCard({
           {line.text}
         </span>
       )}
+      <TaskChips task={task} />
       {progress ? (
         <span className="flex items-center gap-2">
           <UsageBar
@@ -134,3 +137,30 @@ export const BoardCard = memo(function BoardCard({
     </article>
   );
 });
+
+/** Autonomous mode runs it, and the owner's priority and deadline. Nothing shows for a normal task. */
+function TaskChips({ task }: { task: Pick<TaskSummary, "autonomous" | "priority" | "due" | "status"> }) {
+  const now = Date.now();
+  const due = task.due !== undefined && task.status !== "done" ? dueText(task.due, now) : undefined;
+  const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
+  if (!task.autonomous && priority === undefined && due === undefined) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1">
+      {task.autonomous && (
+        <Badge title="Autonomous mode runs this task" className="h-[18px]">
+          Auto
+        </Badge>
+      )}
+      {priority && (
+        <Badge tone={priority === "high" ? "amber" : "neutral"} className="h-[18px]">
+          {PRIORITY_WORD[priority]} priority
+        </Badge>
+      )}
+      {due && (
+        <Badge tone={due.late ? "red" : due.soon ? "amber" : "neutral"} className="h-[18px]">
+          {due.text}
+        </Badge>
+      )}
+    </span>
+  );
+}

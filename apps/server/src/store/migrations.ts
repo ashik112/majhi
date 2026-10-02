@@ -481,6 +481,64 @@ ALTER TABLE runs ADD COLUMN tools TEXT;
     name: "task repo shipped head",
     sql: "ALTER TABLE task_repos ADD COLUMN shipped_head TEXT; ALTER TABLE task_repos ADD COLUMN shipped_into TEXT;",
   },
+  {
+    // Autonomous mode (PRV-74). `autonomy_state` is one row: the mode, who changed it and why, the
+    // boss's autonomy chat, the queue it plans (JSON), and the holds seen last (JSON), so a restart
+    // does not write their cap events again. `autonomy_tasks` are the tasks it runs; `held` is set
+    // while its run gate holds one (`owner` for a pause or a stop, `limit` for a cap, `held_scope`
+    // being `day` or the org), so Resume and a lifted cap restart exactly those. `resumed_at` is when
+    // the owner last resumed it by hand: the gate lets it run until the mode changes again. The feed is
+    // `autonomy_events`; `autonomy_summaries` keeps one daily summary per local day. Tasks get the
+    // owner's `priority` and `due` date.
+    id: 112,
+    name: "autonomous mode",
+    sql: `
+ALTER TABLE tasks ADD COLUMN priority TEXT;
+ALTER TABLE tasks ADD COLUMN due TEXT;
+CREATE TABLE autonomy_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  mode TEXT NOT NULL DEFAULT 'off' CHECK (mode IN ('off', 'on', 'paused', 'stopping')),
+  since TEXT,
+  changed_by TEXT,
+  why TEXT,
+  chat TEXT,
+  queue TEXT NOT NULL DEFAULT '[]',
+  queued_at TEXT,
+  last_tick TEXT,
+  holds TEXT NOT NULL DEFAULT '[]'
+);
+INSERT INTO autonomy_state (id) VALUES (1);
+CREATE TABLE autonomy_tasks (
+  task TEXT PRIMARY KEY REFERENCES tasks (id) ON DELETE CASCADE,
+  since TEXT NOT NULL,
+  held TEXT CHECK (held IN ('owner', 'limit')),
+  held_scope TEXT,
+  resumed_at TEXT
+);
+CREATE TABLE autonomy_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  reason TEXT,
+  task TEXT,
+  org TEXT,
+  agent TEXT,
+  command TEXT,
+  outcome TEXT,
+  unsure INTEGER NOT NULL DEFAULT 0,
+  item TEXT,
+  status TEXT
+);
+CREATE INDEX autonomy_events_task ON autonomy_events (task, seq);
+CREATE INDEX autonomy_events_at ON autonomy_events (at);
+CREATE TABLE autonomy_summaries (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  summary TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

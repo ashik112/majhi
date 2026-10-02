@@ -32,6 +32,7 @@ import {
   type TaskId,
   type TaskKind,
   type TaskLink,
+  type TaskPriority,
   type TaskRepo,
   type TaskSummary,
   type TeamOverride,
@@ -144,6 +145,8 @@ import { TeamFactsSource } from "./team-facts-source.ts";
 export interface TaskDeps {
   /** The owner resumed a task that a budget paused: budget alerts so far no longer hold it. */
   onOwnerResumedLimit?: (task: string) => void;
+  /** The owner resumed a paused task by hand: autonomous mode's pause no longer holds it (PRV-74). */
+  onOwnerResumed?: (task: string) => void;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -868,6 +871,8 @@ export class TaskService {
     ) {
       this.deps.onOwnerResumedLimit?.(id);
     }
+    if (task.status === "paused" && by === "owner")
+      this.deps.onOwnerResumed?.(id);
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -1048,19 +1053,30 @@ export class TaskService {
     return stopped;
   }
 
-  /** Changes the title and the description. Key, folder and branch stay; TASK.md is written again. */
+  /**
+   * Changes the title and the description, and the owner's priority and deadline (null clears
+   * one). Key, folder and branch stay; TASK.md is written again.
+   */
   async update(input: {
     id: string;
     title?: string | undefined;
     brief?: string | undefined;
     agent?: string | undefined;
     mode?: CoordinationMode | undefined;
+    priority?: TaskPriority | null | undefined;
+    due?: string | null | undefined;
   }): Promise<Task> {
     const task = this.get(input.id);
     if (input.agent !== undefined && input.agent !== task.team[0])
       await this.changeAgent(task, input.agent);
     if (input.mode !== undefined && input.mode !== task.mode)
       await this.changeMode(task, input.mode);
+    if (input.priority !== undefined || input.due !== undefined)
+      this.deps.store.tasks.setPlanning(
+        task.id,
+        { priority: input.priority, due: input.due },
+        this.now().toISOString(),
+      );
     const title = (input.title ?? task.title).trim();
     if (title === "") throw new UserError("The title cannot be empty.");
     const current = task.brief.trim().split(/\r?\n/);
@@ -2986,10 +3002,13 @@ export class TaskService {
     this.deps.runs.processEnded(p);
   }
 
-  /** An agent paused on its own (offline, or an error it cannot get past): a running task pauses with it. */
+  /**
+   * An agent paused on its own (offline, or an error it cannot get past), or autonomous mode's gate
+   * held it (`owner`, `limit`): a running task pauses with it.
+   */
   async pausedByRuns(
     id: string,
-    reason: "offline" | "error" | "limit",
+    reason: "offline" | "error" | "limit" | "owner",
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (
@@ -3256,7 +3275,8 @@ export class TaskService {
       `Message from scheduler "${input.from}"`,
       "majhi",
     );
-    if (task.status !== "running") await this.start(task.id);
+    // A schedule is not the owner: it resumes no pause of a budget or of autonomous mode by hand.
+    if (task.status !== "running") await this.start(task.id, "majhi");
     this.deps.runs.notify(
       task.id,
       lead,

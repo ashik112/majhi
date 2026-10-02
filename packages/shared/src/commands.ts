@@ -34,6 +34,18 @@ import {
   ScheduleUpdateInputSchema,
   ScheduleViewSchema,
 } from "./automation.ts";
+import {
+  AutonomyAnswerInputSchema,
+  AutonomyAnswerResultSchema,
+  AutonomyEventSchema,
+  AutonomyEventsInputSchema,
+  AutonomyGuideInputSchema,
+  AutonomyGuideResultSchema,
+  AutonomyNoteInputSchema,
+  AutonomyPlanInputSchema,
+  AutonomyStatusSchema,
+  AutonomyStopInputSchema,
+} from "./autonomy.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -115,6 +127,7 @@ import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
+  AutonomyPatchSchema,
   BudgetsPatchSchema,
   CleanupPatchSchema,
   CommitsPatchSchema,
@@ -143,6 +156,7 @@ import {
   RoomSearchInputSchema,
   TaskIdSchema,
   TaskKindSchema,
+  TaskPrioritySchema,
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
@@ -871,7 +885,7 @@ export const commands = {
   "tasks.update": {
     risk: "change",
     summary:
-      "Change a task's title, description (the text after the title line) or its agent. Its key, folder and branch stay. TASK.md is rewritten",
+      "Change a task's title, description (the text after the title line), its agent, or the owner's priority (high, normal, low) and deadline (due, YYYY-MM-DD). Its key, folder and branch stay. TASK.md is rewritten",
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
@@ -880,6 +894,10 @@ export const commands = {
       agent: IdSchema.optional(),
       /** How the team takes turns (5.3). */
       mode: CoordinationModeSchema.optional(),
+      /** The owner's priority; null clears it (normal). */
+      priority: TaskPrioritySchema.nullable().optional(),
+      /** The deadline, `YYYY-MM-DD`; null clears it. */
+      due: DaySchema.nullable().optional(),
     }),
     output: TaskSchema,
   },
@@ -2116,6 +2134,83 @@ export const commands = {
     summary: "Delete a watch trigger and its run history",
     input: z.object({ id: TriggerIdSchema }),
     output: z.object({ removed: TriggerIdSchema }),
+  },
+
+  // Autonomous mode (PRV-74) ------------------------------------------------------
+  "autonomy.status": {
+    risk: "read",
+    summary:
+      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner, the settings and the newest daily summary",
+    input: Empty,
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.events": {
+    risk: "read",
+    summary:
+      "The autonomous feed, newest first: mode changes, ticks, decisions with their one-line reasons, approvals, refusals, task changes, answers, guidance and cap holds. decisions true keeps only decisions, approvals and refusals",
+    input: AutonomyEventsInputSchema,
+    output: z.object({ events: z.array(AutonomyEventSchema) }),
+  },
+  "autonomy.start": {
+    risk: "change",
+    summary: "Turn autonomous mode on, or resume it when paused. Owner only. Refused when there is no boss",
+    input: Empty,
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.pause": {
+    risk: "change",
+    summary:
+      "Pause autonomous mode: the boss gets no ticks and autonomous tasks pause after their current turn, until autonomy.start resumes them. Owner only",
+    input: Empty,
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.stop": {
+    risk: "change",
+    summary:
+      "Stop autonomous mode. now: stop every run of its tasks and the boss's autonomy turn at once. graceful: current turns finish, nothing new starts, then it turns off. Owner only",
+    input: AutonomyStopInputSchema,
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.configure": {
+    risk: "change",
+    summary:
+      "Change autonomous mode's day cap, org caps, per-org push and merge permission, account floors, summary time or time zone. Owner only",
+    input: AutonomyPatchSchema,
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.guide": {
+    risk: "change",
+    summary:
+      "Send the boss a message in its autonomy chat: guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on. Owner only",
+    input: AutonomyGuideInputSchema,
+    output: AutonomyGuideResultSchema,
+  },
+  "autonomy.forget": {
+    risk: "change",
+    summary: "Remove a standing instruction of autonomous mode. Owner only",
+    input: z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) }),
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.plan": {
+    risk: "change",
+    summary:
+      "Autonomous mode only, for the boss: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time",
+    input: AutonomyPlanInputSchema,
+    output: z.object({ queue: z.number().int().nonnegative() }),
+  },
+  "autonomy.note": {
+    risk: "change",
+    summary:
+      "Autonomous mode only, for the boss: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the daily summary",
+    input: AutonomyNoteInputSchema,
+    output: z.object({ seq: z.number().int().positive() }),
+  },
+  "autonomy.answer": {
+    risk: "change",
+    summary:
+      "Autonomous mode only, for the boss: answer a card in an autonomous task as the owner would. option for a permission prompt or a choice (the option id) or an owner question (the choice); answers for an ask card. Refused for connection writes, secret requests and approval cards",
+    input: AutonomyAnswerInputSchema,
+    output: AutonomyAnswerResultSchema,
   },
 } as const satisfies Record<string, CommandDef<z.ZodType, z.ZodType>>;
 

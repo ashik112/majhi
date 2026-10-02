@@ -144,6 +144,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.resilience.start();
       services.automation.scheduler.start();
       services.automation.triggerEngine.start();
+      services.autonomy.startSweep();
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,

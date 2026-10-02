@@ -7,6 +7,7 @@ import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
+import { AutonomyStrip } from "@/features/autonomy/strip";
 import { needsYouCount } from "@/features/board/model";
 import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
@@ -95,6 +96,7 @@ function Frame() {
     <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
+        <AutonomyStrip />
         <NotifyPrompt />
         <AttentionBanner banner={banner} org={org} />
         <m.div

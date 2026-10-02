@@ -21,7 +21,11 @@ import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
 import { type Automation, createAutomation } from "./automation/index.ts";
+import { ScheduleRepo } from "./automation/schedules.ts";
 import { createWatchHost } from "./automation/triggers/host.ts";
+import { TriggerRepo } from "./automation/triggers/repo.ts";
+import { AutonomyDriver } from "./autonomy/driver.ts";
+import { AutonomyService } from "./autonomy/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
@@ -185,6 +189,8 @@ export interface Services {
   processes: ProcessManager;
   /** Previews and service containers majhi runs for agents (PRV-53). */
   containers: ContainerService;
+  /** Autonomous mode (PRV-74): the mode, its tasks, the run gate, spend, holds and the feed. */
+  autonomy: AutonomyService;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
   /** Facts, hybrid search and recall (5.6). */
@@ -300,7 +306,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     lift: () =>
       liftLimits({
         runs,
-        limited: limitedRun,
+        // A run autonomous mode holds stays held when no budget does.
+        limited: async (task, agent) => (await limitedRun(task, agent)) ?? autonomy.holdFor(task)?.why,
         pausedTasks: () =>
           store.tasks.list(false).filter((t) => t.status === "paused" && t.pausedReason === "limit"),
         start: (id) => tasks.start(id, "majhi"),
@@ -322,7 +329,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store,
     prices: () => readPrices(config.file),
     onRecorded: () => events.emit(["usage"]),
-    afterRecord: (turn) => budgets.afterTurn(turn),
+    afterRecord: async (turn) => {
+      await budgets.afterTurn(turn);
+      await autonomy.afterTurn(turn).catch(() => undefined);
+    },
   });
   const usageService = new UsageService({ repo: usageRepo, config, events: store.usageEvents });
   const adminTokens = new AdminTokens(`http://127.0.0.1:${env.port}/mcp`);
@@ -424,6 +434,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const runs = new RunManager({
     store,
     limited: limitedRun,
+    // Bound below: autonomous mode is built after the task service.
+    held: (task) => autonomy.held(task),
+    onLoopEnd: (task) => autonomy.loopEnded(task),
     rooms: roomAccess,
     processes,
     usage: usageRecorder,
@@ -533,6 +546,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     onOwnerResumedLimit: (task) => budgets.exempt(task),
+    // Bound below: autonomous mode is built after the task service.
+    onOwnerResumed: (task) => autonomy.ownerResumed(task),
     store,
     config,
     projects,
@@ -658,6 +673,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     delayMs: options.idleWatchMs,
   });
   const admin = new AdminService({ config, room, store, secrets, tasks });
+  const scheduleRows = new ScheduleRepo(store.raw);
+  const triggerRows = new TriggerRepo(store.raw);
+  const autonomy = new AutonomyService({
+    store,
+    config,
+    tasks,
+    runs,
+    room,
+    accounts,
+    agents: agentStore,
+    events,
+    gitLogins,
+    notify: (summary, line) => notifier.autonomySummary(summary.day, line),
+    automationAction: (kind, id) =>
+      (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  autonomy.useDriver(
+    new AutonomyDriver({
+      autonomy,
+      tasks,
+      runs,
+      room,
+      store,
+      events,
+      ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    }),
+  );
+  admin.useAutonomy(autonomy);
+  void autonomy
+    .boot()
+    .catch((err: unknown) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`));
   const resilience = new Resilience({
     runs,
     tasks,
@@ -728,6 +775,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     containers,
+    autonomy,
     automation,
     memory,
     extraction,
@@ -740,6 +788,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      autonomy.close();
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);

@@ -1,18 +1,22 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Layers } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Kbd } from "@/components/ui/kbd";
-import { Lamp, type LampState } from "@/components/ui/lamp";
+import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Switch } from "@/components/ui/switch";
+import { OffDialog, TurnOnDialog } from "@/features/autonomy/controls";
+import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
 import { useBoss } from "@/features/boss/boss-context";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText, orgRows } from "@/features/shell/model";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
+import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -58,7 +62,10 @@ export function Sidebar() {
       <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pb-6 scroll-fade">
         <UpdateNotice />
         <MainNav />
-        <BossButton />
+        <div className="flex shrink-0 flex-col gap-1">
+          <BossButton />
+          <AutonomyRow />
+        </div>
         <OrgList />
       </div>
       <AgentsNow />
@@ -217,6 +224,53 @@ function BossButton() {
       <span>Boss</span>
       <Kbd className="ml-auto">{MOD_KEY} J</Kbd>
     </button>
+  );
+}
+
+/**
+ * Autonomous mode: the row opens its page, the switch turns it on (after a confirm that shows the
+ * caps and the push and merge permissions) or offers Pause, Stop gracefully and Stop now.
+ */
+function AutonomyRow() {
+  const query = useAutonomyStatus();
+  const status = query.data;
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [open, setOpen] = useState<"on" | "off">();
+  const active = pathname.startsWith(PAGE_PATH.autonomous);
+  const mode = status?.mode ?? "off";
+  const lamp = MODE_LAMP[mode];
+  const unavailable = query.isError
+    ? autonomyMissing(query.error)
+      ? "Autonomous mode is not ready on this server yet"
+      : "Could not read autonomous mode"
+    : undefined;
+  return (
+    <div title={unavailable} className="flex h-8 shrink-0 items-center gap-1">
+      <Link
+        to={PAGE_PATH.autonomous}
+        search={{}}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          ITEM,
+          "h-8 min-w-0 flex-1 gap-2 px-2.5 text-body font-medium",
+          active ? ROW_SELECTED : "text-fg-muted",
+        )}
+      >
+        <Lamp state={lamp} size={7} />
+        <span className="truncate">Autonomous</span>
+        <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
+      </Link>
+      <Switch
+        label="Autonomous mode"
+        hideLabel
+        checked={mode !== "off"}
+        disabled={status === undefined}
+        title={unavailable ?? (mode === "off" ? "Turn autonomous mode on" : "Pause or stop autonomous mode")}
+        onChange={(next) => setOpen(next ? "on" : "off")}
+      />
+      {open === "on" && status && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
+      {open === "off" && status && <OffDialog mode={status.mode} onClose={() => setOpen(undefined)} />}
+    </div>
   );
 }
 

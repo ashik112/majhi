@@ -17,6 +17,7 @@ import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
+import { autonomyHandlers } from "../autonomy/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -142,6 +143,7 @@ export function createHandlers({
   return {
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
+    ...autonomyHandlers(services.autonomy),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
 
     "config.get": async () => (await config.load()).state,
@@ -463,7 +465,12 @@ export function createHandlers({
     },
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
-    "tasks.stop": (input) => services.tasks.stop(input.id),
+    "tasks.stop": async (input, ctx) => {
+      const stopped = await services.tasks.stop(input.id);
+      // The owner's own stop: autonomous mode does not restart this task on Resume.
+      if (ctx.meta.actor.kind === "owner") services.autonomy.forgetHold(input.id);
+      return stopped;
+    },
     "tasks.update": (input) => services.tasks.update(input),
     "tasks.close": (input, ctx) =>
       services.tasks.close(input.id, {

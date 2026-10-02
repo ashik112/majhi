@@ -225,6 +225,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
       hint: "⌘ J",
       run: () => (onClose(), boss.show()),
     },
+    {
+      id: "autonomous",
+      name: "Open autonomous mode",
+      keywords: "autonomy autopilot away caps spend queue decisions feed",
+      run: () => go(PAGE_PATH.autonomous),
+    },
   ];
 
   const entries = ((): Entry[] => {

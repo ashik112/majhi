@@ -40,7 +40,8 @@ export interface Pending {
   writes?: readonly GateWrite[] | undefined;
 }
 
-export type PauseReason = "offline" | "error" | "limit";
+/** `owner`: autonomous mode is paused or stopping and its run gate held this run (PRV-74). */
+export type PauseReason = "offline" | "error" | "limit" | "owner";
 
 /** Everything the manager holds for one (task, agent). */
 export class AgentRun {

@@ -43,6 +43,8 @@ interface Waiting {
   id: string;
   subject: Subject;
   attention: Attention;
+  /** Where a notice with no task opens. Default: the board. */
+  path?: string;
 }
 
 export interface TestResult {
@@ -102,6 +104,20 @@ export class Notifier {
       id: key,
       subject: { id: "", title: "majhi", chat: false },
       attention: { kind: "update", text: `The update failed: ${reason}` },
+    });
+  }
+
+  /** Autonomous mode's daily summary (PRV-74) has no card the owner must answer. Told once per day. */
+  autonomySummary(day: string, text: string): void {
+    const key = `autonomy:${day}`;
+    if (this.seen.has(key)) return;
+    this.seen.add(key);
+    this.enqueue({
+      task: "",
+      id: key,
+      subject: { id: "", title: "majhi", chat: false },
+      attention: { kind: "autonomy", text },
+      path: "/autonomous",
     });
   }
 
@@ -197,7 +213,7 @@ export class Notifier {
           ...(w.task === "" ? {} : { task: w.task }),
           title: w.subject.title,
           text: w.attention.text,
-          path: w.task === "" ? "/" : pathOf(w.subject),
+          path: w.task === "" ? (w.path ?? "/") : pathOf(w.subject),
           count: 1,
         },
         settings,

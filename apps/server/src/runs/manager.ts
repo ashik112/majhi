@@ -9,12 +9,13 @@ import {
   type SessionEvent,
 } from "@majhi/acp";
 import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
-import { durationMs } from "@majhi/shared";
+import { durationMs, isAutonomyChat } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { AUTONOMY_PREAMBLE } from "../autonomy/preamble.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { GateWrite } from "../connections/gate.ts";
 import { type HeldSecret, redactSecrets } from "../connections/redact.ts";
@@ -113,6 +114,13 @@ export interface RunDeps {
    * or the account's weekly budget reached 100%), else undefined. The run then pauses with `limit`.
    */
   limited?: (task: string, agent: string) => Promise<string | undefined>;
+  /**
+   * Autonomous mode's run gate (PRV-74), asked where `limited` is: `owner` while the mode is paused
+   * or stopping, `limit` under a cap, with the line to say. The run then pauses with that reason.
+   */
+  held?: (task: string, agent: string) => Promise<{ reason: "owner" | "limit"; why: string } | undefined>;
+  /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
+  onLoopEnd?: (task: string, agent: string) => void;
   /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
   onIdle?: (task: string) => void;
   /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
@@ -663,7 +671,7 @@ export class RunManager {
   /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
   async wake(): Promise<void> {
     const views = [...this.runs.values()]
-      .filter((r) => !r.closing && r.paused !== "offline" && r.paused !== "limit")
+      .filter((r) => !r.closing && r.paused !== "offline" && r.paused !== "limit" && r.paused !== "owner")
       .map((r) => ({
         key: this.key(r.task, r.agent),
         turning: r.turning && r.session !== undefined,
@@ -786,8 +794,8 @@ export class RunManager {
       if (run.session !== undefined && run.live.status === "idle") {
         this.slots.mark(this.key(run.task, run.agent), false);
       }
-      // A budget pause can last days: the process goes, and the prompts stay queued.
-      if (run.paused === "limit" && !run.closing) {
+      // A budget or autonomy pause can last days: the process goes, and the prompts stay queued.
+      if ((run.paused === "limit" || run.paused === "owner") && !run.closing) {
         this.evict(this.key(run.task, run.agent));
         this.setLive(run, { status: "paused", nowDoing: undefined });
       }
@@ -795,20 +803,28 @@ export class RunManager {
         run.redrive = false;
         if (!run.closing) void this.drive(run);
       }
+      if (!run.turning) this.deps.onLoopEnd?.(run.task, run.agent);
     }
   }
 
-  /** Pauses the run when a budget holds its task. True when it paused. */
+  /** Pauses the run when a budget or autonomous mode's gate holds its task. True when it paused. */
   private async pauseIfLimited(run: AgentRun): Promise<boolean> {
     const why = await this.deps.limited?.(run.task, run.agent);
-    if (why === undefined || run.closing) return false;
-    this.pause(run, "limit", why);
+    if (run.closing) return false;
+    if (why !== undefined) {
+      this.pause(run, "limit", why);
+      return true;
+    }
+    const held = await this.deps.held?.(run.task, run.agent);
+    if (held === undefined || run.closing) return false;
+    this.pause(run, held.reason, held.why);
     return true;
   }
 
   /**
-   * A budget reached 100%: runs that wait with prompts queued pause now. A run in the middle of a
-   * turn is not touched, and pauses between turns by itself.
+   * A budget reached 100%, or autonomous mode started holding work: runs that wait with prompts
+   * queued pause now. A run in the middle of a turn is not touched, and pauses between turns by
+   * itself.
    */
   async pauseLimited(): Promise<void> {
     for (const run of [...this.runs.values()]) {
@@ -833,11 +849,34 @@ export class RunManager {
   resumeLimit(task: string, agent: string, why: string): void {
     const run = this.runs.get(this.key(task, agent));
     if (run?.paused !== "limit" || run.closing) return;
+    this.resumeQueue(run, why);
+  }
+
+  /**
+   * Continues every run of the task that autonomous mode's gate held (`owner` or `limit`): their
+   * queued prompts go on, with no extra "continue" prompt. Returns how many it resumed.
+   */
+  resumeHeld(task: string, why: string): number {
+    let n = 0;
+    for (const run of this.runs.values()) {
+      if (run.task !== task || run.closing || (run.paused !== "owner" && run.paused !== "limit")) continue;
+      this.resumeQueue(run, why);
+      n++;
+    }
+    return n;
+  }
+
+  private resumeQueue(run: AgentRun, why: string): void {
     run.paused = undefined;
     this.live.system(run, "info", `Resuming @${run.agent}: ${why}.`);
     this.deps.onResumed?.(run.task);
     if (run.turning) run.redrive = true;
     else void this.drive(run);
+  }
+
+  /** True while a run of the task is in its loop: in a turn, or about to send one. */
+  inTurn(task: string): boolean {
+    return [...this.runs.values()].some((r) => r.task === task && r.turning && !r.closing);
   }
 
   private async runQueue(run: AgentRun): Promise<void> {
@@ -1187,12 +1226,20 @@ export class RunManager {
     return text === undefined ? blocks : [...blocks, { type: "text", text }];
   }
 
-  /** Puts the admin preamble before a session's first prompt. Slash commands stay whole and keep it waiting. */
+  /**
+   * Puts the admin preamble before a session's first prompt, and in the autonomy chat autonomous
+   * mode's after it. Slash commands stay whole and keep it waiting.
+   */
   private withPreamble(run: AgentRun, blocks: PromptBlock[]): PromptBlock[] {
     const first = blocks[0];
     if (!run.preambleDue || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
     run.preambleDue = false;
-    return [{ type: "text", text: ADMIN_PREAMBLE }, ...blocks];
+    const task = this.deps.store.tasks.get(run.task);
+    const autonomy = task !== undefined && isAutonomyChat(task);
+    return [
+      { type: "text", text: autonomy ? `${ADMIN_PREAMBLE}\n${AUTONOMY_PREAMBLE}` : ADMIN_PREAMBLE },
+      ...blocks,
+    ];
   }
 
   /**
