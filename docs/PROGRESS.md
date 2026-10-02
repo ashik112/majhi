@@ -32,6 +32,14 @@
   Every task id opens its room.
 - **Cards and tasks.** Approval cards say when autonomous mode approved them or left them for the owner. Board cards show an Auto mark and priority and due chips. The task header edits priority and due.
 
+### Rework: pick rules, the boss chat and one-screen page (2026-10-02, `ux/auto`)
+
+- **Pick rules** (`autonomy.pick`, Rules view). Task size it may start (Small only, Up to medium, Any size; default Any size), the workspaces it may work in (all, or a list with Private), and a per-task mark Not for autonomous mode (`autonomy.exclude`, owner only, `noAutonomy` in `tasks.list`). Size is Laya's rating of the task (`sizes.ts`), cached per task and rated again after an edit.
+- **Enforcement.** The digest lists the rules and each backlog task's size, and leaves out what they exclude. The preamble states them and says size is no reason to skip allowed work. The boss's starts and creates that break them are refused in `refusal` with one line, and logged as `refused` (`pick.ts`, `pick.test.ts`).
+- **The boss chat.** One chat, reused across runs. While the mode is not off it cannot be closed or removed; off, it can, and the next start makes a new one. A tick first makes or reopens a chat that is gone (`tickChat`).
+- **The page** fits 1440x900 without scrolling: a status bar (mode lamp, since, today's spend against the cap, Desk/Rules/Summary, Pause or Resume, Stop with both stops); the Desk with Waiting for you, Now and Next (each with why, a size badge and a leave-alone button) beside a compact Log with All/Decisions/Tasks; the boss chat on the right with the room's timeline and a box to write to it (Keep as standing instruction). Rules holds the pick rules, the backlog with the leave-alone switches, caps, push and merge, floors, spend and accounts, and the standing instructions. Below 1280 px the Log is its own view. The strip hides on this page.
+- **Checked.** 8 tests in `pick.test.ts` and a driver test; screenshots and click tests in `e2e/shots.autonomy.ts` (`playwright.autonomy.config.ts`).
+
 ### How to try it
 
 1. Make sure there is a boss (Agents, or the last onboarding step).
@@ -39,8 +47,8 @@
 3. In the sidebar, flip the Autonomous switch. Check the day cap, the floors and each org's push and merge in the confirm, then click Turn on.
 4. The strip shows on every page. Click Open, or Autonomous in the sidebar.
 5. Within about 20 s the feed shows "Woke the boss". Its plan shows under Queue, and its decisions show in the feed with their reasons.
-6. Under Limits, set the caps, push and merge per org, the floors and the summary time, then click Save.
-7. In Guide the boss, Ask sends a message. Add as instruction also keeps it in the list below.
+6. Under Rules, set what it may pick (size, workspaces), the caps, push and merge per workspace, the floors and the summary time, then click Save. Mark tasks Not for autonomous mode in the backlog there.
+7. In the boss chat on the right, Send writes to the boss. With Keep as standing instruction on, it is also kept.
 8. Pause, Resume, Stop gracefully or Stop now, from the page header, the strip or the sidebar switch.
 
 ### Verified
