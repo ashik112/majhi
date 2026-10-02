@@ -1,7 +1,8 @@
 import type { AgentLive, RoomItem, Task, TaskStatus, TaskSummary } from "@majhi/shared";
 import type { LampState } from "../../components/ui/lamp";
 import type { DotTone } from "../../components/ui/status-dot";
-import { isYourTurn } from "../tasks/model";
+import { workingText } from "../board/model";
+import { isYourTurn, statusInfo } from "../tasks/model";
 
 export interface AgentState {
   label: string;
@@ -166,7 +167,8 @@ export interface Relations {
   parent: { id: string; title: string | undefined } | undefined;
   /** Tasks this one depends on; `waiting` is true while the dependency is not met. */
   depends: { id: string; title: string | undefined; waiting: boolean; when: "merged" | "ready" }[];
-  children: { id: string; title: string; status: TaskStatus }[];
+  /** Its subtasks, by id, so the order is the order they were planned in. */
+  children: TaskSummary[];
   progress: { done: number; total: number } | undefined;
 }
 
@@ -178,7 +180,6 @@ export function relations(task: Pick<Task, "id" | "links">, list: readonly TaskS
   const parent = task.links.find((l) => l.type === "parent");
   const children = list
     .filter((t) => t.links.some((l) => l.type === "parent" && l.task === task.id))
-    .map((t) => ({ id: t.id, title: t.title, status: t.status }))
     .toSorted((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   return {
     parent: parent && { id: parent.task, title: byId.get(parent.task)?.title },
@@ -191,8 +192,39 @@ export function relations(task: Pick<Task, "id" | "links">, list: readonly TaskS
         when: l.when ?? "merged",
       })),
     children,
-    progress: me?.children,
+    progress:
+      me?.children ??
+      (children.length > 0
+        ? { done: children.filter((c) => c.status === "done").length, total: children.length }
+        : undefined),
   };
+}
+
+/** A subtask's state in one line: its lamp, its words, and the tasks it waits for. */
+export interface SubtaskLine {
+  lamp: LampState;
+  text: string;
+  waitingOn: readonly string[];
+}
+
+/**
+ * "Inbox", "Ready", "Waiting on" (with the keys), "@builder working", "Your turn", "Your review",
+ * "Paused · usage limit", "MR open", "Done".
+ */
+export function subtaskLine(
+  task: Pick<TaskSummary, "status" | "working" | "waitingOn" | "pausedReason">,
+): SubtaskLine {
+  if ((task.status === "inbox" || task.status === "ready") && task.waitingOn.length > 0)
+    return { lamp: "idle", text: "Waiting on", waitingOn: task.waitingOn };
+  if (task.status === "running" && task.working.length > 0)
+    return { lamp: "working", text: workingText(task.working), waitingOn: [] };
+  const info = statusInfo(task.status, task.pausedReason, isYourTurn(task));
+  return { lamp: info.lamp, text: info.label, waitingOn: [] };
+}
+
+/** A subtask the owner can start now: not started and waiting on nothing. */
+export function canStartSubtask(task: Pick<TaskSummary, "status" | "waitingOn">): boolean {
+  return (task.status === "inbox" || task.status === "ready") && task.waitingOn.length === 0;
 }
 
 /** Tasks a link can point at: open ones, not the task itself and not ones it is already linked to that way. */
