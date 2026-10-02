@@ -261,13 +261,17 @@ for (const [name, scene] of Object.entries({
   }
 }
 
-test("the header summary brings the Subtasks card into view", async ({ page }) => {
+test("the header summary opens a subtask", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   await stub(page, parent(MANY, ["GLX-401", "GLX-402", "GLX-403"]));
   await page.goto("/t/GLX-418");
   await page.getByRole("button", { name: /Subtasks .* done/ }).click();
-  await expect(page.getByRole("region", { name: /Subtasks/ })).toBeInViewport();
+  const menu = page.getByRole("menu", { name: "Subtasks" });
+  await expect(menu).toBeVisible();
+  await expect(menu).toBeInViewport({ ratio: 1 });
   await page.screenshot({ path: `${SHOTS}/summary-click-1100.png` });
+  await menu.locator('[role^="menuitem"]').first().click();
+  await expect(page).not.toHaveURL(/GLX-418/);
 });
 
 test("menus stay open while the room streams", async ({ page }) => {

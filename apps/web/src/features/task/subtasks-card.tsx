@@ -11,16 +11,7 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useStartTask, useTasks } from "@/lib/task-queries";
 import { canStartSubtask, relations, subtaskLine } from "./model";
 
-/** The card's id, so the header's summary can bring it into view. */
-export const SUBTASKS_CARD_ID = "subtasks-card";
-
-/** Brings the Subtasks card into view and moves focus to it. */
-export function showSubtasksCard(): void {
-  const card = document.getElementById(SUBTASKS_CARD_ID);
-  if (!card) return;
-  card.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  card.focus({ preventScroll: true });
-}
+const SUBTASKS_CARD_ID = "subtasks-card";
 
 /**
  * A parent task's subtasks, each with its lamp and state, what it waits for, and Start when it can

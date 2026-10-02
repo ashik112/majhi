@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
-import { Check, Plus, X } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -12,8 +12,7 @@ import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useLinkTask, useTasks, useUnlinkTask } from "@/lib/task-queries";
 import { TaskChips } from "../new-task/task-chips";
-import { linkTargets, relations } from "./model";
-import { SUBTASKS_CARD_ID, showSubtasksCard } from "./subtasks-card";
+import { linkTargets, relations, subtaskLine } from "./model";
 
 type Picking = "parent" | "depends-on" | null;
 
@@ -26,6 +25,7 @@ const chip =
 export function TaskLinks({ task }: { task: Task }) {
   const list = useTasks().data ?? [];
   const { org } = useOrgFilter();
+  const navigate = useNavigate();
   const unlink = useUnlinkTask();
   const [picking, setPicking] = useState<Picking>(null);
   const [asking, setAsking] = useState<Unlinking | null>(null);
@@ -96,24 +96,41 @@ export function TaskLinks({ task }: { task: Task }) {
         </span>
       )}
       {rel.children.length > 0 && (
-        // The Subtasks card on the right lists them with their state; this brings it into view.
-        <button
-          type="button"
-          onClick={showSubtasksCard}
-          aria-controls={SUBTASKS_CARD_ID}
-          title="Show the subtasks"
-          className={cn(chip, "cursor-pointer text-fg-muted")}
-        >
-          <span className="text-fg-faint">Subtasks</span>
-          <span className="tnum">
-            {rel.progress ? `${rel.progress.done} of ${rel.progress.total} done` : `${rel.children.length}`}
-          </span>
-          {rel.progress && rel.progress.total > 0 && (
-            <span className="w-10">
-              <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
-            </span>
+        <Menu
+          label="Subtasks"
+          maxHeight={420}
+          items={rel.children.map((c) => {
+            const line = subtaskLine(c);
+            const state = line.waitingOn.length > 0 ? `${line.text} ${line.waitingOn.join(", ")}` : line.text;
+            return {
+              label: `${c.id}  ${short(c.title)}  ·  ${state}`,
+              checked: c.status === "done",
+              onSelect: () => void navigate(linkTo(c.id)),
+            };
+          })}
+          trigger={({ ref, ...props }) => (
+            <button
+              ref={ref}
+              type="button"
+              {...props}
+              title="Open a subtask"
+              className={cn(chip, "cursor-pointer text-fg-muted")}
+            >
+              <span className="text-fg-faint">Subtasks</span>
+              <span className="tnum">
+                {rel.progress
+                  ? `${rel.progress.done} of ${rel.progress.total} done`
+                  : `${rel.children.length}`}
+              </span>
+              {rel.progress && rel.progress.total > 0 && (
+                <span className="w-10">
+                  <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
+                </span>
+              )}
+              <ChevronDown aria-hidden="true" className="size-3" />
+            </button>
           )}
-        </button>
+        />
       )}
       <Menu
         label="Link a task"
@@ -164,6 +181,8 @@ export function TaskLinks({ task }: { task: Task }) {
     </div>
   );
 }
+
+const short = (title: string) => (title.length > 60 ? `${title.slice(0, 59)}…` : title);
 
 function RemoveLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
