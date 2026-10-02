@@ -83,6 +83,7 @@ describe("store", () => {
       "audit",
       "automation_runs",
       "autonomy_events",
+      "autonomy_sizes",
       "autonomy_state",
       "autonomy_summaries",
       "autonomy_tasks",
