@@ -4,6 +4,7 @@ import type {
   EditorApp,
   GitLoginsResult,
   HostJob,
+  HostProgress,
   HostReply,
   LayaDecideResult,
   LayaStatus,
@@ -46,7 +47,31 @@ export interface JobHandlers {
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
   /** Throws an error whose message is safe to show when macOS shows nothing. */
   notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
+  /**
+   * Opens an http(s) page in the default browser: `open` on macOS, `xdg-open` on Linux, `wslview`
+   * (else `explorer.exe`) on WSL. False when nothing could open it. Undefined until built.
+   */
+  openUrl?: (params: Extract<HostJob, { method: "openUrl" }>["params"]) => Promise<boolean>;
+  /**
+   * Clones with the job's credential through majhi's own askpass, into a temporary sibling that is
+   * renamed to `path` when done and removed on failure. Calls `progress` as git reports phases.
+   * Throws an error whose message is safe to show: never git's raw output or the token. Undefined until built.
+   */
+  gitClone?: (
+    params: Extract<HostJob, { method: "git.clone" }>["params"],
+    progress: (progress: Omit<HostProgress, "id">) => void,
+  ) => Promise<{ head: string; branch: string }>;
+  /** `git ls-remote --symref` with the job's credential. Throws a safe sentence when unreachable. Undefined until built. */
+  gitLsRemote?: (
+    params: Extract<HostJob, { method: "git.lsRemote" }>["params"],
+  ) => Promise<{ empty: boolean; defaultBranch?: string | undefined }>;
 }
+
+/** Sends progress for a running job to `POST /api/host/progress`. Failures are dropped. */
+export type SendProgress = (progress: HostProgress) => Promise<void>;
+
+/** The answer for a job this helper has no handler for yet. Names no operating system. */
+export const NOT_BUILT_JOB = "This host helper cannot do that yet. Update majhi and try again.";
 
 export type SendReply = (reply: HostReply) => Promise<void>;
 
@@ -61,7 +86,12 @@ export const CANNOT_REMOUNT =
  * message; nothing here throws. `remount` is answered first, because it
  * restarts the server the reply goes to.
  */
-export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendReply): Promise<void> {
+export async function runJob(
+  job: HostJob,
+  handlers: JobHandlers,
+  reply: SendReply,
+  sendProgress: SendProgress = async () => undefined,
+): Promise<void> {
   try {
     switch (job.method) {
       case "listDirs":
@@ -123,6 +153,33 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         await handlers.gitPush(job.params);
         await reply({ id: job.id, ok: true, result: { pushed: true } });
         return;
+      case "openUrl": {
+        if (handlers.openUrl === undefined) {
+          await reply({ id: job.id, ok: true, result: { opened: false } });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: { opened: await handlers.openUrl(job.params) } });
+        return;
+      }
+      case "git.clone": {
+        if (handlers.gitClone === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        const result = await handlers.gitClone(job.params, (progress) => {
+          void sendProgress({ id: job.id, ...progress }).catch(() => undefined);
+        });
+        await reply({ id: job.id, ok: true, result });
+        return;
+      }
+      case "git.lsRemote": {
+        if (handlers.gitLsRemote === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: await handlers.gitLsRemote(job.params) });
+        return;
+      }
       case "git.credential":
         await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
         return;

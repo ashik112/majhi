@@ -56,6 +56,14 @@ export const queryKeys = {
   connections: ["connections"],
   /** Every `autonomy.*` read: the status and the feed. */
   autonomy: ["autonomy"],
+  /** `git.signIn.poll` for each flow. */
+  signins: ["signins"],
+  /** `projects.cloneStatus`. */
+  clones: ["clones"],
+  /** `onboarding.status`. Under `config`: orgs, accounts, the captain, projects and sign-ins all emit `config`. */
+  onboarding: ["config", "onboarding"],
+  /** `git.remoteRepos` and `git.remoteOwners`. Under `orgs`, so a new sign-in refetches them. */
+  remoteRepos: ["orgs", "remote-repos"],
 } as const;
 
 export function useConfig() {

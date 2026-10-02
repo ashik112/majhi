@@ -3,6 +3,7 @@ import {
   HOST_INFO_HEADER,
   type HostInfo,
   HostInfoSchema,
+  HostProgressSchema,
   HostReplySchema,
 } from "@majhi/shared";
 import { Hono } from "hono";
@@ -19,7 +20,8 @@ export interface HostRoutesDeps {
 /**
  * The host helper's endpoints, mounted at `/api/host`:
  * `POST /poll` answers 200 with a job or 204 when none came in time;
- * `POST /reply` takes the helper's answer to a job.
+ * `POST /reply` takes the helper's answer to a job;
+ * `POST /progress` takes `HostProgress` for a job still running.
  */
 export function hostRoutes({ link, majhiHome }: HostRoutesDeps): Hono {
   const app = new Hono();
@@ -62,6 +64,25 @@ export function hostRoutes({ link, majhiHome }: HostRoutesDeps): Hono {
     }
     // A reply to a job that already timed out has nobody waiting. That is fine.
     link.reply(reply.data);
+    return c.body(null, 204);
+  });
+
+  app.post("/progress", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "The request body is not valid JSON" } satisfies ApiError, 400);
+    }
+    const progress = HostProgressSchema.safeParse(body);
+    if (!progress.success) {
+      return c.json(
+        { error: "Invalid progress", details: formatIssues(progress.error) } satisfies ApiError,
+        400,
+      );
+    }
+    // Progress for a job nobody waits for any more is dropped.
+    link.progress(progress.data);
     return c.body(null, 204);
   });
 

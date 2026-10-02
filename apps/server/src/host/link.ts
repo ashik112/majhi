@@ -5,6 +5,7 @@ import {
   type HostJob,
   HostJobSchema,
   type HostMethod,
+  type HostProgress,
   type HostReply,
   HostResultSchemas,
   type HostStatus,
@@ -40,6 +41,9 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "git.token": (value) => HostResultSchemas["git.token"].safeParse(value),
   "git.push": (value) => HostResultSchemas["git.push"].safeParse(value),
   "git.credential": (value) => HostResultSchemas["git.credential"].safeParse(value),
+  openUrl: (value) => HostResultSchemas.openUrl.safeParse(value),
+  "git.clone": (value) => HostResultSchemas["git.clone"].safeParse(value),
+  "git.lsRemote": (value) => HostResultSchemas["git.lsRemote"].safeParse(value),
   "version.changes": (value) => HostResultSchemas["version.changes"].safeParse(value),
   update: (value) => HostResultSchemas.update.safeParse(value),
   restart: (value) => HostResultSchemas.restart.safeParse(value),
@@ -83,6 +87,8 @@ interface Waiter {
 export class HostLink {
   private readonly queue: HostJob[] = [];
   private readonly pending = new Map<string, (reply: HostReply) => void>();
+  /** Progress listeners of running calls that asked for it, by job id. */
+  private readonly progressListeners = new Map<string, (progress: HostProgress) => void>();
   private waiter: Waiter | undefined;
   private lastPollEnd: number | undefined;
   private lastSeen: number | undefined;
@@ -131,18 +137,24 @@ export class HostLink {
     return () => this.wakeListeners.delete(listener);
   }
 
-  /** Sends a job to the helper and resolves with its checked result. */
+  /**
+   * Sends a job to the helper and resolves with its checked result. `onProgress` gets the
+   * `HostProgress` the helper posts for this job while it runs (`git.clone`).
+   */
   call<M extends HostMethod>(
     method: M,
     params: HostParams<M>,
     timeoutMs = DEFAULT_CALL_TIMEOUT_MS,
+    onProgress?: (progress: HostProgress) => void,
   ): Promise<HostResult<M>> {
     if (!this.isConnected()) return Promise.reject(new HostOfflineError());
     const job = HostJobSchema.parse({ id: randomUUID(), method, params });
     const parse = parseResult[method];
+    if (onProgress !== undefined) this.progressListeners.set(job.id, onProgress);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(job.id);
+        this.progressListeners.delete(job.id);
         const queued = this.queue.findIndex((j) => j.id === job.id);
         if (queued !== -1) this.queue.splice(queued, 1);
         const seconds = Math.round(timeoutMs / 1000);
@@ -151,6 +163,7 @@ export class HostLink {
       this.pending.set(job.id, (reply) => {
         clearTimeout(timer);
         this.pending.delete(job.id);
+        this.progressListeners.delete(job.id);
         if (!reply.ok) {
           reject(new HostJobError(reply.error));
           return;
@@ -210,6 +223,14 @@ export class HostLink {
     const settle = this.pending.get(reply.id);
     if (settle === undefined) return false;
     settle(reply);
+    return true;
+  }
+
+  /** Hands progress to the call waiting on that job. False when nothing listens, like after a timeout. */
+  progress(progress: HostProgress): boolean {
+    const listener = this.progressListeners.get(progress.id);
+    if (listener === undefined) return false;
+    listener(progress);
     return true;
   }
 

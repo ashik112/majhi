@@ -41,6 +41,9 @@ export function topicsFor(command: string): EventTopic[] {
       return ["config"];
     case "projects":
       return ["projects", "config"];
+    case "git":
+      // OAuth apps are config and secrets; a sign-in ends by saving a token for an org.
+      return ["signins", "orgs", "config", "secrets"];
     case "tasks":
       return ["tasks"];
     case "settings":

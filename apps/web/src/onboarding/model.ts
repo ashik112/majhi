@@ -1,7 +1,12 @@
-import type { AccountView, AgentEntry } from "@majhi/shared";
+import type { AccountView, AgentEntry, LegacyOnboardingStepId, OnboardingStepId } from "@majhi/shared";
 import { isUsableStatus } from "../features/accounts/model";
 
-export type SetupStepId = "roots" | "account" | "boss";
+/**
+ * A step onboarding can open at. The steps and their order are `ONBOARDING_STEP_IDS` in
+ * `@majhi/shared` (welcome, account, workspaces, git, projects, boss, finish). `roots` is the old id
+ * of `welcome`; map it with `onboardingStepId` before looking a step up.
+ */
+export type SetupStepId = OnboardingStepId | LegacyOnboardingStepId;
 
 export interface SetupState {
   /** The config is in first-run state: no workspace roots yet. */
@@ -19,7 +24,10 @@ export function hasBoss(agents: readonly AgentEntry[]): boolean {
   return agents.some((a) => a.status === "ok" && a.isBoss);
 }
 
-/** The first setup step the server state says is not done, or null when setup is complete. */
+/**
+ * The first setup step the server state says is not done, or null when setup is complete. To be
+ * replaced by `onboarding.status`'s `next`, which also covers workspaces, git and projects.
+ */
 export function firstIncompleteStep(state: SetupState): SetupStepId | null {
   if (state.noRoots) return "roots";
   if (!firstHealthyAccount(state.accounts)) return "account";

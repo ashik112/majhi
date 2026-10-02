@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { AccountStep } from "./account-step";
 import { BossStep } from "./boss-step";
 import { FinishStep } from "./finish-step";
+import type { SetupStepId } from "./model";
 import { RootsStep } from "./roots-step";
 
 export interface OnboardingStepProps {
@@ -14,7 +15,7 @@ export interface OnboardingStepProps {
 }
 
 export interface OnboardingStep {
-  id: string;
+  id: SetupStepId;
   /** Short name, read out with the progress header. */
   title: string;
   Component: ComponentType<OnboardingStepProps>;
@@ -32,4 +33,4 @@ export const onboardingSteps: readonly OnboardingStep[] = [
 ];
 
 /** Steps the owner may skip; the roots step cannot be skipped. */
-export const skippableSteps: readonly string[] = ["account", "boss", "finish"];
+export const skippableSteps: readonly SetupStepId[] = ["account", "boss", "finish"];

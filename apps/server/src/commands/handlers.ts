@@ -28,6 +28,7 @@ import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { hostNameOf } from "../mrs/remote.ts";
@@ -151,6 +152,7 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
+    ...gitConnectHandlers(),
 
     "config.get": async () => (await config.load()).state,
 
