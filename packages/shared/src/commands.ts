@@ -1276,7 +1276,8 @@ export const commands = {
   },
   "room.around": {
     risk: "read",
-    summary: "The room items around one item (a search match), newest first, and whether more lie on either side",
+    summary:
+      "The room items around one item (a search match), newest first, and whether more lie on either side",
     input: z.object({
       task: TaskIdSchema,
       item: z.string().min(1),

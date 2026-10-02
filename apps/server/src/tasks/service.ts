@@ -3338,7 +3338,8 @@ export class TaskService {
   itemsAround(id: string, item: string, limit: number) {
     this.get(id);
     this.deps.room.flush(id);
-    return this.deps.store.room.around(id, item, Math.ceil(limit / 2)) ?? { items: [], older: false, newer: false };
+    const page = this.deps.store.room.around(id, item, Math.ceil(limit / 2));
+    return page ?? { items: [], older: false, newer: false };
   }
 
   /** Full-text search over every task's room. Items still in the room's write buffer show up once it flushes. */

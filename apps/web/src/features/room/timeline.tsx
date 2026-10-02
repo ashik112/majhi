@@ -224,7 +224,7 @@ export function Timeline({
     return byItem;
   }, [rows]);
   const loadingFocus = useRef(false);
-  const aroundTried = useRef<string>();
+  const aroundTried = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (focusItem === undefined || !state.loaded) return;
     const key = rowOf.get(focusItem);

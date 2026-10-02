@@ -36,7 +36,10 @@ export function useRoom(taskId: string) {
   const [state, dispatch] = useReducer(roomReducer, taskId, (id) => {
     // A window around a search match is not kept: the room opens at its newest messages again.
     const cached = roomCache.get(id);
-    return { ...(cached === undefined || cached.newer ? emptyRoom : cached), connection: "connecting" as const };
+    return {
+      ...(cached === undefined || cached.newer ? emptyRoom : cached),
+      connection: "connecting" as const,
+    };
   });
   useEffect(() => remember(taskId, state), [taskId, state]);
   const loadingOlder = useRef(false);

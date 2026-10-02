@@ -594,7 +594,8 @@ export function createHandlers({
       item: await services.tasks.answerChoice(input.task, input.item, input.option),
     }),
     "tasks.plan": (input) => services.tasks.plan(input.id),
-    "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq),
+    "room.items": async (input) =>
+      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq),
     "room.around": async (input) => services.tasks.itemsAround(input.task, input.item, input.limit),
     "room.search": async (input) => services.tasks.searchRooms(input.query, input.limit, input.org),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
