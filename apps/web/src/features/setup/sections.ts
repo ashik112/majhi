@@ -5,7 +5,7 @@ export const SETUP_GROUPS = [
     label: "How majhi works",
     sections: ["decisions", "memory", "context", "teams", "approvals", "notifications", "containers"],
   },
-  { label: "More", sections: ["editor", "appearance", "history"] },
+  { label: "More", sections: ["editor", "appearance", "backups", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
@@ -25,6 +25,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   editor: "Editor",
   containers: "Containers",
   appearance: "Appearance",
+  backups: "Backups",
   history: "History",
 };
 
@@ -43,6 +44,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
+  backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",
   history: "Every change to majhi.yaml, by you, the boss or a hand edit.",
 };
 

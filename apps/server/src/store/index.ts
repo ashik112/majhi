@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { applyPendingRestore } from "../backup/service.ts";
 import { UsageEvents } from "../usage/events.ts";
 import { ChatStateRepo } from "./chat-state.ts";
 import { createDb } from "./db.ts";
@@ -40,6 +41,8 @@ export class Store {
   }
 
   static open(majhiHome: string): Store {
+    // A restore the owner picked in Hub setup replaces the file before anything opens it.
+    applyPendingRestore(majhiHome, DB_FILE_NAME);
     return new Store(join(majhiHome, DB_FILE_NAME));
   }
 

@@ -32,6 +32,9 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.configure",
   "autonomy.guide",
   "autonomy.forget",
+  // A restore replaces the whole database: the owner's call.
+  "backup.restore",
+  "backup.cancelRestore",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

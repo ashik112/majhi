@@ -18,6 +18,7 @@ import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
+import { backupHandlers } from "../backup/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -144,6 +145,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
+    ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
 
     "config.get": async () => (await config.load()).state,

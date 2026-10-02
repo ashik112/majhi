@@ -46,6 +46,7 @@ import {
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
 } from "./autonomy.ts";
+import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -1352,6 +1353,34 @@ export const commands = {
     summary: "Stop the preview of a task (name preview) or one of its service containers",
     input: z.object({ task: TaskIdSchema, name: ContainerNameSchema }),
     output: z.object({ container: ContainerInfoSchema }),
+  },
+
+  // Backups of majhi.db (PRV-31) ---------------------------------------------------
+  "backup.list": {
+    risk: "read",
+    summary:
+      "The snapshots of majhi.db (tasks, rooms, history): a daily one, kept for 7 days, the ones taken on request and the ones a restore replaced, newest first, and whether a restore waits for the next start",
+    input: Empty,
+    output: BackupListSchema,
+  },
+  "backup.now": {
+    risk: "change",
+    summary: "Take a snapshot of majhi.db now, besides the daily one",
+    input: Empty,
+    output: z.object({ name: z.string() }),
+  },
+  "backup.restore": {
+    risk: "change",
+    summary:
+      "Restore majhi.db from a snapshot. The current database is snapshotted first, and the swap happens when majhi next starts. Owner only",
+    input: z.object({ name: z.string().min(1).max(100) }),
+    output: z.object({ restored: z.string(), safety: z.string() }),
+  },
+  "backup.cancelRestore": {
+    risk: "change",
+    summary: "Drop a restore that waits for the next start, so majhi keeps its current database. Owner only",
+    input: Empty,
+    output: z.object({ cancelled: z.boolean() }),
   },
 
   // Task links (5.4a) ---------------------------------------------------------
