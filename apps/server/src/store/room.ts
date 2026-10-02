@@ -155,6 +155,25 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /**
+   * Approval cards that appeared at or after `since` (ISO), counted per command, state and whether
+   * they ran with no owner click (`alone`, or a saved `rule`). One query.
+   */
+  approvalCounts(since: string): { command: string; state: string; alone: boolean; n: number }[] {
+    const rows = this.db.all<{ command: string | null; state: string | null; alone: number; n: number }>(sql`
+      SELECT json_extract(payload, '$.command') AS command, json_extract(payload, '$.state') AS state,
+        (json_extract(payload, '$.alone') IS NOT NULL OR json_extract(payload, '$.rule') IS NOT NULL) AS alone,
+        count(*) AS n
+      FROM room_items
+      WHERE type = 'approval' AND at >= ${since}
+      GROUP BY 1, 2, 3`);
+    return rows.flatMap((r) =>
+      r.command === null || r.state === null
+        ? []
+        : [{ command: r.command, state: r.state, alone: r.alone === 1, n: r.n }],
+    );
+  }
+
   /** How many items the task's room holds, not counting the ones whose id starts with `except`. */
   count(task: string, except?: string): number {
     const row = this.db

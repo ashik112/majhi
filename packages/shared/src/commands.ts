@@ -25,6 +25,7 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import { ApprovalStatsSchema } from "./approval-stats.ts";
 import { AuditListInputSchema, AuditListSchema } from "./audit.ts";
 import {
   AutomationRunSchema,
@@ -1560,6 +1561,13 @@ export const commands = {
       "Remove one saved always-allow rule, named by its agent, command and scope (task or org). Its commands ask again",
     input: AllowRuleSchema,
     output: SettingsSchema,
+  },
+  "policy.cardStats": {
+    risk: "read",
+    summary:
+      "How many approval cards each command put in front of the owner over the last days, and what came of them: approved, ran without asking, rejected, failed, still waiting",
+    input: z.object({ days: z.number().int().min(1).max(90).default(14) }),
+    output: ApprovalStatsSchema,
   },
   "permissions.list": {
     risk: "read",

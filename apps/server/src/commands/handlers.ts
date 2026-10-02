@@ -13,6 +13,7 @@ import type {
 import { RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
+import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
@@ -659,6 +660,7 @@ export function createHandlers({
       return config.settings();
     },
     "policy.set": async (input, ctx) => {
+      ownerOnlyPolicy(ctx.meta);
       await requireConfigFile(config);
       await config.setSettings(
         { policy: input },
@@ -671,6 +673,7 @@ export function createHandlers({
       return config.settings();
     },
     "policy.removeRule": async (input, ctx) => {
+      ownerOnlyPolicy(ctx.meta);
       await requireConfigFile(config);
       const { policy } = await config.settings();
       const rules = policy.rules.filter((r) => !sameRule(r, input));
@@ -685,6 +688,7 @@ export function createHandlers({
       );
       return config.settings();
     },
+    "policy.cardStats": async (input) => cardStats(services.store.room, input.days),
     "permissions.list": async () => allowances(services),
     "permissions.revoke": async (input) => {
       services.store.permissions.revoke(input.task, input.kind);
@@ -863,4 +867,9 @@ export async function requestRemount(hostLink: HostLink, unmounted: readonly str
     if (err instanceof HostOfflineError || err instanceof HostJobError) return "manual";
     throw err;
   }
+}
+
+/** The approval policy is the owner's alone: an agent never changes what it may do without asking. */
+function ownerOnlyPolicy(meta: CommandMeta): void {
+  if (meta.actor.kind !== "owner") throw new UserError("Only the owner changes the approval policy.", 409);
 }

@@ -1,24 +1,8 @@
-import { type CommandName, commands, type RiskClass } from "@majhi/shared";
+import { AGENT_BLOCKED_COMMANDS, type CommandName, commands, type RiskClass } from "@majhi/shared";
 import { z } from "zod";
 
 /** Commands an agent must never call: they approve, answer or reach outside majhi for the owner. */
-export const NOT_TOOLS: ReadonlySet<CommandName> = new Set<CommandName>([
-  "room.approve",
-  "room.secret",
-  "policy.set",
-  "policy.removeRule",
-  "permissions.list",
-  "permissions.revoke",
-  "room.permission",
-  "room.choose",
-  "room.send",
-  "room.cancel",
-  "room.fresh",
-  "ssh.unlock",
-  "boss.chat",
-  "chats.create",
-  "chats.rename",
-]);
+export const NOT_TOOLS: ReadonlySet<CommandName> = AGENT_BLOCKED_COMMANDS;
 
 export const REQUEST_SECRET_TOOL = "majhi_request_secret";
 

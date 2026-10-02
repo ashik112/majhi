@@ -129,6 +129,7 @@ export class AdminService {
     const held = !done.ok && ask.accept?.(done.error) === true;
     this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
       ...cardOf(caller.agent, command, input, ask.reason),
+      alone: true,
       state: done.ok || held ? "applied" : "failed",
       ...(done.commit === undefined ? {} : { commit: done.commit }),
       result: done.ok ? lineOf(done.output) : done.error,
@@ -183,6 +184,7 @@ export class AdminService {
       if (def.risk !== "read") {
         this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
           ...cardOf(caller.agent, command, input, ask.reason),
+          alone: true,
           ...(rule === undefined
             ? {}
             : { rule: rule.task === undefined ? ("org" as const) : ("task" as const) }),
