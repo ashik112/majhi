@@ -62,18 +62,32 @@ export function lastLine(text: string, max = 200): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-/** The note that wakes the lead when a teammate ended its turn and nobody took over. */
-export function leadNote(task: string, finished: string, text: string): string {
+/**
+ * The note that wakes the lead when a teammate ended its turn and nobody took over. `refused`: the
+ * model's safeguards stopped the teammate, so its step needs someone else or other words.
+ */
+export function leadNote(task: string, finished: string, text: string, refused = false): string {
   const quote = lastLine(text);
+  const last = quote === "" ? "." : `. Its last line: "${quote}"`;
+  if (refused) {
+    return [
+      `@${finished} was blocked by its model's safeguards and stopped. Nobody is working on ${task} now${last}`,
+      "Nothing else is pending: no handoff, no question to the owner, no background process.",
+      'Give its step to another teammate (the majhi-room mention tool, or "@name: please ..."), or rephrase the step and hand it back to it. Do not repeat the same words.',
+    ].join("\n");
+  }
   return [
-    `@${finished} finished its turn and nobody is working on ${task} now${quote === "" ? "." : `. Its last line: "${quote}"`}`,
+    `@${finished} finished its turn and nobody is working on ${task} now${last}`,
     "Nothing is pending: no handoff, no question to the owner, no background process.",
     'Hand off the next step of your plan (the majhi-room mention tool, or "@name: please ..."), finish the task, or say what it waits for.',
   ].join("\n");
 }
 
 /** The line the owner sees when the lead itself ended and nobody else is left to wake. */
-export function ownerLine(task: string, lead: string, text: string): string {
+export function ownerLine(task: string, lead: string, text: string, refused = false): string {
+  if (refused) {
+    return `@${lead} was blocked by its model's safeguards and nobody is working on ${task}. Rephrase the step, change its model, or give the step to another agent.`;
+  }
   const quote = lastLine(text);
   return `Nobody is working on ${task} and nothing is pending. @${lead}'s last message: ${quote === "" ? "(empty)" : `"${quote}"`}`;
 }
@@ -91,14 +105,14 @@ export interface IdleWatchDeps {
 
 /**
  * Keeps a running task from going silent (5.3). A moment after an agent ends a turn with nothing
- * queued, when the task still runs but nobody works, no owner card waits and no background process
+ * queued (by itself, or stopped by its model's safeguards with no other model left to try), when the task still runs but nobody works, no owner card waits and no background process
  * is waited on, the lead is woken once with who finished last. When the lead itself ended, the owner
  * is asked instead: the task pauses as blocked. At most once per quiet period: every turn that ends
  * starts a new one. Lives in memory: after a restart the resilience sweep wakes stranded tasks, and
  * the next turn that ends arms this again.
  */
 export class IdleWatch {
-  private readonly last = new Map<string, { agent: string; text: string; turn: number }>();
+  private readonly last = new Map<string, { agent: string; text: string; refused: boolean; turn: number }>();
   /** The turn each task's quiet period was handled for. */
   private readonly handled = new Map<string, number>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -106,10 +120,15 @@ export class IdleWatch {
 
   constructor(private readonly deps: IdleWatchDeps) {}
 
-  /** An agent ended a turn with this final message. */
-  turnEnded(turn: { task: string; agent: string; text: string }): void {
+  /** An agent ended a turn with this final message. `refused`: the model's safeguards ended it. */
+  turnEnded(turn: { task: string; agent: string; text: string; refused?: boolean }): void {
     this.turns += 1;
-    this.last.set(turn.task, { agent: turn.agent, text: turn.text, turn: this.turns });
+    this.last.set(turn.task, {
+      agent: turn.agent,
+      text: turn.text,
+      refused: turn.refused === true,
+      turn: this.turns,
+    });
   }
 
   /** An agent of the task has nothing queued: look at the room in a moment. */
@@ -140,11 +159,12 @@ export class IdleWatch {
     if (lead === undefined || !stalled(this.facts(task, runs.working(id).length))) return;
     this.handled.set(id, last.turn);
     if (last.agent !== lead) {
-      this.say(task.id, `Nobody was working on ${task.id} after @${last.agent} finished. Woke @${lead}.`);
-      runs.notify(task.id, lead, leadNote(task.id, last.agent, last.text));
+      const what = last.refused ? "was blocked by its model's safeguards" : "finished";
+      this.say(task.id, `Nobody was working on ${task.id} after @${last.agent} ${what}. Woke @${lead}.`);
+      runs.notify(task.id, lead, leadNote(task.id, last.agent, last.text, last.refused));
       return;
     }
-    await this.deps.pauseForOwner(task.id, ownerLine(task.id, lead, last.text));
+    await this.deps.pauseForOwner(task.id, ownerLine(task.id, lead, last.text, last.refused));
   }
 
   stop(): void {

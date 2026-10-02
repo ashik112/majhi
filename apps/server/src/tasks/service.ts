@@ -2874,7 +2874,7 @@ export class TaskService {
    * An agent finished its turn with nothing queued. When no agent in the task is still working,
    * the task moves to review: the owner replies (back to running) or marks it done.
    */
-  async agentsIdle(id: string): Promise<void> {
+  async agentsIdle(id: string, refused = false): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "running") return;
     // The boss chat is an ongoing conversation, never a piece of work to review.
@@ -2882,6 +2882,9 @@ export class TaskService {
       this.deps.onChatTurn?.(id);
       return;
     }
+    // The model's safeguards stopped the last step: the task is not finished. The idle watch hands
+    // the step to the lead, or to the owner.
+    if (refused) return;
     if (this.deps.runs.working(id).length > 0) return;
     // An agent's question to the owner is still open: the task is not ready for review. Answering
     // it wakes the agent, and the task reaches review when the agents are idle again.

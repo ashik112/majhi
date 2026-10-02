@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Turn } from "../testing/fakeSession.ts";
+import type { FakeSession, StopReason, Turn } from "../testing/fakeSession.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { childMoves, lastLine, stalled } from "./idle-watch.ts";
 
@@ -21,8 +21,13 @@ afterEach(async () => {
   await w?.cleanup();
 });
 
-type Turns = ((turn: Turn) => Promise<string>)[];
+type Step = string | { text: string; stop: StopReason };
+type Turns = ((turn: Turn) => Promise<Step>)[];
 const say = (text: string) => async () => text;
+/** The model's safeguards stop the turn, as Claude Code reports a flagged message. */
+const refuse =
+  (text = "") =>
+  async (): Promise<Step> => ({ text, stop: "refusal" });
 const QUIET_MS = 20;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,8 +39,18 @@ async function until(check: () => boolean | Promise<boolean>, what: string): Pro
   throw new Error(`Timed out waiting for ${what}`);
 }
 
-/** Acme with a lead on Codex, the builder on Claude and a reviewer on a second Claude account. */
-async function parentWorld(scripts: Record<string, Turns>) {
+/** Two models on offer, for agents that can fall back after a refusal. */
+const TWO_MODELS = [
+  { id: "opus", name: "Opus" },
+  { id: "sonnet", name: "Sonnet" },
+];
+
+/**
+ * Acme with a lead on Codex, the builder on Claude and a reviewer on a second Claude account.
+ * `opus`: these agents' sessions offer Opus and Sonnet and run on Opus; the others offer no choice.
+ * `alone`: the task has the lead only and no subtask, so it would go to review when it is idle.
+ */
+async function parentWorld(scripts: Record<string, Turns>, opts: { opus?: string[]; alone?: boolean } = {}) {
   w = await taskWorld({ idleWatchMs: QUIET_MS });
   const { h } = w;
   const must = async (name: string, body: unknown) => {
@@ -61,33 +76,46 @@ async function parentWorld(scripts: Record<string, Turns>) {
     "claude-acme-2": "acme-reviewer",
   };
   const prompts: Record<string, string[]> = {};
+  const sessions: Record<string, FakeSession> = {};
   h.runtime.onSession = (session, start) => {
     if (start.scratch) return;
     const agent = agentOf[basename(start.account.home)] ?? "unknown";
+    sessions[agent] = session;
+    if (opts.opus?.includes(agent)) {
+      session.models = { models: TWO_MODELS, efforts: [], defaultModel: "opus" };
+      // Like a real session: the model it runs is the one last set.
+      session.setOption = async (category, value) => {
+        session.options.push([category, value]);
+        if (category === "model") session.models = { ...session.models, defaultModel: value };
+      };
+    }
     session.script = async (turn) => {
       const list = prompts[agent] ?? [];
       prompts[agent] = list;
       list.push(turn.text);
       const step = scripts[agent]?.[list.length - 1];
-      const text = step === undefined ? "ok" : await step(turn);
-      turn.emit({ type: "text", messageId: `m${list.length}`, text });
-      return "end_turn";
+      const out = step === undefined ? "ok" : await step(turn);
+      const { text, stop } = typeof out === "string" ? { text: out, stop: "end_turn" as const } : out;
+      if (text !== "") turn.emit({ type: "text", messageId: `m${list.length}`, text });
+      return stop;
     };
   };
   await must("tasks.create", {
     text: "export orders from api",
     repos: [{ project: "acme-api" }],
-    team: ["acme-lead", "acme-builder", "acme-reviewer"],
+    team: opts.alone === true ? ["acme-lead"] : ["acme-lead", "acme-builder", "acme-reviewer"],
     start: false,
   });
   // A subtask nobody started: it does not move by itself, so ACM-1 stays running.
-  await must("tasks.split", {
-    task: "ACM-1",
-    children: [{ text: "add docs/export.md to api", repos: [{ project: "acme-api" }] }],
-    start: false,
-  });
+  if (opts.alone !== true) {
+    await must("tasks.split", {
+      task: "ACM-1",
+      children: [{ text: "add docs/export.md to api", repos: [{ project: "acme-api" }] }],
+      start: false,
+    });
+  }
   await must("tasks.start", { id: "ACM-1" });
-  return { h, prompts };
+  return { h, prompts, sessions };
 }
 
 async function items(): Promise<RoomItem[]> {
@@ -207,6 +235,129 @@ describe("a running task never goes silent", () => {
     expect((await systemTexts()).some((t) => t.startsWith("Nobody"))).toBe(false);
     expect((await task()).status).toBe("running");
     await w.h.majhi.services.processes.stopTask("ACM-1");
+  });
+});
+
+describe("a turn the model's safeguards stopped", () => {
+  const overrides = async () =>
+    ((await w.h.cmd("tasks.get", { id: "ACM-1" })).body as { overrides: Record<string, { model?: string }> })
+      .overrides;
+
+  it("moves a builder to the next model once and continues there", async () => {
+    const { prompts, sessions } = await parentWorld(
+      {
+        "acme-lead": [say("@acme-builder please build the web part."), say("Both parts are built.")],
+        "acme-builder": [refuse("Starting on the web part."), say("The web part is done.")],
+      },
+      { opus: ["acme-builder"] },
+    );
+    await until(async () => (await task()).status === "paused", "the owner asked");
+    await settle();
+
+    expect(prompts["acme-builder"]).toHaveLength(2);
+    expect(prompts["acme-builder"]?.[1]).toContain("Continue from where you stopped.");
+    expect(sessions["acme-builder"]?.options).toEqual([["model", "sonnet"]]);
+    expect((await overrides())["acme-builder"]?.model).toBe("sonnet");
+    const said = await systemTexts();
+    expect(said).toContain(
+      "@acme-builder was blocked by Opus's safeguards. Continuing on Sonnet for this task.",
+    );
+    // The builder then ended its turn itself: the lead hears it finished, not that it was blocked.
+    expect(prompts["acme-lead"]).toHaveLength(2);
+    expect(prompts["acme-lead"]?.[1]).toContain(
+      '@acme-builder finished its turn and nobody is working on ACM-1 now. Its last line: "The web part is done."',
+    );
+    expect(said.some((t) => t.includes("goes back to the team"))).toBe(false);
+  });
+
+  it("wakes the lead once with the safeguards note when the next model refuses too", async () => {
+    const { prompts, sessions } = await parentWorld(
+      {
+        "acme-lead": [say("@acme-builder please build the web part."), say("I will ask the owner.")],
+        "acme-builder": [refuse("Starting on the web part."), refuse("Still blocked."), refuse(), refuse()],
+      },
+      { opus: ["acme-builder"] },
+    );
+    await until(async () => (await task()).status === "paused", "the owner asked");
+    await settle();
+
+    // One switch, then the step goes back to the lead: no third try, no second switch.
+    expect(prompts["acme-builder"]).toHaveLength(2);
+    expect(sessions["acme-builder"]?.options).toEqual([["model", "sonnet"]]);
+    expect(prompts["acme-lead"]).toHaveLength(2);
+    const note = prompts["acme-lead"]?.[1] ?? "";
+    expect(note).toContain(
+      '@acme-builder was blocked by its model\'s safeguards and stopped. Nobody is working on ACM-1 now. Its last line: "Still blocked."',
+    );
+    expect(note).toContain("Give its step to another teammate");
+    expect(note).toContain("or rephrase the step and hand it back to it");
+    const said = await systemTexts();
+    expect(said).toContain(
+      "@acme-builder was blocked by Sonnet's safeguards after the switch too. Its step goes back to the team.",
+    );
+    expect(
+      said.filter(
+        (t) =>
+          t ===
+          "Nobody was working on ACM-1 after @acme-builder was blocked by its model's safeguards. Woke @acme-lead.",
+      ),
+    ).toHaveLength(1);
+    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
+  });
+
+  it("pauses the task for the owner when the lead refuses with no other model, and never sends it to review", async () => {
+    const { prompts } = await parentWorld({ "acme-lead": [refuse("Planning the export.")] }, { alone: true });
+    await until(async () => (await task()).status !== "running", "the task to stop running");
+    await settle();
+
+    expect(prompts["acme-lead"]).toHaveLength(1);
+    const said = await systemTexts();
+    expect(said).toContain(
+      "@acme-lead was blocked by fake-model's safeguards and has no other model to try. Its step goes back to the team.",
+    );
+    expect(said).toContain(
+      "@acme-lead was blocked by its model's safeguards and nobody is working on ACM-1. Rephrase the step, change its model, or give the step to another agent.",
+    );
+    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
+  });
+
+  it("never loops: a lead that always refuses switches once, then the owner is asked", async () => {
+    const always = [refuse(), refuse(), refuse(), refuse(), refuse()];
+    const { prompts, sessions } = await parentWorld(
+      { "acme-lead": always, "acme-builder": always },
+      { opus: ["acme-lead", "acme-builder"] },
+    );
+    await until(async () => (await task()).status === "paused", "the owner asked");
+    await settle();
+    await pause(QUIET_MS * 10);
+
+    expect(prompts["acme-lead"]).toHaveLength(2);
+    expect(prompts["acme-builder"]).toBeUndefined();
+    expect(sessions["acme-lead"]?.options).toEqual([["model", "sonnet"]]);
+    const said = await systemTexts();
+    expect(said.filter((t) => t.includes("Continuing on"))).toHaveLength(1);
+    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
+  });
+
+  it("wakes nobody when the owner stops a turn with Esc", async () => {
+    const { h, prompts } = await parentWorld({
+      "acme-lead": [say("@acme-builder please build the web part.")],
+      "acme-builder": [
+        async (turn) => {
+          await turn.untilCancelled();
+          return "Stopped.";
+        },
+      ],
+    });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder's turn");
+    await h.cmd("room.cancel", { task: "ACM-1", agent: "acme-builder" });
+    await settle();
+
+    expect(prompts["acme-lead"]).toHaveLength(1);
+    expect(prompts["acme-builder"]).toHaveLength(1);
+    const said = await systemTexts();
+    expect(said.some((t) => t.startsWith("Nobody") || t.includes("safeguards"))).toBe(false);
+    expect((await task()).status).toBe("running");
   });
 });
 

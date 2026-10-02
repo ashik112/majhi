@@ -66,6 +66,10 @@ export class AgentRun {
   needsBrief = false;
   /** Stop reason of the last finished turn. */
   lastStop: string | undefined;
+  /** The model the agent said it used in its last turn. */
+  turnModel: string | undefined;
+  /** A refusal moved this run to a fallback model, and no turn has ended well since: the next refusal hands over. */
+  refusalSwitched = false;
   /** The majhi-admin token of this session, revoked when it ends. */
   adminToken: string | undefined;
   /** The majhi-decide token of this session, revoked when it ends. */

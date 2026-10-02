@@ -440,8 +440,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
-    onIdle: (task) => {
-      void tasks.agentsIdle(task).catch(() => undefined);
+    onIdle: (task, refused) => {
+      void tasks.agentsIdle(task, refused).catch(() => undefined);
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),

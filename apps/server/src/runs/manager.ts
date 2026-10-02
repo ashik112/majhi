@@ -56,6 +56,7 @@ import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from ".
 import { PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
+import { currentModelName, switchAfterRefusal } from "./refusal.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
 import { wakePlan } from "./wake.ts";
@@ -97,9 +98,11 @@ export interface RunDeps {
   onTasksChanged: () => void;
   /**
    * An agent ended a turn by itself (stop reason end_turn) with this final message. The room
-   * routes its @mentions (5.3) before the task can count as idle, so this is awaited.
+   * routes its @mentions (5.3) before the task can count as idle, so this is awaited. `refused`:
+   * the model's safeguards ended it and no other model is left to try, so the step goes back to
+   * the team.
    */
-  onTurnEnd?: (turn: { task: string; agent: string; text: string }) => Promise<void>;
+  onTurnEnd?: (turn: { task: string; agent: string; text: string; refused?: boolean }) => Promise<void>;
   /**
    * Called right before a prompt is sent, not for slash commands. A returned text is added after
    * the prompt. `brief` is true when the agent reads TASK.md with this prompt: the first prompt,
@@ -113,8 +116,11 @@ export interface RunDeps {
    * or the account's weekly budget reached 100%), else undefined. The run then pauses with `limit`.
    */
   limited?: (task: string, agent: string) => Promise<string | undefined>;
-  /** Called when an agent finished a turn normally and has nothing queued: the task may be ready for review. */
-  onIdle?: (task: string) => void;
+  /**
+   * Called when an agent finished a turn normally and has nothing queued: the task may be ready for
+   * review. `refused`: the turn ended on the model's safeguards, so the task is not finished.
+   */
+  onIdle?: (task: string, refused: boolean) => void;
   /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
   onPaused?: (task: string, reason: PauseReason) => void;
   /** A paused or cut agent is resuming: the task runs again. */
@@ -898,20 +904,31 @@ export class RunManager {
       run.turns++;
       this.setLive(run, { turns: run.turns });
       const finalText = run.mapper?.finalText() ?? "";
+      if (stopReason === "end_turn") run.refusalSwitched = false;
+      // Blocked by the model's safeguards: a cheaper model of the same account continues, once.
+      const switched = stopReason === "refusal" && (await this.afterRefusal(run));
       if (!(await this.afterTurn(run, stopReason, budget))) break;
-      // The room routes the final message before this agent can count as idle.
-      if (stopReason === "end_turn" && !run.closing && run.paused === undefined) {
-        await this.routeTurn(run, finalText);
+      if (switched) continue;
+      // The room routes the final message before this agent can count as idle. A refusal with no
+      // model left to try ends the turn the same way, so its step goes back to the team.
+      if (
+        (stopReason === "end_turn" || stopReason === "refusal") &&
+        !run.closing &&
+        run.paused === undefined
+      ) {
+        await this.routeTurn(run, finalText, stopReason === "refusal");
       }
     }
     if (run.session !== undefined && !run.exited && !run.closing && run.paused === undefined) {
       this.setLive(run, { status: "idle", nowDoing: undefined });
       this.scheduleIdleStop(run);
-      // Only a turn the agent ended itself hands the task back; Esc and stops keep it with the owner.
-      if (run.queue.length === 0 && !run.held && run.lastStop === "end_turn") {
+      // Only a turn the agent ended itself, or its model's safeguards, hands the task back; Esc and
+      // stops keep it with the owner.
+      const ended = run.lastStop === "end_turn" || run.lastStop === "refusal";
+      if (run.queue.length === 0 && !run.held && ended) {
         // This loop is done sending, so it no longer counts as working.
         run.settling = true;
-        this.deps.onIdle?.(run.task);
+        this.deps.onIdle?.(run.task, run.lastStop === "refusal");
       }
     }
   }
@@ -1025,11 +1042,43 @@ export class RunManager {
     return stopReason;
   }
 
-  private async routeTurn(run: AgentRun, text: string): Promise<void> {
+  /**
+   * The model's safeguards ended the turn. The first refusal in a row moves the agent to the next
+   * cheaper model of its account for this task and queues "continue" (true). Otherwise, or when
+   * there is no such model, the room says so and the turn ends like one the agent ended (false).
+   */
+  private async afterRefusal(run: AgentRun): Promise<boolean> {
+    if (run.closing || run.paused !== undefined) return false;
+    const blocked = currentModelName(run);
+    const by = blocked === undefined ? "the model's safeguards" : `${blocked}'s safeguards`;
+    const next = run.refusalSwitched ? undefined : await switchAfterRefusal(this.deps, run, this.now());
+    if (next === undefined) {
+      const why = run.refusalSwitched ? "after the switch too" : "and has no other model to try";
+      this.live.system(
+        run,
+        "warn",
+        `@${run.agent} was blocked by ${by} ${why}. Its step goes back to the team.`,
+      );
+      return false;
+    }
+    run.refusalSwitched = true;
+    this.live.system(run, "warn", `@${run.agent} was blocked by ${by}. Continuing on ${next} for this task.`);
+    this.deps.onTasksChanged();
+    run.queue.unshift({ kind: "continue" });
+    this.live.refreshQueued(run);
+    return true;
+  }
+
+  private async routeTurn(run: AgentRun, text: string, refused = false): Promise<void> {
     try {
       // Other agents get the message as the room shows it.
       const shown = redactSecrets(text, this.secretsOf(run.task));
-      await this.deps.onTurnEnd?.({ task: run.task, agent: run.agent, text: shown });
+      await this.deps.onTurnEnd?.({
+        task: run.task,
+        agent: run.agent,
+        text: shown,
+        ...(refused ? { refused: true } : {}),
+      });
     } catch (err) {
       this.live.system(run, "warn", `Could not route @${run.agent}'s message: ${errorMessage(err)}`);
     }
@@ -1223,7 +1272,6 @@ export class RunManager {
       this.live.system(run, "warn", `@${run.agent} stopped: it reached its output limit.`);
     else if (stopReason === "max_turn_requests")
       this.live.system(run, "warn", `@${run.agent} stopped: it reached its turn limit.`);
-    else if (stopReason === "refusal") this.live.system(run, "warn", `@${run.agent} declined to continue.`);
     this.setLive(run, { nowDoing: undefined, turnAt: undefined });
   }
 
@@ -1403,6 +1451,7 @@ export class RunManager {
         }
         break;
       case "turn":
+        if (event.usage.model !== undefined) run.turnModel = event.usage.model;
         if (run.account !== undefined && run.accountKind !== undefined) {
           void this.deps.usage?.record(
             { task: run.task, agent: run.agent, account: run.account, ...run.accountKind, runId: run.runId },
