@@ -5,12 +5,30 @@ import { pointAt, scaleAt } from "./geometry";
 /** Water easing: a slow push off, a long glide, a soft arrival. */
 const GLIDE: [number, number, number, number] = [0.42, 0.04, 0.18, 1];
 
+/** The boat art (public/onboarding/boat.webp) and where its waterline middle sits in it. */
+const ART = { href: "/onboarding/boat.webp", w: 720, h: 411, x: 360, y: 380 };
+/** The boat's width in painting pixels at full size. */
+const BOAT_W = 350;
+/** The paddle art (public/onboarding/paddle.webp), drawn at its length in the boat art. */
+/** Drawn so the shaft is as thick as a fist; `holdY` is where the upper fist grips it. */
+const PADDLE = { href: "/onboarding/paddle.webp", w: 50, h: 254, holdY: 34 };
+/** Each rower's upper fist, from the waterline middle, in boat-art pixels. */
+const FISTS: readonly { x: number; y: number }[] = [
+  { x: -72, y: -158 },
+  { x: 40, y: -156 },
+  { x: 154, y: -150 },
+];
+/** The paddles' lean, degrees clockwise from upright: top toward the bow, blade toward the stern. */
+const PADDLE_ANGLE = 32;
+/** The lantern's glass, from the waterline middle, in boat-art pixels. */
+const LANTERN = { x: -322, y: -184 };
+
 /**
- * A nouka, the Bengal river boat, with its hooded middle and the majhi at the stern pushing a long
- * bamboo pole, drawn side on with its origin on the waterline. It bobs in place (CSS), and when
- * `s` changes it glides there along the river (Motion), turning to face the way it goes, with a
- * wake that shows only while it moves. Positions are written to the DOM directly, so a glide
- * re-renders nothing.
+ * The majhi's nouka in rickshaw paint: the human captain at the stern steering with the long oar,
+ * and a crew of three robot agents paddling. Paddles are their own pieces, so the crew rows while
+ * the boat glides and holds still at rest. It bobs in place (CSS); when `s` changes it glides there
+ * along the river (Motion), turning to face the way it goes, with a wake that shows only while it
+ * moves. Positions are written to the DOM directly, so a glide re-renders nothing.
  */
 export function Boat({ s, still }: { s: number; still: boolean }) {
   const id = useId().replace(/:/g, "");
@@ -20,10 +38,10 @@ export function Boat({ s, still }: { s: number; still: boolean }) {
 
   const place = () => {
     const p = pointAt(pos.current.s);
-    const k = scaleAt(p.y);
+    const k = (scaleAt(p.y) * BOAT_W) / ART.w;
     group.current?.setAttribute(
       "transform",
-      `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)}) scale(${(k * pos.current.flip).toFixed(3)} ${k.toFixed(3)})`,
+      `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)}) scale(${(k * pos.current.flip).toFixed(4)} ${k.toFixed(4)})`,
     );
   };
 
@@ -33,25 +51,32 @@ export function Boat({ s, still }: { s: number; still: boolean }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `place` reads refs only
   useEffect(() => {
     const from = pos.current.s;
+    const rowing = (on: boolean) => {
+      if (on) group.current?.setAttribute("data-moving", "");
+      else group.current?.removeAttribute("data-moving");
+    };
     if (still || Math.abs(s - from) < 0.5) {
       pos.current.s = s;
       place();
+      rowing(false);
       if (wake.current) wake.current.style.opacity = "0";
       return;
     }
     const dx = pointAt(s).x - pointAt(from).x;
-    const face = Math.abs(dx) < 18 ? pos.current.flip : dx > 0 ? 1 : -1;
+    const face = Math.abs(dx) < 40 ? pos.current.flip : dx > 0 ? 1 : -1;
     const span = Math.abs(s - from);
+    rowing(true);
     const glide = animate(from, s, {
-      duration: Math.min(3.4, 1.7 + span / 260),
+      duration: Math.min(3.6, 1.8 + span / 520),
       ease: GLIDE,
       onUpdate: (v) => {
         pos.current.s = v;
         place();
         const t = Math.abs(v - from) / span;
         if (wake.current)
-          wake.current.style.opacity = (Math.sin(Math.PI * Math.min(1, t * 1.08)) * 0.95).toFixed(3);
+          wake.current.style.opacity = (Math.sin(Math.PI * Math.min(1, t * 1.08)) * 0.9).toFixed(3);
       },
+      onComplete: () => rowing(false),
     });
     const turn =
       face === Math.sign(pos.current.flip)
@@ -68,89 +93,67 @@ export function Boat({ s, still }: { s: number; still: boolean }) {
     return () => {
       glide.stop();
       turn?.stop();
+      rowing(false);
     };
   }, [s, still]);
 
   return (
-    <g ref={group} data-boat="">
+    <g ref={group} data-boat="" className="rv-boat">
       <defs>
         <radialGradient id={`${id}-lamp`}>
-          <stop offset="0" style={{ stopColor: "var(--rv-lantern)", stopOpacity: 0.9 }} />
+          <stop offset="0" style={{ stopColor: "var(--rv-lantern)", stopOpacity: 0.85 }} />
           <stop offset="1" style={{ stopColor: "var(--rv-lantern)", stopOpacity: 0 }} />
         </radialGradient>
       </defs>
-      {/* The bow lantern's light on the water. */}
-      <ellipse cx="34" cy="3" rx="46" ry="7" fill={`url(#${id}-lamp)`} opacity="0.5" />
+      {/* The hull's shadow on the water, so the boat sits in the river rather than on it. */}
+      <ellipse cx="0" cy="12" rx="330" ry="20" fill="var(--rv-hull-shadow)" />
       {/* Rings spreading from the hull while it rests. */}
-      <ellipse
-        className="rv-ripple"
-        cx="0"
-        cy="1"
-        rx="56"
-        ry="4.5"
-        fill="none"
-        stroke="var(--rv-flow)"
-        strokeWidth="0.9"
-      />
-      <ellipse
-        className="rv-ripple"
-        style={{ "--rv-delay": "-1.8s" } as React.CSSProperties}
-        cx="0"
-        cy="1"
-        rx="56"
-        ry="4.5"
-        fill="none"
-        stroke="var(--rv-flow)"
-        strokeWidth="0.9"
-      />
-      {/* The wake behind the stern, shown only while gliding. */}
+      {[0, -1.8].map((delay) => (
+        <ellipse
+          key={delay}
+          className="rv-ripple"
+          style={{ "--rv-delay": `${delay}s` } as React.CSSProperties}
+          cx="0"
+          cy="10"
+          rx="380"
+          ry="26"
+          fill="none"
+          stroke="var(--rv-flow)"
+          strokeWidth="5"
+        />
+      ))}
+      {/* The wake behind the stern, white strokes like the painting's own waves. */}
       <g ref={wake} style={{ opacity: 0 }} fill="none" stroke="var(--rv-flow)" strokeLinecap="round">
-        <path d="M-42 -1 C -60 -2, -82 -1, -108 1" strokeWidth="1.1" />
-        <path d="M-40 2 C -58 5, -80 9, -104 14" strokeWidth="0.9" />
-        <path d="M-30 3 C -44 7, -60 12, -78 19" strokeWidth="0.7" opacity="0.6" />
+        <path d="M-330 4 C -440 0, -560 6, -700 16" strokeWidth="8" />
+        <path d="M-320 18 C -430 30, -540 48, -660 70" strokeWidth="6" />
+        <path d="M-250 22 C -330 40, -420 62, -520 88" strokeWidth="5" opacity="0.6" />
       </g>
       <g className="rv-bob">
-        {/* Reflection: the hull flipped on the water, faint. */}
-        <use href={`#${id}-hull`} transform="matrix(1 0 0 -0.5 0 1.5)" opacity="0.2" />
-        <g id={`${id}-hull`}>
-          {/* The bamboo pole, planted in the river behind the stern. */}
-          <path d="M-17 -48 L-53 14" stroke="var(--rv-ink)" strokeWidth="1.25" strokeLinecap="round" />
-          {/* The hull: long and low, both ends sweeping up. */}
-          <path
-            d="M-48 -14 C -41 -1, -25 3, 0 3 C 26 3, 41 -2, 50 -16 C 43 -9, 34 -6, 0 -5 C -32 -5, -42 -8, -48 -14 Z"
-            fill="var(--rv-ink)"
-          />
-          <path
-            d="M-45 -11 C -37 -7, -20 -5.8, 0 -5.8 C 22 -5.8, 37 -8, 47 -13"
-            fill="none"
-            stroke="var(--rv-rim)"
-            strokeWidth="0.9"
-          />
-          {/* The chhoi, a bamboo hood over the middle. */}
-          <path d="M-17 -5 C -17 -22, 15 -22, 15 -5 Z" fill="var(--rv-ink)" />
-          <path
-            d="M-11.5 -5.5 C -11.5 -16.5, 9.5 -16.5, 9.5 -5.5 M-5.5 -5.5 C -5.5 -12, 3.5 -12, 3.5 -5.5"
-            fill="none"
-            stroke="var(--rv-ink-line)"
-            strokeWidth="0.7"
-          />
-          {/* The majhi at the stern, leaning into the pole. */}
-          <g fill="var(--rv-ink)">
-            <path d="M-36.5 -5 L-34.6 -17.5 L-29.6 -17.5 L-28.2 -5 Z" />
-            <path d="M-34.8 -17.5 L-33.6 -27.6 C -33 -29.6, -29.8 -29.6, -29.4 -27.6 L-29.2 -17.5 Z" />
-            <circle cx="-31.2" cy="-31.6" r="2.7" />
-            <ellipse cx="-31" cy="-33.4" rx="3" ry="1.3" />
-          </g>
-          <path
-            d="M-30.8 -27 L-27.4 -31.2 M-31 -24.6 L-31.6 -21.4"
-            stroke="var(--rv-ink)"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          {/* A lantern hung at the bow. */}
-          <path d="M47.5 -15 L49 -24 L52 -24" fill="none" stroke="var(--rv-ink)" strokeWidth="0.9" />
-          <circle cx="52" cy="-19.5" r="11" fill={`url(#${id}-lamp)`} className="rv-breathe" />
-          <rect x="50.6" y="-22" width="2.8" height="4" rx="0.8" fill="var(--rv-lantern)" />
+        {/* The lantern's light, at night only. */}
+        <circle
+          cx={LANTERN.x}
+          cy={LANTERN.y}
+          r="90"
+          fill={`url(#${id}-lamp)`}
+          className="rv-breathe"
+          style={{ opacity: "var(--rv-dusk)" }}
+        />
+        <image href={ART.href} x={-ART.x} y={-ART.y} width={ART.w} height={ART.h} />
+        {/* The crew's paddles, then their fists over the shafts so each paddle sits in its hands.
+            The stroke moves paddles and fists together, so the grip never slips. */}
+        <g className="rv-stroke">
+          {FISTS.map((f) => (
+            <g key={f.x} transform={`translate(${f.x} ${f.y}) rotate(${PADDLE_ANGLE})`}>
+              <image
+                href={PADDLE.href}
+                x={-PADDLE.w / 2}
+                y={-PADDLE.holdY}
+                width={PADDLE.w}
+                height={PADDLE.h}
+              />
+            </g>
+          ))}
+          <image href="/onboarding/fists.webp" x={-ART.x} y={-ART.y} width={ART.w} height={ART.h} />
         </g>
       </g>
     </g>

@@ -1118,109 +1118,106 @@
 }
 
 /*
- * The onboarding river (apps/web/src/onboarding/scene). Dusk in the dark theme, day in the light
- * one. Scene colors live here so both themes are tuned, not inverted. Lanterns are fire, so they
- * stay warm in every accent; the current stop's ring uses the accent. Only transform and opacity
- * animate; every loop stops when the tab is hidden (`data-paused`) and under reduced motion.
+ * The onboarding river (apps/web/src/onboarding/scene): a rickshaw-art painting, by moonlight in
+ * the dark theme and by day in the light one, with the boat, paddles and signboards drawn over it.
+ * Only transform and opacity animate; every loop stops when the tab is hidden (`data-paused`) and
+ * under reduced motion.
  */
 .rv-scene {
-  --rv-sky-top: #040812;
-  --rv-sky-mid: #0c1630;
-  --rv-sky-low: #2b2444;
-  --rv-sky-glow: rgb(244 156 92 / 0.5);
-  --rv-sun: #f8c27a;
-  --rv-sun-glow: rgb(247 170 92 / 0.36);
-  --rv-hill-far: #1a2240;
-  --rv-hill-mid: #10182e;
-  --rv-land-far: #111a30;
-  --rv-land-near: #060b16;
-  --rv-contour: rgb(110 165 225 / 0.07);
-  --rv-water-far: #4a3a4e;
-  --rv-water-mid: #172b4c;
-  --rv-water-near: #112746;
-  --rv-rim: rgb(250 190 110 / 0.6);
-  --rv-shore: rgb(150 200 245 / 0.18);
-  --rv-flow: rgb(175 210 250 / 0.42);
-  --rv-shimmer: rgb(252 196 128 / 0.75);
-  --rv-ink: #03060d;
-  --rv-ink-far: #0d1528;
-  --rv-ink-line: rgb(150 190 240 / 0.22);
-  --rv-lantern: #f7b95c;
-  --rv-lantern-core: #fff1d2;
-  --rv-lantern-glow: rgb(247 176 84 / 0.6);
-  --rv-lantern-off: #46536a;
-  --rv-star: #dbe6ff;
-  --rv-stars: 1;
-  --rv-birds: 0;
-  --rv-cloud: rgb(176 150 214 / 0.13);
-  --rv-label-halo: rgb(2 5 11 / 0.9);
+  --rv-painting: url("/onboarding/river-night.webp");
+  --rv-flow: rgb(235 240 255 / 0.7);
+  --rv-hull-shadow: rgb(4 10 40 / 0.35);
+  --rv-lantern: #ffc45c;
   --rv-dusk: 1;
+  --rv-ink: #2b1a0c;
+  --rv-label-halo: rgb(2 5 11 / 0.9);
+  background: #12205a;
 }
 :root[data-theme="light"] .rv-scene {
-  --rv-sky-top: #b3cde7;
-  --rv-sky-mid: #d4e2ee;
-  --rv-sky-low: #f3e7d4;
-  --rv-sky-glow: rgb(255 210 150 / 0.55);
-  --rv-sun: #fff6e2;
-  --rv-sun-glow: rgb(255 224 168 / 0.7);
-  --rv-hill-far: #b7c6d6;
-  --rv-hill-mid: #a2b5c7;
-  --rv-land-far: #d3dbd1;
-  --rv-land-near: #b5c3b3;
-  --rv-contour: rgb(40 80 110 / 0.07);
-  --rv-water-far: #efe5d3;
-  --rv-water-mid: #abc6dd;
-  --rv-water-near: #85a8c8;
-  --rv-rim: rgb(255 255 255 / 0.55);
-  --rv-shore: rgb(255 255 255 / 0.6);
-  --rv-flow: rgb(255 255 255 / 0.72);
-  --rv-shimmer: rgb(255 255 255 / 0.95);
-  --rv-ink: #26354a;
-  --rv-ink-far: #8597ab;
-  --rv-ink-line: rgb(255 255 255 / 0.35);
-  --rv-lantern: #e3922a;
-  --rv-lantern-core: #fff4dc;
-  --rv-lantern-glow: rgb(242 168 66 / 0.5);
-  --rv-lantern-off: #7d8ca0;
-  --rv-star: #ffffff;
-  --rv-stars: 0;
-  --rv-birds: 1;
-  --rv-cloud: rgb(255 255 255 / 0.7);
-  --rv-label-halo: rgb(238 243 247 / 0.95);
+  --rv-painting: url("/onboarding/river-day.webp");
+  --rv-flow: rgb(255 255 255 / 0.85);
+  --rv-hull-shadow: rgb(10 40 120 / 0.28);
   --rv-dusk: 0;
+  --rv-label-halo: rgb(238 243 247 / 0.95);
+  background: #2a64d8;
+}
+.rv-painting {
+  background: var(--rv-painting) center bottom / cover no-repeat;
 }
 
-.rv-scene .rv-anim {
-  transform-box: fill-box;
-  transform-origin: center;
+/* The signboards: painted plaques, the step name written on the cream panel. */
+.rv-sign {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: url("/onboarding/sign.webp") center / contain no-repeat;
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 400ms ease,
+    filter 400ms ease;
 }
-.rv-flow-line {
-  animation: rv-flow var(--rv-dur, 8s) ease-in-out var(--rv-delay, 0s) infinite;
+.rv-sign:hover {
+  transform: translateY(-2px);
 }
-.rv-twinkle {
-  animation: rv-twinkle 4.8s ease-in-out var(--rv-delay, 0s) infinite alternate;
+.rv-sign[data-state="todo"] {
+  opacity: 0.82;
 }
-.rv-shimmer-line {
-  animation: rv-twinkle 3.2s ease-in-out var(--rv-delay, 0s) infinite alternate;
+.rv-sign[data-state="skipped"] {
+  filter: saturate(0.4);
+  opacity: 0.72;
 }
+.rv-sign[data-state="todo"]:hover,
+.rv-sign[data-state="skipped"]:hover {
+  opacity: 0.95;
+}
+.rv-sign[data-state="current"] {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 10px rgb(255 196 92 / 0.85));
+}
+.rv-sign-text {
+  position: absolute;
+  inset: 13% 11% 12% 11%;
+  font-family: "Baloo Da 2", var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  text-align: center;
+  line-height: 1;
+}
+.rv-sign-title {
+  font-size: var(--rv-font, 12px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--rv-ink);
+}
+.rv-sign-word {
+  font-size: calc(var(--rv-font, 12px) * 0.74);
+  font-weight: 600;
+  color: #6e5a44;
+}
+.rv-sign[data-state="current"] .rv-sign-word {
+  color: #b3261e;
+}
+.rv-sign[data-state="done"] .rv-sign-word {
+  color: #1d6b35;
+}
+
 .rv-bob {
   transform-box: fill-box;
   transform-origin: 50% 100%;
   animation: rv-bob 4.6s ease-in-out infinite alternate;
 }
+/* The crew's stroke: paddles and fists sweep back and dip together while the boat moves. */
+.rv-boat[data-moving] .rv-stroke {
+  animation: rv-row 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
 .rv-ripple {
   transform-box: fill-box;
   transform-origin: center;
   animation: rv-ripple 3.6s cubic-bezier(0.2, 0.6, 0.35, 1) var(--rv-delay, 0s) infinite;
-}
-.rv-cloud {
-  animation: rv-drift var(--rv-dur, 70s) ease-in-out infinite alternate;
-}
-.rv-bird {
-  animation: rv-glide var(--rv-dur, 46s) linear var(--rv-delay, 0s) infinite;
-}
-.rv-glow {
-  transition: opacity 900ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .rv-breathe {
   transform-box: fill-box;
@@ -1246,37 +1243,20 @@
     transition: none;
   }
 }
-
-@keyframes rv-flow {
-  0% {
-    opacity: 0;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-  }
-  70% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(var(--rv-drift, 10px));
-  }
-}
-@keyframes rv-twinkle {
-  from {
-    opacity: 0.25;
-  }
-  to {
-    opacity: 1;
-  }
-}
 @keyframes rv-bob {
   from {
-    transform: translateY(0.4px) rotate(-1.1deg);
+    transform: translateY(2px) rotate(-0.8deg);
   }
   to {
-    transform: translateY(-1.4px) rotate(1deg);
+    transform: translateY(-6px) rotate(0.7deg);
+  }
+}
+@keyframes rv-row {
+  from {
+    transform: translate(10px, -4px);
+  }
+  to {
+    transform: translate(-14px, 6px);
   }
 }
 @keyframes rv-ripple {
@@ -1285,30 +1265,11 @@
     transform: scale(0.55);
   }
   20% {
-    opacity: 0.55;
+    opacity: 0.6;
   }
   100% {
     opacity: 0;
-    transform: scale(1.45);
-  }
-}
-@keyframes rv-drift {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-46px);
-  }
-}
-@keyframes rv-glide {
-  from {
-    transform: translate(-80px, 0);
-  }
-  50% {
-    transform: translate(280px, -14px);
-  }
-  to {
-    transform: translate(640px, 6px);
+    transform: scale(1.4);
   }
 }
 @keyframes rv-breathe {

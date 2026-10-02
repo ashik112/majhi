@@ -1,34 +1,45 @@
 /**
- * The river scene's geometry, in the SVG's own units (a 480 by 900 view box). The river rises from
- * the bottom edge and winds up to the horizon; the stops sit along it from near (Welcome) to far
- * (Arrive, at the ghat). Everything is worked out once at module load: plain numbers, no DOM.
+ * The river scene's geometry, in the painting's own pixels (a 1024 by 1536 rickshaw-art panel;
+ * public/onboarding/river-day.webp and river-night.webp share it). The river's middle line was
+ * traced from the painting; it rises from the bottom edge and winds up to the ghat under the sun or
+ * moon. The stops sit along it from near (Welcome) to far (Arrive, at the ghat). Everything is
+ * worked out once at module load: plain numbers, no DOM.
  */
 
-export const VIEW_W = 480;
-export const VIEW_H = 900;
-/** Where the land meets the sky. */
-export const HORIZON = 312;
-/** The nearest and farthest stop. */
-const NEAR_Y = 836;
-const FAR_Y = 352;
+export const VIEW_W = 1024;
+export const VIEW_H = 1536;
+/** Where the river meets the ghat steps. */
+export const GHAT_Y = 430;
+/** The nearest stop. */
+const NEAR_Y = 1390;
 
 export interface Point {
   x: number;
   y: number;
 }
 
-/** The river's middle line, bottom to top, through which a smooth curve is drawn. */
+/** The river's middle line, bottom to top, traced from the painting. */
 const SPINE: readonly Point[] = [
-  { x: 238, y: 960 },
-  { x: 292, y: 856 },
-  { x: 214, y: 752 },
-  { x: 284, y: 658 },
-  { x: 222, y: 568 },
-  { x: 270, y: 488 },
-  { x: 232, y: 420 },
-  { x: 262, y: 364 },
-  { x: 250, y: 330 },
-  { x: 256, y: HORIZON },
+  { x: 492, y: 1620 },
+  { x: 505, y: 1440 },
+  { x: 498, y: 1320 },
+  { x: 482, y: 1200 },
+  { x: 462, y: 1100 },
+  { x: 418, y: 1020 },
+  { x: 462, y: 962 },
+  { x: 560, y: 905 },
+  { x: 604, y: 860 },
+  { x: 562, y: 812 },
+  { x: 472, y: 776 },
+  { x: 410, y: 726 },
+  { x: 424, y: 680 },
+  { x: 500, y: 640 },
+  { x: 588, y: 596 },
+  { x: 560, y: 550 },
+  { x: 472, y: 510 },
+  { x: 456, y: 478 },
+  { x: 498, y: 446 },
+  { x: 512, y: GHAT_Y },
 ];
 
 function at<T>(list: readonly T[], i: number): T {
@@ -58,14 +69,14 @@ function smooth(points: readonly Point[], per: number): Point[] {
   return out;
 }
 
-const samples = smooth(SPINE, 40);
+const samples = smooth(SPINE, 30);
 const lengths: number[] = [0];
 for (let i = 1; i < samples.length; i += 1) {
   const a = at(samples, i - 1);
   const b = at(samples, i);
   lengths.push(at(lengths, i - 1) + Math.hypot(b.x - a.x, b.y - a.y));
 }
-/** The river's length along its middle, bottom edge to horizon. */
+/** The river's length along its middle, bottom edge to the ghat. */
 export const RIVER_LENGTH = at(lengths, lengths.length - 1);
 
 /** The point `s` units along the middle line from the bottom edge. */
@@ -85,51 +96,20 @@ export function pointAt(s: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-/** How far the land at `y` is: 0 at the horizon, 1 at the nearest stop and beyond. */
+/** How near the water at `y` is: 0 at the ghat, 1 at the nearest stop. */
 function nearness(y: number): number {
-  return Math.max(0, Math.min(1.12, (y - HORIZON) / (NEAR_Y - HORIZON)));
+  return Math.max(0, Math.min(1, (y - GHAT_Y) / (NEAR_Y - GHAT_Y)));
 }
 
-/** The river's width at `y`: a thread at the horizon, wide at the bottom edge. */
+/** The river's width at `y` in the painting, roughly: narrow at the ghat, wide at the bottom. */
 export function widthAt(y: number): number {
-  return 3 + 196 * nearness(y) ** 1.22;
+  return 190 + 330 * nearness(y);
 }
 
-/** How big a thing standing at `y` is drawn: perspective, so far things are small. */
+/** How big a thing on the water at `y` is drawn: the painting's gentle perspective. */
 export function scaleAt(y: number): number {
-  return 0.3 + 0.7 * nearness(y) ** 0.95;
+  return 0.46 + 0.54 * nearness(y) ** 0.9;
 }
-
-function fmt(n: number): string {
-  return n.toFixed(1);
-}
-
-/** The water: the left bank up to the horizon, then the right bank back down. */
-export const RIVER_PATH = (() => {
-  const step = 4;
-  const left: string[] = [];
-  const right: string[] = [];
-  for (let i = 0; i < samples.length; i += step) {
-    const p = at(samples, i);
-    const w = widthAt(p.y) / 2;
-    left.push(`${fmt(p.x - w)} ${fmt(p.y)}`);
-    right.push(`${fmt(p.x + w)} ${fmt(p.y)}`);
-  }
-  const top = at(samples, samples.length - 1);
-  return `M${left.join(" L")} L${fmt(top.x)} ${fmt(top.y)} L${right.reverse().join(" L")} Z`;
-})();
-
-/** One bank's edge as an open line, for the thin bright rim where water meets land. */
-function bankPath(side: -1 | 1): string {
-  const points: string[] = [];
-  for (let i = 0; i < samples.length; i += 4) {
-    const p = at(samples, i);
-    points.push(`${fmt(p.x + (side * widthAt(p.y)) / 2)} ${fmt(p.y)}`);
-  }
-  return `M${points.join(" L")}`;
-}
-export const LEFT_BANK = bankPath(-1);
-export const RIGHT_BANK = bankPath(1);
 
 /** The arc length whose point is nearest to height `y`. */
 function lengthAtY(y: number): number {
@@ -145,106 +125,43 @@ function lengthAtY(y: number): number {
   return at(lengths, best);
 }
 
+/** The signboard's width at full size, in painting pixels; it shrinks a little with distance. */
+const SIGN_W = 210;
+/** The signboard art's height over width (public/onboarding/sign.webp): the plaque alone. */
+export const SIGN_RATIO = 174 / 320;
+/** The two columns the signs stand in, one on each bank, clear of the river and the boat. */
+const SIGN_X = { left: 205, right: 819 } as const;
+
 export interface StopPlace {
   /** Where the boat waits, on the middle line. */
   s: number;
   boat: Point;
-  /** The lantern's foot on the bank. */
-  lantern: Point;
-  /** Which bank the lantern and label are on. */
+  /** Where the signboard's bottom edge meets the bank. */
+  sign: Point;
+  /** The signboard's width in painting pixels. */
+  signW: number;
+  /** Which bank the sign stands on. */
   side: -1 | 1;
   scale: number;
 }
 
 /**
- * The stops, near to far. Gaps shrink toward the horizon, as they would in perspective. Each
- * lantern stands on the bank with more land beside it, so its label has room.
+ * The stops, near to far, evenly spaced up the painting. The signboards alternate banks, starting
+ * on the right, in two fixed columns: the boat keeps the middle of the river to itself, and
+ * neighbouring signs never stack.
  */
 export function stopPlaces(count: number): StopPlace[] {
   const places: StopPlace[] = [];
   for (let i = 0; i < count; i += 1) {
     const t = count === 1 ? 0 : i / (count - 1);
-    const y = FAR_Y + (NEAR_Y - FAR_Y) * (1 - t) ** 1.18;
+    const y = NEAR_Y + (GHAT_Y + 50 - NEAR_Y) * t;
     const s = lengthAtY(y);
     const boat = pointAt(s);
-    const side: -1 | 1 = boat.x < VIEW_W / 2 ? 1 : -1;
     const scale = scaleAt(boat.y);
-    const reach = widthAt(boat.y) / 2 + 10 + 16 * scale;
-    places.push({
-      s,
-      boat,
-      lantern: { x: boat.x + side * reach, y: boat.y - 4 * scale },
-      side,
-      scale,
-    });
+    const signW = SIGN_W * (0.8 + 0.2 * scale);
+    const side: -1 | 1 = i % 2 === 0 ? 1 : -1;
+    const x = side < 0 ? SIGN_X.left : SIGN_X.right;
+    places.push({ s, boat, sign: { x, y: boat.y + 20 * scale }, signW, side, scale });
   }
   return places;
 }
-
-/** A small seeded random source, so the water lines and stars land in the same places every load. */
-export function seeded(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export interface FlowLine {
-  x: number;
-  y: number;
-  length: number;
-  width: number;
-  delay: number;
-  duration: number;
-  /** How far it drifts toward the viewer in one pass. */
-  drift: number;
-}
-
-/** Short strokes on the water that drift downstream and fade, so the river reads as flowing. */
-export const FLOW_LINES: readonly FlowLine[] = (() => {
-  const rand = seeded(7);
-  const lines: FlowLine[] = [];
-  for (let i = 0; i < 26; i += 1) {
-    const s = RIVER_LENGTH * (0.04 + 0.86 * rand() ** 1.5);
-    const p = pointAt(s);
-    const w = widthAt(p.y);
-    const k = scaleAt(p.y);
-    lines.push({
-      x: p.x + (rand() - 0.5) * w * 0.66,
-      y: p.y,
-      length: w * (0.1 + rand() * 0.16),
-      width: 0.6 + 1.1 * k,
-      delay: -rand() * 9,
-      duration: 6 + rand() * 4,
-      drift: 4 + 12 * k,
-    });
-  }
-  return lines;
-})();
-
-export interface Star {
-  x: number;
-  y: number;
-  r: number;
-  delay: number;
-  twinkle: boolean;
-}
-
-export const STARS: readonly Star[] = (() => {
-  const rand = seeded(23);
-  const stars: Star[] = [];
-  for (let i = 0; i < 34; i += 1) {
-    stars.push({
-      x: rand() * VIEW_W,
-      y: 40 + rand() ** 1.4 * (HORIZON - 120),
-      r: 0.5 + rand() * 0.9,
-      delay: -rand() * 6,
-      twinkle: rand() < 0.4,
-    });
-  }
-  return stars;
-})();

@@ -687,7 +687,7 @@ test("the boat glides to the next stop", async ({ browser }) => {
 test("reduced motion: the scene stands still and the boat moves at once", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await open(page, "workspaces", "dark", { scene: SCENES.workspaces });
-  const flow = page.locator(".rv-flow-line").first();
+  const flow = page.locator(".rv-bob").first();
   expect(await flow.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
   const boat = page.locator("[data-boat]");
   const before = await boat.getAttribute("transform");
