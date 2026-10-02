@@ -84,7 +84,7 @@ export function FolderBrowser({ home, startPath, chosen, counts, onPick, onClose
 
   const tooWide = path === homePath || parent === null;
   const alreadyRoot = chosen.has(path);
-  const reason = tooWide ? "Pick a folder inside this one" : alreadyRoot ? "Already a root" : null;
+  const reason = tooWide ? "Pick a folder inside this one" : alreadyRoot ? "Already added" : null;
   const canPick = reason === null && !listing.isError;
 
   /** Shows `to`, with the cursor on `highlight` when it is in the new listing. */
@@ -338,7 +338,7 @@ function FolderOption({
           item.entry.name,
           item.entry.isRepo && "git repo",
           repoCount !== undefined && plural(repoCount, "repo"),
-          chosen && "already a root",
+          chosen && "already added",
         ]
           .filter(Boolean)
           .join(", ");

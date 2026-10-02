@@ -20,7 +20,7 @@ export function EditRootsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      label="Workspace roots"
+      label="Project folders"
       onClose={onClose}
       className="max-h-[calc(100dvh-32px)] w-[640px] overflow-auto border-0 bg-transparent shadow-none backdrop-blur-none"
     >
@@ -31,7 +31,7 @@ export function EditRootsDialog({ onClose }: { onClose: () => void }) {
             home={pending.state.home}
             continueLabel="Close"
             onBack={() => {
-              toast("Roots mounted");
+              toast("Folders mounted");
               onClose();
             }}
             onContinue={onClose}
@@ -51,7 +51,7 @@ export function EditRootsDialog({ onClose }: { onClose: () => void }) {
             initial={draftFromConfig(state.config, state.home)}
             onSaved={(result) => {
               if (result.remount !== "not-needed") return setPending(result);
-              toast("Roots saved");
+              toast("Folders saved");
               onClose();
             }}
             onCancel={onClose}

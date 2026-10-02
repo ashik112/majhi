@@ -319,8 +319,8 @@ function Picks({ status }: { status: DecisionsStatus }) {
       </table>
       <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">
         For an auto agent, the task's size moves its role's tiers one step: down for trivial or small work, up
-        for large work. Models rank by the price table, else by the CLI's order. Orgs and agents can override
-        a role.
+        for large work. Models rank by the price table, else by the CLI's order. Workspaces and agents can
+        override a role.
       </p>
     </SaveSection>
   );

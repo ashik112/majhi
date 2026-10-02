@@ -34,7 +34,7 @@ export function NewOrgForm({
   const shownId = idEdited ? id : orgIdFromName(name);
 
   function submit() {
-    if (name.trim() === "") return setProblem("Give the org a name");
+    if (name.trim() === "") return setProblem("Give the workspace a name");
     const parsed = IdSchema.safeParse(shownId);
     if (!parsed.success) return setProblem(parsed.error.issues[0]?.message ?? "Invalid id");
     setProblem(undefined);
@@ -57,15 +57,15 @@ export function NewOrgForm({
     <div
       role="form"
       onKeyDown={onKeyDown}
-      aria-label="New org"
+      aria-label="New workspace"
       className={cn("flex flex-col gap-3 rounded-md border border-line-strong bg-sunken p-3", className)}
     >
-      <Field label="Org name">
+      <Field label="Workspace name">
         {(p) => (
           <Input {...p} value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme" autoFocus />
         )}
       </Field>
-      <Field label="Org id" hint="Used in file names and config. Lowercase letters, digits and dashes.">
+      <Field label="Workspace id" hint="Used in file names and config. Lowercase letters, digits and dashes.">
         {(p) => (
           <Input
             {...p}
@@ -113,7 +113,7 @@ export function NewOrgForm({
           Cancel
         </Button>
         <Button size="sm" variant="primary" onClick={submit} disabled={create.isPending}>
-          Create org
+          Create workspace
         </Button>
       </div>
     </div>

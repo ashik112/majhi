@@ -211,7 +211,7 @@ export function RootPicker({
       >
         <div className="flex h-6 items-center justify-between">
           <h2 id={`${formId}-chosen`} className="text-sm text-fg-muted">
-            Roots
+            Folders
           </h2>
           <span className="font-mono text-xs text-fg-faint tabular-nums">{listed.length}</span>
         </div>

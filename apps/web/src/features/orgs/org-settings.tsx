@@ -47,7 +47,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
     if (!result.ok) return setErrors(result.errors);
     const nextId = orgId.trim();
     if (nextId !== org.id && !IdSchema.safeParse(nextId).success) {
-      setFailure("Org id: use lowercase letters, digits and dashes");
+      setFailure("Workspace id: use lowercase letters, digits and dashes");
       return;
     }
     setErrors({});
@@ -114,10 +114,10 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             {(p) => <Input {...p} value={draft.name} onChange={(e) => set({ name: e.target.value })} />}
           </Field>
           <Field
-            label="Org id"
+            label="Workspace id"
             hint={
               org.id === PRIVATE
-                ? "The built-in org keeps its id."
+                ? "The built-in workspace keeps its id."
                 : "Renaming updates its agents, accounts and projects. Task keys stay."
             }
           >
@@ -220,7 +220,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
                 onChange={(e) => set({ leadStart: e.target.value as OrgDraft["leadStart"] })}
               >
                 <option value="children">Their subtasks</option>
-                <option value="org">Any task in the org</option>
+                <option value="org">Any task in the workspace</option>
                 <option value="off">Off</option>
               </Select>
             )}

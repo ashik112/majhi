@@ -154,7 +154,7 @@ function StatusSection({ view, testing, now }: { view: ConnectionView; testing: 
           ))}
         <p className="text-sm text-fg-faint text-pretty">
           {view.agents.length === 0 ? (
-            "No agent of this org lists it yet. Root agents get every connection of the task's org."
+            "No agent of this workspace lists it yet. Root agents get every connection of the task's workspace."
           ) : (
             <>
               Listed by{" "}

@@ -81,7 +81,7 @@ export function NewConnection({
         />
         <p className="-mt-2 text-sm text-fg-faint text-pretty">{def.summary}.</p>
         <div className="grid gap-3 @[560px]:grid-cols-2">
-          <Field label="Org">
+          <Field label="Workspace">
             {(p) => (
               <Select {...p} value={org} onChange={(e) => setOrg(e.target.value)}>
                 {orgs.map((o) => (

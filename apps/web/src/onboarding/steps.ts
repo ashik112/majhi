@@ -25,7 +25,7 @@ export interface OnboardingStep {
  * "Step N of M" and the progress bar from this list.
  */
 export const onboardingSteps: readonly OnboardingStep[] = [
-  { id: "roots", title: "Workspace roots", Component: RootsStep },
+  { id: "roots", title: "Project folders", Component: RootsStep },
   { id: "account", title: "First account", Component: AccountStep },
   { id: "boss", title: "Choose the boss", Component: BossStep },
   { id: "finish", title: "Finish with the boss", Component: FinishStep },

@@ -130,11 +130,15 @@ export function WatchFields({
   const taskSelect = (optional: boolean) => (
     <Field
       label="Task"
-      hint={optional ? "Leave empty for every task of this org." : "Only tasks of this org are offered."}
+      hint={
+        optional
+          ? "Leave empty for every task of this workspace."
+          : "Only tasks of this workspace are offered."
+      }
     >
       {(p) => (
         <Select {...p} value={draft.task} onChange={(e) => set("task", e.target.value)}>
-          <option value="">{optional ? "Any task of this org" : "Pick a task"}</option>
+          <option value="">{optional ? "Any task of this workspace" : "Pick a task"}</option>
           {orgTasks.map((t) => (
             <option key={t.id} value={t.id}>
               {t.id} · {t.title}
@@ -285,7 +289,7 @@ export function WatchFields({
               </Select>
             )}
           </Field>
-          <Field label="Limit" hint="This org only. Fires once per crossing.">
+          <Field label="Limit" hint="This workspace only. Fires once per crossing.">
             {(p) => (
               <Input
                 {...p}

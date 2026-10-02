@@ -177,7 +177,7 @@ function Identity({
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <h2 className="text-md leading-6 font-semibold">Global lessons</h2>
-          <p className="truncate text-sm text-fg-muted">Lessons that hold in every org and project.</p>
+          <p className="truncate text-sm text-fg-muted">Lessons that hold in every workspace and project.</p>
         </div>
       </div>
     );

@@ -14,7 +14,7 @@ export const SETUP_SECTIONS: readonly SetupSection[] = SETUP_GROUPS.flatMap((g) 
 
 export const SECTION_TITLE: Record<SetupSection, string> = {
   overview: "Overview",
-  roots: "Workspace roots",
+  roots: "Project folders",
   ssh: "SSH keys",
   decisions: "Decisions",
   memory: "Memory",

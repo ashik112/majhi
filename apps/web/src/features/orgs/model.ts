@@ -60,7 +60,7 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   const input: CommandInput<"orgs.update"> = { id: org.id };
 
   const name = draft.name.trim();
-  if (name === "") errors.name = "Give the org a name";
+  if (name === "") errors.name = "Give the workspace a name";
   else if (name !== org.name) input.name = name;
 
   const color = draft.color.trim();

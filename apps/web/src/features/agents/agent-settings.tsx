@@ -331,7 +331,7 @@ function RoleSection({
           />
           {worksOutsideScope(draft.scope, draft.where) && (
             <p className="text-sm text-amber text-pretty">
-              This agent will use {draft.account} on other orgs' code. Allowed because you said so.
+              This agent will use {draft.account} on other workspaces' code. Allowed because you said so.
             </p>
           )}
         </div>
@@ -526,8 +526,8 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
     return (
       <DetailSection title="Connections">
         <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every connection of the task's org, and can attach one of another org to a task.
-          Each attach shows in the room.
+          A root agent gets every connection of the task's workspace, and can attach one of another workspace
+          to a task. Each attach shows in the room.
         </p>
       </DetailSection>
     );
@@ -537,12 +537,12 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
   return (
     <SettingsSection
       title="Connections"
-      note="What it may reach outside its repos. Only this org's connections."
+      note="What it may reach outside its repos. Only this workspace's connections."
       {...section}
     >
       {own.length === 0 ? (
         <p className="text-sm text-fg-muted text-pretty">
-          This org has no connections yet.{" "}
+          This workspace has no connections yet.{" "}
           <PageLink page="connections" className="text-fg underline-offset-2 hover:underline">
             Add one
           </PageLink>
@@ -562,7 +562,7 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
       {gone.length > 0 && (
         <p className="text-sm text-amber text-pretty">
           Lists {gone.join(", ")}, which {gone.length === 1 ? "is not a connection" : "are not connections"}{" "}
-          of this org. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
+          of this workspace. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
           <button
             type="button"
             className="cursor-pointer text-fg underline-offset-2 hover:underline"

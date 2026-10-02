@@ -91,7 +91,7 @@ export function useRescan() {
 export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => void) {
   const client = useQueryClient();
   return useMutation<WorkspacesUpdateResult, ApiRequestError, WorkspacesUpdate>({
-    mutationFn: (input) => cmd("workspaces.set", input, { reason: "Owner edited workspace roots" }),
+    mutationFn: (input) => cmd("workspaces.set", input, { reason: "Owner edited project folders" }),
     onSuccess: async (result) => {
       onSaved?.(result);
       client.setQueryData(queryKeys.config, result.state);
@@ -211,7 +211,7 @@ export function useListDirs(path: string, showHidden: boolean) {
 /** Asks the host helper to mount every root in majhi.yaml, which restarts majhi. */
 export function useRemount() {
   return useMutation<CommandOutput<"workspaces.remount">, ApiRequestError>({
-    mutationFn: () => cmd("workspaces.remount", {}, { reason: "Owner asked to mount workspace roots" }),
+    mutationFn: () => cmd("workspaces.remount", {}, { reason: "Owner asked to mount project folders" }),
   });
 }
 

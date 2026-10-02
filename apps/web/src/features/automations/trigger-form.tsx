@@ -118,7 +118,7 @@ export function TriggerForm({
               />
             )}
           </Field>
-          <Field label="Org" hint={trigger === undefined ? undefined : "An org cannot change."}>
+          <Field label="Workspace" hint={trigger === undefined ? undefined : "A workspace cannot change."}>
             {(p) => (
               <Select
                 {...p}

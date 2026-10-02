@@ -48,7 +48,7 @@ export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => v
   const chosenOrg = org || (orgList.length === 0 ? "" : defaultOrgId(orgList, orgFilter));
   const idProblem = projectIdError(id, taken);
   const clashes = aliasClashes(aliases, others, id);
-  const orgProblem = chosenOrg === "" ? "Pick the org this repo belongs to" : undefined;
+  const orgProblem = chosenOrg === "" ? "Pick the workspace this repo belongs to" : undefined;
   const aliasProblem =
     clashes.length > 0
       ? `${clashes.map((c) => `${c.alias} (${c.project})`).join(", ")} already in use`
@@ -97,10 +97,10 @@ export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => v
           </p>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4 scroll-fade">
-          <Field label="Org" error={submitted ? orgProblem : undefined}>
+          <Field label="Workspace" error={submitted ? orgProblem : undefined}>
             {(props) => (
               <Select {...props} value={chosenOrg} onChange={(event) => setOrg(event.target.value)}>
-                <option value="">Choose an org</option>
+                <option value="">Choose a workspace</option>
                 {orgList.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
@@ -142,7 +142,7 @@ export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => v
 
           <Field
             label="Base branch (optional)"
-            hint="Default: the org's base, then the repo's default branch."
+            hint="Default: the workspace's base, then the repo's default branch."
           >
             {(props) => (
               <Input

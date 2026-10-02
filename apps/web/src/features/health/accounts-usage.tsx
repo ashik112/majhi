@@ -60,7 +60,7 @@ export function AccountsUsage({
           <RowsSkeleton rows={5} height={48} />
         ) : accounts.length === 0 ? (
           <p className="py-2 text-base text-fg-muted">
-            {filtered ? "This org has no accounts yet. " : "No accounts yet. "}
+            {filtered ? "This workspace has no accounts yet. " : "No accounts yet. "}
             <PageLink page="accounts" className="underline underline-offset-2 hover:text-fg">
               Add one in Accounts
             </PageLink>

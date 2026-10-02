@@ -94,14 +94,14 @@ export function SetupView() {
         </Button>
       )}
       <Button size="sm" onClick={() => setEditingRoots(true)}>
-        Edit roots
+        Edit folders
       </Button>
     </>
   );
   const readiness: ReadinessRow[] = [
     {
       section: "roots",
-      title: "Workspace roots",
+      title: "Project folders",
       state: roots,
       action:
         needsMount && mount.canMount ? (
@@ -110,7 +110,7 @@ export function SetupView() {
           </Button>
         ) : (
           <Button size="sm" onClick={() => setEditingRoots(true)}>
-            Edit roots
+            Edit folders
           </Button>
         ),
     },

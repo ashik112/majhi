@@ -139,7 +139,7 @@ export function ActionFields({
     [tasks, org, draft.task],
   );
   const taskSelect = (
-    <Field label="Task" hint="Only tasks of this org are offered.">
+    <Field label="Task" hint="Only tasks of this workspace are offered.">
       {(p) => (
         <Select {...p} value={draft.task} onChange={(e) => set("task", e.target.value)}>
           <option value="">Pick a task</option>
@@ -184,7 +184,7 @@ export function ActionFields({
                 </Select>
               )}
             </Field>
-            <Field label="Agent" hint="Leave empty for the org's default agent.">
+            <Field label="Agent" hint="Leave empty for the workspace's default agent.">
               {(p) => (
                 <Select {...p} value={draft.agent} onChange={(e) => set("agent", e.target.value)}>
                   <option value="">Default agent</option>

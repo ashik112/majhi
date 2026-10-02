@@ -173,7 +173,7 @@ export function ContextSection({ settings }: { settings: Settings }) {
       </Section>
       <Section
         title="Commits"
-        note="Orgs and projects can override this. It applies to runs that start after you save."
+        note="Workspaces and projects can override this. It applies to runs that start after you save."
         draft={commits}
       >
         <Switch

@@ -35,7 +35,11 @@ export function RestartingCard({
   const now = useNow(1000);
   const names = roots.map((path) => collapseHome(path, home));
   const label =
-    names.length === 0 ? "new roots" : names.length <= 2 ? names.join(" and ") : plural(names.length, "root");
+    names.length === 0
+      ? "new folders"
+      : names.length <= 2
+        ? names.join(" and ")
+        : plural(names.length, "folder");
 
   if (phase === "timed-out") {
     return (

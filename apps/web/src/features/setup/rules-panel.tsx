@@ -44,7 +44,7 @@ export function RulesPanel() {
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-semibold">Rules from approval cards</h3>
             <p className="text-xs text-fg-faint text-pretty">
-              An agent with a rule runs that command without a card, in the task or org the rule names.
+              An agent with a rule runs that command without a card, in the task or workspace the rule names.
             </p>
             <RulesList settings={settings.data} label="Always-allow rules" />
           </div>

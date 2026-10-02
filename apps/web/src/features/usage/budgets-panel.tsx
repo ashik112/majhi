@@ -41,7 +41,7 @@ export function BudgetsPanel({ className }: { className?: string }) {
   const over = overBudget(rows);
   const taken = new Set(rows.map((r) => `${r.scope}:${r.id}`));
   const targets = [
-    ...(orgs.data ?? []).map((o) => ({ scope: "org" as const, id: o.id, label: `Org ${o.name}` })),
+    ...(orgs.data ?? []).map((o) => ({ scope: "org" as const, id: o.id, label: `Workspace ${o.name}` })),
     ...(accounts.data ?? []).map((a) => ({ scope: "account" as const, id: a.id, label: `Account ${a.id}` })),
   ].filter((t) => !taken.has(`${t.scope}:${t.id}`));
 
@@ -178,7 +178,7 @@ function BudgetForm({
     if (cost.trim() !== "" && c === undefined) return setProblem("Cost: use dollars, like 25.");
     if (t === undefined && c === undefined) return setProblem("Set tokens, cost or both.");
     const [scope, id] = row ? [row.scope, row.id] : target.split(":");
-    if ((scope !== "org" && scope !== "account") || !id) return setProblem("Pick an org or account.");
+    if ((scope !== "org" && scope !== "account") || !id) return setProblem("Pick a workspace or account.");
     const change: BudgetChange = {
       scope,
       id,

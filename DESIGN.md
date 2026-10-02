@@ -268,7 +268,7 @@ Light theme re-tunes every token (ground #e5eaf0, text #0e1726, lamps darkened t
 - **Card title** (500, 14px, 1.35): task titles on cards (clamped to three lines), sidebar navigation, agent message body (14px, 1.6).
 - **Body** (400, 13px, 20px): the default everywhere; controls and inputs.
 - **Label** (400, 12px, 18px): secondary lines, chips, segments, lamp status lines.
-- **Group label** (500, 11px, 0.08em, uppercase, `fg-faint`): the heading of a group or the column heads of a table ("Orgs", "Agents right now", "Accounts"). Never above a title.
+- **Group label** (500, 11px, 0.08em, uppercase, `fg-faint`): the heading of a group or the column heads of a table ("Setup", "Agents right now", "Accounts"). Never above a title.
 - **Data** (Plex Mono 400, 11 to 13px, tabular): task ids, agent handles, counts, percentages, paths, keyboard hints.
 - **Telemetry** (Plex Mono 500, 15px, tabular): the big numbers in the top telemetry strip, with the word in Sans beside each.
 
@@ -281,7 +281,7 @@ Documents in the file viewer step up to 15px at 1.65 with headings at 1.55em and
 
 ## Layout
 
-The shell is the viewport (`100dvh`, overflow hidden, no overscroll). Inside it: a 12px outer padding and 12px gaps between regions. The sidebar is a 228px glass column with the brand, navigation, org filter and, pinned at its foot, the "Agents right now" lamp grid. The main area stacks a glass top bar (min 68px, 14px corners) above the working region.
+The shell is the viewport (`100dvh`, overflow hidden, no overscroll). Inside it: a 12px outer padding and 12px gaps between regions. The sidebar is a 228px glass column: the brand with the notifications bell, the workspace switcher, the navigation (daily rows, then Setup, then System) and, pinned at its foot, the "Agents right now" lamps. It fits a 900px window without scrolling. Below 800px of window height the lamps fold into one line of counts and the gaps tighten, so it still fits at 700px; anything shorter scrolls the navigation inside itself. The main area stacks a glass top bar (min 68px, 14px corners) above the working region.
 
 On the board, status columns share the width (min 228px each) with 12px gaps and scroll vertically inside themselves. Columns with no cards, and Done while folded, collapse to 44px rails: dashed border, lamp, the column name set vertically and the count in mono. The agent roster sits at the right as a glass panel. At narrower widths (checked at 1100px) the columns keep their minimum and the row scrolls horizontally inside the board, never the page; the telemetry strip tightens its gap below 1280px.
 
@@ -344,12 +344,12 @@ A 3px-inset track (9px corners, field fill, `line-strong` border) holding 32px s
 - **Error / Disabled:** red border (also on focus); disabled at 50% opacity.
 
 ### Navigation and selection
-The sidebar navigation is a stack of 32px rows (14px, medium), muted at rest, raised tint on hover. Counts sit right-aligned in mono. Group labels head the org list and the lamp grid.
+The sidebar navigation is a stack of 32px rows (14px, medium), muted at rest, raised tint on hover. Counts sit right-aligned in mono. Group labels head the Setup and System groups and the lamps. The workspace switcher is a 36px field-well button (badge, name, open count) that opens a floating-glass menu; the bell opens a floating-glass panel beside the sidebar listing what needs the owner, each row with its lamp, its line and the task under it.
 
-One selection treatment everywhere (sidebar pages, the sidebar org filter, the rows of every list-and-detail page, pressed segments): the `selected` tint, a 1px inset `line-control` ring all round, and full `fg` text, medium weight where the row's text is otherwise regular. It is `ROW_SELECTED` in `components/ui/list-detail.tsx`. The accent does not mark selection, and nothing marks it on one edge only.
+One selection treatment everywhere (sidebar pages, the rows of every list-and-detail page, pressed segments): the `selected` tint, a 1px inset `line-control` ring all round, and full `fg` text, medium weight where the row's text is otherwise regular. It is `ROW_SELECTED` in `components/ui/list-detail.tsx`. The accent does not mark selection, and nothing marks it on one edge only.
 
 ### List and detail
-Agents, Accounts, Health and usage, Projects and links and Orgs share one frame (`components/ui/list-detail.tsx`): a glass list on the left (264px, 296px from 1320px) and the picked item on the right, both as tall as the page and each scrolling inside itself with edge fades. The list groups rows by org under a small head (org badge, name, count, and a ghost + button when the group takes new items); a row is two lines, the name first and a status line under it, with its lamp or dot and word. A pinned footer holds the list's one action (New org, Add account, Register a repo). The detail has a fixed head (name, key facts, actions) over sections divided by hairlines, never boxed; each editable section keeps its own draft with Cancel and Save showing only while something changed.
+Agents, Accounts, Health and usage, Projects and links and Workspaces share one frame (`components/ui/list-detail.tsx`): a glass list on the left (264px, 296px from 1320px) and the picked item on the right, both as tall as the page and each scrolling inside itself with edge fades. The list groups rows by org under a small head (org badge, name, count, and a ghost + button when the group takes new items); a row is two lines, the name first and a status line under it, with its lamp or dot and word. A pinned footer holds the list's one action (New workspace, Add account, Register a repo). The detail has a fixed head (name, key facts, actions) over sections divided by hairlines, never boxed; each editable section keeps its own draft with Cancel and Save showing only while something changed.
 
 ### Status Lamp (signature)
 A round lamp, 8px by default (7px in rails and docks, 6px in the connection indicator). Working: filled and breathing. Needs you and paused: filled with a steady glow ring. Done: filled, no glow. Idle: an unlit 1.5px ring. A dim lamp (35% opacity) keeps its colour but unlit, for a count of zero.

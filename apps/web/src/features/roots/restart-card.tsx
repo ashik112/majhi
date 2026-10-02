@@ -32,16 +32,16 @@ export function RestartCard({
     >
       <div className="flex flex-col gap-2 p-5 pb-4">
         <h1 id="restart-title" className="text-lg font-semibold text-balance">
-          Saved. Restart majhi to see {count === 1 ? "this root" : "these roots"}
+          Saved. Restart majhi to see {count === 1 ? "this folder" : "these folders"}
         </h1>
         <p className="text-base text-fg-muted text-pretty">
-          {count === 1 ? "This root is" : "These roots are"} in majhi.yaml but not visible to majhi yet. It
-          only sees folders that were mounted when it started.
+          {count === 1 ? "This folder is" : "These folders are"} in majhi.yaml but not visible to majhi yet.
+          It only sees folders that were mounted when it started.
         </p>
       </div>
 
       <ul
-        aria-label="Roots not mounted yet"
+        aria-label="Folders not mounted yet"
         className="mx-5 flex flex-col rounded-md border border-line-strong"
       >
         {result.unmounted.map((path) => (
@@ -65,7 +65,7 @@ export function RestartCard({
       </div>
 
       <div className="mt-5 flex items-center gap-2 border-t border-line px-5 py-3">
-        <p className="text-sm text-fg-faint">{plural(count, "root")} waiting for a restart</p>
+        <p className="text-sm text-fg-faint">{plural(count, "folder")} waiting for a restart</p>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" onClick={onContinue}>
             {continueLabel}
