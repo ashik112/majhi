@@ -78,6 +78,28 @@ export function parentIsComplete(childStatuses: readonly TaskStatus[]): boolean 
   return childStatuses.length > 0 && childStatuses.every((s) => s === "done");
 }
 
+/**
+ * Whether the parent's only open children are subtasks that have not started and wait for the
+ * parent itself. Neither side can move first: the parent only reaches review once its subtasks are
+ * done, and they start once the parent reaches review. False when no child is open, and when any
+ * open child runs, sits in review or paused, or waits for something other than the parent.
+ */
+export function childrenWaitOnParent(
+  parent: string,
+  children: readonly { status: TaskStatus; unmet: readonly string[] }[],
+): boolean {
+  const open = children.filter((c) => c.status !== "done");
+  return (
+    open.length > 0 &&
+    open.every(
+      (c) =>
+        (c.status === "inbox" || c.status === "ready") &&
+        c.unmet.length > 0 &&
+        c.unmet.every((u) => u === parent),
+    )
+  );
+}
+
 /** The tasks a task relates to, for TASK.md. */
 export interface RelatedTask {
   id: string;
