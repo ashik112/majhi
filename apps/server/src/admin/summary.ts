@@ -82,6 +82,9 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "containers.preview.run": (i) => `Run the preview of ${str(i.task)} on port ${str(i.port)}`,
   "containers.services.start": (i) => `Start service ${str(i.name)} (${str(i.image)}) in ${str(i.task)}`,
   "containers.stop": (i) => `Stop ${str(i.name)} in ${str(i.task)}`,
+  "backup.now": () => "Back up majhi.db now",
+  "backup.restore": (i) => `Restore majhi.db from ${str(i.name)}`,
+  "backup.cancelRestore": () => "Cancel the waiting restore of majhi.db",
 };
 
 /** A command's own summary up to its first full stop: the rest explains, a card only names. */

@@ -18,6 +18,7 @@ import { useBoss } from "@/features/boss/boss-context";
 import { EditRootsDialog } from "@/features/roots/edit-roots-dialog";
 import { useMountNow } from "@/features/roots/use-mount-now";
 import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
+import { useBackups } from "@/lib/backup-queries";
 import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { useContainers } from "@/lib/container-queries";
@@ -29,6 +30,7 @@ import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-qu
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ApprovalsSection, policyStatus } from "./approvals-panel";
+import { BackupsSection } from "./backups-panel";
 import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
 import { EditorSection } from "./editor-panel";
@@ -64,6 +66,7 @@ export function SetupView() {
   const settings = useSettings();
   const decisions = useDecisionsStatus();
   const containers = useContainers();
+  const backups = useBackups();
   const appearance = useAppearance();
   const boss = useBoss();
   const [param, setParam] = useSearchParam("section");
@@ -171,6 +174,7 @@ export function SetupView() {
     editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
+    backups: backupsStatus(backups.data),
     history: "Undo any change",
   };
 
@@ -269,6 +273,7 @@ export function SetupView() {
               <AppearanceControls className="max-w-[320px]" />
             </DetailSection>
           )}
+          {section === "backups" && <BackupsSection />}
           {section === "history" && <HistorySection />}
         </DetailPane>
       </ListDetail>
@@ -296,6 +301,11 @@ function containersStatus(data: ReturnType<typeof useContainers>["data"]): strin
   if (!data.available) return "Off";
   const n = data.containers.filter((c) => c.status === "running").length;
   return n === 0 ? "Nothing running" : `${n} running`;
+}
+
+function backupsStatus(data: ReturnType<typeof useBackups>["data"]): string | undefined {
+  if (data === undefined) return undefined;
+  return data.pending ? "Restore waiting" : data.lastDaily ? "Daily, 7 kept" : "No snapshot yet";
 }
 
 function WithSettings({

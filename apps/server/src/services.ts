@@ -26,6 +26,7 @@ import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService } from "./autonomy/service.ts";
+import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
@@ -87,7 +88,7 @@ import { SERENA_COMMAND } from "./runs/serena.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
-import { Store } from "./store/index.ts";
+import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import type { LinkOptions } from "./tasks/links.ts";
@@ -169,6 +170,8 @@ export interface Services {
   watcher: HomeWatcher;
   usageSweeper: UsageSweeper;
   store: Store;
+  /** The daily snapshot of majhi.db, kept 7 days, and restore (PRV-31). */
+  backup: BackupService;
   uploads: UploadStore;
   projects: ProjectService;
   room: RoomService;
@@ -258,6 +261,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (id) => terminals.killKey(`login:${id}`),
   });
   const store = Store.open(env.majhiHome);
+  const backup = new BackupService({
+    majhiHome: env.majhiHome,
+    sqlite: () => store.raw,
+    dbFile: DB_FILE_NAME,
+  });
+  backup.start();
   const memory = createMemory(env.majhiHome, options.embedder);
   memory.project.setLanded(async (task, repo) => {
     const found = store.tasks
@@ -761,6 +770,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     roomAccess,
     coordinator,
     store,
+    backup,
     uploads,
     projects,
     room,
@@ -793,6 +803,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(updateWatch);
+      backup.stop();
       notifier.close();
       automation.scheduler.stop();
       automation.triggerEngine.stop();
@@ -801,6 +812,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await processes.stopAll();
       await usageRecorder.flush();
       await memory.close();
+      await backup.settle();
       store.close();
     },
     orgs: new OrgService(config, agentStore, (id, newId) => {

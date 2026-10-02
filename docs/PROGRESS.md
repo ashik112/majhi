@@ -1,5 +1,22 @@
 # Progress
 
+## PRV-31: Back up majhi.db (built)
+
+**Status.** Built on `task/prv-31-back-up-majhi-db`, from `main`. Part of Phase 2c (SPEC: a daily snapshot of `majhi.db` kept for 7 days, with restore).
+
+### What works
+
+- **Daily snapshot** (`apps/server/src/backup/service.ts`). Thirty seconds after start, then every hour, majhi takes `backups/daily-<time>.db` in `~/.majhi` unless the newest daily one is under 24 hours old, so a restart or a night asleep catches up on the next check. It uses SQLite's online backup, so majhi keeps working and the copy is consistent with the WAL. The newest 7 of each kind are kept. `*.db` is already in the config history's `.gitignore`, so snapshots never enter it.
+- **Kinds.** `daily` (automatic), `manual` ("Back up now") and `before-restore` (what a restore replaced). Each kind keeps its own 7, so clicking Back up now cannot push the dailies out.
+- **Restore.** Hub setup, Backups, Restore on a row. majhi checks the snapshot (integrity check, has the migrations table, no migration this build does not know), snapshots the current database as `before-restore`, and stages the file as `majhi.db.restore`. `Store.open` swaps it in, and drops the old WAL, the next time majhi starts. The open database cannot be replaced under the repos holding it, so the section says to run `make up` and offers Cancel the restore. An older snapshot gets the newer migrations on open.
+- **Commands.** `backup.list`, `backup.now`, `backup.restore`, `backup.cancelRestore`. Restore and cancel are in `AGENT_BLOCKED_COMMANDS`: the owner's call only.
+
+### Left and known issues
+
+- Restore needs a restart by the owner (`make up`); majhi cannot restart itself from inside the container.
+- `memory/memory.db` (facts) is its own file and is not backed up here; the brief covers `majhi.db` only.
+- Not tried with a long-running majhi or in a browser.
+
 ## PRV-74: Autonomous mode (built)
 
 **Status.** Built on `task/prv-74-autonomous-mode`, from `main` (`1b001e74`). The contract came first, then the web, the server core and the boss driver, then the review fixes, all in this one worktree. The child task PRV-91 holds no code. The owner flips one switch and leaves; the boss runs the desk inside the caps, the account floors and the hard limits, and logs every decision with one line why.
