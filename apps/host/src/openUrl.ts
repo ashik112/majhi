@@ -28,11 +28,6 @@ const DESKTOP_VARS = [
   "WSL_INTEROP",
 ];
 
-/** True when the kernel release or the environment says this Linux is WSL. */
-export function isWsl(release: string, env: NodeJS.ProcessEnv): boolean {
-  return /microsoft|wsl/i.test(release) || env.WSL_DISTRO_NAME !== undefined;
-}
-
 /** The programs to try, in order. */
 export function openers(platform: NodeJS.Platform, wsl: boolean): string[] {
   if (platform === "darwin") return ["open"];

@@ -61,8 +61,18 @@ export type SshStatus = z.infer<typeof SshStatusSchema>;
 /** Longest passphrase majhi accepts. It goes to the helper once and is never stored. */
 export const SSH_PASSPHRASE_MAX = 1024;
 
-/** The one-time command that gives a passphrase-protected key to the macOS Keychain. */
-export function sshUnlockCommand(key: string): string {
+/**
+ * The socket the helper serves on Linux and WSL2. It passes each connection to the agent the helper
+ * loads keys into, and majhi's server reaches it through the `~/.majhi` mount.
+ */
+export const HOST_SSH_AGENT_SOCKET = "~/.majhi/run/ssh-agent.sock";
+
+/**
+ * The terminal fallback that unlocks a passphrase-protected key. On macOS it also gives the
+ * passphrase to the Keychain. Elsewhere it loads the key into the agent majhi uses.
+ */
+export function sshUnlockCommand(key: string, os?: HostOs): string {
+  if (os === "linux" || os === "wsl") return `SSH_AUTH_SOCK=${HOST_SSH_AGENT_SOCKET} ssh-add ${key}`;
   return `ssh-add --apple-use-keychain ${key}`;
 }
 
@@ -94,6 +104,34 @@ export function dockerRuntimeName(runtime: DockerRuntime | undefined): string {
   if (runtime === "orbstack") return "OrbStack";
   if (runtime === "docker-desktop") return "Docker Desktop";
   return "Docker";
+}
+
+/** The operating system the host helper runs on. `wsl` is Linux inside Windows, through WSL2. */
+export const HostOsSchema = z.enum(["macos", "linux", "wsl"]);
+export type HostOs = z.infer<typeof HostOsSchema>;
+
+/**
+ * Where the helper keeps secrets: the copy of the secrets key, and on Linux and WSL2 the SSH key
+ * passphrases. `keychain` is the macOS login Keychain. `secret-service` is a keyring reached through
+ * libsecret's `secret-tool`: GNOME Keyring, KWallet or KeePassXC. `none` means no keyring answered,
+ * and `reason` says why in plain words. Then the passphrase-protected export is the only other copy
+ * of the secrets key, and an unlocked SSH key stays loaded only until its agent stops.
+ */
+export const KeyringStateSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("keychain") }),
+  z.object({ kind: z.literal("secret-service") }),
+  z.object({ kind: z.literal("none"), reason: z.string() }),
+]);
+export type KeyringState = z.infer<typeof KeyringStateSchema>;
+
+/** How copy names where secrets are kept: "the Keychain" on macOS, "the keyring" elsewhere. */
+export function keyringName(os: HostOs | undefined): string {
+  return os === "macos" ? "the Keychain" : "the keyring";
+}
+
+/** The example workspace root forms show: `~/Work` on macOS, `~/code` on Linux and WSL2. */
+export function rootExample(os: HostOs | undefined): string {
+  return os === "linux" || os === "wsl" ? "~/code" : "~/Work";
 }
 
 /** A git commit as `git rev-parse` prints it, or a prefix of one. */
@@ -435,7 +473,12 @@ export type HostReply = z.infer<typeof HostReplySchema>;
 /** Sent by the helper in the `x-majhi-host` header on every poll. */
 export const HostInfoSchema = z.object({
   version: z.string(),
+  /** Node's `process.platform`. Read `hostOsOf` instead: it tells WSL2 from Linux. */
   platform: z.string(),
+  /** Absent from helpers that predate it. */
+  os: HostOsSchema.optional(),
+  /** Where the helper keeps secrets. Absent until its first look, and from older helpers. */
+  keyring: KeyringStateSchema.optional(),
   /** False when the helper cannot run Docker commands, so remounting is manual. */
   canRemount: z.boolean(),
   /** Absent until the helper's first key check ends, and from older helpers. */
@@ -457,6 +500,15 @@ export const HostInfoSchema = z.object({
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";
+
+/** The helper's OS: `os`, else `platform` from helpers that predate `os` (those ran on macOS only). */
+export function hostOsOf(info: Pick<HostInfo, "os" | "platform"> | undefined): HostOs | undefined {
+  if (info === undefined) return undefined;
+  if (info.os !== undefined) return info.os;
+  if (info.platform === "darwin") return "macos";
+  if (info.platform === "linux") return "linux";
+  return undefined;
+}
 
 /** What `ssh -T` said about one git host that a registered project's remote uses. */
 export const SshHostCheckSchema = z.object({

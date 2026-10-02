@@ -324,7 +324,7 @@ export function sshVerdict(
   const held = `${keys} ${keys === 1 ? "key" : "keys"} loaded`;
   const needs = ssh?.needsPassphrase ?? [];
   if (needs.length > 0) {
-    const commands = needs.map(sshUnlockCommand).join(" ; ");
+    const commands = needs.map((key) => sshUnlockCommand(key)).join(" ; ");
     return {
       name,
       status: "warn",
