@@ -77,17 +77,19 @@ describe("login terminals over WebSocket", () => {
   });
 
   it("caps the buffer at 256 KB, keeping the end", async () => {
+    // The trailing sleep keeps the pty open while the reader drains it. Without it the kernel can
+    // report EIO as soon as the shell exits and drop the last output, so THE-END never arrives.
     const terminal = start(
-      "echo line-0-start; yes line-x-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 8000; echo THE-END",
+      "echo line-0-start; yes line-x-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 8000; echo THE-END; sleep 0.5",
     );
     const client = await join(`/api/term/${terminal.id}`);
-    await client.until(() => client.messages.some((m) => m.type === "exit"), 600);
+    await client.until(() => client.messages.some((m) => m.type === "exit"), 200);
     client.ws.close();
 
     const late = await join(`/api/term/${terminal.id}`);
     await late.until(
       () => late.messages.some((m) => m.type === "exit") && late.text().includes("THE-END"),
-      600,
+      100,
     );
     expect(late.text().length).toBeLessThanOrEqual(256 * 1024);
     expect(late.text()).toContain("THE-END");
