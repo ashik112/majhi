@@ -70,7 +70,7 @@ try {
     if (await fetch(`http://127.0.0.1:${E2E_PORT}/health`).then((r) => r.ok, () => false)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process.env.CHROME });
   const page = await (
     await browser.newContext({ viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${E2E_PORT}`, reducedMotion: "reduce" })
   ).newPage();
