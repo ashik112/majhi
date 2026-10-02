@@ -164,7 +164,8 @@ const CloneJobBase = z.object({
 /**
  * A clone job: `queued` (waiting for the host helper), `cloning` (with git's phase and percent),
  * `registering` (adding the project with base = the default branch and the remote), then `done`
- * or `failed`. A failed clone leaves no folder behind. Jobs live in memory for an hour after they end.
+ * or `failed`. A failed clone leaves no folder behind. Jobs are kept in majhi.db; a job a restart cut
+ * off reads as `failed` with "majhi restarted". `projects.cloneStatus` lists them for an hour after they end.
  */
 export const CloneJobSchema = z.discriminatedUnion("state", [
   CloneJobBase.extend({ state: z.literal("queued") }),
@@ -189,6 +190,17 @@ export const CloneStatusInputSchema = z.object({
   /** One job. Absent: every job still running or ended within the hour, newest first. */
   clone: CloneIdSchema.optional(),
 });
+
+/**
+ * The temporary sibling a clone goes into before it is renamed to `path`: `<parent>/.<folder>.majhi-clone-<clone>`.
+ * The server and the host helper both use it: the helper clones there, the server removes it after
+ * a clone a restart cut off.
+ */
+export function cloneTempPath(path: string, clone: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+  return `${trimmed.slice(0, cut)}/.${trimmed.slice(cut + 1)}.majhi-clone-${clone}`;
+}
 
 export const CloneStatusSchema = z.object({ jobs: z.array(CloneJobSchema) });
 export type CloneStatus = z.infer<typeof CloneStatusSchema>;

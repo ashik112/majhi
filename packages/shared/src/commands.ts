@@ -86,6 +86,8 @@ import {
   SignInStartInputSchema,
   SignInStartSchema,
   SignInStatusSchema,
+  SignOutInputSchema,
+  SignOutSchema,
 } from "./git-signin.ts";
 import {
   DirListingSchema,
@@ -509,6 +511,20 @@ export const commands = {
     summary: "Stop a pending sign-in flow. Nothing is saved. Owner only",
     input: SignInRefSchema,
     output: SignInStatusSchema,
+  },
+  "git.signIn.confirm": {
+    risk: "change",
+    summary:
+      "Save a sign-in whose account other workspaces already use, after the owner confirmed it. The token is saved for that workspace only. Owner only",
+    input: SignInRefSchema,
+    output: SignInStatusSchema,
+  },
+  "git.signOut": {
+    risk: "change",
+    summary:
+      "Remove a workspace's signed-in token for one git host, and revoke it at the host where the host allows it. Owner only",
+    input: SignOutInputSchema,
+    output: SignOutSchema,
   },
   "git.remoteRepos": {
     risk: "read",

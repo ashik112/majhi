@@ -8,8 +8,8 @@ import { IdSchema, MrHostSchema, SecretRefSchema } from "./accounts.ts";
  *
  * - GitHub: OAuth device flow with the public client ID of one OAuth App (`git_apps.github`).
  * - GitLab: OAuth device authorization grant with a public application ID per host
- *   (`git_apps.gitlab`). Tokens last about 2 hours; majhi refreshes them with the refresh token.
- * - Bitbucket: OAuth authorization code with a redirect to majhi's own
+ *   (`git_apps.gitlab`), GitLab 17.3 or later. Tokens last about 2 hours; majhi refreshes them.
+ * - Bitbucket: OAuth authorization code (no PKCE: Bitbucket documents none) with a redirect to majhi's own
  *   `/oauth/bitbucket/callback`, using the per-install consumer (`git_apps.bitbucket`).
  *
  * See docs/briefs/onboarding-and-git-connect.md for the flows and the security rules.
@@ -21,6 +21,20 @@ export const DEFAULT_GIT_HOST = {
   gitlab: "gitlab.com",
   bitbucket: "bitbucket.org",
 } as const satisfies Record<z.infer<typeof MrHostSchema>, string>;
+
+/**
+ * Public client IDs of the OAuth apps the majhi project registers, used when majhi.yaml `git_apps`
+ * names none. Device flow needs no client secret, so these are safe to ship. Empty until the apps
+ * are registered: then `git.oauthApps.get` reports the host as not set up and `git.signIn.start`
+ * answers `needs-app`. `git.oauthApps.set` overrides them per install.
+ */
+export const BUILT_IN_OAUTH_APPS: { github: string; gitlab: Readonly<Record<string, string>> } = {
+  github: "",
+  gitlab: { "gitlab.com": "" },
+};
+
+/** The oldest GitLab that offers the device authorization grant by default (17.3; GA in 17.9). */
+export const GITLAB_DEVICE_GRANT_MIN_VERSION = "17.3";
 
 /** A git host name as typed or found in a remote, like `gitlab.com` or `gitlab.acme.test:8443`. */
 export const GitHostNameSchema = z
@@ -89,8 +103,9 @@ export type OAuthGrant = z.infer<typeof OAuthGrantSchema>;
 
 /** What majhi has for each host's app. Never holds the Bitbucket secret. */
 export const GitAppsViewSchema = z.object({
-  github: z.object({ clientId: z.string().optional() }),
-  gitlab: z.array(z.object({ host: z.string(), clientId: z.string() })),
+  /** `builtIn`: the ID is majhi's own (`BUILT_IN_OAUTH_APPS`), not one this install saved. */
+  github: z.object({ clientId: z.string().optional(), builtIn: z.boolean().optional() }),
+  gitlab: z.array(z.object({ host: z.string(), clientId: z.string(), builtIn: z.boolean().optional() })),
   bitbucket: z.object({ key: z.string().optional(), secretSaved: z.boolean() }),
   /** majhi's own address as the browser reaches it, like `http://127.0.0.1:7070`. */
   origin: z.string(),
@@ -191,6 +206,11 @@ export function gitAppSetup(kind: z.infer<typeof MrHostSchema>, host: string, or
         "Tick the api scope.",
         "Click Save application.",
         "Copy the Application ID and paste it here. majhi needs no secret.",
+        ...(host === DEFAULT_GIT_HOST.gitlab
+          ? []
+          : [
+              `Signing in from majhi needs GitLab ${GITLAB_DEVICE_GRANT_MIN_VERSION} or later on ${host}. On an older GitLab, paste a personal access token with the api scope instead.`,
+            ]),
       ],
       values: [
         { label: "Name", value: "majhi" },
@@ -207,7 +227,7 @@ export function gitAppSetup(kind: z.infer<typeof MrHostSchema>, host: string, or
     link: { label: "Open your Bitbucket workspaces", url: "https://bitbucket.org/account/workspaces/" },
     steps: [
       "Open your Bitbucket workspaces and pick one you administer. The consumer only names majhi; each workspace in majhi still signs in as its own account.",
-      "Open Settings, then OAuth consumers, and click Add consumer.",
+      "Click the Settings cog, choose Workspace settings, then under Apps and features choose OAuth consumers, and click Add consumer.",
       "Fill in the values below.",
       "Under Permissions, tick Account: Read, Workspace membership: Read, Projects: Read, Repositories: Admin and Pull requests: Write.",
       "Click Save, then open the new consumer to see its Key and Secret.",
@@ -287,7 +307,8 @@ const SignInBase = z.object({
 });
 
 /**
- * A sign-in flow's state. `pending` moves to exactly one of the others and never back:
+ * A sign-in flow's state. `pending` moves to exactly one of the others and never back
+ * (`confirm` then moves on to `done`, `cancelled` or `expired`):
  * - `done`: the token is saved for `org` and checked with the host's user API as `account`.
  * - `denied`: the owner refused on the host's page.
  * - `expired`: the code or the authorize link ran out (15 minutes at most).
@@ -311,6 +332,18 @@ export const SignInStatusSchema = z.discriminatedUnion("state", [
     /** The account this workspace used on this host before, when it was another one. */
     replaced: z.string().optional(),
   }),
+  /**
+   * The host accepted the sign-in, but `account` is already used by other workspaces. Nothing is
+   * saved yet: `git.signIn.confirm` saves it and moves to `done`; `git.signIn.cancel` drops it.
+   * It ends as `expired` when nobody answers before `expiresAt`.
+   */
+  SignInBase.extend({
+    state: z.literal("confirm"),
+    account: z.string(),
+    alsoUsedBy: z.array(IdSchema).min(1),
+    replaced: z.string().optional(),
+    expiresAt: z.iso.datetime(),
+  }),
   SignInBase.extend({ state: z.literal("denied") }),
   SignInBase.extend({ state: z.literal("expired") }),
   SignInBase.extend({ state: z.literal("cancelled") }),
@@ -329,6 +362,31 @@ export const SIGN_IN_ENDED: ReadonlySet<SignInState> = new Set<SignInState>([
 ]);
 
 export const SignInRefSchema = z.object({ signIn: SignInIdSchema });
+
+/** `git.signOut`: removes a workspace's signed-in token for one host. */
+export const SignOutInputSchema = z.object({
+  org: IdSchema,
+  kind: MrHostSchema,
+  host: GitHostNameSchema.optional(),
+});
+
+/**
+ * - `revoked`: the host revoked the token too (GitLab).
+ * - `local`: majhi removed it, but the host offers no revoke majhi can call (GitHub without a client
+ *   secret, Bitbucket). `revokeUrl` is the host page where the owner can remove majhi's access.
+ * - `failed`: majhi removed it, and the host's revoke call did not go through.
+ */
+export const SignOutSchema = z.object({
+  org: IdSchema,
+  kind: MrHostSchema,
+  host: z.string(),
+  /** The account whose token was removed, when there was one. */
+  account: z.string().optional(),
+  removed: z.boolean(),
+  revoke: z.enum(["revoked", "local", "failed"]),
+  revokeUrl: z.url().optional(),
+});
+export type SignOut = z.infer<typeof SignOutSchema>;
 
 /** The query string of `GET /oauth/bitbucket/callback`. Either `code` or `error` comes with `state`. */
 export const BitbucketCallbackQuerySchema = z.object({

@@ -9,6 +9,8 @@ type GitConnectCommand =
   | "git.signIn.start"
   | "git.signIn.poll"
   | "git.signIn.cancel"
+  | "git.signIn.confirm"
+  | "git.signOut"
   | "git.remoteRepos"
   | "git.remoteOwners"
   | "projects.clone"
@@ -42,6 +44,8 @@ export function gitConnectHandlers(): Pick<CommandHandlers, GitConnectCommand> {
     "git.signIn.start": notBuilt,
     "git.signIn.poll": notBuilt,
     "git.signIn.cancel": notBuilt,
+    "git.signIn.confirm": notBuilt,
+    "git.signOut": notBuilt,
     "git.remoteRepos": notBuilt,
     "git.remoteOwners": notBuilt,
     "projects.clone": notBuilt,
