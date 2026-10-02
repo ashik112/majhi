@@ -35,6 +35,7 @@ export interface WorldOptions {
   mrHosts?: MrHostOptions;
   containerDocker?: ContainerDocker;
   connectionsRemote?: RemoteRunFn;
+  idleWatchMs?: number;
 }
 
 /**
@@ -53,6 +54,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.mrHosts === undefined ? {} : { mrHosts: options.mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
+    ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
   });
   const world: World = {
     h,

@@ -1332,14 +1332,21 @@ export class TaskService {
   }
 
   /** The loop guard or the review round cap stopped the room: pause with reason owner and say why. */
-  /** The loop guard's pause: the agents went in circles, so the owner decides how to continue. */
-  async pauseForOwner(id: string, text: string): Promise<void> {
+  /**
+   * The loop guard's pause (`loop`: the agents went in circles), or the idle watch's (`blocked`:
+   * nobody is left to wake), so the owner decides how to continue.
+   */
+  async pauseForOwner(
+    id: string,
+    text: string,
+    reason: "loop" | "blocked" = "loop",
+  ): Promise<void> {
     this.deps.room.post(id as TaskId, `error:${randomUUID()}`, {
       type: "system",
       level: "warn",
       text,
     });
-    await this.stop(id, "loop");
+    await this.stop(id, reason);
     this.deps.events.emit(["tasks"]);
   }
 

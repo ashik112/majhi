@@ -72,6 +72,7 @@ import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
+import { IdleWatch } from "./rooms/idle-watch.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
 import { processLaunch, repoMounts } from "./runs/launch.ts";
@@ -129,6 +130,8 @@ export interface ServiceOptions {
   containerDocker?: ContainerDocker;
   /** Replaces ssh for majhi-connections, so tests never reach a host. */
   connectionsRemote?: RemoteRunFn;
+  /** How long after a turn ends a silent room is looked at. Default `IDLE_CHECK_MS`. */
+  idleWatchMs?: number;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -437,11 +440,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
-    onIdle: (task) => void tasks.agentsIdle(task).catch(() => undefined),
+    onIdle: (task) => {
+      void tasks.agentsIdle(task).catch(() => undefined);
+      idleWatch.idle(task);
+    },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
     onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
-    onTurnEnd: (turn) => coordinator.turnEnded(turn),
+    onTurnEnd: (turn) => {
+      idleWatch.turnEnded(turn);
+      return coordinator.turnEnded(turn);
+    },
     onCheckpoint: (task) => void tasks.restackOnto(task).catch(() => undefined),
     onNetworkError: () => void resilience.networkError().catch(() => undefined),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -640,6 +649,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     waitsOnProcess: (task, agent) => processes.waiting(task).some((p) => p.agent === agent),
   });
   coordinator.sweepEmptyQuestions();
+  const idleWatch = new IdleWatch({
+    store,
+    room,
+    runs,
+    pauseForOwner: (task, text) => tasks.pauseForOwner(task, text, "blocked"),
+    waitsOnProcess: (task) => processes.waiting(task).length > 0,
+    delayMs: options.idleWatchMs,
+  });
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const resilience = new Resilience({
     runs,
@@ -723,6 +740,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runner: runner.runner,
     close: async () => {
       resilience.stop();
+      idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(updateWatch);

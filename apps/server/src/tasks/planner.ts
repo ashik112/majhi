@@ -65,13 +65,7 @@ export class TaskPlanner {
 
   /** The task's parent, its parent's parent and so on. A subtask never waits for the work it is part of. */
   ancestors(task: Task): Set<string> {
-    const out = new Set<string>();
-    let parent = task.links.find((l) => l.type === "parent")?.task;
-    while (parent !== undefined && !out.has(parent) && parent !== task.id) {
-      out.add(parent);
-      parent = this.deps.store.tasks.get(parent)?.links.find((l) => l.type === "parent")?.task;
-    }
-    return out;
+    return ancestorsOf(task, (id) => this.deps.store.tasks.get(id));
   }
 
   async plan(task: Task): Promise<Plan> {
@@ -126,6 +120,20 @@ export class TaskPlanner {
     };
     return { verdict: planStart(input), overlaps, redundant };
   }
+}
+
+/** The ids of the task's parent, its parent's parent and so on, up to the top or a cycle. */
+export function ancestorsOf(
+  task: Pick<Task, "id" | "links">,
+  get: (id: string) => Pick<Task, "links"> | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  let parent = task.links.find((l) => l.type === "parent")?.task;
+  while (parent !== undefined && !out.has(parent) && parent !== task.id) {
+    out.add(parent);
+    parent = get(parent)?.links.find((l) => l.type === "parent")?.task;
+  }
+  return out;
 }
 
 function accountOf(task: Task, agents: readonly AgentFrontmatter[]): string | undefined {

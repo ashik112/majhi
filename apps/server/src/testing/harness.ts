@@ -50,6 +50,8 @@ export interface HarnessOptions {
   containerDocker?: ContainerDocker;
   /** Replaces ssh for majhi-connections. */
   connectionsRemote?: RemoteRunFn;
+  /** How long after a turn ends a silent room is looked at. */
+  idleWatchMs?: number;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -84,6 +86,7 @@ function build(
     ...(mrHosts === undefined ? {} : { mrHosts }),
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
+    ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
   });
   const h: Harness = {
     dir,
