@@ -1,5 +1,26 @@
 # Progress
 
+## Phase 13: The captain per workspace (plan)
+
+**Status.** Building on `feat/captain-levels`, from `main` (`80002454`). SPEC 5.18 and section 7, Phase 13.
+
+### What will be built, in order
+
+1. **The choice.** `autonomy.orgs.<org>` gets `level` (`ask`, `tidy`, `runs`) and the "More rules" fields (hours, freeze dates, time zone, branches, providers, account). Defaults: Private `tidy`, every other workspace `ask`. A startup migration turns an old `autonomy.pick.orgs` list into `runs` for the listed workspaces, in one config commit by majhi.
+2. **The store.** Migration 116: the stop switch, lanes, chore runs, the captain's log (with an idempotency key per action), the per-chore circuit breaker, and the owner's last action per task (presence).
+3. **The guards.** One runner for every chore: one run per chore and workspace (a trigger during a run joins it), caps per run (actions, tokens, minutes) and per day, events tagged with their cause (the captain's own never start a run), idempotent actions, two failures in a row turn the chore off and tell the owner, the stop switch, and the always-on rules (never list, stricter rule wins, presence, re-check before anything irreversible, text is not instruction).
+4. **The chores.** Ship, approval cards, agents' questions, memory, projects, task triage, cleanup and stuck tasks, each reusing what majhi has (Ship, the AdminService policy, the curator, repos.scan and projects.register, the cleanup service, the idle watch). Judgment: rules, then Laya through the decision provider, then a short captain turn in the workspace's lane.
+5. **Lanes.** One chat of the captain per workspace. Autonomous mode ticks the lane of each "Runs it" workspace with a digest of that workspace only; the old autonomy chat stays readable. A lane may run on another account allowed in its workspace.
+6. **Autonomous mode.** The switch stays the master switch. "Runs it" acts as "Keeps things tidy" while it is off; on, the captain starts and ships work only in "Runs it" workspaces. The pick rule "workspaces it may work in" goes.
+7. **What the owner notices.** The bell, one summary line per workspace per day, and the captain's log with reason, evidence and Undo (a merge as a revert commit, a config change through the config history, a push marked as not undoable).
+8. **Web.** The Captain page (`/captain`) with a card per workspace, "More rules", the budget, the summary line and "Stop the captain"; the sidebar Captain row opens it (Cmd J still opens the chat); the Autonomous page shows a lane per "Runs it" workspace.
+
+### How it will be tested
+
+- Unit tests for the crucial parts: the level defaults and the pick migration, the rule checks (hours, freeze, presence, never list), the runner's guards, the revert of a merge, the lane's account choice.
+- A soak test with the fake ACP agent that replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails when a cap is passed, an event re-triggers itself, an action repeats, or anything happens in an "Only when I ask" workspace. It runs in under a minute and joins the post-merge checks.
+- The migration against a copy of a real database. Screenshots of the Captain page and the Autonomous page with stubbed data, and a click test of the level and the budget.
+
 ## Onboarding and git connect (plan)
 
 **Status.** The contract is on `feat/onboarding-contract`: schemas and commands in `packages/shared` (`git-signin.ts`, `remote-repos.ts`, `project-create.ts`, `onboarding.ts`, new host jobs in `host.ts`), stub handlers in `apps/server/src/gitConnect/` (501 until built), the Bitbucket callback route stub, the `signins` and `clones` event topics, and the host progress route. The brief is `docs/briefs/onboarding-and-git-connect.md`. Two agents build from it: server and host, and the onboarding UI against the stubs.
