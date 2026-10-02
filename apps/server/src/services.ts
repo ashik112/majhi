@@ -85,6 +85,7 @@ import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
 import { SERENA_COMMAND } from "./runs/serena.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
+import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { Store } from "./store/index.ts";
@@ -143,6 +144,8 @@ export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
   secrets: SecretStore;
+  /** The passphrase-protected export of the secrets key, and which key it was. */
+  keyExports: KeyExports;
   secretService: SecretService;
   /** Connections of every org: definitions, secrets, files and the last Test of each (5.14). */
   connections: ConnectionService;
@@ -733,6 +736,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     runtime,
     secrets,
+    keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
     connections,
     connectionTests: new ConnectionTester({

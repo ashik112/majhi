@@ -775,6 +775,14 @@ Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phas
 - A new price applies to new turns only; the unpriced count stays until turns are priced.
 - Sign-in, health probes and usage reads still start the CLIs in the server container (they touch only the account home).
 
+### Secrets key backup (PRV-30)
+
+- **Keychain copy.** The host helper reads `~/.config/majhi/secrets.key` (or `MAJHI_SECRETS_KEY`) and saves it in the login Keychain as the generic password "majhi secrets key" (account `secrets.key`). It does so at start when the Keychain has none, and looks again every 10 minutes. The key goes to `security -i` on stdin, never in an argument, and is read back to confirm. It never replaces a different key on its own. The helper reports only a fingerprint (the first 16 hex characters of the SHA-256 of the key line) in its poll header.
+- **Restore.** When the key file is missing, the helper's Update and `make up` put the Keychain copy back before they make a new key, so a lost file no longer turns `secrets.age` unreadable.
+- **Export.** `secrets.exportKey` encrypts the key file's content with a passphrase (age scrypt, at least 12 characters), armored, and the browser downloads `majhi-secrets-key.age`. `age -d` with the passphrase gives back a key file majhi reads as is. majhi records only which key it exported and when (`~/.majhi/secrets-key-backup.json`). Agents cannot call it.
+- **Warnings.** Health and usage has "Secrets key in Keychain" and "Secrets key export". Each warns until it holds the key majhi uses. The fixes are "Save to Keychain" (or "Replace copy" when the Keychain holds another key; the helper refuses a key file that is not the server's key) and "Export key", which opens the passphrase form under the check.
+- **Left.** The Keychain calls were tested against a fake `security`, not a real Keychain: the owner's check is that after `make up` both checks pass once the key is exported, and the item shows in Keychain Access. Restoring from the export needs a terminal (`age -d`); doing it in majhi is PRV-95.
+
 ### Goal
 
 Done when: after a few runs on two orgs, Health and usage shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.

@@ -17,6 +17,7 @@ import { errorMessage } from "./errors.ts";
 import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
 import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
+import { createKeyBackup } from "./keychain.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
@@ -34,6 +35,7 @@ import { createUpdater } from "./update.ts";
 const exec: ExecFn = promisify(execFile);
 
 const FACTS_REFRESH_MS = 30_000;
+const KEY_BACKUP_REFRESH_MS = 10 * 60_000;
 
 const files = {
   readText: (file: string) => readFile(file, "utf8").catch(() => undefined),
@@ -84,6 +86,15 @@ async function main(): Promise<void> {
   const factsTimer = setInterval(() => void facts.refresh(), FACTS_REFRESH_MS);
   factsTimer.unref();
   const bundle = join(config.majhiHome, "bin", "majhi-host.mjs");
+  const secretsKeyFile =
+    process.env.MAJHI_SECRETS_KEY ?? join(config.home, ".config", "majhi", "secrets.key");
+  const keyBackup = createKeyBackup({
+    run: runCommand,
+    readText: files.readText,
+    keyFile: secretsKeyFile,
+    platform: process.platform,
+    log,
+  });
   const update =
     remountOptions === undefined || gitContext === undefined
       ? undefined
@@ -93,8 +104,8 @@ async function main(): Promise<void> {
           majhiHome: config.majhiHome,
           bundle,
           selfPath: process.argv[1] ?? "",
-          secretsKeyFile:
-            process.env.MAJHI_SECRETS_KEY ?? join(config.home, ".config", "majhi", "secrets.key"),
+          secretsKeyFile,
+          keychain: keyBackup,
           log,
           exit: () => process.exit(0),
         });
@@ -146,6 +157,7 @@ async function main(): Promise<void> {
     const status = ssh.status();
     const repo = facts.repo();
     const runtime = facts.runtime();
+    const secretsKey = keyBackup.status();
     return {
       version: config.version,
       platform: process.platform,
@@ -154,6 +166,7 @@ async function main(): Promise<void> {
       ...(repo === undefined ? {} : { commit: repo.commit, dirty: repo.dirty }),
       ...(runtime === undefined ? {} : { dockerRuntime: runtime }),
       laya: laya.status(),
+      ...(secretsKey === undefined ? {} : { secretsKey }),
       ...(wokeAt === undefined ? {} : { wokeAt }),
     };
   };
@@ -168,6 +181,11 @@ async function main(): Promise<void> {
     `majhi host helper ${config.version} started (pid ${process.pid}, ${config.url}, remounts ${remounts})`,
   );
 
+  // A copy of the secrets key in the Keychain, made when there is none. Looked at again now and then,
+  // so a copy deleted in Keychain Access shows on Health. It never blocks the poll loop.
+  void keyBackup.ensure();
+  const keyTimer = setInterval(() => void keyBackup.ensure(), KEY_BACKUP_REFRESH_MS);
+  keyTimer.unref();
   const stopSsh = ssh.start({
     onWake: (at) => {
       wokeAt = at.toISOString();
@@ -201,6 +219,7 @@ async function main(): Promise<void> {
       setTimeout(() => process.exit(0), 300);
     },
     sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
+    secretsKeySave: (params: { expected: string }) => keyBackup.save(params.expected),
     gitLogins: async (params: { extraHosts: string[] }) => ({
       hosts: await detectGitLogins(gitDeps, params.extraHosts),
     }),

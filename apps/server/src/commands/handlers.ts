@@ -698,6 +698,8 @@ export function createHandlers({
       await services.secretService.remove(input.name);
       return { removed: input.name };
     },
+    // The passphrase is used once to encrypt the export: not logged, kept or put in an error.
+    "secrets.exportKey": (input) => services.keyExports.export(input.passphrase),
     "history.list": (input) => config.historyEntries(input.limit),
     "history.undo": async (input, ctx) => {
       const done = await config.undo(input.commit, {

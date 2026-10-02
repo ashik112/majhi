@@ -1,12 +1,14 @@
 import { ChevronDown, LoaderCircle } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dot, toneText } from "@/components/ui/status-dot";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
+import { KeyExportForm } from "./key-export-form";
 import { type CheckRow, checkTone, groupChecks, groupLevel, levelOf, openChecks } from "./model";
 
 interface FixResult {
@@ -23,14 +25,21 @@ const LEVEL_TONE = { pass: "green", warn: "amber", fail: "red" } as const;
 export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => void }) {
   const checks = useHealthChecks();
   const fix = useFixCheck();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string>();
   const [results, setResults] = useState<Record<string, FixResult>>({});
+  // The check whose fix needs a form only the owner fills in, like the key export's passphrase.
+  const [form, setForm] = useState<string>();
 
   async function runFix(row: CheckRow) {
     setBusy(row.id);
     try {
       const out = await fix.mutateAsync(row.id);
+      if (out.open?.kind === "key-export") {
+        setForm(row.id);
+        return;
+      }
       setResults((prev) => ({ ...prev, [row.id]: { ok: out.ok, detail: out.detail } }));
       if (out.open?.kind === "sign-in") onSignIn(out.open.account);
     } catch (err) {
@@ -51,6 +60,17 @@ export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => voi
       locked={busy !== undefined}
       result={results[row.id]}
       onFix={() => void runFix(row)}
+      form={
+        form === row.id ? (
+          <KeyExportForm
+            onDone={(detail) => {
+              setForm(undefined);
+              // The check passes now and leaves this list, so the result goes to a toast.
+              toast("Secrets key exported", { detail });
+            }}
+          />
+        ) : undefined
+      }
     />
   );
 
@@ -128,12 +148,14 @@ function CheckItem({
   locked,
   result,
   onFix,
+  form,
 }: {
   row: CheckRow;
   busy: boolean;
   locked: boolean;
   result: FixResult | undefined;
   onFix: () => void;
+  form?: ReactNode;
 }) {
   const tone = checkTone(row);
   const failing = levelOf(row) !== "pass";
@@ -149,13 +171,14 @@ function CheckItem({
         >
           {row.detail}
         </span>
-        {row.fix && failing && (
+        {row.fix && failing && form === undefined && (
           <Button size="sm" disabled={locked} aria-label={`${row.fix.label}: ${row.label}`} onClick={onFix}>
             {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
             {busy ? "Working" : row.fix.label}
           </Button>
         )}
       </div>
+      {form}
       {result && (
         <p role="status" className={cn("pl-[19px] text-sm", toneText(result.ok ? "green" : "red"))}>
           {result.detail}
