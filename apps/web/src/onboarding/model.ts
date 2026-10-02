@@ -1,4 +1,18 @@
-import type { AccountView, AgentEntry, LegacyOnboardingStepId, OnboardingStepId } from "@majhi/shared";
+import {
+  type AccountView,
+  type AgentEntry,
+  DEFAULT_GIT_HOST,
+  type LegacyOnboardingStepId,
+  type MrHost,
+  MrHostSchema,
+  ONBOARDING_STEP_IDS,
+  type OnboardingStatus,
+  type OnboardingStepId,
+  type OnboardingWorkspace,
+  type OrgView,
+  PRIVATE,
+  type ProjectView,
+} from "@majhi/shared";
 import { isUsableStatus } from "../features/accounts/model";
 
 /**
@@ -7,13 +21,6 @@ import { isUsableStatus } from "../features/accounts/model";
  * of `welcome`; map it with `onboardingStepId` before looking a step up.
  */
 export type SetupStepId = OnboardingStepId | LegacyOnboardingStepId;
-
-export interface SetupState {
-  /** The config is in first-run state: no workspace roots yet. */
-  noRoots: boolean;
-  accounts: readonly AccountView[];
-  agents: readonly AgentEntry[];
-}
 
 /** An account that passed its health check and can run agents. */
 export function firstHealthyAccount(accounts: readonly AccountView[]): AccountView | undefined {
@@ -24,15 +31,96 @@ export function hasBoss(agents: readonly AgentEntry[]): boolean {
   return agents.some((a) => a.status === "ok" && a.isBoss);
 }
 
+/** The git host kind of a host name, for workspaces whose status came from the org list. */
+export function hostKind(host: string): MrHost | undefined {
+  const h = host.toLowerCase();
+  if (h === "github.com") return "github";
+  if (h === "bitbucket.org") return "bitbucket";
+  if (h.includes("gitlab")) return "gitlab";
+  return undefined;
+}
+
+/** A workspace's git hosts as its org config has them: an account per host, signed in when it has a token. */
+export function workspaceGit(org: OrgView): OnboardingWorkspace["git"] {
+  const rows: OnboardingWorkspace["git"] = [];
+  for (const account of org.gitAccounts ?? []) {
+    const kind = hostKind(account.host);
+    if (!kind) continue;
+    rows.push({
+      kind,
+      host: account.host,
+      account: account.account,
+      signedIn: account.token !== undefined || org.mrTokens?.[kind] !== undefined,
+    });
+  }
+  for (const kind of MrHostSchema.options) {
+    if (org.mrTokens?.[kind] === undefined || rows.some((r) => r.kind === kind)) continue;
+    rows.push({ kind, host: DEFAULT_GIT_HOST[kind], signedIn: true });
+  }
+  return rows;
+}
+
+export interface DerivedInput {
+  roots: readonly string[];
+  accounts: readonly AccountView[];
+  agents: readonly AgentEntry[];
+  orgs: readonly OrgView[];
+  projects: readonly ProjectView[];
+  hostHelper: boolean;
+}
+
 /**
- * The first setup step the server state says is not done, or null when setup is complete. To be
- * replaced by `onboarding.status`'s `next`, which also covers workspaces, git and projects.
+ * `onboarding.status` worked out in the browser from the reads it already has, for when the server
+ * cannot answer it. Same rules as the server's (see the brief); git counts only what the org
+ * config shows, so it never says a token works.
  */
-export function firstIncompleteStep(state: SetupState): SetupStepId | null {
-  if (state.noRoots) return "roots";
-  if (!firstHealthyAccount(state.accounts)) return "account";
-  if (!hasBoss(state.agents)) return "boss";
-  return null;
+export function deriveStatus(input: DerivedInput): OnboardingStatus {
+  const workspaces: OnboardingWorkspace[] = [...input.orgs]
+    .sort((a, b) => (a.id === PRIVATE ? -1 : b.id === PRIVATE ? 1 : a.name.localeCompare(b.name)))
+    .map((org) => ({
+      id: org.id,
+      name: org.name,
+      ...(org.color ? { color: org.color } : {}),
+      git: workspaceGit(org),
+      projects: input.projects.filter((p) => p.org === org.id).length,
+    }));
+  const needGit = workspaces.filter((w) => w.id !== PRIVATE || w.projects > 0);
+  const welcome = input.roots.length > 0;
+  const account = firstHealthyAccount(input.accounts) !== undefined;
+  const boss = hasBoss(input.agents);
+  const done: Record<OnboardingStepId, boolean> = {
+    welcome,
+    account,
+    workspaces: workspaces.some((w) => w.id !== PRIVATE),
+    git: needGit.length > 0 && needGit.every((w) => w.git.some((g) => g.signedIn)),
+    projects: input.projects.length > 0,
+    boss,
+    finish: welcome && account && boss,
+  };
+  const steps = ONBOARDING_STEP_IDS.map((id) => ({ id, done: done[id] }));
+  return {
+    steps,
+    next: steps.find((s) => !s.done)?.id ?? null,
+    roots: [...input.roots],
+    hostHelper: input.hostHelper,
+    workspaces,
+  };
+}
+
+/** Steps without which majhi cannot run a task. Only these open the journey by themselves. */
+export const ESSENTIAL_STEPS: readonly OnboardingStepId[] = ["welcome", "account", "boss"];
+
+/**
+ * Where the gate should open the journey, or null to show the app: the first essential step that
+ * is neither done nor skipped. Workspaces, git and projects never open it alone; the journey walks
+ * through them once it is open, and Hub setup reopens them.
+ */
+export function gateStep(
+  status: Pick<OnboardingStatus, "steps">,
+  skipped: ReadonlySet<OnboardingStepId>,
+): OnboardingStepId | null {
+  const done = new Set(status.steps.filter((s) => s.done).map((s) => s.id));
+  return ESSENTIAL_STEPS.find((id) => !done.has(id) && !skipped.has(id)) ?? null;
 }
 
 /**

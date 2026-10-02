@@ -19,7 +19,7 @@ function emit() {
   for (const listener of listeners) listener();
 }
 
-export function reopenOnboarding(step: SetupStepId = "roots"): void {
+export function reopenOnboarding(step: SetupStepId = "welcome"): void {
   counter += 1;
   current = { step, id: counter };
   emit();

@@ -1,18 +1,19 @@
 import type { HealthCheck } from "@majhi/shared";
 import { AUTO } from "@majhi/shared";
+import { Anchor } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { HealthSteps } from "@/features/accounts/health-steps";
-import { isUsableStatus, statusInfo } from "@/features/accounts/model";
+import { isUsableStatus } from "@/features/accounts/model";
 import { buildOptions, newAgentFrontmatter, optionChips } from "@/features/agents/model";
 import { cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import { useAccountModels, useAccounts, useAgents, useCreateAgent, useSetBoss } from "@/lib/studio-queries";
-import { BOSS_INSTRUCTIONS, bossId, firstHealthyAccount, isExistingRootAgent } from "./model";
-import type { OnboardingStepProps } from "./steps";
+import { Waiting } from "./bits";
+import { BOSS_INSTRUCTIONS, bossId, firstHealthyAccount, hasBoss, isExistingRootAgent } from "./model";
+import { Problem, StepFrame, useStep } from "./step-frame";
 
 type Phase =
   | { kind: "form" }
@@ -21,10 +22,12 @@ type Phase =
   | { kind: "error"; message: string };
 
 /**
- * Step 3: create the captain, a root agent that sets up and runs majhi. Creates the agent, makes it
- * captain, then runs its health check. Each step is skipped on retry once it has worked.
+ * Captain: pick the model; majhi writes the rest (the id, the instructions, the permissions). It
+ * creates a root agent, makes it captain, then runs its health check. Each part is skipped on retry
+ * once it has worked.
  */
-export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
+export function BossStep() {
+  const step = useStep();
   const accounts = useAccounts().data ?? [];
   const agents = useAgents().data ?? [];
   const create = useCreateAgent();
@@ -35,16 +38,15 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
   const account = usable.find((a) => a.id === accountPick) ?? firstHealthyAccount(accounts);
   const models = useAccountModels(account?.id);
   const [modelPick, setModelPick] = useState<string>();
-  const [effortPick, setEffortPick] = useState<string>();
-  const [idPick, setIdPick] = useState<string>();
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const done = useRef({ created: false, boss: false });
 
-  const id = idPick ?? bossId(agents);
+  const current = agents.find((a) => a.status === "ok" && a.isBoss);
+  const id = bossId(agents);
   const model = modelPick ?? models.data?.defaultModel ?? "";
-  const effort = effortPick ?? models.data?.defaultEffort ?? "";
+  const effort = models.data?.defaultEffort ?? "";
   const modelChoices = buildOptions("model", models.data?.models, model, models.data?.defaultModel);
-  const effortChoices = buildOptions("effort", models.data?.efforts, effort, models.data?.defaultEffort);
+  const already = hasBoss(agents) && phase.kind === "form";
 
   async function run() {
     if (!account) return;
@@ -58,7 +60,7 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
             ...frontmatter,
             perms: ["edit", "shell"],
             origin: "setup",
-            ...(model && model !== "" ? { model } : {}),
+            ...(model !== "" ? { model } : {}),
             ...(effort ? { effort } : {}),
           },
           instructions: BOSS_INSTRUCTIONS,
@@ -78,21 +80,23 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
 
   const locked = phase.kind !== "form";
   const passed = phase.kind === "result" && phase.health.ok;
+  const ready = passed || already;
 
   return (
-    <>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold text-balance">Choose the captain</h1>
-        <p className="text-base text-fg-muted text-pretty">
-          The captain is an agent that sets up and runs majhi for you. Pick the account it uses. You can
-          change all of this later in Agents.
-        </p>
-      </div>
-
+    <StepFrame
+      primary={
+        ready ? (
+          <Button variant="primary" size="lg" onClick={step.next}>
+            Continue
+          </Button>
+        ) : undefined
+      }
+    >
       {usable.length === 0 ? (
-        <p className="text-base text-fg-muted">
-          No account is signed in and healthy yet. Add one in the previous step first.
-        </p>
+        <div className="flex flex-col items-start gap-3 rounded-xl border border-dashed border-line-control px-5 py-6">
+          <p className="m-0 text-body text-fg-soft">The captain needs a signed-in AI account first.</p>
+          <Button onClick={() => step.goTo("account")}>Go to AI account</Button>
+        </div>
       ) : (
         <form
           aria-label="Captain agent"
@@ -100,40 +104,46 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
             e.preventDefault();
             void run();
           }}
-          className="flex flex-col gap-4 rounded-xl border border-line-strong bg-card p-5"
+          className="flex flex-col gap-6"
         >
-          <Field label="Agent id">
-            {(p) => (
-              <Input
-                {...p}
-                className="font-mono"
-                value={id}
+          <div className="flex items-center gap-4 rounded-xl border border-line-strong bg-card px-4 py-3.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-accent-line bg-accent-wash">
+              <Anchor aria-hidden="true" className="size-[18px] text-accent-text" />
+            </span>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="font-mono text-body text-fg">
+                @{already && current?.status === "ok" ? current.agent.frontmatter.id : id}
+              </span>
+              <span className="text-sm text-fg-muted text-pretty">
+                majhi writes its instructions and gives it edit and shell. Change any of it later in Agents.
+              </span>
+            </div>
+          </div>
+
+          {usable.length > 1 && (
+            <div className="flex items-center gap-3">
+              <label htmlFor="captain-account" className="w-[64px] shrink-0 text-sm text-fg-muted">
+                Runs on
+              </label>
+              <Select
+                id="captain-account"
+                value={account?.id ?? ""}
                 disabled={locked}
-                onChange={(e) => setIdPick(e.target.value)}
-              />
-            )}
-          </Field>
-          <Chips label="Account">
-            {usable.map((a) => (
-              <ChoiceChip
-                key={a.id}
-                pressed={account?.id === a.id}
-                disabled={locked}
-                aria-label={`${a.id}, ${statusInfo(a.status).label.toLowerCase()}`}
-                className="min-h-11 flex-col items-start gap-px px-2.5 py-1"
-                onClick={() => {
-                  setAccountPick(a.id);
+                onChange={(e) => {
+                  setAccountPick(e.target.value);
                   setModelPick(undefined);
-                  setEffortPick(undefined);
                 }}
+                className="h-10 w-[280px] font-mono"
               >
-                <span className="font-mono text-sm">{a.id}</span>
-                <span className="text-[0.625rem] leading-4 font-normal text-fg-faint">
-                  {statusInfo(a.status).label}
-                </span>
-              </ChoiceChip>
-            ))}
-          </Chips>
+                {usable.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.id}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
           <Chips label="Model" note={modelChoices.warning}>
             {optionChips(modelChoices, models.data?.models).map((o) => (
               <ChoiceChip
@@ -148,75 +158,49 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
               </ChoiceChip>
             ))}
           </Chips>
-          <Chips label="Effort" note={effortChoices.warning}>
-            {optionChips(effortChoices, models.data?.efforts).map((o) => (
-              <ChoiceChip
-                key={o.value}
-                mono={o.value !== "" && o.value !== AUTO}
-                pressed={effort === o.value}
-                disabled={locked}
-                title={o.title}
-                onClick={() => setEffortPick(o.value)}
-              >
-                {o.label}
-              </ChoiceChip>
-            ))}
-          </Chips>
           {models.isError && (
-            <p className="text-sm text-fg-faint">
+            <p className="m-0 text-sm text-fg-faint">
               Could not read the account's models. It will use its defaults.
             </p>
           )}
           {model === AUTO && (
-            <p className="text-sm text-fg-faint">Auto lets majhi pick a model for each run.</p>
+            <p className="m-0 text-sm text-fg-faint">Auto lets majhi pick a model for each run.</p>
           )}
 
-          {phase.kind === "form" && (
+          {phase.kind === "form" && !already && (
             <div>
-              <Button type="submit" variant="primary" disabled={!account}>
-                Create captain
+              <Button type="submit" variant="primary" size="lg" disabled={!account}>
+                Make it the captain
               </Button>
             </div>
           )}
-          {phase.kind === "working" && (
-            <p role="status" className="text-base text-fg-muted">
-              Creating the captain and checking it
+          {already && (
+            <p className="m-0 text-base text-green">
+              A captain is already set. Change it any time in Agents.
             </p>
           )}
+          {phase.kind === "working" && <Waiting>Making the captain and checking it</Waiting>}
           {phase.kind === "error" && (
-            <div role="alert" className="flex flex-col gap-3">
-              <p className="text-base text-red text-pretty">{phase.message}</p>
+            <div className="flex flex-col gap-3">
+              <Problem>{phase.message}</Problem>
               <div>
-                <Button onClick={() => void run()}>Retry</Button>
+                <Button onClick={() => void run()}>Try again</Button>
               </div>
             </div>
           )}
           {phase.kind === "result" && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 rounded-xl border border-line-strong bg-card p-4">
               <HealthSteps health={phase.health} />
-              {passed ? (
+              {!passed && (
                 <div>
-                  <Button variant="primary" onClick={onComplete}>
-                    {isLast ? "Open majhi" : "Continue"}
-                  </Button>
-                </div>
-              ) : (
-                <div>
-                  <Button onClick={() => void run()}>Retry</Button>
+                  <Button onClick={() => void run()}>Try again</Button>
                 </div>
               )}
             </div>
           )}
         </form>
       )}
-      {onSkip && !passed && (
-        <div>
-          <Button variant="ghost" onClick={onSkip}>
-            Skip for now
-          </Button>
-        </div>
-      )}
-    </>
+    </StepFrame>
   );
 }
 
@@ -232,9 +216,9 @@ function Chips({
 }) {
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-      <legend className="mb-2 p-0 text-sm text-fg-faint">{label}</legend>
+      <legend className="mb-2 p-0 text-sm text-fg-muted">{label}</legend>
       <div className="flex flex-wrap gap-1.5">{children}</div>
-      {note && <p className="text-sm text-amber text-pretty">{note}</p>}
+      {note && <p className="m-0 text-sm text-amber text-pretty">{note}</p>}
     </fieldset>
   );
 }

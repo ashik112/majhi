@@ -1,77 +1,65 @@
-import type { Task } from "@majhi/shared";
-import { useEffect, useRef, useState } from "react";
+import { ArrowRight, CircleCheck, CircleDashed } from "lucide-react";
+import * as m from "motion/react-m";
 import { Button } from "@/components/ui/button";
-import { RoomPane } from "@/features/room/room-pane";
-import { useRoom } from "@/features/room/use-room";
-import { cmd } from "@/lib/api";
-import { useBossChat } from "@/lib/boss-queries";
-import { describeError } from "@/lib/errors";
-import type { OnboardingStepProps } from "./steps";
-
-/** The first thing the captain hears, sent when this step opens. */
-export const FIRST_MESSAGE =
-  "Hi. I just finished the first setup. Look at what exists and tell me in a few lines what you can set up for me next.";
+import { Kbd } from "@/components/ui/kbd";
+import { cn } from "@/lib/cn";
+import { MOD_KEY } from "@/lib/format";
+import { StepFrame, useStep } from "./step-frame";
+import { onboardingSteps } from "./steps";
 
 /**
- * Step 4: finish with the captain. Opens the captain chat with a first message, so the owner sees the
- * captain answer and knows where to find it later (Cmd J).
+ * Arrive: the boat reaches the ghat. A short look back at each stop, with a way back to the ones
+ * left for later, then the board with the new-task box open.
  */
-export function FinishStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
-  const chat = useBossChat();
+export function FinishStep() {
+  const step = useStep();
+  const done = new Set(step.status.steps.filter((s) => s.done).map((s) => s.id));
+  const stops = onboardingSteps.filter((s) => s.id !== "finish");
+  const left = stops.filter((s) => !done.has(s.id));
+
   return (
-    <>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold text-balance">Finish with the captain</h1>
-        <p className="text-base text-fg-muted text-pretty">
-          Say what you want next. The captain can create workspaces, agents and projects for you. Each change
-          waits for your approval, and every change can be undone. Open this chat any time with Cmd J.
-        </p>
-      </div>
-      <div className="flex h-[420px] min-h-0 flex-col rounded-xl border border-line-strong bg-card p-3">
-        {chat.isPending && <p className="m-auto text-sm text-fg-faint">Opening the captain chat</p>}
-        {chat.isError && <p className="m-auto text-sm text-red">{describeError(chat.error)}</p>}
-        {chat.data && <FirstConversation key={chat.data.id} task={chat.data} />}
-      </div>
-      <div className="flex gap-2">
-        <Button variant="primary" onClick={onComplete}>
-          {isLast ? "Open majhi" : "Continue"}
+    <StepFrame
+      skippable={false}
+      note={left.length > 0 ? "Anything left waits in Hub setup." : undefined}
+      primary={
+        <Button variant="primary" size="lg" onClick={step.next}>
+          Write the first task
+          <ArrowRight aria-hidden="true" />
         </Button>
-        {onSkip && (
-          <Button variant="ghost" onClick={onSkip}>
-            Skip for now
-          </Button>
-        )}
-      </div>
-    </>
-  );
-}
-
-function FirstConversation({ task }: { task: Task }) {
-  const room = useRoom(task.id);
-  const started = useRef(false);
-  const [problem, setProblem] = useState<string>();
-  const { loaded, items } = room.state;
-  const { dispatch } = room;
-
-  // Once the room is loaded and nobody has spoken, say the first message.
-  useEffect(() => {
-    if (started.current || !loaded) return;
-    started.current = true;
-    if (items.some((item) => item.type === "owner")) return;
-    cmd("room.send", { task: task.id, text: FIRST_MESSAGE, attachments: [], mode: "queue" }).then(
-      ({ item }) => dispatch({ type: "local", item }),
-      (error: unknown) => setProblem(describeError(error)),
-    );
-  }, [loaded, items, task.id, dispatch]);
-
-  return (
-    <>
-      {problem && (
-        <p role="alert" className="text-sm text-red text-pretty">
-          {problem}
+      }
+    >
+      <div className="flex flex-col gap-6">
+        <ul aria-label="Your journey" className="m-0 flex list-none flex-col p-0">
+          {stops.map((s, i) => {
+            const ok = done.has(s.id);
+            return (
+              <m.li
+                key={s.id}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.12 + i * 0.06, duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+                className="flex min-h-12 items-center gap-3 border-t border-line first:border-t-0"
+              >
+                {ok ? (
+                  <CircleCheck aria-hidden="true" className="size-[18px] shrink-0 text-green" />
+                ) : (
+                  <CircleDashed aria-hidden="true" className="size-[18px] shrink-0 text-fg-dim" />
+                )}
+                <span className={cn("text-body", ok ? "text-fg" : "text-fg-muted")}>{s.title}</span>
+                <span className="text-sm text-fg-faint">{ok ? "Done" : "Left for later"}</span>
+                {!ok && (
+                  <Button variant="ghost" size="sm" className="ml-auto" onClick={() => step.goTo(s.id)}>
+                    Go back
+                  </Button>
+                )}
+              </m.li>
+            );
+          })}
+        </ul>
+        <p className="m-0 text-base leading-7 text-fg-muted">
+          Start a task any time with <Kbd>N</Kbd>, and talk to the captain with <Kbd>{MOD_KEY} J</Kbd>.
         </p>
-      )}
-      <RoomPane task={task} state={room.state} dispatch={room.dispatch} loadOlder={room.loadOlder} />
-    </>
+      </div>
+    </StepFrame>
   );
 }

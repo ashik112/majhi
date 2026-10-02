@@ -28,6 +28,7 @@ import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
+import { useArrivalNewTask } from "@/onboarding/arrive";
 
 /** Pages that lay out their own panes to fit the viewport. */
 const PINNED: ReadonlySet<string> = new Set([
@@ -67,6 +68,7 @@ export function AppShell() {
 function Frame() {
   const newTask = useNewTask();
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
+  useArrivalNewTask(newTask.open);
   useAdoptOrgParam();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;

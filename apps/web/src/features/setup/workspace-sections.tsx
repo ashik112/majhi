@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { plural } from "@/lib/format";
 import { useSshReload } from "@/lib/queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
+import { SetupJourneyList } from "@/onboarding/setup-list";
 import type { CardState, Tone } from "./model";
 import type { SetupSection } from "./sections";
 
@@ -87,8 +88,9 @@ export function OverviewSection({
           majhi reads config files and public keys only. Passphrases and API keys go to the macOS Keychain and
           never to a file.
         </p>
+        <SetupJourneyList />
         <div>
-          <Button size="sm" onClick={() => reopenOnboarding("roots")}>
+          <Button size="sm" onClick={() => reopenOnboarding("welcome")}>
             Run first-time setup again
           </Button>
         </div>

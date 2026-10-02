@@ -22,6 +22,8 @@ export interface RootsFormProps {
   initial: RootsDraft;
   onSaved: (result: WorkspacesUpdateResult) => void;
   onCancel?: () => void;
+  /** Leave out the heading and the restart note, for a host that has its own (the onboarding journey). */
+  bare?: boolean;
 }
 
 const COPY = {
@@ -41,7 +43,7 @@ const COPY = {
  * The roots form for onboarding and `/settings/roots`. With the host helper connected the owner
  * picks folders (suggestions, browser); without it, this falls back to typed paths.
  */
-export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: RootsFormProps) {
+export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare = false }: RootsFormProps) {
   const save = useSetWorkspaces(onSaved);
   const host = useHostStatus();
   const formId = useId();
@@ -119,10 +121,12 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
 
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold text-balance">{copy.title}</h1>
-        <p className="text-base text-fg-muted text-pretty">{copy.body}</p>
-      </div>
+      {!bare && (
+        <div className="flex flex-col gap-2">
+          <h1 className="text-lg font-semibold text-balance">{copy.title}</h1>
+          <p className="text-base text-fg-muted text-pretty">{copy.body}</p>
+        </div>
+      )}
 
       <form
         noValidate
@@ -237,7 +241,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
         </div>
       </form>
 
-      {helper !== "checking" && (
+      {helper !== "checking" && !bare && (
         <p className="text-sm text-fg-faint text-pretty">
           {autoRemount
             ? "When you save, majhi restarts for a few seconds to mount new folders."

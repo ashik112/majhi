@@ -1,13 +1,21 @@
+import { type OnboardingStepId, onboardingStepId } from "@majhi/shared";
 import { useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/lib/queries";
-import { useAccounts, useAgents } from "@/lib/studio-queries";
-import { firstIncompleteStep, type SetupStepId } from "@/onboarding/model";
+import { openNewTaskOnArrival } from "@/onboarding/arrive";
+import { gateStep } from "@/onboarding/model";
 import { OnboardingFlow } from "@/onboarding/onboarding-flow";
 import { clearOnboardingRequest, useOnboardingRequest } from "@/onboarding/reopen";
-import { setupSkipped, skipSetup } from "@/onboarding/skip";
-import { onboardingSteps } from "@/onboarding/steps";
+import {
+  endJourney,
+  finishLater,
+  savedPlace,
+  setupSkipped,
+  skippedSteps,
+  unskipStep,
+} from "@/onboarding/skip";
+import { useJourney } from "@/onboarding/use-journey";
 import { ConfigError } from "./config-error";
 import { ServerError } from "./server-error";
 
@@ -35,30 +43,32 @@ function AppLoading() {
 }
 
 /**
- * Decides what the whole window shows from the config state: onboarding on first run, a broken
- * config, or the app (children). The roots settings page stays reachable in every state.
+ * Decides what the whole window shows from the config state: the onboarding journey on first run,
+ * a broken config, or the app (children). The journey also opens while an essential step (the
+ * folder, an AI account, the captain) is neither done nor skipped, comes back after a reload at
+ * the step it was on, and opens at any step Hub setup asks for. The roots settings page stays
+ * reachable in every state.
  */
 export function AppGate({ children }: { children: ReactNode }) {
   const config = useConfig();
   const state = config.data;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Onboarding starts on first run and stays until its last step finishes, although the config
-  // stops being first-run as soon as the roots step saves.
-  const [onboarding, setOnboarding] = useState(false);
-  const [startId, setStartId] = useState<SetupStepId>("roots");
-  const [skipped, setSkipped] = useState(setupSkipped);
-  // Hub setup can ask for onboarding again. The request is taken once.
+  // The step the journey is open at, or null for the app. A reload resumes where it was.
+  const [open, setOpen] = useState<OnboardingStepId | null>(savedPlace);
+  const [session, setSession] = useState(0);
+  const [later, setLater] = useState(setupSkipped);
+  const appShown = useRef(false);
+  const journey = useJourney();
+  // Hub setup can ask for the journey again. The request is taken once.
   const reopen = useOnboardingRequest();
   useEffect(() => {
     if (!reopen) return;
-    setStartId(reopen.step);
-    setOnboarding(true);
+    const id = onboardingStepId(reopen.step);
+    unskipStep(id);
+    setOpen(id);
+    setSession((n) => n + 1);
     clearOnboardingRequest();
   }, [reopen]);
-  // After the roots are set the server state says what is left: an account, then a captain.
-  const loaded = state?.status === "loaded";
-  const accounts = useAccounts(loaded);
-  const agents = useAgents(loaded);
 
   if (pathname === "/settings/roots") return children;
 
@@ -75,22 +85,20 @@ export function AppGate({ children }: { children: ReactNode }) {
     return <AppLoading />;
   }
 
-  if (state.status === "first-run" || onboarding) {
-    if (!onboarding) setOnboarding(true);
+  if (state.status === "first-run" || open) {
     return (
       <OnboardingFlow
-        startIndex={Math.max(
-          0,
-          onboardingSteps.findIndex((s) => s.id === startId),
-        )}
-        onFinish={() => {
-          setSkipped(true);
-          setOnboarding(false);
+        key={session}
+        start={state.status === "first-run" ? "welcome" : (open ?? "welcome")}
+        onLater={() => {
+          finishLater();
+          setLater(true);
+          setOpen(null);
         }}
-        onSkip={() => {
-          skipSetup();
-          setSkipped(true);
-          setOnboarding(false);
+        onArrive={() => {
+          endJourney();
+          openNewTaskOnArrival();
+          setOpen(null);
         }}
       />
     );
@@ -108,18 +116,17 @@ export function AppGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!skipped) {
-    // Wait for the server state, so a reload resumes at the right step instead of flashing the board.
-    if (accounts.isPending || agents.isPending) return <AppLoading />;
-    if (accounts.data && agents.data) {
-      const next = firstIncompleteStep({ noRoots: false, accounts: accounts.data, agents: agents.data });
-      if (next) {
-        setStartId(next);
-        setOnboarding(true);
-        return null;
-      }
+  if (!later && !appShown.current) {
+    // Wait for the status, so a reload resumes at the right step instead of flashing the board.
+    // Once the app shows it stays: a status refetch never swaps it for a loading screen.
+    if (!journey.status) return <AppLoading />;
+    const step = gateStep(journey.status, skippedSteps());
+    if (step) {
+      setOpen(step);
+      return null;
     }
   }
 
+  appShown.current = true;
   return children;
 }
