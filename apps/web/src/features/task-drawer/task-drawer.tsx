@@ -127,6 +127,8 @@ function Body({ task, list }: { task: Task; list: readonly TaskSummary[] }) {
                   <span className="text-fg-soft">{r.project}</span>
                   <span className="text-fg-faint"> on </span>
                   <span className="break-all text-fg-muted">{r.branch}</span>
+                  <span className="text-fg-faint"> from </span>
+                  <span className="text-fg-soft">{r.base}</span>
                 </li>
               ))}
             </ul>

@@ -284,18 +284,26 @@ export const BRIEF_PROMPT =
 /** Prepended to the first prompt of a session that has no earlier conversation. */
 export const CONTEXT_PROMPT = "First read TASK.md in this folder for the task and its rules.";
 
+/** "Starting branch: main.", or with more repos "Starting branches: main (acme-api), develop (acme-web)." */
+export function startingBranches(repos: readonly Pick<Task["repos"][number], "project" | "base">[]): string {
+  if (repos.length === 1) return `Starting branch: ${repos[0]?.base}.`;
+  return `Starting branches: ${repos.map((r) => `${r.base} (${r.project})`).join(", ")}.`;
+}
+
 /** `task/<key>-<slug>`, the slug from the title at most 40 characters. */
 export function branchName(id: string, title: string): string {
   const slug = slugify(title).slice(0, 40).replace(/-+$/, "");
   return `task/${id.toLowerCase()}${slug === "" ? "" : `-${slug}`}`;
 }
 
-/** Lowercase words joined by dashes. Links, mentions and from/on phrases are dropped first. */
+/**
+ * Lowercase words joined by dashes. Links and mentions are dropped first. Every other word stays:
+ * a title is prose, so "work on main" or "the base branch" is never a setting to cut out.
+ */
 export function slugify(text: string): string {
   return text
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/(?<![\w@/.-])@[\w-]+/g, " ")
-    .replace(/(?<![\w-])(?:from|off|base|on|branch)\s*:?\s+[\w./-]+/gi, " ")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");

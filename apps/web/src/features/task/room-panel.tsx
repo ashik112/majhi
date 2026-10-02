@@ -1,11 +1,21 @@
-import { type AgentLive, collapseHome, type ProcessInfo, type RoomItem, type Task } from "@majhi/shared";
+import {
+  type AgentLive,
+  collapseHome,
+  type ProcessInfo,
+  type RoomItem,
+  type Task,
+  type TaskRepo,
+} from "@majhi/shared";
 import { Copy } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { OpenInEditor } from "@/components/open-in-editor";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
 import { useConfig } from "@/lib/queries";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
+import { useTaskBranches, useUpdateTask } from "@/lib/task-queries";
 import { useCopy } from "@/lib/use-copy";
 import { useNow } from "@/lib/use-now";
 import { showsMrCard } from "../mrs/model";
@@ -111,6 +121,66 @@ function InRoomCard({ task, agents }: { task: Task; agents: readonly AgentLive[]
   );
 }
 
+/** The branch the worktree is cut from. Until the task starts, a pick changes it. */
+function StartingBranch({ task, repo }: { task: Task; repo: TaskRepo }) {
+  const waiting = (task.status === "inbox" || task.status === "ready") && repo.worktree === undefined;
+  const branches = useTaskBranches(task.id, waiting);
+  const update = useUpdateTask();
+  const toast = useToast();
+  if (!waiting) {
+    return (
+      <span className="text-xs text-fg-faint">
+        Starting branch <span className="font-mono text-fg-soft">{repo.base}</span>
+      </span>
+    );
+  }
+  const entry = branches.data?.find((r) => r.project === repo.project);
+  const local = [...new Set([repo.base, ...(entry?.branches ?? [])])];
+  const remote = [...new Set(entry?.remote ?? [])].filter((b) => !local.includes(b));
+  return (
+    <div className="flex items-center gap-2 text-xs text-fg-faint">
+      <span className="shrink-0">Starting branch</span>
+      <Select
+        aria-label={`Starting branch of ${repo.project}`}
+        value={repo.base}
+        disabled={update.isPending}
+        title={repo.base}
+        onChange={(e) =>
+          update.mutate(
+            {
+              id: task.id,
+              base: e.target.value,
+              ...(task.repos.length > 1 ? { project: repo.project } : {}),
+            },
+            {
+              onError: (err) =>
+                toast("Could not change the starting branch", { detail: err.message, tone: "error" }),
+            },
+          )
+        }
+        className="h-7 min-w-0 flex-1 font-mono text-sm"
+      >
+        <optgroup label="Local">
+          {local.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </optgroup>
+        {remote.length > 0 && (
+          <optgroup label="Remote only">
+            {remote.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </Select>
+    </div>
+  );
+}
+
 function BranchCard({ task }: { task: Task }) {
   const config = useConfig().data;
   const copy = useCopy();
@@ -129,9 +199,9 @@ function BranchCard({ task }: { task: Task }) {
             label={`Copy branch of ${repo.project}`}
             onCopy={() => void copy(repo.branch)}
           >
-            <span className="[overflow-wrap:anywhere]">{repo.branch}</span>{" "}
-            <span className="whitespace-nowrap text-fg-faint">from {repo.base}</span>
+            <span className="[overflow-wrap:anywhere]">{repo.branch}</span>
           </CopyValue>
+          <StartingBranch task={task} repo={repo} />
           {repo.worktree ? (
             <CopyValue
               value={repo.worktree}
