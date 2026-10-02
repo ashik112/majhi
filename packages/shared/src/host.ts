@@ -166,9 +166,11 @@ export type GitLoginsResult = z.infer<typeof GitLoginsResultSchema>;
 /**
  * How the helper's git authenticates to a remote, for the jobs that clone, check or push with a
  * workspace's own credential. Platform-neutral: plain git, never a system keychain helper.
- * - `token`: https with `GIT_ASKPASS` pointing at majhi's own askpass, which reads `password` from
- *   the child's environment. `-c credential.helper=` turns off every other helper, and
- *   `GIT_TERMINAL_PROMPT=0` stops prompts. The token is never in the URL, argv, a file or a log.
+ * - `token`: https with `GIT_ASKPASS` pointing at majhi's own askpass, which prints `username` and
+ *   reads `password` from a file only the owner can read (mode 600, in the helper's private folder),
+ *   made for the job and removed when git exits. `-c credential.helper=` turns off every other
+ *   helper, and `GIT_TERMINAL_PROMPT=0` stops prompts. The token is never in the URL, argv, the
+ *   environment or a log (apps/host/src/gitAuth.ts).
  * - `ssh`: the URL names the workspace's SSH alias (`git@github-acme:acme/api.git`); the owner's
  *   own ssh config and agent do the rest. `BatchMode=yes`, so it never prompts.
  * - `none`: a public repo over https.
@@ -308,10 +310,11 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ via: z.enum(["gh", "glab"]), host: z.string().min(1).max(255) }),
   }),
   /**
-   * `git push <url> <branch>` from the Mac, so its Keychain or `gh` helper supplies the https login.
-   * Never forces, never prompts. The path is the same on the Mac and in the container.
-   * With `auth`, the workspace's own credential is used instead and no system helper is asked
-   * (publish and connect a remote); `setUpstream` then also sets the branch's upstream.
+   * `git push <url> <branch>` from the owner's computer, so its saved https login supplies the
+   * credential. Never forces, never prompts. The path is the same there and in the container.
+   * With `auth` (a token), the workspace's own credential is used instead and no system helper is
+   * asked (Ship, publish and connect a remote); `setUpstream` also points the branch's upstream at
+   * the remote whose URL this is.
    */
   z.object({
     id: z.string(),

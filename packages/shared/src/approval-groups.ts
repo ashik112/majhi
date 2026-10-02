@@ -42,6 +42,8 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "git.signIn.start",
   "git.signIn.poll",
   "git.signIn.cancel",
+  "git.signIn.confirm",
+  "git.signOut",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([
