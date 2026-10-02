@@ -92,6 +92,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       reposOf: (id) => services.store.tasks.get(id)?.repos,
     },
     mcp: { tokens: services.adminTokens, admin: services.admin },
+    oauth: { bitbucketCallback: (query) => services.gitConnect.signIn.bitbucketCallback(query) },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
     roomMcp: {
       tasks: services.tasks,

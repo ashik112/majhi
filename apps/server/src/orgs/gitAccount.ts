@@ -32,6 +32,8 @@ export function tokenRequest(
   kind: GitHost,
   account: string,
   secret: string,
+  /** A saved value, not a pasted one: a Bitbucket value with no `:` is then an OAuth or access token, sent as Bearer. */
+  options: { stored?: boolean } = {},
 ): { kind: MrHost; url: string; headers: Record<string, string>; value: string } {
   const mr = mrKindOf(kind);
   if (mr === "github") {
@@ -43,6 +45,14 @@ export function tokenRequest(
     };
   }
   if (mr === "bitbucket") {
+    if (options.stored === true && !secret.includes(":")) {
+      return {
+        kind: mr,
+        url: "https://api.bitbucket.org/2.0/user",
+        headers: { authorization: `Bearer ${secret}` },
+        value: secret,
+      };
+    }
     const value = secret.includes(":") ? secret : `${account}:${secret}`;
     return {
       kind: mr,

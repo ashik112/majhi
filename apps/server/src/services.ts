@@ -55,6 +55,8 @@ import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { GitLoginService } from "./git/logins.ts";
+import type { Fetch } from "./gitConnect/http.ts";
+import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
@@ -73,6 +75,7 @@ import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import { Notifier } from "./notify/service.ts";
+import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { ProjectService } from "./projects/service.ts";
@@ -89,6 +92,7 @@ import { Resilience } from "./runs/resilience.ts";
 import { SERENA_COMMAND } from "./runs/serena.ts";
 import { signedIn } from "./runs/start-failure.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
+import { classifyHost } from "./scan/remote.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -141,6 +145,8 @@ export interface ServiceOptions {
   connectionsRemote?: RemoteRunFn;
   /** How long after a turn ends a silent room is looked at. Default `IDLE_CHECK_MS`. */
   idleWatchMs?: number;
+  /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
+  gitFetch?: Fetch;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -186,6 +192,8 @@ export interface Services {
   /** Push, open, watch and merge the merge requests of a task (5.5). */
   mrs: MrService;
   gitLogins: GitLoginService;
+  /** Git sign-in per workspace, tokens, clone jobs, and making and publishing projects. */
+  gitConnect: GitConnect;
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
   pendingShips: PendingShips;
@@ -658,8 +666,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           if (loaded.state.status !== "loaded") return [];
           return [...loaded.state.config.workspaces, loaded.state.config.tasksDir, ...loaded.projectPaths];
         });
+  const gitTokens = createGitTokens(config, secrets, options.gitFetch ?? fetch);
   const mrs = new MrService({
     gitLogins,
+    freshToken: (ref) => gitTokens.value(ref),
+    pushAuth: async (org, url) =>
+      pushAuthFor(gitTokens, (await config.sections()).orgs, org, url, (host) =>
+        mrKindOf(classifyHost(host)),
+      ),
     ...(hostGit === undefined ? {} : { hostGit }),
     store,
     config,
@@ -776,6 +790,24 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     .startup()
     .catch((err: unknown) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`));
   const secretService = new SecretService(secrets, config);
+  const orgs = new OrgService(config, agentStore, (id, newId) => {
+    store.tasks.renameOrg(id, newId);
+    events.emit(["tasks"]);
+  });
+  const gitConnect = createGitConnect({
+    config,
+    secrets,
+    secretService,
+    orgs,
+    projects,
+    store,
+    events,
+    hostLink: options.hostLink,
+    origin: env.origin,
+    hostHome: env.hostHome,
+    tokens: gitTokens,
+    fetch: options.gitFetch ?? fetch,
+  });
   const connections = new ConnectionService({
     config,
     secrets,
@@ -825,6 +857,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tasks,
     mrs,
     gitLogins,
+    gitConnect,
     cardActions: new CardActions({ tasks, mrs, room }),
     pendingShips,
     cleanup: new CleanupService({ store, room, events, projects }),
@@ -868,10 +901,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await backup.settle();
       store.close();
     },
-    orgs: new OrgService(config, agentStore, (id, newId) => {
-      store.tasks.renameOrg(id, newId);
-      events.emit(["tasks"]);
-    }),
+    orgs,
     accounts,
     terminals,
     events,

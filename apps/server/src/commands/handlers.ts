@@ -152,7 +152,7 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
-    ...gitConnectHandlers(),
+    ...gitConnectHandlers({ config, scanner, hostLink, services }),
 
     "config.get": async () => (await config.load()).state,
 
@@ -286,9 +286,10 @@ export function createHandlers({
           },
           checkToken: (host, kind, account, ref) =>
             gitChecks.get(`token\n${host}\n${ref}`, async () => {
-              const value = await services.secrets.get(ref.replace(/^secret:/, "")).catch(() => undefined);
+              // Refreshed first when it came from signing in and is about to expire.
+              const value = await services.gitConnect.tokens.value(ref).catch(() => undefined);
               if (value === undefined) return { state: "refused" as const };
-              return checkToken(fetchProbe, tokenRequest(host, kind, account, value));
+              return checkToken(fetchProbe, tokenRequest(host, kind, account, value, { stored: true }));
             }),
           savedLogin: (host, kind, account) =>
             gitChecks.get(`saved\n${host}\n${account.toLowerCase()}`, () =>
