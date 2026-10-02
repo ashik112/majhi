@@ -3327,10 +3327,18 @@ export class TaskService {
     return this.deps.runs.answerPermission(id, item, option);
   }
 
-  items(id: string, limit: number, beforeSeq: number | undefined) {
+  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {
     this.get(id);
     this.deps.room.flush(id);
+    if (afterSeq !== undefined) return this.deps.store.room.pageAfter(id, limit, afterSeq);
     return this.deps.store.room.page(id, limit, beforeSeq);
+  }
+
+  /** The page around one item, for a search match far back in a long room. */
+  itemsAround(id: string, item: string, limit: number) {
+    this.get(id);
+    this.deps.room.flush(id);
+    return this.deps.store.room.around(id, item, Math.ceil(limit / 2)) ?? { items: [], older: false, newer: false };
   }
 
   /** Full-text search over every task's room. Items still in the room's write buffer show up once it flushes. */

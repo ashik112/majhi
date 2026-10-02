@@ -1264,13 +1264,25 @@ export const commands = {
   },
   "room.items": {
     risk: "read",
-    summary: "Older room items, newest first",
+    summary:
+      "Older room items, newest first; with afterSeq, the next newer ones instead (`more` then says whether newer ones remain)",
     input: z.object({
       task: TaskIdSchema,
       beforeSeq: z.number().int().optional(),
+      afterSeq: z.number().int().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),
     output: z.object({ items: z.array(RoomItemSchema), more: z.boolean() }),
+  },
+  "room.around": {
+    risk: "read",
+    summary: "The room items around one item (a search match), newest first, and whether more lie on either side",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string().min(1),
+      limit: z.number().int().min(1).max(250).default(50),
+    }),
+    output: z.object({ items: z.array(RoomItemSchema), older: z.boolean(), newer: z.boolean() }),
   },
   "room.search": {
     risk: "read",

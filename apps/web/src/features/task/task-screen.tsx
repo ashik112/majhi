@@ -156,6 +156,9 @@ function TaskView({ taskId }: { taskId: string }) {
               state={room.state}
               dispatch={room.dispatch}
               loadOlder={room.loadOlder}
+              loadAround={room.loadAround}
+              loadNewer={room.loadNewer}
+              loadLatest={room.loadLatest}
               onShowChanges={showChanges}
               focusItem={shown === "room" ? item : undefined}
               onFocused={clearItem}
