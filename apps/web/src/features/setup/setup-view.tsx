@@ -31,6 +31,7 @@ import { useSearchParam } from "@/pages/parts/url-state";
 import { ApprovalsSection, policyStatus } from "./approvals-panel";
 import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
+import { E2eSection } from "./e2e-panel";
 import { EditorSection } from "./editor-panel";
 import { HistorySection } from "./history-panel";
 import { MemorySection } from "./memory-panel";
@@ -169,6 +170,7 @@ export function SetupView() {
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
+    e2e: s && (Object.values(s.e2e.projects).some((on) => !on) ? "Off for some projects" : "On for majhi"),
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
     history: "Undo any change",
@@ -258,6 +260,11 @@ export function SetupView() {
           )}
           {section === "editor" && (
             <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
+          )}
+          {section === "e2e" && (
+            <WithSettings settings={settings}>
+              {(data) => <E2eSection saved={data.e2e.projects} />}
+            </WithSettings>
           )}
           {section === "containers" && <ContainersSection />}
           {section === "appearance" && (

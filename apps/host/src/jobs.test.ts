@@ -45,6 +45,9 @@ describe("host jobs", () => {
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
+    e2eRun: async () => {
+      throw new Error("An e2e run is already in progress on this Mac.");
+    },
     editorOpen: async ({ path }) => {
       if (path === "/gone") throw new Error("There is nothing at /gone on this Mac.");
     },

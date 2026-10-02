@@ -47,6 +47,8 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
+import type { E2eService } from "./e2e/service.ts";
+import { createE2e } from "./e2e/wire.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -193,6 +195,8 @@ export interface Services {
   autonomy: AutonomyService;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
+  /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
+  e2e: E2eService | undefined;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -543,6 +547,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   let chatMemory: ChatMemory | undefined;
+  // Bound below: background e2e is built after the task service, which it creates tasks with.
+  let e2e: E2eService | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -571,6 +577,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (task) => promotion.release(task),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => pendingShips.reviewReached(id),
+    onMerged: (merge) => e2e?.onMerged(merge),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -643,6 +650,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  e2e =
+    options.hostLink === undefined
+      ? undefined
+      : createE2e({
+          store,
+          config,
+          projects,
+          hostLink: options.hostLink,
+          room,
+          tasks,
+          uploads,
+          majhiHome: env.majhiHome,
+          log: (message) => console.error(message),
+        });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
   const automation = createAutomation({
@@ -777,6 +798,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containers,
     autonomy,
     automation,
+    e2e,
     memory,
     extraction,
     promotion,
@@ -796,6 +818,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       notifier.close();
       automation.scheduler.stop();
       automation.triggerEngine.stop();
+      e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
       await processes.stopAll();

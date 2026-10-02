@@ -1,5 +1,6 @@
 import type {
   DirListing,
+  E2eRunResult,
   EditorApp,
   GitLoginsResult,
   HostJob,
@@ -37,6 +38,8 @@ export interface JobHandlers {
   layaInstall(): LayaStatus;
   /** Throws an error whose message is safe to show when the editor cannot open the path. */
   editorOpen(params: { app: EditorApp; path: string; line?: number | undefined }): Promise<void>;
+  /** Resolves when the suite ended, passed or not. Throws an error whose message is safe to show when it cannot start. */
+  e2eRun(params: Extract<HostJob, { method: "e2e.run" }>["params"]): Promise<E2eRunResult>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
   /** Throws an error whose message is safe to show when macOS shows nothing. */
   notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
@@ -98,6 +101,9 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
       case "editor.open":
         await handlers.editorOpen(job.params);
         await reply({ id: job.id, ok: true, result: { opened: true } });
+        return;
+      case "e2e.run":
+        await reply({ id: job.id, ok: true, result: await handlers.e2eRun(job.params) });
         return;
       case "notify": {
         const { clickable } = await handlers.notify(job.params);

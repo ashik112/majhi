@@ -182,6 +182,12 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
       "Change another task's branch: commit a change inside that task's own worktree, so its files and index stay in step with the branch. Give base, the commit of that branch you read the files from (run `git rev-parse <branch>` before you read them): if the branch has moved since, the call is refused and nothing is written, so read again and retry. Send a patch (a unified diff from the repo root) for small changes; send whole files (path from the repo root, full new content) only for new files or full rewrites. Give exactly one of patch or files. Never commit to another task's branch with git: majhi refuses it, and that task's agents would undo the change. Only for tasks in your own org. Refused while that task's agents are working or have work queued: retry when it is idle, paused or in review. Give the reason: the task's room shows who changed which files and why. Returns the commit.",
   },
   {
+    name: "e2e_latest",
+    command: "e2e.status",
+    description:
+      "The latest result of the full e2e suite, which majhi runs by itself in the background after each merge into main: per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
+  },
+  {
     name: "link",
     command: "tasks.link",
     description: "Make a task wait for another (depends-on), or a subtask of another (parent).",

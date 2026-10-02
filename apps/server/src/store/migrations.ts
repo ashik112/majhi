@@ -539,6 +539,54 @@ CREATE TABLE autonomy_summaries (
 );
 `,
   },
+  {
+    // Background e2e (PRV-72). `e2e_runs` is every run of a project's suite after a merge into its
+    // base branch: `task` is the task whose merge triggered it (no foreign key: the run outlives the
+    // task), `failed_specs` and `traces` are JSON lists, and `break_task` the task a failure opened
+    // or found already open. `e2e_breaks` is one row per break, so a break that stays red across many
+    // runs opens one task: `closed_at` is set by the first green run after it. `e2e_seen` is the
+    // base-branch tip the watcher saw last per project, so a merge made while majhi was down still
+    // starts a run, and the first sight of a project starts none.
+    id: 113,
+    name: "background e2e",
+    sql: `
+CREATE TABLE e2e_runs (
+  id TEXT PRIMARY KEY,
+  project TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  subject TEXT,
+  task TEXT,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'passed', 'failed', 'errored', 'replaced')),
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  duration_ms INTEGER,
+  passed INTEGER,
+  failed INTEGER,
+  failed_specs TEXT NOT NULL DEFAULT '[]',
+  traces TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  break_task TEXT
+);
+CREATE INDEX e2e_runs_project ON e2e_runs (project, queued_at);
+CREATE TABLE e2e_breaks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  task TEXT NOT NULL,
+  first_run TEXT NOT NULL,
+  first_commit TEXT NOT NULL,
+  last_green TEXT,
+  opened_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX e2e_breaks_open ON e2e_breaks (project, closed_at);
+CREATE TABLE e2e_seen (
+  project TEXT PRIMARY KEY,
+  commit_sha TEXT NOT NULL,
+  seen_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
