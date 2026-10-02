@@ -28,6 +28,7 @@ import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
+import { Background } from "./background.ts";
 import type { CurationTask } from "./curator.ts";
 
 /** The room, after the hand-back messages, is cut to about this many tokens. */
@@ -382,13 +383,34 @@ export interface HousekeeperDeps {
 /** Nobody is set to do it, so there is nothing to tell the owner about. */
 export class NoHousekeeper extends Error {}
 
+/** Majhi is shutting down: also nothing to tell the owner about. */
+export class HousekeeperClosed extends NoHousekeeper {
+  constructor() {
+    super("The Housekeeper is closed: majhi is shutting down.");
+  }
+}
+
 /**
  * The Housekeeper (SPEC 5.6): one throwaway session per finished task reads what happened and
  * answers JSON only. The only step of memory that spends tokens. The same kind of session as the
  * stand-in of the decision provider: a scratch folder, no tools, checked and asked once more.
  */
 export class Housekeeper {
+  private readonly background = new Background();
+  private readonly live = new Set<{ close(): Promise<void> }>();
+  private closed = false;
+
   constructor(private readonly deps: HousekeeperDeps) {}
+
+  /**
+   * Stops it for good: new questions are refused, open sessions are closed, and this resolves once
+   * every question in flight has ended, so nothing of it writes to the home afterwards.
+   */
+  async close(): Promise<void> {
+    this.closed = true;
+    await Promise.all([...this.live].map((s) => s.close().catch(() => undefined)));
+    await this.background.settled();
+  }
 
   /** The agent that does it: `memory.housekeeper`, else the boss. */
   async agentId(): Promise<string | undefined> {
@@ -401,7 +423,16 @@ export class Housekeeper {
    * usable. Tokens are recorded under `usageTask`. Throws `NoHousekeeper` when no agent is set, a
    * `UserError` when the agent may not read the org's work, and an `Error` saying why otherwise.
    */
-  async ask<T>(
+  ask<T>(
+    task: { id: string; org?: string | undefined },
+    prompt: string,
+    parse: (reply: string) => Parsed<T>,
+  ): Promise<{ value: T; agent: string }> {
+    if (this.closed) return Promise.reject(new HousekeeperClosed());
+    return this.background.track(this.run(task, prompt, parse));
+  }
+
+  private async run<T>(
     task: { id: string; org?: string | undefined },
     prompt: string,
     parse: (reply: string) => Parsed<T>,
@@ -443,6 +474,7 @@ export class Housekeeper {
       scratch: true,
       ...(wanted === undefined ? {} : { model: wanted }),
     });
+    this.live.add(session);
     const stopUsage = session.onEvent((event) => {
       if (event.type !== "turn") return;
       void deps.usage?.record(
@@ -451,6 +483,8 @@ export class Housekeeper {
       );
     });
     try {
+      // Closed while the session was starting: `close` could not see it yet.
+      if (this.closed) throw new HousekeeperClosed();
       // It only answers. Every tool request is refused.
       session.setPermissionHandler(async () => undefined);
       if (wanted === undefined) {
@@ -474,6 +508,7 @@ export class Housekeeper {
       return { value: parsed.value, agent: fm.id };
     } finally {
       stopUsage();
+      this.live.delete(session);
       await session.close().catch(() => undefined);
     }
   }

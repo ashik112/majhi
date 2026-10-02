@@ -845,6 +845,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
+      // Titles and records of closed tasks run after their turn and write into the home: let them
+      // end (the Housekeeper's sessions are cut short) before usage is flushed and the stores close.
+      await housekeeper.close();
+      await Promise.all([extraction.idle(), chatMemory?.idle()]);
       await processes.stopAll();
       await usageRecorder.flush();
       await memory.close();
