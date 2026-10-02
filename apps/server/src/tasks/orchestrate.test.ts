@@ -116,6 +116,28 @@ describe("lead orchestration: parallel planning", () => {
     await until(async () => (await status("ACM-3")) !== "ready", "ACM-3 started after ACM-2 was ready");
   });
 
+  it("starts a subtask that touches the same files as its running parent, without waiting for it", async () => {
+    w = await taskWorld();
+    hold();
+    await w.h.cmd("tasks.create", {
+      text: "change apps/server/src/runs/manager.ts and apps/web/src/page.ts in api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
+    await until(async () => (await status("ACM-1")) === "running", "parent running");
+    await split([
+      { text: "change apps/web/src/page.ts in api", repos: [{ project: "acme-api" }] },
+      { text: "change apps/server/src/runs/manager.ts in api", repos: [{ project: "acme-api" }] },
+    ]);
+    await until(async () => (await status("ACM-2")) === "running", "ACM-2 started");
+    await until(async () => (await status("ACM-3")) === "running", "ACM-3 started");
+    for (const id of ["ACM-2", "ACM-3"]) {
+      const child = (await w.h.cmd("tasks.get", { id })).body;
+      expect(child.links.filter((l: { type: string }) => l.type === "depends-on")).toEqual([]);
+    }
+    expect((await lines("ACM-1")).filter((l) => l.includes("waits for ACM-1"))).toEqual([]);
+  });
+
   it("asks the owner in one card when the wait would be long, and starts on the answer", async () => {
     w = await taskWorld();
     hold();

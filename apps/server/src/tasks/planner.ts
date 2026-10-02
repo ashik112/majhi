@@ -63,11 +63,25 @@ export class TaskPlanner {
       .flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
   }
 
+  /** The task's parent, its parent's parent and so on. A subtask never waits for the work it is part of. */
+  ancestors(task: Task): Set<string> {
+    const out = new Set<string>();
+    let parent = task.links.find((l) => l.type === "parent")?.task;
+    while (parent !== undefined && !out.has(parent) && parent !== task.id) {
+      out.add(parent);
+      parent = this.deps.store.tasks.get(parent)?.links.find((l) => l.type === "parent")?.task;
+    }
+    return out;
+  }
+
   async plan(task: Task): Promise<Plan> {
     const running = this.running(task.id);
     const named = likelyPaths(`${task.title}\n${task.brief}`);
     const likely = new Map(task.repos.map((r) => [r.project, named]));
-    const footprints = (await Promise.all(running.map((t) => this.footprints(t)))).flat();
+    // Ancestors are no overlap: their footprint includes the subtask's own work, so it would always wait on them.
+    const ancestors = this.ancestors(task);
+    const others = running.filter((t) => !ancestors.has(t.id));
+    const footprints = (await Promise.all(others.map((t) => this.footprints(t)))).flat();
     const overlaps = overlapsOf(likely, footprints);
 
     // Links that only hold the task back: the target shares nothing with it.

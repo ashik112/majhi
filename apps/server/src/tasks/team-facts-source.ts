@@ -117,10 +117,14 @@ export class TeamFactsSource {
     const named = likelyPaths(`${task.title}\n${task.brief}`);
     const likely = new Map(task.repos.map((r) => [r.project, named]));
     const accountOf = (id: string) => agents.find((a) => a.id === id)?.account;
+    // An ancestor holds this task's own work, so it is never an overlap (the planner says the same).
+    const ancestors = planner.ancestors(task);
     const out: RunningFacts[] = [];
     for (const other of visible) {
       const footprints = await planner.footprints(other);
-      const overlap = overlapsOf(likely, footprints).find((o) => o.task === other.id)?.level ?? "none";
+      const overlap = ancestors.has(other.id)
+        ? "none"
+        : (overlapsOf(likely, footprints).find((o) => o.task === other.id)?.level ?? "none");
       out.push(runningFactsOf(other, accountOf, footprints, overlap));
     }
     return out;
