@@ -5,8 +5,8 @@ import { git } from "../git/git.ts";
 /**
  * Checkpoints (SPEC 5.7): after every turn that changed files, a WIP commit on the task branch
  * in each touched worktree, `wip(<task>): checkpoint N`, authored as the org and committed by the
- * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with hooks and
- * signing off, so the owner's setup cannot block or prompt.
+ * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with signing off,
+ * and `git` keeps hooks and filters off, so the owner's setup cannot block or prompt.
  */
 
 export interface Identity {
@@ -65,7 +65,7 @@ export function checkpointMessage(task: string, n: number): string {
 }
 
 function quiet(): string[] {
-  return ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"];
+  return ["-c", "commit.gpgsign=false"];
 }
 
 /** Author and committer by environment, which wins over the server's own `GIT_*` variables and the repo's config. */

@@ -44,8 +44,103 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
+ * What keeps a repo from running commands in majhi's git. An agent can edit its worktree's
+ * `.gitattributes` and, outside a container, `.git/config`, and majhi's git runs in that worktree and
+ * in the project's checkout. So hooks, fsmonitor and `ext::` remotes are off for every command; the
+ * filter and merge drivers the repo defines are turned off by name (`repoDrivers`); and diffs get
+ * `--no-ext-diff --no-textconv`. majhi's own hooks reach only runs, through the run's environment
+ * (`buildEnv`), so nothing here relied on them, and an agent's git in a run is unchanged.
+ */
+const SERVER_CONFIG: readonly (readonly [string, string])[] = [
+  ["core.hooksPath", "/dev/null"],
+  ["core.fsmonitor", "false"],
+  ["protocol.ext.allow", "never"],
+];
+
+/** Commands that run textconv or an external diff unless told not to. */
+const DIFF_COMMANDS = new Set(["diff", "log", "show", "whatchanged"]);
+
+/** Commands that never read a file's content or merge, so no driver can run: no lookup. */
+const NO_DRIVERS = new Set([
+  "rev-parse",
+  "symbolic-ref",
+  "rev-list",
+  "merge-base",
+  "update-ref",
+  "for-each-ref",
+  "show-ref",
+  "ls-remote",
+  "remote",
+  "config",
+]);
+
+/**
+ * The filter and merge drivers the repo's own config sets a command for (its `.git/config`, its
+ * worktree config and what they include), turned off: a filter converts nothing and is not
+ * required, a merge driver fails, which git reports as a conflict. The owner's global and system
+ * drivers (git-lfs, say) stay on: turning those off would commit LFS files whole. Empty when there
+ * are none or git cannot tell. Read with `git config`, which runs nothing.
+ */
+async function repoDrivers(cwd: string, env: NodeJS.ProcessEnv): Promise<(readonly [string, string])[]> {
+  const listed = await run(
+    "git",
+    [
+      "config",
+      "-z",
+      "--show-scope",
+      "--name-only",
+      "--get-regexp",
+      "^(filter\\..+\\.(clean|smudge|process)|merge\\..+\\.driver)$",
+    ],
+    { cwd, env, timeout: GIT_TIMEOUT_MS },
+  ).then(
+    ({ stdout }) => stdout.split("\0"),
+    () => [],
+  );
+  const off = new Map<string, string>();
+  for (let i = 0; i + 1 < listed.length; i += 2) {
+    const [scope, key = ""] = [listed[i], listed[i + 1]];
+    if (scope !== "local" && scope !== "worktree") continue;
+    const driver = key.slice(0, key.lastIndexOf("."));
+    if (key.startsWith("filter.")) {
+      for (const name of ["clean", "smudge", "process"]) off.set(`${driver}.${name}`, "");
+      off.set(`${driver}.required`, "false");
+    } else if (key.endsWith(".driver")) {
+      off.set(key, "false");
+    }
+  }
+  return [...off];
+}
+
+/**
+ * Adds settings in the command-line scope, after any already there, so they win over the repo's.
+ * Through the environment, not `-c`, which cuts a key at its first `=`: a driver's name may hold one.
+ */
+function withConfig(
+  env: NodeJS.ProcessEnv,
+  settings: readonly (readonly [string, string])[],
+): NodeJS.ProcessEnv {
+  const had = Number(env.GIT_CONFIG_COUNT ?? 0);
+  const start = Number.isInteger(had) && had > 0 ? had : 0;
+  const out: NodeJS.ProcessEnv = { ...env, GIT_CONFIG_COUNT: String(start + settings.length) };
+  settings.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${start + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${start + i}`] = value;
+  });
+  return out;
+}
+
+/** Where the command's name is, past git's own options (`-c <setting>`, `-C <dir>`, `--no-pager`). */
+function commandAt(args: readonly string[]): number {
+  let i = 0;
+  while (i < args.length && args[i]?.startsWith("-")) i += args[i] === "-c" || args[i] === "-C" ? 2 : 1;
+  return i;
+}
+
+/**
  * Runs `git` with an argument list, never through a shell. Prompts are off, so a
- * missing credential fails at once instead of hanging the server.
+ * missing credential fails at once instead of hanging the server. The repo cannot make it run
+ * a command (`SERVER_CONFIG`).
  */
 export async function git(
   cwd: string,
@@ -53,11 +148,18 @@ export async function git(
   options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> } = {},
 ): Promise<string> {
   try {
-    const { stdout } = await run("git", [...args], {
+    const at = commandAt(args);
+    const command = args[at] ?? "";
+    const base = { ...gitEnv(process.env), ...options.env };
+    const drivers = NO_DRIVERS.has(command) ? [] : await repoDrivers(cwd, base);
+    const argv = DIFF_COMMANDS.has(command)
+      ? [...args.slice(0, at + 1), "--no-ext-diff", "--no-textconv", ...args.slice(at + 1)]
+      : [...args];
+    const { stdout } = await run("git", argv, {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       maxBuffer: options.maxBufferBytes ?? 64 * 1024 * 1024,
-      env: { ...gitEnv(process.env), ...options.env },
+      env: withConfig(base, [...SERVER_CONFIG, ...drivers]),
     });
     return stdout;
   } catch (err) {
