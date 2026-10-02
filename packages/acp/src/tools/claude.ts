@@ -2,7 +2,7 @@ import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
 import { exec } from "../exec.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
-import type { ToolDef, UsageContext } from "./types.ts";
+import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
 
 const AuthStatusJson = z.looseObject({
   loggedIn: z.boolean().optional(),
@@ -102,13 +102,29 @@ async function readClaudeUsage(ctx: UsageContext): Promise<AccountUsage> {
   return mapClaudeUsage(json);
 }
 
+/**
+ * Claude Code compacts when a turn reaches its window minus a reserve of up to 20k tokens for the
+ * reply and 13k of margin (checked in 2.1.284). `CLAUDE_CODE_AUTO_COMPACT_WINDOW` sets that window,
+ * so the window that makes it compact at `compact_at` of the cap is the threshold plus the reserve.
+ */
+const CLAUDE_RESERVE = 33_000;
+/** Claude Code raises a smaller window to this one. */
+export const CLAUDE_MIN_WINDOW = 100_000;
+
+export function claudeCapEnv({ tokens, compactAt }: ContextCap): Record<string, string> {
+  const window = Math.round(tokens * compactAt) + CLAUDE_RESERVE;
+  return { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(Math.min(tokens, Math.max(CLAUDE_MIN_WINDOW, window))) };
+}
+
 export const claude: ToolDef = {
+  capEnv: claudeCapEnv,
   info: {
     id: "claude",
     name: "Claude Code",
     authModes: ["login", "api-key"],
     loginHint: "Open the link, sign in to Claude, then paste the code back here.",
     apiKeyLabel: "Anthropic API key",
+    midTurnCapMin: CLAUDE_MIN_WINDOW,
   },
   configHomeVar: "CLAUDE_CONFIG_DIR",
   apiKeyVar: "ANTHROPIC_API_KEY",

@@ -193,6 +193,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             )}
           </Field>
           <Field
+            label="Context cap (k tokens)"
+            error={errors.contextCap}
+            hint="Blank uses majhi's setting. 0 is no cap: the model's full window."
+          >
+            {(p) => (
+              <Input
+                {...p}
+                inputMode="numeric"
+                className="font-mono"
+                placeholder="majhi's setting"
+                value={draft.contextCap}
+                onChange={(e) => set({ contextCap: e.target.value })}
+              />
+            )}
+          </Field>
+          <Field
             label="Agent attribution in commits"
             hint="The agent is the committer and each commit names its task. Off: your identity alone."
           >

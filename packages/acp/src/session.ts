@@ -5,6 +5,7 @@ import type { AccountRuntime, RuntimeOptions } from "./index.ts";
 import type { DebugLog } from "./normalize.ts";
 import { openSession } from "./session-impl.ts";
 import type { RunMount } from "./spawn.ts";
+import type { ContextCap } from "./tools/types.ts";
 import type { TurnUsage } from "./turn-usage.ts";
 
 /**
@@ -22,6 +23,8 @@ export interface SessionStart {
   mcpServers?: (McpServerSpec | StdioServerSpec)[];
   /** Variables of the run's connections (SPEC 5.14). The run's own variables win over them. */
   env?: Record<string, string>;
+  /** Compact inside a turn at this cap, where the tool's CLI can (`info.midTurnCapMin`). */
+  contextCap?: ContextCap;
   /** Resume this ACP session id with session/load when the agent supports it. */
   resume?: string;
   model?: string;

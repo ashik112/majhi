@@ -54,7 +54,7 @@ export function withPickedRepos(
   if (orgs.length > 1) warnings.push(`Repos from more than one org: ${orgs.join(", ")}`);
   const { org: _named, ...rest } = parsed;
   // The kind as the words say it for the repos that joined: an investigation stays ops.
-  const kind = taskKindOf(text, repos.length > 0, parsed.branch);
+  const kind = taskKindOf(text, repos.length > 0);
   const out: ParsedTask = { ...rest, repos, kind, warnings };
   if (orgs.length === 1 && orgs[0] !== undefined) out.org = orgs[0];
   const mentioned = parsed.repos

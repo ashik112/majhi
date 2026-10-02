@@ -53,7 +53,7 @@ function tokenRows(t: UsageTotals, rate: number | null) {
 
 const GRID = "m-0 grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-base";
 
-/** One task's token receipt, as the Context tab shows it. */
+/** One task's token receipt, as the Context tab shows it. Its compactions are listed there on their own. */
 export function TaskReceiptView({ receipt }: { receipt: TaskReceipt }) {
   const { context, totals } = receipt;
   return (
@@ -100,30 +100,6 @@ export function TaskReceiptView({ receipt }: { receipt: TaskReceipt }) {
           </tbody>
         </table>
       )}
-
-      <div className="flex flex-col gap-1">
-        <span className="text-fg-faint">Compactions</span>
-        {receipt.compactions.length === 0 ? (
-          <span className="text-base text-fg-muted">None</span>
-        ) : (
-          <ul aria-label="Compactions" className="m-0 flex list-none flex-col gap-1 p-0 text-base">
-            {receipt.compactions.map((c) => (
-              <li key={`${c.at}-${c.agent}`}>
-                <span className="font-mono">@{c.agent}</span>{" "}
-                {c.before !== null && c.after !== null
-                  ? `${formatTokens(c.before)} to ${formatTokens(c.after)} tokens`
-                  : c.after !== null
-                    ? `to ${formatTokens(c.after)} tokens`
-                    : "size not known"}{" "}
-                <span className="text-fg-muted">
-                  ({c.method}
-                  {c.reason === "native" || c.reason === "handoff" ? "" : `, ${c.reason}`})
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }

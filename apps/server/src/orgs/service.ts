@@ -69,6 +69,7 @@ export class OrgService {
       "resume",
       "commits",
       "rooms",
+      "turns",
       "tiers",
       "team",
       "merge",
@@ -150,10 +151,16 @@ function view(
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
   if (org.identity !== undefined) out.identity = org.identity;
-  if (org.context?.compact_at !== undefined) out.context = { compact_at: org.context.compact_at };
+  if (org.context?.compact_at !== undefined || org.context?.cap !== undefined) {
+    out.context = {
+      ...(org.context.compact_at === undefined ? {} : { compact_at: org.context.compact_at }),
+      ...(org.context.cap === undefined ? {} : { cap: org.context.cap }),
+    };
+  }
   if (org.resume?.auto !== undefined) out.resume = { auto: org.resume.auto };
   if (org.commits?.attribution !== undefined) out.commits = { attribution: org.commits.attribution };
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
+  if (org.turns !== undefined && Object.keys(org.turns).length > 0) out.turns = org.turns;
   if (org.tiers !== undefined && Object.keys(org.tiers).length > 0) out.tiers = org.tiers;
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;

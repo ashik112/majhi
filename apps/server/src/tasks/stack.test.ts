@@ -76,9 +76,11 @@ describe("a ready dependency", () => {
 
     // ACM-1 moves on: ACM-2 follows.
     await h.cmd("room.send", { task: "ACM-1", text: "one more step" });
-    await until(async () => (await git(api2(), "ls-files")).includes("step2.txt"), "rebased");
+    // The files show up while git is still rebasing; majhi notes the move once it has recorded it.
+    const moved = `acme-api: rebased onto ACM-1's latest ${first.repos[0].branch}.`;
+    await until(async () => (await notes("ACM-2")).includes(moved), "rebased");
+    expect(await git(api2(), "ls-files")).toContain("step2.txt");
     const tip = (await git(api1(), "rev-parse", "HEAD")).trim();
     expect((await h.cmd("tasks.get", { id: "ACM-2" })).body.repos[0].stack.commit).toBe(tip);
-    expect(await notes("ACM-2")).toContain(`acme-api: rebased onto ACM-1's latest ${first.repos[0].branch}.`);
   });
 });

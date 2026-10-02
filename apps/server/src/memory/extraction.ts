@@ -1,5 +1,6 @@
 import type { MemoryExtractOutput, ProjectBrief, RoomItem, Task, TaskRepo } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
+import { Background } from "./background.ts";
 import { firstWords } from "./brief-doc.ts";
 import { type CurationTask, type Curator, EMPTY_COUNTS } from "./curator.ts";
 import {
@@ -90,8 +91,14 @@ export function curationTask(task: Task): CurationTask {
  */
 export class Extraction {
   private readonly running = new Set<string>();
+  private readonly background = new Background();
 
   constructor(private readonly deps: ExtractionDeps) {}
+
+  /** Resolves once the reads that `afterClose` started have ended. */
+  idle(): Promise<void> {
+    return this.background.settled();
+  }
 
   /** For the command: writes the record again, whatever was there. An error says why nothing was read. */
   async extract(id: string): Promise<MemoryExtractOutput> {
@@ -118,7 +125,7 @@ export class Extraction {
     if (this.running.has(task.id) || this.deps.memory.project.record(task.id) !== undefined) return;
     // No agent wrote anything (a promotion task, a task closed without a run): nothing to record, no tokens spent.
     if (!agentSpoke(this.deps.room(task.id))) return;
-    void this.read(task.id, { again: false }).catch((err: unknown) => {
+    void this.background.track(this.read(task.id, { again: false })).catch((err: unknown) => {
       if (err instanceof NoHousekeeper) return;
       this.say(task.id, "warn", `Memory was not written: ${errorMessage(err)}`);
     });

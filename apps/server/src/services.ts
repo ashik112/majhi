@@ -26,6 +26,7 @@ import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService } from "./autonomy/service.ts";
+import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
@@ -47,6 +48,8 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
+import type { E2eService } from "./e2e/service.ts";
+import { createE2e } from "./e2e/wire.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -84,10 +87,12 @@ import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
 import { SERENA_COMMAND } from "./runs/serena.ts";
+import { signedIn } from "./runs/start-failure.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
+import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
-import { Store } from "./store/index.ts";
+import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import type { LinkOptions } from "./tasks/links.ts";
@@ -143,6 +148,8 @@ export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
   secrets: SecretStore;
+  /** The passphrase-protected export of the secrets key, and which key it was. */
+  keyExports: KeyExports;
   secretService: SecretService;
   /** Connections of every org: definitions, secrets, files and the last Test of each (5.14). */
   connections: ConnectionService;
@@ -169,6 +176,8 @@ export interface Services {
   watcher: HomeWatcher;
   usageSweeper: UsageSweeper;
   store: Store;
+  /** The daily snapshot of majhi.db, kept 7 days, and restore (PRV-31). */
+  backup: BackupService;
   uploads: UploadStore;
   projects: ProjectService;
   room: RoomService;
@@ -193,6 +202,8 @@ export interface Services {
   autonomy: AutonomyService;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
+  /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
+  e2e: E2eService | undefined;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -258,6 +269,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (id) => terminals.killKey(`login:${id}`),
   });
   const store = Store.open(env.majhiHome);
+  const backup = new BackupService({
+    majhiHome: env.majhiHome,
+    sqlite: () => store.raw,
+    dbFile: DB_FILE_NAME,
+  });
+  backup.start();
   const memory = createMemory(env.majhiHome, options.embedder);
   memory.project.setLanded(async (task, repo) => {
     const found = store.tasks
@@ -458,7 +475,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
-    onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
+    onPaused: (task, reason, why) => void tasks.pausedByRuns(task, reason, why).catch(() => undefined),
+    checkAccount: async (id) => {
+      const { account } = await accounts.health(id, true);
+      const full = [account.usage?.window, account.usage?.weekly].find(
+        (w) => w !== undefined && w.usedPct >= 100 && w.resetsAt !== undefined,
+      );
+      return { status: account.status, resetsAt: full?.resetsAt ?? account.usage?.window?.resetsAt };
+    },
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
@@ -543,6 +567,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   let chatMemory: ChatMemory | undefined;
+  // Bound below: background e2e is built after the task service, which it creates tasks with.
+  let e2e: E2eService | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -571,6 +597,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onRemoving: (task) => promotion.release(task),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => pendingShips.reviewReached(id),
+    onMerged: (merge) => e2e?.onMerged(merge),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -643,6 +670,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
+  e2e =
+    options.hostLink === undefined
+      ? undefined
+      : createE2e({
+          store,
+          config,
+          projects,
+          hostLink: options.hostLink,
+          room,
+          tasks,
+          uploads,
+          majhiHome: env.majhiHome,
+          log: (message) => console.error(message),
+        });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
   const automation = createAutomation({
@@ -714,6 +755,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     probe: options.probe ?? probeFromSetting(env.netProbe),
     ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
     runners: runner.runner,
+    accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
   options.hostLink?.onWake(() => void resilience.wake().catch(() => undefined));
@@ -733,6 +775,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     runtime,
     secrets,
+    keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
     connections,
     connectionTests: new ConnectionTester({
@@ -761,6 +804,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     roomAccess,
     coordinator,
     store,
+    backup,
     uploads,
     projects,
     room,
@@ -777,6 +821,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containers,
     autonomy,
     automation,
+    e2e,
     memory,
     extraction,
     promotion,
@@ -793,14 +838,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(updateWatch);
+      backup.stop();
       notifier.close();
       automation.scheduler.stop();
       automation.triggerEngine.stop();
+      e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
+      // Titles and records of closed tasks run after their turn and write into the home: let them
+      // end (the Housekeeper's sessions are cut short) before usage is flushed and the stores close.
+      await housekeeper.close();
+      await Promise.all([extraction.idle(), chatMemory?.idle()]);
       await processes.stopAll();
       await usageRecorder.flush();
       await memory.close();
+      await backup.settle();
       store.close();
     },
     orgs: new OrgService(config, agentStore, (id, newId) => {

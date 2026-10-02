@@ -1,6 +1,6 @@
 import type { HostStatus } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { accountCheck, checkHostHelper, diskStatus } from "./checks.ts";
+import { accountCheck, checkHostHelper, diskStatus, exportCheck, keychainCheck } from "./checks.ts";
 
 describe("accountCheck", () => {
   const view = (status: Parameters<typeof accountCheck>[0]["status"]) => ({
@@ -62,5 +62,61 @@ describe("diskStatus", () => {
     expect(diskStatus(6e9)).toBe("pass");
     expect(diskStatus(4e9)).toBe("warn");
     expect(diskStatus(5e8)).toBe("fail");
+  });
+});
+
+describe("secrets key backup checks", () => {
+  const KEY = "0123456789abcdef";
+  const OLD = "fedcba9876543210";
+  const mac = (secretsKey?: NonNullable<HostStatus["info"]>["secretsKey"]): { status: HostStatus } => ({
+    status: {
+      connected: true,
+      info: { version: "1", platform: "darwin", canRemount: true, ...(secretsKey ? { secretsKey } : {}) },
+    },
+  });
+
+  it("passes when the Keychain holds the key majhi uses", () => {
+    expect(keychainCheck(KEY, mac({ saved: KEY, checkedAt: "t" })).status).toBe("pass");
+  });
+
+  it("warns with a fix when there is no copy, a failed copy or another key", () => {
+    expect(keychainCheck(KEY, mac({ checkedAt: "t" }))).toMatchObject({
+      status: "warn",
+      fix: { label: "Save to Keychain" },
+    });
+    expect(
+      keychainCheck(KEY, mac({ error: "The Keychain did not answer. Is it locked?", checkedAt: "t" })),
+    ).toMatchObject({
+      status: "warn",
+      detail: "The Keychain did not answer. Is it locked?",
+      fix: { label: "Save to Keychain" },
+    });
+    expect(keychainCheck(KEY, mac({ saved: OLD, checkedAt: "t" }))).toMatchObject({
+      status: "warn",
+      fix: { label: "Replace copy" },
+    });
+    expect(keychainCheck(KEY, mac()).status).toBe("warn");
+  });
+
+  it("warns without a fix while the helper is away, and leaves hosts without a Keychain to the export", () => {
+    const away = keychainCheck(KEY, { status: { connected: false } });
+    expect(away.status).toBe("warn");
+    expect(away.fix).toBeUndefined();
+    const linux = keychainCheck(KEY, {
+      status: { connected: true, info: { version: "1", platform: "linux", canRemount: true } },
+    });
+    expect(linux.status).toBe("pass");
+  });
+
+  it("warns until the current key is exported", () => {
+    expect(exportCheck(KEY, undefined)).toMatchObject({ status: "warn", fix: { label: "Export key" } });
+    expect(exportCheck(KEY, { fingerprint: OLD, exportedAt: "2026-09-01T10:00:00.000Z" })).toMatchObject({
+      status: "warn",
+      fix: { label: "Export key" },
+    });
+    expect(exportCheck(KEY, { fingerprint: KEY, exportedAt: "2026-10-02T10:00:00.000Z" })).toMatchObject({
+      status: "pass",
+      detail: expect.stringContaining("2026-10-02"),
+    });
   });
 });

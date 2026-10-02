@@ -12,6 +12,8 @@ export interface AgentState {
 /** How an agent shows in the room panel. Without live data the task has not started it. */
 export function agentState(live: AgentLive | undefined, pausedReason?: string | undefined): AgentState {
   if (!live) return { label: "Not started", tone: "faint" };
+  if (live.couldNotStart && (live.status === "error" || live.status === "paused"))
+    return { label: "Could not start", tone: "red" };
   if (live.status === "paused" && pausedReason === "offline")
     return { label: "Paused, offline", tone: "paused" };
   switch (live.status) {
@@ -78,6 +80,8 @@ const PAUSE_TEXT: Record<string, string> = {
     "Paused: a weekly budget reached 100%. It continues when the budget is raised or on Monday, or resume it now.",
   offline: "majhi is offline. The task continues on its own when the connection is back.",
   error: "Paused after an error. Read the room, then resume.",
+  "signed-out":
+    "Paused: an account is signed out. It continues on its own once you sign in, or resume it now.",
   owner: "You stopped the task. Resume when you are ready.",
 };
 
@@ -239,9 +243,15 @@ export function linkTargets(
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
 
-/** The context meter: share of the window in use, 0 to 1, and "42k of 200k". */
+/** The context meter: share of the cap in use, 0 to 1, and "42k of 200k", with "(1M window)" when the cap is under the model's window. */
 export function contextMeter(usage: AgentLive["usage"]): { share: number; label: string } | undefined {
   if (usage === undefined || usage.size <= 0) return undefined;
   const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)));
-  return { share: Math.min(1, usage.used / usage.size), label: `${k(usage.used)} of ${k(usage.size)}` };
+  const m = (n: number) => (n >= 1_000_000 ? `${Math.round(n / 100_000) / 10}M` : k(n));
+  const window =
+    usage.window !== undefined && usage.window > usage.size ? ` (${m(usage.window)} window)` : "";
+  return {
+    share: Math.min(1, usage.used / usage.size),
+    label: `${k(usage.used)} of ${k(usage.size)}${window}`,
+  };
 }

@@ -3,7 +3,7 @@
  * Build first: `pnpm --filter @majhi/web build && pnpm --filter @majhi/server build`.
  *
  * It makes a throwaway home (the e2e one, on port 7090), fills it with tasks whose rooms hold
- * 40, 600 and 6,000 items, starts the built server (`node apps/server/dist/main.js`, no agents) and
+ * 40, 600 and 6,000 items, starts the built server (`node --max-semi-space-size=2 apps/server/dist/main.js`, no agents) and
  * a browser, and prints:
  *
  * - server memory (RSS) after start, and after the browser opened every task;
@@ -97,9 +97,11 @@ function seed(): void {
 async function startServer(): Promise<{ pid: number; stop: () => void }> {
   mkdirSync(HOST_HOME, { recursive: true });
   writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
-  const child = spawn(process.execPath, ["apps/server/dist/main.js"], {
+  // The flags and the malloc setting are the ones the Dockerfile starts the server with.
+  const child = spawn(process.execPath, ["--max-semi-space-size=2", "apps/server/dist/main.js"], {
     env: {
       ...process.env,
+      MALLOC_ARENA_MAX: "2",
       MAJHI_HOST: "127.0.0.1",
       MAJHI_PORT: String(E2E_PORT),
       HOST_HOME,

@@ -179,8 +179,11 @@ ENV MAJHI_COMMIT=$MAJHI_COMMIT \
     MAJHI_HOST=0.0.0.0 \
     MAJHI_PORT=7070 \
     MAJHI_WEB_DIST=/app/web \
-    HOME=/tmp/majhi
+    HOME=/tmp/majhi \
+    MALLOC_ARENA_MAX=2
 EXPOSE 7070
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:7070/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "dist/main.js"]
+# A 2 MB young generation (V8 grows it to 16 MB by default) and two malloc arenas keep the server's
+# resident memory under the 200 MB target of SPEC 5.17; see docs/PROGRESS.md.
+CMD ["node", "--max-semi-space-size=2", "dist/main.js"]

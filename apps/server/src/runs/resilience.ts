@@ -12,8 +12,11 @@ import { NetworkWatch, type Probe } from "./network.ts";
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
   statusChanged(id: string): Promise<void>;
-  pausedByRuns(id: string, reason: "offline" | "error" | "limit" | "owner"): Promise<void>;
+  pausedByRuns(id: string, reason: "offline" | "error" | "limit" | "owner" | "signed-out"): Promise<void>;
 }
+
+/** How often paused-for-sign-in tasks look at their accounts. */
+const SIGN_IN_CHECK_MS = 30_000;
 
 export interface ResilienceDeps {
   runs: RunManager;
@@ -25,6 +28,8 @@ export interface ResilienceDeps {
   probeMs?: number;
   /** Runner containers: when the connection is back, any left without a live run are removed. */
   runners?: { prune(): Promise<unknown> } | undefined;
+  /** A fresh check of an account: true when it can run agents (signed in). Absent: signed-out pauses wait for the owner. */
+  accountSignedIn?: (account: string) => Promise<boolean>;
   /** In ms. Tests pass a fake clock. */
   now?: () => number;
 }
@@ -36,6 +41,7 @@ export interface ResilienceDeps {
  */
 export class Resilience {
   readonly network: NetworkWatch;
+  private signInTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly deps: ResilienceDeps) {
     this.network = new NetworkWatch({
@@ -50,10 +56,42 @@ export class Resilience {
 
   start(): void {
     this.network.start();
+    if (this.deps.accountSignedIn !== undefined && this.signInTimer === undefined) {
+      this.signInTimer = setInterval(() => void this.checkSignIns().catch(() => undefined), SIGN_IN_CHECK_MS);
+      this.signInTimer.unref();
+    }
   }
 
   stop(): void {
     this.network.stop();
+    if (this.signInTimer !== undefined) clearInterval(this.signInTimer);
+    this.signInTimer = undefined;
+  }
+
+  /**
+   * Tasks paused because no agent could start (its account was signed out) continue by
+   * themselves once every account that held them is signed in again.
+   */
+  async checkSignIns(): Promise<void> {
+    const { runs, store, accountSignedIn } = this.deps;
+    if (accountSignedIn === undefined) return;
+    const byTask = new Map<string, Set<string>>();
+    for (const { task, account } of runs.pausedSignedOut()) {
+      byTask.set(task, (byTask.get(task) ?? new Set()).add(account));
+    }
+    if (byTask.size === 0) return;
+    const healthy = new Map<string, boolean>();
+    for (const accounts of byTask.values()) {
+      for (const id of accounts) {
+        if (!healthy.has(id)) healthy.set(id, await accountSignedIn(id).catch(() => false));
+      }
+    }
+    for (const [id, accounts] of byTask) {
+      if (![...accounts].every((a) => healthy.get(a) === true)) continue;
+      const task = store.tasks.get(id);
+      if (task === undefined || task.status !== "paused" || waitsForOwner(task.pausedReason)) continue;
+      if (await this.autoResume(task)) runs.resumeStarts(id, "the account is signed in again");
+    }
   }
 
   /** `resume.auto` for the task's org: the org's own value, else majhi's. */

@@ -46,6 +46,7 @@ import {
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
 } from "./autonomy.ts";
+import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -74,6 +75,7 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
+import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
   DirListingSchema,
@@ -81,6 +83,7 @@ import {
   GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
+  KEY_EXPORT_PASSPHRASE_MIN,
   SSH_PASSPHRASE_MAX,
   SshStatusSchema,
   UpdateStatusSchema,
@@ -143,6 +146,7 @@ import {
   ResumePatchSchema,
   RoomPatchSchema,
   SettingsSchema,
+  TurnsPatchSchema,
 } from "./settings.ts";
 import {
   AttachmentSchema,
@@ -542,7 +546,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold, automatic resume, loop guard, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -550,7 +554,7 @@ export const commands = {
       base: OrgConfigSchema.shape.base.nullable().optional(),
       key: OrgConfigSchema.shape.key.nullable().optional(),
       identity: OrgConfigSchema.shape.identity.nullable().optional(),
-      /** Overrides majhi's `context.compact_at` for this org's agents. */
+      /** Overrides majhi's `context.compact_at` and `context.cap` for this org's agents. */
       context: OrgConfigSchema.shape.context.nullable().optional(),
       /** Overrides majhi's `resume.auto` for this org's runs. */
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
@@ -558,6 +562,8 @@ export const commands = {
       commits: OrgConfigSchema.shape.commits.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
+      /** Overrides majhi's `turns` limits for this org's agents, field by field. */
+      turns: OrgConfigSchema.shape.turns.nullable().optional(),
       /** Overrides majhi's `decisions.tiers` (model and effort fallback by role) for this org's agents. */
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
@@ -1272,13 +1278,26 @@ export const commands = {
   },
   "room.items": {
     risk: "read",
-    summary: "Older room items, newest first",
+    summary:
+      "Older room items, newest first; with afterSeq, the next newer ones instead (`more` then says whether newer ones remain)",
     input: z.object({
       task: TaskIdSchema,
       beforeSeq: z.number().int().optional(),
+      afterSeq: z.number().int().optional(),
       limit: z.number().int().min(1).max(500).default(100),
     }),
     output: z.object({ items: z.array(RoomItemSchema), more: z.boolean() }),
+  },
+  "room.around": {
+    risk: "read",
+    summary:
+      "The room items around one item (a search match), newest first, and whether more lie on either side",
+    input: z.object({
+      task: TaskIdSchema,
+      item: z.string().min(1),
+      limit: z.number().int().min(1).max(250).default(50),
+    }),
+    output: z.object({ items: z.array(RoomItemSchema), older: z.boolean(), newer: z.boolean() }),
   },
   "room.search": {
     risk: "read",
@@ -1347,6 +1366,34 @@ export const commands = {
     summary: "Stop the preview of a task (name preview) or one of its service containers",
     input: z.object({ task: TaskIdSchema, name: ContainerNameSchema }),
     output: z.object({ container: ContainerInfoSchema }),
+  },
+
+  // Backups of majhi.db (PRV-31) ---------------------------------------------------
+  "backup.list": {
+    risk: "read",
+    summary:
+      "The snapshots of majhi.db (tasks, rooms, history): a daily one, kept for 7 days, the ones taken on request and the ones a restore replaced, newest first, and whether a restore waits for the next start",
+    input: Empty,
+    output: BackupListSchema,
+  },
+  "backup.now": {
+    risk: "change",
+    summary: "Take a snapshot of majhi.db now, besides the daily one",
+    input: Empty,
+    output: z.object({ name: z.string() }),
+  },
+  "backup.restore": {
+    risk: "change",
+    summary:
+      "Restore majhi.db from a snapshot. The current database is snapshotted first, and the swap happens when majhi next starts. Owner only",
+    input: z.object({ name: z.string().min(1).max(100) }),
+    output: z.object({ restored: z.string(), safety: z.string() }),
+  },
+  "backup.cancelRestore": {
+    risk: "change",
+    summary: "Drop a restore that waits for the next start, so majhi keeps its current database. Owner only",
+    input: Empty,
+    output: z.object({ cancelled: z.boolean() }),
   },
 
   // Task links (5.4a) ---------------------------------------------------------
@@ -1472,8 +1519,21 @@ export const commands = {
     input: z.object({ name: IdSchema }),
     output: z.object({ removed: IdSchema }),
   },
+  "secrets.exportKey": {
+    risk: "change",
+    summary:
+      "Export the secrets key encrypted with a passphrase, as an age file to keep off this Mac. Decrypting it gives the key file back",
+    input: z.object({
+      /** Used once to encrypt the export. Never logged, stored or returned. */
+      passphrase: z
+        .string()
+        .min(KEY_EXPORT_PASSPHRASE_MIN, `Use at least ${KEY_EXPORT_PASSPHRASE_MIN} characters`)
+        .max(SSH_PASSPHRASE_MAX),
+    }),
+    output: z.object({ fileName: z.string(), content: z.string() }),
+  },
 
-  // Connections (5.14) ---------------------------------------------------------
+  // Connections (5.14)---------------------------------------------------------
   "connections.types": {
     risk: "read",
     summary:
@@ -1581,15 +1641,17 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to true or false), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
+      turns: TurnsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       commits: CommitsPatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),
+      e2e: E2ePatchSchema.optional(),
       cleanup: CleanupPatchSchema.optional(),
       notifications: NotificationsPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
@@ -1702,6 +1764,13 @@ export const commands = {
       ),
     }),
   },
+  "e2e.status": {
+    risk: "read",
+    summary:
+      "The background e2e suite on main: the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
+    input: Empty,
+    output: E2eStatusSchema,
+  },
   "health.fix": {
     risk: "change",
     summary: "Run the fix majhi offers for a failed check",
@@ -1710,7 +1779,13 @@ export const commands = {
       ok: z.boolean(),
       detail: z.string(),
       /** Something the UI does next, like opening the sign-in terminal, which only the browser can show. */
-      open: z.object({ kind: z.literal("sign-in"), account: z.string() }).optional(),
+      open: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("sign-in"), account: z.string() }),
+          /** The form that exports the secrets key: it needs a passphrase only the owner types. */
+          z.object({ kind: z.literal("key-export") }),
+        ])
+        .optional(),
     }),
   },
   "system.version": {

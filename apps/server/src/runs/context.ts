@@ -6,6 +6,8 @@ import type { ContextSettings } from "@majhi/shared";
  * compaction must reach, and when to rotate. Pure functions, so the rules are tested alone.
  */
 export interface ContextBudget {
+  /** Most tokens the session may use, whatever the model allows. 0 means no cap: the model's window. */
+  cap: number;
   /** Compact when used / size reaches this. */
   compactAt: number;
   /** Native compaction must bring usage under this, else majhi hands off to a fresh session. */
@@ -16,7 +18,10 @@ export interface ContextBudget {
 
 export interface Usage {
   used: number;
+  /** What `used` is measured against: the cap, or the model's window when there is no cap or it is smaller. */
   size: number;
+  /** The model's window, when the cap makes `size` smaller. */
+  window?: number;
 }
 
 /** At most this many compactions while one prompt is handled; then the run pauses with reason error. */
@@ -29,19 +34,36 @@ export const IMAGE_TOKENS = 1600;
 export const COMPACT_NOTE =
   "Keep the task, key decisions, remaining work, files touched, and the next step. Drop old tool output.";
 
+/** What an org or an agent may override in the budget. */
+export interface ContextOverride {
+  compact_at?: number | undefined;
+  cap?: number | undefined;
+}
+
 /**
- * `compact_at` in merge order: majhi's default, then the org's, then the agent's. The target and
- * `max_turns` are majhi-wide. When an org or agent threshold is at or under the target, the
- * target becomes half the threshold, so native compaction still has something to reach.
+ * `compact_at` and `cap` in merge order: majhi's default, then the org's, then the agent's. The
+ * target and `max_turns` are majhi-wide. When an org or agent threshold is at or under the target,
+ * the target becomes half the threshold, so native compaction still has something to reach.
  */
 export function budgetFor(
   global: ContextSettings,
-  org: { compact_at?: number | undefined } | undefined,
-  agent: { compact_at?: number | undefined } | undefined,
+  org: ContextOverride | undefined,
+  agent: ContextOverride | undefined,
 ): ContextBudget {
   const compactAt = agent?.compact_at ?? org?.compact_at ?? global.compact_at;
   const compactTarget = global.compact_target < compactAt ? global.compact_target : compactAt / 2;
-  return { compactAt, compactTarget, maxTurns: global.max_turns };
+  const cap = agent?.cap ?? org?.cap ?? global.cap;
+  return { cap, compactAt, compactTarget, maxTurns: global.max_turns };
+}
+
+/**
+ * A usage report measured against the cap: `size` is the smaller of the cap and the model's
+ * window, so `compact_at` and `compact_target` are shares of the cap. The window is kept when it
+ * differs, for the meter. With no cap the report passes through.
+ */
+export function capUsage(used: number, window: number, cap: number): Usage {
+  if (cap <= 0 || cap >= window) return { used, size: window };
+  return { used, size: cap, window };
 }
 
 /** About four characters per token, plus a fixed cost per image. */

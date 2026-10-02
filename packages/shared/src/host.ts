@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LayaStatusSchema } from "./decisions.ts";
+import { E2eRunResultSchema } from "./e2e.ts";
 import { EditorAppSchema } from "./settings.ts";
 
 /**
@@ -63,6 +64,26 @@ export const SSH_PASSPHRASE_MAX = 1024;
 export function sshUnlockCommand(key: string): string {
   return `ssh-add --apple-use-keychain ${key}`;
 }
+
+/**
+ * A secrets key's fingerprint: the first 16 hex characters of the SHA-256 of its
+ * `AGE-SECRET-KEY-1...` line. The helper and the server compare keys by it; it never reveals the key.
+ */
+export const KeyFingerprintSchema = z.string().regex(/^[0-9a-f]{16}$/);
+
+/** The copy of the secrets key the helper keeps in the macOS Keychain. */
+export const SecretsKeyBackupSchema = z.object({
+  /** The fingerprint of the key in the Keychain. Absent when the Keychain holds none. */
+  saved: KeyFingerprintSchema.optional(),
+  /** Why the helper could not read or save the copy, in plain words. */
+  error: z.string().optional(),
+  checkedAt: z.string(),
+});
+export type SecretsKeyBackup = z.infer<typeof SecretsKeyBackupSchema>;
+
+/** Shortest passphrase for a secrets key export. The file leaves the Mac, so it must hold up offline. */
+export const KEY_EXPORT_PASSPHRASE_MIN = 12;
+export const KEY_EXPORT_FILE_NAME = "majhi-secrets-key.age";
 
 /** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
 export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
@@ -186,6 +207,29 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     }),
   }),
   /**
+   * Run the project's Playwright suite in the helper's own worktree at `commit`, at low priority, and
+   * answer when it ends (the call waits up to `timeoutMs`). `repo` is the project's path, the same on
+   * the Mac and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("e2e.run"),
+    params: z.object({
+      runId: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[A-Za-z0-9-]+$/),
+      repo: z.string().min(1).max(EDITOR_PATH_MAX),
+      commit: CommitSchema,
+      timeoutMs: z
+        .number()
+        .int()
+        .min(60_000)
+        .max(6 * 60 * 60_000),
+    }),
+  }),
+  /**
    * Show a macOS notification. `path` is where a click leads in majhi, like `/t/ACM-12`; the helper
    * joins it to majhi's own address and only opens it when it can carry a click.
    */
@@ -250,6 +294,15 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("ssh.unlock"),
     params: z.object({ key: z.string().min(1), passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX) }),
   }),
+  /**
+   * Save the Mac's secrets key file to the Keychain, replacing any other key there. The helper refuses
+   * when the file's fingerprint is not `expected`, the key the server uses. The key never travels.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("secretsKey.save"),
+    params: z.object({ expected: KeyFingerprintSchema }),
+  }),
 ]);
 export type HostJob = z.infer<typeof HostJobSchema>;
 export type HostMethod = HostJob["method"];
@@ -261,12 +314,14 @@ export const HostResultSchemas = {
   remount: z.object({ accepted: z.literal(true) }),
   "ssh.reload": SshStatusSchema,
   "ssh.unlock": SshStatusSchema,
+  "secretsKey.save": SecretsKeyBackupSchema,
   "version.changes": z.object({
     head: z.string(),
     dirty: z.boolean(),
     changes: z.array(z.string()).max(20),
   }),
   "editor.open": z.object({ opened: z.literal(true) }),
+  "e2e.run": E2eRunResultSchema,
   /** `clickable`: a click on the notification opens majhi. */
   notify: z.object({ shown: z.literal(true), clickable: z.boolean() }),
   "git.logins": GitLoginsResultSchema,
@@ -301,6 +356,8 @@ export const HostInfoSchema = z.object({
   dockerRuntime: DockerRuntimeSchema.optional(),
   /** Laya on this Mac. Absent from older helpers. */
   laya: LayaStatusSchema.optional(),
+  /** The Keychain copy of the secrets key. Absent until the helper's first look, off macOS, and from older helpers. */
+  secretsKey: SecretsKeyBackupSchema.optional(),
   /**
    * When the helper last noticed a wake from sleep (clock gap). The server resumes turns that
    * failed or stalled while the Mac slept each time this changes. Absent until the first wake.

@@ -9,6 +9,8 @@ import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useStartTask, useTasks } from "@/lib/task-queries";
+import { openDue } from "../tasks/schedule";
+import { DueChip, PriorityChip } from "../tasks/schedule-chips";
 import { canStartSubtask, relations, subtaskLine } from "./model";
 
 const SUBTASKS_CARD_ID = "subtasks-card";
@@ -59,6 +61,7 @@ function SubtaskRow({ task, first }: { task: TaskSummary; first: boolean }) {
   const line = subtaskLine(task);
   const search = orgSearch(org);
   const done = task.status === "done";
+  const due = openDue(task, Date.now());
   return (
     <li className={cn("flex items-start gap-2 py-2", !first && "border-t border-line")}>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -69,7 +72,11 @@ function SubtaskRow({ task, first }: { task: TaskSummary; first: boolean }) {
           title={`${task.id} ${task.title}`}
           className="group flex min-w-0 flex-col gap-0.5 rounded-xs text-left"
         >
-          <span className="font-mono text-xs text-fg-faint group-hover:text-fg-muted">{task.id}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="font-mono text-xs text-fg-faint group-hover:text-fg-muted">{task.id}</span>
+            {task.priority && <PriorityChip priority={task.priority} />}
+            {due && <DueChip due={due} />}
+          </span>
           <span
             className={cn(
               "line-clamp-2 text-base leading-snug [overflow-wrap:anywhere] group-hover:text-fg",

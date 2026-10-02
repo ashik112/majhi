@@ -67,7 +67,9 @@ export function itemLine(item: RoomItem): string | undefined {
   switch (item.type) {
     case "owner":
       // A queued message is not part of the story yet (it comes as its own prompt), a removed one never is.
-      return item.text.trim() === "" || item.queued || item.removed === true ? undefined : `Owner: ${item.text.trim()}`;
+      return item.text.trim() === "" || item.queued || item.removed === true
+        ? undefined
+        : `Owner: ${item.text.trim()}`;
     case "agent":
       return item.text.trim() === "" ? undefined : `@${item.agent}: ${item.text.trim()}`;
     case "tool":
@@ -176,6 +178,8 @@ export interface FreshInput {
   diffStat: string;
   /** The prompt that was waiting, verbatim, or undefined when none was. */
   pending?: string | undefined;
+  /** False when majhi wrote the pending prompt itself, like "Continue from the handoff note." */
+  fromOwner?: boolean;
 }
 
 /**
@@ -204,7 +208,9 @@ export function freshPrompt(input: FreshInput): string {
     "",
     input.pending === undefined
       ? "# Next\n\nContinue from where you left off."
-      : `# The owner's message\n\n${input.pending}`,
+      : input.fromOwner === false
+        ? `# Next\n\n${input.pending}`
+        : `# The owner's message\n\n${input.pending}`,
   ].join("\n");
 }
 

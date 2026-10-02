@@ -1,5 +1,6 @@
 import type {
   DirListing,
+  E2eRunResult,
   EditorApp,
   GitLoginsResult,
   HostJob,
@@ -7,6 +8,7 @@ import type {
   LayaDecideResult,
   LayaStatus,
   RootSuggestion,
+  SecretsKeyBackup,
   SshStatus,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
@@ -25,6 +27,8 @@ export interface JobHandlers {
   restart(): void;
   /** Throws an error whose message is safe to show. It never holds the passphrase. */
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
+  /** Throws an error whose message is safe to show. It never holds the key. */
+  secretsKeySave(params: { expected: string }): Promise<SecretsKeyBackup>;
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
@@ -37,6 +41,8 @@ export interface JobHandlers {
   layaInstall(): LayaStatus;
   /** Throws an error whose message is safe to show when the editor cannot open the path. */
   editorOpen(params: { app: EditorApp; path: string; line?: number | undefined }): Promise<void>;
+  /** Resolves when the suite ended, passed or not. Throws an error whose message is safe to show when it cannot start. */
+  e2eRun(params: Extract<HostJob, { method: "e2e.run" }>["params"]): Promise<E2eRunResult>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
   /** Throws an error whose message is safe to show when macOS shows nothing. */
   notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
@@ -99,6 +105,9 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         await handlers.editorOpen(job.params);
         await reply({ id: job.id, ok: true, result: { opened: true } });
         return;
+      case "e2e.run":
+        await reply({ id: job.id, ok: true, result: await handlers.e2eRun(job.params) });
+        return;
       case "notify": {
         const { clickable } = await handlers.notify(job.params);
         await reply({ id: job.id, ok: true, result: { shown: true, clickable } });
@@ -119,6 +128,9 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });
+        return;
+      case "secretsKey.save":
+        await reply({ id: job.id, ok: true, result: await handlers.secretsKeySave(job.params) });
         return;
       case "remount": {
         const remount = handlers.remount;

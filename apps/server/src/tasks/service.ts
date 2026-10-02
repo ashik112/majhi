@@ -125,6 +125,7 @@ import {
   ReadRefused,
 } from "./read-mounts.ts";
 import {
+  childrenWaitOnParent,
   describeCycle,
   findCycle,
   NO_RELATED,
@@ -187,6 +188,8 @@ export interface TaskDeps {
   onRemoving?: (task: Task) => Promise<void>;
   /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
   onReview?: (id: string) => Promise<void>;
+  /** majhi merged a task's branch into `into` of `project`. Never awaited (background e2e, PRV-72). */
+  onMerged?: (merge: { task: string; project: string; into: string }) => void | Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -1839,6 +1842,9 @@ export class TaskService {
           outcome.head,
           into,
         );
+        void Promise.resolve(
+          this.deps.onMerged?.({ task: task.id, project: repo.project, into }),
+        ).catch(() => undefined);
         results.push({
           project: repo.project,
           into,
@@ -2886,6 +2892,20 @@ export class TaskService {
     return pending;
   }
 
+  /** Every open subtask of the parent waits for the parent alone, so the parent is the one to move. */
+  private childrenWaitOnParent(parent: string): boolean {
+    const { tasks } = this.deps.store;
+    return childrenWaitOnParent(
+      parent,
+      tasks.children(parent).flatMap((id) => {
+        const child = tasks.get(id);
+        return child === undefined
+          ? []
+          : [{ status: child.status, unmet: tasks.unmetDependencies(id) }];
+      }),
+    );
+  }
+
   /** An ask, choice, approval or permission card of the task still waits for the owner. */
   private ownerAnswerPending(id: string): boolean {
     this.deps.room.flush(id);
@@ -2926,9 +2946,11 @@ export class TaskService {
     // it wakes the agent, and the task reaches review when the agents are idle again.
     if (this.ownerAnswerPending(id)) return;
     // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
+    // Unless the only ones left wait for the parent itself: then only its review lets them start.
     if (
       this.deps.store.tasks.children(id).length > 0 &&
-      !this.deps.store.tasks.childrenDone(id)
+      !this.deps.store.tasks.childrenDone(id) &&
+      !this.childrenWaitOnParent(id)
     )
       return;
     // An agent waits for a background process: it is woken when that ends (5.15).
@@ -3031,7 +3053,8 @@ export class TaskService {
    */
   async pausedByRuns(
     id: string,
-    reason: "offline" | "error" | "limit" | "owner",
+    reason: "offline" | "error" | "limit" | "owner" | "signed-out",
+    why?: string,
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (
@@ -3040,7 +3063,7 @@ export class TaskService {
     )
       return;
     // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
-    if (reason === "error")
+    if (reason === "error" || reason === "signed-out")
       this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(
       id,
@@ -3049,7 +3072,7 @@ export class TaskService {
       this.now().toISOString(),
     );
     const paused = this.get(id);
-    this.cards.paused(paused, reason);
+    this.cards.paused(paused, reason, why);
     this.deps.room.publishTask(paused);
     await this.statusChanged(id);
   }
@@ -3347,10 +3370,19 @@ export class TaskService {
     return this.deps.runs.answerPermission(id, item, option);
   }
 
-  items(id: string, limit: number, beforeSeq: number | undefined) {
+  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {
     this.get(id);
     this.deps.room.flush(id);
+    if (afterSeq !== undefined) return this.deps.store.room.pageAfter(id, limit, afterSeq);
     return this.deps.store.room.page(id, limit, beforeSeq);
+  }
+
+  /** The page around one item, for a search match far back in a long room. */
+  itemsAround(id: string, item: string, limit: number) {
+    this.get(id);
+    this.deps.room.flush(id);
+    const page = this.deps.store.room.around(id, item, Math.ceil(limit / 2));
+    return page ?? { items: [], older: false, newer: false };
   }
 
   /** Full-text search over every task's room. Items still in the room's write buffer show up once it flushes. */

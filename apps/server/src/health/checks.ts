@@ -19,6 +19,7 @@ import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import { checkRunnerIsolation, checkSerena } from "../runner/check.ts";
 import { SERENA_COMMAND } from "../runs/serena.ts";
+import type { KeyExportRecord } from "../secrets/backup.ts";
 import type { Services } from "../services.ts";
 
 const run = promisify(execFile);
@@ -83,6 +84,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
     checkSecrets(ctx.services),
+    checkKeyBackup(ctx),
     checkTools(ctx),
     checkRunner(ctx),
     checkSerenaTool(ctx),
@@ -410,6 +412,78 @@ async function checkSecrets(services: Services): Promise<Check[]> {
           detail: `No key file, so API keys cannot be saved. ${MAKE_UP} It creates the key.`,
         },
       ];
+}
+
+/**
+ * The two backups of the secrets key: the copy the host helper keeps in the Keychain, and the
+ * passphrase-protected export to keep off the Mac. Each warns until it holds the key majhi uses.
+ * Nothing to back up while there is no key: the Secrets key check says so.
+ */
+async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
+  const fingerprint = await ctx.services.secrets.fingerprint().catch(() => undefined);
+  if (fingerprint === undefined) return [];
+  const last = await ctx.services.keyExports.last().catch(() => undefined);
+  return [keychainCheck(fingerprint, ctx.host), exportCheck(fingerprint, last)];
+}
+
+export function keychainCheck(fingerprint: string, host: HostSource): Check {
+  const base = { id: "secrets-key-keychain", group: "majhi", name: "Secrets key in Keychain" } as const;
+  if (!helperConnected(host)) {
+    return { ...base, status: "warn", detail: "Not checked: the host helper is not connected." };
+  }
+  const info = host.status?.info;
+  if (info !== undefined && info.platform !== "darwin") {
+    return { ...base, status: "pass", detail: "This host has no Keychain, so the export is the backup." };
+  }
+  const saved = info?.secretsKey;
+  const save = { fix: { label: "Save to Keychain" } };
+  if (saved?.error !== undefined) return { ...base, status: "warn", detail: saved.error, ...save };
+  if (saved?.saved === undefined) {
+    return {
+      ...base,
+      status: "warn",
+      detail:
+        "No copy in the Keychain yet. Without one, a lost key file makes every saved API key unreadable.",
+      ...save,
+    };
+  }
+  if (saved.saved !== fingerprint) {
+    return {
+      ...base,
+      status: "warn",
+      detail:
+        "The Keychain holds a different key, maybe from an earlier install. Replace it with the key majhi uses.",
+      fix: { label: "Replace copy" },
+    };
+  }
+  return { ...base, status: "pass", detail: 'A copy is in the login Keychain as "majhi secrets key"' };
+}
+
+export function exportCheck(fingerprint: string, last: KeyExportRecord | undefined): Check {
+  const base = { id: "secrets-key-export", group: "majhi", name: "Secrets key export" } as const;
+  const exportFix = { fix: { label: "Export key" } };
+  if (last === undefined) {
+    return {
+      ...base,
+      status: "warn",
+      detail:
+        "No export yet. Export the key with a passphrase and keep the file off this Mac, in case the Mac is lost.",
+      ...exportFix,
+    };
+  }
+  if (last.fingerprint !== fingerprint) {
+    return {
+      ...base,
+      status: "warn",
+      detail: "The last export holds an older key. Export the current one.",
+      ...exportFix,
+    };
+  }
+  return {
+    ...base,
+    status: "pass",
+    detail: `Exported on ${last.exportedAt.slice(0, 10)}. Keep the file off this Mac.`,
+  };
 }
 
 /** Each agent CLI's version. A missing CLI fails when an account uses it, and warns otherwise. */
