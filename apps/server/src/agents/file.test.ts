@@ -84,6 +84,7 @@ describe("serializeAgent", () => {
       account: "claude-personal",
       model: "auto",
       effort: "high",
+      tier: { model: "balanced" as const, effort: "middle" as const },
       models: ["opus", "sonnet"],
       where: ["acme", "globex"],
       perms: ["edit" as const, "shell" as const],
@@ -92,12 +93,13 @@ describe("serializeAgent", () => {
       skills: ["review"],
       fallback: "backup",
       context: { compact_at: 0.8 },
+      turns: { idle: "10m", max_tool_calls: 200 },
       origin: "setup" as const,
     },
     instructions: "Line one.\n\n  Indented: keep # this\n",
   };
 
-  it("round trips exactly, including odd instruction text", () => {
+  it("round trips exactly, every field and odd instruction text included", () => {
     const text = serializeAgent(full);
     expect(parseAgentFile("lead.md", text)).toEqual({ ok: true, agent: full });
   });
