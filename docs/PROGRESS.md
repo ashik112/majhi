@@ -711,7 +711,7 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 
 - **What works.** `room.search` finds messages, handoffs, system lines and tool output in every task, best match first, with the matched words marked. The board search shows the matches in a panel above the columns while it still filters cards by id, title and project. Cmd or Ctrl K opens a palette with task and room matches. Migration 90 builds the FTS5 index `room_search` and fills it from the existing room items; triggers keep it current.
 - **How to try it.** Type a word an agent wrote or a command printed in the board search, or press Cmd K anywhere. Tests: `pnpm exec vitest run apps/server/src/store/store.test.ts`.
-- **Left.** A match opens the task, not the place in the room. The palette has search only, not the commands SPEC 3.2 lists (new task, add account, and so on). Thoughts are not searched. A line still in the room's write buffer is found once it is saved.
+- **Left.** Thoughts are not searched. A line still in the room's write buffer is found once it is saved. (Two gaps listed here first, a match opening the task at its bottom and a palette with search only, were closed in Phase 9 part 2: the palette lists commands above the search results, and a match scrolls to its row. PRV-69 checked both in Chromium against a seeded server: a match on message 31 of an 800-message room opened with that row centred in view and lit, in 1.4 s.)
 
 ## Phase 3: Teams, rooms and decisions (built, waiting for owner review)
 
