@@ -8,6 +8,7 @@ import {
 } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import type { Store } from "../store/index.ts";
+import { Background } from "./background.ts";
 import type { Extraction } from "./extraction.ts";
 import { chatLines, type Housekeeper, NoHousekeeper, parseTitleReply, titlePrompt } from "./housekeeper.ts";
 
@@ -50,15 +51,25 @@ export class ChatMemory {
   private readonly reading = new Set<string>();
   private readonly titling = new Set<string>();
   private readonly failedAt = new Map<string, number>();
+  private readonly background = new Background();
 
   constructor(private readonly deps: ChatMemoryDeps) {}
+
+  /** Resolves once the sweeps and titles in flight have ended. */
+  idle(): Promise<void> {
+    return this.background.settled();
+  }
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
   }
 
   /** Reads every chat that is due. Safe to run often and after a restart: a message is read once. */
-  async sweep(): Promise<void> {
+  sweep(): Promise<void> {
+    return this.background.track(this.sweepDue());
+  }
+
+  private async sweepDue(): Promise<void> {
     const { store } = this.deps;
     const idleMs = (await this.deps.settings()).chat_idle_minutes * 60_000;
     const chats = store.tasks.list(true).filter((s) => s.chat === true);
@@ -120,7 +131,11 @@ export class ChatMemory {
    * After the agent's turn in a chat: names an untitled chat from its first exchange, and checks the
    * title once after `RETITLE_AFTER` more owner messages. Never fails the turn.
    */
-  async afterTurn(id: string): Promise<void> {
+  afterTurn(id: string): Promise<void> {
+    return this.background.track(this.title(id));
+  }
+
+  private async title(id: string): Promise<void> {
     if (this.titling.has(id)) return;
     this.titling.add(id);
     try {
