@@ -123,6 +123,7 @@ import {
   ReadRefused,
 } from "./read-mounts.ts";
 import {
+  childrenWaitOnParent,
   describeCycle,
   findCycle,
   NO_RELATED,
@@ -2866,6 +2867,20 @@ export class TaskService {
     return pending;
   }
 
+  /** Every open subtask of the parent waits for the parent alone, so the parent is the one to move. */
+  private childrenWaitOnParent(parent: string): boolean {
+    const { tasks } = this.deps.store;
+    return childrenWaitOnParent(
+      parent,
+      tasks.children(parent).flatMap((id) => {
+        const child = tasks.get(id);
+        return child === undefined
+          ? []
+          : [{ status: child.status, unmet: tasks.unmetDependencies(id) }];
+      }),
+    );
+  }
+
   /** An ask, choice, approval or permission card of the task still waits for the owner. */
   private ownerAnswerPending(id: string): boolean {
     this.deps.room.flush(id);
@@ -2906,9 +2921,11 @@ export class TaskService {
     // it wakes the agent, and the task reaches review when the agents are idle again.
     if (this.ownerAnswerPending(id)) return;
     // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
+    // Unless the only ones left wait for the parent itself: then only its review lets them start.
     if (
       this.deps.store.tasks.children(id).length > 0 &&
-      !this.deps.store.tasks.childrenDone(id)
+      !this.deps.store.tasks.childrenDone(id) &&
+      !this.childrenWaitOnParent(id)
     )
       return;
     // An agent waits for a background process: it is woken when that ends (5.15).

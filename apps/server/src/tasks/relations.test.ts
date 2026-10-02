@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  childrenWaitOnParent,
   describeCycle,
   findCycle,
   isMet,
@@ -95,5 +96,23 @@ describe("a merged dependency with merge requests", () => {
     const status = (id: string) => (id === "A-1" || id === "A-3" ? ("done" as const) : undefined);
     expect(unmetDependencies(links, status, (id) => id === "A-1")).toEqual(["A-1"]);
     expect(unmetDependencies(links, status, () => false)).toEqual([]);
+  });
+});
+
+describe("childrenWaitOnParent", () => {
+  const waiting = (...unmet: string[]) => ({ status: "ready" as const, unmet });
+
+  it("is true when every open child waits for the parent alone", () => {
+    expect(childrenWaitOnParent("A-1", [waiting("A-1")])).toBe(true);
+    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }, waiting("A-1"), waiting("A-1")])).toBe(true);
+  });
+
+  it("is false with no open child, or one that runs, is in review or waits for something else", () => {
+    expect(childrenWaitOnParent("A-1", [])).toBe(false);
+    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }])).toBe(false);
+    expect(childrenWaitOnParent("A-1", [waiting("A-1"), { status: "running", unmet: [] }])).toBe(false);
+    expect(childrenWaitOnParent("A-1", [waiting("A-1"), { status: "review", unmet: ["A-1"] }])).toBe(false);
+    expect(childrenWaitOnParent("A-1", [waiting("A-1", "A-3")])).toBe(false);
+    expect(childrenWaitOnParent("A-1", [waiting()])).toBe(false);
   });
 });
