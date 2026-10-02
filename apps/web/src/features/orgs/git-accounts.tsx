@@ -67,7 +67,7 @@ export function GitAccounts({ org }: { org: OrgView }) {
   return (
     <DetailSection
       title="Git accounts"
-      note={`Who ${org.name} pushes and opens merge requests as.`}
+      note={`Who ${org.name} pushes as.`}
       actions={
         <>
           {checked !== undefined && !detect.isPending && (
@@ -478,7 +478,7 @@ function MissingRow({
             }}
           >
             <span className="text-sm text-fg-faint">
-              No other login for {host} found on this Mac. Type the account {org.name} uses there.
+              Type the account {org.name} uses on {host}.
             </span>
             <span className="flex items-center gap-2">
               <Input
