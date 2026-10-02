@@ -254,3 +254,15 @@ describe("turn usage", () => {
     expect(turn?.type === "turn" ? turn.usage.costUsd : "missing").toBeUndefined();
   });
 });
+
+describe("refusal", () => {
+  it("ends the turn with refusal, and the session goes on after a model switch", async () => {
+    const { session, events } = await start();
+    const res = await session.prompt(text("stop:refusal"));
+    expect(res.stopReason).toBe("refusal");
+    expect(events.some((e) => e.type === "text" && e.text.includes("safeguards"))).toBe(true);
+    await session.setOption("model", "fake-model-b");
+    expect(session.models.defaultModel).toBe("fake-model-b");
+    expect((await session.prompt(text("echo: go on"))).stopReason).toBe("end_turn");
+  });
+});

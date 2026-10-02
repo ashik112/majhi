@@ -641,6 +641,14 @@ export function serveAcp(o: ServeOptions): void {
             content: { type: "text", text: agentText },
           });
           stopReason = "max_tokens";
+        } else if (text.includes("stop:refusal")) {
+          // The model's safeguards stop the turn, as Claude Code reports a flagged message.
+          agentText = "API Error: the model's safeguards flagged this message.";
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "refusal";
         } else if (text.startsWith("show:")) {
           const say = (content: object) =>
             update(params.sessionId, { sessionUpdate: "agent_message_chunk", content: content as never });
