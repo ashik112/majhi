@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import type { Banner, BannerAction } from "@/features/shell/model";
 import { cn } from "@/lib/cn";
-import { orgSearch } from "@/lib/org-filter";
+import { setNoticesOpen } from "@/lib/notices";
 
 const TONE = {
   amber: {
@@ -18,23 +18,32 @@ const TONE = {
   },
 } as const;
 
-/** The strip above the page. It appears only when something needs the owner, and slides in. */
-export function AttentionBanner({ banner, org }: { banner: Banner | null; org: string | undefined }) {
+/** Opens what an attention item points at: its task or chat, a page, or a prompt on this page. */
+export function useRunAttention(): (action: BannerAction) => void {
   const navigate = useNavigate();
-
-  function run(action: BannerAction) {
+  return (action) => {
     if (action.kind === "task")
-      void navigate({ to: "/t/$taskId", params: { taskId: action.id }, search: orgSearch(org) });
-    else if (action.kind === "chat")
-      void navigate({ to: "/chats/$taskId", params: { taskId: action.id }, search: orgSearch(org) });
-    else if (action.kind === "page")
-      void navigate({ to: action.to, search: { ...orgSearch(org), ...action.search } });
+      void navigate({
+        to: "/t/$taskId",
+        params: { taskId: action.id },
+        search: action.item === undefined ? {} : { item: action.item },
+      });
+    else if (action.kind === "chat") void navigate({ to: "/chats/$taskId", params: { taskId: action.id } });
+    else if (action.kind === "page") void navigate({ to: action.to, search: { ...action.search } });
     else {
       const el = document.getElementById(action.id);
       el?.scrollIntoView({ block: "center", behavior: "smooth" });
       el?.focus({ preventScroll: true });
     }
-  }
+  };
+}
+
+/**
+ * The strip above the page: the one thing that needs the owner most. It appears only then, and
+ * slides in. "And 3 more" opens the notifications panel with the rest.
+ */
+export function AttentionBanner({ banner }: { banner: Banner | null }) {
+  const run = useRunAttention();
 
   return (
     <AnimatePresence initial={false}>
@@ -63,7 +72,18 @@ export function AttentionBanner({ banner, org }: { banner: Banner | null; org: s
             />
             <span className="min-w-0 truncate text-base">
               {banner.text}
-              {banner.more > 0 && <span className="opacity-70"> and {banner.more} more need you.</span>}
+              {banner.more > 0 && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setNoticesOpen(true)}
+                    className="cursor-pointer opacity-70 underline-offset-2 hover:underline hover:opacity-100"
+                  >
+                    And {banner.more} more need you.
+                  </button>
+                </>
+              )}
             </span>
             <button
               type="button"

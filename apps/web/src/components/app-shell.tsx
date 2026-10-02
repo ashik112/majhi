@@ -22,7 +22,7 @@ import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { useAttentionBadge } from "@/lib/browser-notify";
 import { cn } from "@/lib/cn";
-import { useAdoptOrgParam, useOrgFilter } from "@/lib/org-filter";
+import { useAdoptOrgParam } from "@/lib/org-filter";
 import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
@@ -67,7 +67,6 @@ function Frame() {
   const newTask = useNewTask();
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
   useAdoptOrgParam();
-  const { org } = useOrgFilter();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
   const agents = useAgentIndex();
@@ -98,7 +97,7 @@ function Frame() {
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <AutonomyStrip />
         <NotifyPrompt />
-        <AttentionBanner banner={banner} org={org} />
+        <AttentionBanner banner={banner} />
         <m.div
           key={section}
           initial={{ opacity: 0, y: 4 }}
