@@ -19,3 +19,6 @@ e2e/screenshots/
 .impeccable/*
 !.impeccable/design.json
 apps/web/.impeccable/
+
+# Marketing art, screenshots and demo videos, kept locally only
+/marketing-assets/

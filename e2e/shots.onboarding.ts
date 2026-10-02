@@ -486,13 +486,13 @@ for (const id of ORDER) {
 
 // Key states --------------------------------------------------------------------------------
 
-const done = (alsoUsedBy: string[] = []): SignInStatus => ({
+const done = (alsoUsedBy: string[] = [], account = "globex-dev"): SignInStatus => ({
   state: "done",
   signIn: SIGN_IN,
   org: "globex",
   kind: "github",
   host: "github.com",
-  account: "globex-dev",
+  account,
   alsoUsedBy,
 });
 
@@ -537,7 +537,7 @@ test("git: the same account in two workspaces asks to confirm", async ({ page })
   await expect(page.getByText(/is already used by Acme/)).toBeVisible();
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/git-reused-confirm.png` });
-  s.poll = { ...done(["acme"]), account: "acme-dev" };
+  s.poll = done(["acme"], "acme-dev");
   await page.getByRole("button", { name: "Use it for Globex too" }).click();
   await expect(page.getByText(/Works as @acme-dev on GitHub/)).toBeVisible();
 });
