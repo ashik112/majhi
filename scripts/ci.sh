@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs every check a change must pass. Used by `make ci` and CI.
 set -eu
+# Do not pipe this script (e.g. through tail): the pipe hides its exit code.
 
 pnpm install --frozen-lockfile
 pnpm exec biome check .
