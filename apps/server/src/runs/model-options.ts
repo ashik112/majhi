@@ -196,3 +196,40 @@ export function effortForTier(efforts: readonly OptionValue[], tier: EffortTier)
     tier === "lowest" ? 0 : tier === "highest" ? list.length - 1 : Math.ceil((list.length - 1) / 2);
   return list[index]?.id;
 }
+
+/** The offered model `id` stands for: the same id, else its family, else the one family that names it. */
+function offeredMatch(models: readonly OfferedModel[], id: string): OfferedModel | undefined {
+  const exact = models.find((m) => m.id === id);
+  if (exact !== undefined) return exact;
+  const { family, tokens } = parse(id);
+  const same = models.filter((m) => m.family === family);
+  if (same.length === 1) return same[0];
+  if (tokens.length === 0) return undefined;
+  // An alias (`opus`) against a full id (`claude-opus-5-5`), or the other way round.
+  const near = models.filter((m) => {
+    const words = m.family.split("-");
+    return tokens.every((t) => words.includes(t)) || words.every((w) => tokens.includes(w));
+  });
+  return near.length === 1 ? near[0] : undefined;
+}
+
+/**
+ * The model to continue on after the current one's safeguards refused a turn: one step cheaper by
+ * the same rank tier picks use (the next model in the CLI's list when a price is missing). `current`
+ * lists what the session says it runs, then what the agent said it used; the first that matches an
+ * offered model counts. Undefined when none matches or the current model is already the cheapest.
+ */
+export function fallbackModel(
+  models: readonly OfferedModel[],
+  current: readonly (string | undefined)[],
+  owner: PricesConfig = {},
+): string | undefined {
+  const match = current.flatMap((id) => {
+    const m = id === undefined ? undefined : offeredMatch(models, id);
+    return m === undefined ? [] : [m];
+  })[0];
+  if (match === undefined) return undefined;
+  const { order } = rankModels(models, owner);
+  const index = order.indexOf(match.id);
+  return index > 0 ? order[index - 1] : undefined;
+}

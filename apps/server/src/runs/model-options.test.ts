@@ -4,6 +4,7 @@ import {
   compareVersions,
   effortForTier,
   effortOptions,
+  fallbackModel,
   modelForTier,
   needsEstimate,
   normalizeOffered,
@@ -177,6 +178,31 @@ describe("modelForTier", () => {
     expect(modelForTier(models, "most-capable")).toBe("claude-fable-5-1");
     expect(modelForTier(models, "cheapest")).toBe("claude-haiku-4-5");
     expect(modelForTier(models, "balanced")).toBe("claude-sonnet-5-5");
+  });
+});
+
+describe("fallbackModel", () => {
+  it("steps one model down from the one that refused, by alias, full id or dated id", () => {
+    const models = normalizeOffered(CLAUDE);
+    expect(fallbackModel(models, ["opus"])).toBe("claude-sonnet-5-5");
+    expect(fallbackModel(models, ["opus[1m]"])).toBe("claude-sonnet-5-5");
+    expect(fallbackModel(models, ["claude-opus-5-5"])).toBe("claude-sonnet-5-5");
+    expect(fallbackModel(models, ["default", "claude-opus-5-5-20260101"])).toBe("claude-sonnet-5-5");
+    expect(fallbackModel(models, ["sonnet"])).toBe("claude-haiku-4-5");
+  });
+
+  it("has none for the cheapest model, an unknown one, or a single model", () => {
+    const models = normalizeOffered(CLAUDE);
+    expect(fallbackModel(models, ["haiku"])).toBeUndefined();
+    expect(fallbackModel(models, ["default"])).toBeUndefined();
+    expect(fallbackModel(models, [undefined])).toBeUndefined();
+    expect(fallbackModel(normalizeOffered(opts("claude-opus-5-5")), ["opus"])).toBeUndefined();
+  });
+
+  it("takes the next model in the CLI's list when prices are missing (Codex)", () => {
+    const codex = normalizeOffered(opts("gpt-5.5-codex", "gpt-5.5", "gpt-5.5-codex-mini"));
+    expect(fallbackModel(codex, ["gpt-5.5-codex"])).toBe("gpt-5.5");
+    expect(fallbackModel(codex, ["gpt-5.5"])).toBe("gpt-5.5-codex-mini");
   });
 });
 
