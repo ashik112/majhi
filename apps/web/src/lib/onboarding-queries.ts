@@ -26,25 +26,6 @@ export function useOnboardingStatus(enabled = true) {
   });
 }
 
-export function useGitApps() {
-  return useQuery<CommandOutput<"git.oauthApps.get">, ApiRequestError>({
-    queryKey: [...queryKeys.config, "git-apps"],
-    queryFn: () => cmd("git.oauthApps.get", {}),
-    staleTime: 60_000,
-  });
-}
-
-export function useSetGitApp() {
-  const client = useQueryClient();
-  return useMutation<CommandOutput<"git.oauthApps.set">, ApiRequestError, CommandInput<"git.oauthApps.set">>({
-    mutationFn: (input) =>
-      cmd("git.oauthApps.set", input, { reason: "Owner registered majhi on a git host" }),
-    onSuccess: (view) => client.setQueryData([...queryKeys.config, "git-apps"], view),
-    // The Bitbucket secret lives only in this call.
-    gcTime: 0,
-  });
-}
-
 export function useSignInStart() {
   return useMutation<CommandOutput<"git.signIn.start">, ApiRequestError, CommandInput<"git.signIn.start">>({
     mutationFn: (input) => cmd("git.signIn.start", input, { reason: "Owner signed a workspace in to git" }),
@@ -138,6 +119,23 @@ export function usePublishProject() {
     mutationFn: (input) =>
       cmd("projects.publish", input, { reason: "Owner put a new project on a git host" }),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.projects }),
+  });
+}
+
+/** Checks a pasted token with its host and saves it for one workspace. The token lives only in this call. */
+export function useSignInToken() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"git.signIn.token">, ApiRequestError, CommandInput<"git.signIn.token">>({
+    mutationFn: (input) =>
+      cmd("git.signIn.token", input, { reason: "Owner pasted a git token for a workspace" }),
+    onSuccess: (status) => {
+      client.setQueryData([...queryKeys.signins, status.signIn], status);
+      return Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.config }),
+        client.invalidateQueries({ queryKey: queryKeys.orgs }),
+      ]);
+    },
+    gcTime: 0,
   });
 }
 

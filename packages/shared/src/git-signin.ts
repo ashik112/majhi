@@ -176,6 +176,8 @@ export const GitTokenHelpSchema = z.object({
   fields: z.array(z.enum(["email", "token"])).min(1),
   /** One line on why it is a token this time, and how to sign in in the browser next time. */
   note: z.string().optional(),
+  /** Where to get the host's CLI, when its absence is why it is a token. */
+  install: z.object({ label: z.string(), url: z.url() }).optional(),
 });
 export type GitTokenHelp = z.infer<typeof GitTokenHelpSchema>;
 
@@ -208,12 +210,16 @@ export function gitTokenHelp(
     kind === "bitbucket"
       ? undefined
       : reason === "no-cli"
-        ? `${CLI_NAME[kind]} is not installed on this computer, so majhi asks for a token. Install ${CLI_NAME[kind]} (${CLI_INSTALL[kind]}) and majhi signs in through the browser next time.`
+        ? `${CLI_NAME[kind]} is not installed on this computer, so majhi asks for a token. Install ${CLI_NAME[kind]} and majhi signs in through the browser next time.`
         : reason === "no-helper"
           ? "The host helper is not connected, so majhi cannot open the browser sign-in. A token works the same."
           : reason === "self-hosted"
             ? `majhi signs in to ${host} with a personal access token.`
             : undefined;
+  const install =
+    kind !== "bitbucket" && reason === "no-cli"
+      ? { install: { label: `Install ${CLI_NAME[kind]}`, url: CLI_INSTALL[kind] } }
+      : {};
   if (kind === "github") {
     return {
       kind,
@@ -231,6 +237,7 @@ export function gitTokenHelp(
       scopes: [...GITHUB_TOKEN_SCOPES],
       fields: ["token"],
       ...(cliNote === undefined ? {} : { note: cliNote }),
+      ...install,
     };
   }
   if (kind === "gitlab") {
@@ -251,6 +258,7 @@ export function gitTokenHelp(
       scopes: [...GITLAB_TOKEN_SCOPES],
       fields: ["token"],
       ...(cliNote === undefined ? {} : { note: cliNote }),
+      ...install,
     };
   }
   return {

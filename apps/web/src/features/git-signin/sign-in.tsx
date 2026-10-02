@@ -1,4 +1,10 @@
-import type { MrHost, OnboardingWorkspace, SignInStart, SignInStatus } from "@majhi/shared";
+import {
+  DEFAULT_GIT_HOST,
+  type MrHost,
+  type PasteReason,
+  type SignInStart,
+  type SignInStatus,
+} from "@majhi/shared";
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import * as m from "motion/react-m";
 import { useEffect, useRef, useState } from "react";
@@ -7,14 +13,20 @@ import { describeError } from "@/lib/errors";
 import { HOST_LABEL } from "@/lib/hosts";
 import { useSignInCancel, useSignInConfirm, useSignInPoll, useSignInStart } from "@/lib/onboarding-queries";
 import { useNow } from "@/lib/use-now";
-import { CopyButton, countdown, ExternalButton, Waiting } from "../bits";
-import { Problem } from "../step-frame";
-import { AppSetup } from "./app-setup";
+import { CopyButton, countdown, ExternalButton, Waiting } from "@/onboarding/bits";
+import { Problem } from "@/onboarding/step-frame";
+import { TokenPaste } from "./token-paste";
+
+/** The workspace a sign-in is for. */
+export interface SignInWorkspace {
+  id: string;
+  name: string;
+}
 
 type Phase =
   | { kind: "starting" }
-  | { kind: "needs-app"; start: Extract<SignInStart, { state: "needs-app" }> }
-  | { kind: "flow"; start: Exclude<SignInStart, { state: "needs-app" }> }
+  | { kind: "paste"; reason: PasteReason; host: string }
+  | { kind: "flow"; start: Exclude<SignInStart, { state: "paste" }> }
   | { kind: "error"; message: string };
 
 const ENDED_WORDS: Record<"denied" | "expired" | "cancelled", string> = {
@@ -23,41 +35,60 @@ const ENDED_WORDS: Record<"denied" | "expired" | "cancelled", string> = {
   cancelled: "was stopped. Nothing was saved.",
 };
 
+/** The app name the host shows on its approve page, so the owner knows what they approve. */
+const CLI_APP: Record<"github" | "gitlab", string> = { github: "GitHub CLI", gitlab: "GitLab CLI" };
+
 /**
- * Signing one workspace in to one git host, inline in the git step: the one-time app setup when the
- * host needs it, then the device code or the authorize page, a live wait, and who it works as.
+ * Signing one workspace in to one git host: the browser sign-in through the host's CLI on this
+ * computer (a code for GitHub, an approve page for GitLab), a live wait, and who it works as. When
+ * there is no browser sign-in, or the owner asks for it, a pasted token with the exact steps.
+ * Bitbucket always takes a pasted API token.
  */
 export function SignIn({
   workspace,
   kind,
   names,
+  paste = false,
   onClose,
 }: {
-  workspace: OnboardingWorkspace;
+  workspace: SignInWorkspace;
   kind: MrHost;
   /** Workspace names by id, for the reused-account warning. */
   names: ReadonlyMap<string, string>;
+  /** Go straight to the pasted token. */
+  paste?: boolean;
   onClose: () => void;
 }) {
   const start = useSignInStart();
-  const [phase, setPhase] = useState<Phase>({ kind: "starting" });
+  const direct = paste || kind === "bitbucket";
+  const [phase, setPhase] = useState<Phase>(
+    direct
+      ? { kind: "paste", reason: kind === "bitbucket" ? "bitbucket" : "chosen", host: DEFAULT_GIT_HOST[kind] }
+      : { kind: "starting" },
+  );
   const [attempt, setAttempt] = useState(0);
   const label = HOST_LABEL[kind];
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: starts once per attempt
   useEffect(() => {
+    if (direct) return;
     setPhase({ kind: "starting" });
     start.mutate(
       { org: workspace.id, kind },
       {
         onSuccess: (s) =>
-          setPhase(s.state === "needs-app" ? { kind: "needs-app", start: s } : { kind: "flow", start: s }),
+          setPhase(
+            s.state === "paste"
+              ? { kind: "paste", reason: s.reason, host: s.host }
+              : { kind: "flow", start: s },
+          ),
         onError: (e) => setPhase({ kind: "error", message: describeError(e) }),
       },
     );
-  }, [attempt, workspace.id, kind]);
+  }, [attempt, workspace.id, kind, direct]);
 
   const again = () => setAttempt((n) => n + 1);
+  const toPaste = () => setPhase({ kind: "paste", reason: "chosen", host: DEFAULT_GIT_HOST[kind] });
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -71,21 +102,39 @@ export function SignIn({
       transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col gap-4 rounded-xl border border-line-strong bg-sunken p-5"
     >
-      {phase.kind === "starting" && <Waiting>Asking {label} for a sign-in code</Waiting>}
+      {phase.kind === "starting" && <Waiting>Starting the {label} sign-in</Waiting>}
       {phase.kind === "error" && (
         <>
           <Problem>{phase.message}</Problem>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={again}>Try again</Button>
+            <Button onClick={toPaste}>Paste a token instead</Button>
             <Button variant="ghost" onClick={onClose}>
               Close
             </Button>
           </div>
         </>
       )}
-      {phase.kind === "needs-app" && <AppSetup setup={phase.start.setup} onSaved={again} />}
+      {phase.kind === "paste" && (
+        <TokenPaste
+          key={`${phase.reason}-${phase.host}`}
+          workspace={workspace}
+          kind={kind}
+          host={phase.host}
+          reason={phase.reason}
+          names={names}
+          onClose={onClose}
+        />
+      )}
       {phase.kind === "flow" && (
-        <Flow start={phase.start} workspace={workspace} names={names} onAgain={again} onClose={onClose} />
+        <Flow
+          start={phase.start}
+          workspace={workspace}
+          names={names}
+          onAgain={again}
+          onPaste={toPaste}
+          onClose={onClose}
+        />
       )}
     </m.div>
   );
@@ -96,12 +145,14 @@ function Flow({
   workspace,
   names,
   onAgain,
+  onPaste,
   onClose,
 }: {
-  start: Exclude<SignInStart, { state: "needs-app" }>;
-  workspace: OnboardingWorkspace;
+  start: Exclude<SignInStart, { state: "paste" }>;
+  workspace: SignInWorkspace;
   names: ReadonlyMap<string, string>;
   onAgain: () => void;
+  onPaste: () => void;
   onClose: () => void;
 }) {
   const poll = useSignInPoll(start.signIn);
@@ -109,11 +160,8 @@ function Flow({
   const status: SignInStatus | undefined = poll.data;
   const label = HOST_LABEL[start.kind];
 
-  if (status?.state === "done") {
-    return <Done status={status} workspace={workspace} names={names} onClose={onClose} />;
-  }
-  if (status?.state === "confirm") {
-    return <Confirm status={status} workspace={workspace} names={names} onClose={onClose} />;
+  if (status?.state === "done" || status?.state === "confirm") {
+    return <Outcome status={status} workspace={workspace} names={names} onClose={onClose} />;
   }
   if (status && status.state !== "pending") {
     const words =
@@ -121,10 +169,11 @@ function Flow({
     return (
       <div className="flex flex-col gap-3">
         <Problem>{words}</Problem>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="primary" onClick={onAgain}>
             Start again
           </Button>
+          <Button onClick={onPaste}>Paste a token instead</Button>
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
@@ -139,8 +188,9 @@ function Flow({
     <div className="flex flex-col gap-5">
       {start.state === "device" ? (
         <div className="flex flex-col gap-3">
-          <p className="m-0 text-base text-fg-soft">
-            Enter this code on {label}. It proves the sign-in came from you.
+          <p className="m-0 text-base text-fg-soft text-pretty">
+            Enter this code on {label}, then approve {CLI_APP[start.kind]}. majhi signs in through it, and the
+            token stays with {workspace.name}.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <output
@@ -154,7 +204,8 @@ function Flow({
         </div>
       ) : (
         <p className="m-0 text-base text-fg-soft text-pretty">
-          Allow majhi on {label}'s page. {label} then sends you back here and the sign-in ends by itself.
+          Approve {CLI_APP[start.kind]} on {label}'s page. majhi signs in through it, the token stays with{" "}
+          {workspace.name}, and the sign-in ends here by itself.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -167,7 +218,7 @@ function Flow({
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
         <Waiting>Waiting for {label}</Waiting>
-        <Expiry until={start.expiresAt} />
+        <Expiry until={start.expiresAt} label={start.state === "device" ? "Code works for" : "Works for"} />
         <Button
           variant="ghost"
           size="sm"
@@ -183,7 +234,7 @@ function Flow({
   );
 }
 
-function Expiry({ until, label = "Code works for" }: { until: string; label?: string }) {
+function Expiry({ until, label }: { until: string; label: string }) {
   const now = useNow(1000);
   return (
     <span className="font-mono text-sm text-fg-faint tabular-nums">
@@ -193,7 +244,26 @@ function Expiry({ until, label = "Code works for" }: { until: string; label?: st
   );
 }
 
-/** "Works as @user". Closes by itself after a moment; the workspace row keeps the account. */
+/** A sign-in that worked: saved, or waiting for the owner to confirm a reused account. */
+export function Outcome({
+  status,
+  workspace,
+  names,
+  onClose,
+}: {
+  status: Extract<SignInStatus, { state: "done" | "confirm" }>;
+  workspace: SignInWorkspace;
+  names: ReadonlyMap<string, string>;
+  onClose: () => void;
+}) {
+  return status.state === "done" ? (
+    <Done status={status} workspace={workspace} names={names} onClose={onClose} />
+  ) : (
+    <Confirm status={status} workspace={workspace} names={names} onClose={onClose} />
+  );
+}
+
+/** "Works as @user". Closes by itself after a moment; the workspace keeps the account. */
 function Done({
   status,
   workspace,
@@ -201,7 +271,7 @@ function Done({
   onClose,
 }: {
   status: Extract<SignInStatus, { state: "done" }>;
-  workspace: OnboardingWorkspace;
+  workspace: SignInWorkspace;
   names: ReadonlyMap<string, string>;
   onClose: () => void;
 }) {
@@ -245,7 +315,7 @@ function Confirm({
   onClose,
 }: {
   status: Extract<SignInStatus, { state: "confirm" }>;
-  workspace: OnboardingWorkspace;
+  workspace: SignInWorkspace;
   names: ReadonlyMap<string, string>;
   onClose: () => void;
 }) {
@@ -253,6 +323,9 @@ function Confirm({
   const cancel = useSignInCancel();
   const others = status.alsoUsedBy.map((id) => names.get(id) ?? id).join(" and ");
   const label = HOST_LABEL[status.kind];
+  if (confirm.data?.state === "done") {
+    return <Done status={confirm.data} workspace={workspace} names={names} onClose={onClose} />;
+  }
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 rounded-lg border border-amber-line bg-amber-wash p-4">
