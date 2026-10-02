@@ -716,7 +716,8 @@ test("the whole journey with stubs: welcome to arrive, then the board with the n
   await expect(heading).toHaveText(/Welcome to majhi/);
   await page.getByRole("button", { name: "Use ~/Work" }).click();
   await expect(heading).toHaveText("Sign in to Claude Code or Codex");
-  await page.getByRole("button", { name: "Continue" }).click();
+  // The stubbed status never marks the account done, so this journey skips it.
+  await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(heading).toHaveText("Keep each client's work apart");
   await page.getByRole("button", { name: "Skip for now" }).click();
   await expect(heading).toHaveText("Sign each workspace in to git");
