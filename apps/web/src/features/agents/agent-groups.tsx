@@ -1,5 +1,6 @@
 import type { AgentEntry, OrgView } from "@majhi/shared";
 import { FileWarning, Plus } from "lucide-react";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { ROW, ROW_SELECTED } from "@/components/ui/list-detail";
@@ -107,35 +108,42 @@ function AgentRow({
       type="button"
       aria-current={selected ? "true" : undefined}
       onClick={onSelect}
-      className={cn(
-        ROW,
-        "min-h-[46px] flex-col justify-center gap-0.5 px-2.5 py-1.5",
-        selected && ROW_SELECTED,
-      )}
+      className={cn(ROW, "min-h-[46px] items-center gap-2.5 px-2.5 py-1.5", selected && ROW_SELECTED)}
     >
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className={cn("min-w-0 truncate font-mono text-sm", selected ? "text-fg" : "text-fg-soft")}>
-          @{id}
-        </span>
-        {entry.status === "ok" && (
-          <span className="ml-auto shrink-0 text-xs text-fg-faint">
-            {entry.agent.frontmatter.role}
-            {entry.isBoss && ", boss"}
+      <AgentAvatar
+        id={id}
+        role={entry.status === "ok" ? entry.agent.frontmatter.role : undefined}
+        emoji={entry.status === "ok" ? (entry.agent.frontmatter.emoji ?? null) : null}
+        size={26}
+        decorative
+      />
+      <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className={cn("min-w-0 truncate font-mono text-sm", selected ? "text-fg" : "text-fg-soft")}>
+            @{id}
           </span>
+          {entry.status === "ok" && (
+            <span className="ml-auto shrink-0 text-xs text-fg-faint">
+              {entry.agent.frontmatter.role}
+              {entry.isBoss && ", boss"}
+            </span>
+          )}
+        </span>
+        {entry.status === "ok" ? (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs">
+            <Lamp state={state} size={7} />
+            <span className={cn("shrink-0", LAMP_TEXT[state])}>{lamp?.state ?? "Idle"}</span>
+            <span aria-hidden="true" className="text-fg-dim">
+              ·
+            </span>
+            <span className="min-w-0 truncate font-mono text-fg-faint">
+              {entry.agent.frontmatter.account}
+            </span>
+          </span>
+        ) : (
+          <span className="text-xs text-red">Has errors, open to see them</span>
         )}
       </span>
-      {entry.status === "ok" ? (
-        <span className="flex min-w-0 items-center gap-1.5 text-xs">
-          <Lamp state={state} size={7} />
-          <span className={cn("shrink-0", LAMP_TEXT[state])}>{lamp?.state ?? "Idle"}</span>
-          <span aria-hidden="true" className="text-fg-dim">
-            ·
-          </span>
-          <span className="min-w-0 truncate font-mono text-fg-faint">{entry.agent.frontmatter.account}</span>
-        </span>
-      ) : (
-        <span className="text-xs text-red">Has errors, open to see them</span>
-      )}
     </button>
   );
 }

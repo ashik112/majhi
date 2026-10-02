@@ -12,7 +12,6 @@ import { Link } from "@tanstack/react-router";
 import { Ellipsis } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { AgentAvatar } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
@@ -36,6 +35,7 @@ import { useConfig } from "@/lib/queries";
 import { useSetBoss } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 import { AgentHealthDialog, DuplicateDialog, RemoveAgentDialog, RenameDialog } from "./agent-dialogs";
+import { AgentEmojiButton } from "./agent-emoji";
 import { AgentSettings } from "./agent-settings";
 import { type OkAgent, ROOT_SCOPE, tasksOf } from "./model";
 
@@ -137,7 +137,7 @@ function Head({ entry, orgs, health, onHealth, onSelect }: AgentDetailProps) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex min-w-0 items-center gap-3">
-        <AgentAvatar id={id} role={f.role} size={32} decorative ring="border-canvas" />
+        <AgentEmojiButton id={id} role={f.role} emoji={f.emoji} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate font-mono text-md leading-6 font-semibold">@{id}</h2>

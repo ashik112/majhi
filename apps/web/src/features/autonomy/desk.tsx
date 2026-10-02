@@ -1,6 +1,7 @@
 import type { AutonomyStatus, AutonomyWaiting, TaskSize } from "@majhi/shared";
 import { Ban } from "lucide-react";
 import type { ReactNode } from "react";
+import { AgentEmoji } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
@@ -159,7 +160,9 @@ function NowSection({ status, now }: { status: AutonomyStatus; now: number }) {
       {boss ? (
         <p className="flex min-w-0 items-center gap-2 text-sm">
           <Lamp state={boss.working ? "working" : "idle"} size={7} />
-          <span className="shrink-0 font-mono text-fg-muted">@{boss.id}</span>
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-fg-muted">
+            <AgentEmoji id={boss.id} />@{boss.id}
+          </span>
           <span className={cn("min-w-0 truncate", boss.working ? "text-fg-soft" : "text-fg-faint")}>
             {boss.nowDoing ?? (boss.working ? "Working" : IDLE_LINE[status.mode])}
           </span>
@@ -190,7 +193,9 @@ function NowSection({ status, now }: { status: AutonomyStatus; now: number }) {
                 .filter((a) => a.nowDoing !== undefined)
                 .map((a) => (
                   <span key={a.id} className="flex min-w-0 gap-2 text-sm">
-                    <span className="shrink-0 font-mono text-fg-muted">@{a.id}</span>
+                    <span className="flex shrink-0 items-center gap-1.5 font-mono text-fg-muted">
+                      <AgentEmoji id={a.id} />@{a.id}
+                    </span>
                     <span className="min-w-0 truncate text-fg-soft">{a.nowDoing}</span>
                   </span>
                 ))}

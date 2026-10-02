@@ -2,6 +2,7 @@ import type { AccountView, TaskSummary } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AgentEmoji } from "@/components/agent-avatar";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { UsageBar } from "@/components/ui/usage-bar";
 import { formatPct, usageTone } from "@/features/accounts/model";
@@ -79,6 +80,9 @@ function limitTone(pct: number | undefined): "calm" | "amber" | "red" {
 }
 
 function RosterList({ rows, org }: { rows: readonly RosterRow[]; org: string | undefined }) {
+  const index = useAgentIndex();
+  // One emoji column for every row once any agent has one, so the names line up.
+  const withEmoji = rows.some((row) => index.get(row.id)?.emoji);
   if (rows.length === 0) {
     return (
       <p className="px-1 text-sm text-fg-faint text-pretty">
@@ -98,6 +102,11 @@ function RosterList({ rows, org }: { rows: readonly RosterRow[]; org: string | u
           >
             <span className="flex min-w-0 items-center gap-2">
               <Lamp state={row.lamp} size={7} />
+              {withEmoji && (
+                <span className="flex w-4 shrink-0 justify-center">
+                  <AgentEmoji id={row.id} className="text-sm" />
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-soft">@{row.id}</span>
             </span>
             <span className="flex items-center gap-2 pl-[15px]">

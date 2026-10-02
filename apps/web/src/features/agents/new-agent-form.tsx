@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { isUsableStatus, orgLabel, statusInfo } from "@/features/accounts/model";
 import { describeError } from "@/lib/errors";
 import { useAccounts, useAgents, useCreateAgent, useOrgs, useTools } from "@/lib/studio-queries";
+import { EmojiAvatarButton } from "./agent-emoji";
 import {
   accountsForScope,
   entryId,
@@ -41,6 +42,7 @@ export function NewAgentForm({
   const [accountPick, setAccountPick] = useState(presetAccount);
   const [idEdit, setIdEdit] = useState<string>();
   const [problem, setProblem] = useState<string>();
+  const [emoji, setEmoji] = useState<string>();
 
   // The scope's own accounts first, then the owner's private ones; ones that work before ones that do not.
   const usable = accountsForScope(accounts, scope).toSorted(
@@ -59,7 +61,11 @@ export function NewAgentForm({
     if (!parsed.success) return setProblem(parsed.error.issues[0]?.message ?? "Invalid id");
     setProblem(undefined);
     create.mutate(
-      { id: parsed.data, frontmatter: newAgentFrontmatter(scope, role, account.id), instructions: "" },
+      {
+        id: parsed.data,
+        frontmatter: { ...newAgentFrontmatter(scope, role, account.id), ...(emoji ? { emoji } : {}) },
+        instructions: "",
+      },
       { onSuccess: () => onCreated(parsed.data), onError: (e) => setProblem(describeError(e)) },
     );
   }
@@ -72,17 +78,29 @@ export function NewAgentForm({
           Pick a role and an account. You tune the rest after it exists.
         </p>
       </div>
-      <Field label="Agent id">
-        {(p) => (
-          <Input
-            {...p}
-            className="font-mono"
-            value={id}
-            onChange={(e) => setIdEdit(e.target.value)}
-            autoFocus
-          />
-        )}
-      </Field>
+      <div className="flex items-end gap-3">
+        <EmojiAvatarButton
+          id={id || "agent"}
+          role={role}
+          emoji={emoji}
+          size={34}
+          onChange={(value, close) => {
+            setEmoji(value ?? undefined);
+            close();
+          }}
+        />
+        <Field label="Agent id" className="flex-1">
+          {(p) => (
+            <Input
+              {...p}
+              className="font-mono"
+              value={id}
+              onChange={(e) => setIdEdit(e.target.value)}
+              autoFocus
+            />
+          )}
+        </Field>
+      </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-sm text-fg-faint">Role</span>
         <Segmented
