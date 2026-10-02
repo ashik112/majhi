@@ -66,20 +66,14 @@ describe("SignInFlows", () => {
     expect(flows.get(f.id)).toBeUndefined();
   });
 
-  it("takes a Bitbucket state once", () => {
+  it("a new start cancels the open flow of the same workspace and host only", () => {
     const flows = new SignInFlows();
-    const f = flows.start({
-      org: "acme",
-      kind: "bitbucket",
-      host: "bitbucket.org",
-      expiresInMs: 600_000,
-      meta: owner,
-      secret: { kind: "browser", key: "AcmeConsumerKey01", state: "st-1", used: false },
-      shown: {},
-    });
-    expect(flows.takeState("st-2")).toBeUndefined();
-    expect(flows.takeState("st-1")?.id).toBe(f.id);
-    expect(flows.takeState("st-1")).toBeUndefined();
+    const first = device(flows, "acme");
+    const other = device(flows, "globex");
+    const again = device(flows, "acme");
+    expect(flows.get(first.id)?.status.state).toBe("cancelled");
+    expect(flows.get(other.id)?.status.state).toBe("pending");
+    expect(flows.get(again.id)?.status.state).toBe("pending");
   });
 
   it("announces every change with the public status only", () => {

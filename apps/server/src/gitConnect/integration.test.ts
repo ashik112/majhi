@@ -28,7 +28,12 @@ const exists = (p: string) =>
  * Plays the host helper on this machine: clones, pushes and ls-remotes against local bare repos,
  * mapping each https URL to its bare repo. Records every job.
  */
-function playHelper(link: HostLink, urls: Map<string, string>, fail?: { clone?: string }) {
+function playHelper(
+  link: HostLink,
+  urls: Map<string, string>,
+  fail?: { clone?: string },
+  gh?: { token: string },
+) {
   let stopped = false;
   const jobs: HostJob[] = [];
   const local = (url: string) => urls.get(url) ?? url;
@@ -40,6 +45,15 @@ function playHelper(link: HostLink, urls: Map<string, string>, fail?: { clone?: 
       try {
         if (job.method === "openUrl") {
           link.reply({ id: job.id, ok: true, result: { opened: true } });
+        } else if (job.method === "git.cliLogin") {
+          // A computer without gh, unless this test plays one that the owner approves at once.
+          if (gh === undefined) {
+            link.reply({ id: job.id, ok: true, result: { state: "missing" } });
+            continue;
+          }
+          link.progress({ id: job.id, login: { url: "https://github.com/login/device", code: "AB12-CD34" } });
+          await new Promise((r) => setTimeout(r, 50));
+          link.reply({ id: job.id, ok: true, result: { state: "done", token: gh.token } });
         } else if (job.method === "git.clone") {
           if (fail?.clone !== undefined) {
             link.reply({ id: job.id, ok: false, error: fail.clone });
@@ -85,11 +99,11 @@ function playHelper(link: HostLink, urls: Map<string, string>, fail?: { clone?: 
   return jobs;
 }
 
-async function world(options: { helper?: boolean; fail?: { clone?: string } } = {}) {
+async function world(options: { helper?: boolean; fail?: { clone?: string }; gh?: { token: string } } = {}) {
   const hosts = fakeGitHosts();
   const urls = new Map<string, string>();
   const link = new HostLink({ pollTimeoutMs: 20, connectedWindowMs: 200 });
-  const jobs = options.helper === false ? [] : playHelper(link, urls, options.fail);
+  const jobs = options.helper === false ? [] : playHelper(link, urls, options.fail, options.gh);
   w = await taskWorld({ hostLink: link, gitFetch: hosts.fetch, noAgent: true });
   await new Promise((r) => setTimeout(r, 30));
   return { w, h: w.h, hosts, urls, jobs };
@@ -123,32 +137,33 @@ async function signIn(h: World["h"], hosts: FakeGitHosts, account = "octo-acme")
 }
 
 describe("OAuth apps", () => {
-  it("saves the Bitbucket secret in secrets.age only, and never returns it", async () => {
-    const { h } = await world({ helper: false });
-    const set = await h.cmd("git.oauthApps.set", {
+  it("a Bitbucket API token pasted with the email is checked, saved in secrets.age only, never returned", async () => {
+    const { h, hosts } = await world({ helper: false });
+    const BB = "ATATTIntegrationBitbucket0099";
+    const good = `Basic ${Buffer.from(`dev@acme.test:${BB}`).toString("base64")}`;
+    hosts.on("GET https://api.bitbucket.org/2.0/user", (req) =>
+      req.headers.authorization === good ? { json: { username: "acme-bb" } } : { status: 401, json: {} },
+    );
+    const start = await h.cmd("git.signIn.start", { org: "acme", kind: "bitbucket" });
+    expect(start.body).toEqual({
+      state: "paste",
       kind: "bitbucket",
-      consumer: { key: "AcmeConsumerKey01", secret: "consumer-secret-value-1" },
+      host: "bitbucket.org",
+      reason: "bitbucket",
     });
-    expect(set.status).toBe(200);
-    expect(set.body.bitbucket).toEqual({ key: "AcmeConsumerKey01", secretSaved: true });
-    expect(set.body.bitbucketCallback).toBe("http://127.0.0.1:7070/oauth/bitbucket/callback");
+    const saved = await h.cmd("git.signIn.token", {
+      org: "acme",
+      kind: "bitbucket",
+      email: "dev@acme.test",
+      token: BB,
+    });
+    expect(saved.body).toMatchObject({ state: "done", account: "acme-bb" });
+    expect(JSON.stringify(saved.body)).not.toContain(BB);
     const yaml = await readFile(join(h.env.majhiHome, "majhi.yaml"), "utf8");
-    expect(yaml).toContain("key: AcmeConsumerKey01");
-    expect(yaml).toMatch(/secret: secret:bitbucket-oauth-consumer/);
-    expect(yaml).not.toContain("consumer-secret-value-1");
-    expect(JSON.stringify((await h.cmd("git.oauthApps.get")).body)).not.toContain("consumer-secret-value-1");
-    expect(await h.majhi.services.secrets.get("bitbucket-oauth-consumer")).toBe("consumer-secret-value-1");
-
-    // A new secret rewrites the same secret; removing drops it.
-    await h.cmd("git.oauthApps.set", {
-      kind: "bitbucket",
-      consumer: { key: "AcmeConsumerKey01", secret: "consumer-secret-value-2" },
-    });
-    expect(await h.majhi.services.secrets.get("bitbucket-oauth-consumer")).toBe("consumer-secret-value-2");
-    expect((await h.cmd("git.oauthApps.set", { kind: "bitbucket", consumer: null })).body.bitbucket).toEqual({
-      secretSaved: false,
-    });
-    expect(await h.majhi.services.secrets.has("bitbucket-oauth-consumer")).toBe(false);
+    expect(yaml).not.toContain(BB);
+    const ref = (await h.majhi.services.config.sections()).orgs.acme?.mr_tokens?.bitbucket ?? "";
+    expect(await h.majhi.services.secrets.get(ref.replace("secret:", ""))).toBe(`dev@acme.test:${BB}`);
+    expect((await h.cmd("git.signIn.token", { org: "acme", kind: "bitbucket", token: BB })).status).toBe(400);
   });
 
   it("refuses an agent, and the sign-in commands too", async () => {
@@ -158,10 +173,40 @@ describe("OAuth apps", () => {
       (await h.cmd("git.oauthApps.set", { kind: "github", clientId: "Ov23liAcmeExample01" }, agent)).status,
     ).toBe(409);
     expect((await h.cmd("git.signIn.start", { org: "acme", kind: "github" }, agent)).status).toBe(409);
+    expect(
+      (await h.cmd("git.signIn.token", { org: "acme", kind: "github", token: "ghp_AgentToken123" }, agent))
+        .status,
+    ).toBe(409);
   });
 });
 
 describe("sign-in through the commands", () => {
+  it("signs in with gh through the host helper: its code on the page, the token for that workspace only", async () => {
+    const { h, hosts, jobs } = await world({ gh: { token: TOKEN } });
+    hosts.on("GET https://api.github.com/user", () => ({ json: { login: "octo-acme" } }));
+    hosts.on("GET https://api.github.com/users/octo-acme", () => ({ json: {} }));
+    const start = await h.cmd("git.signIn.start", { org: "acme", kind: "github" });
+    expect(start.body).toMatchObject({ state: "device", userCode: "AB12-CD34", opened: true });
+    expect(jobs.find((j) => j.method === "git.cliLogin")?.params).toMatchObject({
+      cli: "gh",
+      org: "acme",
+      host: "github.com",
+    });
+    let done: { state: string } | undefined;
+    for (let i = 0; i < 100 && done === undefined; i++) {
+      const poll = await h.cmd("git.signIn.poll", { signIn: start.body.signIn });
+      if (poll.body.state !== "pending") done = poll.body;
+      else await new Promise((r) => setTimeout(r, 30));
+    }
+    expect(done).toMatchObject({ state: "done", account: "octo-acme" });
+    const orgs = (await h.majhi.services.config.sections()).orgs;
+    expect(
+      await h.majhi.services.secrets.get((orgs.acme?.mr_tokens?.github ?? "").replace("secret:", "")),
+    ).toBe(TOKEN);
+    expect(orgs.private?.mr_tokens).toBeUndefined();
+    expect(JSON.stringify(jobs.filter((j) => j.method !== "git.cliLogin"))).not.toContain(TOKEN);
+  });
+
   it("saves the token for that workspace in secrets.age and points its git account and mr_tokens at it", async () => {
     const { h, hosts } = await world();
     const done = await signIn(h, hosts);

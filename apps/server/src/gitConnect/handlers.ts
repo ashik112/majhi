@@ -23,6 +23,7 @@ type GitConnectCommand =
   | "git.signIn.poll"
   | "git.signIn.cancel"
   | "git.signIn.confirm"
+  | "git.signIn.token"
   | "git.signOut"
   | "git.remoteRepos"
   | "git.remoteOwners"
@@ -66,18 +67,7 @@ export function gitConnectHandlers({
   services,
 }: GitConnectHandlerDeps): Pick<CommandHandlers, GitConnectCommand> {
   const gc = services.gitConnect;
-  const secrets = {
-    save: (input: { value: string; label: string }) => services.secretService.save(input),
-    set: (name: string, value: string) => services.secrets.set(name, value),
-    has: (name: string) => services.secrets.has(name),
-    delete: (name: string) => services.secrets.delete(name),
-  };
-  const view = async () => {
-    const apps = await gc.apps();
-    const ref = apps.bitbucket?.secretRef.replace(/^secret:/, "");
-    const saved = ref === undefined ? false : await services.secrets.has(ref).catch(() => false);
-    return appsView(apps, saved, gc.origin);
-  };
+  const view = async () => appsView(await gc.apps());
 
   /** Projects, repos under the roots and SSH aliases, for marking remote repos already here. */
   const hereIndex = async (): Promise<HereIndex> => {
@@ -112,7 +102,7 @@ export function gitConnectHandlers({
       if (!(await config.sections()).exists) {
         throw new UserError("Pick a project folder first: majhi.yaml does not exist yet.", 409);
       }
-      await setApp({ config, secrets }, input, change(ctx));
+      await setApp({ config }, input, change(ctx));
       return view();
     },
 
@@ -131,6 +121,10 @@ export function gitConnectHandlers({
     "git.signIn.confirm": async (input, ctx) => {
       ownerOnly(ctx, "confirm a sign-in");
       return gc.signIn.confirm(input.signIn);
+    },
+    "git.signIn.token": (input, ctx) => {
+      ownerOnly(ctx, "save a git token for a workspace");
+      return gc.signIn.token(input, ctx.meta);
     },
     "git.signOut": async (input, ctx) => {
       ownerOnly(ctx, "sign a workspace out of a git host");

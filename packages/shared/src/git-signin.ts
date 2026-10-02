@@ -1,16 +1,20 @@
 import { z } from "zod";
-import { IdSchema, MrHostSchema, SecretRefSchema } from "./accounts.ts";
+import { IdSchema, MrHostSchema } from "./accounts.ts";
 
 /**
  * Git sign-in per workspace (org in code). The owner signs a workspace in to GitHub, GitLab or
- * Bitbucket in the browser; majhi saves the token for that workspace only, in `secrets.age`, and
- * points the workspace's git account and `mr_tokens` at it, so Ship, MRs and push use it.
+ * Bitbucket; majhi saves the token for that workspace only, in `secrets.age`, and points the
+ * workspace's git account and `mr_tokens` at it, so Ship, MRs and push use it.
  *
- * - GitHub: OAuth device flow with the public client ID of one OAuth App (`git_apps.github`).
- * - GitLab: OAuth device authorization grant with a public application ID per host
- *   (`git_apps.gitlab`), GitLab 17.3 or later. Tokens last about 2 hours; majhi refreshes them.
- * - Bitbucket: OAuth authorization code (no PKCE: Bitbucket documents none) with a redirect to majhi's own
- *   `/oauth/bitbucket/callback`, using the per-install consumer (`git_apps.bitbucket`).
+ * - GitHub: the GitHub CLI's own browser login (`gh auth login --web`), run by the host helper with
+ *   a config folder of the workspace's own. Without `gh`: a token pasted from a prefilled page.
+ *   A device flow with majhi's own client ID is the second path, only once `BUILT_IN_OAUTH_APPS`
+ *   (or `git_apps.github`) has one.
+ * - GitLab: the GitLab CLI's browser login (`glab auth login --web`) for gitlab.com, the same way.
+ *   Without `glab`, or on a self-hosted GitLab: a pasted personal access token. Tokens from glab
+ *   last about 2 hours; majhi refreshes them with glab's public client ID.
+ * - Bitbucket: an Atlassian API token with scopes, pasted with the Atlassian account email. No
+ *   admin access is needed.
  *
  * See docs/briefs/onboarding-and-git-connect.md for the flows and the security rules.
  */
@@ -23,10 +27,10 @@ export const DEFAULT_GIT_HOST = {
 } as const satisfies Record<z.infer<typeof MrHostSchema>, string>;
 
 /**
- * Public client IDs of the OAuth apps the majhi project registers, used when majhi.yaml `git_apps`
- * names none. Device flow needs no client secret, so these are safe to ship. Empty until the apps
- * are registered: then `git.oauthApps.get` reports the host as not set up and `git.signIn.start`
- * answers `needs-app`. `git.oauthApps.set` overrides them per install.
+ * Public client IDs of OAuth apps the majhi project registers, used when majhi.yaml `git_apps`
+ * names none. Device flow needs no client secret, so these are safe to ship. Empty until such apps
+ * exist: sign-in then goes through the host's CLI or a pasted token. `git.oauthApps.set` overrides
+ * them per install.
  */
 export const BUILT_IN_OAUTH_APPS: { github: string; gitlab: Readonly<Record<string, string>> } = {
   github: "",
@@ -45,7 +49,28 @@ export const GitHostNameSchema = z
   .max(255)
   .regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/, "Use a host name like gitlab.com");
 
-/** An OAuth client ID or Bitbucket consumer key. Public: it may sit in majhi.yaml. */
+/**
+ * The public client ID of the GitLab CLI's own OAuth app on gitlab.com (`DefaultClientID` in
+ * glab's `internal/glinstance/host.go`). A token from `glab auth login --web` is refreshed with it.
+ */
+export const GLAB_CLIENT_ID = "41d48f9422ebd655dd9cf2947d6979681dfaddc6d0c56f7628f6ada59559af1e";
+
+/** The scopes a pasted GitHub token needs, and the ones `gh` asks for. */
+export const GITHUB_TOKEN_SCOPES = ["repo", "read:org", "workflow"] as const;
+/** The scopes a pasted GitLab personal access token needs. */
+export const GITLAB_TOKEN_SCOPES = ["api", "read_user", "write_repository"] as const;
+/** The scopes of a Bitbucket API token. `admin:repository:bitbucket` only to let majhi make repos. */
+export const BITBUCKET_TOKEN_SCOPES = [
+  "read:user:bitbucket",
+  "read:workspace:bitbucket",
+  "read:repository:bitbucket",
+  "write:repository:bitbucket",
+  "read:pullrequest:bitbucket",
+  "write:pullrequest:bitbucket",
+] as const;
+export const BITBUCKET_CREATE_REPO_SCOPE = "admin:repository:bitbucket";
+
+/** An OAuth client ID. Public: it may sit in majhi.yaml. */
 export const OAuthClientIdSchema = z
   .string()
   .trim()
@@ -57,16 +82,14 @@ export const OAuthClientIdSchema = z
 // majhi.yaml `git_apps`
 
 /**
- * The OAuth apps majhi signs in with, one per host. Written by `git.oauthApps.set`. Only public
- * values live here; the Bitbucket consumer secret is a `secret:` reference into `secrets.age`.
+ * OAuth apps for the device-flow path, one per host. Written by `git.oauthApps.set`. Only public
+ * IDs live here. Optional: without them, sign-in uses the host's CLI or a pasted token.
  *
  * ```yaml
  * git_apps:
  *   github: { client_id: Ov23liAcmeExample01 }
  *   gitlab:
- *     gitlab.com: { client_id: 0123456789abcdef0123456789abcdef }
  *     gitlab.acme.test: { client_id: fedcba9876543210fedcba9876543210 }
- *   bitbucket: { key: AcmeConsumerKey01, secret: secret:bitbucket-oauth-consumer }
  * ```
  */
 export const GitAppsConfigSchema = z.strictObject({
@@ -74,14 +97,19 @@ export const GitAppsConfigSchema = z.strictObject({
   github: z.strictObject({ client_id: OAuthClientIdSchema }).optional(),
   /** By host. gitlab.com and any self-hosted GitLab the owner registered an application on. */
   gitlab: z.record(GitHostNameSchema, z.strictObject({ client_id: OAuthClientIdSchema })).optional(),
-  /** bitbucket.org. `secret` names the consumer secret in `secrets.age`. */
-  bitbucket: z.strictObject({ key: OAuthClientIdSchema, secret: SecretRefSchema }).optional(),
+  /**
+   * Ignored. A Bitbucket OAuth consumer from an older majhi: consumers need workspace admin, so
+   * majhi signs in to Bitbucket with an API token instead (DECISIONS 2026-10-03). Kept so an old
+   * majhi.yaml still loads.
+   */
+  bitbucket: z.unknown().optional(),
 });
 export type GitAppsConfig = z.infer<typeof GitAppsConfigSchema>;
 
 /**
  * The OAuth grant behind a signed-in token, saved as JSON in `secrets.age` under the git account's
- * `oauth` reference. Only GitLab and Bitbucket have one: GitHub OAuth App tokens do not expire.
+ * `oauth` reference. Only GitLab has one: GitHub OAuth App tokens do not expire, and Bitbucket API
+ * tokens are pasted. A `bitbucket` grant from an older majhi is not refreshed any more.
  * majhi refreshes the access token before `expiresAt` and rewrites both secrets in place, so the
  * references in majhi.yaml never change and no config commit is made.
  */
@@ -89,7 +117,7 @@ export const OAuthGrantSchema = z.strictObject({
   v: z.literal(1),
   kind: MrHostSchema,
   host: GitHostNameSchema,
-  /** The client ID or consumer key the grant was made with. Refreshing needs the same one. */
+  /** The client ID the grant was made with (majhi's, or `GLAB_CLIENT_ID`). Refreshing needs the same one. */
   clientId: OAuthClientIdSchema,
   refreshToken: z.string().min(1).max(4096),
   /** When the access token stops working. */
@@ -101,16 +129,11 @@ export type OAuthGrant = z.infer<typeof OAuthGrantSchema>;
 // ---------------------------------------------------------------------------
 // git.oauthApps.get / git.oauthApps.set
 
-/** What majhi has for each host's app. Never holds the Bitbucket secret. */
+/** What majhi has for each host's app. */
 export const GitAppsViewSchema = z.object({
   /** `builtIn`: the ID is majhi's own (`BUILT_IN_OAUTH_APPS`), not one this install saved. */
   github: z.object({ clientId: z.string().optional(), builtIn: z.boolean().optional() }),
   gitlab: z.array(z.object({ host: z.string(), clientId: z.string(), builtIn: z.boolean().optional() })),
-  bitbucket: z.object({ key: z.string().optional(), secretSaved: z.boolean() }),
-  /** majhi's own address as the browser reaches it, like `http://127.0.0.1:7070`. */
-  origin: z.string(),
-  /** The redirect URL to register for Bitbucket: `<origin>/oauth/bitbucket/callback`. */
-  bitbucketCallback: z.string(),
 });
 export type GitAppsView = z.infer<typeof GitAppsViewSchema>;
 
@@ -122,123 +145,132 @@ export const GitAppsSetInputSchema = z.discriminatedUnion("kind", [
     host: GitHostNameSchema.default(DEFAULT_GIT_HOST.gitlab),
     clientId: OAuthClientIdSchema.nullable(),
   }),
-  z.object({
-    kind: z.literal("bitbucket"),
-    consumer: z
-      .object({
-        key: OAuthClientIdSchema,
-        /** Sent once, saved in `secrets.age`, never returned, logged or written to majhi.yaml. */
-        secret: z.string().trim().min(8).max(512),
-      })
-      .nullable(),
-  }),
 ]);
 export type GitAppsSetInput = z.input<typeof GitAppsSetInputSchema>;
 
 // ---------------------------------------------------------------------------
-// The "needs-app" setup steps
+// The paste-a-token help
 
-/** Exact steps to register majhi's app on a host, for the UI to show as they are. */
-export const GitAppSetupSchema = z.object({
+/**
+ * Why a sign-in asks for a pasted token instead of a browser sign-in:
+ * - `bitbucket`: Bitbucket always takes an Atlassian API token.
+ * - `no-cli`: the host's CLI (`gh`, `glab`) is not installed on this computer.
+ * - `no-helper`: the host helper is not connected, so majhi cannot run the CLI.
+ * - `self-hosted`: a GitLab other than gitlab.com.
+ * - `chosen`: the owner asked to paste one.
+ */
+export const PasteReasonSchema = z.enum(["bitbucket", "no-cli", "no-helper", "self-hosted", "chosen"]);
+export type PasteReason = z.infer<typeof PasteReasonSchema>;
+
+/** How to make a token on a host, for the UI to show as is. Shared so the server and UI agree. */
+export const GitTokenHelpSchema = z.object({
   kind: MrHostSchema,
   host: z.string(),
-  title: z.string(),
-  /** The host page to open. Opened through the host helper's `openUrl`, or shown as a link. */
-  link: z.object({ label: z.string(), url: z.string() }),
+  /** The host page that makes the token, prefilled where the host allows it. */
+  link: z.object({ label: z.string(), url: z.url() }),
   /** Plain sentences, in order. */
   steps: z.array(z.string()).min(1),
-  /** Values to copy into the host's form, each with a copy button. */
-  values: z.array(z.object({ label: z.string(), value: z.string() })),
-  /** The fields the UI asks for, then sends with `git.oauthApps.set`. */
-  needs: z.array(z.enum(["clientId", "key", "secret"])).min(1),
+  /** Scope names to tick, when the page does not tick them itself. */
+  scopes: z.array(z.string()),
+  /** The fields the form asks for. Bitbucket needs the Atlassian account email too. */
+  fields: z.array(z.enum(["email", "token"])).min(1),
+  /** One line on why it is a token this time, and how to sign in in the browser next time. */
+  note: z.string().optional(),
 });
-export type GitAppSetup = z.infer<typeof GitAppSetupSchema>;
+export type GitTokenHelp = z.infer<typeof GitTokenHelpSchema>;
 
-/** majhi's address when nothing else is known: the default port on loopback. */
-export const DEFAULT_MAJHI_ORIGIN = "http://127.0.0.1:7070";
+const CLI_NAME = { github: "gh", gitlab: "glab" } as const;
+const CLI_INSTALL = {
+  github: "https://cli.github.com",
+  gitlab: "https://gitlab.com/gitlab-org/cli#installation",
+} as const;
 
-/** The OAuth redirect path of a host kind. Only Bitbucket uses it; GitHub and GitLab require one on the form. */
-export function oauthCallbackUrl(origin: string, kind: z.infer<typeof MrHostSchema>): string {
-  return `${origin.replace(/\/+$/, "")}/oauth/${kind}/callback`;
+/** The token name majhi suggests: `majhi-<workspace>`. */
+export function tokenName(workspace: string): string {
+  return `majhi-${workspace}`;
 }
 
 /**
- * The setup steps for a host whose app is not registered yet. Shared so the server's `needs-app`
- * answer and any UI preview say the same thing. Names no operating system.
+ * How to make a token for `workspace` on a host: a prefilled page and the exact steps. Names no
+ * operating system. Checked against the host docs on 2026-10-03:
+ * - https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+ * - https://docs.gitlab.com/user/profile/personal_access_tokens/
+ * - https://support.atlassian.com/bitbucket-cloud/docs/create-an-api-token/
  */
-export function gitAppSetup(kind: z.infer<typeof MrHostSchema>, host: string, origin: string): GitAppSetup {
-  const callback = oauthCallbackUrl(origin, kind);
+export function gitTokenHelp(
+  kind: z.infer<typeof MrHostSchema>,
+  host: string,
+  workspace: string,
+  reason: PasteReason,
+): GitTokenHelp {
+  const name = encodeURIComponent(tokenName(workspace));
+  const cliNote =
+    kind === "bitbucket"
+      ? undefined
+      : reason === "no-cli"
+        ? `${CLI_NAME[kind]} is not installed on this computer, so majhi asks for a token. Install ${CLI_NAME[kind]} (${CLI_INSTALL[kind]}) and majhi signs in through the browser next time.`
+        : reason === "no-helper"
+          ? "The host helper is not connected, so majhi cannot open the browser sign-in. A token works the same."
+          : reason === "self-hosted"
+            ? `majhi signs in to ${host} with a personal access token.`
+            : undefined;
   if (kind === "github") {
     return {
       kind,
       host,
-      title: "Register majhi on GitHub once",
       link: {
-        label: "Open GitHub's new OAuth app page",
-        url: "https://github.com/settings/applications/new",
+        label: "Open GitHub's new token page",
+        url: `https://github.com/settings/tokens/new?description=${name}&scopes=${GITHUB_TOKEN_SCOPES.join(",")}`,
       },
       steps: [
-        "Open GitHub's new OAuth app page, signed in as any of your accounts. The app only names majhi; each workspace still signs in as its own account.",
-        "Fill in the form with the values below.",
-        "Click Register application.",
-        "On the app's page, tick Enable Device Flow and click Update application.",
-        "Copy the Client ID and paste it here. majhi needs no client secret.",
-        "If a GitHub organization limits OAuth app access, an owner of that organization approves majhi once, from the prompt GitHub shows when you sign in.",
+        "Open GitHub's new token page, signed in as the account this workspace uses. majhi fills in the name and the scopes.",
+        "Pick an expiration.",
+        "Click Generate token at the bottom of the page.",
+        "Copy the token and paste it here. GitHub shows it only once.",
       ],
-      values: [
-        { label: "Application name", value: "majhi" },
-        { label: "Homepage URL", value: origin },
-        { label: "Authorization callback URL", value: callback },
-      ],
-      needs: ["clientId"],
+      scopes: [...GITHUB_TOKEN_SCOPES],
+      fields: ["token"],
+      ...(cliNote === undefined ? {} : { note: cliNote }),
     };
   }
   if (kind === "gitlab") {
     return {
       kind,
       host,
-      title: `Register majhi on ${host} once`,
-      link: { label: `Open ${host} applications`, url: `https://${host}/-/user_settings/applications` },
+      link: {
+        label: `Open personal access tokens on ${host}`,
+        url: `https://${host}/-/user_settings/personal_access_tokens?name=${name}&scopes=${GITLAB_TOKEN_SCOPES.join(",")}`,
+      },
       steps: [
-        `Open the Applications page on ${host}, signed in as any of your accounts. The application only names majhi; each workspace still signs in as its own account.`,
-        "Click Add new application and fill in the values below.",
-        "Clear the Confidential box.",
-        "Tick the api scope.",
-        "Click Save application.",
-        "Copy the Application ID and paste it here. majhi needs no secret.",
-        ...(host === DEFAULT_GIT_HOST.gitlab
-          ? []
-          : [
-              `Signing in from majhi needs GitLab ${GITLAB_DEVICE_GRANT_MIN_VERSION} or later on ${host}. On an older GitLab, paste a personal access token with the api scope instead.`,
-            ]),
+        `Open the personal access tokens page on ${host}, signed in as the account this workspace uses. majhi fills in the name and the scopes.`,
+        "If GitLab asks which kind of token, choose Legacy token.",
+        "Set an expiration date.",
+        "Click Generate token.",
+        "Copy the token and paste it here. GitLab shows it only once.",
       ],
-      values: [
-        { label: "Name", value: "majhi" },
-        { label: "Redirect URI", value: callback },
-        { label: "Scopes", value: "api" },
-      ],
-      needs: ["clientId"],
+      scopes: [...GITLAB_TOKEN_SCOPES],
+      fields: ["token"],
+      ...(cliNote === undefined ? {} : { note: cliNote }),
     };
   }
   return {
     kind,
     host,
-    title: "Register majhi on Bitbucket once",
-    link: { label: "Open your Bitbucket workspaces", url: "https://bitbucket.org/account/workspaces/" },
+    link: {
+      label: "Open Atlassian API tokens",
+      url: "https://id.atlassian.com/manage-profile/security/api-tokens",
+    },
     steps: [
-      "Open your Bitbucket workspaces and pick one you administer. The consumer only names majhi; each workspace in majhi still signs in as its own account.",
-      "Click the Settings cog, choose Workspace settings, then under Apps and features choose OAuth consumers, and click Add consumer.",
-      "Fill in the values below.",
-      "Under Permissions, tick Account: Read, Workspace membership: Read, Projects: Read, Repositories: Admin and Pull requests: Write.",
-      "Click Save, then open the new consumer to see its Key and Secret.",
-      "Paste the Key and the Secret here. majhi keeps the secret encrypted on this computer.",
+      "Open the API tokens page of your Atlassian account, signed in as the account this workspace uses. No admin access is needed.",
+      "Click Create API token with scopes.",
+      `Name it ${tokenName(workspace)}, pick an expiry date, and click Next.`,
+      "Choose Bitbucket as the app, and click Next.",
+      "Tick the scopes below, and click Next.",
+      "Click Create token. Copy it and paste it here with your Atlassian email. Atlassian shows it only once.",
     ],
-    values: [
-      { label: "Name", value: "majhi" },
-      { label: "Callback URL", value: callback },
-      { label: "URL", value: origin },
-    ],
-    needs: ["key", "secret"],
+    scopes: [...BITBUCKET_TOKEN_SCOPES],
+    fields: ["email", "token"],
+    note: `Add ${BITBUCKET_CREATE_REPO_SCOPE} too if majhi should make new repos.`,
   };
 }
 
@@ -253,26 +285,20 @@ export const SignInStartInputSchema = z.object({
   /** The workspace the token is for. Only this workspace gets it. */
   org: IdSchema,
   kind: MrHostSchema,
-  /** Default: `DEFAULT_GIT_HOST[kind]`. A self-hosted GitLab needs its own entry in `git_apps.gitlab`. */
+  /** Default: `DEFAULT_GIT_HOST[kind]`. A self-hosted GitLab answers `paste`. */
   host: GitHostNameSchema.optional(),
 });
 
 /**
- * - `needs-app`: the host has no app registered yet. Show `setup`, save with `git.oauthApps.set`,
- *   then start again.
- * - `device` (GitHub, GitLab): show `userCode` and open `verificationUri`. majhi polls the host
- *   itself; follow the flow with `git.signIn.poll` and the `signins` events topic.
- * - `browser` (Bitbucket): open `authorizeUrl`. The host sends the browser back to majhi's
- *   callback, which ends the flow.
+ * - `device` (GitHub through `gh`, or majhi's own device flow): show `userCode` and open
+ *   `verificationUri`. Follow the flow with `git.signIn.poll` and the `signins` events topic.
+ * - `browser` (GitLab through `glab`): the host's page is open in the browser; the sign-in ends
+ *   by itself once the owner approves there. `authorizeUrl` is the link to show when it is not.
+ * - `paste`: no browser sign-in this time. Show `gitTokenHelp(kind, host, org, reason)` and send the
+ *   token with `git.signIn.token`.
  * `opened` is true when the host helper opened the page; otherwise the UI shows the link to click.
  */
 export const SignInStartSchema = z.discriminatedUnion("state", [
-  z.object({
-    state: z.literal("needs-app"),
-    kind: MrHostSchema,
-    host: z.string(),
-    setup: GitAppSetupSchema,
-  }),
   z.object({
     state: z.literal("device"),
     signIn: SignInIdSchema,
@@ -289,12 +315,18 @@ export const SignInStartSchema = z.discriminatedUnion("state", [
   z.object({
     state: z.literal("browser"),
     signIn: SignInIdSchema,
-    kind: z.literal("bitbucket"),
+    kind: z.enum(["github", "gitlab"]),
     host: z.string(),
-    /** The host's authorize page with majhi's key and a one-time `state`. Holds no secret. */
+    /** The host's authorize page. Holds no secret. */
     authorizeUrl: z.url(),
     expiresAt: z.iso.datetime(),
     opened: z.boolean(),
+  }),
+  z.object({
+    state: z.literal("paste"),
+    kind: MrHostSchema,
+    host: z.string(),
+    reason: PasteReasonSchema,
   }),
 ]);
 export type SignInStart = z.infer<typeof SignInStartSchema>;
@@ -388,10 +420,32 @@ export const SignOutSchema = z.object({
 });
 export type SignOut = z.infer<typeof SignOutSchema>;
 
-/** The query string of `GET /oauth/bitbucket/callback`. Either `code` or `error` comes with `state`. */
-export const BitbucketCallbackQuerySchema = z.object({
-  state: z.string().min(1).max(200),
-  code: z.string().min(1).max(2000).optional(),
-  error: z.string().max(200).optional(),
-});
-export type BitbucketCallbackQuery = z.infer<typeof BitbucketCallbackQuerySchema>;
+/**
+ * `git.signIn.token`: a pasted token for one workspace and host. majhi asks the host who it belongs
+ * to before anything is saved, then saves it exactly as a browser sign-in would (with the same
+ * confirm when another workspace uses that account). Bitbucket takes an Atlassian API token with
+ * the Atlassian account email.
+ */
+export const SignInTokenInputSchema = z
+  .object({
+    org: IdSchema,
+    kind: MrHostSchema,
+    host: GitHostNameSchema.optional(),
+    /** Sent once, saved in `secrets.age`, never returned, logged or put in an event. */
+    token: z
+      .string()
+      .trim()
+      .min(8, "Paste the whole token")
+      .max(4096)
+      .regex(/^\S+$/, "A token has no spaces"),
+    /** Bitbucket only: the Atlassian account email the API token belongs to. */
+    email: z.email("Use the email of your Atlassian account").max(320).optional(),
+  })
+  .refine((v) => v.kind !== "bitbucket" || v.email !== undefined, {
+    message: "Bitbucket needs the email of your Atlassian account",
+    path: ["email"],
+  });
+export type SignInTokenInput = z.infer<typeof SignInTokenInputSchema>;
+
+/** majhi's address when nothing else is known: the default port on loopback. */
+export const DEFAULT_MAJHI_ORIGIN = "http://127.0.0.1:7070";

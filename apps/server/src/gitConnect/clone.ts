@@ -6,7 +6,7 @@ import {
   type CommandMeta,
   DEFAULT_GIT_HOST,
   type GitAuth,
-  type HostProgress,
+  type HostCloneProgress,
   type MrHost,
   normalizeSshRoute,
   type ProjectView,
@@ -39,7 +39,7 @@ export interface CloneDeps {
   /** The host helper's `git.clone`. Throws a sentence safe to show. */
   hostClone: (
     params: { clone: string; url: string; path: string; auth: GitAuth },
-    onProgress: (progress: HostProgress) => void,
+    onProgress: (progress: HostCloneProgress) => void,
   ) => Promise<{ head: string; branch: string }>;
   register: (input: RegisterInput, change: { command: string; meta: CommandMeta }) => Promise<ProjectView>;
   /** A job changed. `registered` when a project was added. */
