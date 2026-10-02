@@ -84,7 +84,7 @@ let apiTaskId: string;
 
 test.beforeAll(async ({ request }) => {
   // The lead may edit and run commands, so `npm test` is allowed by rule. The builder may only edit,
-  // so its commands ask. The boss runs the chat task.
+  // so its commands ask. The captain runs the chat task.
   await setPerms(request, "acme-lead", ["edit", "shell"]);
   await setPerms(request, "acme-builder", ["edit"]);
   const bossId = readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8").match(/^boss: (\S+)/m)?.[1];

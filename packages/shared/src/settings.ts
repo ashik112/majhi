@@ -4,7 +4,7 @@ import { E2eSettingsSchema } from "./e2e.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
 /**
- * Runtime settings in majhi.yaml that the owner or the boss can change live
+ * Runtime settings in majhi.yaml that the owner or the captain can change live
  * (SPEC 5.7, 5.13, 5.16, 5.17). Every field has a default, so an empty
  * section means "use the defaults".
  */
@@ -155,7 +155,7 @@ const memoryFields = {
   auto_threshold: z.number().min(0).max(1),
   /** Nothing is kept or dropped on its own: every fact waits for the owner. */
   review_all: z.boolean(),
-  /** The agent that reads the room after a task. Default: the boss. */
+  /** The agent that reads the room after a task. Default: the captain. */
   // Same shape as an agent id; accounts.ts imports this file, so it is not imported here.
   housekeeper: z
     .string()
@@ -174,7 +174,7 @@ export const MemorySettingsSchema = z.strictObject({
   chat_idle_minutes: memoryFields.chat_idle_minutes.default(30),
 });
 export type MemorySettings = z.infer<typeof MemorySettingsSchema>;
-/** `null` puts the default back: the boss as Housekeeper, the cheapest model. */
+/** `null` puts the default back: the captain as Housekeeper, the cheapest model. */
 export const MemoryPatchSchema = z
   .strictObject({
     ...memoryFields,
@@ -300,7 +300,7 @@ export const ContainersFilePatchSchema = z.strictObject(containersFields).partia
 export const ContainersPatchSchema = ContainersFilePatchSchema.omit({ images: true });
 export type ContainersPatch = z.infer<typeof ContainersPatchSchema>;
 
-/** How the boss's commands are approved, per risk class (5.16). */
+/** How the captain's commands are approved, per risk class (5.16). */
 export const ApprovalModeSchema = z.enum([
   /** Runs without asking. */
   "auto",
@@ -378,7 +378,7 @@ export const AutonomyOrgSchema = z.strictObject({
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
 
-/** Guidance the owner gave on the Autonomous page, which the boss follows until it is removed. */
+/** Guidance the owner gave on the Autonomous page, which the captain follows until it is removed. */
 export const AutonomyInstructionSchema = z.strictObject({
   id: z.string().regex(/^[a-z0-9]{8}$/),
   text: z.string().trim().min(1).max(500),

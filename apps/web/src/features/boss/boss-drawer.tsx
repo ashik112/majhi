@@ -14,7 +14,7 @@ import { useChats } from "@/lib/task-queries";
 import { useBoss } from "./boss-context";
 import { BossConversation } from "./boss-conversation";
 
-/** The boss chat as a right-side drawer over any page. Cmd+J or the sidebar opens it. */
+/** The captain chat as a right-side drawer over any page. Cmd+J or the sidebar opens it. */
 export function BossDrawer() {
   const { open, hide } = useBoss();
   const chat = useBossChat(open);
@@ -31,7 +31,7 @@ export function BossDrawer() {
 
   if (!open) return null;
   const boss = chat.data?.team[0];
-  // Earlier chats with this boss, newest first: the same ones the Chats page lists.
+  // Earlier chats with this captain, newest first: the same ones the Chats page lists.
   const past = (chats.data ?? [])
     .filter((t) => t.id !== chat.data?.id && t.team[0] === boss && t.org === undefined)
     .slice(0, 15);
@@ -39,7 +39,7 @@ export function BossDrawer() {
   return (
     <aside
       ref={panel}
-      aria-label="Boss chat"
+      aria-label="Captain chat"
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) hide();
       }}
@@ -51,7 +51,7 @@ export function BossDrawer() {
       <header className="flex items-center gap-2.5">
         {boss && <AgentAvatar id={boss} size={28} />}
         <div className="flex min-w-0 flex-col">
-          <h2 className="text-md font-semibold">Boss</h2>
+          <h2 className="text-md font-semibold">Captain</h2>
           {boss && <span className="truncate font-mono text-xs text-fg-faint">@{boss}</span>}
         </div>
         <div className="ml-auto flex items-center gap-1">
@@ -93,13 +93,13 @@ export function BossDrawer() {
                 to="/chats/$taskId"
                 params={{ taskId: chat.data.id }}
                 onClick={hide}
-                aria-label="Open the boss chat in Chats"
+                aria-label="Open the captain chat in Chats"
               >
                 <ExternalLink aria-hidden="true" />
               </Link>
             </Button>
           )}
-          <Button variant="ghost" size="icon-sm" aria-label="Close the boss chat" onClick={hide}>
+          <Button variant="ghost" size="icon-sm" aria-label="Close the captain chat" onClick={hide}>
             <X aria-hidden="true" />
           </Button>
         </div>

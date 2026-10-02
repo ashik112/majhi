@@ -21,7 +21,7 @@ const rated = (level: TaskRating["level"]): TaskRating => ({
 });
 
 /**
- * A boss world with autonomous mode on. Sizes come from a fixed rater: a task whose text says
+ * A captain world with autonomous mode on. Sizes come from a fixed rater: a task whose text says
  * "large", "medium" or "small" is rated so, anything else is not rated.
  */
 async function on() {
@@ -57,7 +57,7 @@ async function on() {
 }
 
 describe("the size rule", () => {
-  it("refuses the boss's start of a task larger than the rule, with one line why, and lets one that fits start", async () => {
+  it("refuses the captain's start of a task larger than the rule, with one line why, and lets one that fits start", async () => {
     const t = await on();
     const big = await t.ownerTask("Rework the billing export\n\nlarge");
     const small = await t.ownerTask("Fix the typo on the login page\n\nsmall");
@@ -132,7 +132,7 @@ describe("the size rule", () => {
 });
 
 describe("the org rule", () => {
-  it("keeps the boss's task calls to the orgs it may work in", async () => {
+  it("keeps the captain's task calls to the orgs it may work in", async () => {
     const t = await on();
     const acme = await t.ownerTask("Fix the api\n\nsmall");
     const status = await t.configure({ orgs: ["private"] });
@@ -162,7 +162,7 @@ describe("the org rule", () => {
 });
 
 describe("tasks marked Not for autonomous mode", () => {
-  it("are left alone by the boss, show in tasks.list, and only the owner sets the mark", async () => {
+  it("are left alone by the captain, show in tasks.list, and only the owner sets the mark", async () => {
     const t = await on();
     const id = await t.ownerTask("Migrate the billing tables\n\nsmall");
     const marked = await t.h.cmd("autonomy.exclude", { task: id, exclude: true });
@@ -184,19 +184,19 @@ describe("tasks marked Not for autonomous mode", () => {
     // Reading it is fine.
     expect((await t.call("majhi_tasks_get", { id })).isError).toBe(false);
 
-    // The boss cannot clear the mark.
+    // The captain cannot clear the mark.
     const agent = await t.call("majhi_autonomy_exclude", { task: id, exclude: false });
     expect(agent.isError).toBe(true);
     expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBe(true);
 
-    // The owner clears it, and the boss may take it again.
+    // The owner clears it, and the captain may take it again.
     expect((await t.h.cmd("autonomy.exclude", { task: id, exclude: false })).status).toBe(200);
     expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBeUndefined();
     expect((await t.call("majhi_tasks_start", { id })).text).not.toContain("Not for autonomous mode");
   });
 });
 
-describe("what the boss reads", () => {
+describe("what the captain reads", () => {
   it("lists the backlog with sizes and leaves out what the rules exclude", async () => {
     const t = await on();
     const small = await t.ownerTask("Fix the typo\n\nsmall");
@@ -222,7 +222,7 @@ describe("what the boss reads", () => {
   });
 });
 
-describe("the boss's chat", () => {
+describe("the captain's chat", () => {
   it("cannot be closed or removed while the mode is not off; off, it can, and the next start makes a new one", async () => {
     const t = await on();
     const remove = await t.h.cmd("tasks.remove", { id: t.chat });
@@ -250,7 +250,7 @@ describe("the boss's chat", () => {
     expect(t.h.majhi.services.store.tasks.get(next ?? "")?.brief).toBe("Autonomous mode");
   });
 
-  it("is made again before a tick when it is gone while the mode is on, so the boss is never woken into nothing", async () => {
+  it("is made again before a tick when it is gone while the mode is on, so the captain is never woken into nothing", async () => {
     const t = await on();
     // Gone without the guard (a direct delete): the driver's chat is made again, with a line why.
     t.h.majhi.services.store.tasks.remove(t.chat);
@@ -261,7 +261,7 @@ describe("the boss's chat", () => {
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.team[0]).toBe("boss");
     expect(t.autonomy.chat()).toBe(chat);
     const events = (await t.h.cmd("autonomy.events", { limit: 20 })).body.events as AutonomyEvent[];
-    expect(events[0]?.text).toBe(`The boss works in a new chat, ${chat}: ${t.chat} was removed`);
+    expect(events[0]?.text).toBe(`The captain works in a new chat, ${chat}: ${t.chat} was removed`);
     // A closed chat is reopened, not replaced.
     t.h.majhi.services.store.tasks.setStatus(chat ?? "", "done", undefined, new Date().toISOString());
     expect(await t.autonomy.tickChat()).toBe(chat);

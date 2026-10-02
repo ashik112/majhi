@@ -37,7 +37,7 @@ export interface UsageServiceDeps {
 const DAYS_IN_SERIES = 30;
 const TOP_TASKS = 5;
 
-/** Reads the `turns` table for Health and usage, the task view and the boss (`usage.*`). */
+/** Reads the `turns` table for Health and usage, the task view and the captain (`usage.*`). */
 export class UsageService {
   private readonly defaultTz: string;
 

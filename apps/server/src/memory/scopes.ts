@@ -36,7 +36,7 @@ export function agentScopes(task: ScopeTask, projectOrgs: ProjectOrgs): MemorySc
 
 /**
  * Scopes the Housekeeper's facts from a task or chat may go to. An org's conversation: global, its
- * org and that org's projects, never another org's. A root conversation (the boss, no org): any
+ * org and that org's projects, never another org's. A root conversation (the captain, no org): any
  * registered org or project.
  */
 export function writableScopes(

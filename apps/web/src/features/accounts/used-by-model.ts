@@ -14,7 +14,7 @@ function validAgents(entries: readonly AgentEntry[]): OkAgent[] {
   return entries.filter((e): e is OkAgent => e.status === "ok");
 }
 
-/** Valid agents by the account they use, boss first then by id. Invalid files have no readable account. */
+/** Valid agents by the account they use, captain first then by id. Invalid files have no readable account. */
 export function agentsByAccount(entries: readonly AgentEntry[]): Map<string, OkAgent[]> {
   const map = new Map<string, OkAgent[]>();
   for (const agent of validAgents(entries)) {

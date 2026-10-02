@@ -29,7 +29,7 @@ export interface AcpProviderDeps {
   usage?: UsageRecorder;
 }
 
-/** An agent (the boss by default) answering in place of Laya: one throwaway session, JSON only. */
+/** An agent (the captain by default) answering in place of Laya: one throwaway session, JSON only. */
 export class AcpProvider implements DecisionProvider {
   readonly id = "acp" as const;
 
@@ -41,7 +41,7 @@ export class AcpProvider implements DecisionProvider {
 
   async unavailable(): Promise<string | undefined> {
     const id = await this.agentId();
-    if (id === undefined) return "No stand-in agent: set one or choose a boss";
+    if (id === undefined) return "No stand-in agent: set one or choose a captain";
     const stored = await this.deps.agents.get(id);
     if (stored === undefined || !stored.ok) return `The stand-in agent @${id} is missing or invalid`;
     return undefined;

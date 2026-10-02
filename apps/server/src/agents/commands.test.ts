@@ -146,7 +146,7 @@ describe("agent emoji", () => {
 });
 
 describe("boss", () => {
-  it("only a valid root agent can be boss, and the boss cannot be removed", async () => {
+  it("only a valid root agent can be captain, and the captain cannot be removed", async () => {
     await setup();
     await h.cmd("agents.create", { id: "builder", ...draft() });
     await h.cmd("agents.create", { id: "chief", ...draft({ scope: "root", role: "Root" }) });
@@ -159,13 +159,13 @@ describe("boss", () => {
 
     expect((await h.cmd("boss.set", { id: "chief" })).body).toEqual({ boss: "chief" });
     expect(await readFile(join(h.env.majhiHome, "majhi.yaml"), "utf8")).toContain("boss: chief");
-    expect((await h.log())[0]).toBe("boss.set: made chief the boss");
+    expect((await h.log())[0]).toBe("boss.set: made chief the captain");
     const chief = (await h.cmd("agents.list")).body.find((e: { file: string }) => e.file === "chief.md");
     expect(chief.isBoss).toBe(true);
 
     const removal = await h.cmd("agents.remove", { id: "chief" });
     expect(removal.status).toBe(409);
-    expect(removal.body.error).toContain("is the boss");
+    expect(removal.body.error).toContain("is the captain");
     await rm(join(agentsDir(), "broken.md"));
   });
 });

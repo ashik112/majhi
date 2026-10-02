@@ -8,7 +8,7 @@ const ROLE_RANK: Record<Role, number> = { Lead: 0, Builder: 1, Reviewer: 2, Test
 export interface PickInput {
   agents: readonly AgentFrontmatter[];
   org: string | undefined;
-  /** Agent id of the boss, when there is one. */
+  /** Agent id of the captain, when there is one. */
   boss: string | undefined;
   accountStatus: ReadonlyMap<string, AccountStatus>;
 }
@@ -16,7 +16,7 @@ export interface PickInput {
 /**
  * The default agent for a task with no @mention (DECISIONS): agents that can work in the
  * org on a usable account, Lead before Builder before the rest, the org's own before root
- * agents. A task without an org goes to the boss. Falls back to agents on accounts that
+ * agents. A task without an org goes to the captain. Falls back to agents on accounts that
  * are not usable, so the owner sees why the run fails. Undefined when nobody can work there.
  */
 export function pickDefaultAgent(input: PickInput): string | undefined {

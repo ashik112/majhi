@@ -103,7 +103,7 @@ export interface DriverHooks {
   close(): void;
 }
 
-/** Who acts for autonomous mode: the boss in its autonomy chat, or an agent of an autonomous task. */
+/** Who acts for autonomous mode: the captain in its autonomy chat, or an agent of an autonomous task. */
 export type AutonomyCaller = "boss" | "agent";
 
 /** Today's numbers, read once for the status and the holds. */
@@ -135,7 +135,7 @@ export class AutonomyService {
   private holdsQueue: Promise<unknown> = Promise.resolve();
   private finishing = false;
   private sweep: NodeJS.Timeout | undefined;
-  /** Wakes the boss with ticks, and hears every mode change. */
+  /** Wakes the captain with ticks, and hears every mode change. */
   private driver: DriverHooks | undefined;
 
   constructor(private readonly deps: AutonomyDeps) {
@@ -164,8 +164,8 @@ export class AutonomyService {
 
   /**
    * The chat a tick goes to, while the mode is on. When the chat was removed, closed or belongs to
-   * an earlier boss, majhi makes (or reopens) one first and says so in the feed, so a tick never
-   * wakes the boss into a chat that is gone. Undefined: the mode is not on, or there is no boss.
+   * an earlier captain, majhi makes (or reopens) one first and says so in the feed, so a tick never
+   * wakes the captain into a chat that is gone. Undefined: the mode is not on, or there is no captain.
    */
   async tickChat(): Promise<string | undefined> {
     if (this.repo.state().mode !== "on") return undefined;
@@ -183,13 +183,13 @@ export class AutonomyService {
             : `${before} was removed`
           : found.status === "done"
             ? `${found.id} was closed`
-            : `${found.id} belongs to another boss`;
+            : `${found.id} belongs to another captain`;
       this.event({
         kind: "mode",
         text:
           chat.id === before
-            ? `Reopened the boss's chat ${chat.id}: ${why}`
-            : `The boss works in a new chat, ${chat.id}: ${why}`,
+            ? `Reopened the captain's chat ${chat.id}: ${why}`
+            : `The captain works in a new chat, ${chat.id}: ${why}`,
       });
       return chat.id;
     } catch {
@@ -198,8 +198,8 @@ export class AutonomyService {
   }
 
   /**
-   * The owner closes or removes a task: while the mode is not off, the boss's autonomy chat stays,
-   * because autonomous mode wakes the boss there. Off, it may go; the next start makes a new one.
+   * The owner closes or removes a task: while the mode is not off, the captain's autonomy chat stays,
+   * because autonomous mode wakes the captain there. Off, it may go; the next start makes a new one.
    */
   guardChat(task: Pick<Task, "id" | "kind" | "brief">, action: "close" | "remove"): void {
     let state: { mode: AutonomyMode; chat?: string };
@@ -220,7 +220,7 @@ export class AutonomyService {
     this.driver = driver;
   }
 
-  /** A line on why the boss should look again: it goes into the next tick. */
+  /** A line on why the captain should look again: it goes into the next tick. */
   private wake(line: string): void {
     this.driver?.wake(line);
   }
@@ -228,7 +228,7 @@ export class AutonomyService {
   // ---------------------------------------------------------------------------
   // Lifecycle
 
-  /** After a restart: in `on`, the boss is woken once; in `stopping`, the stop finishes. */
+  /** After a restart: in `on`, the captain is woken once; in `stopping`, the stop finishes. */
   async boot(): Promise<void> {
     const { mode } = this.repo.state();
     if (mode === "stopping") await this.maybeFinishStop();
@@ -284,7 +284,7 @@ export class AutonomyService {
   // ---------------------------------------------------------------------------
   // The mode (rule 1)
 
-  /** Turn on, or resume when paused or stopping. Refused without a boss. */
+  /** Turn on, or resume when paused or stopping. Refused without a captain. */
   async start(): Promise<AutonomyStatus> {
     const { mode } = this.repo.state();
     if (mode === "on") return this.status();
@@ -293,7 +293,12 @@ export class AutonomyService {
       // Holds from an earlier run are news again.
       this.repo.setHolds([]);
       this.holds = [];
-      this.setMode("on", "owner", "Turned on", "Autonomous mode is on. The boss picks the work from here.");
+      this.setMode(
+        "on",
+        "owner",
+        "Turned on",
+        "Autonomous mode is on. The captain picks the work from here.",
+      );
       await this.refreshHolds();
       this.wake("Autonomous mode turned on");
       return this.status();
@@ -308,7 +313,7 @@ export class AutonomyService {
     return this.status();
   }
 
-  /** Autonomous tasks pause after their current turn; the boss gets no ticks. */
+  /** Autonomous tasks pause after their current turn; the captain gets no ticks. */
   async pause(): Promise<AutonomyStatus> {
     const { mode } = this.repo.state();
     if (mode === "paused") return this.status();
@@ -343,11 +348,11 @@ export class AutonomyService {
     return this.status();
   }
 
-  /** Stop now: every autonomous task with a live run stops, and the boss's turn ends. */
+  /** Stop now: every autonomous task with a live run stops, and the captain's turn ends. */
   private async stopNow(): Promise<void> {
     // Held at every boundary while the runs stop; the event comes once, for `off`.
     this.repo.setMode("stopping", this.now().toISOString(), "owner", undefined);
-    // The boss first, so it calls no more tools while its tasks stop.
+    // The captain first, so it calls no more tools while its tasks stop.
     const chat = this.chat();
     if (chat !== undefined) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
     for (const task of this.openTasks()) {
@@ -400,12 +405,12 @@ export class AutonomyService {
     this.driver?.onMode(mode);
   }
 
-  /** The autonomy chat, made on the first start and reused. A new boss gets a new one. */
+  /** The autonomy chat, made on the first start and reused. A new captain gets a new one. */
   async ensureChat(): Promise<Task> {
     const boss = await this.bossId();
     if (boss === undefined) {
       throw new UserError(
-        "There is no boss yet. Make a root agent the boss first, then turn autonomous mode on.",
+        "There is no captain yet. Make a root agent the captain first, then turn autonomous mode on.",
         409,
       );
     }
@@ -425,7 +430,7 @@ export class AutonomyService {
     return chat;
   }
 
-  /** The boss's id, when it is set and its agent file is good. */
+  /** The captain's id, when it is set and its agent file is good. */
   private async bossId(): Promise<string | undefined> {
     const { boss } = await this.deps.config.sections();
     if (boss === undefined) return undefined;
@@ -552,7 +557,7 @@ export class AutonomyService {
 
   /**
    * Recomputes what holds new work. A hold that starts or lifts writes a `cap` event and wakes the
-   * boss; a cap that starts holds runs at their next boundary, one that lifts restarts what it held.
+   * captain; a cap that starts holds runs at their next boundary, one that lifts restarts what it held.
    * One at a time, so two callers never write the same event twice.
    */
   refreshHolds(measured?: Measure): Promise<AutonomyHold[]> {
@@ -598,12 +603,12 @@ export class AutonomyService {
   }
 
   // ---------------------------------------------------------------------------
-  // Calls of the boss and of autonomous tasks' agents (rules 2, 4, 5)
+  // Calls of the captain and of autonomous tasks' agents (rules 2, 4, 5)
 
   /** Whether this caller acts for autonomous mode. Checked in every mode, for the hard limits. */
   async callerKind(caller: AdminCaller): Promise<AutonomyCaller | undefined> {
     const { chat } = this.repo.state();
-    // An agent the boss brought into its chat acts for autonomous mode too, with none of the boss's tools.
+    // An agent the captain brought into its chat acts for autonomous mode too, with none of the captain's tools.
     if (chat !== undefined && caller.task === chat) {
       return caller.agent === (await this.bossId()) ? "boss" : "agent";
     }
@@ -641,7 +646,7 @@ export class AutonomyService {
   }
 
   /**
-   * The owner's pick rules (PRV-74 follow-up), for the boss and the agents in its autonomy chat while
+   * The owner's pick rules (PRV-74 follow-up), for the captain and the agents in its autonomy chat while
    * the mode is not off: no call that touches a task marked Not for autonomous mode, nothing about
    * tasks in an org it may not work in, and no start of a task larger than the size rule allows.
    */
@@ -863,7 +868,7 @@ export class AutonomyService {
     });
   }
 
-  /** Autonomous mode left the card for the owner: an `approval` event, and the boss hears of it. */
+  /** Autonomous mode left the card for the owner: an `approval` event, and the captain hears of it. */
   left(
     caller: AdminCaller,
     command: CommandName,
@@ -888,7 +893,7 @@ export class AutonomyService {
   }
 
   /**
-   * After a call of an autonomous caller ran (rule 2): tasks the boss creates, splits or starts from
+   * After a call of an autonomous caller ran (rule 2): tasks the captain creates, splits or starts from
    * its chat join, and so do tasks an agent of an autonomous task creates or splits.
    */
   adopt(caller: AutonomyCaller, command: CommandName, output: unknown, reason = ""): void {
@@ -999,8 +1004,8 @@ export class AutonomyService {
   }
 
   /**
-   * The owner's message to the boss, in any mode: it goes to the autonomy chat as the owner's
-   * message, which wakes the boss. With `keep` it is also a standing instruction, as a config commit.
+   * The owner's message to the captain, in any mode: it goes to the autonomy chat as the owner's
+   * message, which wakes the captain. With `keep` it is also a standing instruction, as a config commit.
    */
   async guide(
     input: { text: string; keep: boolean },
@@ -1076,12 +1081,12 @@ export class AutonomyService {
   // ---------------------------------------------------------------------------
   // The driver's inputs (rule 8)
 
-  /** While the day cap holds, the driver wakes the boss only for the owner's own messages. */
+  /** While the day cap holds, the driver wakes the captain only for the owner's own messages. */
   dayCapped(): boolean {
     return this.holds.some((h) => h.kind === "day-cap");
   }
 
-  /** Pending cards of autonomous tasks the boss may answer with majhi_autonomy_answer. */
+  /** Pending cards of autonomous tasks the captain may answer with majhi_autonomy_answer. */
   answerable(): AnswerableCard[] {
     const out: AnswerableCard[] = [];
     for (const task of this.openTasks()) {
@@ -1096,7 +1101,7 @@ export class AutonomyService {
     return out;
   }
 
-  /** Inbox and ready tasks across orgs, chats left out, in the order the boss takes them. */
+  /** Inbox and ready tasks across orgs, chats left out, in the order the captain takes them. */
   backlog(): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
     return backlogOrder(
@@ -1136,7 +1141,7 @@ export class AutonomyService {
   }
 
   /**
-   * What the tick shows the boss: the backlog the pick rules allow, with sizes, how many they leave
+   * What the tick shows the captain: the backlog the pick rules allow, with sizes, how many they leave
    * out, and the rules in words. Sizes not known yet are rated first, for up to `fillMs`.
    */
   async pickable(fillMs: number): Promise<{ backlog: BacklogTask[]; leftOut: number; rules: string[] }> {
@@ -1204,20 +1209,20 @@ export class AutonomyService {
       });
   }
 
-  /** The driver woke the boss: the feed and the chat say why. */
+  /** The driver woke the captain: the feed and the chat say why. */
   ticked(reasons: readonly string[]): void {
     this.repo.setLastTick(this.now().toISOString());
     const last = reasons.at(-1) ?? "a check";
-    const text = `Woke the boss: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
+    const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
     this.event({ kind: "tick", text });
     this.say(text);
   }
 
   // ---------------------------------------------------------------------------
-  // The boss's own tools (rule 9)
+  // The captain's own tools (rule 9)
 
   /**
-   * `autonomy.plan`, `autonomy.note` and `autonomy.answer`: no policy and no card. Only for the boss
+   * `autonomy.plan`, `autonomy.note` and `autonomy.answer`: no policy and no card. Only for the captain
    * in its autonomy chat, while the mode is not off; answers only while it is on.
    */
   async bossTool(
@@ -1227,7 +1232,7 @@ export class AutonomyService {
     reason: string,
   ): Promise<ToolResult> {
     if ((await this.callerKind(caller)) !== "boss") {
-      return fail(`${command} is a tool of the boss in its autonomy chat.`);
+      return fail(`${command} is a tool of the captain in its autonomy chat.`);
     }
     const { mode } = this.repo.state();
     if (mode === "off") return fail("Autonomous mode is off.");
@@ -1268,7 +1273,7 @@ export class AutonomyService {
     return fail(`${command} is not a tool of autonomous mode.`);
   }
 
-  /** The boss answers a card of an autonomous task through the owner's own paths. */
+  /** The captain answers a card of an autonomous task through the owner's own paths. */
   private async answer(
     caller: AdminCaller,
     input: z.infer<typeof AutonomyAnswerInputSchema>,

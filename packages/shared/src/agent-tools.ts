@@ -57,7 +57,7 @@ export const TOOL_CATALOG = [
   {
     name: "majhi-admin",
     summary: "Every majhi command, with the owner's approval policy",
-    rule: "The boss, and root agents that list it. The boss keeps it",
+    rule: "The captain, and root agents that list it. The captain keeps it",
   },
 ] as const satisfies readonly { name: string; summary: string; rule: string }[];
 

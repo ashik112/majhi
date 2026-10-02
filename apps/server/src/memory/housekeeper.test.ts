@@ -396,7 +396,7 @@ describe("when a task is done", () => {
     await until(() => said(task.id, "Memory was not written"));
   });
 
-  it("says nothing when no Housekeeper or boss is set, and the command says why", async () => {
+  it("says nothing when no Housekeeper or captain is set, and the command says why", async () => {
     const { h, must, sessions, task, extract, record } = await world({ housekeeper: false });
     const closed = (await must("tasks.close", { id: task.id })) as { status: string };
     expect(closed.status).toBe("done");

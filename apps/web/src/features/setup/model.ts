@@ -75,14 +75,14 @@ export function agentsCard(agents: readonly AgentEntry[] | undefined, orgs: read
   return { pill: ok.length > 0 ? "Ready" : "None yet", tone: ok.length > 0 ? "green" : "coral", detail };
 }
 
-/** The boss agent and how its account is doing. */
+/** The captain agent and how its account is doing. */
 export function bossCard(
   agents: readonly AgentEntry[] | undefined,
   accounts: readonly AccountView[] | undefined,
 ): CardState & { id?: string } {
   if (agents === undefined) return { pill: "Checking", tone: "neutral", detail: "" };
   const boss = agents.find((a): a is Extract<AgentEntry, { status: "ok" }> => a.status === "ok" && a.isBoss);
-  if (!boss) return { pill: "No boss", tone: "coral", detail: "Choose the agent that runs setup" };
+  if (!boss) return { pill: "No captain", tone: "coral", detail: "Choose the agent that runs setup" };
   const f = boss.agent.frontmatter;
   const account = accounts?.find((a) => a.id === f.account);
   const detail = `@${f.id} · ${f.account} · ${f.model ?? "account default"}`;

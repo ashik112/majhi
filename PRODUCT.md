@@ -18,7 +18,7 @@ majhi is a local, dockerized workspace where the owner runs AI coding agents for
 
 ## Positioning
 
-Owned core, reused parts: majhi orchestrates existing agents over ACP rather than building its own. Config lives as plain files in `~/.majhi`, versioned with git, and every change is a typed command the UI, the palette and the boss agent share.
+Owned core, reused parts: majhi orchestrates existing agents over ACP rather than building its own. Config lives as plain files in `~/.majhi`, versioned with git, and every change is a typed command the UI, the palette and the captain agent share.
 
 ## Operating Context
 

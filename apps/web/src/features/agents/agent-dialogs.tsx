@@ -96,7 +96,7 @@ export function RenameDialog({
         <h2 className="text-md font-semibold">Rename @{id}</h2>
         <Field
           label="New agent id"
-          hint="Tasks, the boss setting and fallbacks follow. Old room messages keep the old handle."
+          hint="Tasks, the captain setting and fallbacks follow. Old room messages keep the old handle."
           error={
             rename.isError
               ? describeError(rename.error)

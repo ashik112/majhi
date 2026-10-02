@@ -33,7 +33,7 @@ majhi turns that into a desk you can run all day:
 | | |
 |---|---|
 | **Hand off work in one sentence** | "Fix the export timeout in the API, from develop." The lead agent plans, splits the work, assigns builders and a reviewer, and reports back. Not every task needs code: start a plain chat, or an investigation that ends in a report. |
-| **Let it run the desk** | Turn on autonomous mode and the boss works through your backlog like you would: it picks tasks by priority and due date, sets up teams, starts and ships work. It stays inside the daily budget, each client's cap and the account limits you set. It approves routine steps for you, but never force-pushes or moves one client's secrets to another. Pushes and merges stay off for each client until you allow them. Every decision is logged with its reason. Watch it live, guide it, pause or stop it at any time, and read a summary each day. |
+| **Let it run the desk** | Turn on autonomous mode and the captain works through your backlog like you would: it picks tasks by priority and due date, sets up teams, starts and ships work. It stays inside the daily budget, each client's cap and the account limits you set. It approves routine steps for you, but never force-pushes or moves one client's secrets to another. Pushes and merges stay off for each client until you allow them. Every decision is logged with its reason. Watch it live, guide it, pause or stop it at any time, and read a summary each day. |
 | **Ship from one card** | Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts get fixed with one click. |
 | **Watch and steer live** | See the plan, every step and every file change as it happens. Stop a turn, queue a message, open a terminal, or open any file in VS Code or Cursor. Comment on lines of a diff and send them back as one review. |
 | **Work across repos** | One task can span several repos, with linked pull requests merged in the right order. Big tasks split into subtasks that wait for each other. |
@@ -41,7 +41,7 @@ majhi turns that into a desk you can run all day:
 | **Automate the routine** | Schedules like "weekdays at 9:00" and triggers that react to what happens, to start tasks or wake agents without you. |
 | **Checks after every merge** | After a merge into main, majhi runs the whole e2e suite by itself, at low priority, so nobody waits on it. The result shows on Health and in the room of the task that merged. A break opens one task with the failing specs and the traces. |
 | **It learns your codebase** | Lasting facts from each task are kept per repo and recalled in the next one, so agents stop relearning the same things. |
-| **Run everything by asking** | The boss agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
+| **Run everything by asking** | The captain agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
 | **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
 | **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your Mac's GPU, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
 | **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. Long sessions compact before they fill up, so costs do not climb. |
@@ -83,13 +83,13 @@ git clone https://github.com/ashik112/majhi.git && cd majhi
 make up    # opens on http://127.0.0.1:7070
 ```
 
-The first screen walks you through your folders, your first AI account and the boss agent. After that, updates are one click.
+The first screen walks you through your folders, your first AI account and the captain agent. After that, updates are one click.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  you((You)) --> boss[Boss agent]
+  you((You)) --> boss[Captain agent]
   boss --> acme & globex
   subgraph acme [Client: Acme]
     a1[Lead] --> a2[Builders] --> a3[Reviewer]

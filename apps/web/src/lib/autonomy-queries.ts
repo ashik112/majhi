@@ -75,7 +75,7 @@ export function useAutonomyCommand<N extends StatusCommand>(name: N) {
   });
 }
 
-/** The owner's message to the boss in its autonomy chat; `keep` also saves it as a standing instruction. */
+/** The owner's message to the captain in its autonomy chat; `keep` also saves it as a standing instruction. */
 export function useGuideAutonomy() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"autonomy.guide">, ApiRequestError, CommandInput<"autonomy.guide">>({

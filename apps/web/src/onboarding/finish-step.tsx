@@ -8,27 +8,27 @@ import { useBossChat } from "@/lib/boss-queries";
 import { describeError } from "@/lib/errors";
 import type { OnboardingStepProps } from "./steps";
 
-/** The first thing the boss hears, sent when this step opens. */
+/** The first thing the captain hears, sent when this step opens. */
 export const FIRST_MESSAGE =
   "Hi. I just finished the first setup. Look at what exists and tell me in a few lines what you can set up for me next.";
 
 /**
- * Step 4: finish with the boss. Opens the boss chat with a first message, so the owner sees the
- * boss answer and knows where to find it later (Cmd J).
+ * Step 4: finish with the captain. Opens the captain chat with a first message, so the owner sees the
+ * captain answer and knows where to find it later (Cmd J).
  */
 export function FinishStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
   const chat = useBossChat();
   return (
     <>
       <div className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold text-balance">Finish with the boss</h1>
+        <h1 className="text-lg font-semibold text-balance">Finish with the captain</h1>
         <p className="text-base text-fg-muted text-pretty">
-          Say what you want next. The boss can create workspaces, agents and projects for you. Each change
+          Say what you want next. The captain can create workspaces, agents and projects for you. Each change
           waits for your approval, and every change can be undone. Open this chat any time with Cmd J.
         </p>
       </div>
       <div className="flex h-[420px] min-h-0 flex-col rounded-xl border border-line-strong bg-card p-3">
-        {chat.isPending && <p className="m-auto text-sm text-fg-faint">Opening the boss chat</p>}
+        {chat.isPending && <p className="m-auto text-sm text-fg-faint">Opening the captain chat</p>}
         {chat.isError && <p className="m-auto text-sm text-red">{describeError(chat.error)}</p>}
         {chat.data && <FirstConversation key={chat.data.id} task={chat.data} />}
       </div>

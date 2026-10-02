@@ -36,7 +36,7 @@ const MetaSchema = z.object({
   mime: z.string(),
   size: z.number(),
   at: z.number(),
-  /** The org of the task the file came from. Absent for the owner's uploads and the LOCAL boss chat. */
+  /** The org of the task the file came from. Absent for the owner's uploads and the LOCAL captain chat. */
   org: z.string().optional(),
   /** A connection's file, like a kubeconfig: any type, and never a task attachment. */
   purpose: z.literal("connection").optional(),

@@ -134,7 +134,7 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
                 value={housekeeper}
                 onChange={(e) => edit({ housekeeper: e.target.value, model: "" })}
               >
-                <option value="">{boss ? `Boss (@${boss.id})` : "Boss (none chosen yet)"}</option>
+                <option value="">{boss ? `Captain (@${boss.id})` : "Captain (none chosen yet)"}</option>
                 {ok.map((a) => (
                   <option key={a.agent.frontmatter.id} value={a.agent.frontmatter.id}>
                     @{a.agent.frontmatter.id} ({a.agent.frontmatter.role})
@@ -147,7 +147,7 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
             label="Housekeeper model"
             hint={
               chosen === undefined
-                ? "Choose the boss or a Housekeeper first."
+                ? "Choose the captain or a Housekeeper first."
                 : `From ${chosen.account}. Cheapest picks the least costly model it offers.`
             }
           >

@@ -18,7 +18,7 @@ const GRID = "grid gap-3 @[480px]:grid-cols-3";
 
 /**
  * One section's draft of the settings form: only the fields it owns, over the saved settings, so a
- * change elsewhere (the boss, an Undo) still shows in the fields it has not touched.
+ * change elsewhere (the captain, an Undo) still shows in the fields it has not touched.
  */
 function useSettingsDraft(settings: Settings, keys: readonly (keyof SettingsForm)[]) {
   const save = useSaveSettings();

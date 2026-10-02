@@ -76,7 +76,7 @@ const OWNER_SETTINGS: ReadonlySet<string> = new Set([
   "decisions.install",
 ]);
 
-/** The owner's answers to cards. The boss answers cards with majhi_autonomy_answer instead. */
+/** The owner's answers to cards. The captain answers cards with majhi_autonomy_answer instead. */
 const OWNER_ANSWERS: ReadonlySet<string> = new Set(["room.answerAsk", "room.answerQuestion"]);
 
 /** Git accounts and tokens of one org: the hard limits already checked they are this org's. */
@@ -121,7 +121,7 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
     return left("Only the owner changes which repos, folders and branches agents reach");
   if (OWNER_SETTINGS.has(command)) return left("These are the owner's settings");
   if (OWNER_ANSWERS.has(command))
-    return left("The owner's answer; the boss answers with majhi_autonomy_answer");
+    return left("The owner's answer; the captain answers with majhi_autonomy_answer");
   if (command === "orgs.update") {
     const touched = SENSITIVE_ORG_FIELDS.filter((f) => input[f] !== undefined);
     if (touched.length > 0)

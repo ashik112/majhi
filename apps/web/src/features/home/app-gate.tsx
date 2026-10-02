@@ -55,7 +55,7 @@ export function AppGate({ children }: { children: ReactNode }) {
     setOnboarding(true);
     clearOnboardingRequest();
   }, [reopen]);
-  // After the roots are set the server state says what is left: an account, then a boss.
+  // After the roots are set the server state says what is left: an account, then a captain.
   const loaded = state?.status === "loaded";
   const accounts = useAccounts(loaded);
   const agents = useAgents(loaded);

@@ -236,9 +236,9 @@ describe("what the owner said and what was inferred", () => {
 });
 
 describe("shared recall", () => {
-  it("gives a project fact from the boss chat to every agent of that project's org, never to another org", async () => {
+  it("gives a project fact from the captain chat to every agent of that project's org, never to another org", async () => {
     const memory = service();
-    // The boss chat (no org) talked about acme-api; the owner said a rule about it.
+    // The captain chat (no org) talked about acme-api; the owner said a rule about it.
     await curatorFor(memory).curateCandidates(
       { id: "BOSS-1", projects: ["acme-api"] },
       [

@@ -5,10 +5,10 @@ import { queryKeys } from "./queries";
 
 export type HistoryEntries = CommandOutput<"history.list">;
 
-/** The boss's chat task. The server creates it on first use, so this is safe to call any time. */
+/** The captain's chat task. The server creates it on first use, so this is safe to call any time. */
 export function useBossChat(enabled = true) {
   return useQuery<Task, ApiRequestError>({
-    // Under `agents`, so a new boss gives a new chat.
+    // Under `agents`, so a new captain gives a new chat.
     queryKey: [...queryKeys.agents, "boss-chat"],
     queryFn: () => cmd("boss.chat", {}),
     enabled,
@@ -17,7 +17,7 @@ export function useBossChat(enabled = true) {
   });
 }
 
-/** Archives the current boss chat and starts a new conversation. */
+/** Archives the current captain chat and starts a new conversation. */
 export function useNewBossChat() {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, void>({

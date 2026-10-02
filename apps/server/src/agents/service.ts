@@ -139,7 +139,8 @@ export class AgentService {
   async remove(id: string, command: string, meta: CommandMeta): Promise<void> {
     await this.require(id);
     const { boss } = await this.config.sections();
-    if (boss === id) throw new UserError(`"${id}" is the boss. Make another root agent the boss first.`, 409);
+    if (boss === id)
+      throw new UserError(`"${id}" is the captain. Make another root agent the captain first.`, 409);
     await this.config.change({ command, meta, summary: `removed agent ${id}` }, async () => {
       await this.store.remove(id);
       await removeAgentRules(this.config.file, id);
@@ -149,17 +150,17 @@ export class AgentService {
   async setBoss(id: string, command: string, meta: CommandMeta): Promise<void> {
     const found = await this.require(id);
     if (!found.ok)
-      throw new UserError(`Agent "${id}" is invalid, so it cannot be the boss.`, 409, found.errors);
+      throw new UserError(`Agent "${id}" is invalid, so it cannot be the captain.`, 409, found.errors);
     if (found.agent.frontmatter.scope !== "root") {
       throw new UserError(
-        `Only a root agent can be the boss, and "${id}" works in "${found.agent.frontmatter.scope}".`,
+        `Only a root agent can be the captain, and "${id}" works in "${found.agent.frontmatter.scope}".`,
         409,
       );
     }
     const sections = await this.config.sections();
     if (!sections.exists)
       throw new UserError("Pick workspace roots first: majhi.yaml does not exist yet.", 409);
-    await this.config.change({ command, meta, summary: `made ${id} the boss` }, () =>
+    await this.config.change({ command, meta, summary: `made ${id} the captain` }, () =>
       writeBoss(this.config.file, id),
     );
   }

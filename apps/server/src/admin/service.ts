@@ -33,7 +33,7 @@ export interface ToolResult {
 export const WAITING_TEXT =
   "Waiting for the owner to approve in the room. You will get a message with the decision.";
 
-/** Autonomous mode's tools for the boss (PRV-74, rule 9). */
+/** Autonomous mode's tools for the captain (PRV-74, rule 9). */
 const BOSS_TOOLS: ReadonlySet<string> = new Set(AUTONOMY_BOSS_COMMANDS);
 
 /** How much of a command's output an agent gets back. */
@@ -109,7 +109,7 @@ export interface AutonomyGate {
 type Outcome = { ok: boolean; error?: string | undefined };
 
 /**
- * What the boss (or any agent with majhi tools) can do: runs its tool calls through the command
+ * What the captain (or any agent with majhi tools) can do: runs its tool calls through the command
  * dispatcher under the approval policy, posts an approval card for every change, and carries out
  * the owner's decision later (SPEC 5.16).
  */
@@ -150,7 +150,7 @@ export class AdminService {
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
       const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
-      // The boss's own tools in autonomous mode: no policy and no card, like a secret request.
+      // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
           (await this.autonomy?.bossTool(caller, spec.command, input, why)) ??
@@ -238,7 +238,7 @@ export class AdminService {
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const parsed = checked.data as Record<string, unknown>;
-    // The boss in its autonomy chat, or an agent of an autonomous task: the hard limits hold in
+    // The captain in its autonomy chat, or an agent of an autonomous task: the hard limits hold in
     // every mode, whatever a rule or an `auto` mode says (PRV-74).
     const autonomy = this.autonomy;
     const auto = autonomy === undefined ? undefined : await autonomy.callerKind(caller);
@@ -448,7 +448,7 @@ export class AdminService {
       );
       this.pending.delete(item.id);
       this.audit(item, "allow", "owner", done.ok ? undefined : `Failed: ${done.error}`);
-      // The owner approved what the boss or an autonomous task's agent asked: its tasks join.
+      // The owner approved what the captain or an autonomous task's agent asked: its tasks join.
       const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(item);
       if (done.ok && auto !== undefined)
         this.autonomy?.adopt(auto, item.command as CommandName, done.output, item.reason ?? "");

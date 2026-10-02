@@ -302,7 +302,7 @@ export type LayaStatus = z.infer<typeof LayaStatusSchema>;
 const decisionFields = {
   /** Providers in the order they are tried. */
   order: z.array(ProviderIdSchema).min(1),
-  /** The agent that stands in for Laya or Jev (`acp`). Default: the boss. */
+  /** The agent that stands in for Laya or Jev (`acp`). Default: the captain. */
   acp_agent: IdSchema,
   /** `secret:<name>` for Jev's API key. Jev is skipped without one. */
   jev_key: z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/),

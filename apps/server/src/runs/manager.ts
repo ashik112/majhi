@@ -96,7 +96,7 @@ export interface RunDeps {
   config: ConfigService;
   secrets: SecretStore;
   majhiHome: string;
-  /** Gives sessions of the boss (and other admin agents) the majhi-admin MCP server. */
+  /** Gives sessions of the captain (and other admin agents) the majhi-admin MCP server. */
   admin?: AdminAccess;
   /** The decision provider: majhi-decide for every session, and model picks for `auto` agents. */
   decisions?: Decisions;
@@ -273,7 +273,7 @@ export class RunManager {
     const { room } = this.deps;
     // Several agents start together (a pipeline's first step): each after the first gets its own brief.
     const briefId = options.ownBrief === true ? `${BRIEF_ITEM_ID}:${agent}` : BRIEF_ITEM_ID;
-    // The boss chat has no brief to send: the owner's first message starts it.
+    // The captain chat has no brief to send: the owner's first message starts it.
     if (room.get(task.id, briefId) !== undefined || isBossChat(task)) return;
     const run = this.runFor(task.id, agent);
     room.post(task.id, briefId, {

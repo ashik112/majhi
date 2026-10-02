@@ -38,11 +38,11 @@ export const MODE_LAMP: Record<AutonomyMode, LampState> = {
 export function modeLine(mode: AutonomyMode): string {
   switch (mode) {
     case "off":
-      return "The boss works only when you ask it to.";
+      return "The captain works only when you ask it to.";
     case "on":
-      return "The boss runs the desk: it picks work, decides within your limits and logs every decision.";
+      return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "paused":
-      return "Paused. The boss gets no wake-ups and autonomous tasks wait after their current turn.";
+      return "Paused. The captain gets no wake-ups and autonomous tasks wait after their current turn.";
     case "stopping":
       return "Stopping. Current turns finish, nothing new starts, then it turns off.";
   }

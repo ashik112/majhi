@@ -15,14 +15,14 @@ import type { TaskService } from "../tasks/service.ts";
 export { BOSS_CHAT_BRIEF };
 
 /**
- * True for any chat the owner has with an agent (the Chats page, Cmd J). Named for the boss chat it
+ * True for any chat the owner has with an agent (the Chats page, Cmd J). Named for the captain chat it
  * began as: the run, review and memory code treats every such chat as an ongoing conversation.
  */
 export const isBossChat = isOwnerChat;
 
 /** Added in front of a majhi-admin agent's first prompt in a session. */
 export const ADMIN_PREAMBLE = [
-  "You are the boss of majhi, a local workspace that runs AI coding agents for the owner's orgs (their own projects, clients and teams).",
+  "You are the captain of majhi, a local workspace that runs AI coding agents for the owner's orgs (their own projects, clients and teams).",
   "You have majhi tools, named majhi_...: they set up orgs, accounts, agents and projects, change settings and start tasks.",
   "Before you change anything, say in one line what you are about to change.",
   "Set ownerAsked to true only when the owner asked for that change in this conversation, and give a short reason.",
@@ -62,14 +62,14 @@ export async function openChat({ config, store, tasks, agents }: BossChatDeps, a
 }
 
 /**
- * The boss's current chat: the newest open one, or a new one. With `fresh`, the current one is
+ * The captain's current chat: the newest open one, or a new one. With `fresh`, the current one is
  * archived (done, still listed under its chats) and a new conversation starts. The autonomy chat
- * (PRV-74) is never it: autonomous mode talks to the boss there, not the owner's Cmd J.
+ * (PRV-74) is never it: autonomous mode talks to the captain there, not the owner's Cmd J.
  */
 export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<Task> {
   const { boss } = await deps.config.sections();
   if (boss === undefined) {
-    throw new UserError("There is no boss yet. Create a root agent and make it the boss first.", 409);
+    throw new UserError("There is no captain yet. Create a root agent and make it the captain first.", 409);
   }
   // Newest first.
   for (const summary of deps.store.tasks.list(false)) {

@@ -21,7 +21,7 @@ import { TaskRef } from "./task-ref";
 const SIZE_HELP: Record<TaskSizeLimit, string> = {
   small: "Only small changes in one or two files.",
   medium: "Features and fixes across several files, not big designs or hunts.",
-  any: "Large tasks too. The boss splits them when that helps.",
+  any: "Large tasks too. The captain splits them when that helps.",
 };
 
 /** The orgs a rule can name: every org, then Private for tasks with no org. */
@@ -58,7 +58,7 @@ function PickCard({ status }: { status: AutonomyStatus }) {
       {
         onSuccess: () => {
           setDraft(undefined);
-          toast("Saved. The boss reads the new rules on its next wake-up.");
+          toast("Saved. The captain reads the new rules on its next wake-up.");
         },
       },
     );
@@ -119,7 +119,7 @@ function PickCard({ status }: { status: AutonomyStatus }) {
           </fieldset>
         )}
         {form.orgs !== undefined && form.orgs.length === 0 && (
-          <span className="text-xs text-amber">No workspace picked: the boss starts nothing.</span>
+          <span className="text-xs text-amber">No workspace picked: the captain starts nothing.</span>
         )}
       </div>
       <p className="text-xs text-fg-faint text-pretty">
@@ -137,7 +137,7 @@ function PickCard({ status }: { status: AutonomyStatus }) {
   );
 }
 
-/** Inbox and ready tasks in the order the boss reads them, with size, whether the rules allow each, and the mark. */
+/** Inbox and ready tasks in the order the captain reads them, with size, whether the rules allow each, and the mark. */
 function BacklogCard({ status }: { status: AutonomyStatus }) {
   const orgs = useOrgs().data ?? [];
   const exclude = useExclude();

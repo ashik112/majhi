@@ -76,7 +76,7 @@ describe("pickDefaultAgent", () => {
     expect(pickDefaultAgent({ agents, org: "acme", boss: undefined, accountStatus: all })).toBe("acme-lead");
   });
 
-  it("sends a task without an org to the boss", () => {
+  it("sends a task without an org to the captain", () => {
     expect(pickDefaultAgent({ agents, org: undefined, boss: "majhi-boss", accountStatus: healthy })).toBe(
       "majhi-boss",
     );

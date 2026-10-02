@@ -88,7 +88,7 @@ export function eligibleAgents(entries: readonly AgentEntry[], org: string | und
 
 /**
  * The agent a task gets when the owner names none (DECISIONS: mentioned, else Lead, then Builder,
- * then others, org-scoped before root; a chat task without an org goes to the boss). The server
+ * then others, org-scoped before root; a chat task without an org goes to the captain). The server
  * decides in the end; this is what the chip shows.
  */
 export function defaultAgentId(

@@ -27,8 +27,8 @@ import { TaskRef } from "./task-ref";
 const INSTRUCTION_MAX = 500;
 
 /**
- * The boss's one autonomy chat, on the right of the page: the conversation as the room shows it,
- * scrolling inside the panel, and a box to write to the boss. Sending goes through
+ * The captain's one autonomy chat, on the right of the page: the conversation as the room shows it,
+ * scrolling inside the panel, and a box to write to the captain. Sending goes through
  * `autonomy.guide`; "Keep as standing instruction" also saves it, so every wake-up lists it.
  */
 export function ChatPane({ status, className }: { status: AutonomyStatus; className?: string }) {
@@ -36,12 +36,12 @@ export function ChatPane({ status, className }: { status: AutonomyStatus; classN
   const chat = boss?.chat;
   return (
     <aside
-      aria-label="Boss chat"
+      aria-label="Captain chat"
       className={cn("flex min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl", GLASS, className)}
     >
       <div className="shrink-0 border-b border-line px-4 py-2.5">
         <div className="flex min-h-7 items-center gap-2">
-          <h2 className="text-base font-semibold text-fg">Boss chat</h2>
+          <h2 className="text-base font-semibold text-fg">Captain chat</h2>
           {chat && <TaskRef task={chat} />}
           {boss && (
             <span className="ml-auto flex min-w-0 items-center gap-1.5 text-sm">
@@ -55,17 +55,17 @@ export function ChatPane({ status, className }: { status: AutonomyStatus; classN
         </div>
         <p className="text-xs text-fg-faint text-pretty">
           {chat === undefined
-            ? "The boss gets one chat on the first start and keeps it for every run after."
+            ? "The captain gets one chat on the first start and keeps it for every run after."
             : status.mode === "off"
-              ? "One chat for every run: majhi wakes the boss here each time. While off, you may remove it; the next start makes a new one."
-              : "One chat for every run: majhi wakes the boss here each time. It cannot be removed until autonomous mode is off."}
+              ? "One chat for every run: majhi wakes the captain here each time. While off, you may remove it; the next start makes a new one."
+              : "One chat for every run: majhi wakes the captain here each time. It cannot be removed until autonomous mode is off."}
         </p>
       </div>
       {chat ? (
         <ChatLog chat={chat} />
       ) : (
         <p className="m-auto max-w-[240px] text-center text-sm text-fg-faint text-pretty">
-          {boss ? "No chat yet. Turn autonomous mode on, or write below." : "There is no boss yet."}
+          {boss ? "No chat yet. Turn autonomous mode on, or write below." : "There is no captain yet."}
         </p>
       )}
       <ChatBox status={status} />
@@ -87,7 +87,7 @@ function ChatLog({ chat }: { chat: string }) {
     (item: string, option: string) => answer.mutate({ item, option }),
     [answer.mutate],
   );
-  // Cards that put text in a composer have none here: the chat box below is the boss's guidance.
+  // Cards that put text in a composer have none here: the chat box below is the captain's guidance.
   const owner = useMemo<OwnerContext | undefined>(
     () => (task === undefined ? undefined : { task, compose: () => {} }),
     [task],
@@ -106,7 +106,7 @@ function ChatLog({ chat }: { chat: string }) {
   );
 }
 
-/** Writes to the boss. Sent with "Keep as standing instruction", it is also kept as one. */
+/** Writes to the captain. Sent with "Keep as standing instruction", it is also kept as one. */
 function ChatBox({ status }: { status: AutonomyStatus }) {
   const toast = useToast();
   const guide = useGuideAutonomy();
@@ -135,7 +135,7 @@ function ChatBox({ status }: { status: AutonomyStatus }) {
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-line p-3">
       <Textarea
-        aria-label="Message to the boss"
+        aria-label="Message to the captain"
         rows={3}
         maxLength={2000}
         value={text}
@@ -175,7 +175,7 @@ function ChatBox({ status }: { status: AutonomyStatus }) {
   );
 }
 
-/** The owner's standing instructions, which every wake-up lists for the boss, each with remove. */
+/** The owner's standing instructions, which every wake-up lists for the captain, each with remove. */
 export function InstructionsCard({ status, now }: { status: AutonomyStatus; now: number }) {
   const toast = useToast();
   const forget = useAutonomyCommand("autonomy.forget");
@@ -185,7 +185,7 @@ export function InstructionsCard({ status, now }: { status: AutonomyStatus; now:
       <CardHead title="Standing instructions" count={list.length} />
       {list.length === 0 ? (
         <p className="text-sm text-fg-faint text-pretty">
-          None yet. Turn on Keep as standing instruction in the boss chat to add one.
+          None yet. Turn on Keep as standing instruction in the captain chat to add one.
         </p>
       ) : (
         <ul className="flex flex-col">

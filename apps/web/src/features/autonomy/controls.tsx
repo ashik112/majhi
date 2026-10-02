@@ -60,9 +60,9 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
       <div className="flex flex-col gap-4 p-5">
         <h2 className="text-md font-semibold">Turn on autonomous mode</h2>
         <p className="text-base text-fg-muted text-pretty">
-          The boss picks work from the board and the workspace backlogs, starts it, and decides its own cards
-          within these limits. Every decision lands in the log with one line why. You can pause or stop it at
-          any time.
+          The captain picks work from the board and the workspace backlogs, starts it, and decides its own
+          cards within these limits. Every decision lands in the log with one line why. You can pause or stop
+          it at any time.
         </p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-base">
           <dt className="text-fg-muted">Day cap</dt>
@@ -120,7 +120,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             role="alert"
             className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber"
           >
-            There is no boss yet. Pick one on Agents first: autonomous mode runs through it.
+            There is no captain yet. Pick one on Agents first: autonomous mode runs through it.
           </p>
         )}
         {start.error && (
@@ -149,7 +149,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
 }
 
 const STOP_NOW_BODY =
-  "Every run of an autonomous task and the boss's own turn stop at once. Turns in progress are cut off, and those tasks stay paused for you.";
+  "Every run of an autonomous task and the captain's own turn stop at once. Turns in progress are cut off, and those tasks stay paused for you.";
 
 /** What switching it off offers: Pause (or Resume), Stop gracefully and Stop now, which asks first. */
 export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () => void }) {
@@ -178,7 +178,7 @@ export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () =
   if (mode === "paused")
     options.push({
       label: "Resume",
-      text: "The boss picks up again, and the tasks the pause held restart.",
+      text: "The captain picks up again, and the tasks the pause held restart.",
       run: () => actions.resume(onClose),
       primary: true,
     });

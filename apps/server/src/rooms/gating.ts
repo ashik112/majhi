@@ -32,7 +32,7 @@ const CODE_ROLES: ReadonlySet<string> = new Set(["Builder"]);
 
 /** What the attachment rules need to know about the session besides the agent. */
 export interface GateContext {
-  /** The boss: has every command through majhi-admin and no majhi-tasks. */
+  /** The captain: has every command through majhi-admin and no majhi-tasks. */
   boss: string | undefined;
   teamSize: number;
   /** The agent is the first of a lead-mode task that is not a chat. */
@@ -54,7 +54,7 @@ type GateAgent = Pick<AgentFrontmatter, "id" | "role" | "scope" | "tools">;
 /**
  * In an agent's `tools` list a bare name adds a server the role does not get by default
  * (`majhi-room`, `majhi-tasks`, `majhi-admin` for a root agent, `serena`), and a name with a
- * leading dash, like `-majhi-decide`, takes a default away. The boss keeps `majhi-admin`.
+ * leading dash, like `-majhi-decide`, takes a default away. The captain keeps `majhi-admin`.
  */
 export const OFF_PREFIX = "-";
 
@@ -68,10 +68,10 @@ export function turnedOff(tools: readonly string[]): Set<string> {
  * off. One place for the rules (SPEC 5.9 item 5), so every run records what it attached.
  *
  * Defaults, kept as they were before gating:
- * - `majhi-admin`: the boss, and a root agent that lists it.
+ * - `majhi-admin`: the captain, and a root agent that lists it.
  * - `majhi-decide`, `majhi-processes`, `majhi-memory`: every session.
  * - `majhi-room`: a team of two or more, a lone lead of a lead-mode task, or listed.
- * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the boss), or listed.
+ * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the captain), or listed.
  * - `majhi-containers`: every session, when majhi can run containers.
  * - `serena`: builders of a task with worktrees, when it can start; or listed, with worktrees.
  * - `majhi-connections`: every session that holds a connection, and root agents, which can attach one.
@@ -93,7 +93,7 @@ export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
     [CONNECTIONS_SERVER_NAME]: ctx.holdsConnections === true || agent.scope === "root",
   };
   return GATED_TOOLS.filter((name) => {
-    // The boss without majhi-admin could not do its job: a dash cannot take it away.
+    // The captain without majhi-admin could not do its job: a dash cannot take it away.
     if (name === ADMIN_TOOL_ID && agent.id === ctx.boss) return defaults[name];
     return defaults[name] && !off.has(name);
   });

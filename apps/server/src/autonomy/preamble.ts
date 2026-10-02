@@ -1,6 +1,6 @@
 /**
  * Added after the admin preamble in front of the first prompt of each session in the autonomy chat
- * (PRV-74, rule 8): how the boss runs the desk while the owner is away.
+ * (PRV-74, rule 8): how the captain runs the desk while the owner is away.
  */
 export const AUTONOMY_PREAMBLE = [
   "This chat is autonomous mode. The owner is away, and you run the desk like the owner would.",

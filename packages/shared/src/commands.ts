@@ -191,7 +191,7 @@ import {
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
- * boss agent and tests all call commands through the same endpoint:
+ * captain agent and tests all call commands through the same endpoint:
  * `POST /api/cmd/<name>` with the input as JSON, answered with the output.
  */
 export const RiskClassSchema = z.enum(["read", "change", "destructive", "outbound"]);
@@ -731,13 +731,13 @@ export const commands = {
   "agents.rename": {
     risk: "change",
     summary:
-      "Change an agent's id (its @handle). Updates the boss setting, fallbacks, task teams and the decisions agent. Refused while the agent is working. Old room messages keep the old handle",
+      "Change an agent's id (its @handle). Updates the captain setting, fallbacks, task teams and the decisions agent. Refused while the agent is working. Old room messages keep the old handle",
     input: z.object({ id: IdSchema, newId: IdSchema }),
     output: AgentEntrySchema,
   },
   "agents.remove": {
     risk: "destructive",
-    summary: "Delete an agent file. Refused for the boss",
+    summary: "Delete an agent file. Refused for the captain",
     input: ById,
     output: z.object({ removed: IdSchema }),
   },
@@ -749,7 +749,7 @@ export const commands = {
   },
   "boss.set": {
     risk: "change",
-    summary: "Make a root agent the boss",
+    summary: "Make a root agent the captain",
     input: ById,
     output: z.object({ boss: IdSchema }),
   },
@@ -1664,7 +1664,7 @@ export const commands = {
   },
   "policy.set": {
     risk: "destructive",
-    summary: "Change the approval policy for the boss's commands",
+    summary: "Change the approval policy for the captain's commands",
     input: PolicyPatchSchema,
     output: SettingsSchema,
   },
@@ -1697,10 +1697,11 @@ export const commands = {
     output: z.array(z.object({ task: TaskIdSchema, title: z.string(), kind: z.string() })),
   },
 
-  // The boss (5.16) ---------------------------------------------------------
+  // The captain (5.16) ---------------------------------------------------------
   "boss.chat": {
     risk: "change",
-    summary: "Open the boss chat, created on first use. With fresh, archive it and start a new conversation",
+    summary:
+      "Open the captain chat, created on first use. With fresh, archive it and start a new conversation",
     input: z.object({ fresh: z.boolean().optional() }),
     output: TaskSchema,
   },
@@ -2239,21 +2240,22 @@ export const commands = {
   },
   "autonomy.start": {
     risk: "change",
-    summary: "Turn autonomous mode on, or resume it when paused. Owner only. Refused when there is no boss",
+    summary:
+      "Turn autonomous mode on, or resume it when paused. Owner only. Refused when there is no captain",
     input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.pause": {
     risk: "change",
     summary:
-      "Pause autonomous mode: the boss gets no ticks and autonomous tasks pause after their current turn, until autonomy.start resumes them. Owner only",
+      "Pause autonomous mode: the captain gets no ticks and autonomous tasks pause after their current turn, until autonomy.start resumes them. Owner only",
     input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.stop": {
     risk: "change",
     summary:
-      "Stop autonomous mode. now: stop every run of its tasks and the boss's autonomy turn at once. graceful: current turns finish, nothing new starts, then it turns off. Owner only",
+      "Stop autonomous mode. now: stop every run of its tasks and the captain's autonomy turn at once. graceful: current turns finish, nothing new starts, then it turns off. Owner only",
     input: AutonomyStopInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -2267,7 +2269,7 @@ export const commands = {
   "autonomy.guide": {
     risk: "change",
     summary:
-      "Send the boss a message in its autonomy chat: guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on. Owner only",
+      "Send the captain a message in its autonomy chat: guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on. Owner only",
     input: AutonomyGuideInputSchema,
     output: AutonomyGuideResultSchema,
   },
@@ -2280,28 +2282,28 @@ export const commands = {
   "autonomy.exclude": {
     risk: "change",
     summary:
-      "Mark a task Not for autonomous mode (exclude true), so the boss in autonomous mode leaves it alone, or clear the mark. Owner only",
+      "Mark a task Not for autonomous mode (exclude true), so the captain in autonomous mode leaves it alone, or clear the mark. Owner only",
     input: AutonomyExcludeInputSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.plan": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the boss: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time",
+      "Autonomous mode only, for the captain: replace the queue of what you plan to do next, in order, each with a one-line why and an optional not-before time",
     input: AutonomyPlanInputSchema,
     output: z.object({ queue: z.number().int().nonnegative() }),
   },
   "autonomy.note": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the boss: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the daily summary",
+      "Autonomous mode only, for the captain: log a decision that is not a call, in one line (waiting for an account's reset, skipping an org, leaving a task for the owner). unsure true puts it in the daily summary",
     input: AutonomyNoteInputSchema,
     output: z.object({ seq: z.number().int().positive() }),
   },
   "autonomy.answer": {
     risk: "change",
     summary:
-      "Autonomous mode only, for the boss: answer a card in an autonomous task as the owner would. option for a permission prompt or a choice (the option id) or an owner question (the choice); answers for an ask card. Refused for connection writes, secret requests and approval cards",
+      "Autonomous mode only, for the captain: answer a card in an autonomous task as the owner would. option for a permission prompt or a choice (the option id) or an owner question (the choice); answers for an ask card. Refused for connection writes, secret requests and approval cards",
     input: AutonomyAnswerInputSchema,
     output: AutonomyAnswerResultSchema,
   },

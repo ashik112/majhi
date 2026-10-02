@@ -36,7 +36,7 @@ export class TeamFactsSource {
 
   /**
    * The facts for a lead-mode task with a team. Undefined when they do not apply (a chat task, the
-   * boss chat, another mode, no team) or the agents cannot be read. Any other read that fails
+   * captain chat, another mode, no team) or the agents cannot be read. Any other read that fails
    * leaves its part out: facts never stop a turn.
    */
   async facts(task: Task): Promise<TeamFacts | undefined> {

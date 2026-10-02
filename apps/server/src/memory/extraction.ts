@@ -249,7 +249,7 @@ export class Extraction {
   /**
    * Reads a stretch of a chat and sends its facts through curation, like a task's lessons. Each fact
    * gets its own scope: an org chat writes only its org, that org's projects or global; a root chat
-   * (the boss) may write any org or project. `onRead` runs once the Housekeeper has answered and before anything is
+   * (the captain) may write any org or project. `onRead` runs once the Housekeeper has answered and before anything is
    * written, so the caller moves its watermark exactly once: a failure before it leaves the
    * messages for the next try, a crash after it never reads them again.
    */

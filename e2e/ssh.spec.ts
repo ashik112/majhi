@@ -5,7 +5,7 @@ import { expect, test, useHome } from "./fixture.ts";
 // ssh.unlock themselves.
 useHome({ seed: "roots" });
 
-// Setup (an account and a boss) is not what these tests are about: skip it, as the owner can.
+// Setup (an account and a captain) is not what these tests are about: skip it, as the owner can.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));
 });

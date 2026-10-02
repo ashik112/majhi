@@ -26,9 +26,9 @@ function ownerOnly(ctx: CommandContext): void {
   }
 }
 
-/** The boss's own tools run in the admin service, for the boss in its autonomy chat only. */
+/** The captain's own tools run in the admin service, for the captain in its autonomy chat only. */
 async function bossOnly(ctx: CommandContext): Promise<never> {
-  throw new UserError(`${ctx.command} is a tool of the boss in its autonomy chat.`, 409);
+  throw new UserError(`${ctx.command} is a tool of the captain in its autonomy chat.`, 409);
 }
 
 /** The `autonomy.*` commands (PRV-74). The command table spreads these in. */

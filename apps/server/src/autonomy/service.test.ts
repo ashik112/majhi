@@ -27,7 +27,7 @@ function gate(): { promise: Promise<void>; resolve: () => void } {
 }
 
 /**
- * A boss world where every agent's first turn waits until `release`, or until it is cancelled, and
+ * A captain world where every agent's first turn waits until `release`, or until it is cancelled, and
  * any later turn ends at once. `prompts()` is every prompt text agents got, in order.
  */
 async function world() {
@@ -65,7 +65,7 @@ async function world() {
       open.resolve();
       open = gate();
     },
-    /** Turns on, and has the boss create and start a task in Acme; waits for its first turn. */
+    /** Turns on, and has the captain create and start a task in Acme; waits for its first turn. */
     async startWorking(): Promise<string> {
       const on = await h.cmd("autonomy.start");
       expect(on.status).toBe(200);
@@ -86,15 +86,15 @@ async function world() {
 }
 
 describe("autonomous mode's state machine", () => {
-  it("is refused without a boss", async () => {
+  it("is refused without a captain", async () => {
     plain = await taskWorld();
     const res = await plain.h.cmd("autonomy.start");
     expect(res.status).toBe(409);
-    expect(res.body.error).toContain("There is no boss yet");
+    expect(res.body.error).toContain("There is no captain yet");
     expect((await plain.h.cmd("autonomy.status")).body.mode).toBe("off");
   });
 
-  it("turns on with an autonomy chat, adopts the boss's task, and pauses it after its current turn", async () => {
+  it("turns on with an autonomy chat, adopts the captain's task, and pauses it after its current turn", async () => {
     const t = await world();
     const id = await t.startWorking();
     const on = await t.status();

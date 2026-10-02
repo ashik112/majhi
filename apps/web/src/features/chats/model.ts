@@ -20,7 +20,7 @@ export interface ChatGroup {
 }
 
 /**
- * Agents by org for the chat list: Root first with the boss on top, then each org. An org filter keeps
+ * Agents by org for the chat list: Root first with the captain on top, then each org. An org filter keeps
  * Root and that org. A search keeps the chats whose title matches, and the agents whose id does.
  */
 export function chatGroups(input: {

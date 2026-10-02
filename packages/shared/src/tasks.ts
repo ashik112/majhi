@@ -255,7 +255,7 @@ export const TaskSchema = z.object({
   priority: TaskPrioritySchema.optional(),
   /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
   due: DaySchema.optional(),
-  /** The owner marked it Not for autonomous mode: the boss in autonomous mode leaves it alone. */
+  /** The owner marked it Not for autonomous mode: the captain in autonomous mode leaves it alone. */
   noAutonomy: z.boolean().optional(),
   /** Absolute path of the task folder. */
   folder: z.string(),
@@ -356,11 +356,11 @@ export type ChangeBranchResult = z.infer<typeof ChangeBranchResultSchema>;
 /** The brief of a chat the owner started from the Chats page or Cmd J. It marks the task; it is never shown. */
 export const CHAT_BRIEF = "Chat";
 /** The same marker on chats made before the Chats page. */
-export const BOSS_CHAT_BRIEF = "Boss chat";
+export const BOSS_CHAT_BRIEF = "Captain chat";
 /** What an untitled chat is called until the owner's first message names it. */
 export const DEFAULT_CHAT_TITLES: readonly string[] = [CHAT_BRIEF, BOSS_CHAT_BRIEF];
 /**
- * The brief of the boss's autonomy chat (PRV-74): where autonomous mode wakes the boss and the owner
+ * The brief of the captain's autonomy chat (PRV-74): where autonomous mode wakes the captain and the owner
  * guides it. A chat like the others, but never the owner's Cmd J chat.
  */
 export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
@@ -373,7 +373,7 @@ export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
   );
 }
 
-/** True for the boss's autonomy chat. */
+/** True for the captain's autonomy chat. */
 export function isAutonomyChat(task: Pick<Task, "kind" | "brief">): boolean {
   return task.kind === "chat" && task.brief === AUTONOMY_CHAT_BRIEF;
 }
@@ -646,7 +646,7 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
       .optional(),
   }),
   /**
-   * A command the boss (or another agent with majhi tools) wants to run (5.16).
+   * A command the captain (or another agent with majhi tools) wants to run (5.16).
    * `pending` waits for the owner; `applied` ran (with `commit` for undo when it
    * changed config); `rejected`, `failed` and `undone` are final.
    */

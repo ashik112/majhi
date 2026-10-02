@@ -10,7 +10,7 @@ import type {
 
 /**
  * The Autonomous page: the status bar, Now and next with each why, the log, the Rules view, the
- * daily summary and the boss chat on the right. The server is the seeded one (`ui`, boss `setup`);
+ * daily summary and the captain chat on the right. The server is the seeded one (`ui`, captain `setup`);
  * autonomous mode, its chat and its room are stubbed in the browser.
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.autonomy.config.ts`.
@@ -244,7 +244,7 @@ const EVENTS: AutonomyEvent[] = Array.from({ length: 40 }, (_, i) => {
       seq: 0,
       at: "",
       kind: "tick",
-      text: "Woke the boss: GLX-429 is done: Queue the export job (and 2 more)",
+      text: "Woke the captain: GLX-429 is done: Queue the export job (and 2 more)",
     },
     {
       seq: 0,
@@ -299,7 +299,7 @@ const item = (n: number, rest: Record<string, unknown>): RoomItem =>
 function conversation(): RoomItem[] {
   const out: RoomItem[] = [];
   for (let n = 1; n <= 12; n++) {
-    out.push(item(n * 3, { type: "system", level: "info", text: `Woke the boss: check ${n}` }));
+    out.push(item(n * 3, { type: "system", level: "info", text: `Woke the captain: check ${n}` }));
     out.push(
       item(n * 3 + 1, {
         type: "agent",
@@ -411,7 +411,7 @@ async function open(page: Page, w: number, h: number, theme: string, scene: Scen
   await page.evaluate((t) => {
     document.documentElement.dataset.theme = t;
   }, theme);
-  await expect(page.getByRole("complementary", { name: "Boss chat" })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Captain chat" })).toBeVisible();
   await page.waitForTimeout(600);
   return stubbed;
 }
@@ -471,10 +471,10 @@ for (const [w, h] of [
 
 test("the chat sends through autonomy.guide, kept as an instruction", async ({ page }) => {
   const { calls } = await open(page, 1440, 900, "dark", { status: status("on") });
-  const chat = page.getByRole("complementary", { name: "Boss chat" });
+  const chat = page.getByRole("complementary", { name: "Captain chat" });
   await expect(chat.getByText("Why only small tasks yesterday?").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/chat-long-1440.png` });
-  await chat.getByRole("textbox", { name: "Message to the boss" }).fill("Take GLX-431 next, split it.");
+  await chat.getByRole("textbox", { name: "Message to the captain" }).fill("Take GLX-431 next, split it.");
   await chat.getByRole("switch", { name: "Keep as standing instruction" }).click();
   await chat.getByRole("button", { name: "Send" }).click();
   await expect
@@ -483,7 +483,7 @@ test("the chat sends through autonomy.guide, kept as an instruction", async ({ p
       text: "Take GLX-431 next, split it.",
       keep: true,
     });
-  await expect(chat.getByRole("textbox", { name: "Message to the boss" })).toHaveValue("");
+  await expect(chat.getByRole("textbox", { name: "Message to the captain" })).toHaveValue("");
   await noPageScroll(page);
 });
 
@@ -521,7 +521,7 @@ test("Pause, then Resume", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Stop autonomous mode now?" })).toBeVisible();
 });
 
-test("removing the boss's chat while the mode is on shows the refusal", async ({ page }) => {
+test("removing the captain's chat while the mode is on shows the refusal", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await stub(page, { status: status("on") });
   await page.goto(`/chats/${CHAT}`);

@@ -412,7 +412,7 @@ export class Housekeeper {
     await this.background.settled();
   }
 
-  /** The agent that does it: `memory.housekeeper`, else the boss. */
+  /** The agent that does it: `memory.housekeeper`, else the captain. */
   async agentId(): Promise<string | undefined> {
     const sections = await this.deps.config.sections();
     return (await this.deps.config.settings()).memory.housekeeper ?? sections.boss;
@@ -439,7 +439,8 @@ export class Housekeeper {
   ): Promise<{ value: T; agent: string }> {
     const { deps } = this;
     const id = await this.agentId();
-    if (id === undefined) throw new NoHousekeeper("No Housekeeper: set memory.housekeeper or choose a boss.");
+    if (id === undefined)
+      throw new NoHousekeeper("No Housekeeper: set memory.housekeeper or choose a captain.");
     const stored = await deps.agents.get(id);
     if (stored === undefined || !stored.ok) {
       throw new UserError(`The Housekeeper @${id} is missing or invalid.`, 409);
