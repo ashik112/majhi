@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LayaStatusSchema } from "./decisions.ts";
 import { E2eRunResultSchema } from "./e2e.ts";
+import { CloneIdSchema, ClonePhaseSchema } from "./remote-repos.ts";
 import { EditorAppSchema } from "./settings.ts";
 
 /**
@@ -162,6 +163,50 @@ export type GitHostLogins = z.infer<typeof GitHostLoginsSchema>;
 export const GitLoginsResultSchema = z.object({ hosts: z.array(GitHostLoginsSchema) });
 export type GitLoginsResult = z.infer<typeof GitLoginsResultSchema>;
 
+/**
+ * How the helper's git authenticates to a remote, for the jobs that clone, check or push with a
+ * workspace's own credential. Platform-neutral: plain git, never a system keychain helper.
+ * - `token`: https with `GIT_ASKPASS` pointing at majhi's own askpass, which reads `password` from
+ *   the child's environment. `-c credential.helper=` turns off every other helper, and
+ *   `GIT_TERMINAL_PROMPT=0` stops prompts. The token is never in the URL, argv, a file or a log.
+ * - `ssh`: the URL names the workspace's SSH alias (`git@github-acme:acme/api.git`); the owner's
+ *   own ssh config and agent do the rest. `BatchMode=yes`, so it never prompts.
+ * - `none`: a public repo over https.
+ */
+export const GitAuthSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("token"),
+    /** `x-access-token` (GitHub), `oauth2` (GitLab), `x-token-auth` (Bitbucket OAuth), or the account for a pasted Bitbucket API token. */
+    username: z.string().min(1).max(255),
+    /** Never logged, stored, echoed in an error or put in the URL, on either side. */
+    password: z.string().min(1).max(4096),
+  }),
+  z.object({ kind: z.literal("ssh") }),
+  z.object({ kind: z.literal("none") }),
+]);
+export type GitAuth = z.infer<typeof GitAuthSchema>;
+
+/** A remote URL with no credentials in it: https without user info, or ssh (`git@host:path` or `ssh://`). */
+export const CleanRemoteUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .refine((url) => !/^https?:\/\/[^/]*@/i.test(url), "Leave the user name and token out of the URL");
+
+/**
+ * Progress of a long job, posted by the helper to `POST /api/host/progress` while the job runs.
+ * Only `git.clone` sends it today. The server drops progress for a job nobody waits for.
+ */
+export const HostProgressSchema = z.object({
+  /** The job's id. */
+  id: z.string(),
+  phase: ClonePhaseSchema,
+  /** 0 to 100 within the phase, when git printed one. */
+  percent: z.number().int().min(0).max(100).optional(),
+});
+export type HostProgress = z.infer<typeof HostProgressSchema>;
+
 /** Longest path the editor jobs take. */
 export const EDITOR_PATH_MAX = 4096;
 
@@ -265,6 +310,8 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   /**
    * `git push <url> <branch>` from the Mac, so its Keychain or `gh` helper supplies the https login.
    * Never forces, never prompts. The path is the same on the Mac and in the container.
+   * With `auth`, the workspace's own credential is used instead and no system helper is asked
+   * (publish and connect a remote); `setUpstream` then also sets the branch's upstream.
    */
   z.object({
     id: z.string(),
@@ -273,7 +320,43 @@ export const HostJobSchema = z.discriminatedUnion("method", [
       path: z.string().min(1).max(4096),
       url: z.string().min(1).max(2048),
       branch: z.string().min(1).max(255),
+      auth: GitAuthSchema.optional(),
+      setUpstream: z.boolean().optional(),
     }),
+  }),
+  /**
+   * Open a web page in the owner's default browser: macOS `open`, Linux `xdg-open`, WSL `wslview`
+   * (else `explorer.exe`). Only http(s) URLs. `opened` is false when nothing could open it; the UI
+   * then shows the link to click.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("openUrl"),
+    params: z.object({ url: z.url({ protocol: /^https?$/ }).max(4096) }),
+  }),
+  /**
+   * `git clone` a remote into `path` with the workspace's credential, posting `HostProgress` as it
+   * goes. Clones into a temporary sibling folder and renames it to `path` only when it finished,
+   * so a failed clone leaves nothing behind. Refuses when `path` exists and is not empty. Never
+   * prompts. The path is the same on the owner's computer and in the container.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.clone"),
+    params: z.object({
+      clone: CloneIdSchema,
+      url: CleanRemoteUrlSchema,
+      path: z.string().min(1).max(4096),
+      /** Check out this branch. Default: the remote's default branch. */
+      branch: z.string().min(1).max(255).optional(),
+      auth: GitAuthSchema,
+    }),
+  }),
+  /** `git ls-remote --symref` with the workspace's credential: whether the remote is reachable and empty. */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.lsRemote"),
+    params: z.object({ url: CleanRemoteUrlSchema, auth: GitAuthSchema }),
   }),
   /**
    * Asks the Mac's git credential helper (`git credential fill`) for the saved https secret of one
@@ -327,6 +410,11 @@ export const HostResultSchemas = {
   "git.logins": GitLoginsResultSchema,
   "git.token": z.object({ token: z.string().min(1) }),
   "git.push": z.object({ pushed: z.literal(true) }),
+  openUrl: z.object({ opened: z.boolean() }),
+  /** `head`: the commit checked out. `branch`: the branch checked out, the remote's default unless one was named. */
+  "git.clone": z.object({ head: CommitSchema, branch: z.string() }),
+  /** `empty`: the remote has no branches. `defaultBranch`: where its HEAD points, when it has one. */
+  "git.lsRemote": z.object({ empty: z.boolean(), defaultBranch: z.string().optional() }),
   "git.credential": z.object({ secret: z.string().min(1) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),

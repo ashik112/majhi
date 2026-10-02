@@ -37,6 +37,11 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",
+  // Git sign-in happens in the owner's browser, and the OAuth apps hold a secret: the owner's alone.
+  "git.oauthApps.set",
+  "git.signIn.start",
+  "git.signIn.poll",
+  "git.signIn.cancel",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([
@@ -92,8 +97,18 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
   },
   projects: {
     label: "Projects",
-    about: "Register a repo as a project, or change where a project's code goes.",
-    commands: ["projects.register", "projects.update", "workspaces.set", "tasks.changeBranch"],
+    about:
+      "Register, clone or create a project, put a new one on its git host, or change where a project's code goes.",
+    commands: [
+      "projects.register",
+      "projects.update",
+      "projects.clone",
+      "projects.create",
+      "projects.publish",
+      "projects.connectRemote",
+      "workspaces.set",
+      "tasks.changeBranch",
+    ],
   },
   accounts: {
     label: "Orgs, git accounts and secrets",
@@ -174,6 +189,8 @@ export const SENSITIVE_COMMANDS: ReadonlySet<string> = new Set<CommandName>([
   "orgs.useGitLogin",
   "orgs.useSavedLogin",
   "orgs.removeGitAccount",
+  "projects.publish",
+  "projects.connectRemote",
   "connections.allow",
   "containers.images.allow",
   "system.update",
@@ -203,6 +220,10 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "tasks.terminal.open": "Open a task's terminal",
   "projects.register": "Register a project",
   "projects.update": "Change a project: remote, base, SSH alias",
+  "projects.clone": "Clone a repo into a workspace",
+  "projects.create": "Create a new local project",
+  "projects.publish": "Create a project's repo on its git host and push",
+  "projects.connectRemote": "Connect a project to a remote repo and push",
   "workspaces.set": "Change the workspace roots",
   "tasks.changeBranch": "Commit to another task's branch",
   "orgs.create": "Create an org",

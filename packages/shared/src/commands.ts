@@ -79,6 +79,14 @@ import {
 import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
+  GitAppsSetInputSchema,
+  GitAppsViewSchema,
+  SignInRefSchema,
+  SignInStartInputSchema,
+  SignInStartSchema,
+  SignInStatusSchema,
+} from "./git-signin.ts";
+import {
   DirListingSchema,
   EDITOR_PATH_MAX,
   GitLoginsResultSchema,
@@ -128,7 +136,25 @@ import {
   RepoDiffSchema,
 } from "./mrs.ts";
 import { PendingNoticeSchema } from "./notify.ts";
+import { OnboardingStatusSchema } from "./onboarding.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
+import {
+  ConnectRemoteInputSchema,
+  ConnectRemoteSchema,
+  ProjectCreateInputSchema,
+  ProjectCreateSchema,
+  ProjectPublishInputSchema,
+  ProjectPublishSchema,
+} from "./project-create.ts";
+import {
+  CloneInputSchema,
+  CloneStartSchema,
+  CloneStatusInputSchema,
+  CloneStatusSchema,
+  RemoteOwnersSchema,
+  RemoteReposInputSchema,
+  RemoteReposSchema,
+} from "./remote-repos.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
   AllowRuleSchema,
@@ -326,6 +352,13 @@ export const commands = {
     input: Empty,
     output: ConfigStateSchema,
   },
+  "onboarding.status": {
+    risk: "read",
+    summary:
+      "What each first-run step needs from the server: which steps are done, the next one, the roots, whether the host helper is connected, and each workspace's git hosts and project count",
+    input: Empty,
+    output: OnboardingStatusSchema,
+  },
   "repos.scan": {
     risk: "read",
     summary: "List the git repos found under every workspace root",
@@ -439,6 +472,60 @@ export const commands = {
       account: z.string().trim().min(1),
     }),
     output: OrgViewSchema,
+  },
+
+  // Git sign-in and remote repos (onboarding and git connect) ----------------
+  "git.oauthApps.get": {
+    risk: "read",
+    summary:
+      "The OAuth apps majhi signs workspaces in to git hosts with: the GitHub client ID, GitLab application IDs per host, and the Bitbucket consumer key. Never returns the consumer secret",
+    input: Empty,
+    output: GitAppsViewSchema,
+  },
+  "git.oauthApps.set": {
+    risk: "change",
+    summary:
+      "Save or remove one host's OAuth app: a GitHub client ID, a GitLab application ID for a host, or the Bitbucket consumer key and secret (the secret goes to secrets.age). Owner only",
+    input: GitAppsSetInputSchema,
+    output: GitAppsViewSchema,
+  },
+  "git.signIn.start": {
+    risk: "change",
+    summary:
+      "Start signing a workspace in to GitHub, GitLab or Bitbucket in the browser. Answers needs-app with setup steps when the host's app is not registered, else the code and page to open. The token is saved for that workspace only. Owner only",
+    input: SignInStartInputSchema,
+    output: SignInStartSchema,
+  },
+  "git.signIn.poll": {
+    risk: "read",
+    summary:
+      "The state of a sign-in flow: pending, done (with the account and other workspaces that use it), denied, expired, cancelled or failed. Never returns a token",
+    input: SignInRefSchema,
+    output: SignInStatusSchema,
+  },
+  "git.signIn.cancel": {
+    risk: "change",
+    summary: "Stop a pending sign-in flow. Nothing is saved. Owner only",
+    input: SignInRefSchema,
+    output: SignInStatusSchema,
+  },
+  "git.remoteRepos": {
+    risk: "read",
+    summary:
+      "One page of the repos a workspace's account can see on a git host (owned, member and organization repos), with search, each marked when it is already cloned or registered here",
+    input: RemoteReposInputSchema,
+    output: RemoteReposSchema,
+  },
+  "git.remoteOwners": {
+    risk: "read",
+    summary:
+      "Where a workspace's account can make a new repo on a git host: itself and its organizations, groups or Bitbucket workspaces",
+    input: z.object({
+      org: IdSchema,
+      kind: MrHostSchema,
+      host: z.string().trim().min(1).max(255).optional(),
+    }),
+    output: RemoteOwnersSchema,
   },
   "projects.pushRoute": {
     risk: "read",
@@ -794,6 +881,41 @@ export const commands = {
     summary: "Unregister a project. The repo on disk is not touched",
     input: ById,
     output: z.object({ removed: IdSchema }),
+  },
+  "projects.clone": {
+    risk: "change",
+    summary:
+      "Clone a remote repo into the workspace's folder (<root>/<workspace>/<repo>) on the owner's computer with the workspace's own credential, then register it as a project with base = the default branch. Answers at once with the job; refused when the folder is not empty or the repo is already a project",
+    input: CloneInputSchema,
+    output: CloneStartSchema,
+  },
+  "projects.cloneStatus": {
+    risk: "read",
+    summary:
+      "Clone jobs and their progress: queued, cloning (phase and percent), registering, done or failed",
+    input: CloneStatusInputSchema,
+    output: CloneStatusSchema,
+  },
+  "projects.create": {
+    risk: "change",
+    summary:
+      "Create a new local project in the workspace's folder: the folder, git init on main, a README and a first commit as the workspace's identity, registered as a project. Nothing leaves this computer",
+    input: ProjectCreateInputSchema,
+    output: ProjectCreateSchema,
+  },
+  "projects.publish": {
+    risk: "outbound",
+    summary:
+      "Create the remote repo for a project with no origin, using the workspace's account on GitHub, GitLab or Bitbucket (private by default), set origin and push the base branch",
+    input: ProjectPublishInputSchema,
+    output: ProjectPublishSchema,
+  },
+  "projects.connectRemote": {
+    risk: "outbound",
+    summary:
+      "Connect a project to a repo the owner made by hand: check it is reachable with the workspace's credential, set the remote, and push the base branch only when the remote is empty",
+    input: ConnectRemoteInputSchema,
+    output: ConnectRemoteSchema,
   },
 
   // Tasks -------------------------------------------------------------------

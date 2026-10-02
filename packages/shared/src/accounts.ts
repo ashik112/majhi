@@ -119,9 +119,23 @@ export const GitAccountSchema = z
     ssh: z.string().trim().min(1).max(255).optional(),
     /** The account's own token for MRs and the API. */
     token: SecretRefSchema.optional(),
+    /**
+     * Set when `token` came from signing in (GitLab, Bitbucket): the OAuth grant (`OAuthGrant`
+     * JSON) majhi refreshes `token` with. Both secrets are rewritten in place, never renamed.
+     */
+    oauth: SecretRefSchema.optional(),
   })
   .transform(
-    ({ ssh, ...rest }): { host: string; account: string; ssh?: string; token?: string | undefined } => {
+    ({
+      ssh,
+      ...rest
+    }): {
+      host: string;
+      account: string;
+      ssh?: string;
+      token?: string | undefined;
+      oauth?: string | undefined;
+    } => {
       const route = normalizeSshRoute(rest.host, ssh);
       return route === undefined ? rest : { ...rest, ssh: route };
     },
@@ -474,6 +488,10 @@ export const EventTopicSchema = z.enum([
   "budgets",
   "connections",
   "autonomy",
+  /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
+  "signins",
+  /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */
+  "clones",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import { E2ePatchSchema } from "./e2e.ts";
+import { GitAppsConfigSchema } from "./git-signin.ts";
 import {
   AutonomyFilePatchSchema,
   BudgetsFilePatchSchema,
@@ -68,6 +69,8 @@ export const MajhiConfigSchema = z.strictObject({
   prices: PricesConfigSchema.optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   orgs: OrgsConfigSchema.optional(),
+  /** The OAuth apps majhi signs workspaces in to git hosts with. Public IDs and secret references only. */
+  git_apps: GitAppsConfigSchema.optional(),
   projects: z.record(IdSchema, ProjectConfigSchema).optional(),
 });
 
