@@ -582,6 +582,56 @@ The owner can run majhi by talking to one agent. The captain sets things up, cha
 - **Secrets never pass through a model.** When the owner pastes something that looks like a secret into any chat, the composer offers "Save as secret" and the agent only receives a reference such as `secret:newrelic-globex`. When the captain needs a secret, it asks for it through a secure input card that the UI renders, never as chat text.
 - **Live changes.** Config changes apply without a restart (file watchers and in-memory registries). The only exception is adding or removing a workspace root, because Docker mounts are fixed at start. The captain says so and shows the command.
 
+### 5.18 How much the captain does, per workspace
+
+The captain never acts on its own unless the owner chose that for the workspace. Outside that choice it answers only when the owner talks to it.
+
+**What the owner sees: one choice per workspace,** "How much does the captain do here?"
+
+- **Only when I ask.** The captain answers in its chat. Nothing else. Default for every new client workspace.
+- **Keeps things tidy.** Upkeep (below), done by the captain. Shipping always asks the owner. Default for Private.
+- **Runs it.** Upkeep, and the captain also picks tasks, runs them and ships them within the workspace's daily budget (autonomous mode, PRV-74, now set per workspace). A budget field sits next to this choice.
+
+"More rules", folded away, holds what most owners never change: working hours and freeze dates in the workspace's time zone, which branches it ships to, allowed AI providers, and the account that pays for the captain's decisions (the captain's own account unless set).
+
+**Upkeep.** Short runs at fixed moments, never a captain that stays awake:
+
+| Chore | When it runs | What the captain does |
+|---|---|---|
+| Ship finished work | A task reaches review and its checks pass | "Runs it": ships by the workspace's ship rule. "Keeps things tidy": asks. |
+| Approval cards | A card arrives | Answers routine ones by the workspace's Approvals rules. Risky ones and the never list go to the owner. |
+| Agents' questions | An agent asks | Answers from the brief, memory or code. Real choices go to the owner. |
+| Memory | Daily | Keeps, merges and drops waiting memories. Asks about doubtful ones. |
+| Projects | A new repo appears, and daily | Registers it in the right workspace with base and remotes. Asks when unsure. Never touches protected repos. |
+| Task triage | Daily | Sets priority and due dates, marks duplicates and stale tasks. Suggests closing; never closes. |
+| Cleanup | Daily | Removes worktrees and containers of done tasks. Never removes uncommitted work. |
+| Stuck tasks | Nobody works and nothing is pending | Wakes the lead once, then tells the owner (5.3). |
+
+**One captain, one conversation per workspace.** There is only the owner's captain. It keeps a separate session per workspace ("lane"), so one client's code and details are never in its context while it decides for another. Lanes share only the owner's global instructions and counts, never content.
+
+**Rules that always hold** (never shown as settings):
+
+- **The never list:** no force push, no deleting uncommitted work, no moving one workspace's secrets, accounts or logins to another, no change to a protected repo, no secret in a diff that ships.
+- **The stricter rule wins:** never list, then protected repo, then the workspace's choice, then the global default. A standing instruction can tighten a rule, never loosen it.
+- **Time never approves anything.** What needs the owner waits, with one reminder a day.
+- **Presence:** the captain does not act in a task the owner touched in the last 10 minutes.
+- **Re-check before anything that cannot be undone.** The rules are read again right before a push, merge, request or post, so a change the owner made a second ago applies.
+- **Text is not instruction.** Words in repos, issues, attachments or messages never authorise an action; checks and the owner's rules do.
+
+**No runaway, no loops** (structural, proven by a soak test):
+
+- Every run has a hard cap on actions, tokens and minutes, and stops at the cap with a line in the log.
+- Events record who caused them. The captain's own actions never start an upkeep run.
+- One run per chore per workspace at a time. A trigger during a run joins it.
+- Every action checks the current state first, so running it twice changes nothing.
+- Two failures in a row turn that chore off for the workspace and tell the owner.
+- Daily caps per chore and workspace (for example five ships, one memory run).
+- The captain's lane rests when its budget or its account's window runs out; rules and Laya keep routine upkeep moving, judgment calls wait.
+- One "Stop the captain" switch stops every lane and run at once.
+- A soak test with the fake agent replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails if a run passes its caps, an event re-triggers itself, or an action repeats. It runs on every merge.
+
+**What the owner notices:** the bell for what needs them, one daily summary line per workspace ("Acme: shipped 2, tidied 8 memories, 1 thing for you"), and the captain's log with each action's reason, evidence and Undo where Undo is possible (a merge undoes as a revert commit; a push cannot be undone, which is why the captain pushes only after checks pass).
+
 ### 5.17 Performance and resource use
 
 - **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 10 minutes). Sessions come back with ACP `session/resume` or `session/load`.
@@ -729,6 +779,13 @@ Delivered in two parts, each usable and reviewed on its own.
 - `browser` connections per org for research and checking results. Social platforms (Meta, X, LinkedIn, TikTok) as connections using their official APIs. Every public post is an outbound action with an approve card showing the exact post.
 - Scheduled and recurring tasks (for example "post three times a week"), which create tasks on a schedule.
 - **Done when:** a task for a project produces a short captioned video and three post drafts in the room, the owner approves one, it is scheduled, and it posts through the platform API at the set time.
+
+### Phase 13: The captain per workspace
+- The "How much does the captain do here?" choice per workspace, with "More rules"; autonomous mode moves under "Runs it".
+- Captain lanes (one session per workspace), the upkeep chores, the never list and the rules in 5.18.
+- The runaway and loop guards and the soak test.
+- The daily summary line per workspace and the captain's log with Undo.
+- **Done when:** with Private on "Runs it" and a client on "Only when I ask", a simulated night ships Private's ready work within its budget, touches nothing of the client's, and the soak test passes.
 
 ---
 
