@@ -1,5 +1,6 @@
 import type { CommandMeta, Settings, WorkspacesUpdate } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import { fileSignature } from "../fs.ts";
 import { ConfigHistory, type HistoryEntry } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
@@ -35,8 +36,17 @@ export class ConfigService {
     this.history = new ConfigHistory(paths.majhiHome);
   }
 
-  load(): Promise<LoadedConfig> {
-    return loadConfig(this.paths);
+  /** The last load with the signature of majhi.yaml it came from; a hand edit changes the signature. */
+  private loaded: { signature: string; config: LoadedConfig } | undefined;
+
+  async load(): Promise<LoadedConfig> {
+    const signature = await fileSignature(this.file).catch(() => undefined);
+    if (signature !== undefined && this.loaded?.signature === signature) {
+      return structuredClone(this.loaded.config);
+    }
+    const config = await loadConfig(this.paths);
+    this.loaded = signature === undefined ? undefined : { signature, config: structuredClone(config) };
+    return config;
   }
 
   sections(): Promise<ConfigSections> {

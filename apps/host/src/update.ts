@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
+import type { KeyBackup } from "./keychain.ts";
 import type { Logger } from "./log.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
@@ -26,6 +27,8 @@ export interface UpdateOptions {
   /** The file this helper runs from. The helper only exits to be replaced when it is the bundle. */
   selfPath: string;
   secretsKeyFile: string;
+  /** The Keychain copy of the secrets key: put back when the file is gone, made after a new key. */
+  keychain?: Pick<KeyBackup, "read" | "ensure">;
   log: Logger;
   now?: () => Date;
   /** Ends the process so launchd starts the new helper. Tests pass a spy. */
@@ -135,18 +138,27 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
   }
 }
 
-/** `make up` creates the key when it is missing. The helper does the same, so a fresh Mac needs no terminal. */
+/**
+ * `make up` creates the key when it is missing. The helper does the same, so a fresh Mac needs no
+ * terminal. A key the Keychain still holds comes back first: a new key could not read `secrets.age`.
+ */
 async function ensureSecretsKey(
   options: UpdateOptions,
   env: NodeJS.ProcessEnv,
   say: (text: string) => Promise<void>,
 ): Promise<void> {
-  const { remount, secretsKeyFile } = options;
+  const { remount, secretsKeyFile, keychain } = options;
   const present = await stat(secretsKeyFile).then(
     (s) => s.size > 0,
     () => false,
   );
   if (present) return;
+  const saved = await keychain?.read();
+  if (saved !== undefined) {
+    await say("Putting back the secrets key from the Keychain");
+    await writeKey(secretsKeyFile, `${saved}\n`);
+    return;
+  }
   await say("Creating the secrets key");
   const step = dockerStep({ ...remount, env }, "update");
   const key = await step(
@@ -156,10 +168,15 @@ async function ensureSecretsKey(
     KEY_TIMEOUT_MS,
   );
   if (key.trim() === "") throw new Error("create secrets key printed nothing");
-  await mkdir(dirname(secretsKeyFile), { recursive: true, mode: 0o700 });
-  const temp = `${secretsKeyFile}.tmp`;
+  await writeKey(secretsKeyFile, key);
+  await keychain?.ensure();
+}
+
+async function writeKey(file: string, key: string): Promise<void> {
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  const temp = `${file}.tmp`;
   await writeFile(temp, key, { mode: 0o600 });
-  await rename(temp, secretsKeyFile);
+  await rename(temp, file);
 }
 
 /** Copies the helper out of the new image over the installed bundle. The running process keeps its loaded copy. */

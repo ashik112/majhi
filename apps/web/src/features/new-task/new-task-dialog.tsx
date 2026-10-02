@@ -125,7 +125,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   ];
   // The kind the words suggest for the chosen projects, until the owner picks one. A pick that no
   // longer fits the projects falls back.
-  const inferred = taskKindOf(deferred, chosen.length > 0, parsed?.branch);
+  const inferred = taskKindOf(deferred, chosen.length > 0);
   const kind = kindPick !== undefined && kindFits(kindPick, chosen.length) ? kindPick : inferred;
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);

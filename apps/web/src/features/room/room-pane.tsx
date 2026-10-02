@@ -14,6 +14,9 @@ export function RoomPane({
   state,
   dispatch,
   loadOlder,
+  loadAround,
+  loadNewer,
+  loadLatest,
   onShowChanges,
   focusItem,
   onFocused,
@@ -22,6 +25,10 @@ export function RoomPane({
   state: RoomState;
   dispatch: (action: RoomAction) => void;
   loadOlder: () => Promise<void>;
+  /** Search matches: the page around an item, the next newer page, and the newest page again. */
+  loadAround?: ((item: string) => Promise<boolean>) | undefined;
+  loadNewer?: (() => Promise<void>) | undefined;
+  loadLatest?: (() => Promise<void>) | undefined;
   /** Opens the Changes tab. */
   onShowChanges?: (() => void) | undefined;
   /** A search match to scroll to, and what to do once it was shown. */
@@ -59,6 +66,12 @@ export function RoomPane({
     [task, compose, onShowChanges, turningKey],
   );
   const busy = isBusy(state.agents);
+  // Around a search match, going to the newest messages also scrolls the view to them.
+  const [jumpSignal, setJumpSignal] = useState(0);
+  const jumpToLatest = useCallback(() => {
+    setJumpSignal((n) => n + 1);
+    void loadLatest?.();
+  }, [loadLatest]);
 
   const cancel = useMutation<{ cancelled: string[] }, ApiRequestError, void>({
     mutationFn: () => cmd("room.cancel", { task: task.id }),
@@ -104,6 +117,10 @@ export function RoomPane({
       <Timeline
         state={state}
         onLoadOlder={loadOlder}
+        onLoadAround={loadAround}
+        onLoadNewer={loadNewer}
+        onJumpToLatest={jumpToLatest}
+        jumpSignal={jumpSignal}
         onPermission={onPermission}
         answering={answer.isPending ? answer.variables?.item : undefined}
         task={{ id: task.id, folder: task.folder }}
@@ -114,7 +131,10 @@ export function RoomPane({
       <Composer
         taskId={task.id}
         agents={state.agents}
-        onSent={(item) => dispatch({ type: "local", item })}
+        onSent={(item) => {
+          dispatch({ type: "local", item });
+          if (state.newer) jumpToLatest();
+        }}
         onDrop={(id) => dispatch({ type: "drop", id })}
         onCancel={() => cancel.mutate()}
         cancelling={cancel.isPending}

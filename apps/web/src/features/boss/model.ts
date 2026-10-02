@@ -97,7 +97,25 @@ export interface SettingsForm {
   commitsAttribution: boolean;
   maxAgentTurns: string;
   reviewRounds: string;
+  /** Turn limits (PRV-96): each on or off, with its value kept while off. */
+  turnLengthOn: boolean;
+  turnLength: string;
+  turnIdleOn: boolean;
+  turnIdle: string;
+  turnToolsOn: boolean;
+  turnTools: string;
 }
+
+/** The fields of the form that are switches. */
+export type SettingsSwitch =
+  | "resumeAuto"
+  | "commitsAttribution"
+  | "turnLengthOn"
+  | "turnIdleOn"
+  | "turnToolsOn";
+
+/** What a limit's field shows while it is off, so turning it on starts from the default. */
+const TURN_DEFAULTS = { length: "2h", idle: "25m", tools: "300" } as const;
 
 const percent = (fraction: number) => String(Math.round(fraction * 100));
 
@@ -114,6 +132,12 @@ export function formFromSettings(s: Settings): SettingsForm {
     commitsAttribution: s.commits.attribution,
     maxAgentTurns: String(s.rooms.max_agent_turns),
     reviewRounds: String(s.rooms.review_rounds),
+    turnLengthOn: s.turns.max_length !== "off",
+    turnLength: s.turns.max_length === "off" ? TURN_DEFAULTS.length : s.turns.max_length,
+    turnIdleOn: s.turns.idle !== "off",
+    turnIdle: s.turns.idle === "off" ? TURN_DEFAULTS.idle : s.turns.idle,
+    turnToolsOn: s.turns.max_tool_calls > 0,
+    turnTools: s.turns.max_tool_calls > 0 ? String(s.turns.max_tool_calls) : TURN_DEFAULTS.tools,
   };
 }
 
@@ -123,6 +147,7 @@ export type SettingsPatch = {
   resume?: { auto?: boolean };
   commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };
+  turns?: { max_length?: string; idle?: string; max_tool_calls?: number };
 };
 
 export type SettingsErrors = Partial<Record<keyof SettingsForm, string>>;
@@ -194,6 +219,22 @@ export function patchFromForm(
   if (rounds.value !== undefined && rounds.value !== current.rooms.review_rounds)
     rooms.review_rounds = rounds.value;
   if (Object.keys(rooms).length > 0) patch.rooms = rooms;
+
+  const turnsPatch: NonNullable<SettingsPatch["turns"]> = {};
+  const duration = /^[1-9][0-9]*(s|m|h)$/;
+  const length = form.turnLength.trim();
+  const quiet = form.turnIdle.trim();
+  if (form.turnLengthOn && !duration.test(length)) errors.turnLength = "Use a number and s, m or h, like 2h";
+  if (form.turnIdleOn && !duration.test(quiet)) errors.turnIdle = "Use a number and s, m or h, like 25m";
+  const tools = form.turnToolsOn ? whole(form.turnTools, 1, 100_000, "Tool calls") : { value: 0 };
+  if (tools.error) errors.turnTools = tools.error;
+  const nextLength = form.turnLengthOn ? length : "off";
+  const nextIdle = form.turnIdleOn ? quiet : "off";
+  if (!errors.turnLength && nextLength !== current.turns.max_length) turnsPatch.max_length = nextLength;
+  if (!errors.turnIdle && nextIdle !== current.turns.idle) turnsPatch.idle = nextIdle;
+  if (tools.value !== undefined && tools.value !== current.turns.max_tool_calls)
+    turnsPatch.max_tool_calls = tools.value;
+  if (Object.keys(turnsPatch).length > 0) patch.turns = turnsPatch;
   return { patch, errors };
 }
 

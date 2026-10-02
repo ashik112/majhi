@@ -3,8 +3,8 @@ import { GitError, git, gitOk } from "./git.ts";
 
 /**
  * Local merges of a task branch into any branch (main, dev, staging, ...), done by the server,
- * which sees the owner's checkout. Never pushes. Git runs with hooks and signing off, so the
- * owner's setup cannot block or prompt. The target branch only ever moves forward: a merge or
+ * which sees the owner's checkout. Never pushes. Git runs with signing off, and `git` keeps hooks,
+ * filters and merge drivers off, so the owner's setup cannot block or prompt. The target branch only ever moves forward: a merge or
  * squash adds a commit on it, a rebase rewrites the task branch and then fast-forwards the target.
  * Any conflict is aborted, so both branches stay exactly as they were.
  */
@@ -51,8 +51,6 @@ function quiet(identity: MergeIdentity): string[] {
     `user.email=${identity.email}`,
     "-c",
     "commit.gpgsign=false",
-    "-c",
-    "core.hooksPath=/dev/null",
   ];
 }
 

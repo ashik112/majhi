@@ -1,8 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { armor, Decrypter } from "age-encryption";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
-import { generateKey, SECRETS_NOT_SET_UP, SecretStore } from "./store.ts";
+import { generateKey, keyFingerprint, SECRETS_NOT_SET_UP, SecretStore } from "./store.ts";
 
 describe("SecretStore", () => {
   let dir: string;
@@ -59,5 +60,36 @@ describe("SecretStore", () => {
     await writeFile(keyFile, `# created by test\n\n${identity}\n`);
     await store.set("a", "value-aaaa");
     expect(await new SecretStore(join(dir, "home"), keyFile).get("a")).toBe("value-aaaa");
+  });
+
+  it("exports the key under a passphrase, as a key file that reads the secrets again", async () => {
+    await store.set("a", "value-aaaa");
+    const exported = await store.exportKey("correct horse battery");
+    expect(exported).toContain("BEGIN AGE ENCRYPTED FILE");
+    expect(exported).not.toContain("AGE-SECRET-KEY-1");
+
+    const wrong = new Decrypter();
+    wrong.addPassphrase("not the passphrase");
+    await expect(wrong.decrypt(armor.decode(exported), "text")).rejects.toThrow();
+
+    const decrypter = new Decrypter();
+    decrypter.addPassphrase("correct horse battery");
+    const restored = join(dir, "restored.key");
+    await writeFile(restored, await decrypter.decrypt(armor.decode(exported), "text"));
+    expect(await new SecretStore(join(dir, "home"), restored).get("a")).toBe("value-aaaa");
+  });
+
+  it("fingerprints the key as the host helper does, and not without one", async () => {
+    // The same line and value as the helper's keychain test.
+    expect(keyFingerprint("AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ")).toBe(
+      "babd60656c326900",
+    );
+    const identity = await generateKey();
+    await writeFile(keyFile, `# created by test\n${identity}\n`);
+    expect(await store.fingerprint()).toBe(keyFingerprint(identity));
+    expect(await new SecretStore(join(dir, "home"), join(dir, "none.key")).fingerprint()).toBeUndefined();
+    await expect(
+      new SecretStore(join(dir, "home"), join(dir, "none.key")).exportKey("long enough here"),
+    ).rejects.toThrow(SECRETS_NOT_SET_UP);
   });
 });

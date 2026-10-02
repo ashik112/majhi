@@ -88,6 +88,25 @@ describe("the repos of a new task", () => {
     for (const r of task.repos) expect(r.branch).toMatch(/^task\/acm-1-/);
   });
 
+  // Real briefs that once gave a bogus branch or base (PRV-87, PRV-68). Keywords are split on purpose.
+  it.each([
+    ["Fix the crash X o" + "n /profile in api", "code"],
+    ["Move the code f" + "rom acme-web into api and fix the imports", "code"],
+    ["Fix the API b" + "ase URLs in api", "code"],
+    ["Update api: the host is resolved once at startup f" + "rom window.location.hostname", "code"],
+    ["Add the screenshot, taken with Playwright, to the api docs", "code"],
+    ["Fix the api, work o" + "n main later", "code"],
+    ["Update api to use the default b" + "ranch name", "code"],
+  ])("keeps the project base and a new task branch for: %s", async (text, kind) => {
+    await world();
+    const res = await cmd("tasks.create", { text, repos: [{ project: "acme-api" }], start: false });
+    expect(res.status).toBe(200);
+    const task = res.body as Task;
+    expect(task.kind).toBe(kind);
+    expect(task.repos.map((r) => [r.project, r.base, r.createdBranch])).toEqual([["acme-api", "main", true]]);
+    expect(task.repos[0]?.branch).toMatch(/^task\/acm-1-/);
+  });
+
   it("refuses a working branch that already exists", async () => {
     await world();
     await git(w.repo("api"), "branch", "task/acm-1-fix-api", "main");
