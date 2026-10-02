@@ -21,6 +21,8 @@ services:
     environment:
       HOST_HOME: ${HOME:?HOME must be set}
       MAJHI_HOME: ${HOME}/.majhi
+      # Where the owner's browser reaches majhi, for OAuth callbacks (Bitbucket sign-in).
+      MAJHI_ORIGIN: http://127.0.0.1:${MAJHI_PORT:-7070}
       SSH_AUTH_SOCK: /run/ssh-agent.sock
       # Agents run in their own runner container per run, never in this one (Phase 2c).
       MAJHI_RUNNER: container

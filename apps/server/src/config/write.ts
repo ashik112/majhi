@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import type {
   AccountConfig,
   ConnectionConfig,
+  GitAppsConfig,
   OrgConfig,
   Price,
   ProjectConfig,
@@ -171,6 +172,19 @@ export function writePrice(file: string, model: string, price: Price | null): Pr
     else doc.setIn(["prices", model], doc.createNode(price));
     const prices: unknown = doc.get("prices", true);
     if (isMap(prices) && prices.items.length === 0) doc.delete("prices");
+  });
+}
+
+/** Replaces `git_apps`, or removes it when nothing is left in it. */
+export function writeGitApps(file: string, apps: GitAppsConfig): Promise<void> {
+  return editConfig(file, (doc) => {
+    const left = Object.fromEntries(
+      Object.entries(apps).filter(
+        ([, value]) => value !== undefined && !(typeof value === "object" && Object.keys(value).length === 0),
+      ),
+    );
+    if (Object.keys(left).length === 0) doc.delete("git_apps");
+    else doc.set("git_apps", doc.createNode(left));
   });
 }
 
