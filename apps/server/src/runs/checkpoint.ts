@@ -181,6 +181,15 @@ async function forkPoint(repo: CheckpointRepo): Promise<string> {
   return out.trim() || "HEAD";
 }
 
+/** Every worktree's HEAD commit, joined, so two readings differ exactly when a repo got a commit. */
+export async function headsOf(repos: readonly CheckpointRepo[]): Promise<string> {
+  const heads: string[] = [];
+  for (const repo of repos) {
+    heads.push((await git(repo.worktree, ["rev-parse", "HEAD"]).catch(() => "")).trim());
+  }
+  return heads.join(" ");
+}
+
 /** `git diff --stat` from the fork point to the working tree, per repo, headed by the project. */
 export async function diffStat(repos: readonly CheckpointRepo[]): Promise<string> {
   const parts: string[] = [];

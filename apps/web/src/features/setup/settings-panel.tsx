@@ -9,6 +9,7 @@ import {
   patchFromForm,
   type SettingsErrors,
   type SettingsForm,
+  type SettingsSwitch,
 } from "@/features/boss/model";
 import { useSaveSettings } from "@/lib/boss-queries";
 
@@ -109,7 +110,7 @@ function NumberField({
 }: {
   label: string;
   hint?: string;
-  name: Exclude<keyof SettingsForm, "resumeAuto" | "commitsAttribution">;
+  name: Exclude<keyof SettingsForm, SettingsSwitch>;
   draft: Draft;
 }) {
   return (
@@ -187,6 +188,64 @@ export function ContextSection({ settings }: { settings: Settings }) {
         </p>
       </Section>
     </>
+  );
+}
+
+/**
+ * Turn limits (PRV-96): a turn over one is cancelled, checkpointed and continued in a fresh session
+ * with a handoff note. Each limit has a switch; its value stays while it is off.
+ */
+export function TurnsSection({ settings }: { settings: Settings }) {
+  const turns = useSettingsDraft(settings, [
+    "turnLengthOn",
+    "turnLength",
+    "turnIdleOn",
+    "turnIdle",
+    "turnToolsOn",
+    "turnTools",
+  ]);
+  const limits = [
+    {
+      on: "turnLengthOn",
+      value: "turnLength",
+      label: "Limit turn length",
+      field: "Longest turn",
+      hint: "Like 2h",
+    },
+    {
+      on: "turnIdleOn",
+      value: "turnIdle",
+      label: "Stop idle turns",
+      field: "Idle after",
+      hint: "No output or tool activity, like 25m",
+    },
+    {
+      on: "turnToolsOn",
+      value: "turnTools",
+      label: "Limit tool calls per turn",
+      field: "Tool calls",
+      hint: "A whole number",
+    },
+  ] as const;
+  return (
+    <Section
+      first
+      title="Turn limits"
+      note="Orgs and agents can override these. They apply from the next turn."
+      draft={turns}
+    >
+      {limits.map((l) => (
+        <div key={l.value} className="grid items-end gap-3 @[480px]:grid-cols-[minmax(0,1fr)_200px]">
+          <Switch label={l.label} checked={turns.form[l.on]} onChange={(v) => turns.set(l.on, v)} />
+          {turns.form[l.on] && <NumberField label={l.field} hint={l.hint} name={l.value} draft={turns} />}
+        </div>
+      ))}
+      <p className="text-sm text-fg-faint text-pretty">
+        A turn over a limit is stopped, its work is committed as a checkpoint, and the agent continues in a
+        fresh session from a handoff note. Waiting on a background process does not count as idle. A task that
+        hits a limit 3 times in a row with no new commits pauses instead.
+      </p>
+    </Section>
   );
 }
 

@@ -3,7 +3,16 @@ export const SETUP_GROUPS = [
   { label: "Setup", sections: ["overview", "roots", "ssh"] },
   {
     label: "How majhi works",
-    sections: ["decisions", "memory", "context", "teams", "approvals", "notifications", "containers"],
+    sections: [
+      "decisions",
+      "memory",
+      "context",
+      "turns",
+      "teams",
+      "approvals",
+      "notifications",
+      "containers",
+    ],
   },
   { label: "More", sections: ["editor", "appearance", "history"] },
 ] as const;
@@ -19,6 +28,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   decisions: "Decisions",
   memory: "Memory",
   context: "Context and limits",
+  turns: "Turns",
   teams: "Teams",
   approvals: "Approvals",
   notifications: "Notifications",
@@ -36,6 +46,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   decisions: "Who answers the small typed questions agents ask, like which model fits a task.",
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
+  turns: "How long one agent turn may run, stay idle or call tools before it continues in a fresh session.",
   teams: "How long agents in a room may pass work around without you.",
   approvals: "What agents may do without asking you, and what they asked for lately.",
   notifications:

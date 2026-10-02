@@ -1,10 +1,11 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
-import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId } from "@majhi/shared";
+import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId, TurnsPatch } from "@majhi/shared";
 import type { GateWrite } from "../connections/gate.ts";
 import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
+import type { FiredLimit, TurnLimits } from "./turn-limits.ts";
 
 /** What the drive loop sends next. */
 export type QueueEntry =
@@ -95,6 +96,22 @@ export class AgentRun {
   accountKind: { tool: ToolId; auth: AuthMode } | undefined;
   /** The agent's own `context.compact_at`, read at session start. */
   compactAt: number | undefined;
+  /** The agent's own `turns` limits, read at session start (PRV-96). */
+  agentTurns: TurnsPatch | undefined;
+  /** The turn limits in force for the current turn, read before it is sent. */
+  turnLimits: TurnLimits | undefined;
+  /** When the current turn was sent. */
+  turnStartedAt = 0;
+  /** Tool calls of the current turn, by id. */
+  turnTools = new Set<string>();
+  /** The last time the current turn was seen waiting on a `wait` process: that counts as activity. */
+  waitSeenAt = 0;
+  /** The worktrees' HEADs when the current turn was sent, to tell whether it committed anything. */
+  turnHeads: string | undefined;
+  /** A turn limit cut the current turn: the loop hands off or pauses once it ends. */
+  limitHit: FiredLimit | undefined;
+  /** Checks the current turn against its limits. */
+  limitTimer: NodeJS.Timeout | undefined;
   /** Turns in the current session. */
   turns = 0;
   /** The last usage the agent reported in this session. */
@@ -172,7 +189,9 @@ export class AgentRun {
   clearTimers(): void {
     if (this.idleTimer !== undefined) clearTimeout(this.idleTimer);
     if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
+    if (this.limitTimer !== undefined) clearInterval(this.limitTimer);
     this.idleTimer = undefined;
     this.retryTimer = undefined;
+    this.limitTimer = undefined;
   }
 }

@@ -38,7 +38,7 @@ import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } fr
 import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
 import { isSetupSection, SECTION_ABOUT, SECTION_TITLE, SETUP_GROUPS, type SetupSection } from "./sections";
-import { ContextSection, TeamsSection } from "./settings-panel";
+import { ContextSection, TeamsSection, TurnsSection } from "./settings-panel";
 import {
   OverviewSection,
   PageButton,
@@ -165,6 +165,7 @@ export function SetupView() {
     memory: s && (s.memory.housekeeper ? `Housekeeper @${s.memory.housekeeper}` : "Housekeeper: the boss"),
     context:
       s && `Compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
+    turns: s && turnsStatus(s.turns),
     teams: s && `${s.rooms.review_rounds} review rounds`,
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
@@ -239,6 +240,9 @@ export function SetupView() {
           )}
           {section === "context" && (
             <WithSettings settings={settings}>{(data) => <ContextSection settings={data} />}</WithSettings>
+          )}
+          {section === "turns" && (
+            <WithSettings settings={settings}>{(data) => <TurnsSection settings={data} />}</WithSettings>
           )}
           {section === "teams" && (
             <WithSettings settings={settings}>{(data) => <TeamsSection settings={data} />}</WithSettings>
@@ -338,4 +342,14 @@ function SectionRow({
       )}
     </button>
   );
+}
+
+/** "2h turns, idle 25m", or "No limits". */
+function turnsStatus(t: Settings["turns"]): string {
+  const parts = [
+    ...(t.max_length === "off" ? [] : [`${t.max_length} turns`]),
+    ...(t.idle === "off" ? [] : [`idle ${t.idle}`]),
+    ...(t.max_tool_calls > 0 ? [`${t.max_tool_calls} tool calls`] : []),
+  ];
+  return parts.length === 0 ? "No limits" : parts.join(", ");
 }
