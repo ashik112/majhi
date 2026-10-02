@@ -3,6 +3,7 @@ import { IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
+import { DaySchema } from "./usage.ts";
 
 /**
  * Projects, tasks, rooms and runs (SPEC 2, 3.1, 5.1, 5.4, 5.4a, 5.15).
@@ -100,6 +101,10 @@ export type TaskKind = z.infer<typeof TaskKindSchema>;
 
 export const TaskStatusSchema = z.enum(["inbox", "ready", "running", "paused", "review", "mr", "done"]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+
+/** The owner's priority for a task (PRV-74). Absent means normal. Autonomous mode takes high first. */
+export const TaskPrioritySchema = z.enum(["high", "normal", "low"]);
+export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
 
 /**
  * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in
@@ -236,6 +241,10 @@ export const TaskSchema = z.object({
   org: IdSchema.optional(),
   status: TaskStatusSchema,
   pausedReason: PausedReasonSchema.optional(),
+  /** The owner's priority. Absent: normal. */
+  priority: TaskPrioritySchema.optional(),
+  /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
+  due: DaySchema.optional(),
   /** Absolute path of the task folder. */
   folder: z.string(),
   repos: z.array(TaskRepoSchema),
@@ -338,10 +347,23 @@ export const CHAT_BRIEF = "Chat";
 export const BOSS_CHAT_BRIEF = "Boss chat";
 /** What an untitled chat is called until the owner's first message names it. */
 export const DEFAULT_CHAT_TITLES: readonly string[] = [CHAT_BRIEF, BOSS_CHAT_BRIEF];
+/**
+ * The brief of the boss's autonomy chat (PRV-74): where autonomous mode wakes the boss and the owner
+ * guides it. A chat like the others, but never the owner's Cmd J chat.
+ */
+export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
 
 /** True for a chat with an agent: an ongoing conversation, not a piece of work to review. */
 export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
-  return task.kind === "chat" && (task.brief === CHAT_BRIEF || task.brief === BOSS_CHAT_BRIEF);
+  return (
+    task.kind === "chat" &&
+    (task.brief === CHAT_BRIEF || task.brief === BOSS_CHAT_BRIEF || task.brief === AUTONOMY_CHAT_BRIEF)
+  );
+}
+
+/** True for the boss's autonomy chat. */
+export function isAutonomyChat(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && task.brief === AUTONOMY_CHAT_BRIEF;
 }
 
 /** A chat title from the owner's first message: its first line, trimmed and cut to fit. */
@@ -362,10 +384,14 @@ export const TaskSummarySchema = TaskSchema.pick({
   org: true,
   status: true,
   pausedReason: true,
+  priority: true,
+  due: true,
   team: true,
   mode: true,
   updatedAt: true,
 }).extend({
+  /** Autonomous mode runs this task: it created, started or adopted it (PRV-74). */
+  autonomous: z.boolean().optional(),
   repos: z.array(z.object({ project: IdSchema, branch: z.string() })),
   /** Agents working right now. */
   working: z.array(IdSchema),
@@ -629,6 +655,11 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["pending", "applied", "rejected", "failed", "undone"]),
     /** Set when a saved "always allow" rule ran this without asking: the rule's scope. */
     rule: z.enum(["task", "org"]).optional(),
+    /**
+     * Set when autonomous mode decided the card (PRV-74): `approved` ran it within its limits,
+     * `left` kept it pending for the owner. `why` is one line: the limit that allowed or held it.
+     */
+    autonomy: z.object({ decision: z.enum(["approved", "left"]), why: z.string() }).optional(),
     /** Set when it ran with no owner click: the policy or a rule let it. Older cards lack it. */
     alone: z.literal(true).optional(),
     /** Config history commit made by the command, for Undo. */

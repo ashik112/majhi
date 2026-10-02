@@ -30,6 +30,10 @@ export const tasks = sqliteTable("tasks", {
   connections: text("connections").notNull().default("[]"),
   /** JSON PendingShip: the ship majhi runs once the lead resolves its conflicts. NULL when none. */
   pendingShip: text("pending_ship"),
+  /** The owner's priority (`high`, `low`); NULL is normal (PRV-74). */
+  priority: text("priority"),
+  /** The owner's deadline, `YYYY-MM-DD`; NULL for none. */
+  due: text("due"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -189,3 +193,12 @@ export const taskPlans = sqliteTable(
   },
   (t) => [index("task_plans_task_version").on(t.task, t.version), index("task_plans_org_at").on(t.org, t.at)],
 );
+
+/** The tasks autonomous mode runs (PRV-74). The rest of its tables are read in `autonomy/repo.ts`. */
+export const autonomyTasks = sqliteTable("autonomy_tasks", {
+  task: text("task").primaryKey(),
+  since: text("since").notNull(),
+  held: text("held"),
+  heldScope: text("held_scope"),
+  resumedAt: text("resumed_at"),
+});

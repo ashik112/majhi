@@ -2,6 +2,7 @@ import {
   type Attachment,
   type CoordinationMode,
   CoordinationModeSchema,
+  DaySchema,
   IdSchema,
   isOwnerChat,
   type PausedReason,
@@ -14,6 +15,8 @@ import {
   type TaskId,
   TaskIdSchema,
   TaskLinkTypeSchema,
+  type TaskPriority,
+  TaskPrioritySchema,
   TaskSchema,
   type TaskStatus,
   type TaskSummary,
@@ -25,7 +28,7 @@ import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
 import type { Db } from "./db.ts";
-import { attachments, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
+import { attachments, autonomyTasks, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
 
 const TeamSchema = z.array(z.string());
 const OverridesSchema = z.record(z.string(), TeamOverrideSchema);
@@ -104,6 +107,8 @@ export class TaskRepo {
           readMounts: JSON.stringify(ReadMountsSchema.parse(task.readMounts ?? [])),
           connections: JSON.stringify(ConnectionIdsSchema.parse(task.connections ?? [])),
           pendingShip: task.pendingShip === undefined ? null : JSON.stringify(task.pendingShip),
+          priority: task.priority ?? null,
+          due: task.due ?? null,
           createdAt: task.createdAt,
           updatedAt: task.updatedAt,
         })
@@ -173,6 +178,7 @@ export class TaskRepo {
       ...(row.org === null ? {} : { org: row.org }),
       status: row.status,
       ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
+      ...priorityAndDue(row),
       folder: row.folder,
       repos: repos.map((r) => ({
         project: r.project,
@@ -234,6 +240,13 @@ export class TaskRepo {
     const linkRows = this.allLinks();
     const statuses = this.statuses();
     const unmerged = this.unmergedMrs();
+    const autonomous = new Set(
+      this.db
+        .select({ task: autonomyTasks.task })
+        .from(autonomyTasks)
+        .all()
+        .map((r) => r.task),
+    );
     const linksBy = new Map<string, LinkRow[]>();
     const childStatuses = new Map<string, TaskStatus[]>();
     for (const l of linkRows) {
@@ -272,6 +285,8 @@ export class TaskRepo {
       if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
       if (row.pausedReason !== null)
         summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
+      Object.assign(summary, priorityAndDue(row));
+      if (autonomous.has(row.id)) summary.autonomous = true;
       return summary;
     });
   }
@@ -412,6 +427,19 @@ export class TaskRepo {
       .set({ status, pausedReason: pausedReason ?? null, updatedAt: at })
       .where(eq(tasks.id, id))
       .run();
+  }
+
+  /** The owner's priority and deadline (PRV-74). Null clears one; undefined leaves it. */
+  setPlanning(
+    id: string,
+    patch: { priority?: TaskPriority | null | undefined; due?: string | null | undefined },
+    at: string,
+  ): void {
+    const set: { priority?: string | null; due?: string | null; updatedAt: string } = { updatedAt: at };
+    // Normal is the default, so it is stored as nothing.
+    if (patch.priority !== undefined) set.priority = patch.priority === "normal" ? null : patch.priority;
+    if (patch.due !== undefined) set.due = patch.due;
+    this.db.update(tasks).set(set).where(eq(tasks.id, id)).run();
   }
 
   /** Replaces the title and brief text of a task. */
@@ -662,6 +690,19 @@ export class TaskRepo {
       .all()
       .map((r) => r.id);
   }
+}
+
+/** A row's priority and due date, left out when unset or no longer valid. */
+function priorityAndDue(row: { priority: string | null; due: string | null }): {
+  priority?: TaskPriority;
+  due?: string;
+} {
+  const priority = TaskPrioritySchema.safeParse(row.priority);
+  const due = DaySchema.safeParse(row.due);
+  return {
+    ...(priority.success && priority.data !== "normal" ? { priority: priority.data } : {}),
+    ...(due.success ? { due: due.data } : {}),
+  };
 }
 
 function toLink(l: LinkRow) {

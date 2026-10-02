@@ -54,6 +54,8 @@ export const queryKeys = {
   triggers: ["triggers"],
   /** Every `connections.*` read: the list, one connection and the types. */
   connections: ["connections"],
+  /** Every `autonomy.*` read: the status and the feed. */
+  autonomy: ["autonomy"],
 } as const;
 
 export function useConfig() {

@@ -172,6 +172,11 @@ const automationsRoute = createRoute({
   path: PAGE_PATH.automations,
   component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
 });
+const autonomousRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.autonomous,
+  component: lazyRouteComponent(() => import("@/pages/autonomous-page"), "AutonomousPage"),
+});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -234,6 +239,7 @@ export const router = createRouter({
     skillsRoute,
     memoryRoute,
     automationsRoute,
+    autonomousRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

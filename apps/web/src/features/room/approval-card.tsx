@@ -1,6 +1,6 @@
 import { isDestructiveCommand, type RoomItem } from "@majhi/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
+import { Bot, ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -95,6 +95,12 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
             {item.reason}
           </p>
         )}
+        {item.autonomy?.decision === "left" && (
+          <p className="flex items-start gap-1.5 pl-6 text-sm text-amber text-pretty">
+            <Bot aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            <span className="min-w-0">Autonomous mode left this for you: {item.autonomy.why}</span>
+          </p>
+        )}
         <Details input={item.input} command={item.command} onToggle={setOpen} />
         <div className={cn(DOCK_ACTIONS, "flex gap-2 pl-[34px]")}>
           <Button
@@ -143,12 +149,25 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   // Older cards carry the command's whole description as their summary; the line names it only.
   const cut = item.summary.indexOf(". ");
   const short = cut === -1 ? item.summary : item.summary.slice(0, cut);
+  const label =
+    item.state === "applied" && item.autonomy?.decision === "approved"
+      ? "Approved by autonomous mode"
+      : item.rule !== undefined && item.state === "applied"
+        ? AUTO_LABEL[item.rule]
+        : outcome;
   return (
     <div className="flex flex-col pl-[34px]">
       <div className="flex min-h-6 min-w-0 items-center gap-1.5 text-sm text-fg-faint">
-        <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate" title={item.summary}>
-          {item.rule !== undefined && item.state === "applied" ? AUTO_LABEL[item.rule] : outcome}: {short}
+        {item.autonomy?.decision === "approved" ? (
+          <Bot aria-hidden="true" className="size-3.5 shrink-0" />
+        ) : (
+          <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
+        )}
+        <span
+          className="min-w-0 truncate"
+          title={item.autonomy ? `${item.summary}. ${item.autonomy.why}` : item.summary}
+        >
+          {label}: {short}
         </span>
         <button
           type="button"
@@ -185,6 +204,12 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
         <div className="mt-1 mb-1 ml-5 flex max-w-[72ch] flex-col gap-1.5 text-xs text-fg-faint">
           {short !== item.summary && <p className="text-sm text-fg-muted text-pretty">{item.summary}</p>}
           {item.reason && <p className="text-sm text-fg-muted text-pretty">{item.reason}</p>}
+          {item.autonomy && (
+            <p className="text-sm text-fg-muted text-pretty">
+              Autonomous mode {item.autonomy.decision === "approved" ? "approved it" : "left it for you"}:{" "}
+              {item.autonomy.why}
+            </p>
+          )}
           <p>
             Input <span className="font-mono">{item.command}</span>
           </p>

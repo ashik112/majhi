@@ -358,6 +358,7 @@ export const UsageWindowSchema = z.object({
   usedPct: z.number().min(0),
   resetsAt: z.string().optional(),
 });
+export type UsageWindow = z.infer<typeof UsageWindowSchema>;
 
 export const ModelUsageWindowSchema = UsageWindowSchema.extend({
   /** Model name as the tool shows it, like "Opus" or "Sonnet". */
@@ -454,6 +455,7 @@ export const EventTopicSchema = z.enum([
   "triggers",
   "budgets",
   "connections",
+  "autonomy",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 export const ServerEventSchema = z.discriminatedUnion("type", [

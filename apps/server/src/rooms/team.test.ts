@@ -87,6 +87,14 @@ async function until(check: () => boolean | Promise<boolean>, what: string): Pro
   throw new Error(`Timed out waiting for ${what}`);
 }
 
+/** Nobody works and nothing waits in any queue: no further agent turn is scheduled. */
+async function settled(task: string, agents: readonly string[]): Promise<void> {
+  const { runs, store } = w.h.majhi.services;
+  await runs.idle(task);
+  expect(runs.working(task)).toEqual([]);
+  for (const a of agents) expect(store.room.queuedFor(task, a)).toEqual([]);
+}
+
 const status = async (task: string) => (await w.h.cmd("tasks.get", { id: task })).body.status as string;
 
 describe("lead, builder and reviewer on different tools", () => {
@@ -364,13 +372,6 @@ describe("team editing", () => {
 });
 
 describe("idle messages", () => {
-  /** Nobody works and nothing waits in any queue: no further agent turn is scheduled. */
-  const settled = async (task: string, agents: readonly string[]) => {
-    const { runs, store } = w.h.majhi.services;
-    await runs.idle(task);
-    expect(runs.working(task)).toEqual([]);
-    for (const a of agents) expect(store.room.queuedFor(task, a)).toEqual([]);
-  };
 
   it("wake no one when two agents post without a mention", async () => {
     const { h, prompts } = await teamWorld({
@@ -449,6 +450,39 @@ describe("idle messages", () => {
 
     expect((await h.cmd("team.add", { task: "ACM-1", agent: "acme-reviewer" })).status).toBe(200);
     expect(h.majhi.services.store.tasks.roomState("ACM-1").removed).toEqual([]);
+  });
+});
+
+describe("the mention tool", () => {
+  it("hands work on once: the same turn's closing message does not wake that teammate again", async () => {
+    const { h, prompts } = await teamWorld(
+      {
+        "acme-lead": [
+          async () => {
+            await h.majhi.services.coordinator.mention(
+              { task: "ACM-1", agent: "acme-lead" },
+              "acme-builder",
+              "Build the health endpoint.",
+            );
+            return "Handed the build on. @acme-builder: please build the health endpoint.";
+          },
+        ],
+        "acme-builder": [say("Built it.")],
+      },
+      { reviewer: false },
+    );
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead", "acme-builder"],
+      start: true,
+    });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder turn");
+    await settled("ACM-1", ["acme-lead", "acme-builder"]);
+    expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (tool)"]);
+    expect(prompts["acme-builder"]).toHaveLength(1);
+    // Nothing was left for the owner to answer: the lead handed the work on.
+    expect((await items("ACM-1")).filter((i) => i.type === "owner-question")).toHaveLength(0);
   });
 });
 

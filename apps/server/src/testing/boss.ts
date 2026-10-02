@@ -20,8 +20,8 @@ export interface BossWorld extends World {
  * A world with a root agent that is the boss, its chat task, a real listening server (so agent
  * processes can reach `/mcp`), and sessions that run the fake ACP adapter.
  */
-export async function bossWorld(options: { real?: boolean } = {}): Promise<BossWorld> {
-  const w = await taskWorld();
+export async function bossWorld(options: { real?: boolean; runClock?: () => Date } = {}): Promise<BossWorld> {
+  const w = await taskWorld(options.runClock === undefined ? {} : { runClock: options.runClock });
   const { h } = w;
   if (options.real !== false) {
     h.env.runtime.adapters = { claude: fakeAdapter("claude", { signedIn: true }) };

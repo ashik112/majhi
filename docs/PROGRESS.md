@@ -1,5 +1,95 @@
 # Progress
 
+## PRV-74: Autonomous mode (built)
+
+**Status.** Built on `task/prv-74-autonomous-mode`, from `main` (`1b001e74`). The contract came first, then the web, the server core and the boss driver, then the review fixes, all in this one worktree. The child task PRV-91 holds no code. The owner flips one switch and leaves; the boss runs the desk inside the caps, the account floors and the hard limits, and logs every decision with one line why.
+
+### What works
+
+**Server** (`apps/server/src/autonomy/`)
+- **The mode.** Off, on, paused and stopping, kept in SQLite (migration 112) across restarts. Turning on is refused without a boss. Pause holds autonomous runs at their next turn boundary, and Resume restarts exactly the tasks it held. Stop gracefully lets the current turns finish, stops what would wake again, then turns off. Stop now cancels the boss's turn first, then stops every autonomous run.
+- **The autonomy chat.** A chat task of the boss with the brief `Autonomous mode`, made on the first start and reused. It is not the Cmd J chat. Its sessions start with a short preamble on how to run the desk.
+- **Autonomous tasks.** Tasks the boss creates, splits or starts from that chat, and tasks agents of autonomous tasks create, join for good. `tasks.list` marks them `autonomous`, with the owner's `priority` and `due`.
+- **Self-approval** (`policy.ts`). While the mode is on, a call from the boss or an agent of an autonomous task that would wait for the owner is approved within the table and the limits (card marked approved, audit row `by: autonomy`), or left for the owner with one line why.
+- **Hard limits** (`limits.ts`). In every mode, off included: no force push, no push with a merge, no `deleteAfter`, no secrets in any text or passed by value, nothing of one org (secrets, accounts, git accounts, logins, SSH aliases, connections) passed to another, and no org agent let work in another org.
+- **Spend and holds** (`spend.ts`). Today's spend of autonomous tasks and the chat in the owner's zone, against the day cap and each org's cap. Account floors keep new work off an account until its window resets. Holds lift by themselves.
+- **The run gate.** `held` in `RunDeps` answers `owner` while paused or stopping and `limit` under a cap, between turns only.
+- **The driver** (`driver.ts`, `digest.ts`). It wakes the boss in its chat when the mode turns on or resumes, a task reaches review, an MR or done, a run ends idle, a card comes in, a hold changes, and hourly while nothing runs. Events are batched for 20 s, one tick waits at a time, never mid-turn. The tick message stays under about 1,500 tokens.
+- **The boss's tools.** `majhi_autonomy_plan` (the queue), `majhi_autonomy_note` (decisions that are not calls, `unsure` for the summary) and `majhi_autonomy_answer` (cards of autonomous tasks, through the owner's own paths). There is no card for them, and only the boss in its chat may use them.
+- **Guidance.** `autonomy.guide` reaches the boss as the owner's message in its chat; with `keep` it also becomes a standing instruction (a config commit). `autonomy.forget` removes one.
+- **The daily summary** (`summary.ts`). Made once a day at `summary_at`, even across restarts, and told to the owner under the notify kind `autonomy`.
+- **Settings.** The `autonomy` section of `majhi.yaml`: day cap ($20 by default, always set), per-org cap, push and merge (both off by default), floors (5-hour 10%, weekly 5%), summary time and zone, instructions. `autonomy.configure` writes only what changed.
+
+**Web** (`apps/web/src/features/autonomy/`)
+- **Sidebar.** An Autonomous row under the Boss button, with a lamp, the mode in words and a switch. On asks first, showing the day cap, the floors and each org's cap, push and merge. Off offers Pause or Resume, Stop gracefully and Stop now, which asks first.
+- **The strip.** While the mode is not off, a strip that cannot be closed sits above the attention banner on every page. It shows the mode, what runs first (a task, else the boss), today's spend against the day cap, Pause or Resume, Stop and Open, and a link to a new daily summary.
+- **The Autonomous page** (`/autonomous`, also in the palette). It has:
+  - the mode, since when and why, and the controls;
+  - the daily summary, Now, the Queue and Waiting for you;
+  - the live feed with a Decisions view and load more;
+  - the chat box (Ask, Add as instruction) with the boss's latest replies, and the standing instructions with remove;
+  - Spend (day and org bars, holds, each account's windows with the floor marked) and the Limits form.
+  Every task id opens its room.
+- **Cards and tasks.** Approval cards say when autonomous mode approved them or left them for the owner. Board cards show an Auto mark and priority and due chips. The task header edits priority and due.
+
+### How to try it
+
+1. Make sure there is a boss (Agents, or the last onboarding step).
+2. Give tasks a priority and a due date in their header if some matter more. The boss takes high first, then the nearest due date.
+3. In the sidebar, flip the Autonomous switch. Check the day cap, the floors and each org's push and merge in the confirm, then click Turn on.
+4. The strip shows on every page. Click Open, or Autonomous in the sidebar.
+5. Within about 20 s the feed shows "Woke the boss". Its plan shows under Queue, and its decisions show in the feed with their reasons.
+6. Under Limits, set the caps, push and merge per org, the floors and the summary time, then click Save.
+7. In Guide the boss, Ask sends a message. Add as instruction also keeps it in the list below.
+8. Pause, Resume, Stop gracefully or Stop now, from the page header, the strip or the sidebar switch.
+
+### Verified
+
+- **Typecheck:** all five packages.
+- **Tests:** the 6 files under `apps/server/src/autonomy`, 43 tests, all passing on 2026-10-02. They use the fake ACP agent and spend no tokens.
+  - `policy.test.ts`: the table, holds on work that starts, and every hard limit (cross-org secrets, accounts, `where`, git accounts, logins and SSH aliases, connections, secrets in text and by value, force push, push with a merge, `deleteAfter`), and which org a call acts in.
+  - `approvals.test.ts`: `AdminService` with the fake agent. A pending change is approved with its audit row, a destructive call is left, a push follows the org setting, and a hard limit is refused in every mode. It also covers agents of autonomous tasks, other agents in the chat, caps on rule, `auto` and lead starts, and the boss's tools and answers.
+  - `service.test.ts`: the state machine. Refused without a boss; turn on, adopt and pause after the turn; the owner resuming one held task; Stop now; Stop gracefully; a restart in `on` and in `stopping`.
+  - `spend.test.ts`: the day in a zone (with a clock change), per-org sums, a cap reached and lifted, account floors, and spend counted from when a task joined.
+  - `driver.test.ts`: the debounce, no tick while the boss is busy, ticks only while on and not under the day cap, the digest's size and the backlog order.
+  - `summary.test.ts`: what the summary says, and one summary per day across restarts.
+- **Browser check** (2026-10-02). Against the real server and web from the worktree, with a throwaway home: org Acme, project api, and the boss on a fake agent account, with no real account. All 16 steps passed:
+  - turn on from the sidebar switch through the confirm;
+  - the strip on the board and on Agents;
+  - the mode change and the first tick in the feed, and Now, Queue and Spend;
+  - a day cap saved and still there after a reload;
+  - one Ask and one instruction, which is listed;
+  - Pause, Resume and Stop gracefully, ending Off with the whole run in the feed.
+
+  It found three web problems, all fixed:
+  - the strip said nothing runs while the boss worked;
+  - a feed row repeated its line as its reason;
+  - the boss's replies had their last line faded.
+
+### Left and known issues
+
+- **Automations.** While the mode is on, schedules and triggers that start tasks or run commands, and every automation resume and run now, are left for the owner. Tasks an automation starts are not autonomous, so they would run outside the caps, the run gate and Stop. The follow-up is to track them as autonomous; then the boss can create them too.
+- **No end-to-end day.** No test runs a whole autonomous day with the fake agent: the boss picking a task, a builder shipping it, the summary next morning. The parts are covered by the tests above.
+- **The fake boss never plans.** In a dry run with the fake agent, the boss never calls its own tools, so the Queue stays empty and no decision rows appear. Those tools are covered by `approvals.test.ts`.
+- **`scroll-fade`.** It dims the bottom 22 px of a box that does not overflow, because a scroll timeline with nothing to scroll leaves the fade at its start value. The reply boxes no longer use it; other boxes that rarely overflow still show it.
+
+### Rules that hold
+
+1. **Mode.** Only the owner starts, pauses, stops, configures, guides or removes an instruction: those six commands are kept from agents. Every change writes a `mode` event and a quiet line in the autonomy chat.
+2. **Autonomous tasks.** They stay autonomous after they are done and after the mode is off, for history and for the hard limits.
+3. **Self-approval.**
+   - A plain change is approved.
+   - These are left for the owner: destructive calls; projects, workspaces and branch changes; the owner's settings; sensitive org fields; outbound calls; model prices, container images and the decision model.
+   - Push and merge follow each org's setting.
+   - Work that starts is approved only when no hold covers it.
+   - An agent's `ownerAsked` counts for nothing.
+4. **Hard limits** come before any rule or `auto` mode, for the boss and every agent of an autonomous task. A refusal writes a `refused` event and goes into the summary.
+5. **Holds.** A cap hold pauses autonomous runs of that scope at their next turn. An account hold only keeps new work off the account. When the day ends or the owner raises the cap, majhi resumes the tasks it paused for that cap.
+6. **The driver** never ticks while the mode is off, paused or stopping, or under the day cap. The owner's guidance still reaches the boss.
+7. **The web** reads `autonomy.status` and the feed. The `autonomy` topic refetches them on every change, and the status is also read every 30 s while the mode is not off.
+
+Only the owner can check a real boss account working overnight with real spend.
+
 ## Phase 10 plan (PRV-25)
 
 **Status.** Parts A, B and C are built. The Done when is covered by `apps/server/src/connections/done-when.test.ts` with the fake ACP agent. Only the owner can check a real cluster with a viewer kubeconfig, New Relic's remote MCP server with an API key, and a runner image build (kubectl and the browser MCP servers).

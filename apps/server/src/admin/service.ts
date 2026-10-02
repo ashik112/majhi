@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   type AllowRule,
+  AUTONOMY_BOSS_COMMANDS,
+  type AutonomyMode,
   type CommandMeta,
   type CommandName,
   commands,
@@ -10,6 +12,7 @@ import {
   type TaskId,
 } from "@majhi/shared";
 import { auditDetail } from "../audit.ts";
+import type { AutonomyVerdict } from "../autonomy/policy.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -30,6 +33,9 @@ export interface ToolResult {
 export const WAITING_TEXT =
   "Waiting for the owner to approve in the room. You will get a message with the decision.";
 
+/** Autonomous mode's tools for the boss (PRV-74, rule 9). */
+const BOSS_TOOLS: ReadonlySet<string> = new Set(AUTONOMY_BOSS_COMMANDS);
+
 /** How much of a command's output an agent gets back. */
 const RESULT_MAX = 20_000;
 /** How much of it a card shows. */
@@ -47,6 +53,62 @@ export interface AdminDeps {
 }
 
 /**
+ * What autonomous mode (PRV-74) sees and decides of agents' calls: whether a caller acts for it,
+ * the hard limits, the self-approval of cards within its limits, and the feed.
+ */
+export interface AutonomyGate {
+  callerKind(caller: AdminCaller): Promise<"boss" | "agent" | undefined>;
+  mode(): AutonomyMode;
+  refusal(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    reason: string,
+  ): Promise<string | undefined>;
+  blockedStart(command: string, input: Record<string, unknown>): string | undefined;
+  heldStart(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    raw: Record<string, unknown>,
+  ): Promise<string | undefined>;
+  decide(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    raw: Record<string, unknown>,
+    ask: { confirm: boolean; reason: string },
+  ): Promise<AutonomyVerdict>;
+  ran(caller: AdminCaller, command: CommandName, input: unknown, reason: string, done: Outcome): void;
+  approved(
+    caller: AdminCaller,
+    command: CommandName,
+    input: unknown,
+    why: string,
+    reason: string,
+    item: string,
+    done: Outcome,
+  ): void;
+  left(
+    caller: AdminCaller,
+    command: CommandName,
+    input: unknown,
+    why: string,
+    reason: string,
+    item: string,
+  ): void;
+  adopt(caller: "boss" | "agent", command: CommandName, output: unknown): void;
+  bossTool(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    reason: string,
+  ): Promise<ToolResult>;
+}
+
+type Outcome = { ok: boolean; error?: string | undefined };
+
+/**
  * What the boss (or any agent with majhi tools) can do: runs its tool calls through the command
  * dispatcher under the approval policy, posts an approval card for every change, and carries out
  * the owner's decision later (SPEC 5.16).
@@ -57,12 +119,18 @@ export class AdminService {
   private readonly pending = new Map<string, unknown>();
   private readonly deciding = new Set<string>();
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
+  private autonomy: AutonomyGate | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
   /** The dispatcher is built after the handlers, which need this service. */
   bind(dispatch: Dispatch): void {
     this.dispatch = dispatch;
+  }
+
+  /** Autonomous mode is built after this service, which it decides for. */
+  useAutonomy(gate: AutonomyGate): void {
+    this.autonomy = gate;
   }
 
   // ---------------------------------------------------------------------------
@@ -81,11 +149,19 @@ export class AdminService {
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
+      const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
+      // The boss's own tools in autonomous mode: no policy and no card, like a secret request.
+      if (BOSS_TOOLS.has(spec.command)) {
+        return (
+          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ??
+          error("Autonomous mode is off.")
+        );
+      }
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
         ownerAsked: ownerAsked === true,
-        reason: typeof reason === "string" ? reason.trim().slice(0, 500) : "",
+        reason: why,
         confirm: options.confirm === true,
       });
     } catch (err) {
@@ -125,6 +201,15 @@ export class AdminService {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for ${command}.\n${details.join("\n")}`);
     }
+    const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(caller);
+    if (auto !== undefined && this.autonomy !== undefined) {
+      const parsed = checked.data as Record<string, unknown>;
+      const refused =
+        (await this.autonomy.refusal(caller, command, input, ask.reason)) ??
+        this.autonomy.blockedStart(command, parsed) ??
+        (await this.autonomy.heldStart(caller, command, parsed, input));
+      if (refused !== undefined) return error(refused);
+    }
     const done = await this.execute(command, input, metaFor(caller.agent, ask.reason, caller.task));
     const held = !done.ok && ask.accept?.(done.error) === true;
     this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
@@ -152,11 +237,23 @@ export class AdminService {
     }
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
+    const parsed = checked.data as Record<string, unknown>;
+    // The boss in its autonomy chat, or an agent of an autonomous task: the hard limits hold in
+    // every mode, whatever a rule or an `auto` mode says (PRV-74).
+    const autonomy = this.autonomy;
+    const auto = autonomy === undefined ? undefined : await autonomy.callerKind(caller);
+    if (auto !== undefined && autonomy !== undefined) {
+      const refused =
+        (await autonomy.refusal(caller, command, input, ask.reason)) ??
+        autonomy.blockedStart(command, parsed);
+      if (refused !== undefined) return error(refused);
+    }
     const { policy } = await this.deps.config.settings();
     const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
-    // An agent's word that the owner asked counts only for low-risk changes.
-    const ownerAsked = ask.ownerAsked && !this.alwaysAsks(command, checked.data);
+    // An agent's word that the owner asked counts only for low-risk changes, and for nothing in
+    // autonomous mode: the owner is away.
+    const ownerAsked = auto === undefined && ask.ownerAsked && !this.alwaysAsks(command, checked.data);
     // A saved rule turns a card that would wait into a run. It is looked up only then.
     const decision = decideMode(mode, ownerAsked);
     const rule =
@@ -169,6 +266,12 @@ export class AdminService {
             org: this.deps.store.tasks.get(caller.task)?.org,
           });
     if (decision === "run" || rule !== undefined) {
+      // The owner's rule or `auto` mode runs it, but no cap or floor of autonomous mode is skipped.
+      const held =
+        auto === undefined || autonomy === undefined
+          ? undefined
+          : await autonomy.heldStart(caller, command, parsed, input);
+      if (held !== undefined) return error(held);
       const done = await this.execute(command, input, meta);
       if (def.risk !== "read" && rule !== undefined) {
         this.log(
@@ -193,7 +296,15 @@ export class AdminService {
           result: done.ok ? lineOf(done.output) : done.error,
         });
       }
+      if (auto !== undefined && autonomy !== undefined) {
+        autonomy.ran(caller, command, input, ask.reason, done);
+        if (done.ok) autonomy.adopt(auto, command, done.output);
+      }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+    }
+    // The owner is away: autonomous mode decides what would wait for them, within its limits.
+    if (auto !== undefined && autonomy !== undefined && autonomy.mode() === "on") {
+      return this.decideAutonomously(caller, auto, command, input, parsed, meta, ask);
     }
     const id = `approval:${randomUUID()}`;
     this.pending.set(id, input);
@@ -202,6 +313,62 @@ export class AdminService {
       state: "pending",
     });
     return { text: WAITING_TEXT, isError: false };
+  }
+
+  /**
+   * Autonomous mode's verdict on a call that would wait (PRV-74, rule 4). Approved: it runs, its card
+   * is posted applied with the one-line why, and the audit says `autonomy`. Left: the card waits for
+   * the owner with the why, and the caller hears it was left.
+   */
+  private async decideAutonomously(
+    caller: AdminCaller,
+    auto: "boss" | "agent",
+    command: CommandName,
+    input: Record<string, unknown>,
+    parsed: Record<string, unknown>,
+    meta: CommandMeta,
+    ask: { reason: string; confirm?: boolean },
+  ): Promise<ToolResult> {
+    const autonomy = this.autonomy;
+    if (autonomy === undefined) return error("Autonomous mode is not available.");
+    const verdict = await autonomy.decide(caller, command, parsed, input, {
+      confirm: ask.confirm === true,
+      reason: ask.reason,
+    });
+    if (verdict.decision === "refused") return error(verdict.why);
+    const id = `approval:${randomUUID()}`;
+    const marker = { decision: verdict.decision, why: verdict.why };
+    if (verdict.decision === "left") {
+      this.pending.set(id, input);
+      this.deps.room.post(caller.task as TaskId, id, {
+        ...cardOf(caller.agent, command, input, ask.reason),
+        state: "pending",
+        autonomy: marker,
+      });
+      autonomy.left(caller, command, input, verdict.why, ask.reason, id);
+      return { text: `Left for the owner: ${verdict.why}.`, isError: false };
+    }
+    const done = await this.execute(command, input, meta);
+    this.log(
+      caller.task,
+      caller.agent,
+      command,
+      summarize(command, input),
+      "allow",
+      "autonomy",
+      done.ok ? verdict.why : `${verdict.why}. Failed: ${done.error}`,
+    );
+    this.deps.room.post(caller.task as TaskId, id, {
+      ...cardOf(caller.agent, command, input, ask.reason),
+      alone: true,
+      state: done.ok ? "applied" : "failed",
+      autonomy: marker,
+      ...(done.commit === undefined ? {} : { commit: done.commit }),
+      result: done.ok ? lineOf(done.output) : done.error,
+    });
+    autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
+    if (done.ok) autonomy.adopt(auto, command, done.output);
+    return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
   /**
@@ -281,6 +448,9 @@ export class AdminService {
       );
       this.pending.delete(item.id);
       this.audit(item, "allow", "owner", done.ok ? undefined : `Failed: ${done.error}`);
+      // The owner approved what the boss or an autonomous task's agent asked: its tasks join.
+      const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(item);
+      if (done.ok && auto !== undefined) this.autonomy?.adopt(auto, item.command as CommandName, done.output);
       const applied = this.update(item, {
         state: done.ok ? "applied" : "failed",
         ...(done.commit === undefined ? {} : { commit: done.commit }),
@@ -373,7 +543,7 @@ export class AdminService {
     kind: string,
     title: string,
     decision: "allow" | "deny",
-    by: "owner" | "rule",
+    by: "owner" | "rule" | "autonomy",
     detail?: string,
   ): void {
     this.deps.store.permissions.log({

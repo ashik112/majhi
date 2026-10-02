@@ -319,6 +319,79 @@ export const PolicyPatchSchema = z
   .partial();
 export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
 
+/**
+ * Autonomous mode (PRV-74): the caps it spends within, the account floors it keeps, what it may do
+ * per org, when the daily summary is made, and the owner's standing instructions. Whether it is on
+ * is runtime state (`autonomy.status`), not config. Only the owner changes this section.
+ */
+export const AutonomyOrgSchema = z.strictObject({
+  /** This org's cap per day. Absent: only the overall `day` cap holds it. */
+  cap: BudgetSchema.optional(),
+  /** May push this org's task branches and open MRs. Off by default. */
+  push: z.boolean().default(false),
+  /**
+   * May merge this org's tasks into their base branch, and merge their MRs where the org's own
+   * `merge` policy is not `never`. Off by default.
+   */
+  merge: z.boolean().default(false),
+});
+export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
+
+/** Guidance the owner gave on the Autonomous page, which the boss follows until it is removed. */
+export const AutonomyInstructionSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9]{8}$/),
+  text: z.string().trim().min(1).max(500),
+  /** When the owner gave it, as a UTC ISO time. */
+  at: z.string(),
+});
+export type AutonomyInstruction = z.infer<typeof AutonomyInstructionSchema>;
+
+const PercentLeftSchema = z.number().int().min(0).max(100);
+const autonomyFields = {
+  /** Spend per day of everything autonomous mode runs, from midnight in `tz`. Always set. */
+  day: BudgetSchema,
+  orgs: z.record(BudgetIdSchema, AutonomyOrgSchema),
+  /** No new work starts on an account with less than this share of a window left, in percent. */
+  floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }),
+  /** When the daily summary is made, 24 h clock in `tz`. */
+  summary_at: ClockSchema,
+  /** An IANA zone like Europe/Berlin: the browser that saved the settings knows it. Absent: the server's. */
+  tz: z.string().trim().min(1).max(64),
+  instructions: z.array(AutonomyInstructionSchema).max(50),
+};
+export const AutonomySettingsSchema = z.strictObject({
+  day: autonomyFields.day.default({ cost: 20 }),
+  orgs: autonomyFields.orgs.default({}),
+  floors: autonomyFields.floors.default({ window: 10, weekly: 5 }),
+  summary_at: autonomyFields.summary_at.default("08:00"),
+  tz: autonomyFields.tz.optional(),
+  instructions: autonomyFields.instructions.default([]),
+});
+export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
+/** What majhi.yaml may hold and what majhi writes. */
+export const AutonomyFilePatchSchema = z.strictObject(autonomyFields).partial();
+/**
+ * What `autonomy.configure` accepts: only what changes. An `orgs` entry merges into the org's
+ * current one, and `null` removes it (or its `cap`). The day cap can change but never goes away.
+ * Instructions change only through `autonomy.guide` and `autonomy.forget`.
+ */
+export const AutonomyPatchSchema = z
+  .strictObject({
+    day: BudgetSchema,
+    orgs: z.record(
+      BudgetIdSchema,
+      z
+        .strictObject({ cap: BudgetSchema.nullable(), push: z.boolean(), merge: z.boolean() })
+        .partial()
+        .nullable(),
+    ),
+    floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }).partial(),
+    summary_at: ClockSchema,
+    tz: autonomyFields.tz,
+  })
+  .partial();
+export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;
+
 /** Everything in one object, as `settings.get` returns it (defaults applied). */
 export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
@@ -333,5 +406,6 @@ export const SettingsSchema = z.object({
   containers: ContainersSettingsSchema,
   budgets: BudgetsSettingsSchema,
   notifications: NotificationsSettingsSchema,
+  autonomy: AutonomySettingsSchema,
 });
 export type Settings = z.infer<typeof SettingsSchema>;

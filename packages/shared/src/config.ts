@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import {
+  AutonomyFilePatchSchema,
   BudgetsFilePatchSchema,
   CleanupPatchSchema,
   CommitsPatchSchema,
@@ -52,6 +53,8 @@ export const MajhiConfigSchema = z.strictObject({
   containers: ContainersFilePatchSchema.optional(),
   /** Weekly token and cost budgets per org and account, with alerts at 80% and 100% (PRV-40). */
   budgets: BudgetsFilePatchSchema.optional(),
+  /** Autonomous mode (PRV-74): its caps, account floors, per-org push and merge, summary time and the owner's instructions. */
+  autonomy: AutonomyFilePatchSchema.optional(),
   /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),

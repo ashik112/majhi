@@ -1,4 +1,11 @@
-import { BOSS_CHAT_BRIEF, CHAT_BRIEF, DEFAULT_CHAT_TITLES, isOwnerChat, type Task } from "@majhi/shared";
+import {
+  BOSS_CHAT_BRIEF,
+  CHAT_BRIEF,
+  DEFAULT_CHAT_TITLES,
+  isAutonomyChat,
+  isOwnerChat,
+  type Task,
+} from "@majhi/shared";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
@@ -56,7 +63,8 @@ export async function openChat({ config, store, tasks, agents }: BossChatDeps, a
 
 /**
  * The boss's current chat: the newest open one, or a new one. With `fresh`, the current one is
- * archived (done, still listed under its chats) and a new conversation starts.
+ * archived (done, still listed under its chats) and a new conversation starts. The autonomy chat
+ * (PRV-74) is never it: autonomous mode talks to the boss there, not the owner's Cmd J.
  */
 export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<Task> {
   const { boss } = await deps.config.sections();
@@ -67,6 +75,7 @@ export async function openBossChat(deps: BossChatDeps, fresh = false): Promise<T
   for (const summary of deps.store.tasks.list(false)) {
     if (summary.chat !== true || summary.org !== undefined || summary.team[0] !== boss) continue;
     const task = deps.tasks.get(summary.id);
+    if (isAutonomyChat(task)) continue;
     if (!fresh || DEFAULT_CHAT_TITLES.includes(task.title)) return task;
     // The owner asked for a new conversation. A chat has no repo of its own, so nothing stays behind.
     await deps.tasks.close(task.id, { by: "owner", whenUnshipped: "keep" });
