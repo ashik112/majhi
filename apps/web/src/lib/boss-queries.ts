@@ -64,6 +64,15 @@ export function useSaveSettings() {
   });
 }
 
+/** Approval cards per command over the last `days` days, for the approvals page. */
+export function useCardStats(days: number) {
+  return useQuery<CommandOutput<"policy.cardStats">, ApiRequestError>({
+    queryKey: [...queryKeys.settings, "card-stats", days],
+    queryFn: () => cmd("policy.cardStats", { days }),
+    staleTime: 30_000,
+  });
+}
+
 export function useSavePolicy() {
   const client = useQueryClient();
   return useMutation<Settings, ApiRequestError, CommandInput<"policy.set">>({

@@ -629,6 +629,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["pending", "applied", "rejected", "failed", "undone"]),
     /** Set when a saved "always allow" rule ran this without asking: the rule's scope. */
     rule: z.enum(["task", "org"]).optional(),
+    /** Set when it ran with no owner click: the policy or a rule let it. Older cards lack it. */
+    alone: z.literal(true).optional(),
     /** Config history commit made by the command, for Undo. */
     commit: z.string().optional(),
     /** Result or error, one line. */

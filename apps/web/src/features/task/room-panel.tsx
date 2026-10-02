@@ -15,6 +15,7 @@ import { ChangeAgent } from "./change-agent";
 import { agentState, agentsBusy } from "./model";
 import { ProcessesCard } from "./processes-card";
 import { PendingShipLine } from "./ship";
+import { SubtasksCard } from "./subtasks-card";
 import { AddAgent, MemberMenu, ModePicker } from "./team-controls";
 
 /** The right column of the task view: who is in the room, the branch, the changes. */
@@ -38,6 +39,7 @@ export function RoomPanel({
       className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-6 scroll-fade"
     >
       <InRoomCard task={task} agents={agents} />
+      <SubtasksCard task={task} />
       <ProcessesCard task={task} processes={processes} />
       {showsMrCard(task) && <MrCard task={task} />}
       <BranchCard task={task} />

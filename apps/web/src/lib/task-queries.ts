@@ -1,5 +1,11 @@
 import type { CommandInput, CommandOutput, ProjectView, Task, TaskSummary } from "@majhi/shared";
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useMemo } from "react";
 import { needsOwner } from "@/features/board/model";
 import { type ApiRequestError, cmd } from "./api";
@@ -148,13 +154,18 @@ export function useOpenTaskTerminal() {
   });
 }
 
-/** What Ship can do now, read again whenever the task changes. */
+/**
+ * What Ship can do now, read again whenever the task changes. The last answer stays while the next
+ * one loads: a task update arrives on every turn of a busy room, and Ship (with its panel open) must
+ * not vanish and come back each time.
+ */
 export function useShipOptions(task: Pick<Task, "id" | "updatedAt" | "status">, enabled: boolean) {
   return useQuery<CommandOutput<"tasks.shipOptions">, ApiRequestError>({
     queryKey: [...queryKeys.tasks, "ship", task.id, task.updatedAt, task.status],
     queryFn: () => cmd("tasks.shipOptions", { id: task.id }),
     enabled,
     staleTime: 5_000,
+    placeholderData: keepPreviousData,
   });
 }
 
