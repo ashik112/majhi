@@ -92,7 +92,7 @@ if (process.env.PROBE_EACH) {
   };
   console.log("EACH start", await heap());
   for (const [name, body] of calls) {
-    for (let i = 0; i < 30; i++) await fetch(base + name, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.text());
+    for (let i = 0; i < Number(process.env.PROBE_N ?? 30); i++) await fetch(base + name, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.text());
     console.log("EACH", name, await heap());
   }
   await browser.close(); child.kill(); process.exit(0);
