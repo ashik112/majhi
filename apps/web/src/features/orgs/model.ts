@@ -2,8 +2,6 @@ import {
   type CommandInput,
   type LeadStart,
   type MergePolicy,
-  type MrHost,
-  MrHostSchema,
   OrgConfigSchema,
   type OrgView,
 } from "@majhi/shared";
@@ -13,8 +11,6 @@ export const MERGE_LABEL: Record<MergePolicy, string> = {
   approve: "Approve, majhi merges when you click",
   "auto-if-green": "Auto if green",
 };
-
-export const MR_HOSTS: readonly MrHost[] = MrHostSchema.options;
 
 /** What the owner types in the org's settings form. Everything is text; `""` means not set. */
 export interface OrgDraft {
@@ -32,10 +28,6 @@ export interface OrgDraft {
   merge: MergePolicy;
   /** Which tasks a lead may start without asking you. */
   leadStart: LeadStart;
-  /** The saved secret (`secret:<name>`) each host's token is read from; `""` for none. */
-  mrTokens: Record<MrHost, string>;
-  /** A token typed for a host, saved as a secret when the form is saved. Never shown again. */
-  newTokens: Record<MrHost, string>;
 }
 
 export type OrgErrors = Partial<Record<keyof OrgDraft, string>>;
@@ -52,18 +44,7 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     merge: org.merge,
     leadStart: org.leadStart,
-    mrTokens: perHost((host) => org.mrTokens?.[host] ?? ""),
-    newTokens: perHost(() => ""),
   };
-}
-
-function perHost(value: (host: MrHost) => string): Record<MrHost, string> {
-  return { github: value("github"), gitlab: value("gitlab"), bitbucket: value("bitbucket") };
-}
-
-/** The `mr_tokens` map of the draft: only hosts with a secret. */
-function tokenMap(tokens: Record<MrHost, string>): Partial<Record<MrHost, string>> {
-  return Object.fromEntries(MR_HOSTS.filter((h) => tokens[h] !== "").map((h) => [h, tokens[h]]));
 }
 
 export type OrgCheck =
@@ -125,14 +106,6 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   if (draft.merge !== org.merge) input.merge = draft.merge;
 
   if (draft.leadStart !== org.leadStart) input.lead_start = draft.leadStart;
-
-  const tokens = tokenMap(draft.mrTokens);
-  const before = tokenMap(perHost((host) => org.mrTokens?.[host] ?? ""));
-  if (MR_HOSTS.some((h) => tokens[h] !== before[h])) {
-    const parsed = OrgConfigSchema.shape.mr_tokens.safeParse(tokens);
-    if (parsed.success) input.mr_tokens = Object.keys(tokens).length === 0 ? null : parsed.data;
-    else errors.mrTokens = "Pick a saved secret for each host";
-  }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, input: Object.keys(input).length > 1 ? input : undefined };

@@ -284,6 +284,42 @@ export function usePushRoute(id: string) {
   });
 }
 
+/** An org's git accounts per host: push route, token check, hosts still missing one. Never holds a token. */
+export function useGitStatus(id: string) {
+  return useQuery<CommandOutput<"orgs.gitStatus">, ApiRequestError>({
+    // Under the orgs key, so any org change refetches it.
+    queryKey: [...queryKeys.orgs, "git-status", id],
+    queryFn: () => cmd("orgs.gitStatus", { id }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** Detects this Mac's logins again and rechecks the tokens, skipping every cache. */
+export function useDetectAgain(id: string) {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"orgs.gitStatus">, ApiRequestError, void>({
+    mutationFn: () => cmd("orgs.gitStatus", { id, refresh: true }),
+    onSuccess: (data) => {
+      client.setQueryData([...queryKeys.orgs, "git-status", id], data);
+      void client.invalidateQueries({ queryKey: ["git-logins"] });
+    },
+  });
+}
+
+/** Stops offering a detected login to one org. */
+export function useDismissGitLogin() {
+  const client = useQueryClient();
+  return useMutation<
+    CommandOutput<"orgs.dismissGitLogin">,
+    ApiRequestError,
+    CommandInput<"orgs.dismissGitLogin">
+  >({
+    mutationFn: (input) => cmd("orgs.dismissGitLogin", input),
+    onSuccess: () => refresh(client, queryKeys.orgs),
+  });
+}
+
 /** Binds or removes an org's git account on a host. */
 export function useSetGitAccount() {
   const client = useQueryClient();

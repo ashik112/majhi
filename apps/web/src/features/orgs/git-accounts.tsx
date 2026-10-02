@@ -1,259 +1,501 @@
-import type { GitAccount } from "@majhi/shared";
-import { useState } from "react";
+import {
+  type GitAccountStatus,
+  type GitHost,
+  type LoginOffer,
+  type OrgView,
+  tokenPageUrl,
+} from "@majhi/shared";
+import { ExternalLink, RefreshCw } from "lucide-react";
+import { type FormEvent, type ReactNode, useState } from "react";
+import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { DetailSection } from "@/components/ui/list-detail";
+import { Dot, type DotTone } from "@/components/ui/status-dot";
 import { describeError } from "@/lib/errors";
+import { formatAgo } from "@/lib/format";
+import { HOST_LABEL } from "@/lib/hosts";
 import {
-  useGitLogins,
-  useOrgs,
+  useDetectAgain,
+  useDismissGitLogin,
+  useGitStatus,
   useSetGitAccount,
   useUpdateOrg,
   useUseSavedLogin,
 } from "@/lib/studio-queries";
+import { useNow } from "@/lib/use-now";
 
-/** Where a host's token is pasted: GitHub and GitLab can adopt a login, Bitbucket and GitLab take a paste. */
-const PASTE_HINT = (host: string) =>
-  host.includes("bitbucket")
-    ? "username:app-password"
-    : host.includes("github")
-      ? "token"
-      : "personal access token";
+/** Where a host lists the account's SSH keys, for when no key on this Mac logs in as it. */
+const SSH_KEYS_PAGE: Partial<Record<GitHost, (host: string) => string>> = {
+  github: () => "https://github.com/settings/keys",
+  gitlab: (host) => `https://${host}/-/user_settings/ssh_keys`,
+  bitbucket: () => "https://bitbucket.org/account/settings/ssh-keys/",
+};
 
-/** The git accounts of one org: who it pushes as per host, and whether its key, token and identity are ready. */
-export function GitAccounts({ org }: { org: { id: string; name: string } }) {
-  const view = useOrgs().data?.find((o) => o.id === org.id);
-  const logins = useGitLogins();
-  const { set, remove } = useSetGitAccount();
-  const [pick, setPick] = useState("");
+const VIA_LABEL: Record<LoginOffer["via"][number], string> = {
+  ssh: "SSH key",
+  gh: "gh login",
+  glab: "glab login",
+};
+
+/** Runs an action and keeps its failure, in plain words, for the spot that started it. */
+function useAction() {
   const [failure, setFailure] = useState<string>();
-  const accounts = view?.gitAccounts ?? [];
-  const hosts = logins.data?.hosts ?? [];
-  const sshOf = (a: GitAccount) =>
-    hosts
-      .find((h) => h.host === a.host)
-      ?.logins.some(
-        (l) =>
-          l.via === "ssh" &&
-          l.account.toLowerCase() === a.account.toLowerCase() &&
-          (a.ssh === undefined || (a.ssh === "default" ? l.alias === undefined : l.alias === a.ssh)),
-      ) === true;
-  // One option per detected account of a host, with the SSH route when it has one.
-  const options = hosts.flatMap((h) => {
-    const seen = new Set<string>();
-    return h.logins.flatMap((l) => {
-      const key = `${h.host}\n${l.account}\n${l.via === "ssh" ? (l.alias ?? "") : ""}`;
-      const taken = accounts.some(
-        (a) => a.host === h.host && a.account.toLowerCase() === l.account.toLowerCase(),
-      );
-      if (seen.has(key) || taken) return [];
-      seen.add(key);
-      return [
-        { key, host: h.host, account: l.account, ssh: l.via === "ssh" ? (l.alias ?? "default") : undefined },
-      ];
-    });
-  });
+  const [busy, setBusy] = useState(false);
   const run = (fn: () => Promise<unknown>) => {
     setFailure(undefined);
-    fn().catch((e: unknown) => setFailure(describeError(e)));
+    setBusy(true);
+    fn()
+      .catch((e: unknown) => setFailure(describeError(e)))
+      .finally(() => setBusy(false));
   };
+  return { failure, busy, run, setFailure };
+}
+
+/**
+ * The org's git accounts, one row per host: how it pushes, whether its merge request token works,
+ * and the commit identity, each with the one step that fixes it. Hosts the org's projects use with
+ * no account yet show the logins found on this Mac.
+ */
+export function GitAccounts({ org }: { org: OrgView }) {
+  const status = useGitStatus(org.id);
+  const detect = useDetectAgain(org.id);
+  const now = useNow(30_000);
+  const data = status.data;
+  const checked = data?.checkedAt;
+  const rows = (data?.accounts.length ?? 0) + (data?.missing.length ?? 0);
   return (
-    <section className="mt-6 flex min-w-0 flex-col gap-3" aria-label="Git accounts">
-      <h3 className="m-0 text-base font-semibold text-fg">Git accounts</h3>
-      <p className="m-0 text-sm text-fg-faint">
-        The account {org.name} pushes and opens merge requests as on each host.
-      </p>
-      {accounts.map((a) => (
-        <AccountRow
-          key={`${a.host}/${a.account}`}
-          org={org.id}
-          account={a}
-          sshOk={sshOf(a)}
-          hasIdentity={view?.identity !== undefined}
-          onRemove={() => run(() => remove.mutateAsync({ id: org.id, host: a.host, account: a.account }))}
-          onToken={(token) =>
-            run(() =>
-              set.mutateAsync({
-                id: org.id,
-                host: a.host,
-                account: a.account,
-                ...(a.ssh === undefined ? {} : { ssh: a.ssh }),
-                token,
-              }),
-            )
-          }
-        />
-      ))}
-      <div className="flex items-center gap-2">
-        <Select
-          aria-label="Add a git account"
-          value={pick}
-          onChange={(e) => setPick(e.target.value)}
-          className="max-w-sm"
-        >
-          <option value="">
-            {options.length === 0 ? "No logins found on this Mac" : "Pick a detected login"}
-          </option>
-          {options.map((o) => (
-            <option key={o.key} value={o.key}>
-              {o.account} on {o.host}
-              {o.ssh === undefined ? "" : o.ssh === "default" ? "" : ` (${o.ssh})`}
-            </option>
-          ))}
-        </Select>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={pick === "" || set.isPending}
-          onClick={() => {
-            const o = options.find((x) => x.key === pick);
-            if (o === undefined) return;
-            run(async () => {
-              await set.mutateAsync({
-                id: org.id,
-                host: o.host,
-                account: o.account,
-                ...(o.ssh === undefined ? {} : { ssh: o.ssh }),
-              });
-              setPick("");
-            });
-          }}
-        >
-          + Add
-        </Button>
-      </div>
-      {failure && (
-        <p role="alert" className="m-0 text-sm text-red">
-          {failure}
+    <DetailSection
+      title="Git accounts"
+      note={`Who ${org.name} pushes and opens merge requests as.`}
+      actions={
+        <>
+          {checked !== undefined && !detect.isPending && (
+            <span className="text-sm text-fg-faint">Checked {formatAgo(checked, now)}</span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={detect.isPending || status.isPending}
+            onClick={() => detect.mutate()}
+          >
+            <RefreshCw aria-hidden="true" className={detect.isPending ? "animate-spin" : undefined} />
+            {detect.isPending ? "Detecting" : "Detect again"}
+          </Button>
+        </>
+      }
+    >
+      {status.isPending ? (
+        <p className="m-0 text-sm text-fg-faint">Looking at this Mac's keys and logins.</p>
+      ) : data === undefined ? (
+        <p className="m-0 text-sm text-fg-muted">
+          The git accounts could not be read{status.error ? `: ${describeError(status.error)}` : "."}
         </p>
+      ) : (
+        <>
+          {checked === undefined && (
+            <p className="m-0 text-sm text-fg-muted">
+              The host helper is not connected, so majhi cannot see this Mac's keys and logins.
+            </p>
+          )}
+          {detect.error && (
+            <p role="alert" className="m-0 text-sm text-red">
+              {describeError(detect.error)}
+            </p>
+          )}
+          {rows === 0 ? (
+            <p className="m-0 text-sm text-fg-faint">
+              No git hosts yet. Register a project of {org.name} and the hosts of its remotes show here.
+            </p>
+          ) : (
+            <ul aria-label={`Git accounts of ${org.name}`} className="m-0 flex list-none flex-col p-0">
+              {data.accounts.map((a) => (
+                <AccountRow key={`${a.host}/${a.account}`} org={org} status={a} />
+              ))}
+              {data.missing.map((m) => (
+                <MissingRow key={m.host} org={org} host={m.host} kind={m.kind} offers={m.offers} />
+              ))}
+            </ul>
+          )}
+          {data.tokens.map((t) => (
+            <p key={t.kind} className="m-0 text-sm text-fg-muted">
+              A {HOST_LABEL[t.kind]} token is saved for merge requests. Add the account it belongs to and it
+              shows there.
+            </p>
+          ))}
+        </>
       )}
-    </section>
+    </DetailSection>
   );
 }
 
-function AccountRow({
-  org,
-  account,
-  sshOk,
-  hasIdentity,
-  onRemove,
-  onToken,
-}: {
-  org: string;
-  account: GitAccount;
-  sshOk: boolean;
-  hasIdentity: boolean;
-  onRemove: () => void;
-  onToken: (token: string) => void;
-}) {
-  const [token, setToken] = useState("");
-  const [name, setName] = useState(account.account);
-  const [email, setEmail] = useState("");
-  const update = useUpdateOrg();
-  const saved = useUseSavedLogin();
-  const [failure, setFailure] = useState<string>();
-  const tag = (ok: boolean, good: string) => (
-    <span className={ok ? "text-green" : "text-amber"}>{ok ? good : ""}</span>
-  );
+const ROW = "flex min-w-0 flex-col gap-3 border-t border-line py-4 first:border-t-0 first:pt-1 last:pb-0";
+
+function RowHead({ kind, children, actions }: { kind: GitHost; children: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-md border border-line p-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <span className="font-mono text-fg">{account.account}</span>
-        <span className="text-fg-faint">{account.host}</span>
-        {tag(sshOk, "SSH ok")}
-        {tag(account.token !== undefined, "token ok")}
-        {tag(hasIdentity, "identity ok")}
-        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={onRemove}>
-          Remove
-        </Button>
-      </div>
-      {!sshOk && (
-        <p className="m-0 text-sm text-amber">
-          No SSH key on this Mac logs in as {account.account}. https remotes push with this Mac's saved login
-          instead.
-        </p>
-      )}
-      {account.token === undefined && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={saved.isPending}
-            onClick={() => {
-              setFailure(undefined);
-              saved.mutate(
-                { id: org, host: account.host, account: account.account },
-                {
-                  onSuccess: (r) => r.saved || setFailure(r.reason),
-                  onError: (e) => setFailure(describeError(e)),
-                },
-              );
-            }}
-          >
-            Use the saved login for {account.host}
-          </Button>
-          <Input
-            aria-label={`Token for ${account.account}`}
-            type="password"
-            autoComplete="new-password"
-            placeholder={PASTE_HINT(account.host)}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={token.trim() === ""}
-            onClick={() => {
-              onToken(token.trim());
-              setToken("");
-            }}
-          >
-            Save token
-          </Button>
-        </div>
-      )}
-      {!hasIdentity && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="Commit name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="max-w-48"
-          />
-          <Input
-            aria-label="Commit email"
-            type="email"
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="max-w-64"
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={name.trim() === "" || email.trim() === "" || update.isPending}
-            onClick={() => {
-              setFailure(undefined);
-              update.mutate(
-                { id: org, identity: { name: name.trim(), email: email.trim() } },
-                { onError: (e) => setFailure(describeError(e)) },
-              );
-            }}
-          >
-            Set identity
-          </Button>
-        </div>
-      )}
-      {failure && (
-        <p role="alert" className="m-0 text-sm text-red">
-          {failure}
-        </p>
-      )}
+    <div className="flex min-h-7 min-w-0 items-center gap-2">
+      <HostGlyph host={kind} />
+      <div className="flex min-w-0 items-baseline gap-2 text-sm">{children}</div>
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
     </div>
+  );
+}
+
+function AccountRow({ org, status }: { org: OrgView; status: GitAccountStatus }) {
+  const { remove } = useSetGitAccount();
+  return (
+    <li className={ROW}>
+      <RowHead
+        kind={status.kind}
+        actions={
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate({ id: org.id, host: status.host, account: status.account })}
+          >
+            Remove
+          </Button>
+        }
+      >
+        <span className="truncate font-mono text-fg">{status.account}</span>
+        <span className="truncate text-fg-faint">on {status.host}</span>
+      </RowHead>
+      <dl className="m-0 grid grid-cols-[120px_minmax(0,1fr)] gap-x-4 gap-y-3 pl-[22px]">
+        <Line label="Push">
+          <PushLine org={org.id} status={status} />
+        </Line>
+        <Line label="Merge requests">
+          <TokenLine org={org.id} status={status} />
+        </Line>
+        <Line label="Commit identity">
+          <IdentityLine org={org} account={status.account} />
+        </Line>
+      </dl>
+    </li>
+  );
+}
+
+function Line({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-sm leading-5 text-fg-faint">{label}</dt>
+      <dd className="m-0 flex min-w-0 flex-col items-start gap-2">{children}</dd>
+    </>
+  );
+}
+
+function State({ tone, children }: { tone: DotTone; children: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-sm leading-5 text-fg-soft">
+      <Dot tone={tone} size={7} />
+      <span className="min-w-0">{children}</span>
+    </span>
+  );
+}
+
+function Failure({ text }: { text: string | undefined }) {
+  if (text === undefined) return null;
+  return (
+    <p role="alert" className="m-0 max-w-[60ch] text-sm text-pretty text-red">
+      {text}
+    </p>
+  );
+}
+
+function ExternalButton({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Button asChild size="sm">
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+        <ExternalLink aria-hidden="true" />
+      </a>
+    </Button>
+  );
+}
+
+function PushLine({ org, status }: { org: string; status: GitAccountStatus }) {
+  const { set } = useSetGitAccount();
+  const action = useAction();
+  const push = status.push;
+  if (push.state === "ssh") {
+    return (
+      <State tone="green">
+        {push.alias === undefined ? (
+          "SSH key ok (default key)"
+        ) : (
+          <>
+            SSH alias <span className="font-mono text-fg">{push.alias}</span> ok
+          </>
+        )}
+      </State>
+    );
+  }
+  if (push.state === "https") return <State tone="green">Pushes with this Mac's saved login</State>;
+  if (push.state === "unknown") return <State tone="neutral">Not known while the host helper is off</State>;
+  const keys = SSH_KEYS_PAGE[status.kind]?.(status.host);
+  return (
+    <>
+      <State tone="amber">
+        No SSH key on this Mac logs in as <span className="font-mono text-fg">{status.account}</span>
+      </State>
+      {push.choices.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {push.choices.map((c) => (
+            <Button
+              key={c.ssh}
+              size="sm"
+              disabled={action.busy}
+              onClick={() =>
+                action.run(() =>
+                  set.mutateAsync({ id: org, host: status.host, account: status.account, ssh: c.ssh }),
+                )
+              }
+            >
+              Push with the {c.label}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        keys && (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-faint">
+            <ExternalButton href={keys}>Add an SSH key on {status.host}</ExternalButton>
+            then Detect again.
+          </span>
+        )
+      )}
+      <Failure text={action.failure} />
+    </>
+  );
+}
+
+function TokenLine({ org, status }: { org: string; status: GitAccountStatus }) {
+  const token = status.token;
+  if (token.state === "ok") {
+    return (
+      <State tone="green">
+        Works as <span className="font-mono text-fg">{token.as}</span>
+      </State>
+    );
+  }
+  if (token.state === "unchecked") {
+    return <State tone="neutral">Token saved. {status.host} could not be reached to check it.</State>;
+  }
+  return (
+    <>
+      <State tone="amber">
+        {token.state === "refused" ? `${status.host} no longer accepts the saved token` : "No token yet"}
+      </State>
+      <TokenFix org={org} status={status} />
+    </>
+  );
+}
+
+/** The ways to give an account a token, in order: a CLI login, the Mac's saved login, a new token. */
+function TokenFix({ org, status }: { org: string; status: GitAccountStatus }) {
+  const { set } = useSetGitAccount();
+  const saved = useUseSavedLogin();
+  const action = useAction();
+  const [value, setValue] = useState("");
+  const token = status.token;
+  const create = tokenPageUrl(status.kind, status.host, org);
+  const bitbucket = status.kind === "bitbucket";
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const pasted = value.trim();
+    if (pasted === "") return;
+    action.run(async () => {
+      await set.mutateAsync({ id: org, host: status.host, account: status.account, token: pasted });
+      setValue("");
+    });
+  };
+  const cli = token.state === "missing" ? token.cli : undefined;
+  const savedLogin = token.state === "missing" && token.savedLogin;
+  return (
+    <>
+      {(cli !== undefined || savedLogin) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {cli !== undefined && (
+            <Button
+              size="sm"
+              disabled={action.busy}
+              onClick={() =>
+                action.run(() => set.mutateAsync({ id: org, host: status.host, account: status.account }))
+              }
+            >
+              Use {cli} login
+            </Button>
+          )}
+          {savedLogin && (
+            <Button
+              size="sm"
+              disabled={action.busy}
+              onClick={() =>
+                action.run(async () => {
+                  const r = await saved.mutateAsync({ id: org, host: status.host, account: status.account });
+                  if (!r.saved) action.setFailure(r.reason);
+                })
+              }
+            >
+              Use this Mac's saved login
+            </Button>
+          )}
+        </div>
+      )}
+      {create && (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ExternalButton href={create}>
+            Create {bitbucket ? "an app password" : "a token"} on {status.host}
+          </ExternalButton>
+          <span className="text-sm text-fg-faint">
+            Log in to {status.host} as <span className="font-mono text-fg-muted">{status.account}</span>{" "}
+            first.
+          </span>
+        </span>
+      )}
+      <form onSubmit={submit} className="flex w-full max-w-[440px] items-center gap-2">
+        <Input
+          aria-label={`Token for ${status.account} on ${status.host}`}
+          type="password"
+          autoComplete="new-password"
+          placeholder={bitbucket ? "username:app-password" : "Paste the token"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <Button type="submit" disabled={value.trim() === "" || action.busy}>
+          {action.busy && value.trim() !== "" ? "Checking" : "Verify and save"}
+        </Button>
+      </form>
+      <Failure text={action.failure} />
+    </>
+  );
+}
+
+function IdentityLine({ org, account }: { org: OrgView; account: string }) {
+  const update = useUpdateOrg();
+  const action = useAction();
+  const [name, setName] = useState(account);
+  const [email, setEmail] = useState("");
+  if (org.identity !== undefined) {
+    return (
+      <State tone="green">
+        {org.identity.name} <span className="font-mono text-fg-muted">{org.identity.email}</span>
+      </State>
+    );
+  }
+  return (
+    <>
+      <State tone="amber">Not set. Commits need a name and an email.</State>
+      <form
+        className="flex w-full max-w-[560px] flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          action.run(() =>
+            update.mutateAsync({ id: org.id, identity: { name: name.trim(), email: email.trim() } }),
+          );
+        }}
+      >
+        <Input
+          aria-label="Commit name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-[160px] flex-none"
+        />
+        <Input
+          aria-label="Commit email"
+          type="email"
+          placeholder="you@company.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-[220px] flex-none"
+        />
+        <Button type="submit" disabled={name.trim() === "" || email.trim() === "" || action.busy}>
+          Set identity
+        </Button>
+      </form>
+      <Failure text={action.failure} />
+    </>
+  );
+}
+
+/** A host the org's projects use with no account yet: the logins found for it, each with Use and No. */
+function MissingRow({
+  org,
+  host,
+  kind,
+  offers,
+}: {
+  org: OrgView;
+  host: string;
+  kind: GitHost;
+  offers: readonly LoginOffer[];
+}) {
+  const { set } = useSetGitAccount();
+  const dismiss = useDismissGitLogin();
+  const action = useAction();
+  const [typed, setTyped] = useState("");
+  const use = (account: string, ssh?: string) =>
+    action.run(() => set.mutateAsync({ id: org.id, host, account, ...(ssh === undefined ? {} : { ssh }) }));
+  return (
+    <li className={ROW}>
+      <RowHead kind={kind}>
+        <span className="font-medium text-fg">Add the {host} account</span>
+      </RowHead>
+      <div className="flex min-w-0 flex-col gap-2 pl-[22px]">
+        {offers.length > 0 ? (
+          <>
+            <p className="m-0 text-sm text-fg-faint">Found on this Mac. Use it for {org.name}?</p>
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {offers.map((o) => (
+                <li key={o.account} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span className="truncate font-mono text-sm text-fg">{o.account}</span>
+                  <span className="text-sm text-fg-faint">{o.via.map((v) => VIA_LABEL[v]).join(", ")}</span>
+                  <span className="flex items-center gap-1">
+                    <Button size="sm" disabled={action.busy} onClick={() => use(o.account, o.ssh)}>
+                      Use
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={action.busy}
+                      onClick={() =>
+                        action.run(() => dismiss.mutateAsync({ id: org.id, host, account: o.account }))
+                      }
+                    >
+                      No
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <form
+            className="flex w-full max-w-[440px] flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (typed.trim() !== "") use(typed.trim());
+            }}
+          >
+            <span className="text-sm text-fg-faint">
+              No other login for {host} found on this Mac. Type the account {org.name} uses there.
+            </span>
+            <span className="flex items-center gap-2">
+              <Input
+                aria-label={`Account on ${host}`}
+                placeholder="Account name"
+                className="font-mono"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+              />
+              <Button type="submit" disabled={typed.trim() === "" || action.busy}>
+                Add
+              </Button>
+            </span>
+          </form>
+        )}
+        <Failure text={action.failure} />
+      </div>
+    </li>
   );
 }

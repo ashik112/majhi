@@ -9,10 +9,8 @@ import { Select } from "@/components/ui/select";
 import { ORG_COLORS, orgColorName } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { HOST_LABEL } from "@/lib/hosts";
-import { useRenameOrg, useSaveSecret, useUpdateOrg } from "@/lib/studio-queries";
-import { GitAccounts } from "./git-accounts";
-import { checkOrgDraft, draftFromOrg, MR_HOSTS, type OrgDraft, type OrgErrors } from "./model";
+import { useRenameOrg, useUpdateOrg } from "@/lib/studio-queries";
+import { checkOrgDraft, draftFromOrg, type OrgDraft, type OrgErrors } from "./model";
 import { MrSettings } from "./mr-settings";
 
 /**
@@ -22,7 +20,6 @@ import { MrSettings } from "./mr-settings";
 export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: string) => void }) {
   const update = useUpdateOrg();
   const rename = useRenameOrg();
-  const saveSecret = useSaveSecret();
   const [orgId, setOrgId] = useState(org.id);
   const [draft, setDraft] = useState<OrgDraft>(() => draftFromOrg(org));
   const [errors, setErrors] = useState<OrgErrors>({});
@@ -33,10 +30,9 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
     setDraft((d) => ({ ...d, ...patch }));
   };
 
-  const busy = update.isPending || rename.isPending || saveSecret.isPending;
-  const typedToken = MR_HOSTS.some((h) => draft.newTokens[h].trim() !== "");
+  const busy = update.isPending || rename.isPending;
   const check = checkOrgDraft(org, draft);
-  const dirty = orgId.trim() !== org.id || typedToken || !check.ok || check.input !== undefined;
+  const dirty = orgId.trim() !== org.id || !check.ok || check.input !== undefined;
 
   function reset() {
     setOrgId(org.id);
@@ -47,26 +43,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
 
   async function submit() {
     setFailure(undefined);
-    // A token typed for a host becomes a secret first; the org keeps only its reference.
-    let mrTokens = draft.mrTokens;
-    try {
-      for (const host of MR_HOSTS) {
-        const value = draft.newTokens[host].trim();
-        if (value === "") continue;
-        const secret = await saveSecret.mutateAsync({
-          value,
-          label: `${org.name} ${HOST_LABEL[host]} token`,
-        });
-        mrTokens = { ...mrTokens, [host]: secret.ref };
-      }
-    } catch (e) {
-      setFailure(describeError(e));
-      return;
-    }
-    // The typed values are spent: a retry after a failed save must not save them again.
-    const next = { ...draft, mrTokens, newTokens: { github: "", gitlab: "", bitbucket: "" } };
-    setDraft(next);
-    const result = checkOrgDraft(org, next);
+    const result = checkOrgDraft(org, draft);
     if (!result.ok) return setErrors(result.errors);
     const nextId = orgId.trim();
     if (nextId !== org.id && !IdSchema.safeParse(nextId).success) {
@@ -231,6 +208,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
+          <MrSettings draft={draft} onChange={set} />
           <Field
             label="Leads can start tasks"
             hint="Without asking you. A task that waits on another still waits for it."
@@ -276,12 +254,7 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             {errors.color && <p className="text-sm text-red">{errors.color}</p>}
           </fieldset>
         </div>
-        <MrSettings
-          org={{ id: org.id, name: org.name }}
-          draft={draft}
-          error={errors.mrTokens}
-          onChange={set}
-        />
+
         {failure && (
           <p role="alert" className="text-sm text-red text-pretty">
             {failure}
@@ -289,7 +262,6 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
         )}
         {(dirty || busy) && <div className="flex justify-end gap-2">{buttons}</div>}
       </form>
-      <GitAccounts org={{ id: org.id, name: org.name }} />
     </DetailSection>
   );
 }
