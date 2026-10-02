@@ -14,8 +14,6 @@ Say what you want in one sentence. A lead plans it, builders write it, a reviewe
 
 <img src="docs/assets/screenshots/onboarding.png" alt="majhi's first-run journey: a rickshaw-art river at night, the captain steering a boat while robot agents row, each setup step a painted signboard" width="100%">
 
-<sub>The first run is a river journey, painted in Dhaka rickshaw art. The captain steers, the crew rows, and every setup step is a stop on the way.</sub>
-
 </div>
 
 ---
