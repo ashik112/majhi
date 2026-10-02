@@ -35,7 +35,7 @@ describe("gateTools: the defaults are what agents had before gating", () => {
     );
   });
 
-  it("gives the agents of an ops task majhi-tasks, but not the boss", () => {
+  it("gives the agents of an ops task majhi-tasks, but not the captain", () => {
     const ops = { ...ctx, opsTask: true };
     expect(gateTools(agent(), ops)).toContain("majhi-tasks");
     expect(gateTools(agent(), ctx)).not.toContain("majhi-tasks");
@@ -55,7 +55,7 @@ describe("gateTools: the defaults are what agents had before gating", () => {
     expect(gateTools({ ...root, tools: ["majhi-admin"] }, ctx)).toContain("majhi-admin");
   });
 
-  it("gives the boss admin but not tasks", () => {
+  it("gives the captain admin but not tasks", () => {
     const boss = gateTools(agent({ id: "majhi-boss", role: "Root", scope: "root" }), ctx);
     expect(boss).toContain("majhi-admin");
     expect(boss).not.toContain("majhi-tasks");
@@ -83,7 +83,7 @@ describe("gateTools: the agent's tools list", () => {
     expect(gateTools(agent({ tools: ["-majhi-room"] }), { ...ctx, teamSize: 2 })).not.toContain("majhi-room");
   });
 
-  it("a dash cannot take majhi-admin from the boss", () => {
+  it("a dash cannot take majhi-admin from the captain", () => {
     const boss = agent({ id: "majhi-boss", role: "Root", scope: "root", tools: ["-majhi-admin"] });
     expect(gateTools(boss, ctx)).toContain("majhi-admin");
   });

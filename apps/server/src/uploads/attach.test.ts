@@ -12,7 +12,7 @@ afterEach(() => w?.cleanup());
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 
-/** The boss calls a tool the way its MCP server does. */
+/** The captain calls a tool the way its MCP server does. */
 const asBoss = (tool: string, args: Record<string, unknown>) =>
   w.h.majhi.services.admin.call({ task: w.chat.id, agent: "boss" }, tool, {
     ownerAsked: true,
@@ -63,7 +63,7 @@ describe("attachments by upload id and by path", () => {
     const md = await taskMd(full);
     expect(md).toContain("`attachments/image.png`");
     expect(md).toContain("`attachments/notes.txt`");
-    // Copied, never moved: the boss chat keeps its file.
+    // Copied, never moved: the captain chat keeps its file.
     expect((await stat(join(w.chat.folder, "attachments", "image.png"))).isFile()).toBe(true);
   });
 

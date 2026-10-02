@@ -1,7 +1,7 @@
 import type { AccountUsage } from "@majhi/shared";
 
 /**
- * Parallel planning (SPEC Phase 3, lead orchestration): before a lead or the boss starts a task,
+ * Parallel planning (SPEC Phase 3, lead orchestration): before a lead or the captain starts a task,
  * check whether it is safe next to the tasks already running. Pure functions only: the service
  * gathers the inputs (worktree diffs, running tasks, account usage) and acts on the verdict.
  */

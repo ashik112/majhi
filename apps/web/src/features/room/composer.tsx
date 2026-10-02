@@ -47,7 +47,7 @@ const MAX_HEIGHT = 8 * 22 + 10;
 /** Numbers the messages shown before the server stored them. */
 let pendingCount = 0;
 
-/** Agents a mention can name: the team first, then the org's agents who may join. Boss excluded. */
+/** Agents a mention can name: the team first, then the org's agents who may join. Captain excluded. */
 function agentMatches(
   task: Pick<Task, "org" | "team">,
   index: ReadonlyMap<string, AgentInfo>,
@@ -312,7 +312,7 @@ export function Composer({
             ))}
           </div>
         )}
-        {/* Narrower than 40rem (the boss drawer, a split room), the text takes the whole first row and
+        {/* Narrower than 40rem (the captain drawer, a split room), the text takes the whole first row and
             the buttons sit under it; the model picker and Send left it a column one word wide. */}
         <div className="flex flex-wrap items-end gap-1 rounded-xl border border-line-control bg-field p-1 transition-[border-color] duration-150 hover:border-line-hover has-[textarea:focus]:border-accent @[40rem]:flex-nowrap">
           <Button

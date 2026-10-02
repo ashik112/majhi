@@ -221,7 +221,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "boss",
-      name: "Open the boss",
+      name: "Open the captain",
       keywords: "chat assistant",
       hint: "⌘ J",
       run: () => (onClose(), boss.show()),

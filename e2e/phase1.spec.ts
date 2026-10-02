@@ -113,22 +113,22 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await expect(page.getByRole("list", { name: "Health check steps" }).getByRole("listitem")).toHaveCount(3);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // Step 3: the boss, with the suggested defaults
-  await expect(page.getByRole("heading", { name: "Choose the boss" })).toBeVisible();
+  // Step 3: the captain, with the suggested defaults
+  await expect(page.getByRole("heading", { name: "Choose the captain" })).toBeVisible();
   await expect(progress).toContainText("Step 3 of 4");
-  const form = page.getByRole("form", { name: "Boss agent" });
+  const form = page.getByRole("form", { name: "Captain agent" });
   await expect(form.getByRole("button", { name: /^claude-personal/, pressed: true })).toBeVisible();
   // The account's default model is picked, not "Account default".
   await expect(form.getByRole("group", { name: "Model" }).getByRole("button", { pressed: true })).toHaveText(
     /fake-model/,
   );
-  await form.getByRole("button", { name: "Create boss" }).click();
+  await form.getByRole("button", { name: "Create captain" }).click();
   await expect(form.getByText("Health check passed")).toBeVisible();
   await shot(page, "onboarding-boss");
   await form.getByRole("button", { name: "Continue" }).click();
 
-  // Step 4: the boss answers a first message.
-  await expect(page.getByRole("heading", { name: "Finish with the boss" })).toBeVisible();
+  // Step 4: the captain answers a first message.
+  await expect(page.getByRole("heading", { name: "Finish with the captain" })).toBeVisible();
   await expect(progress).toContainText("Step 4 of 4");
   await expect(
     page.getByRole("log", { name: "Room messages" }).getByText(/^echo: Hi\. I just finished/),

@@ -209,7 +209,12 @@ describe("registered projects in every run", () => {
     // The task's own folder is not a mount here: the runner adds it, read-write.
     expect(own.every((m) => m.readOnly === true || m.path.endsWith(".git"))).toBe(true);
 
-    await must("tasks.create", { text: "look around as the boss", kind: "chat", agent: "boss", start: true });
+    await must("tasks.create", {
+      text: "look around as the captain",
+      kind: "chat",
+      agent: "boss",
+      start: true,
+    });
     await w.h.majhi.services.runs.idle();
     expect(w.h.runtime.starts.at(-1)?.mounts).toBeDefined();
     const boss = w.h.runtime.starts.at(-1)?.mounts ?? [];

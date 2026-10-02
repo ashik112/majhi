@@ -483,7 +483,7 @@ ALTER TABLE runs ADD COLUMN tools TEXT;
   },
   {
     // Autonomous mode (PRV-74). `autonomy_state` is one row: the mode, who changed it and why, the
-    // boss's autonomy chat, the queue it plans (JSON), and the holds seen last (JSON), so a restart
+    // captain's autonomy chat, the queue it plans (JSON), and the holds seen last (JSON), so a restart
     // does not write their cap events again. `autonomy_tasks` are the tasks it runs; `held` is set
     // while its run gate holds one (`owner` for a pause or a stop, `limit` for a cap, `held_scope`
     // being `day` or the org), so Resume and a lifted cap restart exactly those. `resumed_at` is when
@@ -589,7 +589,7 @@ CREATE TABLE e2e_seen (
   },
   {
     // What autonomous mode may pick (PRV-74 follow-up). `tasks.no_autonomy` is the owner's mark Not
-    // for autonomous mode. `autonomy_tasks.why` keeps the boss's reason for taking a task on.
+    // for autonomous mode. `autonomy_tasks.why` keeps the captain's reason for taking a task on.
     // `autonomy_sizes` caches each task's size as the decision provider rated it; `key` is a hash of
     // the title and brief, so an edited task is rated again.
     id: 114,

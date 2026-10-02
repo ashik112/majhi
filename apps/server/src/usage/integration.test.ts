@@ -187,7 +187,7 @@ describe("tokens and cost from real turns", () => {
     expect(byDay.body.rows[0].totals).toMatchObject(sum(all));
   });
 
-  it("lets the boss answer a cost question from the same numbers", async () => {
+  it("lets the captain answer a cost question from the same numbers", async () => {
     await twoOrgs();
     const { h } = w;
     await h.cmd("tasks.create", {

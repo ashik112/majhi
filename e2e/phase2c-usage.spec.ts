@@ -3,7 +3,7 @@ import { expect, test, useHome } from "./fixture.ts";
 
 // Tokens and cost (Phase 2c). Acme's lead runs a turn on the Claude fake, which reports tokens and a
 // running cost. This spec adds Northwind with a Codex API-key account (tokens, no cost), prices its
-// model, runs a task, and checks that the page and the boss show the sum of the recorded turns.
+// model, runs a task, and checks that the page and the captain show the sum of the recorded turns.
 useHome({ seed: "team-api" });
 test.describe.configure({ mode: "serial" });
 
@@ -149,7 +149,7 @@ test("after runs on two orgs, the totals per org, project, agent and model are t
   await expect(page.getByText(money(taskCost)).first()).toBeVisible();
 });
 
-test("the boss answers a cost question from the same numbers", async ({ request }) => {
+test("the captain answers a cost question from the same numbers", async ({ request }) => {
   const chat = await cmd<{ id: string }>(request, "boss.chat", {});
   const week = (await cmd<{ week: Totals }>(request, "usage.summary", { filters: { org: "northwind" } }))
     .week;

@@ -9,7 +9,7 @@ export interface ReadPolicy {
   roots: readonly string[];
   /** Registered projects. An org agent reads its own org's and never another's. */
   projects: readonly { path: string; org: string }[];
-  /** The agent's scope: `root` for a root agent (the boss), else its org. */
+  /** The agent's scope: `root` for a root agent (the captain), else its org. */
   scope: string;
   /** Places no run may read: majhi's config folder, the secrets key, the owner's `.ssh`. */
   blocked: readonly string[];
@@ -91,7 +91,7 @@ export interface ReadableProject {
 }
 
 /**
- * The registered projects an agent reads in every run: a root agent (the boss) reads all of them,
+ * The registered projects an agent reads in every run: a root agent (the captain) reads all of them,
  * an org agent only its own org's. Never another org's.
  */
 export function projectsFor<P extends { org: string }>(scope: string, projects: readonly P[]): P[] {

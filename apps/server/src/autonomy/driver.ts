@@ -8,14 +8,14 @@ import { answerableText, digest } from "./digest.ts";
 import type { AutonomyService } from "./service.ts";
 
 /**
- * The driver (PRV-74, rule 8): wakes the boss in its autonomy chat with a tick when something it
+ * The driver (PRV-74, rule 8): wakes the captain in its autonomy chat with a tick when something it
  * should decide happened. Events are batched for `DEBOUNCE_MS`; at most one tick waits at a time;
- * while the boss is in a turn, the next tick goes when the turn ends. Nothing ticks unless the mode
+ * while the captain is in a turn, the next tick goes when the turn ends. Nothing ticks unless the mode
  * is on.
  */
 
 export const DEBOUNCE_MS = 20_000;
-/** A check while nothing autonomous runs, so the boss picks the next work. */
+/** A check while nothing autonomous runs, so the captain picks the next work. */
 export const HEARTBEAT_MS = 60 * 60_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
@@ -39,7 +39,7 @@ export interface DriverDeps {
 export class AutonomyDriver {
   private reasons: string[] = [];
   private timer: NodeJS.Timeout | undefined;
-  /** A tick waits for the boss's turn to end. */
+  /** A tick waits for the captain's turn to end. */
   private afterTurn = false;
   private sending: Promise<void> | undefined;
   private lastTickAt: number;
@@ -76,7 +76,7 @@ export class AutonomyDriver {
     this.watchTimer = undefined;
   }
 
-  /** Something the boss should look at happened: batched into the next tick. */
+  /** Something the captain should look at happened: batched into the next tick. */
   wake(line: string): void {
     if (this.deps.autonomy.mode() !== "on") return;
     this.reasons.push(line);
@@ -99,8 +99,8 @@ export class AutonomyDriver {
   }
 
   /**
-   * A run's loop ended. The boss's: a tick that waited goes now. An autonomous task's that is
-   * still running with nobody working: the boss looks.
+   * A run's loop ended. The captain's: a tick that waited goes now. An autonomous task's that is
+   * still running with nobody working: the captain looks.
    */
   loopEnded(task: string): void {
     if (task === this.deps.autonomy.chat()) {
@@ -116,12 +116,12 @@ export class AutonomyDriver {
     }
   }
 
-  /** Sends the batch now, or after the boss's turn. One send at a time. */
+  /** Sends the batch now, or after the captain's turn. One send at a time. */
   async fire(): Promise<void> {
     if (this.sending !== undefined) return this.sending;
     const { autonomy } = this.deps;
     if (autonomy.mode() !== "on" || this.reasons.length === 0) return;
-    // Under the day cap the boss is not woken: only the owner's own messages reach it.
+    // Under the day cap the captain is not woken: only the owner's own messages reach it.
     if (autonomy.dayCapped()) {
       this.reasons = [];
       return;
@@ -171,7 +171,7 @@ export class AutonomyDriver {
       task: chat,
       agent: boss,
       text,
-      settled: "Autonomous mode woke the boss",
+      settled: "Autonomous mode woke the captain",
     });
     this.lastTickAt = this.now().getTime();
     autonomy.ticked(reasons);
@@ -199,7 +199,7 @@ export class AutonomyDriver {
     this.watchTimer.unref();
   }
 
-  /** Writes a `task` event for each autonomous task that changed status, and wakes the boss for the ones it should see. */
+  /** Writes a `task` event for each autonomous task that changed status, and wakes the captain for the ones it should see. */
   checkTasks(): void {
     let ids: Set<string>;
     let all: ReturnType<Store["tasks"]["list"]>;
@@ -230,7 +230,7 @@ export class AutonomyDriver {
     }
   }
 
-  /** A card the boss may answer was posted in an autonomous task. */
+  /** A card the captain may answer was posted in an autonomous task. */
   private cardWritten(task: string, item: RoomItem): void {
     const text = answerableText(item);
     if (text === undefined) return;
@@ -247,7 +247,7 @@ export class AutonomyDriver {
   }
 }
 
-/** What a status change says, and whether the boss should look now. */
+/** What a status change says, and whether the captain should look now. */
 function changeOf(
   t: Pick<Task, "id" | "title" | "status" | "pausedReason">,
 ): { text: string; wake: boolean } | undefined {

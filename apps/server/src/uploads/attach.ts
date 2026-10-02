@@ -17,7 +17,7 @@ import {
 export interface AttachSource {
   task: string;
   folder: string;
-  /** Absent for a LOCAL task such as the boss chat. */
+  /** Absent for a LOCAL task such as the captain chat. */
   org: string | undefined;
 }
 

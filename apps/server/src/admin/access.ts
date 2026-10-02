@@ -4,7 +4,7 @@ import type { AdminCaller, AdminTokens } from "./tokens.ts";
 export const ADMIN_TOOL_ID = "majhi-admin";
 export const ADMIN_SERVER_NAME = "majhi-admin";
 
-/** True for the boss, and for any root agent whose `tools` list has `majhi-admin`. */
+/** True for the captain, and for any root agent whose `tools` list has `majhi-admin`. */
 export function getsAdminTools(
   agent: { id: string; scope: string; tools: readonly string[] },
   boss: string | undefined,

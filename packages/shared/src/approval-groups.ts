@@ -26,7 +26,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "boss.chat",
   "chats.create",
   "chats.rename",
-  // Autonomous mode is the owner's switch: the boss never turns it on, widens its limits or guides itself.
+  // Autonomous mode is the owner's switch: the captain never turns it on, widens its limits or guides itself.
   "autonomy.start",
   "autonomy.pause",
   "autonomy.stop",
@@ -253,7 +253,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "agents.edit": "Edit an agent",
   "agents.duplicate": "Copy an agent",
   "agents.rename": "Rename an agent",
-  "boss.set": "Choose the boss",
+  "boss.set": "Choose the captain",
   "room.answerQuestion": "Answer a question card",
   "room.answerAsk": "Answer an ask card",
   "containers.images.allow": "Allow a service image",

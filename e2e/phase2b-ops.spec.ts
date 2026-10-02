@@ -9,7 +9,7 @@ const TASKS_DIR = join(HOST_HOME, "ops-tasks");
 const setRoots = (request: import("@playwright/test").APIRequestContext, roots: string[]) =>
   request.post("/api/cmd/workspaces.set", { data: { workspaces: roots, tasks_dir: TASKS_DIR } });
 
-// Setup (an account and a boss) is not what these tests are about: skip it, as the owner can.
+// Setup (an account and a captain) is not what these tests are about: skip it, as the owner can.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));
 });

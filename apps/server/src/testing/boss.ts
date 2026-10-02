@@ -7,7 +7,7 @@ import type { RoomItem, Task } from "@majhi/shared";
 import { taskWorld, type World } from "./world.ts";
 
 export interface BossWorld extends World {
-  /** The boss chat task. */
+  /** The captain chat task. */
   chat: Task;
   /** The MCP URL agents reach, on a real port. */
   mcpUrl: string;
@@ -17,7 +17,7 @@ export interface BossWorld extends World {
 }
 
 /**
- * A world with a root agent that is the boss, its chat task, a real listening server (so agent
+ * A world with a root agent that is the captain, its chat task, a real listening server (so agent
  * processes can reach `/mcp`), and sessions that run the fake ACP adapter.
  */
 export async function bossWorld(options: { real?: boolean; runClock?: () => Date } = {}): Promise<BossWorld> {
@@ -37,7 +37,7 @@ export async function bossWorld(options: { real?: boolean; runClock?: () => Date
       effort: "high",
       perms: ["edit", "shell"],
     },
-    instructions: "You are the boss.\n",
+    instructions: "You are the captain.\n",
   });
   if (made.status !== 200) throw new Error(`boss create failed: ${JSON.stringify(made.body)}`);
   const set = await h.cmd("boss.set", { id: "boss" });

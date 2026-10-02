@@ -61,7 +61,7 @@ export const MajhiConfigSchema = z.strictObject({
   budgets: BudgetsFilePatchSchema.optional(),
   /** Autonomous mode (PRV-74): its caps, account floors, per-org push and merge, summary time and the owner's instructions. */
   autonomy: AutonomyFilePatchSchema.optional(),
-  /** Approval policy for the boss's commands (5.16). Changing it is destructive. */
+  /** Approval policy for the captain's commands (5.16). Changing it is destructive. */
   policy: PolicyPatchSchema.optional(),
   boss: z.string().trim().min(1).optional(),
   /** The owner's rows of the price table (Phase 2c), in dollars per million tokens. */

@@ -12,7 +12,7 @@ export function ChatRoom({ task }: { task: Task }) {
 }
 
 /**
- * The conversation with the boss: the boss's chat task, opened (and created on first use) through
+ * The conversation with the captain: the captain's chat task, opened (and created on first use) through
  * `boss.chat`. Used by the drawer, the Hub setup page and the last onboarding step.
  */
 export function BossConversation({ empty }: { empty?: React.ReactNode }) {
@@ -20,7 +20,7 @@ export function BossConversation({ empty }: { empty?: React.ReactNode }) {
   if (chat.isPending)
     return (
       <p role="status" className="m-auto text-sm text-fg-faint">
-        Opening the boss chat
+        Opening the captain chat
       </p>
     );
   if (chat.isError) {

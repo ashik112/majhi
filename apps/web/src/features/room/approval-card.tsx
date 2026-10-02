@@ -33,7 +33,7 @@ const AUTO_LABEL: Record<Scope, string> = {
 type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
 /**
- * A command the boss wants to run. Pending: summary, risk, why, the input folded, Approve and Reject.
+ * A command the captain wants to run. Pending: summary, risk, why, the input folded, Approve and Reject.
  * Settled: one quiet line, with Undo while an applied change can still be undone.
  */
 export function ApprovalCard({ item }: { item: Item<"approval"> }) {
@@ -55,7 +55,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
     onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }),
   });
   const undo = useMutation<unknown, ApiRequestError, string>({
-    mutationFn: (commit) => cmd("history.undo", { commit }, { reason: "Owner undid a boss change" }),
+    mutationFn: (commit) => cmd("history.undo", { commit }, { reason: "Owner undid a captain change" }),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.history }),
     onError: (error) => toast("Could not undo", { detail: describeError(error), tone: "error" }),
   });

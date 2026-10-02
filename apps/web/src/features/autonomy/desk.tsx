@@ -92,7 +92,9 @@ export function useExclude() {
         {
           onSuccess: () =>
             on
-              ? toast(`${task} is left alone`, { detail: "The boss will not start, message or change it." })
+              ? toast(`${task} is left alone`, {
+                  detail: "The captain will not start, message or change it.",
+                })
               : toast(`Autonomous mode may take ${task} again`),
           onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }),
         },
@@ -153,7 +155,7 @@ function NowSection({ status, now }: { status: AutonomyStatus; now: number }) {
     <div className="flex flex-col gap-1.5">
       <SectionHead title="Now" count={status.now.length}>
         {status.lastTick && (
-          <span className="text-sm text-fg-faint">boss woken {formatAgo(status.lastTick, now)}</span>
+          <span className="text-sm text-fg-faint">captain woken {formatAgo(status.lastTick, now)}</span>
         )}
       </SectionHead>
       {boss ? (
@@ -165,7 +167,7 @@ function NowSection({ status, now }: { status: AutonomyStatus; now: number }) {
           </span>
         </p>
       ) : (
-        <p className="text-sm text-amber">There is no boss. Pick one on Agents to use autonomous mode.</p>
+        <p className="text-sm text-amber">There is no captain. Pick one on Agents to use autonomous mode.</p>
       )}
       {status.holds.map((h) => (
         <p key={`${h.kind}:${h.id ?? ""}`} className="text-sm text-amber text-pretty">
@@ -218,7 +220,7 @@ function NextSection({ status, now, onRules }: { status: AutonomyStatus; now: nu
       </SectionHead>
       {status.queue.length === 0 ? (
         <p className="text-sm text-fg-faint">
-          Nothing planned yet. The boss sets this list after each wake-up, each item with why.
+          Nothing planned yet. The captain sets this list after each wake-up, each item with why.
         </p>
       ) : (
         <ol className="flex flex-col">
@@ -255,7 +257,7 @@ function NextSection({ status, now, onRules }: { status: AutonomyStatus; now: nu
                     size="icon-sm"
                     variant="ghost"
                     aria-label={`Leave ${q.task} alone`}
-                    title="Not for autonomous mode: the boss leaves this task alone"
+                    title="Not for autonomous mode: the captain leaves this task alone"
                     disabled={exclude.busy || item?.noAutonomy === true}
                     onClick={() => q.task && exclude.set(q.task, true)}
                     className="shrink-0 opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
@@ -269,7 +271,7 @@ function NextSection({ status, now, onRules }: { status: AutonomyStatus; now: nu
         </ol>
       )}
       <p className="text-sm text-fg-faint">
-        The boss picks from {plural(status.backlog.length - leftOut, "backlog task")}
+        The captain picks from {plural(status.backlog.length - leftOut, "backlog task")}
         {leftOut > 0 && `; the rules leave out ${leftOut}`}.{" "}
         <button type="button" onClick={onRules} className="cursor-pointer text-blue hover:underline">
           Rules

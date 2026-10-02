@@ -53,7 +53,7 @@ describe("decideAutonomously: the table", () => {
     ] as const) {
       expect([command, decide(call(command))]).toEqual([command, "left"]);
     }
-    // The owner's answers: the boss answers with its own tool.
+    // The owner's answers: the captain answers with its own tool.
     expect(decide(call("room.answerAsk", {}))).toBe("left");
   });
 
@@ -354,7 +354,7 @@ describe("hardLimit", () => {
     ).toContain(glx);
     expect(limit("team.swap", { task: "ACM-1", agent: "acme-builder", with: "globex-root" })).toContain(glx);
     expect(limit("team.add", { task: "GLX-1", agent: "globex-root" }, world("globex"))).toBe(undefined);
-    // A private account is the owner's own: the boss may join any task, whatever connections it lists.
+    // A private account is the owner's own: the captain may join any task, whatever connections it lists.
     expect(limit("team.add", { task: "ACM-1", agent: "boss" })).toBe(undefined);
     expect(limit("tasks.addAgent", { id: "ACM-1", agent: "acme-builder" })).toBe(undefined);
   });
@@ -417,7 +417,7 @@ describe("hardLimit", () => {
     // Merged without the host's word would count as shipped when nothing was.
     expect(limit("tasks.markMerged", { id: "ACM-1", force: true })).toContain("without its host's word");
     expect(limit("tasks.markMerged", { id: "ACM-1", force: false })).toBe(undefined);
-    // The boss pushes with tasks.push only: its tools offer no push on a merge and no force anywhere.
+    // The captain pushes with tasks.push only: its tools offer no push on a merge and no force anywhere.
     const tools = adminTools();
     const props = (command: string) =>
       Object.keys(tools.find((t) => t.command === command)?.inputSchema.properties ?? {});

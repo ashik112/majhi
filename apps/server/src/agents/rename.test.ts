@@ -43,7 +43,7 @@ describe("agents.rename", () => {
     expect(list.find((e) => e.file === "acme-lead.md")?.agent?.frontmatter.fallback).toBe("acme-dev");
     expect((await h.cmd("tasks.get", { id: task.id })).body.team).toEqual(["acme-dev"]);
 
-    // The boss and the decisions agent follow a rename too.
+    // The captain and the decisions agent follow a rename too.
     expect((await h.cmd("agents.rename", { id: "boss-a", newId: "chief" })).status).toBe(200);
     expect((await h.majhi.services.config.sections()).boss).toBe("chief");
     expect((await h.cmd("decisions.status")).body.settings.acp_agent).toBe("chief");

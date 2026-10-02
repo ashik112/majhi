@@ -22,7 +22,7 @@ export interface AutonomyState {
   since?: string;
   by?: "owner" | "majhi";
   why?: string;
-  /** The boss's autonomy chat. */
+  /** The captain's autonomy chat. */
   chat?: string;
   queue: QueueItem[];
   queuedAt?: string;
@@ -41,7 +41,7 @@ export interface AutonomyTaskRow {
   heldScope?: string;
   /** When the owner last resumed it by hand. */
   resumedAt?: string;
-  /** The boss's one-line reason for taking it on. */
+  /** The captain's one-line reason for taking it on. */
   why?: string;
 }
 
@@ -166,7 +166,7 @@ export class AutonomyRepo {
     return this.db.prepare("SELECT 1 FROM autonomy_tasks WHERE task = ?").get(task) !== undefined;
   }
 
-  /** Adds the task, with the boss's reason. False when it was autonomous already, or no longer exists. */
+  /** Adds the task, with the captain's reason. False when it was autonomous already, or no longer exists. */
   join(task: string, at: string, why?: string): boolean {
     try {
       return (

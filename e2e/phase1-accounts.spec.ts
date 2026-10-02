@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// What phase1.spec.ts sets up through the UI, seeded: org Acme, its accounts and agents, and the boss.
+// What phase1.spec.ts sets up through the UI, seeded: org Acme, its accounts and agents, and the captain.
 useHome({ seed: "team" });
 
 const AGENTS_DIR = join(MAJHI_HOME, "agents");
@@ -35,14 +35,14 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   await expect(accountRow(page, "claude-acme-1")).toContainText("18%");
   await expect(accountRow(page, "codex-key")).toContainText("API key");
 
-  // The boss shows in its account's details, with a link to its editor.
+  // The captain shows in its account's details, with a link to its editor.
   await accountRow(page, "claude-personal")
     .getByRole("button", { name: "claude-personal", exact: true })
     .click();
   const details = page.getByRole("region", { name: "Account details" });
   const root = details.getByRole("region", { name: "Used by, Root" });
   await expect(root.getByRole("link")).toHaveCount(1);
-  await expect(root).toContainText("Boss");
+  await expect(root).toContainText("Captain");
 
   // Details group agents by scope.
   await accountRow(page, "claude-acme-1").getByRole("button", { name: "claude-acme-1", exact: true }).click();
@@ -138,7 +138,7 @@ test("permissions are switches: reading code is always allowed, the rest toggle 
   await expect.poll(() => readAgent("acme-reviewer")).not.toMatch(/^perms: \[.*push.*\]/m);
 });
 
-test("removing an account that agents use is refused, and so is removing the boss", async ({
+test("removing an account that agents use is refused, and so is removing the captain", async ({
   page,
   request,
 }) => {
@@ -151,7 +151,7 @@ test("removing an account that agents use is refused, and so is removing the bos
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("button", { name: "claude-acme-1", exact: true })).toBeVisible();
 
-  // The boss's account is in use too.
+  // The captain's account is in use too.
   await accountRow(page, "claude-personal")
     .getByRole("button", { name: "claude-personal", exact: true })
     .click();
@@ -160,16 +160,16 @@ test("removing an account that agents use is refused, and so is removing the bos
   await expect(page.getByRole("alert").filter({ hasText: "Agents still use claude-personal" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel" }).click();
 
-  // The editor blocks removing the boss, and the server refuses it too.
+  // The editor blocks removing the captain, and the server refuses it too.
   const bossId = readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8").match(/^boss: (\S+)/m)?.[1];
   expect(bossId).toBeTruthy();
   await page.goto(`/agents?agent=${bossId}`);
   await page.getByRole("button", { name: "Agent actions" }).click();
   const remove = page.getByRole("menuitem", { name: /^Remove/ });
   await expect(remove).toBeDisabled();
-  await expect(remove).toContainText("the boss cannot be removed");
+  await expect(remove).toContainText("the captain cannot be removed");
   const res = await request.post("/api/cmd/agents.remove", { data: { id: bossId } });
   expect(res.ok()).toBe(false);
-  expect(await res.text()).toContain("is the boss");
+  expect(await res.text()).toContain("is the captain");
   expect(readAgent(bossId as string)).toContain(`id: ${bossId}`);
 });

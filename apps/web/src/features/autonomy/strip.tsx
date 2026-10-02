@@ -45,7 +45,7 @@ export function AutonomyStrip() {
       ? `@${boss.id} ${boss.nowDoing}`
       : boss?.working
         ? `@${boss.id} is working`
-        : "Nothing runs now. The boss picks what comes next.");
+        : "Nothing runs now. The captain picks what comes next.");
 
   return (
     <section

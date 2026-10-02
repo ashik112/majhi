@@ -26,7 +26,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "agents.update": (i) => `Change agent ${str(i.id)}`,
   "agents.duplicate": (i) => `Copy agent ${str(i.id)} as ${str(i.newId)}`,
   "agents.remove": (i) => `Delete agent ${str(i.id)}`,
-  "boss.set": (i) => `Make ${str(i.id)} the boss`,
+  "boss.set": (i) => `Make ${str(i.id)} the captain`,
   "projects.register": (i) => `Register project ${str(i.id)} for ${str(i.org)}`,
   "projects.update": (i) => `Change project ${str(i.id)}`,
   "projects.remove": (i) => `Unregister project ${str(i.id)}`,

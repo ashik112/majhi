@@ -34,7 +34,7 @@ const ITEM =
 
 /**
  * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows (Board,
- * Chats, Boss, Autonomous), the pages set up once (Setup), the ones opened rarely (System), and the
+ * Chats, Captain, Autonomous), the pages set up once (Setup), the ones opened rarely (System), and the
  * agents' lamps at the foot.
  */
 export function Sidebar() {
@@ -211,7 +211,7 @@ function NavRow({
   );
 }
 
-/** Opens the boss chat drawer, like Cmd+J. */
+/** Opens the captain chat drawer, like Cmd+J. */
 function BossButton() {
   const { open, toggle } = useBoss();
   return (
@@ -225,7 +225,7 @@ function BossButton() {
         open ? ROW_SELECTED : "text-fg-muted",
       )}
     >
-      <span>Boss</span>
+      <span>Captain</span>
       <Kbd className="ml-auto">{MOD_KEY} J</Kbd>
     </button>
   );

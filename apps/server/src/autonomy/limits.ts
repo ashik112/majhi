@@ -1,7 +1,7 @@
 import { type ConnectionConfig, detectSecrets, type GitAccount, PRIVATE } from "@majhi/shared";
 
 /**
- * The hard limits of autonomous mode (PRV-74, rule 5): what the boss and the agents of autonomous
+ * The hard limits of autonomous mode (PRV-74, rule 5): what the captain and the agents of autonomous
  * tasks never do, whatever a policy, a saved rule or an `auto` mode says. Pure: the service gathers
  * the world, and every refusal is one line the agent and the owner read.
  *

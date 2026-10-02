@@ -16,8 +16,8 @@ const ORG_CALL =
 const AGENT_CALL =
   'call: majhi_agents_create {"id":"acme-reviewer","frontmatter":{"scope":"acme","role":"Reviewer","account":"claude-acme"},"instructions":"Review.\\n","ownerAsked":false,"reason":"a reviewer for Acme"}';
 
-describe("the boss through the fake adapter", () => {
-  it("creates an org and an agent after the owner approves, and tells the boss", async () => {
+describe("the captain through the fake adapter", () => {
+  it("creates an org and an agent after the owner approves, and tells the captain", async () => {
     w = await bossWorld();
     expect((await say(ORG_CALL)).status).toBe(200);
     await idle();
@@ -43,7 +43,7 @@ describe("the boss through the fake adapter", () => {
       { kind: "orgs.create", agent: "boss", decision: "allow", by: "owner", title: "Create org Acme Two" },
     ]);
 
-    // The room says it in words; the boss got the decision with the result in its session and answered it.
+    // The room says it in words; the captain got the decision with the result in its session and answered it.
     items = await w.items();
     expect(items.filter((i) => i.type === "system").map((i) => i.type === "system" && i.text)).toContain(
       "You approved: create org Acme Two",

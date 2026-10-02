@@ -10,7 +10,7 @@ interface BossControls {
 
 const BossContext = createContext<BossControls | null>(null);
 
-/** Whether the boss drawer is open, and Cmd+J (Ctrl+J elsewhere) to toggle it from any page. */
+/** Whether the captain drawer is open, and Cmd+J (Ctrl+J elsewhere) to toggle it from any page. */
 export function BossProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const show = useCallback(() => setOpen(true), []);

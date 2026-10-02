@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// The boss (majhi-boss) on a signed-in account. The fake adapter turns "call: <tool> {json}" into a
+// The captain (majhi-boss) on a signed-in account. The fake adapter turns "call: <tool> {json}" into a
 // real call to the majhi-admin MCP server, and echoes anything else.
 useHome({ seed: "team" });
 
@@ -12,7 +12,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screensh
 const SECRET = "nr-e2e-not-a-real-secret-4711";
 const API_KEY = `sk-ant-api03-${"Zq8Lm2".repeat(8)}`;
 
-const drawer = (page: Page) => page.getByRole("complementary", { name: "Boss chat" });
+const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain chat" });
 const composer = (page: Page) => drawer(page).getByRole("textbox", { name: "Message the room" });
 const log = (page: Page) => drawer(page).getByRole("log", { name: "Room messages" });
 
@@ -49,7 +49,7 @@ async function openBoss(page: Page) {
   await expect(drawer(page)).toBeVisible();
 }
 
-test("Cmd J opens the boss over any page; a change waits for approval, then applies and can be undone", {
+test("Cmd J opens the captain over any page; a change waits for approval, then applies and can be undone", {
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto("/agents");
@@ -76,7 +76,7 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
 
   await card.getByRole("button", { name: "Approve" }).click();
   await expect(drawer(page).getByText("Applied: Create org Globex", { exact: true })).toBeVisible();
-  // The boss is told and answers.
+  // The captain is told and answers.
   await expect(
     log(page).getByText("echo: The owner approved: Create org Globex.", { exact: false }),
   ).toBeVisible();
@@ -94,7 +94,7 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
   await expect(priv.getByRole("button", { name: /remove/i })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Personal" })).toHaveCount(0);
 
-  // History on Hub setup lists it, made by the boss.
+  // History on Hub setup lists it, made by the captain.
   await page.goto("/setup?section=history");
   const history = page.getByRole("region", { name: "History" });
   await expect(history.getByText("added org globex")).toBeVisible();
@@ -203,7 +203,7 @@ test("the composer warns about a secret, and sends only a reference", async ({ p
 test("Hub setup: sections save on their own; changing the policy asks first", async ({ page, request }) => {
   await page.goto("/setup");
   await expect(page.getByRole("heading", { name: "Hub setup" })).toBeVisible();
-  // The boss is not on the page: Ask the boss opens its drawer.
+  // The captain is not on the page: Ask the captain opens its drawer.
   await page.getByRole("button", { name: /Ask the boss/ }).click();
   await expect(composer(page)).toBeVisible();
   await page.keyboard.press("Meta+j");

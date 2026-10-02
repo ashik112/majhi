@@ -15,7 +15,7 @@ import type {
 import { capText } from "./spend.ts";
 
 /**
- * The tick message (PRV-74, rule 8): what the boss reads each time majhi wakes it in the autonomy
+ * The tick message (PRV-74, rule 8): what the captain reads each time majhi wakes it in the autonomy
  * chat. Pure. It stays under about 1,500 tokens: long lists are cut, and what is cut is counted.
  */
 
@@ -35,7 +35,7 @@ export interface BacklogTask {
   size?: TaskSize | undefined;
 }
 
-/** A card the boss may answer with majhi_autonomy_answer. */
+/** A card the captain may answer with majhi_autonomy_answer. */
 export interface AnswerableCard {
   task: string;
   item: string;
@@ -46,7 +46,7 @@ export interface AnswerableCard {
 export interface DigestInput {
   now: Date;
   tz: string;
-  /** Why the boss was woken: the lines since the last tick, oldest first. */
+  /** Why the captain was woken: the lines since the last tick, oldest first. */
   reasons: readonly string[];
   spend: AutonomySpend;
   holds: readonly AutonomyHold[];
@@ -257,7 +257,7 @@ export function when(iso: string, tz: string): string {
   return Number.isNaN(at.getTime()) ? iso : f.format(at);
 }
 
-/** The line for a pending card the boss may answer, or undefined for any other item. */
+/** The line for a pending card the captain may answer, or undefined for any other item. */
 export function answerableText(item: RoomItem): string | undefined {
   switch (item.type) {
     case "permission":

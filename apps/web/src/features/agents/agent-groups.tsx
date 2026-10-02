@@ -120,7 +120,7 @@ function AgentRow({
         {entry.status === "ok" && (
           <span className="ml-auto shrink-0 text-xs text-fg-faint">
             {entry.agent.frontmatter.role}
-            {entry.isBoss && ", boss"}
+            {entry.isBoss && ", captain"}
           </span>
         )}
       </span>

@@ -17,7 +17,7 @@ export * from "./paths.ts";
  * - `team`: what phase1.spec.ts sets up: org Acme; the login accounts claude-personal (Private),
  *   claude-acme-1 and claude-acme-2, signed in and healthy; the API-key account codex-key in Acme;
  *   the agents acme-lead and acme-reviewer on claude-acme-1, acme-builder on claude-acme-2, all with
- *   edit and shell; and the boss majhi-boss on claude-personal. No project is registered.
+ *   edit and shell; and the captain majhi-boss on claude-personal. No project is registered.
  * - `team-api`: `team`, plus ~/Work/alpha-api registered as Acme's project api (alias backend).
  */
 export type Seed = "empty" | "roots" | "team" | "team-api";

@@ -124,7 +124,7 @@ const ROOM_TOOLS: Tool[] = [
 // ---------------------------------------------------------------------------
 // majhi-tasks (5.4a, 5.10)
 
-/** Each tool is one command, run under the approval policy like the boss's. */
+/** Each tool is one command, run under the approval policy like the captain's. */
 const TASK_TOOLS: (Tool & { command: CommandName })[] = [
   { name: "list", command: "tasks.list", description: "List the tasks of your org, newest first." },
   { name: "get", command: "tasks.get", description: "Show one task with its repos, team and links." },
@@ -258,7 +258,7 @@ export interface RoomMcpDeps {
 
 /**
  * `/mcp/room`, `/mcp/tasks`, `/mcp/processes` and `/mcp/memory`: stateless streamable HTTP like `/mcp`, one bearer token per agent
- * session. `majhi-tasks` runs its commands through the boss's approval policy, and an org agent
+ * session. `majhi-tasks` runs its commands through the captain's approval policy, and an org agent
  * only sees and changes tasks of the orgs it may work in.
  */
 export function roomMcpRoutes(deps: RoomMcpDeps): Hono {

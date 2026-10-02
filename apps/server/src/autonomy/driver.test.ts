@@ -28,7 +28,7 @@ const STATUS: AutonomyStatus = {
   settings: AutonomySettingsSchema.parse({}),
 };
 
-/** A driver over fakes: the mode, whether the boss works and the day cap are the test's to set. */
+/** A driver over fakes: the mode, whether the captain works and the day cap are the test's to set. */
 function fakes() {
   const state = { mode: "on" as AutonomyMode, busy: false, capped: false, chat: CHAT as string | undefined };
   const ticks: string[][] = [];
@@ -90,7 +90,7 @@ describe("the driver", () => {
     expect(f.ticks).toHaveLength(2);
   });
 
-  it("sends nothing while the boss is in a turn, and one tick when the turn ends", async () => {
+  it("sends nothing while the captain is in a turn, and one tick when the turn ends", async () => {
     const f = fakes();
     f.state.busy = true;
     f.driver.wake("ACM-1 is ready for review");
@@ -133,14 +133,14 @@ describe("the driver", () => {
 });
 
 describe("the driver and a chat that is gone", () => {
-  it("wakes the boss in the chat majhi made again, and sends nothing when there is none", async () => {
+  it("wakes the captain in the chat majhi made again, and sends nothing when there is none", async () => {
     const f = fakes();
     // The service made a new chat because the old one was removed.
     f.state.chat = "LOCAL-2";
     f.driver.wake("ACM-1 is ready for review");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.toldIn).toEqual(["LOCAL-2"]);
-    // No chat could be made (no boss): nothing is told, nothing ticks.
+    // No chat could be made (no captain): nothing is told, nothing ticks.
     f.state.chat = undefined;
     f.driver.wake("ACM-2 is done");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);

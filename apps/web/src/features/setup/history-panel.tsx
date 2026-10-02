@@ -13,7 +13,7 @@ import { useNow } from "@/lib/use-now";
 const PAGE = 20;
 const MOST = 200;
 
-/** The config changes, by the owner, the boss or a hand edit, newest first, each with Undo. */
+/** The config changes, by the owner, the captain or a hand edit, newest first, each with Undo. */
 export function HistorySection() {
   const [limit, setLimit] = useState(PAGE);
   const history = useHistory(limit);

@@ -11,7 +11,7 @@ export interface PickedRepo {
 
 /**
  * A task's repos are the ones its creator listed: the owner's project chips, or `repos` from the
- * boss, a lead or an automation. Project names in the text attach nothing, so a brief that says
+ * captain, a lead or an automation. Project names in the text attach nothing, so a brief that says
  * "read X, do not change it" never gives X a branch. Returns the parse with those repos, the base
  * picked per repo, and the projects the text named that did not join, to say so in the room.
  */

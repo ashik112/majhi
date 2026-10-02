@@ -36,8 +36,8 @@ The owner works on several orgs: their own projects, clients and teams. An org c
 - **Org boundary by default, owner override always.** An org's agents only see that org's work unless the owner explicitly allows otherwise. Root agents work anywhere, and can organize projects and create tasks, with owner approval for every change.
 - **Nothing leaves the machine without approval.** No push, MR or merge unless the owner approves or the org's policy allows it.
 - **Measure tokens.** Every run records token use. Optimizations are kept only if the numbers show they help.
-- **One control plane, and the boss runs it.** Every change in majhi is a typed command. The UI, the palette and the boss agent all use the same commands, so the owner can set up and run everything just by talking to the boss (5.16). Everything is configurable at runtime, and every change can be undone.
-- **No manual work outside majhi.** Anything the owner would otherwise do in a terminal, a config file or another app (loading SSH keys, restarting, mounting, signing in, fixing setup) is done by majhi itself, through the UI, the boss or the host helper. When something truly needs the owner outside majhi (answering a macOS prompt, finishing a browser sign-in, the very first `make up`), majhi says so explicitly, in the place the owner is looking, with the exact step. A terminal command is only ever a fallback, never the main path.
+- **One control plane, and the captain runs it.** Every change in majhi is a typed command. The UI, the palette and the captain agent all use the same commands, so the owner can set up and run everything just by talking to the captain (5.16). Everything is configurable at runtime, and every change can be undone.
+- **No manual work outside majhi.** Anything the owner would otherwise do in a terminal, a config file or another app (loading SSH keys, restarting, mounting, signing in, fixing setup) is done by majhi itself, through the UI, the captain or the host helper. When something truly needs the owner outside majhi (answering a macOS prompt, finishing a browser sign-in, the very first `make up`), majhi says so explicitly, in the place the owner is looking, with the exact step. A terminal command is only ever a fallback, never the main path.
 - **Light on resources.** Agent processes and models start when needed and stop when idle. Limits keep memory, CPU and tokens bounded (5.17).
 
 ---
@@ -61,7 +61,7 @@ The owner works on several orgs: their own projects, clients and teams. An org c
 | **Connection** | Access to an outside system: a Kubernetes cluster, New Relic, a mailbox, a server over SSH, a cloud CLI, any MCP server. Owned by an org. Org agents use their org's connections; root agents can use all of them. See 5.14. |
 | **Tool** | A kind of agent CLI majhi can drive over ACP (Claude Code, Codex). Each tool is one entry in a registry, so new tools are added without touching the rest of majhi. |
 | **Decision provider** | An optional fast model that answers small typed questions (pick one, score, true or false) instead of writing text. Used for routing and model picking. See 5.12. |
-| **Boss** | The one root agent the owner talks to for everything: setup, orgs, repos, agents, accounts, limits, tasks, debugging, stopping other agents. Which agent is the boss is itself a setting. See 5.16. |
+| **Captain** | The one root agent the owner talks to for everything: setup, orgs, repos, agents, accounts, limits, tasks, debugging, stopping other agents. Which agent is the captain is itself a setting. See 5.16. |
 
 ### Task statuses
 
@@ -115,7 +115,7 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 
 ### 3.3 Studio (one overlay, five tabs)
 - **Agents:** list grouped by scope (Root, then each org), each with a status dot. Editor: role, where it can work, account (shows usage), model and effort (both read live from the account's agent over ACP, plus `auto`, which lets the decision provider pick), instructions, skills, permissions (edit files, run shell, push, open MRs, merge), MCP tools, fallback agent. Actions: New (per scope), Duplicate, Health check. Changes save to the agent's file immediately.
-- **Accounts:** its own sidebar page (`/accounts`, `g u`), the one place to add, see, check, sign in again and remove every AI account, and see where it is used. Health and usage keeps the checks and the usage overview and links here. Org cards have an Add account button that opens the same flow with that org selected. Table with tool, org, "Used by" (the agents on the account, boss marked; from Phase 2 also the tasks running on it), current-window usage with reset time, weekly usage, status (healthy, running high, at limit, re-login soon, unreachable). API-key accounts show tokens and cost instead of windows. Add account flow: pick tool, pick org (Private is preselected unless the org filter or the only other org says otherwise), name is suggested (`claude-acme-2`), then either sign in through a device-code flow in an embedded terminal or paste an API key, then one click to create an agent on it. Selecting an account opens its details: status, last health check, usage, and "Used by" grouped by scope with each agent's role, model and effort. Agents that point at a missing account are listed so the broken reference is visible.
+- **Accounts:** its own sidebar page (`/accounts`, `g u`), the one place to add, see, check, sign in again and remove every AI account, and see where it is used. Health and usage keeps the checks and the usage overview and links here. Org cards have an Add account button that opens the same flow with that org selected. Table with tool, org, "Used by" (the agents on the account, captain marked; from Phase 2 also the tasks running on it), current-window usage with reset time, weekly usage, status (healthy, running high, at limit, re-login soon, unreachable). API-key accounts show tokens and cost instead of windows. Add account flow: pick tool, pick org (Private is preselected unless the org filter or the only other org says otherwise), name is suggested (`claude-acme-2`), then either sign in through a device-code flow in an embedded terminal or paste an API key, then one click to create an agent on it. Selecting an account opens its details: status, last health check, usage, and "Used by" grouped by scope with each agent's role, model and effort. Agents that point at a missing account are listed so the broken reference is visible.
 - **Memory:** search, scope filters (All, Global, each org, Needs review), rows with text, scope, source (task and agent), use count, and actions (Pin, To AGENTS.md, Forget).
 - **Skills:** install from a GitHub link, skills registry name, zip, or local folder. Rows show source, which agents use it, and Enable for all / Remove from all.
 - **Connections:** grouped by org. Each row: name, type, access (read or write), which agents use it, last test result. Add flow: pick org, pick type, fill the fields, paste secrets (stored encrypted, never shown again), then Test. For write access, Studio asks whether the credential itself is limited and says plainly what agents will be able to change.
@@ -128,17 +128,17 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 - Dark theme first. IBM Plex Sans and IBM Plex Mono, as in the demo.
 
 ### 3.5 Workspace roots
-Set during onboarding (3.6) and changed later from the palette or by the boss. The owner never types a path: a folder browser lists folders on the host (via the host helper, 4.2), marks git repos, and suggests likely roots (folders under home that hold repos, with their repo counts). Typing a path stays possible for keyboard users. Container mounts are fixed at start, so when a new root is saved, the host helper regenerates the mounts and restarts majhi on its own; the UI shows "Restarting to mount ~/X" and comes back with the new repos. Only when no host helper is connected does majhi show the `make up` command.
+Set during onboarding (3.6) and changed later from the palette or by the captain. The owner never types a path: a folder browser lists folders on the host (via the host helper, 4.2), marks git repos, and suggests likely roots (folders under home that hold repos, with their repo counts). Typing a path stays possible for keyboard users. Container mounts are fixed at start, so when a new root is saved, the host helper regenerates the mounts and restarts majhi on its own; the UI shows "Restarting to mount ~/X" and comes back with the new repos. Only when no host helper is connected does majhi show the `make up` command.
 
 ### 3.6 Onboarding
 The first run is a short guided flow. Nothing else shows until it is done, and it can be reopened later from the palette.
 
 1. **Workspace roots:** pick the folders that hold projects (3.5), from suggestions or the folder browser. majhi mounts them, scans them and shows what it found.
 2. **First account:** add a Claude Code or Codex account, personal or for an org, by signing in through the embedded terminal or pasting an API key.
-3. **Choose the boss:** pick the account, model and effort for the boss (5.16), or keep the suggested defaults. It is created as a root agent file the owner can edit later.
-4. **Hand-off to the boss:** the boss opens its chat and finishes the setup as a conversation. It proposes orgs from the repos it found (remotes, folder names), asks one question at a time, adds more accounts and agents, sets limits, and registers projects. Everything it does follows the approval policy and can be undone.
+3. **Choose the captain:** pick the account, model and effort for the captain (5.16), or keep the suggested defaults. It is created as a root agent file the owner can edit later.
+4. **Hand-off to the captain:** the captain opens its chat and finishes the setup as a conversation. It proposes orgs from the repos it found (remotes, folder names), asks one question at a time, adds more accounts and agents, sets limits, and registers projects. Everything it does follows the approval policy and can be undone.
 
-Each step is one entry in a step list, so later phases add steps without redesigning the flow. The owner can skip ahead after step 3 and continue the setup with the boss at any time.
+Each step is one entry in a step list, so later phases add steps without redesigning the flow. The owner can skip ahead after step 3 and continue the setup with the captain at any time.
 
 ---
 
@@ -281,7 +281,7 @@ workspaces: [~/Work, ~/private]   # one or more roots, owner picks them
 tasks_dir: ~/Work/.majhi             # default: <first root>/.majhi
 decisions: { provider: laya, fallback: acp, acp_agent: dispatcher }   # laya | jev | acp | rules
 context: { cap: 200000, compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
-boss: majhi-boss                  # which root agent is the boss (5.16)
+boss: majhi-boss                  # which root agent is the captain (5.16)
 limits: { agents_max: 6, idle_timeout: 10m, per_account: 2 }   # see 5.17
 turns: { max_length: 2h, idle: 25m, max_tool_calls: 0 }   # per turn, off or 0 turns one off (5.13)
 accounts:
@@ -370,7 +370,7 @@ projects:
   - A task can have one parent. Nesting can go several levels deep.
   - Each child is a full task: its own room, team, repos, worktrees and branch.
   - The parent shows its children's progress ("3 of 5 done") and a rollup of their statuses. It moves to `done` when every child is done, unless the owner closes it earlier.
-  - The owner, the boss or a lead agent can split a task into children. Agents do it through `majhi-tasks`, which follows the approval policy (5.16).
+  - The owner, the captain or a lead agent can split a task into children. Agents do it through `majhi-tasks`, which follows the approval policy (5.16).
   - The task list nests children under their parent, collapsed by default.
 - **Dependencies.**
   - `depends-on` points at one or more tasks. Cycles are refused when the link is made.
@@ -380,7 +380,7 @@ projects:
     - `ready`: the dependency reached `review`. The waiting task stacks its branch on the dependency's working branch, and is rebased when that branch changes.
   - If a dependency is closed without finishing, the waiting task pauses with reason `owner` and asks what to do.
 - **Context for agents.** `TASK.md` lists related tasks in one or two lines each: the parent and its goal, what this task waits on or builds on (with the branch), and its children. Agents do not read other tasks' rooms unless they ask for them.
-- **Commands.** `tasks.link`, `tasks.unlink` and `tasks.split` are commands like any other (5.16), so the UI, the palette, the boss and agents use the same rules.
+- **Commands.** `tasks.link`, `tasks.unlink` and `tasks.split` are commands like any other (5.16), so the UI, the palette, the captain and agents use the same rules.
 
 ### 5.5 Multi-repo MRs and merging
 
@@ -445,7 +445,7 @@ Token receipt per task: brief size at start, recalled memory size, total input, 
 - **Dispatcher:** turns new tasks (local or tracker) into rooms: detects repos, branch and org, proposes a team.
 - **Housekeeper:** curates memory (5.6), removes worktrees after merge, keeps AGENTS.md short.
 
-All three are normal agent files the owner can edit, swap or delete. One root agent is the boss (5.16); it can hand work to the others.
+All three are normal agent files the owner can edit, swap or delete. One root agent is the captain (5.16); it can hand work to the others.
 
 Root agents can also:
 
@@ -550,7 +550,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
 
 #### Containers for agents
 
-Agents run without Docker on purpose (the socket is root on the Mac). When they need containers (to build and try a branch of majhi itself, or a database for tests), majhi runs them from a short list of actions, never a raw socket. The `majhi-containers` MCP tool (on for every session when majhi runs in Docker) has `preview_build`, `preview_run`, `preview_stop`, `service_start`, `service_stop`, `list` and `logs`. The boss and the Hub have the same actions as `containers.*` commands.
+Agents run without Docker on purpose (the socket is root on the Mac). When they need containers (to build and try a branch of majhi itself, or a database for tests), majhi runs them from a short list of actions, never a raw socket. The `majhi-containers` MCP tool (on for every session when majhi runs in Docker) has `preview_build`, `preview_run`, `preview_stop`, `service_start`, `service_stop`, `list` and `logs`. The captain and the Hub have the same actions as `containers.*` commands.
 
 - **Preview.** `preview_build` builds a repo's Dockerfile as `majhi-preview-<task>` on the task's own BuildKit builder, as a process that wakes the agent when it ends. `preview_run` runs it with a throwaway folder and nothing of the host, on the runner network, with one port on `127.0.0.1` for the owner's link.
 - **Services.** `service_start` runs an allowed image (postgres, redis) on a per-task internal network that only that task's runners join, with only named volumes majhi creates for the task. A port is never published.
@@ -559,12 +559,12 @@ Agents run without Docker on purpose (the socket is root on the Mac). When they 
 - **Processes.** Each container is a majhi process: the Processes card, `majhi-processes output`, Stop and waking the agent work as for any process.
 - **Cleanup.** Stopping a task removes its containers and network and keeps its volumes. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start.
 
-### 5.16 The boss and the control plane
+### 5.16 The captain and the control plane
 
-The owner can run majhi by talking to one agent. The boss sets things up, changes them, runs tasks and debugs, the way the owner would use a CLI agent today, but with access to all of majhi.
+The owner can run majhi by talking to one agent. The captain sets things up, changes them, runs tasks and debugs, the way the owner would use a CLI agent today, but with access to all of majhi.
 
-- **One control plane.** Every change is a typed command with zod input and output, defined in `packages/shared/commands` and handled in majhi. Examples: create an org, clone a repo into a root and register it, add an account, start a login, create or remove an agent, set a limit, create a task, stop an agent. The UI, the palette, the boss and the tests all call the same commands. A feature is not done until its commands exist. There are no UI-only or file-only features.
-- **Who the boss is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's private account. The owner can make any root agent the boss, in Studio or by asking the current boss. The boss is always one keystroke away (Cmd J opens its chat from any screen). Its chat is a `chat` task, so it streams, stops and resumes like any other room.
+- **One control plane.** Every change is a typed command with zod input and output, defined in `packages/shared/commands` and handled in majhi. Examples: create an org, clone a repo into a root and register it, add an account, start a login, create or remove an agent, set a limit, create a task, stop an agent. The UI, the palette, the captain and the tests all call the same commands. A feature is not done until its commands exist. There are no UI-only or file-only features.
+- **Who the captain is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's private account. The owner can make any root agent the captain, in Studio or by asking the current captain. The captain is always one keystroke away (Cmd J opens its chat from any screen). Its chat is a `chat` task, so it streams, stops and resumes like any other room.
 - **What it gets.** The `majhi-admin` MCP tool, which exposes every command, plus every other majhi tool and every connection of every org.
 - **What it can do**, for example:
   - Clone a repo into a workspace root, create an org for it, register the project with aliases and links.
@@ -576,21 +576,21 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
   - Install skills, curate memory, change the decision provider.
 - **Approval policy.** Every command has a risk class:
   - `read`: runs.
-  - `change` (reversible config, for example creating an agent or raising a limit): runs when the owner asked for it in the conversation. If the boss decides to do it on its own, it proposes and waits for a click.
+  - `change` (reversible config, for example creating an agent or raising a limit): runs when the owner asked for it in the conversation. If the captain decides to do it on its own, it proposes and waits for a click.
   - `destructive` (remove an agent, org or project, delete a worktree, forget memory, move folders) and `outbound` (push, MR, merge, send mail, connection writes, sending data to a hosted service): always a confirm card in the chat, approved with one click.
-  - The owner can change the policy per class or per command, also by asking the boss. Changing the policy is itself `destructive`.
-- **History and undo.** `~/.majhi` is a git repository. Every command that changes a file commits it, recording who (owner, boss or which agent), which command, and why. Undo reverts that commit. Studio shows the history. Credentials, databases and caches are git-ignored.
-- **Secrets never pass through a model.** When the owner pastes something that looks like a secret into any chat, the composer offers "Save as secret" and the agent only receives a reference such as `secret:newrelic-globex`. When the boss needs a secret, it asks for it through a secure input card that the UI renders, never as chat text.
-- **Live changes.** Config changes apply without a restart (file watchers and in-memory registries). The only exception is adding or removing a workspace root, because Docker mounts are fixed at start. The boss says so and shows the command.
+  - The owner can change the policy per class or per command, also by asking the captain. Changing the policy is itself `destructive`.
+- **History and undo.** `~/.majhi` is a git repository. Every command that changes a file commits it, recording who (owner, captain or which agent), which command, and why. Undo reverts that commit. Studio shows the history. Credentials, databases and caches are git-ignored.
+- **Secrets never pass through a model.** When the owner pastes something that looks like a secret into any chat, the composer offers "Save as secret" and the agent only receives a reference such as `secret:newrelic-globex`. When the captain needs a secret, it asks for it through a secure input card that the UI renders, never as chat text.
+- **Live changes.** Config changes apply without a restart (file watchers and in-memory registries). The only exception is adding or removing a workspace root, because Docker mounts are fixed at start. The captain says so and shows the command.
 
 ### 5.17 Performance and resource use
 
 - **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 10 minutes). Sessions come back with ACP `session/resume` or `session/load`.
 - **Concurrency limits.** A global maximum of running agent processes (`agents_max`, default 6), a maximum per account, and a maximum per task. Extra runs wait in the jobs table and show as queued, with their place in line.
-- **Budgets.** Optional token or cost budgets per account, org and task, per day. At the budget, runs pause with reason `limit`. The owner or the boss can raise them.
+- **Budgets.** Optional token or cost budgets per account, org and task, per day. At the budget, runs pause with reason `limit`. The owner or the captain can raise them.
 - **Models load lazily.** Laya and the embedding model load on first use and unload after idle. Docker memory limits cap each service.
 - **Server.** SQLite in WAL mode with prepared statements, bounded caches, streaming with backpressure, repo scans cached and refreshed by file watchers. The UI pages and virtualizes long rooms and lists.
-- **Configurable.** Every limit lives in `majhi.yaml` under `limits` and can be changed live, by hand, in Studio, or by the boss.
+- **Configurable.** Every limit lives in `majhi.yaml` under `limits` and can be changed live, by hand, in Studio, or by the captain.
 - **Targets**, measured in Phase 9: task switch under 100 ms, room updates on screen under 50 ms after the server receives them, server memory under 200 MB with no agents running.
 
 ---
@@ -606,7 +606,7 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 - Connection secrets follow the same rules as API keys. Write actions through a connection ask the owner unless the org policy allows that exact action (5.14).
 - API keys are injected only into runs on the account they belong to, never logged, and never written to TASK.md or the room.
 - The Jev decision provider sends task text to a hosted API. It is off by default and must be enabled by the owner.
-- Config changes and folder moves follow the boss's approval policy (5.16). Every change is a commit in `~/.majhi`, and every approval is logged in the audit table.
+- Config changes and folder moves follow the captain's approval policy (5.16). Every change is a commit in `~/.majhi`, and every approval is logged in the audit table.
 - Secrets pasted into a chat are stored in `secrets.age` and replaced with a reference before any agent sees them (5.16)
 - Containers majhi runs for agents (5.15) never get a bind mount, the Docker socket, `~/.majhi`, the secrets key or `~/.ssh`: every docker call is built by majhi from checked values and refused unless each flag is on an allow list.
 
@@ -616,7 +616,7 @@ The owner can run majhi by talking to one agent. The boss sets things up, change
 
 Build in phases. Each phase ends with working software, tests, and a short demo note in `docs/PROGRESS.md`. Stop at the end of each phase for the owner to review before starting the next.
 
-Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is only done when the boss can do everything that phase adds to the UI.
+Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is only done when the captain can do everything that phase adds to the UI.
 
 ### Phase 0: Skeleton
 - Monorepo, Biome, Vitest, Playwright, CI script.
@@ -631,8 +631,8 @@ Every phase exposes its features as commands (5.16). From Phase 2 on, a phase is
 - Agent files: load, validate, watch for changes, write from the UI.
 - Per-agent homes and the credential-linking check from 5.2. Log the result.
 - Studio Agents and Accounts tabs.
-- Onboarding steps 2 and 3 (3.6): first account and choosing the boss.
-- **Done when:** a fresh install walks through onboarding to a created boss agent whose health check passes; the owner can add two Claude accounts for one org and three agents on them from the UI, add one API-key account, and each agent's health check passes.
+- Onboarding steps 2 and 3 (3.6): first account and choosing the captain.
+- **Done when:** a fresh install walks through onboarding to a created captain agent whose health check passes; the owner can add two Claude accounts for one org and three agents on them from the UI, add one API-key account, and each agent's health check passes.
 
 ### Phase 2: One agent, one repo, end to end
 
@@ -647,31 +647,31 @@ Delivered in two parts, each usable and reviewed on its own.
 - Live control from 5.15: Esc to stop a turn, Stop all, queue or interrupt with a new message, inline permission prompts, slash commands, `@file` mentions. Task kind `chat`.
 - **Done when:** "add a health endpoint to api from develop" produces a working branch in a worktree, with the whole run visible in the room, stoppable with Esc, and a `chat` task works like opening the agent's CLI.
 
-#### Phase 2b: The boss and staying cheap
+#### Phase 2b: The captain and staying cheap
 - Context budget from 5.13: usage meter per agent, native compaction at the threshold, handoff to a fresh session, `max_turns` rotation.
-- The boss (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the boss finishes setup as a conversation (orgs, projects, more accounts and agents).
+- The captain (5.16): chat with Cmd J, `majhi-admin` with every command built so far, the approval policy, undo, and secret capture. Onboarding step 4: the captain finishes setup as a conversation (orgs, projects, more accounts and agents).
 - Task links UI from 5.4a: parent and child tasks (created by the owner), nested in the task list with progress, and manual `depends-on` links with the "Waiting on" chip. Related tasks listed in TASK.md.
 - Agents on demand and concurrency limits (5.17). The two-agents-on-one-account token refresh check from 5.2.
 - Decision provider (5.12), built alongside the run manager work: Laya natively on Apple silicon (`laya-mlx` in a private Python environment the host helper installs, with the model downloaded once and a local decision service), Jev (off until the owner adds a key), the ACP simulation and rules, in a fallback chain with every decision recorded. The `majhi-decide` MCP tool for every agent. Model and effort picking for `auto` agents at session start. A Decisions section in Hub setup: provider order, Laya status, an "Ask the decision model" box and recent decisions. Laya in Docker for Linux and Windows comes later.
 - Resume after sleep, shutdown, reboot, lost internet and crashes (5.7), without the owner clicking anything: checkpoints after every turn, wake and offline detection, auto-restart at login, auto-resume from the checkpoint. Limit handling and fallback handoff stay in Phase 8.
 - No manual work outside majhi (principles): "Update ready" when the code on disk is newer than the running image, and the host helper rebuilds and restarts majhi on one click; a Health view in the UI with every `doctor` check and a Fix button where majhi can fix it; a warning before mounting a macOS-protected folder (Documents, Desktop, Downloads) that a system prompt will appear and must be allowed.
-- **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact; an `auto` agent gets a model and effort picked by Laya with the decision recorded on the run, and with Laya stopped the chain falls back to the ACP simulation, then rules.
+- **Done when:** a fake agent pushed past 80% context gets compacted with the event shown in the room; the captain creates an org and an agent after the owner approves; and a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact; an `auto` agent gets a model and effort picked by Laya with the decision recorded on the run, and with Laya stopped the chain falls back to the ACP simulation, then rules.
 
 #### Phase 2c: Tokens, cost and runner isolation
 - Record every turn: input, output, reasoning, cache read and cache write tokens (from ACP's cumulative session usage, stored as per-turn deltas), cost, model, and the task, agent, account, org, project and time. API-key accounts show real cost; subscription accounts show the equivalent API cost, labelled estimated; tools that report no cost get an estimate from an owner-editable price table per model.
 - A "Tokens and cost" section on the Health and usage page: totals for today, this week and this month, filters by org, project, agent, account and model, a daily chart and the top tasks. Each task shows its total in the task view; org cards show theirs.
-- Commands `usage.summary` and `usage.breakdown`, so the boss can answer questions like "what did Acme cost this week?"
+- Commands `usage.summary` and `usage.breakdown`, so the captain can answer questions like "what did Acme cost this week?"
 - Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
 - Desktop notifications when a task needs the owner (review, permission prompt, limit, failed run), with per-event settings.
 - Backups: the secrets key kept in the macOS Keychain with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
-- **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
+- **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the captain answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions
 - @mention routing, handoff prompts, `majhi-room` MCP server, the three coordination modes, loop guards, worktree locks.
 - Team editing in the room: add, remove, swap agent, change model.
 - `majhi-tasks` MCP tool: a lead splits a task into children and adds dependencies. Waiting tasks start on their own when their dependencies are met. `ready` dependencies with stacked branches.
 - Decisions in teams: choosing the default team for a new task, and whether an agent message needs the owner, with the decision provider from Phase 2b. Laya in Docker (`laya`, PyTorch CPU) for Linux and Windows.
-- Lead orchestration: a lead (or the boss) given a parent task drives it to the end without the owner: it splits the work into child tasks, is told when a child finishes, reviews what was delivered, starts the next child, and reports when the parent is done. Approvals for destructive and outbound actions still wait for the owner.
+- Lead orchestration: a lead (or the captain) given a parent task drives it to the end without the owner: it splits the work into child tasks, is told when a child finishes, reviews what was delivered, starts the next child, and reports when the parent is done. Approvals for destructive and outbound actions still wait for the owner.
 - The lead chooses the cheapest way to staff a task, and says why. `TASK.md` of a lead-mode task carries "Team facts", rewritten each time majhi wakes the lead: each member's role, model, price tier, effort and account with what is left of its 5-hour and weekly windows, the org's other agents that could join, the other running tasks with the files they touch, and up to three recent plans with the tokens each agent used. A short block goes into the wake prompt only when those facts changed. A lead working alone also gets `majhi-room`, so it can bring in agents that could join. The lead states its plan in its first reply and records it with the `majhi-room` `record_plan` tool (lead only): the room shows a plan line, and majhi keeps each version on the task (`task_plans`). When the task reaches review or done, majhi stores on each version the tokens each agent used from that version to the next, subtasks included, and posts one line for the latest. The owner can reply to change the plan, and the lead records the new one.
 - Background processes from 5.15: the Processes card, Stop by the owner or the agent, cleanup with the task.
 - Task ids mentioned in any message (`PRV-15`) are links that open the task's details in a drawer.
@@ -702,7 +702,7 @@ Delivered in two parts, each usable and reviewed on its own.
 
 
 ### Phase 8: Root agents
-- Setup, Dispatcher and Housekeeper shipped as default agent files (the boss can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves. The Dispatcher routes new tasks to an org, repos and team with the decision provider.
+- Setup, Dispatcher and Housekeeper shipped as default agent files (the captain can hand setup work to Setup). `majhi-projects` MCP tool with the proposal and approval flow for config edits and folder moves. The Dispatcher routes new tasks to an org, repos and team with the decision provider.
 - Cleanup of done tasks: worktrees, merged task branches and old room logs after N days, previewed and approved.
 - **Done when:** Setup drafts a working config on a fresh machine, a root agent moves a project after approval without breaking its worktrees, and the Dispatcher routes a new task with its decision recorded.
 

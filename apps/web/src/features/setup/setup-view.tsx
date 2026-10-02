@@ -54,7 +54,7 @@ import {
 /**
  * Hub setup as a settings hub: the sections on the left, the picked one on the right. Overview says
  * what majhi still needs; every other section edits one part of majhi.yaml, saved per section as a
- * change that can be undone. The boss is one click (or Cmd+J) away in its drawer.
+ * change that can be undone. The captain is one click (or Cmd+J) away in its drawer.
  */
 export function SetupView() {
   const config = useConfig();
@@ -144,7 +144,7 @@ export function SetupView() {
     },
     {
       section: undefined,
-      title: "Boss",
+      title: "Captain",
       state: bossState,
       action: bossState.id ? (
         <Button size="sm" onClick={() => setCheckingBoss(bossState.id)}>
@@ -152,7 +152,7 @@ export function SetupView() {
         </Button>
       ) : (
         <Button size="sm" onClick={() => reopenOnboarding("boss")}>
-          Choose the boss
+          Choose the captain
         </Button>
       ),
     },
@@ -166,7 +166,7 @@ export function SetupView() {
     roots: <StateWord state={roots} />,
     ssh: <StateWord state={ssh} />,
     decisions: firstProvider(decisions.data),
-    memory: s && (s.memory.housekeeper ? `Housekeeper @${s.memory.housekeeper}` : "Housekeeper: the boss"),
+    memory: s && (s.memory.housekeeper ? `Housekeeper @${s.memory.housekeeper}` : "Housekeeper: the captain"),
     context:
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
@@ -190,7 +190,7 @@ export function SetupView() {
       >
         <Button onClick={boss.show} aria-pressed={boss.open}>
           <MessageSquare aria-hidden="true" />
-          Ask the boss
+          Ask the captain
           <Kbd className="ml-1">{MOD_KEY} J</Kbd>
         </Button>
       </PageHeader>

@@ -456,7 +456,7 @@ export class TaskService {
     if (agent === undefined && input.start) {
       throw new UserError(
         org === undefined
-          ? "No agent can run a task without an org. Create the boss in Studio."
+          ? "No agent can run a task without an org. Create the captain in Studio."
           : `No agent can work in "${org}". Create one in Studio.`,
         409,
       );
@@ -2937,7 +2937,7 @@ export class TaskService {
   async agentsIdle(id: string, refused = false): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "running") return;
-    // The boss chat is an ongoing conversation, never a piece of work to review.
+    // The captain chat is an ongoing conversation, never a piece of work to review.
     if (isBossChat(task)) {
       this.deps.onChatTurn?.(id);
       return;

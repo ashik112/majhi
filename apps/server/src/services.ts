@@ -157,7 +157,7 @@ export interface Services {
   connectionTests: ConnectionTester;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
-  /** The boss's tool calls, approvals and secret requests. */
+  /** The captain's tool calls, approvals and secret requests. */
   admin: AdminService;
   agents: AgentService;
   agentStore: AgentStore;
@@ -333,7 +333,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   /** Whether a budget holds this agent's task: its org's budget, or its account's. */
   const limitedRun = async (task: string, agent: string): Promise<string | undefined> => {
     const found = store.tasks.get(task);
-    // The boss is how the owner raises a budget (SPEC 5.17): its chat is never held.
+    // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held.
     if (found !== undefined && isBossChat(found)) return undefined;
     const org = found?.org ?? null;
     const stored = await agentStore.get(agent);

@@ -4,7 +4,7 @@ import { limitWord, type SizeOf, sizeProblem } from "./sizes.ts";
 /**
  * The owner's pick rules for autonomous mode (PRV-74 follow-up): the largest task size it may start,
  * the orgs it works in, and the tasks marked Not for autonomous mode. Pure: the digest leaves out what
- * they exclude, and the service refuses the boss's calls that break them.
+ * they exclude, and the service refuses the captain's calls that break them.
  */
 
 /** An org's name for the lines, `Private` for tasks with no org. */
@@ -20,7 +20,7 @@ export function orgProblem(pick: AutonomyPick, org: string, names: OrgNames): st
   return `${orgName(org, names)} is not one of the workspaces autonomous mode may work in`;
 }
 
-/** Why the rules leave a backlog task out, or undefined when the boss may take it. */
+/** Why the rules leave a backlog task out, or undefined when the captain may take it. */
 export function leftOutWhy(
   pick: AutonomyPick,
   task: { org?: string | undefined; noAutonomy?: boolean | undefined },
@@ -34,7 +34,7 @@ export function leftOutWhy(
   return big === undefined ? undefined : upperFirst(big);
 }
 
-/** The rules in one line each, for the digest and the boss. */
+/** The rules in one line each, for the digest and the captain. */
 export function pickLines(pick: AutonomyPick, names: OrgNames): string[] {
   const orgs =
     pick.orgs === undefined

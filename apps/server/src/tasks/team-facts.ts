@@ -82,7 +82,7 @@ export interface TeamFacts {
   at: string;
   lead: string;
   members: MemberFacts[];
-  /** Agents that may work in the task's org, not on the team, not the boss. Mentioning one adds it. */
+  /** Agents that may work in the task's org, not on the team, not the captain. Mentioning one adds it. */
   joinable: MemberFacts[];
   running: RunningFacts[];
   /** At most 3 plans of other tasks with an outcome, newest first. */

@@ -5,13 +5,13 @@ import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from 
 import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } from "./tasks.ts";
 
 /**
- * Autonomous mode (PRV-74): the boss runs the desk like the owner would, inside the caps, the
+ * Autonomous mode (PRV-74): the captain runs the desk like the owner would, inside the caps, the
  * account floors and the hard limits, and explains each decision in one line. The rules are in
  * docs/PROGRESS.md under PRV-74.
  */
 
 /**
- * `off`: nothing autonomous runs. `on`: the boss picks work and does it. `paused`: the boss gets no
+ * `off`: nothing autonomous runs. `on`: the captain picks work and does it. `paused`: the captain gets no
  * ticks and autonomous tasks pause after their current turn, until Resume. `stopping`: Stop
  * gracefully was pressed; current turns finish, nothing new starts, then majhi turns it `off`.
  */
@@ -39,7 +39,7 @@ export const AutonomySpendSchema = z.object({
   day: z.string(),
   tz: z.string(),
   resetsAt: z.string(),
-  /** Everything autonomous mode ran today: its tasks and the boss's autonomy chat. */
+  /** Everything autonomous mode ran today: its tasks and the captain's autonomy chat. */
   total: CapUseSchema,
   /** Per org: every org with a cap or with spend today. `private` stands for tasks with no org. */
   orgs: z.array(CapUseSchema.extend({ org: z.string() })),
@@ -77,12 +77,12 @@ export const AutonomyNowSchema = z.object({
   org: IdSchema.optional(),
   status: TaskStatusSchema,
   agents: z.array(z.object({ id: IdSchema, nowDoing: z.string().optional() })),
-  /** The boss's one-line reason for taking it on, when the call that started or created it gave one. */
+  /** The captain's one-line reason for taking it on, when the call that started or created it gave one. */
   why: z.string().optional(),
 });
 export type AutonomyNow = z.infer<typeof AutonomyNowSchema>;
 
-/** One entry of the queue the boss plans next (`autonomy.plan`). */
+/** One entry of the queue the captain plans next (`autonomy.plan`). */
 export const QueueItemSchema = z.object({
   /** What it will do, in a few words. */
   title: z.string().trim().min(1).max(200),
@@ -117,7 +117,7 @@ export const AutonomyBacklogItemSchema = z.object({
   sizeNote: z.string(),
   /** The owner marked it Not for autonomous mode. */
   noAutonomy: z.boolean(),
-  /** Why the pick rules leave it out, one line. Absent: the boss may take it. */
+  /** Why the pick rules leave it out, one line. Absent: the captain may take it. */
   leftOut: z.string().optional(),
 });
 export type AutonomyBacklogItem = z.infer<typeof AutonomyBacklogItemSchema>;
@@ -137,11 +137,11 @@ export const AutonomyWaitingSchema = z.object({
 export type AutonomyWaiting = z.infer<typeof AutonomyWaitingSchema>;
 
 /**
- * The feed. `mode`: turned on, paused, resumed, stopping, stopped. `tick`: majhi woke the boss, and
- * why. `decision`: the boss chose something, with its one-line reason (a note, or a call that
+ * The feed. `mode`: turned on, paused, resumed, stopping, stopped. `tick`: majhi woke the captain, and
+ * why. `decision`: the captain chose something, with its one-line reason (a note, or a call that
  * changed something). `approval`: a card approved within the limits or left for the owner.
  * `refused`: a hard limit stopped a call. `task`: an autonomous task started, went to review, was
- * shipped, paused or failed. `answer`: the boss answered an agent's question or prompt. `guide`: the
+ * shipped, paused or failed. `answer`: the captain answered an agent's question or prompt. `guide`: the
  * owner's message, an instruction saved or removed. `cap`: a cap or a floor started or stopped
  * holding new work. `summary`: the daily summary was made.
  */
@@ -166,7 +166,7 @@ export const AutonomyEventSchema = z.object({
   kind: AutonomyEventKindSchema,
   /** What happened, one line in plain words. Never holds a secret. */
   text: z.string(),
-  /** The boss's one-line reason, when it gave one. */
+  /** The captain's one-line reason, when it gave one. */
   reason: z.string().optional(),
   task: TaskIdSchema.optional(),
   org: z.string().optional(),
@@ -174,7 +174,7 @@ export const AutonomyEventSchema = z.object({
   command: z.string().optional(),
   /** For approvals and calls. */
   outcome: z.enum(["applied", "left", "refused", "failed"]).optional(),
-  /** The boss is not sure about this one: it goes into the daily summary. */
+  /** The captain is not sure about this one: it goes into the daily summary. */
   unsure: z.boolean().optional(),
   /** The room item it is about, to open it. */
   item: z.string().optional(),
@@ -220,7 +220,7 @@ export const AutonomyStatusSchema = z.object({
   since: z.string().optional(),
   by: z.enum(["owner", "majhi"]).optional(),
   why: z.string().optional(),
-  /** The boss and its autonomy chat. Absent: there is no boss, and turning on is refused. */
+  /** The captain and its autonomy chat. Absent: there is no captain, and turning on is refused. */
   boss: z
     .object({
       id: IdSchema,
@@ -232,9 +232,9 @@ export const AutonomyStatusSchema = z.object({
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
   queue: z.array(QueueItemSchema),
-  /** Inbox and ready tasks in the order the boss reads them, each with its size and whether the rules leave it out. */
+  /** Inbox and ready tasks in the order the captain reads them, each with its size and whether the rules leave it out. */
   backlog: z.array(AutonomyBacklogItemSchema),
-  /** When the boss last set the queue, UTC ISO. */
+  /** When the captain last set the queue, UTC ISO. */
   queuedAt: z.string().optional(),
   holds: z.array(AutonomyHoldSchema),
   spend: AutonomySpendSchema,
@@ -243,7 +243,7 @@ export const AutonomyStatusSchema = z.object({
   settings: AutonomySettingsSchema,
   /** The newest daily summary. */
   summary: AutonomySummarySchema.optional(),
-  /** When majhi last woke the boss, UTC ISO. */
+  /** When majhi last woke the captain, UTC ISO. */
   lastTick: z.string().optional(),
 });
 export type AutonomyStatus = z.infer<typeof AutonomyStatusSchema>;
@@ -260,7 +260,7 @@ export const AutonomyEventsInputSchema = z.object({
   task: TaskIdSchema.optional(),
 });
 
-/** `autonomy.plan`: the boss replaces its queue. */
+/** `autonomy.plan`: the captain replaces its queue. */
 export const AutonomyPlanInputSchema = z.object({ items: z.array(QueueItemSchema).max(20) });
 
 /** `autonomy.note`: a decision that is not a call, like waiting for a reset or skipping an org. */
@@ -272,7 +272,7 @@ export const AutonomyNoteInputSchema = z.object({
 });
 
 /**
- * `autonomy.answer`: the boss answers a card in an autonomous task as the owner would. `option` for
+ * `autonomy.answer`: the captain answers a card in an autonomous task as the owner would. `option` for
  * a permission prompt or a choice (the option id) and an owner question (the choice); `answers` for
  * an ask card (question id to option id or free text).
  */
@@ -303,7 +303,7 @@ export const AutonomyStopInputSchema = z.object({ how: z.enum(["now", "graceful"
 /** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
 export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });
 
-/** The boss's own tools: no approval card, only for the boss in its autonomy chat while the mode is not off. */
+/** The captain's own tools: no approval card, only for the captain in its autonomy chat while the mode is not off. */
 export const AUTONOMY_BOSS_COMMANDS = ["autonomy.plan", "autonomy.note", "autonomy.answer"] as const;
 
 /** What `autonomy.answer` returns. */

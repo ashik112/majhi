@@ -273,7 +273,7 @@ describe("who could join", () => {
   const boss = agent({ id: "boss", scope: "root", role: "Root" });
   const tired = agent({ id: "acme-aardvark", account: "claude-tired" });
 
-  it("lists the org's agents not on the team, without the boss or agents that cannot work there", () => {
+  it("lists the org's agents not on the team, without the captain or agents that cannot work there", () => {
     const facts = buildTeamFacts(
       input({ agents: [lead, builder, reviewer, rooted, globex, boss], boss: "boss" }),
     );

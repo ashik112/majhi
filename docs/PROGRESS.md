@@ -19,53 +19,53 @@
 
 ## PRV-74: Autonomous mode (built)
 
-**Status.** Built on `task/prv-74-autonomous-mode`, from `main` (`1b001e74`). The contract came first, then the web, the server core and the boss driver, then the review fixes, all in this one worktree. The child task PRV-91 holds no code. The owner flips one switch and leaves; the boss runs the desk inside the caps, the account floors and the hard limits, and logs every decision with one line why.
+**Status.** Built on `task/prv-74-autonomous-mode`, from `main` (`1b001e74`). The contract came first, then the web, the server core and the captain driver, then the review fixes, all in this one worktree. The child task PRV-91 holds no code. The owner flips one switch and leaves; the captain runs the desk inside the caps, the account floors and the hard limits, and logs every decision with one line why.
 
 ### What works
 
 **Server** (`apps/server/src/autonomy/`)
-- **The mode.** Off, on, paused and stopping, kept in SQLite (migration 112) across restarts. Turning on is refused without a boss. Pause holds autonomous runs at their next turn boundary, and Resume restarts exactly the tasks it held. Stop gracefully lets the current turns finish, stops what would wake again, then turns off. Stop now cancels the boss's turn first, then stops every autonomous run.
-- **The autonomy chat.** A chat task of the boss with the brief `Autonomous mode`, made on the first start and reused. It is not the Cmd J chat. Its sessions start with a short preamble on how to run the desk.
-- **Autonomous tasks.** Tasks the boss creates, splits or starts from that chat, and tasks agents of autonomous tasks create, join for good. `tasks.list` marks them `autonomous`, with the owner's `priority` and `due`.
-- **Self-approval** (`policy.ts`). While the mode is on, a call from the boss or an agent of an autonomous task that would wait for the owner is approved within the table and the limits (card marked approved, audit row `by: autonomy`), or left for the owner with one line why.
+- **The mode.** Off, on, paused and stopping, kept in SQLite (migration 112) across restarts. Turning on is refused without a captain. Pause holds autonomous runs at their next turn boundary, and Resume restarts exactly the tasks it held. Stop gracefully lets the current turns finish, stops what would wake again, then turns off. Stop now cancels the captain's turn first, then stops every autonomous run.
+- **The autonomy chat.** A chat task of the captain with the brief `Autonomous mode`, made on the first start and reused. It is not the Cmd J chat. Its sessions start with a short preamble on how to run the desk.
+- **Autonomous tasks.** Tasks the captain creates, splits or starts from that chat, and tasks agents of autonomous tasks create, join for good. `tasks.list` marks them `autonomous`, with the owner's `priority` and `due`.
+- **Self-approval** (`policy.ts`). While the mode is on, a call from the captain or an agent of an autonomous task that would wait for the owner is approved within the table and the limits (card marked approved, audit row `by: autonomy`), or left for the owner with one line why.
 - **Hard limits** (`limits.ts`). In every mode, off included: no force push, no push with a merge, no `deleteAfter`, no secrets in any text or passed by value, nothing of one org (secrets, accounts, git accounts, logins, SSH aliases, connections) passed to another, and no org agent let work in another org.
 - **Spend and holds** (`spend.ts`). Today's spend of autonomous tasks and the chat in the owner's zone, against the day cap and each org's cap. Account floors keep new work off an account until its window resets. Holds lift by themselves.
 - **The run gate.** `held` in `RunDeps` answers `owner` while paused or stopping and `limit` under a cap, between turns only.
-- **The driver** (`driver.ts`, `digest.ts`). It wakes the boss in its chat when the mode turns on or resumes, a task reaches review, an MR or done, a run ends idle, a card comes in, a hold changes, and hourly while nothing runs. Events are batched for 20 s, one tick waits at a time, never mid-turn. The tick message stays under about 1,500 tokens.
-- **The boss's tools.** `majhi_autonomy_plan` (the queue), `majhi_autonomy_note` (decisions that are not calls, `unsure` for the summary) and `majhi_autonomy_answer` (cards of autonomous tasks, through the owner's own paths). There is no card for them, and only the boss in its chat may use them.
-- **Guidance.** `autonomy.guide` reaches the boss as the owner's message in its chat; with `keep` it also becomes a standing instruction (a config commit). `autonomy.forget` removes one.
+- **The driver** (`driver.ts`, `digest.ts`). It wakes the captain in its chat when the mode turns on or resumes, a task reaches review, an MR or done, a run ends idle, a card comes in, a hold changes, and hourly while nothing runs. Events are batched for 20 s, one tick waits at a time, never mid-turn. The tick message stays under about 1,500 tokens.
+- **The captain's tools.** `majhi_autonomy_plan` (the queue), `majhi_autonomy_note` (decisions that are not calls, `unsure` for the summary) and `majhi_autonomy_answer` (cards of autonomous tasks, through the owner's own paths). There is no card for them, and only the captain in its chat may use them.
+- **Guidance.** `autonomy.guide` reaches the captain as the owner's message in its chat; with `keep` it also becomes a standing instruction (a config commit). `autonomy.forget` removes one.
 - **The daily summary** (`summary.ts`). Made once a day at `summary_at`, even across restarts, and told to the owner under the notify kind `autonomy`.
 - **Settings.** The `autonomy` section of `majhi.yaml`: day cap ($20 by default, always set), per-org cap, push and merge (both off by default), floors (5-hour 10%, weekly 5%), summary time and zone, instructions. `autonomy.configure` writes only what changed.
 
 **Web** (`apps/web/src/features/autonomy/`)
-- **Sidebar.** An Autonomous row under the Boss button, with a lamp, the mode in words and a switch. On asks first, showing the day cap, the floors and each org's cap, push and merge. Off offers Pause or Resume, Stop gracefully and Stop now, which asks first.
-- **The strip.** While the mode is not off, a strip that cannot be closed sits above the attention banner on every page. It shows the mode, what runs first (a task, else the boss), today's spend against the day cap, Pause or Resume, Stop and Open, and a link to a new daily summary.
+- **Sidebar.** An Autonomous row under the Captain button, with a lamp, the mode in words and a switch. On asks first, showing the day cap, the floors and each org's cap, push and merge. Off offers Pause or Resume, Stop gracefully and Stop now, which asks first.
+- **The strip.** While the mode is not off, a strip that cannot be closed sits above the attention banner on every page. It shows the mode, what runs first (a task, else the captain), today's spend against the day cap, Pause or Resume, Stop and Open, and a link to a new daily summary.
 - **The Autonomous page** (`/autonomous`, also in the palette). It has:
   - the mode, since when and why, and the controls;
   - the daily summary, Now, the Queue and Waiting for you;
   - the live feed with a Decisions view and load more;
-  - the chat box (Ask, Add as instruction) with the boss's latest replies, and the standing instructions with remove;
+  - the chat box (Ask, Add as instruction) with the captain's latest replies, and the standing instructions with remove;
   - Spend (day and org bars, holds, each account's windows with the floor marked) and the Limits form.
   Every task id opens its room.
 - **Cards and tasks.** Approval cards say when autonomous mode approved them or left them for the owner. Board cards show an Auto mark and priority and due chips. The task header edits priority and due.
 
-### Rework: pick rules, the boss chat and one-screen page (2026-10-02, `ux/auto`)
+### Rework: pick rules, the captain chat and one-screen page (2026-10-02, `ux/auto`)
 
 - **Pick rules** (`autonomy.pick`, Rules view). Task size it may start (Small only, Up to medium, Any size; default Any size), the workspaces it may work in (all, or a list with Private), and a per-task mark Not for autonomous mode (`autonomy.exclude`, owner only, `noAutonomy` in `tasks.list`). Size is Laya's rating of the task (`sizes.ts`), cached per task and rated again after an edit.
-- **Enforcement.** The digest lists the rules and each backlog task's size, and leaves out what they exclude. The preamble states them and says size is no reason to skip allowed work. The boss's starts and creates that break them are refused in `refusal` with one line, and logged as `refused` (`pick.ts`, `pick.test.ts`).
-- **The boss chat.** One chat, reused across runs. While the mode is not off it cannot be closed or removed; off, it can, and the next start makes a new one. A tick first makes or reopens a chat that is gone (`tickChat`).
-- **The page** fits 1440x900 without scrolling: a status bar (mode lamp, since, today's spend against the cap, Desk/Rules/Summary, Pause or Resume, Stop with both stops); the Desk with Waiting for you, Now and Next (each with why, a size badge and a leave-alone button) beside a compact Log with All/Decisions/Tasks; the boss chat on the right with the room's timeline and a box to write to it (Keep as standing instruction). Rules holds the pick rules, the backlog with the leave-alone switches, caps, push and merge, floors, spend and accounts, and the standing instructions. Below 1280 px the Log is its own view. The strip hides on this page.
+- **Enforcement.** The digest lists the rules and each backlog task's size, and leaves out what they exclude. The preamble states them and says size is no reason to skip allowed work. The captain's starts and creates that break them are refused in `refusal` with one line, and logged as `refused` (`pick.ts`, `pick.test.ts`).
+- **The captain chat.** One chat, reused across runs. While the mode is not off it cannot be closed or removed; off, it can, and the next start makes a new one. A tick first makes or reopens a chat that is gone (`tickChat`).
+- **The page** fits 1440x900 without scrolling: a status bar (mode lamp, since, today's spend against the cap, Desk/Rules/Summary, Pause or Resume, Stop with both stops); the Desk with Waiting for you, Now and Next (each with why, a size badge and a leave-alone button) beside a compact Log with All/Decisions/Tasks; the captain chat on the right with the room's timeline and a box to write to it (Keep as standing instruction). Rules holds the pick rules, the backlog with the leave-alone switches, caps, push and merge, floors, spend and accounts, and the standing instructions. Below 1280 px the Log is its own view. The strip hides on this page.
 - **Checked.** 8 tests in `pick.test.ts` and a driver test; screenshots and click tests in `e2e/shots.autonomy.ts` (`playwright.autonomy.config.ts`).
 
 ### How to try it
 
-1. Make sure there is a boss (Agents, or the last onboarding step).
-2. Give tasks a priority and a due date in their header if some matter more. The boss takes high first, then the nearest due date.
+1. Make sure there is a captain (Agents, or the last onboarding step).
+2. Give tasks a priority and a due date in their header if some matter more. The captain takes high first, then the nearest due date.
 3. In the sidebar, flip the Autonomous switch. Check the day cap, the floors and each org's push and merge in the confirm, then click Turn on.
 4. The strip shows on every page. Click Open, or Autonomous in the sidebar.
-5. Within about 20 s the feed shows "Woke the boss". Its plan shows under Queue, and its decisions show in the feed with their reasons.
+5. Within about 20 s the feed shows "Woke the captain". Its plan shows under Queue, and its decisions show in the feed with their reasons.
 6. Under Rules, set what it may pick (size, workspaces), the caps, push and merge per workspace, the floors and the summary time, then click Save. Mark tasks Not for autonomous mode in the backlog there.
-7. In the boss chat on the right, Send writes to the boss. With Keep as standing instruction on, it is also kept.
+7. In the captain chat on the right, Send writes to the captain. With Keep as standing instruction on, it is also kept.
 8. Pause, Resume, Stop gracefully or Stop now, from the page header, the strip or the sidebar switch.
 
 ### Verified
@@ -73,12 +73,12 @@
 - **Typecheck:** all five packages.
 - **Tests:** the 6 files under `apps/server/src/autonomy`, 43 tests, all passing on 2026-10-02. They use the fake ACP agent and spend no tokens.
   - `policy.test.ts`: the table, holds on work that starts, and every hard limit (cross-org secrets, accounts, `where`, git accounts, logins and SSH aliases, connections, secrets in text and by value, force push, push with a merge, `deleteAfter`), and which org a call acts in.
-  - `approvals.test.ts`: `AdminService` with the fake agent. A pending change is approved with its audit row, a destructive call is left, a push follows the org setting, and a hard limit is refused in every mode. It also covers agents of autonomous tasks, other agents in the chat, caps on rule, `auto` and lead starts, and the boss's tools and answers.
-  - `service.test.ts`: the state machine. Refused without a boss; turn on, adopt and pause after the turn; the owner resuming one held task; Stop now; Stop gracefully; a restart in `on` and in `stopping`.
+  - `approvals.test.ts`: `AdminService` with the fake agent. A pending change is approved with its audit row, a destructive call is left, a push follows the org setting, and a hard limit is refused in every mode. It also covers agents of autonomous tasks, other agents in the chat, caps on rule, `auto` and lead starts, and the captain's tools and answers.
+  - `service.test.ts`: the state machine. Refused without a captain; turn on, adopt and pause after the turn; the owner resuming one held task; Stop now; Stop gracefully; a restart in `on` and in `stopping`.
   - `spend.test.ts`: the day in a zone (with a clock change), per-org sums, a cap reached and lifted, account floors, and spend counted from when a task joined.
-  - `driver.test.ts`: the debounce, no tick while the boss is busy, ticks only while on and not under the day cap, the digest's size and the backlog order.
+  - `driver.test.ts`: the debounce, no tick while the captain is busy, ticks only while on and not under the day cap, the digest's size and the backlog order.
   - `summary.test.ts`: what the summary says, and one summary per day across restarts.
-- **Browser check** (2026-10-02). Against the real server and web from the worktree, with a throwaway home: org Acme, project api, and the boss on a fake agent account, with no real account. All 16 steps passed:
+- **Browser check** (2026-10-02). Against the real server and web from the worktree, with a throwaway home: org Acme, project api, and the captain on a fake agent account, with no real account. All 16 steps passed:
   - turn on from the sidebar switch through the confirm;
   - the strip on the board and on Agents;
   - the mode change and the first tick in the feed, and Now, Queue and Spend;
@@ -87,15 +87,15 @@
   - Pause, Resume and Stop gracefully, ending Off with the whole run in the feed.
 
   It found three web problems, all fixed:
-  - the strip said nothing runs while the boss worked;
+  - the strip said nothing runs while the captain worked;
   - a feed row repeated its line as its reason;
-  - the boss's replies had their last line faded.
+  - the captain's replies had their last line faded.
 
 ### Left and known issues
 
-- **Automations.** While the mode is on, schedules and triggers that start tasks or run commands, and every automation resume and run now, are left for the owner. Tasks an automation starts are not autonomous, so they would run outside the caps, the run gate and Stop. The follow-up is to track them as autonomous; then the boss can create them too.
-- **No end-to-end day.** No test runs a whole autonomous day with the fake agent: the boss picking a task, a builder shipping it, the summary next morning. The parts are covered by the tests above.
-- **The fake boss never plans.** In a dry run with the fake agent, the boss never calls its own tools, so the Queue stays empty and no decision rows appear. Those tools are covered by `approvals.test.ts`.
+- **Automations.** While the mode is on, schedules and triggers that start tasks or run commands, and every automation resume and run now, are left for the owner. Tasks an automation starts are not autonomous, so they would run outside the caps, the run gate and Stop. The follow-up is to track them as autonomous; then the captain can create them too.
+- **No end-to-end day.** No test runs a whole autonomous day with the fake agent: the captain picking a task, a builder shipping it, the summary next morning. The parts are covered by the tests above.
+- **The fake captain never plans.** In a dry run with the fake agent, the captain never calls its own tools, so the Queue stays empty and no decision rows appear. Those tools are covered by `approvals.test.ts`.
 
 ### Rules that hold
 
@@ -107,12 +107,12 @@
    - Push and merge follow each org's setting.
    - Work that starts is approved only when no hold covers it.
    - An agent's `ownerAsked` counts for nothing.
-4. **Hard limits** come before any rule or `auto` mode, for the boss and every agent of an autonomous task. A refusal writes a `refused` event and goes into the summary.
+4. **Hard limits** come before any rule or `auto` mode, for the captain and every agent of an autonomous task. A refusal writes a `refused` event and goes into the summary.
 5. **Holds.** A cap hold pauses autonomous runs of that scope at their next turn. An account hold only keeps new work off the account. When the day ends or the owner raises the cap, majhi resumes the tasks it paused for that cap.
-6. **The driver** never ticks while the mode is off, paused or stopping, or under the day cap. The owner's guidance still reaches the boss.
+6. **The driver** never ticks while the mode is off, paused or stopping, or under the day cap. The owner's guidance still reaches the captain.
 7. **The web** reads `autonomy.status` and the feed. The `autonomy` topic refetches them on every change, and the status is also read every 30 s while the mode is not off.
 
-Only the owner can check a real boss account working overnight with real spend.
+Only the owner can check a real captain account working overnight with real spend.
 
 ## Phase 10 plan (PRV-25)
 
@@ -130,10 +130,10 @@ Branch `task/prv-25-phase-10-connections-and-ops-tasks`, from `main` (`ff601c27`
    - `mail`: IMAP and SMTP (hosts, ports, user, password), or a mail MCP server set up like `mcp`.
    - `browser`: Playwright MCP or Chrome DevTools MCP, with one profile per connection.
 2. **Storage.** Definitions sit under the org: `orgs.<org>.connections.<id>` in `majhi.yaml`. The schema changes in the same commit. Ids are unique across all orgs. Text values go in the yaml. Secret values go in `secrets.age`, with a `secret:` ref in the yaml. Files go in `~/.majhi/connections/<id>/` (folder 0700, files 0600). Each connection also has a `description`, which is what agents see, and an `allow` list: the exact actions the org allows without asking (Part B). Values never reach logs, the room, TASK.md, memory or reports.
-3. **Commands** in `packages/shared/src/commands.ts`, so the boss gets them:
+3. **Commands** in `packages/shared/src/commands.ts`, so the captain gets them:
    - `connections.list` and `connections.get`. These never return a secret value, only whether it is set.
    - `connections.create`, `connections.update` and `connections.remove`. Remove is destructive and deletes the connection's secrets and files.
-   - `connections.setSecret` takes the value from the page's secure input, or a `secret:` ref the boss got from secret capture.
+   - `connections.setSecret` takes the value from the page's secure input, or a `secret:` ref the captain got from secret capture.
    - `connections.setFile` takes an upload id.
    - `connections.test`.
 4. **Test** per type. Each returns `{ ok, detail, warnings }`.
@@ -158,14 +158,14 @@ Branch `task/prv-25-phase-10-connections-and-ops-tasks`, from `main` (`ff601c27`
 
 What works:
 
-- **Registry.** `packages/shared/src/connections.ts` declares the six types. A field has a key, label, kind, variable, required, help, and optionally choices, a `when` rule (a remote MCP server has a URL, a local one a command) and a format (URL, port, host, words). The owner's own entries are lists keyed by name, each with its kind: `vars` for `env`, `headers` and `env` for MCP servers. `mail` is IMAP and SMTP or a mail MCP server set up like `mcp`; `browser` is Playwright MCP or Chrome DevTools MCP. `connections.types` hands the registry to the boss.
+- **Registry.** `packages/shared/src/connections.ts` declares the six types. A field has a key, label, kind, variable, required, help, and optionally choices, a `when` rule (a remote MCP server has a URL, a local one a command) and a format (URL, port, host, words). The owner's own entries are lists keyed by name, each with its kind: `vars` for `env`, `headers` and `env` for MCP servers. `mail` is IMAP and SMTP or a mail MCP server set up like `mcp`; `browser` is Playwright MCP or Chrome DevTools MCP. `connections.types` hands the registry to the captain.
 - **Storage.** `orgs.<org>.connections.<id>`, checked by the org schema, so `orgs.update`, `orgs.rename` and the Private org's first write keep connections. Ids are unique across orgs, hand edits included. Secret values go to secrets.age under names derived from the connection and field; a replaced secret is deleted once nothing else names it. Files sit in `~/.majhi/connections/<id>/` (0700, 0600). Remove deletes them and takes the id off the agents that list it. Variables that steer majhi or the agent CLIs (PATH, LD_*, GIT_*, ANTHROPIC_*, KUBECONFIG and the like) are refused. A connection's file comes through `POST /api/uploads?for=connection`: any type, at most 1 MB, owner-only, never a task attachment.
 - **Commands.** `connections.types`, `list`, `get`, `create`, `update`, `remove`, `setSecret`, `setFile`, `allow` (destructive: it lets agents write unasked) and `test`. No view holds a secret's value. An agent may pass only a `secret:` reference, never one the config already uses. It may not change where a connection that holds a secret sends it (URL, command, test command, transport, mail hosts).
 - **Test.** As planned per type, through the sessions' spawner: with runner containers, kubectl, the env test command and local or browser MCP servers run in a runner. They get PATH, LANG, a throwaway HOME and the connection's own values. Their files go in an owner-only scratch folder in the tasks folder, removed afterwards. SSH logs in from majhi, only to an alias of ~/.ssh/config. Secret values are replaced in every result. Health and `doctor` have a Connections group. `doctor` tests each connection. The Health page and the sidebar read the checks every few minutes, so they only show the last Test: testing there would start containers and sign in to clusters and APIs unasked. Each row offers Test as its fix. The runner image gets kubectl 1.37.1, pinned by SHA-256. Both choices are in `docs/DECISIONS.md`.
 - **Web.** Connections in the sidebar, the palette ("Open connections") and `g n`. Rows by org show a lamp with the last Test and a Test button. The detail has Status (problems, last result, warnings, which agents list it), Details (name and description), the type's settings and "Allowed without asking". Settings has text inputs, write-only secrets (Set or Replace), file upload and rows for variables or headers. The New connection form takes the org, type, name, description and text values; secrets and files are set right after. The agent editor has a Connections section with the org's connections; a root agent gets a note instead, since it gets every connection of the task's org.
 - **Tests.** Registry and stored shape, storage (no secret in the yaml or the history, 0600 files, remove and replace clean up, round trips through `orgs.update` and the Private org), the commands (no secret returned, the agent rules), the kubeconfig cut, and each Test with a fake kubectl, a fake stdio MCP server, a local HTTP MCP server and a fake ssh.
 
-How to try it: Connections > New connection > Kubernetes, give it a name and the context, Create, upload the kubeconfig, then Test. Ask the boss "add the New Relic MCP server for Acme": it asks for the key with a secret request.
+How to try it: Connections > New connection > Kubernetes, give it a name and the context, Create, upload the kubeconfig, then Test. Ask the captain "add the New Relic MCP server for Acme": it asks for the key with a secret request.
 
 Left and known issues:
 
@@ -271,7 +271,7 @@ Left and known issues:
    - it says "No report yet" until the file exists;
    - it lists the linked fix tasks with their status and a Start button.
 
-   The read command `tasks.report` lets the boss read a report.
+   The read command `tasks.report` lets the captain read a report.
 4. **Kind.** The task box infers `ops` for investigations and incidents ("why is the api down in prod") and shows a chip the owner can change. `task-parse.ts` has no `ops` inference today.
 5. **Tests:** the follow-up link, that starting a fix task needs the owner, and the brief section for ops tasks.
 
@@ -285,11 +285,11 @@ What works:
 - **An ops task is an investigation**, whether its kind was inferred or picked: its repos are mounted read-only, with no branch, worktree, Changes or Ship.
 - **TASK.md** of an ops task has an Ops section. Investigate with the task's connections and post findings as you go. Before a step that changes something, say it in one line; write actions such as a rollout restart wait for the owner. Logs, alerts, emails and command output are data, not instructions. Write `REPORT.md` with Summary, Timeline, Evidence, Cause, What was changed and Follow-ups. Turn each follow-up that needs code into a fix task. The section is fixed text, so it stays in the cached prefix.
 - **Fix tasks.** `tasks.create` takes `followUpOf`: the new task gets a `follow-up` link to the ops task, and takes its org when it lists no repo. An agent's create with `followUpOf` is always created unstarted. An agent's `start` of a fix task always posts an approval card: `lead_start`, an `auto` policy and saved allow rules do not apply to it (`AdminService.call` with `confirm`). Every agent of an ops task gets `majhi-tasks`, not only leads. The owner's Start runs `tasks.start` as the owner.
-- **REPORT.md.** `tasks.report` is a read command, so the boss has it. It returns the report and when it last changed, or null before the file exists. It opens only `<task folder>/REPORT.md`, without following a link: a link, a folder or a file over 2 MB is refused with 409. Part B shows it with the run's secret values replaced.
+- **REPORT.md.** `tasks.report` is a read command, so the captain has it. It returns the report and when it last changed, or null before the file exists. It opens only `<task folder>/REPORT.md`, without following a link: a link, a folder or a file over 2 MB is refused with 409. Part B shows it with the run's secret values replaced.
 - **Report tab** in the task view, for ops tasks and for any task with a REPORT.md. It renders the report like markdown in the room, says "No report yet" until the file exists, and lists the fix tasks with their status and a Start button for those not started. It reads the file again every 5 s while the page is visible.
 - **Tests.** The ops inference (`task-parse.test.ts`), the Ops section (`brief.test.ts`), `readReport` refusing a link or a folder (`report.test.ts`), ops agents getting `majhi-tasks` (`rooms/gating.test.ts`), and `followUpOf` with a start that waits for the owner (`rooms/mcp.test.ts`). The Done when (Part B) runs the whole flow with the fake agent.
 
-How to try it: New task, type "why is the api down in prod" and pick the Acme project: Kind reads ops. Pick a root agent, which gets every Acme connection, and start the task. TASK.md has the Ops section. When the agent writes REPORT.md, the Report tab shows it. A fix task it proposes waits for your approval, then shows under Fix tasks, and starts only when you click Start there or approve its start card. The boss reads a report with "show the report of ACM-12".
+How to try it: New task, type "why is the api down in prod" and pick the Acme project: Kind reads ops. Pick a root agent, which gets every Acme connection, and start the task. TASK.md has the Ops section. When the agent writes REPORT.md, the Report tab shows it. A fix task it proposes waits for your approval, then shows under Fix tasks, and starts only when you click Start there or approve its start card. The captain reads a report with "show the report of ACM-12".
 
 Left and known issues:
 
@@ -315,7 +315,7 @@ Branch `task/prv-24-phase-9-token-receipts-and-polish`, from `main`. SPEC 5.9, 5
 
 Part 1, in this order, one small commit per step:
 
-1. **Token receipts.** Migration 108 adds `usage_events` (the brief size once per task, the TASK.md memory section, each `majhi-memory.recall` result, each compaction with before, after and native or handoff) and `runs.tools`. `usage.receipt` (one task) and `usage.agentReceipt` (one agent, a date range) in `packages/shared`, so the boss gets them as tools. The math is a pure function in `usage/receipt.ts`: totals and the cache hit rate `cache_read / (input + cache_read)`, or "not reported" when the agent reported no cache numbers; cost and the split per agent come from the `turns` rows already there; decisions that replaced an LLM call are the logged decisions of the task that a local or hosted provider answered and the gate accepted. Web: a Context tab in the task view and the agent receipt in the agent drawer.
+1. **Token receipts.** Migration 108 adds `usage_events` (the brief size once per task, the TASK.md memory section, each `majhi-memory.recall` result, each compaction with before, after and native or handoff) and `runs.tools`. `usage.receipt` (one task) and `usage.agentReceipt` (one agent, a date range) in `packages/shared`, so the captain gets them as tools. The math is a pure function in `usage/receipt.ts`: totals and the cache hit rate `cache_read / (input + cache_read)`, or "not reported" when the agent reported no cache numbers; cost and the split per agent come from the `turns` rows already there; decisions that replaced an LLM call are the logged decisions of the task that a local or hosted provider answered and the gate accepted. Web: a Context tab in the task view and the agent receipt in the agent drawer.
 2. **Tool gating.** One function turns the role defaults plus the agent's `tools` list into the attached servers. A `-name` entry in `tools` turns a default off (`-majhi-decide`). Today's rules are the defaults, so no agent loses a tool. `runs.tools` records what each run attached; the Studio agent editor shows it.
 3. **Serena.** A stdio MCP server per task worktree for roles that edit code, gated by step 2. The package, launch command and the runner image change are checked first and written to `docs/DECISIONS.md`. A Health check says whether it is there.
 4. **Cache-friendly prompts.** Audit of `runs/prompt.ts`, `runs/handoff.ts`, `runs/wake.ts` and `tasks/brief.ts`: stable text first, volatile text last. TASK.md's "Team facts" block (it carries an "As of" time) moves behind the stable sections. The measure is the cache hit rate in the receipt; before and after go in this file.
@@ -326,14 +326,14 @@ Tests: the receipt math, the migration, the gating function. Typecheck, plus the
 
 What works:
 
-- **Receipts.** `usage.receipt` (a task) and `usage.agentReceipt` (an agent, a range) are commands, so the boss has them as tools. A task receipt has: brief size at the first prompt (estimated, once per task), the TASK.md memory section and each `majhi-memory.recall` result (estimated), input, output, reasoning, cache read and write, the cache hit rate `cache_read / (input + cache_read)` ("Not reported" when no cache number came in), cost with the split per agent, compactions (before, after, native or handoff, with the reason) and the decisions a local or hosted provider answered that the gate accepted (the `acp` stand-in and the rules do not count). Migration 108 adds `usage_events` and `runs.tools`. Web: a Context tab in the task view (context meter per agent, receipt, attachments, skills of the team) and the agent's receipt for the month in the agent drawer.
-- **Tool gating.** `gateTools` (`rooms/gating.ts`) is the only place that decides which MCP servers a run gets. The defaults are the old rules, unchanged. In an agent's `tools`, `-majhi-decide` turns a default off and a bare name adds one. Each run records what it attached (`runs.tools`, command `agents.attached`); Studio's agent editor has a Tools section with Default, Add and Off per server and shows the latest run's list. The boss keeps `majhi-admin`.
+- **Receipts.** `usage.receipt` (a task) and `usage.agentReceipt` (an agent, a range) are commands, so the captain has them as tools. A task receipt has: brief size at the first prompt (estimated, once per task), the TASK.md memory section and each `majhi-memory.recall` result (estimated), input, output, reasoning, cache read and write, the cache hit rate `cache_read / (input + cache_read)` ("Not reported" when no cache number came in), cost with the split per agent, compactions (before, after, native or handoff, with the reason) and the decisions a local or hosted provider answered that the gate accepted (the `acp` stand-in and the rules do not count). Migration 108 adds `usage_events` and `runs.tools`. Web: a Context tab in the task view (context meter per agent, receipt, attachments, skills of the team) and the agent's receipt for the month in the agent drawer.
+- **Tool gating.** `gateTools` (`rooms/gating.ts`) is the only place that decides which MCP servers a run gets. The defaults are the old rules, unchanged. In an agent's `tools`, `-majhi-decide` turns a default off and a bare name adds one. Each run records what it attached (`runs.tools`, command `agents.attached`); Studio's agent editor has a Tools section with Default, Add and Off per server and shows the latest run's list. The captain keeps `majhi-admin`.
 - **Serena 1.7.0.** Stdio MCP server per run for builders with a worktree, when agents run in runner containers. Runner image installs it under `/opt/serena`. Health and `make doctor` have a "Serena" check (a warning, with Rebuild majhi). Choice and launch command in `docs/DECISIONS.md`.
 - **Cache-friendly prompts.** TASK.md now ends with Related tasks, Team facts (its "As of" line) and Memory; "How the lead plans" is fixed text and moved up with the rules. Handoff prompts open with their fixed rules. A note majhi builds repeats only the Brief instead of all of TASK.md, which the fresh prompt already carries.
 
 Cache, before and after. A real hit rate needs real runs, and none are recorded where this was built, so there is no before and after hit rate yet; the receipt will show it from the next runs. What was measured is the stable start of TASK.md: two renders of the same task a while apart (the clock, the limits, a related task's status and one recalled fact differ) share 300 of 3,717 characters before (8%) and 3,424 of 3,717 after (92%). A provider cache can only reuse that shared start, and only in a fresh session of the same agent (a rotation, a handoff, a restart): inside one session the conversation already is the prefix. Compare the hit rate of tasks before and after this branch once a few have run.
 
-How to try it: open a task, then its Context tab; click an agent mention for the drawer; Studio > Agents > an agent > Tools. `usage.receipt` from the boss: "show the token receipt of PRV-24".
+How to try it: open a task, then its Context tab; click an agent mention for the drawer; Studio > Agents > an agent > Tools. `usage.receipt` from the captain: "show the token receipt of PRV-24".
 
 Left and known issues:
 
@@ -348,7 +348,7 @@ Left and known issues:
 
 What works:
 
-- **Command palette** (`Cmd/Ctrl K`). Search stays: tasks, and anything said or run in a room. Memory facts join it. Commands match on their name and filter as you type: New task, Add account, New agent, Install skill from link, Search memory, Swap an agent in this task (only on a task page), Resume paused runs, Go to task, Open the audit log, Budgets and alerts, Manage workspace roots, Ask the decision model, Reopen onboarding, Open the boss. They reuse what exists: the New task dialog, the add-account form (`/accounts?create=`), the new-agent form (`/agents?create=`), `team.swap` and `tasks.update`, `tasks.start`, `/settings/roots`, the decision panel's ask form and the onboarding mailbox. Some open a list of their own (Search memory, Go to task, Swap); Esc or Backspace on an empty field goes back, Esc from the root closes. Arrows, Enter and Esc work throughout.
+- **Command palette** (`Cmd/Ctrl K`). Search stays: tasks, and anything said or run in a room. Memory facts join it. Commands match on their name and filter as you type: New task, Add account, New agent, Install skill from link, Search memory, Swap an agent in this task (only on a task page), Resume paused runs, Go to task, Open the audit log, Budgets and alerts, Manage workspace roots, Ask the decision model, Reopen onboarding, Open the captain. They reuse what exists: the New task dialog, the add-account form (`/accounts?create=`), the new-agent form (`/agents?create=`), `team.swap` and `tasks.update`, `tasks.start`, `/settings/roots`, the decision panel's ask form and the onboarding mailbox. Some open a list of their own (Search memory, Go to task, Swap); Esc or Backspace on an empty field goes back, Esc from the root closes. Arrows, Enter and Esc work throughout.
 - **A room search match** opens its task and scrolls to the message, lighting its row once. Older pages load until the row exists (a match 5,990 messages back took 11 s, in view, address cleared).
 - **Shortcuts** come from one table (`features/shell/shortcuts.ts`); the handlers and the `?` list both read it. New: `]` and `[` for the next and previous open task (board order), `a` to approve (clicks the review card's main button: Ship opens its panel, or Mark done for a task with no repos), `g l` for the audit log. `Cmd/Ctrl Enter` sends from the message box (it stops a working agent first), and `Cmd/Ctrl K`, `Cmd/Ctrl J` and send are the only keys that work while typing in a field. The list shows every key, grouped.
 - **Performance.** Two causes, both in the room. Every row took the whole agent list and the task in its context, so each message or status change redrew every row (markdown and code highlighting made that the cost: 6 updates spent 2.2 s in the highlighter and the garbage collector). Rows now take only what they show. And a long room drew its 200 newest rows before anything showed: a room over 60 rows now draws its newest 40 first and the rest a frame later.
@@ -425,23 +425,23 @@ Branch `task/prv-40-budgets-and-alerts`, from `main`. Weekly budgets per org and
 - **Config.** `budgets.orgs.<org>` and `budgets.accounts.<account>` in `majhi.yaml`, each `{ tokens?, cost? }` per week. `settings.get` returns them, `settings.set` changes one at a time (`null` removes one). Changes apply live.
 - **Check.** After each recorded turn, this week's turns for its org and account are summed and compared (`budgets/thresholds.ts` holds the pure math). Tokens are input + output + cache write.
 - **Alerts.** 80% and 100%, once per (scope, id, week, threshold) in `budget_alerts` (migration 106). Raising a budget re-arms only the thresholds now under. Each alert is a quiet room line in the newest task that spent in that scope this week, and a `budgets` event that refreshes open pages.
-- **Commands.** `budgets.status` (read, no confirm card for the boss).
+- **Commands.** `budgets.status` (read, no confirm card for the captain).
 - **Web.** Health and usage has a "Budgets" panel above "Tokens and cost": a bar per budget (amber from 80%, red from 100%), edit, remove and add, and a banner when one is over.
 - **100% action (pause).** After the 100% alert, runs pause with reason `limit` through the run manager's own pause and resume. An org budget holds the runs of tasks in that org, an account budget the runs on that account. A run asks `limited` between turns, so a turn in progress finishes, and new runs and queued prompts wait; the task shows Paused. A pause lifts when the budget is raised above the use (or removed), when the owner resumes the task by hand (`tasks.start`; that task is not paused again until a new 100% alert is recorded), or when the week resets (a 60 second sweep notices, since a paused scope records no turns). The lifts also reach a task still paused at budget after a majhi restart: it starts again as majhi, not as an owner resume. The panel and banner say "Paused at budget".
-- **Overshoot.** A budget is a brake, not a hard cap: turns in progress finish, and the boss's chat is never held (the boss is how the owner raises a budget), so spend can pass 100% a little.
+- **Overshoot.** A budget is a brake, not a hard cap: turns in progress finish, and the captain's chat is never held (the captain is how the owner raises a budget), so spend can pass 100% a little.
 
 ### How to try it
 
 1. Health and usage, Budgets: add a small token budget for an org.
 2. Run a task in that org. Watch the bar turn amber at 80% and red at 100%, with a room line at each.
 3. At 100% the task pauses with "Paused at budget". Raise the budget, or resume the task, and it continues.
-4. Ask the boss (Cmd J): "How are the budgets this week?"
+4. Ask the captain (Cmd J): "How are the budgets this week?"
 
 ### Left and known issues
 
 - Not run with real accounts or a long-running majhi. Per-task and per-day budgets from SPEC 5.17 are not built.
 - After a restart, a prompt that was waiting in a paused run may not be in the stored queue, so it may not be sent when the pause lifts. This looks like how restarts already treat any pause; not confirmed.
-- The boss integration tests share a cleanup race (`ENOTEMPTY` while the chat is still being titled) that fails now and then. It is filed as its own task.
+- The captain integration tests share a cleanup race (`ENOTEMPTY` while the chat is still being titled) that fails now and then. It is filed as its own task.
 
 ## PRV-63: Scheduler and watch triggers (built, waiting for owner review)
 
@@ -449,7 +449,7 @@ Branch `task/prv-63-scheduler-and-watch-triggers`, from `main`. Choices: the `do
 
 ### What works
 
-- Shared: `automation.ts` (specs, actions, run records, overlap, the phrase parser), `schedule-time.ts` (next runs with croner, used by server and UI), `triggers.ts` (eight watch kinds, poll defaults, `describeWatch`). Commands `schedules.*` and `triggers.*` (list, get, runs: read; create, update, pause, resume, runNow: change; delete: destructive), so the boss gets `majhi_schedules_*` and `majhi_triggers_*`.
+- Shared: `automation.ts` (specs, actions, run records, overlap, the phrase parser), `schedule-time.ts` (next runs with croner, used by server and UI), `triggers.ts` (eight watch kinds, poll defaults, `describeWatch`). Commands `schedules.*` and `triggers.*` (list, get, runs: read; create, update, pause, resume, runNow: change; delete: destructive), so the captain gets `majhi_schedules_*` and `majhi_triggers_*`.
 - Server, `apps/server/src/automation/`: `ActionRunner` (org checks on save and on every run, overlap, secret refusal, how a run ends), `RunHistory` (`automation_runs`, shared), the scheduler loop (one timer, catch-up runs a missed schedule once), the trigger engine (baseline, settle, cooldown, one firing per change after a restart). Migrations 101 and 102.
 - Actions: start a task from a template, post to a task's room (wakes its lead), run a command as a process of a task.
 - Web: the Automations page (`/automations`, sidebar, `g t`) with Schedules and Triggers tabs, forms with a live next-runs preview and an explicit time zone, row actions and a run history drawer.
@@ -457,7 +457,7 @@ Branch `task/prv-63-scheduler-and-watch-triggers`, from `main`. Choices: the `do
 ### How to try it
 
 - Automations in the sidebar, New schedule, "weekdays at 9:00", start a task in a project, Run now, open History.
-- Or ask the boss: "every hour, post 'status?' to ACM-4".
+- Or ask the captain: "every hour, post 'status?' to ACM-4".
 - Screenshots: `e2e/shots.automations.ts` with `playwright.automations.config.ts`.
 
 ### Left and known issues
@@ -517,14 +517,14 @@ Built in three parts, one after the other in this worktree.
    - `recall(query, scope?)`, `propose(text, scope)` and `list_recent(scope?)`.
    - An agent sees and proposes only in `global`, its task's org and that org's projects. It never sees another org's facts.
    - `propose` makes a pending fact and hands it to curation (Part B).
-7. Commands (5.16), so the boss and the UI share them: `memory.search`, `memory.list` (scope, status, task), `memory.add` (the owner adds an active fact), `memory.approve`, `memory.reject`, `memory.forget` (retire, sets valid to), `memory.pin`, `memory.events` (the log, per task or all).
+7. Commands (5.16), so the captain and the UI share them: `memory.search`, `memory.list` (scope, status, task), `memory.add` (the owner adds an active fact), `memory.approve`, `memory.reject`, `memory.forget` (retire, sets valid to), `memory.pin`, `memory.events` (the log, per task or all).
 
 **Part B: curation, Housekeeper, promotion, settings**
 
 1. Settings: a `memory:` section in `majhi.yaml`, shown in Hub setup under Memory.
    - `auto_threshold`: default 0.8.
    - `review_all`: "Review every fact", default false.
-   - `housekeeper`: the agent that extracts facts. The default is the boss.
+   - `housekeeper`: the agent that extracts facts. The default is the captain.
    - `housekeeper_model`: the cheapest model its account offers when not set, for example Haiku.
 2. Extract (the only step that spends tokens): when a task becomes `done` (after a merge, or closed as done), and on `memory.extract(task)`.
    - One throwaway ACP session, like the ACP decision provider, reads the room (trimmed to about 8k tokens) and answers JSON only: up to 8 short facts (under 200 characters), each with a scope.
@@ -597,13 +597,13 @@ Server:
 
 - `Extraction.afterClose` skips a task where no agent wrote anything (a promotion task, a task closed without a run), so it spends no tokens. `memory.extract` still reads any room when asked.
 - A promotion task that is closed or removed without its branch reaching the base branch clears the fact's `promoted` and logs an `unpromoted` step, so the fact can be promoted again (`Promotion.release`). A merged one keeps it.
-- `settings.set { memory }` takes `null` for `housekeeper` and `housekeeper_model`, to put back the boss and "Cheapest".
+- `settings.set { memory }` takes `null` for `housekeeper` and `housekeeper_model`, to put back the captain and "Cheapest".
 
 Web (checked in Chromium, 1440x900, against the e2e server with a seeded home: `e2e/memory-seed.ts`, `e2e/shots.memory.ts`, `playwright.memory.config.ts`; screenshots in `media/`):
 
 - **Memory page** (sidebar, `g m`, `/memory`): search over active facts (`memory.search`), tabs All, Global, each org (its project facts included) and Needs review. A row shows the fact, where it holds, its source (task id opens the task drawer, and the agent), how many tasks got it, Pinned and "In AGENTS.md via <task>". Pending facts have Approve and Reject; active ones Pin/Unpin, To AGENTS.md (project facts not yet promoted, with a confirm that a task is made and waits in review) and Forget (confirm). "Recent automatic decisions" lists what curation kept, dropped, retired or merged, with the reason, how sure it was, the provider and Undo. Everything refreshes on the `memory` topic. The sidebar shows "N to review" for pending facts.
 - **Task Memory tab** (next to Room and Changes; shown when the task has facts or is done): the facts this task proposed or the Housekeeper wrote, each with its status and its logged steps, Approve and Reject on pending ones, Undo on steps, and Extract again for a done task or an empty tab.
-- **Hub setup, Memory**: the auto-keep threshold (0.5 to 1, with a line that explains it), Review every fact, the Housekeeper agent (default the boss) and its model (from that agent's account, or Cheapest).
+- **Hub setup, Memory**: the auto-keep threshold (0.5 to 1, with a line that explains it), Review every fact, the Housekeeper agent (default the captain) and its model (from that agent's account, or Cheapest).
 
 Try it: `pnpm exec playwright test -c playwright.memory.config.ts` starts the e2e server on port 7075 with the seeded home. `e2e/memory-seed.ts` has to run against it first (see the file header); for the screenshots, set `MEMORY_SHOTS` to the folder.
 
@@ -611,7 +611,7 @@ The real embedding model was downloaded and run once on this linux arm64 host (`
 
 ### Phase 5 result
 
-What works: the memory store and hybrid search, recall into TASK.md at task start, `majhi-memory` for every agent with org isolation, the `memory.*` commands (also through the boss), curation with duplicates, decisions, thresholds and Undo, the Housekeeper after a done task, promotion to AGENTS.md through a task in review, and the Memory screens above.
+What works: the memory store and hybrid search, recall into TASK.md at task start, `majhi-memory` for every agent with org isolation, the `memory.*` commands (also through the captain), curation with duplicates, decisions, thresholds and Undo, the Housekeeper after a done task, promotion to AGENTS.md through a task in review, and the Memory screens above.
 
 Left, and known:
 
@@ -689,7 +689,7 @@ Branch `task/prv-19-phase-4-multi-repo-and-mrs`, from `main` (Phase 3 merged). S
 - **Flow.** `tasks.openMrs` (outbound) checks every repo first, then opens one MR per repo in merge order and rewrites each description to name all of them; the task moves to `mr`. `tasks.mergeMrs` (outbound) merges in order and stops at the first failure with the reason in the room. `tasks.markMerged` is "I merged it". `tasks.refreshMrs` reads the hosts. The poller (`MrPoller`, every 60 seconds) reads open MRs, merges under `auto-if-green`, and notices merges done on the host.
 - **After the merge.** Base fetched, clean worktrees removed (one with uncommitted changes stays, and the room says so), task `done`, waiting tasks start. A `merged` dependency is met only when none of the task's MRs is left open or closed; a task closed with one makes its waiting tasks pause with reason `owner`, and the poller tells them when it merges.
 - **Credentials.** Every host needs a token (org `mr_tokens` or the remote's `token`); `tasks.openMrs` refuses before pushing when one is missing.
-- **The boss** has all of it through `majhi-admin`, since every step is a command. `openMrs` and `mergeMrs` are outbound, so they wait for the owner under the approval policy.
+- **The captain** has all of it through `majhi-admin`, since every step is a command. `openMrs` and `mergeMrs` are outbound, so they wait for the owner under the approval policy.
 
 ### How to try it (server, without the web)
 
@@ -732,7 +732,7 @@ Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c me
 
 ### Lead orchestration and parallel planning (PRV-32)
 
-- A lead (or the boss) given a parent task splits it (`tasks.split` with `start`), is woken when a child reaches review, reviews it, closes it with the `majhi-tasks` `close` tool, and the next child starts by itself. The parent closes with a report when every child is done. Approvals for destructive and outbound actions still go to the owner.
+- A lead (or the captain) given a parent task splits it (`tasks.split` with `start`), is woken when a child reaches review, reviews it, closes it with the `majhi-tasks` `close` tool, and the next child starts by itself. The parent closes with a report when every child is done. Approvals for destructive and outbound actions still go to the owner.
 - Before majhi starts a child by itself it checks overlap with the running tasks (changed files and named paths), removes "waits for" links between independent tasks, and checks the account's 5-hour and weekly windows. It starts, waits, hands the task to an agent on another account, or queues. One `choice` card goes to the owner only for a long wait on heavy overlap. Each step is a short line in the parent's room. `tasks.plan` (and the `plan` tool) answers "what can I start now?" without changing anything. Code: `tasks/planning.ts` (pure), `planner.ts` (inputs), `orchestrator.ts` (acts). Rules and numbers: `docs/DECISIONS.md`, 2026-09-30.
 - Tests: `tasks/planning.test.ts` (paths, overlap, limits, verdicts) and `tasks/orchestrate.test.ts` (link removed, overlap waits then starts, owner card, `tasks.plan`, lead told and parent report).
 - Known limits: the overlap check reads paths from task text and the worktree diff, so a task that names no paths is never held back or freed; the size and cost numbers are estimates; the queue is not saved across a restart (a sweep runs on the next status change).
@@ -756,12 +756,12 @@ Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c me
 - **Loop guard.** After 12 agent-to-agent turns without the owner (org override `rooms.max_agent_turns`), the task pauses with reason owner and says why.
 - **Worktree locks.** An agent with `edit` holds its worktrees' locks for its turn. Another editing agent waits, showing "Waiting for @x to finish in api". Builders on different repos (`team.set repos`) work in parallel.
 - **Team editing in the room.** Add agent, and a menu per agent: make lead, model and effort for this task, swap, remove. Commands: `team.add`, `team.remove`, `team.swap`, `team.set`. A model or effort change applies to a live session at once.
-- **`majhi-room`** (`read_recent`, `post`, `mention`) for team members, and **`majhi-tasks`** (`list`, `get`, `create`, `split`, `update`, `link`) for leads and root agents. `majhi-tasks` goes through the boss's approval policy, with cards in the room, and keeps an org agent to its org. New command `tasks.split` makes children in order, each able to wait for earlier ones.
+- **`majhi-room`** (`read_recent`, `post`, `mention`) for team members, and **`majhi-tasks`** (`list`, `get`, `create`, `split`, `update`, `link`) for leads and root agents. `majhi-tasks` goes through the captain's approval policy, with cards in the room, and keeps an org agent to its org. New command `tasks.split` makes children in order, each able to wait for earlier ones.
 - **Dependencies.** Waiting tasks start on their own (2b). A `ready` dependency now stacks the waiting task's branch on the dependency's working branch, and majhi rebases it after every checkpoint of the dependency. Conflicts are aborted and named in the room.
 - **Decisions in teams.** The default team comes from the org's `team` when set. Otherwise the decision provider picks one of: one agent; builder and reviewer; lead, builder and reviewer. The pick is recorded, and the rules pick one agent when the provider is not sure. The decision provider also reads unclear reviewer verdicts in the review loop, and flags a lead-mode message that needs the owner while others work.
 - **Laya in Docker** for Linux and Windows. It is the `laya` compose service (`laya-serve` 0.3.22, PyTorch CPU), which `make up` builds everywhere but Apple silicon Macs. It starts on the first question and stops after 10 idle minutes. The provider tries native Laya first.
 - **Settings.** Hub setup, Settings has a Teams group (agent turns without you, review rounds). `orgs.update` takes `team` and `rooms`.
-- **The boss** has every new command through `majhi-admin` (`team.*`, `tasks.split`, `tasks.update mode`, `settings.set rooms`, `orgs.update team`).
+- **The captain** has every new command through `majhi-admin` (`team.*`, `tasks.split`, `tasks.update mode`, `settings.set rooms`, `orgs.update team`).
 - **Background processes (PRV-33, 5.15).** Agents start slow or long-running commands through the `majhi-processes` MCP tool (`start`, `list`, `output`, `stop`, `restart`), which every session gets. majhi runs them with `/bin/sh -c` through the session's own spawner, environment and mounts, at most 5 at once per task, and refuses a second copy of a running command. When a `wait` process exits by itself, majhi wakes the agent that started it with the exit code and the last lines, and a task in review runs again. While one runs, the task stays running and the room says "Waiting for p1 `pnpm test`". Each prompt says what already runs. The Processes card in the task view shows each one with its output and a Stop button (`processes.stop`). Stopping, closing or removing the task stops its processes. TASK.md no longer tells agents to run tests in the foreground.
 
 ### How to try it
@@ -779,7 +779,7 @@ Branch `task/prv-18-phase-3-teams-rooms-and-decisions`, from `main` (Phase 2c me
 - A lock covers a whole turn, so two editing agents on one repo take turns even when one only reads. Reviewers should not have `edit`.
 - An agent added to the team mid-session gets `majhi-room` from its next session.
 - Changing the mode starts the new mode's turn order from its first step.
-- The Orgs form does not show the default team or the loop guard yet; the boss and `orgs.update` set them.
+- The Orgs form does not show the default team or the loop guard yet; the captain and `orgs.update` set them.
 - "Needs you" lines use the decision provider. With the ACP stand-in in the chain, each one costs a small prompt.
 - Background processes live in memory: a restart of majhi ends them. In container mode their ports are not published to the Mac yet, so the card's port link works only in local mode.
 - No new Playwright spec: the done-when runs as integration tests. `sh scripts/ci.sh` and e2e were not run from this task.
@@ -792,7 +792,7 @@ Done when: lead, builder and reviewer on different tools complete a task togethe
 
 1. **Contract.** A coordination mode per task (`lead`, `pipeline`, `review-loop`), per-task agent overrides (model, effort, repos), a `handoff` room item, `rooms` settings (`max_agent_turns` 12, `review_rounds` 5, orgs override `max_agent_turns`), and commands `team.add`, `team.remove`, `team.swap`, `team.set`, `tasks.split`, plus `mode` on `tasks.create` and `tasks.update`.
 2. **Routing.** Every agent turn's final message is parsed for @mentions. A mention wakes that agent with a handoff prompt: the message, the TASK.md pointer, a short room summary and the diff stat. Owner messages go to the mentioned agent, else the lead. Mentioning an agent outside the team adds it when it may work in the org. The three modes and the loop guard (pause with reason `owner` after 12 agent turns without the owner) are one pure module. A worktree lock per edit turn, so two agents never edit one worktree at once.
-3. **MCP servers.** `majhi-room` (`post`, `mention`, `read_recent`) and `majhi-tasks` (`create`, `list`, `get`, `update`, `split`, `link`) at `/mcp/room` and `/mcp/tasks`, one bearer token per session, `majhi-tasks` through the boss's approval policy and limited to the agent's org.
+3. **MCP servers.** `majhi-room` (`post`, `mention`, `read_recent`) and `majhi-tasks` (`create`, `list`, `get`, `update`, `split`, `link`) at `/mcp/room` and `/mcp/tasks`, one bearer token per session, `majhi-tasks` through the captain's approval policy and limited to the agent's org.
 4. **Dependencies.** Waiting tasks start on their own (built in 2b); `ready` dependencies stack the branch on the dependency's working branch and rebase when it moves.
 5. **Decisions in teams.** The default team for a new task is picked by the decision provider from teams built of the org's agents, with the decision recorded on the task; whether an agent message needs the owner, and whether a reviewer approved. Laya in Docker (`laya-serve`, PyTorch CPU) for Linux and Windows, behind a compose profile, started on first use and stopped when idle.
 6. **Web.** Handoff lines in the room, the mode picker, team editing in "In this room" (add, remove, swap, model and effort).
@@ -811,7 +811,7 @@ Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phas
 - **Every turn is recorded.** Each prompt an agent finishes writes one row to `turns` (`majhi.db`, migration 40): input, output, reasoning, cache read and cache write tokens, cost, model, task, agent, account, org, project, run and time. majhi's own prompts (`/compact`, handoff notes) and the decision stand-in's answers count too. What each CLI reports, and what is estimated, is in `docs/DECISIONS.md`.
 - **Cost.** A cost the agent reports is used as is: real on an API-key account, the equivalent API price on a sign-in account (marked estimated). Otherwise majhi prices the tokens from the price table (marked estimated). A turn with neither is counted as unpriced, never guessed. The table has Claude's prices built in (checked 2026-09-25); the owner adds or changes rows on the page (`prices` in `majhi.yaml`, with history and undo).
 - **Health and usage, "Tokens and cost".** Today, this week and this month, filters by org, project, agent, account and model (the sidebar org preselects it), a 30-day chart split into real and estimated cost, this month's top tasks, the unpriced count with a link to the price table, and the price table itself. API-key accounts show today's and this week's cost in the accounts table. The task header shows the task's total; org cards show the month's cost.
-- **Commands.** `usage.summary`, `usage.breakdown` (by org, project, agent, account, model, task or day, for a named range or from/to days), `usage.turns` (the rows themselves), `usage.prices`, `usage.setPrice`. The boss has them through `majhi-admin`; the reads run without a confirm card, so "what did Acme cost this week?" is one tool call.
+- **Commands.** `usage.summary`, `usage.breakdown` (by org, project, agent, account, model, task or day, for a named range or from/to days), `usage.turns` (the rows themselves), `usage.prices`, `usage.setPrice`. The captain has them through `majhi-admin`; the reads run without a confirm card, so "what did Acme cost this week?" is one tool call.
 - **Runner isolation.** With `make up`, agents no longer run in majhi's container:
   - Each session starts its own container from the new `majhi-runner` image (pnpm, build tools, Playwright's Chromium).
   - A container mounts only the task folder, each task repo's `.git` (`config` and `hooks` read-only) and the account's own home.
@@ -825,7 +825,7 @@ Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phas
 
 1. `make up` (builds both images; the host helper's Update does the same from now on). Health and usage should show "Agent runner: Agent runs are isolated".
 2. Run a task or two in two orgs. Health and usage, Tokens and cost: pick an org, a project, an agent. The task header shows the task's total.
-3. Ask the boss (Cmd J): "What did Acme cost this week?"
+3. Ask the captain (Cmd J): "What did Acme cost this week?"
 4. On a Codex account, set a price for its model in the price table (Codex reports no cost).
 
 ### Left and known issues
@@ -847,29 +847,29 @@ Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phas
 
 ### Goal
 
-Done when: after a few runs on two orgs, Health and usage shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the boss answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
+Done when: after a few runs on two orgs, Health and usage shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the captain answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### What I will build, in order
 
 1. **Recording.** `packages/acp` emits one `turn` event per prompt: input, output, reasoning, cache read and cache write tokens from the prompt response, the cost the adapter reported for that turn (the change in its running session cost), and the model. The server writes one row per turn to a `turns` table with the task, agent, account, org, project, run and time. Cost: an API-key account's reported cost is real; a sign-in account's reported cost is the equivalent API cost, marked estimated; without a reported cost, majhi prices the tokens from a price table (built-in defaults for Claude models, owner rows in `majhi.yaml` under `prices`), marked estimated.
-2. **Commands.** `usage.summary` (today, this week, this month, a daily series and the top tasks, with filters), `usage.breakdown` (totals grouped by org, project, agent, account, model, task or day), `usage.prices` and `usage.setPrice`. The boss gets them through `majhi-admin` like every command.
+2. **Commands.** `usage.summary` (today, this week, this month, a daily series and the top tasks, with filters), `usage.breakdown` (totals grouped by org, project, agent, account, model, task or day), `usage.prices` and `usage.setPrice`. The captain gets them through `majhi-admin` like every command.
 3. **Web.** A "Tokens and cost" section on Health and usage: three totals, filters by org, project, agent, account and model, a daily chart, the top tasks. The task header shows the task's total; org cards show the month's cost; API-key accounts show today and this week in the accounts table.
 4. **Runner isolation.** A separate `runner` image with the dev toolchain (pnpm, build tools, Playwright). The server starts each agent session in its own container on the runner network, mounting only the task folder, the `.git` of each task repo (its `config` and `hooks` read-only) and the account's config home. A guard refuses any mount of `~/.majhi` (other than the run's own account home), the secrets key, or another account's home. Secrets reach the run only as environment variables. From the runner network only `/mcp` answers. A Health check starts a throwaway runner and proves it cannot see `~/.majhi`, the secrets key or another account's home.
 
 ### How I will test it
 
 - Unit: per-turn usage from the adapters' shapes, cost rules and price matching, day, week and month ranges in the owner's time zone, the docker arguments and the mount guard.
-- Integration: turns recorded through the run manager with the fake adapter on two orgs, totals from `usage.summary` and `usage.breakdown` equal to the sum of the rows, and the boss (fake adapter) answering from `usage.summary` through `majhi-admin`.
+- Integration: turns recorded through the run manager with the fake adapter on two orgs, totals from `usage.summary` and `usage.breakdown` equal to the sum of the rows, and the captain (fake adapter) answering from `usage.summary` through `majhi-admin`.
 - Real Docker is not available where this is built, so the runner container itself is checked by the Health check on the owner's machine.
 
-## Phase 2b: The boss and staying cheap (in progress)
+## Phase 2b: The captain and staying cheap (in progress)
 
 Wave 1 and the decision provider are merged into `main`. Wave 2 (the run manager) is task PRV-15, from `phase-2b`, following `docs/briefs/2b-wave2.md`. PRV-14 is the parent: it tracks the phase and runs the integration step once PRV-15 is done.
 
 ### Done when, status
 
 - [ ] A fake agent pushed past 80% context gets compacted, with the event shown in the room. PRV-15.
-- [x] The boss creates an org and an agent after the owner approves (`e2e/phase2b-boss.spec.ts`).
+- [x] The captain creates an org and an agent after the owner approves (`e2e/phase2b-boss.spec.ts`).
 - [ ] A running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact. PRV-15.
 - [ ] An `auto` agent gets a model and effort picked by Laya, with the decision recorded on the run. The pick itself is built (`decisions.pickModel`); calling it at session start is PRV-15.
 - [x] With Laya stopped, the chain falls back to the ACP simulation, then rules (`decisions/integration.test.ts`).
@@ -878,13 +878,13 @@ Wave 1 and the decision provider are merged into `main`. Wave 2 (the run manager
 
 ### Goal
 
-Done when: a fake agent pushed past 80% context gets compacted with the event shown in the room; the boss creates an org and an agent after the owner approves; a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact. Plus task links, concurrency limits, and no manual work outside majhi (update, health, protected folders).
+Done when: a fake agent pushed past 80% context gets compacted with the event shown in the room; the captain creates an org and an agent after the owner approves; a running task resumes on its own after the network drops and returns, and after majhi restarts, with its work intact. Plus task links, concurrency limits, and no manual work outside majhi (update, health, protected folders).
 
 ### What I will build, in order
 
 1. **Contract** (done): settings (context, limits, resume, approval policy), org overrides, task links on summaries, agent live states `queued`/`paused`, room items `approval`, `secret-request`, `context`, and commands: `tasks.link|unlink`, `room.fresh|approve|secret`, `secrets.list|save|remove`, `history.list|undo`, `settings.get|set`, `policy.set`, `boss.chat`, `health.run|fix`, `system.version|update`.
 2. **Wave 1, in parallel** (done):
-   - **Boss:** `majhi-admin` MCP server exposing every command as a tool, attached to the boss's sessions; approval policy with confirm cards; undo from config history; secret capture and secret requests; Cmd J boss chat; onboarding step 4; Hub setup becomes the boss conversation, with history and settings.
+   - **Captain:** `majhi-admin` MCP server exposing every command as a tool, attached to the captain's sessions; approval policy with confirm cards; undo from config history; secret capture and secret requests; Cmd J captain chat; onboarding step 4; Hub setup becomes the captain conversation, with history and settings.
    - **Task links:** parent and child tasks, `depends-on` with the Waiting on chip, progress on parents, links in TASK.md, in the New task dialog and the task view.
    - **No manual work:** Health view with every doctor check and Fix buttons; Update ready and one-click update through the host helper; warning before mounting a macOS-protected folder; majhi and Docker start at login.
    - **Decision provider** (done, moved in from Phase 3): Laya on the Mac, the provider chain, `majhi-decide`, the Decisions section in Hub setup.
@@ -894,20 +894,20 @@ Done when: a fake agent pushed past 80% context gets compacted with the event sh
 ### How I will test it
 
 - Unit: settings defaults and merge order (majhi, org, agent), approval decisions per policy, secret detection, link cycles and waiting-on, compaction thresholds, limit queue order, offline and wake detection, version compare.
-- Integration: the MCP server over HTTP with a real MCP client; the boss (fake adapter calling MCP tools) creating an org after approval; undo; a fake agent with rising usage compacting natively and by handoff; checkpoints and resume after a simulated restart and a simulated network drop; limits queueing a third agent.
+- Integration: the MCP server over HTTP with a real MCP client; the captain (fake adapter calling MCP tools) creating an org after approval; undo; a fake agent with rising usage compacting natively and by handoff; checkpoints and resume after a simulated restart and a simulated network drop; limits queueing a third agent.
 - Playwright: boss chat with an approval card and undo; secret request card; links and the Waiting on chip; context event in the room; Health view with a fix; update banner.
 
-### The boss (built)
+### The captain (built)
 
-- **majhi-admin MCP server** at `/mcp` (`apps/server/src/admin/`): stateless streamable HTTP, `Authorization: Bearer <token>`, 401 without a valid token, 403 for a browser Origin that is not loopback. One tool per command (`majhi_orgs_create`, ...) with the command's zod input as JSON schema plus `ownerAsked` and `reason`, and `majhi_request_secret`. Tokens map to (task, agent); the run manager issues one when it starts a session for the boss or a root agent with `majhi-admin` in `tools`, and revokes it when the session ends.
+- **majhi-admin MCP server** at `/mcp` (`apps/server/src/admin/`): stateless streamable HTTP, `Authorization: Bearer <token>`, 401 without a valid token, 403 for a browser Origin that is not loopback. One tool per command (`majhi_orgs_create`, ...) with the command's zod input as JSON schema plus `ownerAsked` and `reason`, and `majhi_request_secret`. Tokens map to (task, agent); the run manager issues one when it starts a session for the captain or a root agent with `majhi-admin` in `tools`, and revokes it when the session ends.
 - **Approval** (`settings.policy`): `auto` runs, `when-asked` runs when `ownerAsked` is true, `confirm` waits. Every non-read call posts an `approval` card in the agent's task: `applied` (with the config `commit`, so Undo works), `failed`, or `pending` (the agent gets "Waiting for the owner..." at once). `room.approve` runs or rejects it, updates the card and sends the agent a message ("The owner approved: ..."). Commands run through the same dispatcher with the agent as actor and the reason, so history records who did it. Secrets in inputs are redacted on cards, results and errors.
 - **History and undo**: `history.list` reads the config git log (trailers), `history.undo` reverts one commit and refuses on conflict; an applied card shows Undo and becomes `undone`.
 - **Secrets**: `secrets.list|save|remove`; `room.send` and `tasks.create` replace detected secrets with `secret:<name>` (detector in `packages/shared/src/secrets-detect.ts`); `room.secret` answers a request card. Values never reach logs, room items, commits or responses (tests read every file under the majhi home and the config git log).
 - **Settings**: `settings.get` merges defaults with majhi.yaml, `settings.set` and `policy.set` write only the given fields through the config history.
-- **Web**: Cmd J / Ctrl J and the sidebar "Boss" button open the boss chat as a right drawer on any page; approval and secret-request cards in the room; composer warning; Hub setup is the boss conversation plus setup cards, History (with Undo) and Settings (changing the policy asks first); onboarding step 4.
-- **Try it**: with a signed-in boss, press Cmd J and ask for an org. Changes wait for Approve unless you asked for them in the chat. Hub setup shows History and Settings.
-- **Tests**: unit (decision table, redaction, detector, name derivation, history parsing, settings merge, web models); integration (MCP with the SDK client, 401, revoked token, approve and reject through the fake adapter, undo and conflict, secret capture and `room.secret`); E2E `e2e/phase2b-boss.spec.ts` (needs the boss from `phase1.spec.ts`, so run the whole suite: `PATH=$PWD/apps/server/node_modules/.bin:$PATH MAJHI_E2E_PORT=7081 npx playwright test`).
-- **Known gaps**: A pending card whose input held a secret cannot run after a restart. The boss's tool calls are not rate limited.
+- **Web**: Cmd J / Ctrl J and the sidebar "Captain" button open the captain chat as a right drawer on any page; approval and secret-request cards in the room; composer warning; Hub setup is the captain conversation plus setup cards, History (with Undo) and Settings (changing the policy asks first); onboarding step 4.
+- **Try it**: with a signed-in captain, press Cmd J and ask for an org. Changes wait for Approve unless you asked for them in the chat. Hub setup shows History and Settings.
+- **Tests**: unit (decision table, redaction, detector, name derivation, history parsing, settings merge, web models); integration (MCP with the SDK client, 401, revoked token, approve and reject through the fake adapter, undo and conflict, secret capture and `room.secret`); E2E `e2e/phase2b-boss.spec.ts` (needs the captain from `phase1.spec.ts`, so run the whole suite: `PATH=$PWD/apps/server/node_modules/.bin:$PATH MAJHI_E2E_PORT=7081 npx playwright test`).
+- **Known gaps**: A pending card whose input held a secret cannot run after a restart. The captain's tool calls are not rate limited.
 
 ### Task links (built)
 
@@ -991,7 +991,7 @@ Branch `phase-2a`, from `phase-1-accounts`. The plan below is kept for reference
 - Web images (`![x](https://...)`) are not loaded into the room: they show as a link card, so an agent cannot make the room call out to a tracker.
 - Task-folder media links need the file to exist when the owner clicks; nothing checks it when the message arrives.
 - Full git diffs, MRs and pushing come in later phases. The Changes tab shows the agent's own edits.
-- Only one agent per task; teams and the boss's compaction are Phase 2b.
+- Only one agent per task; teams and the captain's compaction are Phase 2b.
 
 ### Goal
 
@@ -1018,10 +1018,10 @@ Branch `phase-1-accounts`, from `phase-0-skeleton`. The plan below is kept for r
 
 ### What works
 
-- Onboarding continues after roots: step 2 adds the first account, step 3 creates the boss (`majhi-boss`, a root agent) with a model and effort read from the account, and runs its health check. A reload resumes at the first missing step. "Skip for now" on steps 2 and 3.
+- Onboarding continues after roots: step 2 adds the first account, step 3 creates the captain (`majhi-boss`, a root agent) with a model and effort read from the account, and runs its health check. A reload resumes at the first missing step. "Skip for now" on steps 2 and 3.
 - Studio (top bar or Cmd+.) with two tabs:
-  - **Accounts:** every account with tool, org, status and signed-in email, usage, and "Used by" (agents on it, boss marked). Usage per login account, read without tokens: `5h` and `Week` with reset times in the table, plan, per-model windows and Refresh in the details panel. Details panel with the last health check and "Used by" grouped by scope. Agent files that name a missing account are listed. Add account: pick tool and org (or create an org inline), suggested id, then sign in through the embedded terminal or paste an API key. Check, Sign in again, Remove (refused while agents use it).
-  - **Agents:** grouped by Root and each org. Editor for scope, role, where, account, model and effort (from the account over ACP, plus auto and account default), instructions, permissions, fallback. Saves as you type. New, Duplicate, Health check, Make boss, Remove (not the boss). Files with errors are shown with each error.
+  - **Accounts:** every account with tool, org, status and signed-in email, usage, and "Used by" (agents on it, captain marked). Usage per login account, read without tokens: `5h` and `Week` with reset times in the table, plan, per-model windows and Refresh in the details panel. Details panel with the last health check and "Used by" grouped by scope. Agent files that name a missing account are listed. Add account: pick tool and org (or create an org inline), suggested id, then sign in through the embedded terminal or paste an API key. Check, Sign in again, Remove (refused while agents use it).
+  - **Agents:** grouped by Root and each org. Editor for scope, role, where, account, model and effort (from the account over ACP, plus auto and account default), instructions, permissions, fallback. Saves as you type. New, Duplicate, Health check, Make captain, Remove (not the captain). Files with errors are shown with each error.
 - Health checks spend no tokens: the CLI starts, it reports signed in, an ACP session opens, and the agent's model and effort are offered.
 - API keys are encrypted in `~/.majhi/secrets.age` with a key at `~/.config/majhi/secrets.key` (created by `make up`). They never appear in `majhi.yaml`, git history or any response.
 - Every change is a commit in `~/.majhi`. Hand edits to `majhi.yaml` or `agents/` show in the UI live through `/api/events`.
@@ -1031,13 +1031,13 @@ Branch `phase-1-accounts`, from `phase-0-skeleton`. The plan below is kept for r
 
 1. `make up`, open http://127.0.0.1:7070. With roots already set, onboarding opens at step 2.
 2. Add a Claude account with Sign in. In the terminal, open the link, sign in, paste the code. It shows healthy.
-3. Create the boss with the suggested model and effort.
+3. Create the captain with the suggested model and effort.
 4. Studio (Cmd+.): create an org, add accounts, create agents, change model and effort, run health checks. Look at `~/.majhi/agents/` and `git -C ~/.majhi log`.
 
 ### Verified
 
 - `make ci`: Biome clean, typecheck, 279 unit and integration tests, both builds, 14 Playwright tests (8 Phase 0, 6 Phase 1). The Phase 1 spec passed 3 runs in a row.
-- e2e with a fake ACP adapter covers the whole "Done when": fresh install to a healthy boss; an org with two signed-in Claude accounts and three agents, each passing its health check; an API-key account whose key is absent from every response, socket frame, `majhi.yaml`, `secrets.age` bytes and `git log -p`; Used by and Missing accounts updating live; editor saves to disk and picks up hand edits; remove refusals.
+- e2e with a fake ACP adapter covers the whole "Done when": fresh install to a healthy captain; an org with two signed-in Claude accounts and three agents, each passing its health check; an API-key account whose key is absent from every response, socket frame, `majhi.yaml`, `secrets.age` bytes and `git log -p`; Used by and Missing accounts updating live; editor saves to disk and picks up hand edits; remove refusals.
 - `docker compose build` succeeds; node-pty works in the image; both adapters are on PATH.
 
 ### Left and known issues
@@ -1051,14 +1051,14 @@ Branch `phase-1-accounts`, from `phase-0-skeleton`. The plan below is kept for r
 
 ### Goal
 
-A fresh install walks through onboarding to a boss agent whose health check passes. From the UI the owner can add two Claude accounts for one org, three agents on them, and one API-key account, and every agent's health check passes.
+A fresh install walks through onboarding to a captain agent whose health check passes. From the UI the owner can add two Claude accounts for one org, three agents on them, and one API-key account, and every agent's health check passes.
 
 ### What I will build, in order
 
 1. **Contract** (`packages/shared/src/accounts.ts`, `commands.ts`): account, org and agent file schemas, tool info, models, health check, the `/api/events` and `/api/term/<id>` WebSocket messages, and the commands: `tools.list`, `orgs.list|create`, `accounts.list|suggestId|create|remove|login.start|health|models`, `agents.list|create|update|duplicate|remove|health`, `boss.set`.
 2. **`packages/acp`**: tool registry (Claude Code, Codex), per-run env built from scratch, login commands, and `probeAccount`, which checks the CLI, the sign-in and an ACP session (models and effort levels) without spending tokens. A fake ACP adapter in `packages/acp/testing` for every test.
 3. **`apps/server`**: orgs and accounts in `majhi.yaml`, account homes, API keys in `secrets.age` (age), agent files with a watcher, the login terminal (node-pty over WebSocket), the events socket, handlers for every command, `doctor` checks for the CLIs, and the adapters installed in the image.
-4. **`apps/web`**: Studio overlay with Agents and Accounts tabs, the add-account flow with an embedded terminal (xterm.js), the agent editor with models and effort read from the account, health check buttons, onboarding steps 2 (first account) and 3 (choose the boss).
+4. **`apps/web`**: Studio overlay with Agents and Accounts tabs, the add-account flow with an embedded terminal (xterm.js), the agent editor with models and effort read from the account, health check buttons, onboarding steps 2 (first account) and 3 (choose the captain).
 5. **Integration**: e2e through onboarding and Studio against the fake adapter, `make ci`, and a real `make up` with the real adapters.
 
 Steps 2 to 4 run in parallel against the contract.
@@ -1067,7 +1067,7 @@ Steps 2 to 4 run in parallel against the contract.
 
 - Unit: schemas, account id suggestion, env building (nothing from the server env leaks), agent file parse and write round trip, secrets encrypt and decrypt, model and effort checks.
 - Integration: every command through the dispatcher with the fake adapter; the login terminal end to end with the fake login; the file watcher picking up a hand edit.
-- Playwright: onboarding to a healthy boss; two Claude accounts for one org and three agents; one API-key account; editing an agent and seeing the file change.
+- Playwright: onboarding to a healthy captain; two Claude accounts for one org and three agents; one API-key account; editing an agent and seeing the file change.
 - Manual: `make up`, sign in to a real Claude account in the embedded terminal, health check passes, the model list comes from the real adapter.
 
 ## Phase 0: Skeleton (done, waiting for owner review)

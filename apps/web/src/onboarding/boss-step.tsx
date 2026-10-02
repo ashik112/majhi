@@ -21,8 +21,8 @@ type Phase =
   | { kind: "error"; message: string };
 
 /**
- * Step 3: create the boss, a root agent that sets up and runs majhi. Creates the agent, makes it
- * boss, then runs its health check. Each step is skipped on retry once it has worked.
+ * Step 3: create the captain, a root agent that sets up and runs majhi. Creates the agent, makes it
+ * captain, then runs its health check. Each step is skipped on retry once it has worked.
  */
 export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
   const accounts = useAccounts().data ?? [];
@@ -82,10 +82,10 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold text-balance">Choose the boss</h1>
+        <h1 className="text-lg font-semibold text-balance">Choose the captain</h1>
         <p className="text-base text-fg-muted text-pretty">
-          The boss is an agent that sets up and runs majhi for you. Pick the account it uses. You can change
-          all of this later in Agents.
+          The captain is an agent that sets up and runs majhi for you. Pick the account it uses. You can
+          change all of this later in Agents.
         </p>
       </div>
 
@@ -95,7 +95,7 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
         </p>
       ) : (
         <form
-          aria-label="Boss agent"
+          aria-label="Captain agent"
           onSubmit={(e) => {
             e.preventDefault();
             void run();
@@ -174,13 +174,13 @@ export function BossStep({ isLast, onComplete, onSkip }: OnboardingStepProps) {
           {phase.kind === "form" && (
             <div>
               <Button type="submit" variant="primary" disabled={!account}>
-                Create boss
+                Create captain
               </Button>
             </div>
           )}
           {phase.kind === "working" && (
             <p role="status" className="text-base text-fg-muted">
-              Creating the boss and checking it
+              Creating the captain and checking it
             </p>
           )}
           {phase.kind === "error" && (

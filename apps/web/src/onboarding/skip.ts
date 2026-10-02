@@ -1,6 +1,6 @@
 const KEY = "majhi.setup.skipped";
 
-/** Whether the owner chose to skip the account and boss steps. A per-browser convenience only. */
+/** Whether the owner chose to skip the account and captain steps. A per-browser convenience only. */
 export function setupSkipped(): boolean {
   try {
     return window.localStorage.getItem(KEY) === "1";

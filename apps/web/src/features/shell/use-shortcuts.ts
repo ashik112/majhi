@@ -74,7 +74,7 @@ export function useShortcuts(onNewTask: () => void): {
         setPaletteOpen(true);
         return;
       }
-      // The boss chat and the message box handle their own keys (`boss-context.tsx`, `composer.tsx`).
+      // The captain chat and the message box handle their own keys (`boss-context.tsx`, `composer.tsx`).
       if (action.id === "boss" || action.id === "send") return;
       if (event.defaultPrevented || insideOverlay(event.target)) return;
       goAt.current = 0;

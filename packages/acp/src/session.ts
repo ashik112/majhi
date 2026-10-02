@@ -19,7 +19,7 @@ export interface SessionStart {
   /** The task folder. */
   cwd: string;
   git?: GitAttribution;
-  /** MCP servers to attach (Phase 2b adds majhi-admin for the boss). */
+  /** MCP servers to attach (Phase 2b adds majhi-admin for the captain). */
   mcpServers?: (McpServerSpec | StdioServerSpec)[];
   /** Variables of the run's connections (SPEC 5.14). The run's own variables win over them. */
   env?: Record<string, string>;

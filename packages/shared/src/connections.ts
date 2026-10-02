@@ -809,7 +809,7 @@ const ValueTargetSchema = z.object({
 export const ConnectionSetSecretInputSchema = ValueTargetSchema.extend({
   /** From the page's secure input. Stored in secrets.age, never returned. */
   value: ConnectionSecretValueSchema.optional(),
-  /** A secret already in secrets.age, like one the boss got from secret capture. */
+  /** A secret already in secrets.age, like one the captain got from secret capture. */
   ref: SecretRefSchema.optional(),
 }).refine((i) => (i.value === undefined) !== (i.ref === undefined), {
   message: "Give the value or a secret: reference, one of them",

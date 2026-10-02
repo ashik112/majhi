@@ -141,7 +141,7 @@ function Head({ entry, orgs, health, onHealth, onSelect }: AgentDetailProps) {
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate font-mono text-md leading-6 font-semibold">@{id}</h2>
-            {entry.isBoss && <Badge tone="amber">Boss</Badge>}
+            {entry.isBoss && <Badge tone="amber">Captain</Badge>}
             {f.origin === "setup" && <Badge tone="blue">Drafted by @setup</Badge>}
             {health && (
               <Badge tone={health.ok ? "green" : "red"}>
@@ -177,10 +177,10 @@ function Head({ entry, orgs, health, onHealth, onSelect }: AgentDetailProps) {
               { label: "Rename", onSelect: () => setDialog("rename") },
               { label: "Duplicate", onSelect: () => setDialog("duplicate") },
               ...(f.scope === ROOT_SCOPE && !entry.isBoss
-                ? [{ label: "Make boss", onSelect: () => boss.mutate(id) }]
+                ? [{ label: "Make captain", onSelect: () => boss.mutate(id) }]
                 : []),
               {
-                label: entry.isBoss ? "Remove (the boss cannot be removed)" : "Remove",
+                label: entry.isBoss ? "Remove (the captain cannot be removed)" : "Remove",
                 onSelect: () => setDialog("remove"),
                 disabled: entry.isBoss,
                 tone: "danger" as const,
@@ -190,11 +190,11 @@ function Head({ entry, orgs, health, onHealth, onSelect }: AgentDetailProps) {
         </div>
       </div>
       {entry.isBoss && (
-        <p className="sr-only">The boss cannot be removed. Make another root agent the boss first.</p>
+        <p className="sr-only">The captain cannot be removed. Make another root agent the captain first.</p>
       )}
       {boss.isError && (
         <p role="alert" className="text-sm text-red">
-          Could not make {id} the boss: {describeError(boss.error)}
+          Could not make {id} the captain: {describeError(boss.error)}
         </p>
       )}
       {dialog === "duplicate" && (

@@ -70,7 +70,7 @@ function SpendReadout({ status }: { status: AutonomyStatus }) {
 /**
  * The Autonomous page, one flow on one screen: a status bar with the mode, today's spend and the
  * controls; then what needs the owner, what runs and what comes next with why, beside a compact log;
- * and the boss chat on the right. The rules and the daily summary are views of the same page.
+ * and the captain chat on the right. The rules and the daily summary are views of the same page.
  * Nothing scrolls but the lists, each inside its own panel.
  */
 export function AutonomyView() {
@@ -99,7 +99,7 @@ export function AutonomyView() {
           status ? (
             <ModeLine status={status} now={now} />
           ) : (
-            "The boss runs the desk while you are away, within your caps and rules."
+            "The captain runs the desk while you are away, within your caps and rules."
           )
         }
       >

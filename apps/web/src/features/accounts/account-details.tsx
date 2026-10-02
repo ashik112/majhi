@@ -215,7 +215,7 @@ export function AccountDetail({
                           >
                             @{f.id}
                           </PageLink>
-                          {a.isBoss && <span className="shrink-0 text-xs text-accent-text">Boss</span>}
+                          {a.isBoss && <span className="shrink-0 text-xs text-accent-text">Captain</span>}
                           <span
                             className={cn(
                               "ml-auto flex shrink-0 items-center gap-1.5 text-xs",

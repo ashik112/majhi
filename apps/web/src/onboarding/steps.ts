@@ -9,7 +9,7 @@ export interface OnboardingStepProps {
   isLast: boolean;
   /** Moves to the next step, or ends onboarding after the last one. */
   onComplete: () => void;
-  /** Leaves setup for now. Present on the steps that can wait: the account, the boss and the last chat. */
+  /** Leaves setup for now. Present on the steps that can wait: the account, the captain and the last chat. */
   onSkip?: () => void;
 }
 
@@ -27,8 +27,8 @@ export interface OnboardingStep {
 export const onboardingSteps: readonly OnboardingStep[] = [
   { id: "roots", title: "Project folders", Component: RootsStep },
   { id: "account", title: "First account", Component: AccountStep },
-  { id: "boss", title: "Choose the boss", Component: BossStep },
-  { id: "finish", title: "Finish with the boss", Component: FinishStep },
+  { id: "boss", title: "Choose the captain", Component: BossStep },
+  { id: "finish", title: "Finish with the captain", Component: FinishStep },
 ];
 
 /** Steps the owner may skip; the roots step cannot be skipped. */

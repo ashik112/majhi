@@ -165,7 +165,7 @@ function AgentBlock({
           />
           <AgentAvatar id={agent.id} size={20} decorative />
           <span className="min-w-0 truncate font-mono text-sm text-fg-soft">@{agent.id}</span>
-          {agent.entry.isBoss && <span className="shrink-0 text-xs text-fg-faint">boss</span>}
+          {agent.entry.isBoss && <span className="shrink-0 text-xs text-fg-faint">captain</span>}
           {agent.asking && (
             <>
               <Lamp state="needs" size={6} className="ml-auto shrink-0" />

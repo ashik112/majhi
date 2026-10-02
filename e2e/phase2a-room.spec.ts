@@ -85,7 +85,7 @@ async function expectIdle(page: Page) {
 let chatTaskId: string;
 
 test.beforeAll(async ({ request }) => {
-  // The builder may only edit, so its commands ask. The lead and the boss (who runs the chat task)
+  // The builder may only edit, so its commands ask. The lead and the captain (who runs the chat task)
   // may edit and run commands.
   await setPerms(request, "acme-builder", ["edit"]);
 });

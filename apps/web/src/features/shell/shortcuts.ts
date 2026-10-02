@@ -25,7 +25,7 @@ export interface ShortcutDef {
   press?: Press;
   /** Pressed right after `g`. */
   afterG?: boolean;
-  /** Fires while typing in a field. Only the palette, the boss chat and send do. */
+  /** Fires while typing in a field. Only the palette, the captain chat and send do. */
   typing?: boolean;
   /** Where the page that handles it is. Matching ignores this; the handler checks it. */
   scope?: "task";
@@ -55,7 +55,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   {
     id: "boss",
     keys: ["Mod", "J"],
-    what: "Open or close the boss chat",
+    what: "Open or close the captain chat",
     group: "Anywhere",
     press: { key: "j", mod: true, shift: false },
     typing: true,

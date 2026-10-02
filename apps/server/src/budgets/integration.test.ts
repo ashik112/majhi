@@ -126,7 +126,7 @@ describe("weekly budgets from real turns", () => {
     expect((await status()).rows.find((r) => r.id === "acme")).toMatchObject({ paused: true });
   });
 
-  it("checks an account budget in dollars, and lets the boss read the status without a card", async () => {
+  it("checks an account budget in dollars, and lets the captain read the status without a card", async () => {
     await twoOrgs();
     const { h } = w;
     await h.cmd("settings.set", { budgets: { accounts: { "claude-acme": { cost: 0.02 } } } });

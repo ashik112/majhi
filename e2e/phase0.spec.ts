@@ -7,7 +7,7 @@ import { expect, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 useHome({ seed: "empty" });
 test.describe.configure({ mode: "serial" });
 
-// Setup now goes on to accounts and the boss. Phase 0 is about roots and repos, so every test after
+// Setup now goes on to accounts and the captain. Phase 0 is about roots and repos, so every test after
 // the first run behaves like an owner who skipped that part.
 test.beforeEach(async ({ context }, info) => {
   if (info.title.startsWith("first run")) return;

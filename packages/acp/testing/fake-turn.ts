@@ -201,13 +201,13 @@ async function callMcpTool(
 }
 
 /**
- * True in the boss's chat: the session has the majhi-admin server and the task folder's TASK.md
- * has the boss chat brief. The boss talking in its chat echoes, so tests never run the coding script.
+ * True in the captain's chat: the session has the majhi-admin server and the task folder's TASK.md
+ * has the captain chat brief. The captain talking in its chat echoes, so tests never run the coding script.
  */
 async function isBossChat(s: Session): Promise<boolean> {
   if (!s.mcp.some((m) => m.name === "majhi-admin")) return false;
   try {
-    return /## Brief\n\n(?:Boss chat|Chat)\n/.test(await readFile(join(s.cwd, "TASK.md"), "utf8"));
+    return /## Brief\n\n(?:Captain chat|Chat)\n/.test(await readFile(join(s.cwd, "TASK.md"), "utf8"));
   } catch {
     return false;
   }
@@ -761,7 +761,7 @@ export function serveAcp(o: ServeOptions): void {
           }
           stopReason = cancelled ? "cancelled" : "end_turn";
         } else if (text.startsWith("echo:") || (await isBossChat(s))) {
-          // A session with the admin server is the boss: it echoes, so tests never run the coding script.
+          // A session with the admin server is the captain: it echoes, so tests never run the coding script.
           const admin = s.mcp.some((m) => m.name === "majhi-admin");
           agentText = `echo: ${
             admin

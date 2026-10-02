@@ -12,7 +12,7 @@ afterEach(async () => {
 
 type Approval = Extract<RoomItem, { type: "approval" }>;
 
-/** A boss world with autonomous mode on; the boss calls from its autonomy chat. */
+/** A captain world with autonomous mode on; the captain calls from its autonomy chat. */
 async function on() {
   w = await bossWorld({ real: false });
   const world = w;
@@ -27,7 +27,7 @@ async function on() {
     (await world.items(task)).filter((i): i is Approval => i.type === "approval");
   const events = async (): Promise<AutonomyEvent[]> =>
     (await h.cmd("autonomy.events", { limit: 100 })).body.events;
-  /** A task of Acme the boss created, so it is autonomous. Not started. */
+  /** A task of Acme the captain created, so it is autonomous. Not started. */
   const acmeTask = async () => {
     const made = await call("majhi_tasks_create", {
       text: "fix the api",
@@ -119,7 +119,7 @@ describe("autonomous mode deciding the cards that would wait", () => {
     const refused = (await t.events()).filter((e) => e.kind === "refused");
     expect(refused).toHaveLength(2);
     expect(JSON.stringify(refused)).not.toContain(key);
-    // Off, the boss's chat still keeps to the hard limits; its other calls wait for the owner.
+    // Off, the captain's chat still keeps to the hard limits; its other calls wait for the owner.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
     expect((await t.call("majhi_tasks_push", { id: "ACM-1", deleteAfter: true })).isError).toBe(true);
     expect((await t.call("majhi_orgs_update", { id: "acme", name: "Acme Two" })).text).toBe(WAITING_TEXT);
@@ -140,9 +140,9 @@ describe("autonomous mode deciding the cards that would wait", () => {
 });
 
 describe("autonomous mode's reach", () => {
-  it("counts any other agent in the autonomy chat as autonomous, with none of the boss's tools", async () => {
+  it("counts any other agent in the autonomy chat as autonomous, with none of the captain's tools", async () => {
     const t = await on();
-    // A second root agent, made by the owner, that the boss brought into its chat.
+    // A second root agent, made by the owner, that the captain brought into its chat.
     const made = await t.h.cmd("agents.create", {
       id: "helper",
       frontmatter: {
@@ -161,12 +161,12 @@ describe("autonomous mode's reach", () => {
     const leaked = await t.call("majhi_tasks_create", { text: `use ${key}`, start: false }, helper);
     expect(leaked.isError).toBe(true);
     expect(leaked.text).toContain("looks like a secret");
-    // Its change waits for no one: autonomous mode decides it, as for the boss.
+    // Its change waits for no one: autonomous mode decides it, as for the captain.
     await t.call("majhi_orgs_update", { id: "acme", name: "Acme Helped" }, helper);
     const card = (await t.cards()).find((c) => c.agent === "helper" && c.command === "orgs.update");
     expect(card?.autonomy?.decision).toBe("approved");
     expect((await t.call("majhi_autonomy_plan", { items: [] }, helper)).text).toBe(
-      "autonomy.plan is a tool of the boss in its autonomy chat.",
+      "autonomy.plan is a tool of the captain in its autonomy chat.",
     );
   });
 
@@ -216,8 +216,8 @@ describe("autonomous mode's reach", () => {
   });
 });
 
-describe("the boss's own tools", () => {
-  it("are the boss's in its autonomy chat only, and need the mode on or paused", async () => {
+describe("the captain's own tools", () => {
+  it("are the captain's in its autonomy chat only, and need the mode on or paused", async () => {
     const t = await on();
     const id = await t.acmeTask();
     const plan = { items: [{ title: "Ship the api fix", task: id, why: "It is the top task" }] };
@@ -226,11 +226,11 @@ describe("the boss's own tools", () => {
       isError: false,
     });
     expect((await t.h.cmd("autonomy.status")).body.queue).toEqual(plan.items);
-    // An agent of an autonomous task, and the boss in another chat, get an error.
+    // An agent of an autonomous task, and the captain in another chat, get an error.
     const agent = await t.call("majhi_autonomy_plan", plan, { task: id, agent: "acme-builder" });
     expect(agent).toMatchObject({
       isError: true,
-      text: "autonomy.plan is a tool of the boss in its autonomy chat.",
+      text: "autonomy.plan is a tool of the captain in its autonomy chat.",
     });
     const cmdJ = (await t.h.cmd("boss.chat")).body.id as string;
     expect((await t.call("majhi_autonomy_note", { text: "x" }, { task: cmdJ, agent: "boss" })).isError).toBe(

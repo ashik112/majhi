@@ -58,7 +58,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
   backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",
-  history: "Every change to majhi.yaml, by you, the boss or a hand edit.",
+  history: "Every change to majhi.yaml, by you, the captain or a hand edit.",
 };
 
 export function isSetupSection(value: string | undefined): value is SetupSection {

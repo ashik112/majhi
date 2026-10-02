@@ -37,7 +37,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 };
 
 /**
- * The sidebar under the daily rows (Board, Chats, Boss, Autonomous): the pages the owner sets up
+ * The sidebar under the daily rows (Board, Chats, Captain, Autonomous): the pages the owner sets up
  * once and tunes, then the ones opened rarely. Workspaces open from the switcher at the top.
  */
 export const NAV_GROUPS: readonly { label: string; pages: readonly PageName[] }[] = [

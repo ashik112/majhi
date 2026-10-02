@@ -28,8 +28,8 @@ export function firstIncompleteStep(state: SetupState): SetupStepId | null {
 }
 
 /**
- * The suggested id for the boss. A root agent already called `majhi-boss` (from an attempt that
- * stopped before it was made boss) is reused; any other agent with that id makes the id bump.
+ * The suggested id for the captain. A root agent already called `majhi-boss` (from an attempt that
+ * stopped before it was made captain) is reused; any other agent with that id makes the id bump.
  */
 export function bossId(agents: readonly AgentEntry[]): string {
   const blocked = new Set(
