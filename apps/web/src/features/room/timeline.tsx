@@ -93,7 +93,10 @@ export function Timeline({
       cancelAnimationFrame(second);
     };
   }, [windowed, hasRows]);
-  const from = windowed && focusItem === undefined ? Math.max(0, rows.length - FIRST_PAINT_ROWS) : 0;
+  // A search match needs every row drawn, and clearing the address must not hide the rows above it again.
+  const hadFocus = useRef(false);
+  if (focusItem !== undefined) hadFocus.current = true;
+  const from = windowed && !hadFocus.current ? Math.max(0, rows.length - FIRST_PAINT_ROWS) : 0;
   const heightBefore = useRef(0);
   heightBefore.current = scroller.current?.scrollHeight ?? 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, when the older rows join

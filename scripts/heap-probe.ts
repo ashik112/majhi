@@ -66,6 +66,31 @@ await capture("idle");
 await sleep(2000);
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, baseURL: `http://127.0.0.1:${E2E_PORT}` })).newPage();
+if (process.env.PROBE_SCROLL) {
+  const t0 = Date.now();
+  await page.goto("/t/PERF-3?item=PERF-3-i10");
+  const row = page.locator("#room-row-PERF-3-i10");
+  await row.waitFor({ timeout: 30000 });
+  for (const wait of [100, 500, 1500]) {
+    await sleep(wait);
+    const box = await row.boundingBox().catch(() => null);
+    const st = await page.locator('[role="log"]').evaluate((el) => ({ top: el.scrollTop, h: el.scrollHeight, c: el.clientHeight, rows: el.querySelectorAll("li").length }));
+    console.log(`scroll probe +${Date.now() - t0}ms box=${JSON.stringify(box)} log=${JSON.stringify(st)}`);
+  }
+  await page.screenshot({ path: `${OUT}/scroll.png` });
+  await browser.close(); child.kill(); process.exit(0);
+}
+if (process.env.PROBE_REQ) {
+  await page.goto("/");
+  await page.locator("#card-PERF-3 a[data-card-link]").waitFor();
+  const seen: string[] = [];
+  page.on("response", async (r) => { const b = await r.body().catch(() => Buffer.alloc(0)); seen.push(`${r.request().method()} ${r.url().replace(/^http:\/\/[^/]+/, "")} ${b.length}`); });
+  await page.locator("#card-PERF-3 a[data-card-link]").click();
+  await page.locator("#room-row-PERF-3-last").waitFor();
+  await sleep(3000);
+  console.log(seen.join("\n"));
+  await browser.close(); child.kill(); process.exit(0);
+}
 for (const { id } of SIZES) {
   for (let k = 0; k < 3; k++) {
     await page.goto(`/t/${id}`);
