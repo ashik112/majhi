@@ -7,7 +7,13 @@ import {
   type RuntimeOptions,
   type StdioServerSpec,
 } from "@majhi/acp";
-import type { AccountConfig, AgentFrontmatter, Task, TeamOverride } from "@majhi/shared";
+import {
+  type AccountConfig,
+  type AgentFrontmatter,
+  PRIVATE,
+  type Task,
+  type TeamOverride,
+} from "@majhi/shared";
 import { accountRuntime, secretName } from "../accounts/homes.ts";
 import { ADMIN_SERVER_NAME, type AdminAccess } from "../admin/access.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -61,6 +67,27 @@ export async function resolveAgent(
     throw new UserError(`@${fm.id} works in "${fm.scope}" and cannot use the account of "${account.org}".`);
   }
   return { fm, instructions: stored.agent.instructions, account, boss };
+}
+
+/**
+ * The agent on another account for one run: the captain's lane on the account its workspace names
+ * (5.18). Only an account of the run's workspace, or a Private one, is ever used: never another
+ * workspace's credentials.
+ */
+export function withAccount(
+  agent: ResolvedAgent,
+  id: string | undefined,
+  accounts: Readonly<Record<string, AccountConfig>>,
+  org: string | undefined,
+): ResolvedAgent {
+  if (id === undefined || id === agent.fm.account) return agent;
+  const account = accounts[id];
+  if (account === undefined) throw new UserError(`Account "${id}" is not in majhi.yaml.`);
+  const workspace = org ?? PRIVATE;
+  if (account.org !== workspace && account.org !== PRIVATE) {
+    throw new UserError(`${id} belongs to "${account.org}" and cannot run work of "${workspace}".`, 409);
+  }
+  return { ...agent, account, fm: { ...agent.fm, account: id } };
 }
 
 /** The agent with the owner's model and effort for one task put in place of its own. */

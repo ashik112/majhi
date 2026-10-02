@@ -34,6 +34,11 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.guide",
   "autonomy.forget",
   "autonomy.exclude",
+  // The captain never stops or resumes itself, undoes its own log or turns its chores back on.
+  "captain.stop",
+  "captain.resume",
+  "captain.undo",
+  "captain.choreOn",
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",

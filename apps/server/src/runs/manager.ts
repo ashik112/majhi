@@ -50,7 +50,7 @@ import {
 import { checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
-import { type LaunchDeps, launch, resolveAgent, withOverride } from "./launch.ts";
+import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
 import { Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
@@ -139,6 +139,11 @@ export interface RunDeps {
   held?: (task: string, agent: string) => Promise<{ reason: "owner" | "limit"; why: string } | undefined>;
   /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
   onLoopEnd?: (task: string, agent: string) => void;
+  /**
+   * The account a run uses in place of its agent's own: the captain's lane runs on the account its
+   * workspace's "More rules" names (5.18). `refuse` stops the start with the reason.
+   */
+  accountFor?: (task: string, agent: string) => Promise<{ account?: string; refuse?: string } | undefined>;
   /**
    * Called when an agent finished a turn normally and has nothing queued: the task may be ready for
    * review. `refused`: the turn ended on the model's safeguards, so the task is not finished.
@@ -1418,8 +1423,15 @@ export class RunManager {
     this.setLive(run, { status: "starting", nowDoing: undefined, couldNotStart: undefined });
     try {
       // The owner's model and effort for this task win over the agent file (5.1).
+      const swap = await deps.accountFor?.(run.task, run.agent);
+      if (swap?.refuse !== undefined) throw new UserError(swap.refuse, 409);
       const agent = withOverride(
-        await resolveAgent(deps, run.agent),
+        withAccount(
+          await resolveAgent(deps, run.agent),
+          swap?.account,
+          (await deps.config.sections()).accounts,
+          deps.store.tasks.get(run.task)?.org,
+        ),
         deps.store.tasks.get(run.task)?.overrides[run.agent],
       );
       const { fm } = agent;

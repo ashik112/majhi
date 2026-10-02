@@ -374,7 +374,9 @@ export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
 export const CaptainLevelSchema = z.enum(["ask", "tidy", "runs"]);
 export type CaptainLevel = z.infer<typeof CaptainLevelSchema>;
 
-const DaySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Use a date like 2026-12-24");
+const DaySchema = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Use a date like 2026-12-24");
 /** Days the captain does nothing on its own in the workspace, `from` to `to` inclusive, in its zone. */
 export const FreezeSchema = z
   .strictObject({ from: DaySchema, to: DaySchema })

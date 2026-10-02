@@ -19,6 +19,7 @@ import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
+import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -150,6 +151,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
+    ...captainHandlers(services.captain),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
@@ -161,10 +163,22 @@ export function createHandlers({
       if (loaded.state.status !== "loaded") {
         return { roots: [], scannedAt: new Date().toISOString(), durationMs: 0 };
       }
-      return scanner.scan(
+      const scan = await scanner.scan(
         { config: loaded.state.config, projectPaths: loaded.projectPaths, hostHome: config.paths.hostHome },
         input.refresh === true,
       );
+      // A repo in a workspace's folder that is not a project yet wakes that workspace's projects chore (5.18).
+      const folders = new Set(
+        scan.roots.flatMap((r) =>
+          r.repos.filter((repo) => !repo.registered).map((repo) => repo.relPath.split("/")[0] ?? ""),
+        ),
+      );
+      const sections = await config.sections();
+      const orgs = ["private", ...Object.keys(sections.orgs)].filter(
+        (id) => folders.has(id) || folders.has((sections.orgs[id]?.name ?? "").toLowerCase()),
+      );
+      if (orgs.length > 0) services.captain.reposSeen(orgs);
+      return scan;
     },
 
     "workspaces.set": async (input, ctx) => {

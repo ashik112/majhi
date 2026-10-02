@@ -213,6 +213,29 @@ export const AutonomySummarySchema = z.object({
 });
 export type AutonomySummary = z.infer<typeof AutonomySummarySchema>;
 
+/**
+ * One workspace set to "Runs it" (5.18): the captain's lane there, and what autonomous mode does in
+ * it today. The lane's chat holds only that workspace's matters.
+ */
+export const AutonomyLaneSchema = z.object({
+  org: z.string(),
+  name: z.string(),
+  /** The lane's chat. Absent until the captain is first woken there. */
+  chat: TaskIdSchema.optional(),
+  /** The captain is in a turn in this lane. */
+  working: z.boolean(),
+  nowDoing: z.string().optional(),
+  /** Today's spend in this workspace against its daily budget. */
+  spend: CapUseSchema,
+  /** Autonomous tasks of this workspace that are not done. */
+  tasks: z.number().int().nonnegative(),
+  /** Backlog tasks the rules let it take here. */
+  backlog: z.number().int().nonnegative(),
+  /** Why no new work starts here now: its budget, the day budget, hours, a freeze. */
+  resting: z.string().optional(),
+});
+export type AutonomyLane = z.infer<typeof AutonomyLaneSchema>;
+
 /** `autonomy.status`. */
 export const AutonomyStatusSchema = z.object({
   mode: AutonomyModeSchema,
@@ -220,7 +243,10 @@ export const AutonomyStatusSchema = z.object({
   since: z.string().optional(),
   by: z.enum(["owner", "majhi"]).optional(),
   why: z.string().optional(),
-  /** The captain and its autonomy chat. Absent: there is no captain, and turning on is refused. */
+  /**
+   * The captain, and the chat the page shows first: the first lane with a chat, else the autonomy
+   * chat from before lanes (readable, never woken). Absent: there is no captain, and turning on is refused.
+   */
   boss: z
     .object({
       id: IdSchema,
@@ -229,6 +255,8 @@ export const AutonomyStatusSchema = z.object({
       nowDoing: z.string().optional(),
     })
     .optional(),
+  /** Each workspace set to "Runs it", in the order of the workspaces. */
+  lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
   queue: z.array(QueueItemSchema),

@@ -681,7 +681,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
      * Set when autonomous mode decided the card (PRV-74): `approved` ran it within its limits,
      * `left` kept it pending for the owner. `why` is one line: the limit that allowed or held it.
      */
-    autonomy: z.object({ decision: z.enum(["approved", "left"]), why: z.string() }).optional(),
+    autonomy: z
+      .object({
+        decision: z.enum(["approved", "left"]),
+        why: z.string(),
+        /** `captain`: the captain's upkeep decided it (5.18), not autonomous mode. */
+        by: z.literal("captain").optional(),
+      })
+      .optional(),
     /** Set when it ran with no owner click: the policy or a rule let it. Older cards lack it. */
     alone: z.literal(true).optional(),
     /** Config history commit made by the command, for Undo. */
@@ -752,6 +759,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     lead: IdSchema.optional(),
     /** Why the task is back in review when majhi expected to ship it: a ship it could not finish. */
     why: z.string().optional(),
+    /** The captain's line when its checks pass and it asks the owner to ship (5.18). */
+    ready: z.string().optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),

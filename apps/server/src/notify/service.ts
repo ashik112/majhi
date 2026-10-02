@@ -121,6 +121,22 @@ export class Notifier {
     });
   }
 
+  /**
+   * Something of the captain the owner should know (5.18): a chore it turned off, the daily summary
+   * lines. Told once per key, under the kind `autonomy`, linking the Captain page.
+   */
+  captain(key: string, text: string): void {
+    if (this.seen.has(key)) return;
+    this.seen.add(key);
+    this.enqueue({
+      task: "",
+      id: key,
+      subject: { id: "", title: "majhi", chat: false },
+      attention: { kind: "autonomy", text },
+      path: "/captain",
+    });
+  }
+
   /** The test button: goes to each channel that is on, with no waiting, muting or grouping. */
   async test(): Promise<TestResult> {
     const settings = await this.deps.settings();

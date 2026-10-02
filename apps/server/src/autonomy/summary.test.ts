@@ -106,9 +106,18 @@ describe("the daily summary", () => {
     let now = new Date("2026-10-01T10:00:00.000Z");
     w = await bossWorld({ real: false, runClock: () => now });
     const { h } = w;
-    expect((await h.cmd("autonomy.configure", { tz: "UTC", summary_at: "08:00" })).status).toBe(200);
+    expect(
+      (
+        await h.cmd("autonomy.configure", {
+          tz: "UTC",
+          summary_at: "08:00",
+          orgs: { acme: { level: "runs" } },
+        })
+      ).status,
+    ).toBe(200);
     expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
     const autonomy = h.majhi.services.autonomy;
+    const lane = (await autonomy.laneChat("acme")) ?? "";
     // Turned on after today's 08:00: the day before had no autonomous mode, so no summary yet.
     expect(await autonomy.dailySummary()).toBe(undefined);
 
@@ -131,8 +140,8 @@ describe("the daily summary", () => {
       (e: AutonomyEvent) => e.kind === "summary",
     );
     expect(summaries).toHaveLength(1);
-    const chat = autonomy.chat() ?? "";
-    const lines = (await w.items(chat)).flatMap((i) => (i.type === "system" ? [i.text] : []));
+    // Said in the lane of each workspace set to Runs it.
+    const lines = (await w.items(lane)).flatMap((i) => (i.type === "system" ? [i.text] : []));
     expect(lines.filter((l) => l.startsWith("Daily summary for 2026-10-02"))).toHaveLength(1);
   });
 });

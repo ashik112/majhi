@@ -78,8 +78,10 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       system,
     }),
     (name) => services.events.emit(topicsFor(name)),
+    (name, input, meta) => services.captain.ownerActed(name, input, meta),
   );
   services.admin.bind(dispatch);
+  services.bindCaptain(dispatch);
   const app = createApp({
     version: env.version,
     commit: env.commit,
@@ -156,6 +158,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.automation.scheduler.start();
       services.automation.triggerEngine.start();
       services.autonomy.startSweep();
+      services.captain.startSweep();
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,

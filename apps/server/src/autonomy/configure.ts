@@ -1,4 +1,11 @@
-import type { AutonomyFilePatchSchema, AutonomyOrg, AutonomyPatch, AutonomySettings } from "@majhi/shared";
+import {
+  type AutonomyFilePatchSchema,
+  type AutonomyOrg,
+  AutonomyOrgSchema,
+  type AutonomyPatch,
+  type AutonomySettings,
+  LEVEL_LABEL,
+} from "@majhi/shared";
 import type { z } from "zod";
 import type { ConfigSections } from "../config/sections.ts";
 import { limitWord } from "./sizes.ts";
@@ -15,23 +22,24 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
       delete orgs[id];
       continue;
     }
-    const had = orgs[id] ?? { push: false, merge: false };
-    const cap = change.cap === undefined ? had.cap : (change.cap ?? undefined);
-    const next: AutonomyOrg = {
-      ...(cap === undefined ? {} : { cap }),
-      push: change.push ?? had.push,
-      merge: change.merge ?? had.merge,
-    };
+    const had: Record<string, unknown> = { ...(orgs[id] ?? { push: false, merge: false }) };
+    // Each field: absent keeps it, null clears it, a value sets it.
+    for (const [key, value] of Object.entries(change)) {
+      if (value === undefined) continue;
+      if (value === null) delete had[key];
+      else had[key] = value;
+    }
+    const next = AutonomyOrgSchema.parse(had);
     // An entry that says only the defaults is no entry.
-    if (next.cap === undefined && !next.push && !next.merge) delete orgs[id];
-    else orgs[id] = next;
+    const meaningful = Object.entries(next).some(([k, v]) =>
+      k === "push" || k === "merge" ? v === true : v !== undefined,
+    );
+    if (meaningful) orgs[id] = next;
+    else delete orgs[id];
   }
   const tz = patch.tz ?? current.tz;
-  const pickOrgs = patch.pick?.orgs === undefined ? current.pick.orgs : (patch.pick.orgs ?? undefined);
-  const pick = {
-    size: patch.pick?.size ?? current.pick.size,
-    ...(pickOrgs === undefined ? {} : { orgs: [...new Set(pickOrgs)] }),
-  };
+  // The pick rule's workspace list moved to the per-workspace choice (5.18); it is not kept.
+  const pick = { size: patch.pick?.size ?? current.pick.size };
   return {
     ...current,
     pick,
@@ -64,29 +72,50 @@ export function toFile(
 /** The config history's line: "set autonomous mode's day cap to $30.00, Acme's cap to $5.00". */
 export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSections, "orgs">): string {
   const parts: string[] = [];
+  const own: string[] = [];
   if (patch.day !== undefined) parts.push(`the day cap to ${capText(patch.day)}`);
   for (const [id, change] of Object.entries(patch.orgs ?? {})) {
-    const name = sections.orgs[id]?.name ?? id;
+    const name = sections.orgs[id]?.name ?? (id === "private" ? "Private" : id);
     if (change === null) {
-      parts.push(`${name} back to the defaults`);
+      own.push(`${name} back to the defaults`);
       continue;
     }
-    if (change.cap === null) parts.push(`no cap of its own for ${name}`);
-    else if (change.cap !== undefined) parts.push(`${name}'s cap to ${capText(change.cap)}`);
-    if (change.push !== undefined) parts.push(`pushing for ${name} ${change.push ? "on" : "off"}`);
-    if (change.merge !== undefined) parts.push(`merging for ${name} ${change.merge ? "on" : "off"}`);
+    if (change.level === null) own.push(`${name} back to its default choice`);
+    else if (change.level !== undefined) own.push(`${name} to ${LEVEL_LABEL[change.level]}`);
+    if (change.cap === null) own.push(`no budget of its own for ${name}`);
+    else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
+    if (change.push !== undefined) own.push(`pushing for ${name} ${change.push ? "on" : "off"}`);
+    if (change.merge !== undefined) own.push(`merging for ${name} ${change.merge ? "on" : "off"}`);
+    const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
+      (k) => change[k] !== undefined,
+    );
+    if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
   }
   if (patch.floors?.window !== undefined) parts.push(`the 5-hour floor to ${patch.floors.window}%`);
   if (patch.floors?.weekly !== undefined) parts.push(`the weekly floor to ${patch.floors.weekly}%`);
   if (patch.summary_at !== undefined) parts.push(`the daily summary to ${patch.summary_at}`);
   if (patch.tz !== undefined) parts.push(`the time zone to ${patch.tz}`);
   if (patch.pick?.size !== undefined) parts.push(`the task size it takes to ${limitWord(patch.pick.size)}`);
-  if (patch.pick?.orgs === null) parts.push("the orgs it works in to all");
-  else if (patch.pick?.orgs !== undefined) {
-    const names = patch.pick.orgs.map((id) => sections.orgs[id]?.name ?? id);
-    parts.push(`the orgs it works in to ${names.length === 0 ? "none" : names.join(", ")}`);
+  const lines = [
+    ...(own.length === 0 ? [] : [`set ${own.join(", ")}`]),
+    ...(parts.length === 0 ? [] : [`set autonomous mode's ${parts.join(", ")}`]),
+  ];
+  return lines.length === 0 ? "changed nothing in autonomous mode" : lines.join("; ");
+}
+
+function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
+  switch (key) {
+    case "hours":
+      return "working hours";
+    case "freeze":
+      return "freeze dates";
+    case "tz":
+      return "time zone";
+    case "branches":
+      return "branches to ship to";
+    case "providers":
+      return "AI providers";
+    case "account":
+      return "paying account";
   }
-  return parts.length === 0
-    ? "changed nothing in autonomous mode"
-    : `set autonomous mode's ${parts.join(", ")}`;
 }

@@ -480,6 +480,95 @@ export class AdminService {
     }
   }
 
+  /** A pending card's call, unredacted while majhi holds it, for the captain's approval rules. */
+  cardCall(
+    taskId: string,
+    itemId: string,
+  ): { command: CommandName; input: Record<string, unknown>; parsed: Record<string, unknown> } | undefined {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending") return undefined;
+    if (!Object.hasOwn(commands, item.command)) return undefined;
+    const command = item.command as CommandName;
+    let input: unknown;
+    try {
+      input = this.inputOf(item);
+    } catch {
+      return undefined;
+    }
+    const parsed = commands[command].input.safeParse(input);
+    if (!parsed.success || typeof input !== "object" || input === null) return undefined;
+    return {
+      command,
+      input: input as Record<string, unknown>,
+      parsed: parsed.data as Record<string, unknown>,
+    };
+  }
+
+  /**
+   * The captain's upkeep decides a pending card (SPEC 5.18, "Approval cards"). `approved` runs it as
+   * the owner's click would, audited `captain`; `left` keeps it pending with the captain's line why.
+   * The verdict comes from the owner's approval rules, never from the card's own words.
+   */
+  async captainDecide(
+    taskId: string,
+    itemId: string,
+    verdict: { decision: "approved" | "left"; why: string },
+    captain: string,
+  ): Promise<{ ok: boolean; error?: string; commit?: string }> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) {
+      return { ok: false, error: "The card is no longer waiting" };
+    }
+    const marker = { decision: verdict.decision, why: verdict.why, by: "captain" as const };
+    if (verdict.decision === "left") {
+      this.update(item, { autonomy: marker });
+      return { ok: true };
+    }
+    this.deciding.add(item.id);
+    try {
+      const done = await this.execute(
+        item.command as CommandName,
+        this.inputOf(item),
+        metaFor(item.agent, item.reason ?? "", item.task),
+      );
+      this.pending.delete(item.id);
+      this.log(
+        item.task,
+        captain,
+        item.command,
+        item.summary,
+        "allow",
+        "captain",
+        done.ok ? verdict.why : `${verdict.why}. Failed: ${done.error}`,
+      );
+      this.update(item, {
+        state: done.ok ? "applied" : "failed",
+        autonomy: marker,
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result: done.ok ? lineOf(done.output) : done.error,
+      });
+      await this.notify(
+        item.task,
+        item.agent,
+        done.ok
+          ? {
+              text: `The captain approved: ${item.summary}. Result: ${lineOf(done.output)}`,
+              shown: `The captain approved: ${lowerFirst(item.summary)}. ${verdict.why}`,
+            }
+          : {
+              text: `The captain approved: ${item.summary}, but it failed: ${done.error}`,
+              shown: `The captain approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
+              level: "warn",
+            },
+      );
+      return done.ok
+        ? { ok: true, ...(done.commit === undefined ? {} : { commit: done.commit }) }
+        : { ok: false, error: done.error };
+    } finally {
+      this.deciding.delete(item.id);
+    }
+  }
+
   /**
    * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
    * destructive command while `allow_destructive_rules` is off, and for an org rule on a task with
@@ -546,7 +635,7 @@ export class AdminService {
     kind: string,
     title: string,
     decision: "allow" | "deny",
-    by: "owner" | "rule" | "autonomy",
+    by: "owner" | "rule" | "autonomy" | "captain",
     detail?: string,
   ): void {
     this.deps.store.permissions.log({

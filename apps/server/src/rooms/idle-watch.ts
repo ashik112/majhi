@@ -167,6 +167,16 @@ export class IdleWatch {
     await this.deps.pauseForOwner(task.id, ownerLine(task.id, lead, last.text, last.refused));
   }
 
+  /**
+   * Whether a running task is quiet right now: nobody works, no owner card waits, no background
+   * process is waited on and no subtask moves. The captain's stuck-task chore (5.18) reads it.
+   */
+  quiet(id: string): boolean {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "running" || isBossChat(task)) return false;
+    return stalled(this.facts(task, this.deps.runs.working(id).length));
+  }
+
   stop(): void {
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();

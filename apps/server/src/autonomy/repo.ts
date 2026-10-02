@@ -321,20 +321,22 @@ export class AutonomyRepo {
   // Spend
 
   /**
-   * Turns of autonomous tasks since they joined, and of the autonomy chat, from `start` to `end`,
-   * summed per org. Tokens count like budgets: input, output and cache writes.
+   * Turns of autonomous tasks since they joined, and of the captain's chats (its lanes and the
+   * autonomy chat from before lanes), from `start` to `end`, summed per org. Tokens count like
+   * budgets: input, output and cache writes.
    */
-  spendRows(start: string, end: string, chat: string | undefined): OrgSpendRow[] {
+  spendRows(start: string, end: string, chats: readonly string[]): OrgSpendRow[] {
+    const marks = chats.map(() => "?").join(", ");
     return this.db
       .prepare(
         `SELECT COALESCE(t.org, ?) AS org,
            COALESCE(SUM(t.input_tokens + t.output_tokens + t.cache_write_tokens), 0) AS tokens,
            COALESCE(SUM(t.cost_usd), 0) AS cost
          FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since) OR t.task = ?)
+         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})
          GROUP BY COALESCE(t.org, ?)`,
       )
-      .all(PRIVATE, start, end, chat ?? "", PRIVATE) as OrgSpendRow[];
+      .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
   }
 }
 

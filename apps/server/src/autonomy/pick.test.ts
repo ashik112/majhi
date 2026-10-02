@@ -21,8 +21,9 @@ const rated = (level: TaskRating["level"]): TaskRating => ({
 });
 
 /**
- * A captain world with autonomous mode on. Sizes come from a fixed rater: a task whose text says
- * "large", "medium" or "small" is rated so, anything else is not rated.
+ * A captain world with Acme set to "Runs it" and autonomous mode on; the captain calls from Acme's
+ * lane. Sizes come from a fixed rater: a task whose text says "large", "medium" or "small" is rated
+ * so, anything else is not rated.
  */
 async function on() {
   w = await bossWorld({ real: false });
@@ -32,9 +33,10 @@ async function on() {
     const level = (["large", "medium", "small"] as const).find((l) => t.brief.includes(l));
     return level === undefined ? undefined : rated(level);
   });
+  expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
-  const chat = autonomy.chat();
-  if (chat === undefined) throw new Error("no autonomy chat");
+  const chat = await autonomy.laneChat("acme");
+  if (chat === undefined) throw new Error("no lane for Acme");
   const call = (tool: string, args: Record<string, unknown>) =>
     h.majhi.services.admin.call({ task: chat, agent: "boss" }, tool, { reason: "it is next", ...args });
   /** A task the owner made in Acme, not started. */
@@ -131,33 +133,43 @@ describe("the size rule", () => {
   });
 });
 
-describe("the org rule", () => {
-  it("keeps the captain's task calls to the orgs it may work in", async () => {
+describe("the workspace's choice and the lane", () => {
+  it("lets the captain start work only in a workspace set to Runs it, and only in its own lane's workspace", async () => {
     const t = await on();
     const acme = await t.ownerTask("Fix the api\n\nsmall");
-    const status = await t.configure({ orgs: ["private"] });
-    expect(status.settings.pick).toEqual({ size: "any", orgs: ["private"] });
-    const start = await t.call("majhi_tasks_start", { id: acme });
-    expect(start).toEqual({
+    const own = await t.ownerTask("Write the release notes\n\nsmall", []);
+    // Another workspace's task, from Acme's lane: refused, read or write.
+    const lane =
+      "Refused: this lane works in Acme only, and the call is about Private. Each workspace has its own lane.";
+    expect(await t.call("majhi_tasks_start", { id: own })).toEqual({ isError: true, text: lane });
+    expect(await t.call("majhi_tasks_get", { id: own })).toEqual({ isError: true, text: lane });
+    expect(await t.call("majhi_tasks_create", { text: "Write the notes", start: false })).toEqual({
       isError: true,
-      text: "Refused: Acme is not one of the workspaces autonomous mode may work in.",
+      text: lane,
     });
-    const create = await t.call("majhi_tasks_create", {
-      text: "Add a health check",
-      repos: [{ project: "acme-api" }],
-      start: false,
-    });
-    expect(create.text).toBe("Refused: Acme is not one of the workspaces autonomous mode may work in.");
-    // A task with no org is Private, which the rule allows.
-    const own = await t.call("majhi_tasks_create", { text: "Write the release notes", start: false });
-    expect(own.isError).toBe(false);
-    // Back to every org.
-    expect((await t.configure({ orgs: null })).settings.pick).toEqual({ size: "any" });
-    expect((await t.call("majhi_tasks_start", { id: acme })).text).not.toContain(
-      "workspaces autonomous mode",
+    // Acme set to Keeps things tidy: the captain no longer starts or changes work there.
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "tidy" } } })).status).toBe(200);
+    const tidy =
+      "Refused: Acme is set to Keeps things tidy, so the captain does not start or change work there.";
+    expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({ isError: true, text: tidy });
+    expect(
+      await t.call("majhi_tasks_create", {
+        text: "Add a health check",
+        repos: [{ project: "acme-api" }],
+        start: false,
+      }),
+    ).toEqual({ isError: true, text: tidy });
+    // Runs it again: it starts.
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+    expect((await t.call("majhi_tasks_start", { id: acme })).isError).toBe(false);
+    // With autonomous mode off, Runs it acts as Keeps things tidy.
+    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
+    const other = await t.ownerTask("Add a status page\n\nsmall");
+    expect((await t.call("majhi_tasks_start", { id: other })).text).toBe(
+      "Refused: autonomous mode is off, so the captain does not start or change work in Acme.",
     );
-    // An org that does not exist is refused.
-    expect((await t.h.cmd("autonomy.configure", { pick: { orgs: ["nowhere"] } })).status).toBe(404);
+    // A workspace that does not exist is refused.
+    expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { level: "runs" } } })).status).toBe(404);
   });
 });
 
@@ -204,13 +216,14 @@ describe("what the captain reads", () => {
     const marked = await t.ownerTask("Touch the payments code\n\nsmall");
     const own = await t.ownerTask("Write the release notes\n\nsmall", []);
     await t.h.cmd("autonomy.exclude", { task: marked, exclude: true });
-    await t.configure({ size: "medium", orgs: ["acme"] });
+    await t.configure({ size: "medium" });
 
-    const pick = await t.autonomy.pickable(10_000);
+    // Acme's lane reads Acme's backlog only.
+    const pick = await t.autonomy.pickable(10_000, "acme");
     expect(pick.backlog.map((b) => [b.id, b.size])).toEqual([[small, "small"]]);
-    expect(pick.leftOut).toBe(3);
+    expect(pick.leftOut).toBe(2);
     expect(pick.rules[0]).toContain("Task size: Up to medium");
-    expect(pick.rules[1]).toBe("Workspaces (orgs): only Acme.");
+    expect(pick.rules[1]).toBe("Workspace: Acme only. This lane never sees or acts in another workspace.");
 
     const status = await t.status();
     const row = (id: string) => status.backlog.find((b) => b.task === id);
@@ -218,17 +231,17 @@ describe("what the captain reads", () => {
     expect(row(small)?.leftOut).toBeUndefined();
     expect(row(big)?.leftOut).toBe("It is large, and the size rule is Up to medium");
     expect(row(marked)).toMatchObject({ noAutonomy: true, leftOut: "Marked Not for autonomous mode" });
-    expect(row(own)?.leftOut).toBe("Private is not one of the workspaces autonomous mode may work in");
+    expect(row(own)?.leftOut).toBe("Private is set to Keeps things tidy");
   });
 });
 
-describe("the captain's chat", () => {
-  it("cannot be closed or removed while the mode is not off; off, it can, and the next start makes a new one", async () => {
+describe("the captain's lane", () => {
+  it("cannot be closed or removed while the mode is not off; off, it can, and the next tick makes a new one", async () => {
     const t = await on();
     const remove = await t.h.cmd("tasks.remove", { id: t.chat });
     expect(remove.status).toBe(409);
     expect(JSON.stringify(remove.body)).toContain(
-      `${t.chat} is the chat autonomous mode works in, so it cannot be removed while autonomous mode is on.`,
+      `${t.chat} is the captain's lane autonomous mode works in, so it cannot be removed while autonomous mode is on.`,
     );
     const close = await t.h.cmd("tasks.close", { id: t.chat });
     expect(close.status).toBe(409);
@@ -241,33 +254,38 @@ describe("the captain's chat", () => {
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
     expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(200);
     expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeUndefined();
-    expect((await t.status()).boss?.chat).toBeUndefined();
+    expect((await t.status()).lanes[0]?.chat).toBeUndefined();
 
     expect((await t.h.cmd("autonomy.start")).status).toBe(200);
-    const next = (await t.status()).boss?.chat;
+    const next = await t.autonomy.laneChat("acme");
     expect(next).toBeDefined();
     expect(next).not.toBe(t.chat);
-    expect(t.h.majhi.services.store.tasks.get(next ?? "")?.brief).toBe("Autonomous mode");
+    expect(t.h.majhi.services.store.tasks.get(next ?? "")).toMatchObject({
+      brief: "Captain lane",
+      org: "acme",
+    });
+    expect((await t.status()).lanes).toEqual([
+      expect.objectContaining({ org: "acme", name: "Acme", chat: next }),
+    ]);
   });
 
   it("is made again before a tick when it is gone while the mode is on, so the captain is never woken into nothing", async () => {
     const t = await on();
-    // Gone without the guard (a direct delete): the driver's chat is made again, with a line why.
+    // Gone without the guard (a direct delete): the lane is made again, with a line why.
     t.h.majhi.services.store.tasks.remove(t.chat);
-    expect(t.autonomy.chat()).toBeUndefined();
-    const chat = await t.autonomy.tickChat();
+    const chat = await t.autonomy.laneChat("acme");
     expect(chat).toBeDefined();
     expect(chat).not.toBe(t.chat);
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.team[0]).toBe("boss");
-    expect(t.autonomy.chat()).toBe(chat);
     const events = (await t.h.cmd("autonomy.events", { limit: 20 })).body.events as AutonomyEvent[];
-    expect(events[0]?.text).toBe(`The captain works in a new chat, ${chat}: ${t.chat} was removed`);
-    // A closed chat is reopened, not replaced.
+    expect(events[0]?.text).toBe(`The captain works in Acme in its lane ${chat}`);
+    // A closed lane is reopened, not replaced.
     t.h.majhi.services.store.tasks.setStatus(chat ?? "", "done", undefined, new Date().toISOString());
-    expect(await t.autonomy.tickChat()).toBe(chat);
+    expect(await t.autonomy.laneChat("acme")).toBe(chat);
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.status).not.toBe("done");
-    // Off: no tick, and no chat is made.
+    // A workspace that is not set to Runs it gets no tick lane; off, no lane at all.
+    expect(await t.autonomy.laneChat("private")).toBeUndefined();
     await t.h.cmd("autonomy.stop", { how: "now" });
-    expect(await t.autonomy.tickChat()).toBeUndefined();
+    expect(await t.autonomy.laneChat("acme")).toBeUndefined();
   });
 });

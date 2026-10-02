@@ -1,13 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   type AccountView,
-  AUTONOMY_CHAT_BRIEF,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
   type AutonomyBacklogItem,
   type AutonomyEvent,
   type AutonomyHold,
   type AutonomyInstruction,
+  type AutonomyLane,
   type AutonomyMode,
   AutonomyNoteInputSchema,
   type AutonomyNow,
@@ -18,22 +18,28 @@ import {
   type AutonomyStatus,
   type AutonomySummary,
   type AutonomyWaiting,
+  type CapUse,
   type CommandMeta,
   type CommandName,
   commands,
   detectSecrets,
   type GitLoginsResult,
-  isAutonomyChat,
+  isCaptainLane,
   PRIVATE,
   type RoomItem,
+  type Spend,
   type Task,
   type TaskId,
+  ToolIdSchema,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { redact, redactText } from "../admin/policy.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
 import type { AgentStore } from "../agents/store.ts";
+import type { Lanes } from "../captain/lanes.ts";
+import { levelOf, workspaceIds } from "../captain/levels.ts";
+import { presenceWhy, restWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -54,7 +60,7 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
-import { leftOutWhy, type OrgNames, orgProblem, pickLines } from "./pick.ts";
+import { leftOutWhy, levelProblem, type OrgNames, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason } from "./repo.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
@@ -90,12 +96,19 @@ export interface AutonomyDeps {
   automationAction?: (kind: "schedule" | "trigger", id: string) => string | undefined;
   /** Rates how much work a task is (the decision provider), for the size rule. */
   rateSize?: SizeRater;
+  /** The captain's lanes (5.18): autonomous mode wakes the captain in each "Runs it" workspace's own. */
+  lanes: Lanes;
+  /** "Stop the captain" is on: autonomous mode does not turn on. */
+  captainStopped?: () => boolean;
+  /** When the owner last acted in a task: the captain keeps out for 10 minutes. */
+  ownerAt?: (task: string) => string | undefined;
   now?: () => Date;
 }
 
 /** What the service tells the driver (part B, `driver.ts`). */
 export interface DriverHooks {
-  wake(line: string): void;
+  /** For one workspace, or every "Runs it" workspace when `org` is absent. */
+  wake(line: string, org?: string): void;
   onMode(mode: AutonomyMode): void;
   loopEnded(task: string): void;
   sweep(): void;
@@ -152,7 +165,7 @@ export class AutonomyService {
     return this.repo.state().mode;
   }
 
-  /** The autonomy chat, when there is one. */
+  /** The autonomy chat from before lanes, when it is still there. Readable; nothing wakes it. */
   chat(): string | undefined {
     const chat = this.repo.state().chat;
     return chat !== undefined && this.deps.store.tasks.get(chat) !== undefined ? chat : undefined;
@@ -162,34 +175,50 @@ export class AutonomyService {
     return this.repo.isAutonomous(task);
   }
 
+  /** The workspaces set to "Runs it", Private first. */
+  async runsOrgs(): Promise<string[]> {
+    const [sections, settings] = await Promise.all([
+      this.deps.config.sections(),
+      this.deps.config.settings(),
+    ]);
+    return workspaceIds(sections.orgs).filter((org) => levelOf(settings.autonomy, org) === "runs");
+  }
+
+  /** The lanes' chats that exist now. */
+  laneChats(): string[] {
+    return this.deps.lanes.all().map((l) => l.chat);
+  }
+
+  /** The workspace of a lane's chat. */
+  laneOrg(task: string): string | undefined {
+    return this.deps.lanes.orgOf(task);
+  }
+
   /**
-   * The chat a tick goes to, while the mode is on. When the chat was removed, closed or belongs to
-   * an earlier captain, majhi makes (or reopens) one first and says so in the feed, so a tick never
-   * wakes the captain into a chat that is gone. Undefined: the mode is not on, or there is no captain.
+   * The lane a tick goes to, while the mode is on and the workspace is set to "Runs it". When the
+   * lane's chat was removed or closed, majhi makes or reopens it first and says so in the feed.
+   * Undefined: the mode is not on, the workspace does not run, or there is no captain.
    */
-  async tickChat(): Promise<string | undefined> {
+  async laneChat(org: string): Promise<string | undefined> {
     if (this.repo.state().mode !== "on") return undefined;
-    const before = this.repo.state().chat;
+    if (!(await this.runsOrgs()).includes(org)) return undefined;
+    const before = this.deps.lanes.chat(org);
     const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
     const boss = await this.bossId();
     if (boss === undefined) return undefined;
     if (found !== undefined && found.status !== "done" && found.team[0] === boss) return found.id;
     try {
-      const chat = await this.ensureChat();
-      const why =
-        found === undefined
-          ? before === undefined
-            ? "it had none"
-            : `${before} was removed`
-          : found.status === "done"
-            ? `${found.id} was closed`
-            : `${found.id} belongs to another captain`;
+      const chat = await this.deps.lanes.ensure(org);
+      const name = await this.orgName(org);
       this.event({
         kind: "mode",
         text:
-          chat.id === before
-            ? `Reopened the captain's chat ${chat.id}: ${why}`
-            : `The captain works in a new chat, ${chat.id}: ${why}`,
+          found === undefined
+            ? `The captain works in ${name} in its lane ${chat.id}`
+            : found.status === "done"
+              ? `Reopened the captain's lane in ${name}, ${chat.id}: it was closed`
+              : `The captain works in ${name} in a new lane, ${chat.id}: ${found.id} belongs to another captain`,
+        ...(org === PRIVATE ? {} : { org }),
       });
       return chat.id;
     } catch {
@@ -197,21 +226,28 @@ export class AutonomyService {
     }
   }
 
+  private async orgName(org: string): Promise<string> {
+    if (org === PRIVATE) return "Private";
+    return (await this.deps.config.sections()).orgs[org]?.name ?? org;
+  }
+
   /**
-   * The owner closes or removes a task: while the mode is not off, the captain's autonomy chat stays,
-   * because autonomous mode wakes the captain there. Off, it may go; the next start makes a new one.
+   * The owner closes or removes a task: while the mode is not off, a lane of the captain stays,
+   * because autonomous mode wakes the captain there. Off, it may go; the next tick makes a new one.
    */
   guardChat(task: Pick<Task, "id" | "kind" | "brief">, action: "close" | "remove"): void {
-    let state: { mode: AutonomyMode; chat?: string };
+    let mode: AutonomyMode;
+    let lane: string | undefined;
     try {
-      state = this.repo.state();
+      mode = this.repo.state().mode;
+      lane = this.deps.lanes.orgOf(task.id);
     } catch {
       // The database closed under a shutdown.
       return;
     }
-    if (state.mode === "off" || task.id !== state.chat || !isAutonomyChat(task)) return;
+    if (mode === "off" || lane === undefined || !isCaptainLane(task)) return;
     throw new UserError(
-      `${task.id} is the chat autonomous mode works in, so it cannot be ${action === "close" ? "closed" : "removed"} while autonomous mode is ${state.mode}. Stop autonomous mode first; the next start makes a new chat.`,
+      `${task.id} is the captain's lane autonomous mode works in, so it cannot be ${action === "close" ? "closed" : "removed"} while autonomous mode is ${mode}. Stop autonomous mode first; the next start makes a new lane.`,
       409,
     );
   }
@@ -220,9 +256,9 @@ export class AutonomyService {
     this.driver = driver;
   }
 
-  /** A line on why the captain should look again: it goes into the next tick. */
-  private wake(line: string): void {
-    this.driver?.wake(line);
+  /** A line on why the captain should look again: it goes into the next tick of that workspace's lane, or every lane. */
+  private wake(line: string, org?: string): void {
+    this.driver?.wake(line, org);
   }
 
   // ---------------------------------------------------------------------------
@@ -264,7 +300,7 @@ export class AutonomyService {
   /** A turn was recorded: an autonomous one may have reached a cap. */
   async afterTurn(turn: { task: string }): Promise<void> {
     if (this.repo.state().mode === "off") return;
-    if (turn.task !== this.repo.state().chat && !this.repo.isAutonomous(turn.task)) return;
+    if (this.laneOrg(turn.task) === undefined && !this.repo.isAutonomous(turn.task)) return;
     await this.refreshHolds();
   }
 
@@ -274,7 +310,7 @@ export class AutonomyService {
       this.driver?.loopEnded(task);
       const state = this.repo.state();
       if (state.mode !== "stopping") return;
-      if (task !== state.chat && !this.repo.isAutonomous(task)) return;
+      if (this.laneOrg(task) === undefined && !this.repo.isAutonomous(task)) return;
       void this.maybeFinishStop().catch(() => undefined);
     } catch {
       // The database closed under a shutdown: nothing to finish.
@@ -288,7 +324,15 @@ export class AutonomyService {
   async start(): Promise<AutonomyStatus> {
     const { mode } = this.repo.state();
     if (mode === "on") return this.status();
-    await this.ensureChat();
+    if (this.deps.captainStopped?.() === true) {
+      throw new UserError("The captain is stopped. Resume it on the Captain page first.", 409);
+    }
+    if ((await this.bossId()) === undefined) {
+      throw new UserError(
+        "There is no captain yet. Make a root agent the captain first, then turn autonomous mode on.",
+        409,
+      );
+    }
     if (mode === "off") {
       // Holds from an earlier run are news again.
       this.repo.setHolds([]);
@@ -352,9 +396,8 @@ export class AutonomyService {
   private async stopNow(): Promise<void> {
     // Held at every boundary while the runs stop; the event comes once, for `off`.
     this.repo.setMode("stopping", this.now().toISOString(), "owner", undefined);
-    // The captain first, so it calls no more tools while its tasks stop.
-    const chat = this.chat();
-    if (chat !== undefined) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
+    // The captain first, in every lane, so it calls no more tools while its tasks stop.
+    for (const chat of this.laneChats()) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
     for (const task of this.openTasks()) {
       // A task in review can still have a turn in flight.
       if (!this.stoppable(task) && !this.deps.runs.inTurn(task.id)) continue;
@@ -367,8 +410,7 @@ export class AutonomyService {
   /** Stop gracefully: once no autonomous run is in a turn, majhi turns the mode off. */
   private async maybeFinishStop(): Promise<void> {
     if (this.finishing || this.repo.state().mode !== "stopping") return;
-    const chat = this.chat();
-    const ids = [...this.openTasks().map((t) => t.id), ...(chat === undefined ? [] : [chat])];
+    const ids = [...this.openTasks().map((t) => t.id), ...this.laneChats()];
     if (ids.some((id) => this.deps.runs.inTurn(id))) return;
     this.finishing = true;
     try {
@@ -403,31 +445,6 @@ export class AutonomyService {
     this.event({ kind: "mode", text, ...(why === undefined ? {} : { reason: why }) });
     this.say(line);
     this.driver?.onMode(mode);
-  }
-
-  /** The autonomy chat, made on the first start and reused. A new captain gets a new one. */
-  async ensureChat(): Promise<Task> {
-    const boss = await this.bossId();
-    if (boss === undefined) {
-      throw new UserError(
-        "There is no captain yet. Make a root agent the captain first, then turn autonomous mode on.",
-        409,
-      );
-    }
-    const id = this.repo.state().chat;
-    const found = id === undefined ? undefined : this.deps.store.tasks.get(id);
-    if (found !== undefined && found.team[0] === boss) {
-      return found.status === "done" ? this.deps.tasks.reopen(found.id) : found;
-    }
-    const chat = await this.deps.tasks.create({
-      text: AUTONOMY_CHAT_BRIEF,
-      kind: "chat",
-      agent: boss,
-      attachments: [],
-      start: false,
-    });
-    this.repo.setChat(chat.id);
-    return chat;
   }
 
   /** The captain's id, when it is set and its agent file is good. */
@@ -546,7 +563,7 @@ export class AutonomyService {
     const tz = zoneOr(settings.tz);
     const now = this.now();
     const window = dayWindow(now, tz);
-    const rows = this.repo.spendRows(window.start, window.end, this.repo.state().chat);
+    const rows = this.repo.spendRows(window.start, window.end, this.spendChats());
     return {
       settings,
       spend: spendOf(rows, settings, window, tz),
@@ -586,8 +603,10 @@ export class AutonomyService {
     if (started.some((h) => h.kind !== "account")) await this.deps.runs.pauseLimited();
     if (lifted.some((h) => h.kind !== "account")) await this.liftCaps();
     const first = started[0] ?? lifted[0];
-    if (first !== undefined)
-      this.wake(started.length > 0 ? `${first.text}` : `No longer held: ${lowerFirst(first.text)}`);
+    if (first !== undefined) {
+      const org = holdOrg(first).org;
+      this.wake(started.length > 0 ? `${first.text}` : `No longer held: ${lowerFirst(first.text)}`, org);
+    }
     return holds;
   }
 
@@ -608,8 +627,9 @@ export class AutonomyService {
   /** Whether this caller acts for autonomous mode. Checked in every mode, for the hard limits. */
   async callerKind(caller: AdminCaller): Promise<AutonomyCaller | undefined> {
     const { chat } = this.repo.state();
-    // An agent the captain brought into its chat acts for autonomous mode too, with none of the captain's tools.
-    if (chat !== undefined && caller.task === chat) {
+    // The captain in a lane, or in the autonomy chat from before lanes. An agent it brought into
+    // either acts for autonomous mode too, with none of the captain's tools.
+    if (this.laneOrg(caller.task) !== undefined || (chat !== undefined && caller.task === chat)) {
       return caller.agent === (await this.bossId()) ? "boss" : "agent";
     }
     return this.repo.isAutonomous(caller.task) ? "agent" : undefined;
@@ -624,13 +644,19 @@ export class AutonomyService {
   ): Promise<string | undefined> {
     const call = { command, input, reason };
     // A read passes nothing between orgs: only the text limits apply, and no org's files are read.
+    // In a lane a read still stays in the lane's workspace: another workspace's task or project is refused.
     const read = commands[command].risk === "read";
-    const ctx = read ? undefined : await this.context(caller, command, input);
+    const lane = this.laneOrg(caller.task);
+    const ctx = read && lane === undefined ? undefined : await this.context(caller, command, input);
     const world = ctx?.world;
     const why =
       world === undefined
         ? textLimit(call)
-        : (hardLimit(call, world) ?? (await this.pickRefusal(caller, command, input, world.org, ctx)));
+        : read
+          ? (textLimit(call) ?? (await this.laneRefusal(lane, world.org)))
+          : (hardLimit(call, world) ??
+            (await this.laneRefusal(lane, world.org)) ??
+            (await this.pickRefusal(caller, command, input, world.org, ctx)));
     if (why === undefined) return undefined;
     this.event({
       kind: "refused",
@@ -646,9 +672,18 @@ export class AutonomyService {
   }
 
   /**
-   * The owner's pick rules (PRV-74 follow-up), for the captain and the agents in its autonomy chat while
-   * the mode is not off: no call that touches a task marked Not for autonomous mode, nothing about
-   * tasks in an org it may not work in, and no start of a task larger than the size rule allows.
+   * A lane works in its own workspace only (5.18): a call that acts in, or reads, another workspace's
+   * tasks or projects is refused, so one workspace's content never reaches another's lane.
+   */
+  private async laneRefusal(lane: string | undefined, org: string): Promise<string | undefined> {
+    if (lane === undefined || org === lane) return undefined;
+    return `Refused: this lane works in ${await this.orgName(lane)} only, and the call is about ${await this.orgName(org)}. Each workspace has its own lane.`;
+  }
+
+  /**
+   * The owner's pick rules (PRV-74 follow-up, 5.18), for the captain and the agents in its lanes: no
+   * call that touches a task marked Not for autonomous mode, no task work in a workspace that is not
+   * set to "Runs it" with the mode on, and no start of a task larger than the size rule allows.
    */
   private async pickRefusal(
     caller: AdminCaller,
@@ -658,16 +693,21 @@ export class AutonomyService {
     ctx: { sections: ConfigSections } | undefined,
   ): Promise<string | undefined> {
     const state = this.repo.state();
-    if (state.mode === "off" || state.chat === undefined || caller.task !== state.chat) return undefined;
+    const legacy = state.chat !== undefined && caller.task === state.chat;
+    if (this.laneOrg(caller.task) === undefined && !legacy) return undefined;
     if (command.startsWith("autonomy.")) return undefined;
     const sections = ctx?.sections ?? (await this.deps.config.sections());
-    const { pick } = (await this.deps.config.settings()).autonomy;
+    const settings = (await this.deps.config.settings()).autonomy;
+    const { pick } = settings;
     const names = orgNames(sections);
     const group = command.split(".", 1)[0];
     const starts = startsWork(command, input);
     // The task the call is about, and a new task's parent.
     const touched = [targetOf(command, input), str(input.parent), str(input.followUpOf)].flatMap((id) => {
-      const t = id === undefined || id === state.chat ? undefined : this.deps.store.tasks.get(id);
+      const t =
+        id === undefined || id === state.chat || this.laneOrg(id) !== undefined
+          ? undefined
+          : this.deps.store.tasks.get(id);
       return t === undefined ? [] : [t];
     });
     const marked = touched.find((t) => t.noAutonomy === true);
@@ -675,7 +715,7 @@ export class AutonomyService {
       return `Refused: the owner marked ${marked.id} Not for autonomous mode, so autonomous mode leaves it alone.`;
     }
     if (group === "tasks" || group === "team" || starts) {
-      const outside = orgProblem(pick, org, names);
+      const outside = levelProblem(levelOf(settings, org), state.mode, org, names);
       if (outside !== undefined) return `Refused: ${outside}.`;
     }
     if (!starts || pick.size === "any") return undefined;
@@ -889,7 +929,10 @@ export class AutonomyService {
       item,
       ...this.orgOfTask(caller.task),
     });
-    this.wake(`${caller.task}: left for the owner: ${summary}`);
+    this.wake(
+      `${caller.task}: left for the owner: ${summary}`,
+      this.deps.store.tasks.get(caller.task)?.org ?? PRIVATE,
+    );
   }
 
   /**
@@ -979,14 +1022,33 @@ export class AutonomyService {
   ): Promise<AutonomyStatus> {
     const sections = await this.deps.config.sections();
     if (!sections.exists) throw new UserError("Pick workspace roots first.", 409);
-    for (const id of Object.keys(patch.orgs ?? {})) {
-      if (patch.orgs?.[id] !== null && sections.orgs[id] === undefined) {
+    for (const [id, change] of Object.entries(patch.orgs ?? {})) {
+      if (change !== null && id !== PRIVATE && sections.orgs[id] === undefined) {
         throw new UserError(`Org "${id}" does not exist.`, 404);
       }
-    }
-    for (const id of patch.pick?.orgs ?? []) {
-      if (id !== PRIVATE && sections.orgs[id] === undefined)
-        throw new UserError(`Org "${id}" does not exist.`, 404);
+      if (change === null) continue;
+      if (typeof change.tz === "string" && !validZone(change.tz)) {
+        throw new UserError(`${change.tz} is not a time zone. Use one like Europe/Berlin.`, 400);
+      }
+      for (const tool of change.providers ?? []) {
+        if (!(ToolIdSchema.options as readonly string[]).includes(tool)) {
+          throw new UserError(
+            `${tool} is not an AI provider majhi knows. Use ${ToolIdSchema.options.join(" or ")}.`,
+            400,
+          );
+        }
+      }
+      if (typeof change.account === "string") {
+        const account = sections.accounts[change.account];
+        if (account === undefined) throw new UserError(`There is no account ${change.account}.`, 404);
+        // A workspace's lane never runs on another workspace's account (5.18, the never list).
+        if (account.org !== id && account.org !== PRIVATE) {
+          throw new UserError(
+            `${change.account} belongs to ${sections.orgs[account.org]?.name ?? account.org}, so it cannot pay for ${id === PRIVATE ? "Private" : (sections.orgs[id]?.name ?? id)}.`,
+            409,
+          );
+        }
+      }
     }
     if (patch.tz !== undefined && !validZone(patch.tz)) {
       throw new UserError(`${patch.tz} is not a time zone. Use one like Europe/Berlin.`, 400);
@@ -1004,11 +1066,12 @@ export class AutonomyService {
   }
 
   /**
-   * The owner's message to the captain, in any mode: it goes to the autonomy chat as the owner's
-   * message, which wakes the captain. With `keep` it is also a standing instruction, as a config commit.
+   * The owner's message to the captain, in any mode: it goes to a workspace's lane as the owner's
+   * message, which wakes the captain there (default: the first workspace set to "Runs it"). With
+   * `keep` it is also a standing instruction for every lane, as a config commit.
    */
   async guide(
-    input: { text: string; keep: boolean },
+    input: { text: string; keep: boolean; org?: string | undefined },
     change: { command: string; meta: CommandMeta },
   ): Promise<{ chat: TaskId; instruction?: AutonomyInstruction }> {
     if (detectSecrets(input.text).length > 0) {
@@ -1017,7 +1080,17 @@ export class AutonomyService {
         400,
       );
     }
-    const chat = await this.ensureChat();
+    const org = input.org ?? (await this.runsOrgs())[0];
+    if (org === undefined) {
+      throw new UserError(
+        "No workspace is set to Runs it. Set one on the Captain page, or name the workspace.",
+        409,
+      );
+    }
+    if ((await this.bossId()) === undefined) {
+      throw new UserError("There is no captain yet. Make a root agent the captain first.", 409);
+    }
+    const chat = await this.deps.lanes.ensure(org);
     let instruction: AutonomyInstruction | undefined;
     if (input.keep) {
       const { instructions } = (await this.deps.config.settings()).autonomy;
@@ -1059,8 +1132,8 @@ export class AutonomyService {
   async exclude(task: string, exclude: boolean): Promise<AutonomyStatus> {
     const found = this.deps.store.tasks.get(task);
     if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
-    if (found.id === this.repo.state().chat) {
-      throw new UserError(`${task} is the chat autonomous mode works in.`, 409);
+    if (found.id === this.repo.state().chat || this.laneOrg(found.id) !== undefined) {
+      throw new UserError(`${task} is a chat of the captain.`, 409);
     }
     if ((found.noAutonomy === true) !== exclude) {
       this.deps.store.tasks.setNoAutonomy(task, exclude);
@@ -1073,7 +1146,7 @@ export class AutonomyService {
         ...orgOf(found),
       });
       this.deps.events.emit(["autonomy", "tasks"]);
-      if (!exclude) this.wake(`The owner let autonomous mode take ${task} again`);
+      if (!exclude) this.wake(`The owner let autonomous mode take ${task} again`, found.org ?? PRIVATE);
     }
     return this.status();
   }
@@ -1087,9 +1160,10 @@ export class AutonomyService {
   }
 
   /** Pending cards of autonomous tasks the captain may answer with majhi_autonomy_answer. */
-  answerable(): AnswerableCard[] {
+  answerable(org?: string): AnswerableCard[] {
     const out: AnswerableCard[] = [];
     for (const task of this.openTasks()) {
+      if (org !== undefined && (task.org ?? PRIVATE) !== org) continue;
       this.deps.room.flush(task.id);
       for (const type of ["permission", "ask", "choice", "owner-question"] as const) {
         for (const item of this.deps.store.room.pendingOfType(task.id, type)) {
@@ -1101,12 +1175,13 @@ export class AutonomyService {
     return out;
   }
 
-  /** Inbox and ready tasks across orgs, chats left out, in the order the captain takes them. */
-  backlog(): (BacklogTask & { task: Task })[] {
+  /** Inbox and ready tasks of one workspace, or all, chats left out, in the order the captain takes them. */
+  backlog(org?: string): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
     return backlogOrder(
       this.deps.store.tasks.list(false).flatMap((t) => {
         if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return [];
+        if (org !== undefined && (t.org ?? PRIVATE) !== org) return [];
         const task = this.deps.store.tasks.get(t.id);
         if (task === undefined) return [];
         return [
@@ -1125,18 +1200,19 @@ export class AutonomyService {
   }
 
   /** The backlog with each task's size and why the pick rules leave it out, if they do. */
-  private async rated(): Promise<
-    { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined }[]
-  > {
+  private async rated(
+    org?: string,
+  ): Promise<{ item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined }[]> {
     const [settings, sections] = await Promise.all([
       this.deps.config.settings(),
       this.deps.config.sections(),
     ]);
     const { pick } = settings.autonomy;
     const names = orgNames(sections);
-    return this.backlog().map((item) => {
+    return this.backlog(org).map((item) => {
       const size = this.sizes.known(item.task) ?? { note: "Not rated yet" };
-      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names) };
+      const level = levelOf(settings.autonomy, item.org ?? PRIVATE);
+      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, level) };
     });
   }
 
@@ -1144,11 +1220,14 @@ export class AutonomyService {
    * What the tick shows the captain: the backlog the pick rules allow, with sizes, how many they leave
    * out, and the rules in words. Sizes not known yet are rated first, for up to `fillMs`.
    */
-  async pickable(fillMs: number): Promise<{ backlog: BacklogTask[]; leftOut: number; rules: string[] }> {
+  async pickable(
+    fillMs: number,
+    org?: string,
+  ): Promise<{ backlog: BacklogTask[]; leftOut: number; rules: string[] }> {
     if (fillMs > 0) {
       const marked = (t: Task) => t.noAutonomy === true;
       await this.sizes.fill(
-        this.backlog()
+        this.backlog(org)
           .map((b) => b.task)
           .filter((t) => !marked(t)),
         fillMs,
@@ -1158,7 +1237,7 @@ export class AutonomyService {
       this.deps.config.settings(),
       this.deps.config.sections(),
     ]);
-    const rows = await this.rated();
+    const rows = await this.rated(org);
     return {
       backlog: rows.flatMap(({ item, size, leftOut }) => {
         if (leftOut !== undefined) return [];
@@ -1166,7 +1245,7 @@ export class AutonomyService {
         return [{ ...rest, ...(size.size === undefined ? {} : { size: size.size }) }];
       }),
       leftOut: rows.filter((r) => r.leftOut !== undefined).length,
-      rules: pickLines(settings.autonomy.pick, orgNames(sections)),
+      rules: pickLines(settings.autonomy.pick, orgNames(sections), org),
     };
   }
 
@@ -1210,12 +1289,12 @@ export class AutonomyService {
   }
 
   /** The driver woke the captain: the feed and the chat say why. */
-  ticked(reasons: readonly string[]): void {
+  ticked(reasons: readonly string[], org?: string, chat?: string): void {
     this.repo.setLastTick(this.now().toISOString());
     const last = reasons.at(-1) ?? "a check";
     const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
-    this.event({ kind: "tick", text });
-    this.say(text);
+    this.event({ kind: "tick", text, ...(org === undefined || org === PRIVATE ? {} : { org }) });
+    if (chat !== undefined) this.sayIn(chat, text);
   }
 
   // ---------------------------------------------------------------------------
@@ -1223,7 +1302,8 @@ export class AutonomyService {
 
   /**
    * `autonomy.plan`, `autonomy.note` and `autonomy.answer`: no policy and no card. Only for the captain
-   * in its autonomy chat, while the mode is not off; answers only while it is on.
+   * in a lane: while the mode is not off, or in any mode in a lane whose workspace is set to "Keeps
+   * things tidy" or "Runs it", where the upkeep asks it about agents' questions (5.18).
    */
   async bossTool(
     caller: AdminCaller,
@@ -1232,11 +1312,17 @@ export class AutonomyService {
     reason: string,
   ): Promise<ToolResult> {
     if ((await this.callerKind(caller)) !== "boss") {
-      return fail(`${command} is a tool of the captain in its autonomy chat.`);
+      return fail(`${command} is a tool of the captain in its lanes.`);
     }
+    if (this.deps.captainStopped?.() === true) return fail("The captain is stopped.");
     const { mode } = this.repo.state();
-    if (mode === "off") return fail("Autonomous mode is off.");
-    if (command === "autonomy.answer" && mode !== "on") {
+    const lane = this.laneOrg(caller.task);
+    const level =
+      lane === undefined ? undefined : levelOf((await this.deps.config.settings()).autonomy, lane);
+    const upkeep = level === "tidy" || level === "runs";
+    // The plan is autonomous mode's own; notes and answers are also the upkeep's.
+    if (mode === "off" && (!upkeep || command === "autonomy.plan")) return fail("Autonomous mode is off.");
+    if (command === "autonomy.answer" && mode !== "on" && !upkeep) {
       return fail(`Autonomous mode is ${mode}, so nothing is answered until it is on.`);
     }
     const refused = await this.refusal(caller, command, input, reason);
@@ -1244,16 +1330,21 @@ export class AutonomyService {
     if (command === "autonomy.plan") {
       const parsed = AutonomyPlanInputSchema.safeParse(input);
       if (!parsed.success) return invalid(command, parsed.error);
-      this.repo.setQueue(parsed.data.items, this.now().toISOString());
+      // A lane plans its own workspace only; the other lanes' plans stay.
+      const items =
+        lane === undefined ? parsed.data.items : parsed.data.items.map((i) => ({ ...i, org: lane }));
+      const others =
+        lane === undefined ? [] : this.repo.state().queue.filter((i) => (i.org ?? PRIVATE) !== lane);
+      this.repo.setQueue([...others, ...items], this.now().toISOString());
       this.deps.events.emit(["autonomy"]);
-      return ok({ queue: parsed.data.items.length });
+      return ok({ queue: items.length });
     }
     if (command === "autonomy.note") {
       const parsed = AutonomyNoteInputSchema.safeParse(input);
       if (!parsed.success) return invalid(command, parsed.error);
       const note = parsed.data;
       const org =
-        note.org ?? (note.task === undefined ? undefined : this.deps.store.tasks.get(note.task)?.org);
+        lane ?? note.org ?? (note.task === undefined ? undefined : this.deps.store.tasks.get(note.task)?.org);
       const seq = this.event({
         kind: "decision",
         text: note.text,
@@ -1268,20 +1359,29 @@ export class AutonomyService {
     if (command === "autonomy.answer") {
       const parsed = AutonomyAnswerInputSchema.safeParse(input);
       if (!parsed.success) return invalid(command, parsed.error);
-      return this.answer(caller, parsed.data, reason);
+      return this.answer(caller, parsed.data, reason, upkeep ? lane : undefined);
     }
     return fail(`${command} is not a tool of autonomous mode.`);
   }
 
-  /** The captain answers a card of an autonomous task through the owner's own paths. */
+  /**
+   * The captain answers a card through the owner's own paths: in an autonomous task, or, for the
+   * upkeep, in any task of the lane's workspace (`upkeep`). Never in a task the owner is in.
+   */
   private async answer(
     caller: AdminCaller,
     input: z.infer<typeof AutonomyAnswerInputSchema>,
     reason: string,
+    upkeep: string | undefined,
   ): Promise<ToolResult> {
-    if (!this.repo.isAutonomous(input.task)) {
-      return fail(`${input.task} is not an autonomous task, so only the owner answers its cards.`);
+    const inLane = upkeep !== undefined && (this.deps.store.tasks.get(input.task)?.org ?? PRIVATE) === upkeep;
+    if (!this.repo.isAutonomous(input.task) && !inLane) {
+      return fail(
+        `${input.task} is not an autonomous task or a task of this lane's workspace, so only the owner answers its cards.`,
+      );
     }
+    const present = presenceWhy(this.deps.ownerAt?.(input.task), this.now());
+    if (present !== undefined) return fail(`The owner is in ${input.task}: ${present}. Leave it to them.`);
     const item = this.deps.room.get(input.task, input.item);
     if (item === undefined) return fail(`There is no card ${input.item} in ${input.task}.`);
     const option = input.option;
@@ -1362,7 +1462,7 @@ export class AutonomyService {
       const t = this.deps.store.tasks.get(e.task);
       if (t !== undefined) tasks.set(e.task, { title: t.title, ...orgOf(t) });
     }
-    const spend = spendOf(this.repo.spendRows(from, to, state.chat), settings, { day, end: to }, tz);
+    const spend = spendOf(this.repo.spendRows(from, to, this.spendChats()), settings, { day, end: to }, tz);
     const summary = buildSummary({
       day,
       from,
@@ -1384,12 +1484,59 @@ export class AutonomyService {
   // ---------------------------------------------------------------------------
   // What the page reads
 
+  /** The captain's chats whose turns count as autonomous spend: every lane, and the chat from before lanes. */
+  private spendChats(): string[] {
+    const legacy = this.repo.state().chat;
+    return [...this.laneChats(), ...(legacy === undefined ? [] : [legacy])];
+  }
+
+  /** Each workspace set to "Runs it": its lane, today's spend there, its tasks and why it rests. */
+  private async lanesView(
+    m: Measure,
+    holds: readonly AutonomyHold[],
+    boss: string | undefined,
+  ): Promise<AutonomyLane[]> {
+    const settings = m.settings;
+    const rows = await this.rated();
+    const now = this.nowList();
+    const out: AutonomyLane[] = [];
+    for (const org of await this.runsOrgs()) {
+      const chat = this.deps.lanes.chat(org);
+      const nowDoing =
+        chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
+      const used = m.spend.orgs.find((o) => o.org === org);
+      const cap = settings.orgs[org]?.cap;
+      const spend: CapUse = used ?? {
+        used: { tokens: 0, cost: 0 },
+        ...(cap === undefined ? {} : { cap }),
+        percent: 0,
+        reached: false,
+      };
+      const rules = settings.orgs[org];
+      const hold = capHoldFor(holds, org);
+      const rest = hold?.text ?? restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz));
+      out.push({
+        org,
+        name: org === PRIVATE ? "Private" : (m.names[org] ?? org),
+        ...(chat === undefined ? {} : { chat: chat as TaskId }),
+        working: chat !== undefined && this.deps.runs.working(chat).length > 0,
+        ...(nowDoing === undefined ? {} : { nowDoing }),
+        spend,
+        tasks: now.filter((t) => (t.org ?? PRIVATE) === org).length,
+        backlog: rows.filter((r) => (r.item.org ?? PRIVATE) === org && r.leftOut === undefined).length,
+        ...(rest === undefined ? {} : { resting: rest }),
+      });
+    }
+    return out;
+  }
+
   async status(): Promise<AutonomyStatus> {
     const state = this.repo.state();
     const m = await this.measure();
     const holds = state.mode === "off" ? [] : await this.refreshHolds(m);
     const boss = await this.bossId();
-    const chat = this.chat();
+    const lanes = await this.lanesView(m, holds, boss);
+    const chat = lanes.find((l) => l.chat !== undefined)?.chat ?? this.chat();
     const nowDoing =
       chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
     const summary = this.repo.latestSummary();
@@ -1409,6 +1556,7 @@ export class AutonomyService {
               ...(nowDoing === undefined ? {} : { nowDoing }),
             },
           }),
+      lanes,
       now: this.nowList(),
       queue: after.queue,
       backlog: await this.backlogView(),
@@ -1459,10 +1607,9 @@ export class AutonomyService {
       }));
   }
 
-  /** Cards in autonomous tasks and the autonomy chat that only the owner can decide. */
+  /** Cards in autonomous tasks and the captain's lanes that only the owner can decide. */
   waiting(): AutonomyWaiting[] {
-    const chat = this.chat();
-    const ids = [...this.openTasks().map((t) => t.id), ...(chat === undefined ? [] : [chat])];
+    const ids = [...this.openTasks().map((t) => t.id), ...this.laneChats()];
     const out: AutonomyWaiting[] = [];
     for (const task of ids) {
       this.deps.room.flush(task);
@@ -1515,15 +1662,55 @@ export class AutonomyService {
     return seq;
   }
 
-  /** A quiet line in the autonomy chat. */
+  /** A quiet line in every lane of a workspace set to "Runs it" that has a chat. */
   say(text: string, level: "info" | "warn" = "info"): void {
-    const chat = this.chat();
-    if (chat === undefined) return;
+    void this.runsOrgs()
+      .then((orgs) => {
+        for (const org of orgs) {
+          const chat = this.deps.lanes.chat(org);
+          if (chat !== undefined) this.sayIn(chat, text, level);
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /** A quiet line in one of the captain's chats. */
+  sayIn(chat: string, text: string, level: "info" | "warn" = "info"): void {
     this.deps.room.post(chat as TaskId, `autonomy:${randomUUID()}`, {
       type: "system",
       level,
       text: redactText(text),
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // What the captain per workspace (5.18) reads
+
+  /** Today's spend in a workspace: the captain's lane there and its autonomous tasks. */
+  async orgSpend(org: string): Promise<{ used: Spend; tz: string }> {
+    const m = await this.measure();
+    const row = m.spend.orgs.find((o) => o.org === org);
+    return { used: row?.used ?? { tokens: 0, cost: 0 }, tz: m.spend.tz };
+  }
+
+  /**
+   * Why a workspace's lane rests now: the day budget is used, the workspace's own budget is used, or
+   * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.
+   */
+  async laneRest(org: string, account: string): Promise<string | undefined> {
+    const m = await this.measure();
+    if (m.spend.total.reached) return "the day budget is used up";
+    const own = m.spend.orgs.find((o) => o.org === org);
+    if (own?.reached === true)
+      return `${org === PRIVATE ? "Private" : (m.names[org] ?? org)} used its daily budget`;
+    const held = m.accounts.find((a) => a.id === account)?.blocked;
+    return held === undefined ? undefined : `${account} is ${lowerFirst(held.why)}`;
+  }
+
+  /** "Stop the captain": autonomous mode stops now, as Stop now does. */
+  async stopNowForCaptain(): Promise<void> {
+    if (this.repo.state().mode === "off") return;
+    await this.stopNow();
   }
 }
 

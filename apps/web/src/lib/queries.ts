@@ -56,6 +56,8 @@ export const queryKeys = {
   connections: ["connections"],
   /** Every `autonomy.*` read: the status and the feed. */
   autonomy: ["autonomy"],
+  /** Every `captain.*` read: the status per workspace and the log. */
+  captain: ["captain"],
   /** `git.signIn.poll` for each flow. */
   signins: ["signins"],
   /** `projects.cloneStatus`. */
