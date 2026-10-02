@@ -37,11 +37,16 @@ export class OwnerCards {
   }
 
   /** The task paused. A pending review card settles: the task is not waiting for review any more. */
-  paused(task: Task, reason: PausedReason): RoomItem {
+  paused(task: Task, reason: PausedReason, why?: string): RoomItem {
     this.settle(task.id, "review", "Paused before a review", "majhi");
     this.replace(task.id, "paused");
     const id = `paused:${randomUUID()}`;
-    this.deps.room.post(task.id, id, { type: "paused", reason, state: "pending" });
+    this.deps.room.post(task.id, id, {
+      type: "paused",
+      reason,
+      ...(why === undefined ? {} : { why }),
+      state: "pending",
+    });
     return this.must(task.id, id);
   }
 
@@ -101,5 +106,11 @@ function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPay
         state,
         ...end,
       }
-    : { type: "paused", reason: card.reason, state, ...end };
+    : {
+        type: "paused",
+        reason: card.reason,
+        ...(card.why === undefined ? {} : { why: card.why }),
+        state,
+        ...end,
+      };
 }

@@ -3,43 +3,9 @@ import type { ParseContext, ParsedTask } from "./tasks.ts";
 /** Longest title kept. */
 export const TITLE_MAX = 120;
 
-/** Words that follow `from` or `off` in plain speech, never a branch. */
-const NOT_A_BRANCH = new Set([
-  "the",
-  "a",
-  "an",
-  "this",
-  "that",
-  "these",
-  "those",
-  "it",
-  "its",
-  "my",
-  "our",
-  "your",
-  "their",
-  "there",
-  "here",
-  "now",
-  "then",
-  "scratch",
-  "which",
-  "what",
-  "where",
-  "one",
-  "each",
-  "all",
-  "any",
-  "some",
-  "other",
-]);
-
 const LINK = /https?:\/\/[^\s<>"'`]+/gi;
 const LINK_TRAILING = /[.,;:!?)\]}>]+$/;
-const BASE_PHRASE = /(?<![A-Za-z0-9_-])(?:from|off|base)(?:\s*:\s*|\s+)([A-Za-z0-9._/-]+)/gi;
-const BRANCH_PHRASE = /(?<![A-Za-z0-9_-])(?:on|branch)(?:\s*:\s*|\s+)([A-Za-z0-9._/-]+)/gi;
 const MENTION = /(?<![A-Za-z0-9_@/.-])@([A-Za-z0-9][A-Za-z0-9-]*)(?![A-Za-z0-9_/@-]|\.[A-Za-z0-9])/g;
-const BRANCH_TRAILING = /[.,;:]+$/;
 
 /** An investigation or an incident: no repo to change, something to find out (SPEC 5.15). */
 const OPS_WORDS =
@@ -55,22 +21,19 @@ const CODE_WORDS =
   /(?<![A-Za-z0-9_-])(?:implement(?:s|ed|ing)?|refactor(?:s|ed|ing)?|pull request|merge request|commit(?:s)?|PR)(?![A-Za-z0-9_-])/;
 
 /**
- * Reads the task box text (SPEC 3.1): repos by project id or alias, base
- * branch (`from develop`, `base: main`, `off release/2.1`), working branch
- * (`on feature/x`, `branch fix/y`; must contain a slash), `@agent` mentions,
- * links, and warnings (unknown agents, repos from more than one org). A repo
+ * Reads the task box text (SPEC 3.1): repos by project id or alias, `@agent`
+ * mentions, links, and warnings (unknown agents, repos from more than one org).
+ * Branches are never read from the text: the base is the project's or the pick,
+ * and the working branch is always a new task branch. A repo
  * means kind `code`. No repo means kind `ops` for an investigation or an incident
  * ("why is the api down in prod", "debug ... in prod"), else `chat`, with no warning. Pure and fast: it runs on every
  * keystroke.
  */
 export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
   const links = findLinks(text);
-  // Spans that must not count as repo names: links, branch phrases and mentions.
+  // Spans that must not count as repo names: links and mentions.
   const masked: [number, number][] = [];
   for (const link of links) masked.push([link.start, link.end]);
-
-  const base = findPhrase(text, BASE_PHRASE, (token) => !NOT_A_BRANCH.has(token.toLowerCase()), masked);
-  const branch = findPhrase(text, BRANCH_PHRASE, (token) => token.includes("/"), masked);
 
   const known = new Set(ctx.agents.map((a) => a.id));
   const mentions: string[] = [];
@@ -98,27 +61,21 @@ export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
     repos,
     mentions,
     links: [...new Set(links.map((l) => l.url))],
-    kind: taskKindOf(text, repos.length > 0, branch),
+    kind: taskKindOf(text, repos.length > 0),
     warnings,
   };
-  if (base !== undefined) parsed.base = base;
-  if (branch !== undefined) parsed.branch = branch;
   if (orgs.length === 1 && orgs[0] !== undefined) parsed.org = orgs[0];
   return parsed;
 }
 
 /**
  * `ops` for an investigation or an incident, `code` when repos are named, else `chat`. Naming a
- * repo does not make an investigation code ("why is the api down in prod"), but a working branch, a code
- * word, or a change verb next to a named repo ("fix the timeout in api") does.
+ * repo does not make an investigation code ("why is the api down in prod"), but a code
+ * word or a change verb next to a named repo ("fix the timeout in api") does.
  */
-export function taskKindOf(
-  text: string,
-  hasRepos: boolean,
-  branchNamed: string | undefined,
-): ParsedTask["kind"] {
+export function taskKindOf(text: string, hasRepos: boolean): ParsedTask["kind"] {
   const ops = OPS_WORDS.test(text) || OPS_WHY.test(text) || OPS_DEBUG.test(text);
-  const changes = branchNamed !== undefined || CODE_WORDS.test(text) || (hasRepos && CHANGE_VERBS.test(text));
+  const changes = CODE_WORDS.test(text) || (hasRepos && CHANGE_VERBS.test(text));
   if (ops && !changes) return "ops";
   return hasRepos ? "code" : "chat";
 }
@@ -147,22 +104,6 @@ function findLinks(text: string): FoundLink[] {
     if (url.length > "https://".length) found.push({ url, start: m.index, end: m.index + m[0].length });
   }
   return found;
-}
-
-/** The token of the first phrase match that `accept`s it and does not sit inside a masked span. Masks the phrase. */
-function findPhrase(
-  text: string,
-  pattern: RegExp,
-  accept: (token: string) => boolean,
-  masked: Array<[number, number]>,
-): string | undefined {
-  for (const m of text.matchAll(pattern)) {
-    const token = (m[1] ?? "").replace(BRANCH_TRAILING, "");
-    if (token === "" || !accept(token) || inside(masked, m.index)) continue;
-    masked.push([m.index, m.index + m[0].length]);
-    return token;
-  }
-  return undefined;
 }
 
 function inside(spans: readonly [number, number][], at: number): boolean {

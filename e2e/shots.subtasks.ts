@@ -114,7 +114,7 @@ function parent(
 const item = (n: number, rest: Record<string, unknown>): RoomItem =>
   ({ id: `i${n}`, task: "GLX-418", seq: n, at: iso(30 - n), ...rest }) as RoomItem;
 
-const AGENT = {
+const AGENT: Extract<RoomServerMessage, { type: "snapshot" }>["agents"][number] = {
   agent: "globex-lead",
   status: "working",
   nowDoing: "Editing src/export/job.ts",
@@ -122,7 +122,7 @@ const AGENT = {
   model: "opus-5.5",
   effort: "high",
   commands: [],
-} as const;
+};
 
 const SNAPSHOT: RoomServerMessage = {
   type: "snapshot",

@@ -12,6 +12,7 @@ import {
   type TaskSummary,
   type TierPatch,
 } from "@majhi/shared";
+import { capToField } from "../orgs/model";
 
 export type OkAgent = Extract<AgentEntry, { status: "ok" }>;
 export type InvalidAgent = Extract<AgentEntry, { status: "invalid" }>;
@@ -162,6 +163,8 @@ export interface AgentDraft {
   /** Connection ids of the agent's org it may use (5.14). Root agents get every connection of the task's org. */
   connections: string[];
   fallback: string | undefined;
+  /** The agent's own context cap in thousands of tokens, `0` for no cap, `""` for the org's or majhi's. */
+  contextCap: string;
   instructions: string;
 }
 
@@ -180,6 +183,7 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     tools: f.tools,
     connections: f.connections,
     fallback: f.fallback,
+    contextCap: capToField(f.context?.cap),
     instructions: agent.instructions,
   };
 }
@@ -193,6 +197,7 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
     models: _ms,
     tier: _t,
     fallback: _f,
+    context: _c,
     ...rest
   } = original.frontmatter;
   const frontmatter: Omit<AgentFrontmatterInput, "id"> = {
@@ -214,6 +219,11 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
   };
   if (Object.keys(tier).length > 0) frontmatter.tier = tier;
   if (draft.fallback) frontmatter.fallback = draft.fallback;
+  // Not a number (or under the least allowed) goes to the server as typed, which says so.
+  const context = { ...original.frontmatter.context };
+  delete context.cap;
+  if (draft.contextCap.trim() !== "") context.cap = Number(draft.contextCap) * 1000;
+  if (Object.keys(context).length > 0) frontmatter.context = context;
   return { id: original.frontmatter.id, frontmatter, instructions: draft.instructions };
 }
 

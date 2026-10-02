@@ -27,9 +27,12 @@ describe("update", () => {
     selfIsBundle?: boolean;
     keyExists?: boolean;
     noImage?: boolean;
+    /** The key the Keychain holds. */
+    keychainKey?: string;
   }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
+    const ensured: string[] = [];
     let failedOnce = false;
     let netFailed = 0;
     const exec: ExecFn = async (file, args, opts) => {
@@ -91,6 +94,13 @@ describe("update", () => {
         bundle,
         selfPath: options.selfIsBundle ? bundle : "/elsewhere/main.ts",
         secretsKeyFile: key,
+        keychain: {
+          read: async () => options.keychainKey,
+          ensure: async () => {
+            ensured.push("ensure");
+            return undefined;
+          },
+        },
         log: () => undefined,
         exit: () => exit.push("exit"),
         sleep: async () => undefined,
@@ -111,7 +121,7 @@ describe("update", () => {
         return undefined;
       }
     };
-    return { calls, exit, run, bundle, key };
+    return { calls, exit, run, bundle, key, ensured };
   }
 
   it("builds with the commit baked in, regenerates the mounts, starts, and replaces the helper last", async () => {
@@ -136,7 +146,17 @@ describe("update", () => {
     expect(s.calls.find((c) => c.args === "compose --profile runner build")?.env.MAJHI_COMMIT).toBe(HEAD);
     expect(await readFile(s.bundle, "utf8")).toBe("bundle");
     expect(await readFile(s.key, "utf8")).toBe("AGE-SECRET-KEY-TEST\n");
+    expect(s.ensured).toEqual(["ensure"]);
     expect(s.exit).toEqual(["exit"]);
+  });
+
+  it("puts back the key the Keychain holds instead of making a new one", async () => {
+    const s = setup({ keychainKey: "AGE-SECRET-KEY-1SAVED" });
+    const status = await s.run();
+    expect(status.state).toBe("done");
+    expect(s.calls.some((c) => c.args.startsWith("run --rm"))).toBe(false);
+    expect(await readFile(s.key, "utf8")).toBe("AGE-SECRET-KEY-1SAVED\n");
+    expect(status.lines).toContain("Putting back the secrets key from the Keychain");
   });
 
   it("keeps an existing secrets key and does not exit when it is not running from the installed bundle", async () => {

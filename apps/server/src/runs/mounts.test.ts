@@ -1,8 +1,9 @@
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
-import { repoMounts } from "./launch.ts";
+import { repairWorktrees, repoMounts } from "./launch.ts";
 
 let dir: string;
 let cleanup: () => Promise<void>;
@@ -47,5 +48,17 @@ describe("a run's mounts of a task repo's git folder", () => {
     ({ dir, cleanup } = await tempDir());
     const own = await taskOn("task/acm-7-work");
     expect(await repoMounts(own.task)).toHaveLength(3);
+  });
+});
+
+describe("waking an agent on a task", () => {
+  it("repairs a worktree whose entry is gone, says so, and mounts the entry", async () => {
+    const { task, entry } = await taskOn("task/acm-7-work");
+    await rm(entry, { recursive: true });
+    const lines = await repairWorktrees(task);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^Repaired the git link of /);
+    expect((await repoMounts(task, { guardRefs: true })).map((m) => m.path)).toContain(entry);
+    expect(await repairWorktrees(task)).toEqual([]);
   });
 });

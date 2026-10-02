@@ -64,6 +64,26 @@ export function sshUnlockCommand(key: string): string {
   return `ssh-add --apple-use-keychain ${key}`;
 }
 
+/**
+ * A secrets key's fingerprint: the first 16 hex characters of the SHA-256 of its
+ * `AGE-SECRET-KEY-1...` line. The helper and the server compare keys by it; it never reveals the key.
+ */
+export const KeyFingerprintSchema = z.string().regex(/^[0-9a-f]{16}$/);
+
+/** The copy of the secrets key the helper keeps in the macOS Keychain. */
+export const SecretsKeyBackupSchema = z.object({
+  /** The fingerprint of the key in the Keychain. Absent when the Keychain holds none. */
+  saved: KeyFingerprintSchema.optional(),
+  /** Why the helper could not read or save the copy, in plain words. */
+  error: z.string().optional(),
+  checkedAt: z.string(),
+});
+export type SecretsKeyBackup = z.infer<typeof SecretsKeyBackupSchema>;
+
+/** Shortest passphrase for a secrets key export. The file leaves the Mac, so it must hold up offline. */
+export const KEY_EXPORT_PASSPHRASE_MIN = 12;
+export const KEY_EXPORT_FILE_NAME = "majhi-secrets-key.age";
+
 /** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
 export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
 export type DockerRuntime = z.infer<typeof DockerRuntimeSchema>;
@@ -250,6 +270,15 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("ssh.unlock"),
     params: z.object({ key: z.string().min(1), passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX) }),
   }),
+  /**
+   * Save the Mac's secrets key file to the Keychain, replacing any other key there. The helper refuses
+   * when the file's fingerprint is not `expected`, the key the server uses. The key never travels.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("secretsKey.save"),
+    params: z.object({ expected: KeyFingerprintSchema }),
+  }),
 ]);
 export type HostJob = z.infer<typeof HostJobSchema>;
 export type HostMethod = HostJob["method"];
@@ -261,6 +290,7 @@ export const HostResultSchemas = {
   remount: z.object({ accepted: z.literal(true) }),
   "ssh.reload": SshStatusSchema,
   "ssh.unlock": SshStatusSchema,
+  "secretsKey.save": SecretsKeyBackupSchema,
   "version.changes": z.object({
     head: z.string(),
     dirty: z.boolean(),
@@ -301,6 +331,8 @@ export const HostInfoSchema = z.object({
   dockerRuntime: DockerRuntimeSchema.optional(),
   /** Laya on this Mac. Absent from older helpers. */
   laya: LayaStatusSchema.optional(),
+  /** The Keychain copy of the secrets key. Absent until the helper's first look, off macOS, and from older helpers. */
+  secretsKey: SecretsKeyBackupSchema.optional(),
   /**
    * When the helper last noticed a wake from sleep (clock gap). The server resumes turns that
    * failed or stalled while the Mac slept each time this changes. Absent until the first wake.

@@ -26,6 +26,7 @@ export function pathOf(task: Subject): string {
 const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   limit: "paused: the account hit its usage limit",
   error: "paused after an error",
+  "signed-out": "paused: an account is signed out",
   loop: "stopped: the agents are going in circles",
   blocked: "is blocked and waits for you",
 };

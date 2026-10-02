@@ -57,6 +57,7 @@ export function AgentRow({
   const detailsId = useId();
   const tick = useNow(live?.status === "working" ? 5_000 : 60_000);
   const quiet = silentFor(live, tick);
+  const turn = turnLength(live, tick);
   // A turn with nothing new on screen for a while still says what it is in: the tool, or thinking.
   const line = quiet === undefined ? nowDoingLine(live) : `${live?.nowDoing ?? "Thinking"}, ${quiet}`;
   const idle = line === "Idle";
@@ -75,6 +76,11 @@ export function AgentRow({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="truncate font-mono text-sm font-medium">@{id}</span>
+              {turn && (
+                <span title="How long this turn has run" className="tnum shrink-0 text-xs text-fg-faint">
+                  turn {turn}
+                </span>
+              )}
             </span>
             {/*
               State first, then what it is doing: the row keeps one height while the agent works.
@@ -133,6 +139,17 @@ function silentFor(live: AgentLive | undefined, now: number): string | undefined
   if (!(ms > 20_000)) return undefined;
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)} min`;
+}
+
+/** While working: how long the current turn has run, like `45s`, `12 min` or `1h 05m`. */
+function turnLength(live: AgentLive | undefined, now: number): string | undefined {
+  if (live?.status !== "working" || live.turnAt === undefined) return undefined;
+  const s = Math.max(0, Math.floor((now - Date.parse(live.turnAt)) / 1000));
+  if (Number.isNaN(s)) return undefined;
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
 /** The open row: the account's limits, then context, model, effort, permissions and fallback. */
@@ -280,11 +297,11 @@ function LimitLine({
 export function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
   const percent = Math.round(share * 100);
   return (
-    <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>
+    <span className="flex items-center gap-2" title={`Context: ${label}`}>
       <meter
         className="sr-only"
         aria-label={`Context of @${agent}`}
-        aria-valuetext={`${label} tokens`}
+        aria-valuetext={label}
         min={0}
         max={100}
         value={percent}
