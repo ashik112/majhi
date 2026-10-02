@@ -16,6 +16,7 @@ import {
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
+  type PendingNotice,
   type PendingShip,
   type PlanMember,
   type ProcessInfo,
@@ -77,6 +78,7 @@ import {
 import type { MemoryService } from "../memory/service.ts";
 import type { TaskScopes } from "../memory/wiring.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
+import { pendingNotices, type Subject } from "../notify/attention.ts";
 import { orgKeys } from "../orgs/keys.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { endItemId, supersededBy } from "../processes/notices.ts";
@@ -303,6 +305,24 @@ export class TaskService {
       working: this.deps.runs.working(t.id),
       ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
     }));
+  }
+
+  /** What waits for the owner in open tasks and chats, oldest first (`notify.pending`). */
+  pendingForOwner(): PendingNotice[] {
+    const open = new Map<string, Subject | undefined>();
+    const subject = (id: string): Subject | undefined => {
+      if (!open.has(id)) {
+        const task = this.deps.store.tasks.get(id);
+        open.set(
+          id,
+          task === undefined || task.status === "done"
+            ? undefined
+            : { id: task.id, title: task.title, chat: isOwnerChat(task) },
+        );
+      }
+      return open.get(id);
+    };
+    return pendingNotices(this.deps.store.room.waitingOnOwner(), subject);
   }
 
   get(id: string): Task {

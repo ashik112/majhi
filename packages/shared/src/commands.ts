@@ -123,6 +123,7 @@ import {
   RefreshMrsResultSchema,
   RepoDiffSchema,
 } from "./mrs.ts";
+import { PendingNoticeSchema } from "./notify.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
 import {
@@ -491,6 +492,13 @@ export const commands = {
       /** Whether open tabs were told to show one. */
       browser: z.boolean(),
     }),
+  },
+  "notify.pending": {
+    risk: "read",
+    summary:
+      "What waits for the owner in open tasks and chats: approvals, permissions, secret requests, questions and decisions, oldest first",
+    input: z.object({}),
+    output: z.array(PendingNoticeSchema),
   },
   "fs.listDirs": {
     risk: "read",

@@ -42,3 +42,19 @@ export const AttentionEventSchema = z.object({
   sound: z.boolean(),
 });
 export type AttentionEvent = z.infer<typeof AttentionEventSchema>;
+
+/**
+ * One item that waits for the owner in an open task or chat (`notify.pending`): an approval, a
+ * permission, a secret request, a question or a decision. `text` is the line a notification would
+ * show, like "ACM-12 needs approval: run migrations".
+ */
+export const PendingNoticeSchema = z.object({
+  task: z.string().min(1),
+  /** The room item, so the task can scroll to it. */
+  item: z.string().min(1),
+  kind: NotifyKindSchema,
+  text: z.string(),
+  /** When the item appeared (ISO). */
+  at: z.string(),
+});
+export type PendingNotice = z.infer<typeof PendingNoticeSchema>;

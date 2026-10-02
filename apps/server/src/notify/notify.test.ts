@@ -158,3 +158,47 @@ describe("quiet hours", () => {
     expect(inQuietHours(at("2026-10-01T12:00:00Z"), {})).toBe(false);
   });
 });
+
+describe("the notifications list", () => {
+  it("lists what waits in open tasks with its notification line, and drops answered items and done tasks", async () => {
+    await setup();
+    const { room, store } = w.h.majhi.services;
+    approval("a1");
+    room.post("ACM-1", "q1", {
+      type: "choice",
+      agent: "acme-builder",
+      question: "Which queue should the export use?",
+      options: [
+        { id: "redis", label: "Redis" },
+        { id: "sqs", label: "SQS" },
+      ],
+      state: "pending",
+    });
+    approval("a2", "applied");
+    const list = async () => {
+      const res = await w.h.cmd("notify.pending", {});
+      expect(res.status).toBe(200);
+      return res.body as { task: string; item: string; kind: string; text: string }[];
+    };
+    expect(await list()).toEqual([
+      expect.objectContaining({
+        task: "ACM-1",
+        item: "a1",
+        kind: "approval",
+        text: "ACM-1 needs approval: run migrations",
+      }),
+      expect.objectContaining({
+        task: "ACM-1",
+        item: "q1",
+        kind: "question",
+        text: "ACM-1 needs a decision: Which queue should the export use?",
+      }),
+    ]);
+
+    approval("a1", "applied");
+    expect((await list()).map((n) => n.item)).toEqual(["q1"]);
+
+    store.tasks.setStatus("ACM-1", "done", undefined, new Date().toISOString());
+    expect(await list()).toEqual([]);
+  });
+});

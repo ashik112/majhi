@@ -13,6 +13,17 @@ export type RoomPayload = RoomItem extends infer T
 
 const PayloadSchema = z.record(z.string(), z.unknown());
 
+/** Item types that wait for the owner while their `state` is pending. */
+const OWNER_WAIT_TYPES: RoomItem["type"][] = [
+  "approval",
+  "permission",
+  "secret-request",
+  "ask",
+  "choice",
+  "owner-question",
+];
+const PENDING = sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`;
+
 /** Room items: one row per (task, id), replaced in place, with a per-task `seq` that grows on every write. */
 export class RoomRepo {
   private readonly lastAt = new Map<string, number>();
@@ -126,21 +137,20 @@ export class RoomRepo {
     const rows = this.db
       .selectDistinct({ task: roomItems.task })
       .from(roomItems)
-      .where(
-        and(
-          inArray(roomItems.type, [
-            "approval",
-            "permission",
-            "secret-request",
-            "ask",
-            "choice",
-            "owner-question",
-          ]),
-          sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
-        ),
-      )
+      .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
       .all();
     return new Set(rows.map((r) => r.task));
+  }
+
+  /** The items behind `tasksWaitingOnOwner`, in every task, oldest first. One query. */
+  waitingOnOwner(): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
+      .orderBy(asc(roomItems.at))
+      .all()
+      .flatMap(readable);
   }
 
   /** Approval cards that ran a config change and can be undone through this commit. */

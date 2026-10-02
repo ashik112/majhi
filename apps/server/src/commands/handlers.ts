@@ -363,6 +363,7 @@ export function createHandlers({
     },
 
     "notify.test": () => services.notifier.test(),
+    "notify.pending": async () => services.tasks.pendingForOwner(),
 
     "fs.listDirs": (input) =>
       hostLink.call("listDirs", {
