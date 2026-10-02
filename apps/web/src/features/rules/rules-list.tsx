@@ -1,4 +1,4 @@
-import { type AllowRule, isDestructiveCommand, type Settings } from "@majhi/shared";
+import { type AllowRule, commandLabel, isDestructiveCommand, type Settings } from "@majhi/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -33,7 +33,8 @@ export function RulesList({ settings, agent, label }: { settings: Settings; agen
         >
           <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
             {agent === undefined && <span className="font-mono text-fg-soft">@{rule.agent}</span>}
-            <span className="font-mono text-fg">{rule.command}</span>
+            <span className="text-fg">{commandLabel(rule.command)}</span>
+            <span className="font-mono text-xs text-fg-faint">{rule.command}</span>
             <span className="text-fg-muted">{scopeLabel(rule)}</span>
           </span>
           {ruleIsOff(rule, settings.policy) && (

@@ -1,23 +1,17 @@
-import type { ApprovalMode, RiskClass, Settings } from "@majhi/shared";
+import type { Settings } from "@majhi/shared";
 import { useState } from "react";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
-import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   formFromSettings,
-  MODE_LABEL,
-  POLICY_ROWS,
   patchFromForm,
   type SettingsErrors,
   type SettingsForm,
 } from "@/features/boss/model";
-import { useSavePolicy, useSaveSettings } from "@/lib/boss-queries";
-import { describeError } from "@/lib/errors";
+import { useSaveSettings } from "@/lib/boss-queries";
 
-const MODES: readonly ApprovalMode[] = ["auto", "when-asked", "confirm"];
 const IDLE: SaveState = { kind: "idle" };
 const GRID = "grid gap-3 @[480px]:grid-cols-3";
 
@@ -206,93 +200,5 @@ export function TeamsSection({ settings }: { settings: Settings }) {
         <NumberField label="Review rounds" name="reviewRounds" draft={teams} />
       </div>
     </Section>
-  );
-}
-
-/** The approval policy. Changing it decides what the boss may do alone, so Save asks first. */
-export function ApprovalsSection({ settings }: { settings: Settings }) {
-  const save = useSavePolicy();
-  const saved: Record<RiskClass, ApprovalMode> = {
-    read: settings.policy.read,
-    change: settings.policy.change,
-    destructive: settings.policy.destructive,
-    outbound: settings.policy.outbound,
-  };
-  const [edits, setEdits] = useState<Partial<Record<RiskClass, ApprovalMode>>>({});
-  const [state, setState] = useState<SaveState>(IDLE);
-  const [confirming, setConfirming] = useState(false);
-  const [problem, setProblem] = useState<string>();
-  const modes = { ...saved, ...edits };
-  const dirty = POLICY_ROWS.some((row) => modes[row.key] !== saved[row.key]);
-  const overrides = Object.keys(settings.policy.commands).length;
-
-  return (
-    <SaveSection
-      title="Approval policy"
-      note="What the boss may do without a click. Anything else waits for you in the room."
-      className="border-t-0"
-      dirty={dirty}
-      state={state}
-      onSave={() => setConfirming(true)}
-      onDiscard={() => {
-        setEdits({});
-        setState(IDLE);
-      }}
-    >
-      <div className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2">
-        {POLICY_ROWS.map((row) => (
-          <Field key={row.key} label={row.label} hint={row.hint}>
-            {(p) => (
-              <Select
-                {...p}
-                value={modes[row.key]}
-                onChange={(e) => {
-                  setState(IDLE);
-                  setEdits({ ...edits, [row.key]: e.target.value as ApprovalMode });
-                }}
-              >
-                {MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {MODE_LABEL[mode]}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        ))}
-      </div>
-      {overrides > 0 && (
-        <p className="text-sm text-fg-faint">
-          {overrides} command {overrides === 1 ? "override is" : "overrides are"} set in majhi.yaml.
-        </p>
-      )}
-      {confirming && (
-        <ConfirmDialog
-          title="Change the approval policy?"
-          body="This decides what the boss can do without asking you. It is a destructive change, so it needs your yes."
-          confirmLabel="Change policy"
-          busy={save.isPending}
-          error={problem}
-          onCancel={() => {
-            setConfirming(false);
-            setProblem(undefined);
-          }}
-          onConfirm={() => {
-            setState({ kind: "saving" });
-            save.mutate(modes, {
-              onSuccess: () => {
-                setConfirming(false);
-                setEdits({});
-                setState({ kind: "saved" });
-              },
-              onError: (error) => {
-                setState(IDLE);
-                setProblem(describeError(error));
-              },
-            });
-          }}
-        />
-      )}
-    </SaveSection>
   );
 }

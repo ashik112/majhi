@@ -202,10 +202,3 @@ export const MODE_LABEL: Record<ApprovalMode, string> = {
   "when-asked": "Run when I asked for it",
   confirm: "Always ask me",
 };
-
-export const POLICY_ROWS: readonly { key: RiskClass; label: string; hint: string }[] = [
-  { key: "read", label: "Reads", hint: "Look at things: lists, health, settings" },
-  { key: "change", label: "Changes", hint: "Create or edit orgs, agents, projects, tasks" },
-  { key: "destructive", label: "Destructive", hint: "Delete things" },
-  { key: "outbound", label: "Outbound", hint: "Reach outside majhi: updates, remounts" },
-];

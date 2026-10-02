@@ -28,6 +28,7 @@ import { useConfig, useHostStatus, useRepos } from "@/lib/queries";
 import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { useSearchParam } from "@/pages/parts/url-state";
+import { ApprovalsSection, policyStatus } from "./approvals-panel";
 import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
 import { EditorSection } from "./editor-panel";
@@ -37,7 +38,7 @@ import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } fr
 import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
 import { isSetupSection, SECTION_ABOUT, SECTION_TITLE, SETUP_GROUPS, type SetupSection } from "./sections";
-import { ApprovalsSection, ContextSection, TeamsSection } from "./settings-panel";
+import { ContextSection, TeamsSection } from "./settings-panel";
 import {
   OverviewSection,
   PageButton,
@@ -165,9 +166,7 @@ export function SetupView() {
     context:
       s && `Compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
     teams: s && `${s.rooms.review_rounds} review rounds`,
-    approvals:
-      s &&
-      `Changes: ${s.policy.change === "auto" ? "run alone" : s.policy.change === "confirm" ? "always ask" : "when asked"}`,
+    approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
