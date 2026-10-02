@@ -116,7 +116,8 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
     "Add the projects agents can work on",
   ]) {
     await expect(heading).toHaveText(step);
-    await page.getByRole("button", { name: "Skip for now" }).click();
+    // A step with nothing to do yet (git, with no projects) offers Continue instead of Skip.
+    await page.getByRole("button", { name: /^(Skip for now|Continue)$/ }).first().click();
   }
 
   // The captain, with the suggested defaults

@@ -1,20 +1,20 @@
 import { type EventTopic, type ServerEvent, ServerEventSchema } from "@majhi/shared";
 import { queryKeys } from "./queries";
 
-/** The query keys to refetch when a topic changes. */
+/** The query keys to refetch when a topic changes. Onboarding progress reads accounts, agents, orgs, projects, sign-ins and clones. */
 export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[] {
   switch (topic) {
     case "config":
       return [queryKeys.config];
     case "orgs":
-      return [queryKeys.orgs, queryKeys.connections];
+      return [queryKeys.orgs, queryKeys.connections, queryKeys.onboarding];
     case "accounts":
-      return [queryKeys.accounts, queryKeys.accountModels];
+      return [queryKeys.accounts, queryKeys.accountModels, queryKeys.onboarding];
     case "agents":
       // A connection lists the agents that use it.
-      return [queryKeys.agents, queryKeys.connections];
+      return [queryKeys.agents, queryKeys.connections, queryKeys.onboarding];
     case "projects":
-      return [queryKeys.projects];
+      return [queryKeys.projects, queryKeys.onboarding];
     case "tasks":
       return [queryKeys.tasks];
     case "secrets":
@@ -36,9 +36,9 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "autonomy":
       return [queryKeys.autonomy];
     case "signins":
-      return [queryKeys.signins];
+      return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
-      return [queryKeys.clones];
+      return [queryKeys.clones, queryKeys.onboarding];
   }
 }
 

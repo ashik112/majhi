@@ -60,7 +60,7 @@ export const queryKeys = {
   signins: ["signins"],
   /** `projects.cloneStatus`. */
   clones: ["clones"],
-  /** `onboarding.status`. Under `config`: orgs, accounts, the captain, projects and sign-ins all emit `config`. */
+  /** `onboarding.status`. Under `config`; the accounts, agents, orgs, projects, signins and clones topics refetch it too. */
   onboarding: ["config", "onboarding"],
   /** `git.remoteRepos` and `git.remoteOwners`. Under `orgs`, so a new sign-in refetches them. */
   remoteRepos: ["orgs", "remote-repos"],

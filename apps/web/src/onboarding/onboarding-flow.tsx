@@ -1,4 +1,5 @@
 import type { OnboardingStepId } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useMemo, useState } from "react";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
+import { queryKeys } from "@/lib/queries";
 import { RiverScene, type SceneStop } from "./scene/river-scene";
 import { savePlace, skippedSteps, skipStep } from "./skip";
 import { JourneyProvider } from "./step-frame";
@@ -31,6 +33,7 @@ export function OnboardingFlow({
   onArrive: () => void;
 }) {
   const journey = useJourney();
+  const queryClient = useQueryClient();
   const status = journey.status;
   const reduced = useReducedMotion() ?? false;
   const [index, setIndex] = useState(() => stepIndex(start));
@@ -150,7 +153,12 @@ export function OnboardingFlow({
                       status,
                       done: doneIds.has(current.id),
                       isLast: shown === last,
-                      next: () => leave(!doneIds.has(current.id)),
+                      // The step's own Continue: it finished. The status may lag a moment behind, so
+                      // only Skip marks a step skipped.
+                      next: () => {
+                        void queryClient.invalidateQueries({ queryKey: queryKeys.onboarding });
+                        leave(false);
+                      },
                       skip: () => leave(true),
                       goTo: (id) => goTo(stepIndex(id)),
                     }}
