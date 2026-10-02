@@ -18,7 +18,7 @@ import { useSearchParam } from "@/pages/parts/url-state";
 import type { AppSearch } from "@/router";
 import { AgentDetail } from "./agent-detail";
 import { AgentGroups } from "./agent-groups";
-import { entryId, groupAgents, type InvalidAgent, ROOT_SCOPE, scopeForAccount } from "./model";
+import { entryId, groupAgents, INVALID_GROUP, type InvalidAgent, ROOT_SCOPE, scopeForAccount } from "./model";
 import { NewAgentForm } from "./new-agent-form";
 
 /** Every agent, grouped by org on the left; the picked agent on the right, what it does first, then its settings. */
@@ -53,7 +53,19 @@ export function AgentsView() {
 
   const entries = useMemo(() => agents.data ?? [], [agents.data]);
   const accountList = useMemo(() => accounts.data ?? [], [accounts.data]);
-  const groups = useMemo(() => groupAgents(entries, orgs.data ?? []), [entries, orgs.data]);
+  const allGroups = useMemo(() => groupAgents(entries, orgs.data ?? []), [entries, orgs.data]);
+  // A workspace filter keeps Root (its agents work in every workspace), that workspace, and files that
+  // failed to load.
+  const groups = useMemo(
+    () =>
+      orgFilter === undefined
+        ? allGroups
+        : allGroups.filter(
+            (g) => g.scope === orgFilter || g.scope === ROOT_SCOPE || g.scope === INVALID_GROUP,
+          ),
+    [allGroups, orgFilter],
+  );
+  const shown = useMemo(() => groups.flatMap((g) => g.entries), [groups]);
   const lamps = useMemo(
     () =>
       new Map<string, RosterRow>(
@@ -64,13 +76,11 @@ export function AgentsView() {
 
   const presetAccount = accountParam ? accountList.find((a) => a.id === accountParam) : undefined;
   // A group from the URL counts only when it exists and takes new agents.
-  const createIn = groups.some((g) => g.scope === creating && g.canAdd) ? creating : undefined;
+  const createIn = allGroups.some((g) => g.scope === creating && g.canAdd) ? creating : undefined;
   const newScope = createIn ?? (presetAccount ? scopeForAccount(presetAccount) : undefined);
   const filtered = groups.find((g) => g.scope === orgFilter)?.entries[0];
   const selected =
-    entries.find((e) => entryId(e) === agentParam) ??
-    filtered ??
-    groups.find((g) => g.entries[0])?.entries[0];
+    shown.find((e) => entryId(e) === agentParam) ?? filtered ?? groups.find((g) => g.entries[0])?.entries[0];
   const selectedId = newScope === undefined && selected ? entryId(selected) : undefined;
   const working = [...lamps.values()].filter((r) => r.lamp === "working").length;
 
@@ -115,7 +125,7 @@ export function AgentsView() {
               <NewAgentForm
                 key={`${newScope}:${accountParam ?? ""}`}
                 scope={newScope}
-                scopeLabel={groups.find((g) => g.scope === newScope)?.label ?? newScope}
+                scopeLabel={allGroups.find((g) => g.scope === newScope)?.label ?? newScope}
                 presetAccount={accountParam}
                 onCreated={(id) => show({ agent: id })}
                 onCancel={() => show({ agent: agentParam })}
@@ -141,7 +151,9 @@ export function AgentsView() {
           ) : (
             <DetailPane label="No agent">
               <div className="flex flex-col items-start gap-3 pt-6">
-                <p className="text-base text-fg-muted">No agents yet. A root agent can work in every org.</p>
+                <p className="text-base text-fg-muted">
+                  No agents yet. A root agent can work in every workspace.
+                </p>
                 <Button variant="primary" onClick={() => show({ create: ROOT_SCOPE })}>
                   New root agent
                 </Button>
