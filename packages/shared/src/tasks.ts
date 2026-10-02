@@ -442,10 +442,6 @@ export const ParsedTaskSchema = z.object({
   title: z.string(),
   /** Projects matched by id or alias, in order of first mention. `match` is the text that matched. */
   repos: z.array(z.object({ project: IdSchema, match: z.string() })),
-  /** `from develop`, `base: main`, `off release/2.1`. */
-  base: z.string().optional(),
-  /** `on feature/x`, `branch fix/y`. Must contain a slash. */
-  branch: z.string().optional(),
   /** `@agent-id` mentions of known agents. */
   mentions: z.array(IdSchema),
   links: z.array(z.string()),
