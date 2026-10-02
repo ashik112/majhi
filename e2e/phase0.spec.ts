@@ -36,31 +36,20 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
 }) => {
   await waitForHelper(request);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Pick your project folders" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Welcome to majhi/ })).toBeVisible();
   const progress = page.getByRole("navigation", { name: "Setup progress" });
-  await expect(progress).toContainText(/Step 1 of \d+/);
-  await expect(progress.locator('[aria-current="step"]')).toHaveText("Project folders");
+  await expect(page.getByText(/Step 1 of \d+/)).toBeVisible();
+  await expect(progress.locator('[aria-current="step"]')).toContainText("Welcome");
 
-  const suggested = page.getByRole("list", { name: "Suggested" });
-  const work = suggested.getByRole("button", { name: "~/Work, 3 repos" });
-  await expect(suggested.getByRole("button")).toHaveCount(2);
-  await expect(suggested.getByRole("button", { name: "~/Projects, 1 repo" })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await expect(work).toBeFocused();
-  await expect(work).toHaveAttribute("aria-pressed", "false");
-  await expect(page.getByText("None yet.")).toBeVisible();
+  // The folder with the most repos is suggested; one click sets it up.
+  await expect(page.getByText("3 git repos inside. Suggested for you.")).toBeVisible();
   await shot(page, "onboarding");
+  await page.getByRole("button", { name: "Use ~/Work" }).click();
 
-  await work.click();
-  await expect(work).toHaveAttribute("aria-pressed", "true");
-  await expect(chosenRoots(page).getByRole("listitem")).toHaveText([/^~\/Work/]);
-  await page.getByRole("button", { name: /Save folders/ }).click();
-
-  // Step 2 (first account) follows; Phase 0 only cares about the repos, so skip the rest of setup.
-  await expect(progress).toContainText("Step 2 of 4");
-  await page.getByRole("button", { name: "Skip for now" }).click();
+  // The AI account follows; Phase 0 only cares about the repos, so put the rest of setup off.
+  await expect(page.getByText(/Step 2 of \d+/)).toBeVisible();
+  await expect(progress.locator('[aria-current="step"]')).toContainText("AI account");
+  await page.getByRole("button", { name: "Finish later" }).click();
 
   // Home is the board now; the projects list is its own page.
   await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
