@@ -183,6 +183,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   blocked: "A task it waits on changed. See the room for what to do.",
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
+  "signed-out": "An account is signed out. Sign in, then resume.",
   limit: "A weekly budget reached 100%. It continues when the budget is raised or on Monday.",
 };
 
@@ -226,7 +227,7 @@ function PendingPause({
         <CirclePause aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
         <span className="min-w-0 break-words">
           <span className="font-medium">Paused.</span>{" "}
-          <span className="text-fg-muted">{PAUSE_WHY[item.reason]}</span>
+          <span className="text-fg-muted">{item.why ?? PAUSE_WHY[item.reason]}</span>
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2 pl-6">

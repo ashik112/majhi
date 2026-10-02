@@ -1,7 +1,7 @@
 import { type AgentLive, collapseHome, type ProcessInfo, type RoomItem, type Task } from "@majhi/shared";
 import { Copy } from "lucide-react";
-import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Card } from "@/components/ui/card";
 import { useAgentIndex } from "@/lib/agent-index";
 import { useConfig } from "@/lib/queries";

@@ -154,12 +154,7 @@ describe("lead orchestration: parallel planning", () => {
     });
     expect(res.status).toBe(200);
     // The subtask holds an older link to its parent, as one made before subtasks stopped waiting for it.
-    const link = await w.h.cmd("tasks.link", {
-      task: "ACM-2",
-      type: "depends-on",
-      target: "ACM-1",
-      when: "ready",
-    });
+    const link = await w.h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1", when: "ready" });
     expect(link.status).toBe(200);
     expect(await status("ACM-2")).not.toBe("done");
 

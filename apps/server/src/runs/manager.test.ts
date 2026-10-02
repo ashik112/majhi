@@ -251,9 +251,12 @@ describe("start-up messages", () => {
     });
     await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
     await runs().idle();
-    expect(await texts()).toContain(
-      'system: @acme-builder could not start: @acme-builder works in "acme" and cannot use the account of "beta".',
-    );
+    // The start fails for good: the task pauses and its card says why.
+    const card = (await items()).find((i) => i.type === "paused");
+    expect(card).toMatchObject({
+      reason: "error",
+      why: '@acme-builder works in "acme" and cannot use the account of "beta".',
+    });
     expect(w.h.runtime.starts).toHaveLength(0);
   });
 });

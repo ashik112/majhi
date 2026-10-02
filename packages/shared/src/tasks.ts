@@ -109,8 +109,18 @@ export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
 /**
  * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in
  * circles. `blocked`: a task it waits on changed. owner, loop and blocked wait for you to continue.
+ * `signed-out`: no agent could start because its account is signed out; it resumes by itself once
+ * the account is healthy again. An account at its limit, or any other failed start, pauses as `error`.
  */
-export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner", "loop", "blocked"]);
+export const PausedReasonSchema = z.enum([
+  "limit",
+  "offline",
+  "error",
+  "owner",
+  "loop",
+  "blocked",
+  "signed-out",
+]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
 /** Paused until the owner continues it: never resumed by majhi on its own. */
@@ -733,6 +743,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("paused"),
     reason: PausedReasonSchema,
+    /** The cause in words, when it is more specific than the reason ("claude-acme is signed out"). */
+    why: z.string().optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),
@@ -829,6 +841,8 @@ export const AgentLiveSchema = z.object({
   effort: z.string().optional(),
   /** Slash commands the agent advertises over ACP. */
   commands: z.array(z.object({ name: z.string(), description: z.string().optional() })),
+  /** The last start failed (signed out, at its limit, a missing runner image, a crash). Cleared when it starts. */
+  couldNotStart: z.boolean().optional(),
 });
 export type AgentLive = z.infer<typeof AgentLiveSchema>;
 
