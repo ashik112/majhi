@@ -3011,7 +3011,8 @@ export class TaskService {
    */
   async pausedByRuns(
     id: string,
-    reason: "offline" | "error" | "limit" | "owner",
+    reason: "offline" | "error" | "limit" | "owner" | "signed-out",
+    why?: string,
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
     if (
@@ -3020,7 +3021,7 @@ export class TaskService {
     )
       return;
     // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
-    if (reason === "error")
+    if (reason === "error" || reason === "signed-out")
       this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(
       id,
@@ -3029,7 +3030,7 @@ export class TaskService {
       this.now().toISOString(),
     );
     const paused = this.get(id);
-    this.cards.paused(paused, reason);
+    this.cards.paused(paused, reason, why);
     this.deps.room.publishTask(paused);
     await this.statusChanged(id);
   }

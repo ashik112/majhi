@@ -84,6 +84,7 @@ import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
 import { SERENA_COMMAND } from "./runs/serena.ts";
+import { signedIn } from "./runs/start-failure.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -458,7 +459,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
-    onPaused: (task, reason) => void tasks.pausedByRuns(task, reason).catch(() => undefined),
+    onPaused: (task, reason, why) => void tasks.pausedByRuns(task, reason, why).catch(() => undefined),
+    checkAccount: async (id) => {
+      const { account } = await accounts.health(id, true);
+      const full = [account.usage?.window, account.usage?.weekly].find(
+        (w) => w !== undefined && w.usedPct >= 100 && w.resetsAt !== undefined,
+      );
+      return { status: account.status, resetsAt: full?.resetsAt ?? account.usage?.window?.resetsAt };
+    },
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
@@ -714,6 +722,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     probe: options.probe ?? probeFromSetting(env.netProbe),
     ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
     runners: runner.runner,
+    accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
   options.hostLink?.onWake(() => void resilience.wake().catch(() => undefined));

@@ -5,6 +5,7 @@ import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
 import type { Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
+import type { StartFailure } from "./start-failure.ts";
 
 /** What the drive loop sends next. */
 export type QueueEntry =
@@ -40,8 +41,11 @@ export interface Pending {
   writes?: readonly GateWrite[] | undefined;
 }
 
-/** `owner`: autonomous mode is paused or stopping and its run gate held this run (PRV-74). */
-export type PauseReason = "offline" | "error" | "limit" | "owner";
+/**
+ * `owner`: autonomous mode is paused or stopping and its run gate held this run (PRV-74).
+ * `signed-out`: the agent could not start because its account is signed out.
+ */
+export type PauseReason = "offline" | "error" | "limit" | "owner" | "signed-out";
 
 /** Everything the manager holds for one (task, agent). */
 export class AgentRun {
@@ -114,6 +118,8 @@ export class AgentRun {
   interrupted = false;
   /** Paused runs send nothing until resumed. */
   paused: PauseReason | undefined;
+  /** Why the last start failed, while it has not started since. Retryable failures (network) leave it unset. */
+  startFailure: StartFailure | undefined;
   /** A resume is under way; failures count toward the limit of two. */
   resuming = false;
   resumeFailures = 0;

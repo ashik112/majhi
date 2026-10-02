@@ -17,6 +17,7 @@ const PAUSE_WORDS: Record<string, string> = {
   limit: "usage limit",
   offline: "connection lost",
   error: "error",
+  "signed-out": "signed out",
   owner: "stopped by you",
   loop: "going in circles",
   blocked: "waiting on another task",

@@ -60,6 +60,7 @@ import { briefBlocks, ownerBlocks } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
+import { type AccountProbe, classifyStartFailure, type StartFailure } from "./start-failure.ts";
 import { wakePlan } from "./wake.ts";
 
 export const BRIEF_ITEM_ID = "brief";
@@ -129,8 +130,13 @@ export interface RunDeps {
    * review. `refused`: the turn ended on the model's safeguards, so the task is not finished.
    */
   onIdle?: (task: string, refused: boolean) => void;
-  /** An agent paused (offline, or an error it cannot get past): the task pauses too. */
-  onPaused?: (task: string, reason: PauseReason) => void;
+  /**
+   * An agent paused (offline, or an error it cannot get past): the task pauses too. `why` is the
+   * cause in words when the reason alone does not say it (a start that failed).
+   */
+  onPaused?: (task: string, reason: PauseReason, why?: string) => void;
+  /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
+  checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
   /** A paused or cut agent is resuming: the task runs again. */
   onResumed?: (task: string) => void;
   /** An agent failed in a way that looks like a lost connection: check the network now. */
@@ -219,6 +225,11 @@ export class RunManager {
   startTask(task: Task, agent: string, options: { ownBrief?: boolean } = {}): void {
     const run = this.runFor(task.id, agent);
     this.queueBrief(task, agent, options);
+    // Paused by a failed start: the brief is still queued, so it goes on with no "continue" prompt. Starting retries.
+    if (run.startFailure !== undefined && run.paused !== undefined && !run.closing) {
+      this.resumeQueue(run, "the task was resumed");
+      return;
+    }
     if (run.paused !== undefined || run.interrupted) {
       this.resumeRun(run, "the task was resumed");
       return;
@@ -677,7 +688,14 @@ export class RunManager {
   /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
   async wake(): Promise<void> {
     const views = [...this.runs.values()]
-      .filter((r) => !r.closing && r.paused !== "offline" && r.paused !== "limit" && r.paused !== "owner")
+      .filter(
+        (r) =>
+          !r.closing &&
+          r.paused !== "offline" &&
+          r.paused !== "limit" &&
+          r.paused !== "owner" &&
+          r.paused !== "signed-out",
+      )
       .map((r) => ({
         key: this.key(r.task, r.agent),
         turning: r.turning && r.session !== undefined,
@@ -890,7 +908,11 @@ export class RunManager {
       if (await this.pauseIfLimited(run)) break;
       if (run.session === undefined) {
         if (!(await this.startSession(run))) {
-          this.resumeFailed(run, "the agent could not start");
+          const failure = run.startFailure;
+          // A resume of an agent that ran before tries a crashed adapter once more. A sign-in or a limit does not pass by retrying.
+          if (failure !== undefined && !(failure.kind === "error" && run.resuming))
+            this.startFailed(run, failure);
+          else this.resumeFailed(run, "the agent could not start");
           return;
         }
         if (run.cancelBeforePrompt) {
@@ -1358,7 +1380,8 @@ export class RunManager {
   private async startSession(run: AgentRun): Promise<boolean> {
     const { deps } = this;
     const key = this.key(run.task, run.agent);
-    this.setLive(run, { status: "starting", nowDoing: undefined });
+    run.startFailure = undefined;
+    this.setLive(run, { status: "starting", nowDoing: undefined, couldNotStart: undefined });
     try {
       // The owner's model and effort for this task win over the agent file (5.1).
       const agent = withOverride(
@@ -1452,6 +1475,7 @@ export class RunManager {
       this.setLive(run, {
         status: "idle",
         slot: undefined,
+        couldNotStart: undefined,
         turns: 0,
         usage: undefined,
         ...(shownModel === undefined ? {} : { model: shownModel }),
@@ -1462,10 +1486,64 @@ export class RunManager {
       if (run.session === undefined) this.slots.release(key);
       const message = errorMessage(err);
       run.retryable = looksLikeNetworkError(message) || /timed out/i.test(message);
-      this.live.system(run, "error", `@${run.agent} could not start: ${message}`);
-      this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined });
+      // A lost connection passes by itself (a wake retries it): only other failures pause the task.
+      run.startFailure = run.retryable ? undefined : await this.classifyStart(run, message);
+      if (run.startFailure === undefined || (run.startFailure.kind === "error" && run.resuming))
+        this.live.system(run, "error", `@${run.agent} could not start: ${message}`);
+      this.setLive(run, { status: "error", nowDoing: undefined, slot: undefined, couldNotStart: true });
       return false;
     }
+  }
+
+  /** Asks the account for its state first: the tools word a sign-in or a limit in many ways. */
+  private async classifyStart(run: AgentRun, message: string): Promise<StartFailure> {
+    const probe =
+      run.account === undefined
+        ? undefined
+        : await this.deps.checkAccount?.(run.account).catch(() => undefined);
+    return classifyStartFailure({ account: run.account, message, probe });
+  }
+
+  /**
+   * A start failed for a reason that retrying does not fix. The task pauses when no other agent of
+   * it is up. When one is, the task goes on and the room says which agent is out.
+   */
+  private startFailed(run: AgentRun, failure: StartFailure): void {
+    const up = [...this.runs.values()].some(
+      (r) =>
+        r.task === run.task &&
+        r !== run &&
+        r.startFailure === undefined &&
+        !r.closing &&
+        (r.session !== undefined || WORKING.has(r.live.status)),
+    );
+    if (up) {
+      this.live.system(run, "warn", `@${run.agent} is out: ${failure.text}`);
+      return;
+    }
+    // The paused card carries the cause and the fix, so the pause adds no line of its own.
+    this.pause(run, failure.kind === "signed-out" ? "signed-out" : "error", failure.text, true);
+  }
+
+  /** Runs paused because their account is signed out, for the sweep that watches it. */
+  pausedSignedOut(): { task: string; agent: string; account: string }[] {
+    return [...this.runs.values()].flatMap((r) =>
+      r.paused === "signed-out" && !r.closing && r.account !== undefined
+        ? [{ task: r.task, agent: r.agent, account: r.account }]
+        : [],
+    );
+  }
+
+  /** The account is healthy again: every agent of the task that could not start tries again. Returns how many. */
+  resumeStarts(task: string, why: string): number {
+    let n = 0;
+    for (const run of this.runs.values()) {
+      if (run.task !== task || run.closing || run.startFailure === undefined) continue;
+      n++;
+      if (run.paused !== undefined) this.resumeQueue(run, why);
+      else if (!run.turning) void this.drive(run);
+    }
+    return n;
   }
 
   private onEvent(run: AgentRun, event: SessionEvent): void {
@@ -1647,12 +1725,13 @@ export class RunManager {
   // ---------------------------------------------------------------------------
   // Pause and resume (5.7)
 
-  private pause(run: AgentRun, reason: PauseReason, text: string): void {
+  /** `carded`: the task's paused card says why (given to `onPaused`), so no line is posted here. */
+  private pause(run: AgentRun, reason: PauseReason, text: string, carded = false): void {
     run.paused = reason;
     run.clearTimers();
-    this.live.system(run, reason === "error" ? "error" : "warn", text);
+    if (!carded) this.live.system(run, reason === "error" ? "error" : "warn", text);
     this.setLive(run, { status: "paused", nowDoing: undefined });
-    this.deps.onPaused?.(run.task, reason);
+    this.deps.onPaused?.(run.task, reason, carded ? text : undefined);
   }
 
   /** Queues "continue from where you stopped" and starts the loop, or restarts it once the current one ends. */

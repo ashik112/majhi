@@ -57,6 +57,7 @@ const PAUSE_TEXT: Record<string, string> = {
   limit: "Paused: the account is at its usage limit",
   offline: "Paused: the connection was lost",
   error: "Paused: an error stopped it",
+  "signed-out": "Paused: an account is signed out",
   owner: "Paused by you",
 };
 
