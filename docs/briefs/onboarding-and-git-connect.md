@@ -4,7 +4,7 @@ Git sign-in per workspace, remote repos, clone, new project, and a rebuilt first
 
 This brief is the contract. Two agents build from it in parallel:
 
-- **Server and host:** `apps/server/src/gitConnect/` (stubs today) and `apps/host`.
+- **Server and host:** `apps/server/src/gitConnect/` (built) and `apps/host` (built).
 - **Onboarding UI:** `apps/web/src/onboarding/`, against the stubs.
 
 Neither changes a schema in `packages/shared` without saying so to the other.
@@ -35,7 +35,9 @@ Neither changes a schema in `packages/shared` without saying so to the other.
 | `git.oauthApps.set` | change | owner only | Save or remove one host's app. The Bitbucket secret goes to `secrets.age` |
 | `git.signIn.start` | change | owner only | `needs-app` with setup steps, or a `device` code, or a `browser` authorize URL |
 | `git.signIn.poll` | read | owner only | The flow's state |
-| `git.signIn.cancel` | change | owner only | Ends a pending flow; nothing saved |
+| `git.signIn.cancel` | change | owner only | Ends a pending or confirming flow; nothing saved |
+| `git.signIn.confirm` | change | owner only | Saves a sign-in whose account other workspaces use, after the owner said yes |
+| `git.signOut` | change | owner only | Removes the workspace's token and grant for a host, revoking it where the host allows |
 | `git.remoteRepos` | read | anyone | One page of repos the workspace's account sees, with search, each marked `here` |
 | `git.remoteOwners` | read | anyone | Where the account can make a repo: itself, its organizations, groups or Bitbucket workspaces |
 | `projects.clone` | change | always asks agents | Starts a clone job; answers at once |
@@ -69,9 +71,9 @@ Neither changes a schema in `packages/shared` without saying so to the other.
   - It rewrites both secrets in place with `SecretStore.set` on the same names. majhi.yaml never changes, so no config commit is made every two hours.
   - GitHub OAuth App tokens do not expire, so a GitHub sign-in has no `oauth` secret.
 - **Bitbucket OAuth tokens** have no `:`, so `mrs/hosts/bitbucket.ts` already sends them as `Bearer`. `tokenRequest` in `gitAccount.ts` turns a value with no `:` into `account:secret` Basic auth, so the sign-in check must build its own Bearer request (or teach `tokenRequest` about OAuth tokens). The clone username for a Bitbucket OAuth token is `x-token-auth`.
-- **Sign-in flows and clone jobs** live in server memory. Both are lost on restart:
-  - A pending sign-in just expires.
-  - A clone in flight at a restart is not resumed. The helper's temporary folder is removed when its job ends either way (see Clone).
+- **Sign-in flows** live in server memory. A pending sign-in is lost on restart and just has to be started again.
+- **Clone jobs** live in majhi.db (`clone_jobs`, migration 115). A job a restart cut off is marked failed with "majhi restarted before the clone finished. Clone it again." At start majhi removes its temporary sibling, and the target only when majhi made that folder in that job and it is inside the job's root. A job whose project was registered before the restart is marked done. Retry is a new `projects.clone`.
+- **Built-in apps.** `BUILT_IN_OAUTH_APPS` in `git-signin.ts` holds majhi's own public client IDs for GitHub and gitlab.com. They are empty until the majhi project registers its apps; while empty, the host reads as not set up and `git.signIn.start` answers `needs-app`. `git_apps` in majhi.yaml overrides them per install. `git.oauthApps.get` marks a built-in ID with `builtIn: true`.
 
 ## Sign-in
 
@@ -80,6 +82,8 @@ Neither changes a schema in `packages/shared` without saying so to the other.
 ```
 start ──► needs-app                       (no flow; set the app, start again)
 start ──► pending ──► done
+                  ├─► confirm ──► done    (the account is used by other workspaces: git.signIn.confirm)
+                  │           ├─► cancelled / expired
                   ├─► denied              (owner refused on the host page)
                   ├─► expired             (code or authorize link ran out, 15 min at most)
                   ├─► cancelled           (git.signIn.cancel, or a new start for the same org and host)
@@ -102,13 +106,15 @@ start ──► pending ──► done
    - `access_denied`: `denied`.
    - `expired_token`: `expired`.
 5. With the token, call `GET https://api.github.com/user`. The `login` is the account.
-6. Save (see "Where things live"). Compute `alsoUsedBy`: other orgs with a git account of the same host and account, compared case-insensitively. Compute `replaced`: this org's previous account on that host, when it was another one. Then `done`.
+6. Compute `alsoUsedBy`: other orgs with a git account of the same host and account, compared case-insensitively. Compute `replaced`: this org's previous account on that host, when it was another one.
+7. When `alsoUsedBy` is empty, save (see "Where things live") and end `done`. Otherwise the flow moves to `confirm` with the account, `alsoUsedBy` and `replaced`, and the token waits in server memory only. `git.signIn.confirm` saves it and ends `done`; `git.signIn.cancel` or the flow's deadline drops it. The saved entry replaces this workspace's other accounts on that host (`replaced` names the old one); an SSH route is kept only when the account is the same.
 
 ### GitLab (device authorization grant)
 
 The same as GitHub, with these differences:
 
-- **App lookup.** The app is `git_apps.gitlab[host]`. gitlab.com and any self-hosted host work only when an application ID is set for that host. Otherwise the answer is `needs-app` with `gitAppSetup("gitlab", host, origin)`.
+- **App lookup.** The app is `git_apps.gitlab[host]`, else the built-in ID for gitlab.com. Without one the answer is `needs-app` with `gitAppSetup("gitlab", host, origin)`.
+- **Version.** The device authorization grant came in GitLab 17.2 behind the `oauth2_device_grant_flow` flag, is on by default from 17.3, and is generally available from 17.9 ([GitLab OAuth 2.0 docs](https://docs.gitlab.com/api/oauth2/)). The needs-app steps for a self-hosted host say "needs GitLab 17.3 or later". A host that answers 404 to `/oauth/authorize_device` gets a plain sentence to paste a personal access token with the `api` scope instead (the existing paste box).
 - **Endpoints.** `POST https://<host>/oauth/authorize_device` with `client_id` and `scope=api`, then poll `POST https://<host>/oauth/token` with the device-code grant.
 - **Code page.** `verificationUriComplete` is passed through when GitLab gives it.
 - **User.** `GET https://<host>/api/v4/user`, field `username`.
@@ -118,13 +124,20 @@ The same as GitHub, with these differences:
 
 1. `git.signIn.start { org, kind: "bitbucket" }`. With no `git_apps.bitbucket`, answer `needs-app` with `gitAppSetup("bitbucket", "bitbucket.org", origin)`. It asks for `key` and `secret`.
 2. Make a flow with a random one-time `state` (32 bytes, base64url).
-3. The authorize URL is `https://bitbucket.org/site/oauth2/authorize?client_id=<key>&response_type=code&state=<state>`. `openUrl` it and answer `browser`.
+3. The authorize URL is `https://bitbucket.org/site/oauth2/authorize?client_id=<key>&response_type=code&state=<state>`. `openUrl` it and answer `browser`. Atlassian documents no PKCE for Bitbucket Cloud, so majhi relies on the single-use `state` and the consumer secret.
 4. Bitbucket sends the browser to `GET <origin>/oauth/bitbucket/callback?code&state`. The route is stubbed in `apps/server/src/gitConnect/routes.ts`; mount `OAuthRoutesDeps` in `AppDeps.oauth`.
    - The handler finds the pending flow by `state`. An unknown, used or expired `state` gets a plain page and nothing else.
    - It exchanges the code at `POST https://bitbucket.org/site/oauth2/access_token` (Basic `key:secret`, `grant_type=authorization_code&code=...`).
    - It calls `GET https://api.bitbucket.org/2.0/user` (Bearer; field `username`), saves, and answers a one-line page.
    - `error=access_denied` makes the flow `denied`.
-5. To refresh, call the same endpoint with `grant_type=refresh_token`. Access tokens last 2 hours.
+5. To refresh, call the same endpoint with `grant_type=refresh_token`. Atlassian's pages disagree on the lifetime (one hour in the REST intro, two hours on the support page), so majhi uses `expires_in` from each answer and refreshes 10 minutes before it.
+6. Bitbucket documents no revoke endpoint for OAuth tokens. `git.signOut` removes the token and links the owner to bitbucket.org's app authorizations page.
+
+Sources, checked 2026-10-02:
+- [Bitbucket Cloud REST intro, OAuth 2.0, repository cloning, refresh tokens](https://developer.atlassian.com/cloud/bitbucket/rest/intro/): authorize and token URLs, Bearer to `api.bitbucket.org`, `git clone https://x-token-auth:{access_token}@bitbucket.org/...`.
+- [Use OAuth on Bitbucket Cloud](https://support.atlassian.com/bitbucket-cloud/docs/use-oauth-on-bitbucket-cloud/): creating a consumer (Settings cog, Workspace settings, Apps and features, OAuth consumers, Add consumer), callback URL, `x-token-auth`.
+- [Using API tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/): REST takes the Atlassian email as the Basic user name; git takes the Bitbucket username, or the static `x-bitbucket-api-token-auth` (or `x-token-auth`). majhi uses `x-bitbucket-api-token-auth` for a pasted `email:token`, so the case of the username cannot break it.
+- The consumer permission names (Account: Read, Workspace membership: Read, Projects: Read, Repositories: Admin, Pull requests: Write) match the OAuth scopes `account`, `team`, `project`, `repository:admin`, `pullrequest:write` in the REST reference.
 
 **The callback port.** The browser reaches majhi at the host-side port. Compose maps `127.0.0.1:${MAJHI_PORT:-7070}` to the container's 7070, and the server itself only sees its own listen port. Add `MAJHI_ORIGIN` (default `http://127.0.0.1:7070`) to the server env, and pass it from compose as `http://127.0.0.1:${MAJHI_PORT:-7070}`. Use it for `git.oauthApps.get.origin`, the setup values and the callback. The stub uses `DEFAULT_MAJHI_ORIGIN`.
 
@@ -148,7 +161,7 @@ The same as GitHub, with these differences:
   6. Paste the Application ID. majhi needs no secret.
 - **Bitbucket:**
   1. Open your workspaces and pick one you administer.
-  2. Go to Settings, then OAuth consumers, and click Add consumer.
+  2. Click the Settings cog, choose Workspace settings, then under Apps and features choose OAuth consumers, and click Add consumer.
   3. Fill in the values: name `majhi`, callback URL `<origin>/oauth/bitbucket/callback`, URL `<origin>`.
   4. Tick the permissions Account: Read, Workspace membership: Read, Projects: Read, Repositories: Admin and Pull requests: Write.
   5. Click Save, then open the new consumer.
@@ -159,11 +172,10 @@ The same as GitHub, with these differences:
 `git.remoteRepos { org, kind, host?, query?, page, perPage }` is called on the server with the org's token for that host: the `mr_tokens[kind]`, or the git account's `token` for that host. It never touches another org's token. Endpoints:
 
 - **GitHub:**
-  - With no query: `GET /user/repos?affiliation=owner,collaborator,organization_member&sort=updated&per_page&page`.
-  - With a query: `GET /search/repositories?q=<query> user:<account> fork:true` plus the account's orgs, or filter `/user/repos` pages. The builder picks one and records it in DECISIONS.
-  - `nextPage` comes from the `Link` header.
+  - With no query: `GET /user/repos?affiliation=owner,collaborator,organization_member&sort=updated&per_page&page`. `nextPage` comes from the `Link` header.
+  - With a query: majhi reads up to five pages of 100 of that list and filters by `owner/name` on the server, then pages the result itself. When the account sees more than 500 repos, it asks `GET /search/repositories?q=<words> in:name fork:true user:<account> org:<each org>` instead (see DECISIONS).
 - **GitLab:** `GET /api/v4/projects?membership=true&order_by=last_activity_at&search&per_page&page`, then `X-Next-Page`.
-- **Bitbucket:** `GET /2.0/repositories?role=member&sort=-updated_on&q=name~"<query>"&pagelen&page`, then `next`.
+- **Bitbucket:** the cross-workspace `GET /2.0/repositories` is gone from the current API reference, so majhi lists `GET /2.0/user/workspaces`, then `GET /2.0/repositories/<workspace>?role=member&sort=-updated_on&q=name ~ "<query>"&pagelen&page` for each (20 at most), merged and sorted by `updated_on`. `nextPage` is set when any workspace has a `next`. Owners for a new repo are the same workspaces.
 
 `here` for each repo:
 
@@ -187,7 +199,7 @@ Paths are built with Node's `path` functions on resolved roots, never by string 
 
 ### Refusals
 
-`projects.clone` refuses, with a 409 and a plain sentence, when:
+`projects.clone` refuses, with a 409 and a plain sentence, when (also: a clone of the same repo or into the same folder already running):
 
 - the target exists and is not an empty folder;
 - `<root>/<org>` exists and is itself a git repo, since that would nest a repo inside a repo;
@@ -206,7 +218,7 @@ queued ──► cloning { phase, percent } ──► registering ──► done
    └──────────────┴────────────────────────────┴──► failed { reason }
 ```
 
-- `queued`: made, waiting for the helper to take the job.
+- `queued`: made (a row in `clone_jobs`), waiting for the helper to take the job.
 - `cloning`: the helper posts `HostProgress { id, phase, percent }` to `POST /api/host/progress`. That route is built; it calls `HostLink.progress`, which hands it to the `onProgress` given to `hostLink.call`. Phases follow git's `--progress` lines: `connecting`, `counting`, `compressing`, `receiving`, `resolving`, `checkout`.
 - `registering`: the server calls the same code as `projects.register`, with:
   - `org`;
@@ -230,11 +242,12 @@ The helper runs on the owner's computer, so the clone uses the owner's ssh confi
 
 ### Credentials on the helper
 
-These rules are platform-neutral (`GitAuth` in `host.ts`):
+These rules are platform-neutral (`GitAuth` in `host.ts`, built in `apps/host/src/gitAuth.ts`):
 
 - **`token`.** Run git with:
-  - `GIT_ASKPASS` set to a small askpass script the helper writes once into its own private folder (mode 700). The script prints `MAJHI_GIT_USERNAME` or `MAJHI_GIT_PASSWORD` from its environment.
-  - Those variables set on the git child process only.
+  - `GIT_ASKPASS` set to a small POSIX askpass script the helper writes at start into its own private folder `<MAJHI_HOME>/host` (mode 700). For a username prompt it prints `MAJHI_GIT_USERNAME`; for a password prompt it prints the file named by `MAJHI_ASKPASS_FILE`.
+  - The token goes in that file only: a fresh folder per job (mode 700) under the helper's folder, the file mode 600, removed when git exits whatever happened. The token is never in argv or any environment variable, so `ps` and `/proc/<pid>/environ` never show it; only the owner's own processes could read the file, and only while the job runs.
+  - `MAJHI_GIT_USERNAME` and `MAJHI_ASKPASS_FILE` set on the git child process only.
   - `-c credential.helper=` and `-c core.askPass=` overridden, so no system helper (osxkeychain, libsecret, wincred) is asked or stores anything.
   - `GIT_TERMINAL_PROMPT=0`.
 
@@ -242,11 +255,15 @@ These rules are platform-neutral (`GitAuth` in `host.ts`):
   - `x-access-token` for GitHub;
   - `oauth2` for GitLab;
   - `x-token-auth` for a Bitbucket OAuth token;
-  - for a pasted Bitbucket API token (`email:token`), the part before `:` as the username and the part after as the password. Verify this against Atlassian's current docs before shipping.
+  - for a pasted Bitbucket API token (`email:token`), the static `x-bitbucket-api-token-auth` as the username and the part after `:` as the password (checked against Atlassian's "Using API tokens", 2026-10-02).
 - **`ssh`.** The URL is `git@<alias or host>:<fullName>.git`, using the org's git account SSH route for the host (`default` means the host name). Set `GIT_SSH_COMMAND=ssh -o BatchMode=yes`.
 - **`none`.** For public repos only. Never the default.
 
 The token travels server to helper once per job, inside the job params on the loopback long-poll, like `ssh.unlock`'s passphrase. It is never logged on either side. The helper's job log line names the method and id only, as today.
+
+An empty remote repo cannot be cloned: the `git.clone` result needs a commit. The helper answers "The repo is empty, so there is nothing to clone. Use New project, then connect it to this repo."
+
+**Ship and push with a signed-in token.** When a project's org has a token saved for exactly the remote's host and majhi pushes that remote over https through the helper, `git.push` carries `auth: token`, so the workspace's own account pushes and no saved login is asked. MRs and `orgs.gitStatus` read tokens through the same reader, which refreshes a GitLab or Bitbucket sign-in first.
 
 ## New project
 
@@ -269,9 +286,9 @@ The web's "Also create it on GitHub/GitLab/Bitbucket" box is off by default. Whe
    - Bitbucket: `POST /2.0/repositories/<workspace>/<slug>` with `is_private`.
 3. Set `origin`: SSH when the org's account on the host has an SSH route, else the https URL. Credentials never go in the saved URL.
 4. Push the base branch with `setUpstream`:
-   - over SSH from the server's git as today;
-   - over https through the helper's `git.push` with `auth: token`.
-5. Update the project's `remotes`. Log the push in the audit table.
+   - over SSH from the server's git as today (`git push --set-upstream origin <base>`);
+   - over https through the helper's `git.push` with `auth: token`; the helper then points the branch's upstream at the remote with that URL.
+5. Update the project's `remotes`. Log the push in the audit table (kind `push`, title "Push of <project>", the branch or the error; never the token).
 
 **Connect a remote:** `projects.connectRemote { id, url, remote? }`.
 
@@ -378,14 +395,14 @@ Existing host helper features that are macOS-only today:
 8. **Server: `onboarding.status`.**
 9. **Web, in parallel from step 1:** the new step list, the per-step skip set, the git step, the projects step's three tabs, clone progress, and the new-project form with the publish box.
 
-## Open questions
+## Settled questions (2026-10-02)
 
-1. **Private clone path.** `<root>/private/<repo>` was chosen for one rule and no clash with workspace folders. Owners who keep personal repos directly in a root may prefer `<root>/<repo>`. That is cheap to change before the first release.
-2. **A shared GitHub OAuth App.** Should majhi ship one public client ID so GitHub needs no setup? Device flow needs no secret, so it is safe to publish. It would be registered by the majhi project, not the owner. The same question applies to gitlab.com.
-3. **Self-hosted GitLab version.** The device authorization grant needs a recent GitLab. Find the minimum version, and decide whether the needs-app text should state it.
-4. **Bitbucket OAuth consumers.** Atlassian retired app passwords in June 2026. Confirm OAuth consumers, the `x-token-auth` git username, and the permission names are still current. Also confirm the username for a pasted API token.
-5. **GitHub search with organizations.** `search/repositories` limited to the account and its organizations, or client-side filtering of `/user/repos`. Results and rate limits differ.
-6. **`alsoUsedBy` policy.** Today the token is saved and the UI warns. Should a second workspace on the same account need a confirm step instead?
-7. **Clone resume.** In-memory jobs are lost on a server restart. Is a SQLite row worth it so the UI can say "Interrupted, clone again"?
-8. **GitHub Enterprise Server** is not covered (`git_apps.github` is github.com only).
-9. **Signing out.** There is no revoke command here. `orgs.removeGitAccount` removes the account but keeps the secret. Should sign-in add a `git.signOut` that also revokes the token at the host?
+1. **Private clone path.** `<root>/private/<repo>`, kept.
+2. **Shared OAuth apps.** majhi ships public client IDs for GitHub and gitlab.com in `BUILT_IN_OAUTH_APPS`, empty until the majhi project registers the apps. `git.oauthApps.set` overrides them per install.
+3. **Self-hosted GitLab.** 17.3 or later (17.2 behind a flag, GA in 17.9). The needs-app text says so; an older host gets a sentence pointing at the paste box.
+4. **Bitbucket.** OAuth consumers, `x-token-auth` and the permission names are current; the API token git user is `x-bitbucket-api-token-auth`. See the sources under Bitbucket.
+5. **GitHub search.** Filter up to five pages of `/user/repos` on the server; the search API only past 500 repos.
+6. **`alsoUsedBy`.** A `confirm` state and `git.signIn.confirm`: nothing is saved until the owner says yes.
+7. **Clone resume.** Jobs in SQLite; a restart marks them failed and tidies their folders; retry is a new clone.
+8. **GitHub Enterprise Server.** Not now. `git.signIn.start` for GitHub accepts github.com only and says to paste a token otherwise.
+9. **Signing out.** `git.signOut {org, kind, host?}`, owner only. It revokes on GitLab (`/oauth/revoke` with the public client ID). GitHub's revoke API needs the app's client secret, which majhi never has, and Bitbucket documents none: there majhi removes the token and answers `revoke: "local"` with the host page to remove majhi's access.
