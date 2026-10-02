@@ -80,11 +80,28 @@ if (process.env.PROBE_SCROLL) {
   await page.screenshot({ path: `${OUT}/scroll.png` });
   await browser.close(); child.kill(); process.exit(0);
 }
+if (process.env.PROBE_EACH) {
+  const base = `http://127.0.0.1:${E2E_PORT}/api/cmd/`;
+  const calls: [string, unknown][] = JSON.parse(process.env.PROBE_EACH);
+  const heap = async () => {
+    process.kill(pid, "SIGWINCH");
+    await sleep(1200);
+    const reps = readdirSync(OUT).filter((f) => f.startsWith("report")).sort();
+    const rep = JSON.parse(readFileSync(join(OUT, reps[reps.length - 1] as string), "utf8"));
+    return `rss ${Number(rss()) / 1024 | 0} heapUsed ${(rep.javascriptHeap.usedMemory / 1e6) | 0} heapTotal ${(rep.javascriptHeap.totalMemory / 1e6) | 0}`;
+  };
+  console.log("EACH start", await heap());
+  for (const [name, body] of calls) {
+    for (let i = 0; i < 30; i++) await fetch(base + name, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.text());
+    console.log("EACH", name, await heap());
+  }
+  await browser.close(); child.kill(); process.exit(0);
+}
 if (process.env.PROBE_REQ) {
   await page.goto("/");
   await page.locator("#card-PERF-3 a[data-card-link]").waitFor();
   const seen: string[] = [];
-  page.on("response", async (r) => { const b = await r.body().catch(() => Buffer.alloc(0)); seen.push(`${r.request().method()} ${r.url().replace(/^http:\/\/[^/]+/, "")} ${b.length}`); });
+  page.on("response", async (r) => { const b = await r.body().catch(() => Buffer.alloc(0)); seen.push(`${r.request().postData() ?? ""} ${r.request().method()} ${r.url().replace(/^http:\/\/[^/]+/, "")} ${b.length}`); });
   await page.locator("#card-PERF-3 a[data-card-link]").click();
   await page.locator("#room-row-PERF-3-last").waitFor();
   await sleep(3000);
