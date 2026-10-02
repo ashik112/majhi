@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown, Plus, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Check, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -13,6 +13,7 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useLinkTask, useTasks, useUnlinkTask } from "@/lib/task-queries";
 import { TaskChips } from "../new-task/task-chips";
 import { linkTargets, relations } from "./model";
+import { SUBTASKS_CARD_ID, showSubtasksCard } from "./subtasks-card";
 
 type Picking = "parent" | "depends-on" | null;
 
@@ -25,17 +26,18 @@ const chip =
 export function TaskLinks({ task }: { task: Task }) {
   const list = useTasks().data ?? [];
   const { org } = useOrgFilter();
-  const navigate = useNavigate();
   const unlink = useUnlinkTask();
   const [picking, setPicking] = useState<Picking>(null);
   const [asking, setAsking] = useState<Unlinking | null>(null);
   const rel = relations(task, list);
   const search = orgSearch(org);
-  const byId = new Map(list.map((t) => [t.id, t]));
   const linkTo = (id: string) => ({ to: "/t/$taskId" as const, params: { taskId: id }, search });
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid="task-links">
+    <div
+      className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs"
+      data-testid="task-links"
+    >
       {rel.parent && (
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="text-fg-faint">Part of</span>
@@ -94,31 +96,24 @@ export function TaskLinks({ task }: { task: Task }) {
         </span>
       )}
       {rel.children.length > 0 && (
-        <Menu
-          label="Subtasks"
-          align="left"
-          items={rel.children.map((c) => ({
-            label: `${c.id} · ${short(byId.get(c.id)?.title ?? c.title)}`,
-            checked: c.status === "done",
-            onSelect: () => void navigate(linkTo(c.id)),
-          }))}
-          trigger={({ ref, ...props }) => (
-            <button ref={ref} type="button" {...props} className={cn(chip, "cursor-pointer text-fg-muted")}>
-              <span className="text-fg-faint">Subtasks</span>
-              <span className="tnum">
-                {rel.progress
-                  ? `${rel.progress.done} of ${rel.progress.total} done`
-                  : `${rel.children.length}`}
-              </span>
-              {rel.progress && rel.progress.total > 0 && (
-                <span className="w-10">
-                  <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
-                </span>
-              )}
-              <ChevronDown aria-hidden="true" className="size-3" />
-            </button>
+        // The Subtasks card on the right lists them with their state; this brings it into view.
+        <button
+          type="button"
+          onClick={showSubtasksCard}
+          aria-controls={SUBTASKS_CARD_ID}
+          title="Show the subtasks"
+          className={cn(chip, "cursor-pointer text-fg-muted")}
+        >
+          <span className="text-fg-faint">Subtasks</span>
+          <span className="tnum">
+            {rel.progress ? `${rel.progress.done} of ${rel.progress.total} done` : `${rel.children.length}`}
+          </span>
+          {rel.progress && rel.progress.total > 0 && (
+            <span className="w-10">
+              <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
+            </span>
           )}
-        />
+        </button>
       )}
       <Menu
         label="Link a task"
@@ -169,9 +164,6 @@ export function TaskLinks({ task }: { task: Task }) {
     </div>
   );
 }
-
-const short = (title: string | undefined) =>
-  title === undefined ? "" : title.length > 60 ? `${title.slice(0, 59)}…` : title;
 
 function RemoveLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
