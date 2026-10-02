@@ -84,3 +84,12 @@ export function useSendTestNotification() {
     mutationFn: () => cmd("notify.test", {}, { reason: "Owner pressed Send a test notification" }),
   });
 }
+
+/** Exports the secrets key under a passphrase, then reads the checks again so the warning clears. */
+export function useExportKey() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"secrets.exportKey">, ApiRequestError, CommandInput<"secrets.exportKey">>({
+    mutationFn: (input) => cmd("secrets.exportKey", input, { reason: "Owner exported the secrets key" }),
+    onSettled: () => client.invalidateQueries({ queryKey: opsKeys.checks }),
+  });
+}

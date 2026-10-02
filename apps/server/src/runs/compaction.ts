@@ -1,4 +1,4 @@
-import type { RoomItem } from "@majhi/shared";
+import type { RoomItem, Task } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import {
   budgetFor,
@@ -12,10 +12,13 @@ import {
 import { buildCarry, type DurableDeps } from "./durable.ts";
 import { freshPrompt, HANDOFF_REQUEST, looksLikeNote } from "./handoff.ts";
 import type { RunLive } from "./live.ts";
-import type { AgentRun, PauseReason } from "./run.ts";
+import type { AgentRun, Carry, PauseReason } from "./run.ts";
 
 /** How long native compaction waits for the agent's next usage report. */
 const USAGE_WAIT_MS = 5_000;
+
+/** How long an agent cut by a turn limit has to write its handoff note before majhi builds one. */
+const NOTE_WAIT_MS = 5 * 60_000;
 
 export type CompactReason = "threshold" | "rotation" | "fresh" | "recovery";
 
@@ -85,19 +88,55 @@ export class Compaction {
     }
 
     // Hand off. The agent writes the note unless its session is past saving.
-    let note: string | undefined;
-    if (why !== "recovery" && run.session !== undefined && !run.exited) {
-      this.live.set(run, { nowDoing: "Writing a handoff note for its fresh session" });
-      const res = await this.internalPrompt(run, HANDOFF_REQUEST);
-      if (res.ok && looksLikeNote(res.text)) note = res.text.trim();
-    }
-    const built = await buildCarry(
-      this.deps,
+    const built = await this.handOff(
+      run,
       task,
-      run.agent,
-      note,
+      why !== "recovery",
       why === "recovery" ? "the session hit its limit" : "the agent did not write a note",
     );
+    return this.contextEvent(run, {
+      method: why === "threshold" ? "handoff" : why,
+      before,
+      after: estimateText(freshPrompt(built.carry)),
+      note: built.path,
+    });
+  }
+
+  /**
+   * A turn limit cut the turn (PRV-96): hand off to a fresh session. The agent writes the note,
+   * within `NOTE_WAIT_MS`, unless it went idle (`askAgent` false): then majhi builds it at once.
+   * The room gets no context line; the caller posts the one line the owner sees.
+   */
+  async afterTurnLimit(run: AgentRun, askAgent: boolean, why: string): Promise<void> {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`, 404);
+    const before = run.usage?.used;
+    const built = await this.handOff(run, task, askAgent, why, NOTE_WAIT_MS);
+    this.deps.store.usageEvents.recordCompaction({
+      task: run.task,
+      agent: run.agent,
+      at: new Date().toISOString(),
+      method: "handoff",
+      before,
+      after: estimateText(freshPrompt(built.carry)),
+    });
+  }
+
+  /** Asks for the note (or builds it), closes the session and sets the carry for the next one. */
+  private async handOff(
+    run: AgentRun,
+    task: Task,
+    askAgent: boolean,
+    why: string,
+    noteWaitMs?: number,
+  ): Promise<{ path: string; carry: Carry }> {
+    let note: string | undefined;
+    if (askAgent && run.session !== undefined && !run.exited) {
+      this.live.set(run, { nowDoing: "Writing a handoff note for its fresh session" });
+      const res = await this.internalPrompt(run, HANDOFF_REQUEST, noteWaitMs);
+      if (res.ok && looksLikeNote(res.text)) note = res.text.trim();
+    }
+    const built = await buildCarry(this.deps, task, run.agent, note, why);
     const session = run.session;
     if (session !== undefined) {
       this.host.endSession(run, "handoff", true);
@@ -108,12 +147,7 @@ export class Compaction {
     run.turns = 0;
     run.usage = undefined;
     this.live.set(run, { usage: undefined, turns: 0, nowDoing: undefined });
-    return this.contextEvent(run, {
-      method: why === "threshold" ? "handoff" : why,
-      before,
-      after: estimateText(freshPrompt(built.carry)),
-      note: built.path,
-    });
+    return built;
   }
 
   /**
@@ -191,18 +225,43 @@ export class Compaction {
     return this.live.context(run, event);
   }
 
-  /** Sends majhi's own prompt (compact, handoff request). The reply is collected, not shown in the room. */
-  private async internalPrompt(run: AgentRun, text: string): Promise<{ ok: boolean; text: string }> {
+  /**
+   * Sends majhi's own prompt (compact, handoff request). The reply is collected, not shown in the
+   * room. With `timeoutMs`, a reply that takes longer is cancelled and counts as none.
+   */
+  private async internalPrompt(
+    run: AgentRun,
+    text: string,
+    timeoutMs?: number,
+  ): Promise<{ ok: boolean; text: string }> {
     const session = run.session;
     if (session === undefined) return { ok: false, text: "" };
     const internal = { text: "" };
     run.internal = internal;
+    let timer: NodeJS.Timeout | undefined;
     try {
-      const res = await session.prompt([{ type: "text", text }]);
+      const reply = session.prompt([{ type: "text", text }]);
+      const res =
+        timeoutMs === undefined
+          ? await reply
+          : await Promise.race([
+              reply,
+              new Promise<undefined>((resolve) => {
+                timer = setTimeout(() => resolve(undefined), timeoutMs);
+                timer.unref();
+              }),
+            ]);
+      if (res === undefined) {
+        await session.cancel().catch(() => undefined);
+        // The cancelled prompt settles on its own; nothing waits for it.
+        void reply.catch(() => undefined);
+        return { ok: false, text: internal.text };
+      }
       return { ok: res.stopReason === "end_turn", text: internal.text };
     } catch {
       return { ok: false, text: internal.text };
     } finally {
+      if (timer !== undefined) clearTimeout(timer);
       run.internal = undefined;
     }
   }

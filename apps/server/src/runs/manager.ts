@@ -35,7 +35,7 @@ import type { Store } from "../store/index.ts";
 import { sectionOf } from "../tasks/brief.ts";
 import { readPrices } from "../usage/prices.ts";
 import type { UsageRecorder } from "../usage/recorder.ts";
-import { diffStat } from "./checkpoint.ts";
+import { diffStat, headsOf } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
@@ -61,6 +61,15 @@ import { briefBlocks, ownerBlocks } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
+import {
+  afterLimit,
+  type FiredLimit,
+  firedLimit,
+  limitPhrase,
+  MAX_STRIKES,
+  type TurnLimits,
+  turnLimitsFor,
+} from "./turn-limits.ts";
 import { wakePlan } from "./wake.ts";
 
 export const BRIEF_ITEM_ID = "brief";
@@ -70,6 +79,10 @@ const RESUME_RETRY_MS = 1_000;
 /** `activeAt` goes out at most this often while an agent streams. */
 const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
+/** The first prompt of the fresh session a turn limit moved the agent to (PRV-96). */
+const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
+/** How often a running turn is checked against its turn limits. */
+const LIMIT_CHECK_MS = 15_000;
 /** A turn that heard from its agent this recently is streaming fine: going offline does not cut it. */
 export const STREAMING_MS = 30_000;
 
@@ -160,6 +173,8 @@ export class RunManager {
   readonly locks = new WorktreeLocks();
   /** Per task, the owner messages still on their way to a session (see `inOrder`). */
   private readonly deliveries = new Map<string, Promise<void>>();
+  /** Turn limit hits in a row without a new commit, per task (PRV-96). */
+  private readonly limitStrikes = new Map<string, number>();
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -729,6 +744,7 @@ export class RunManager {
       this.runs.delete(key);
     }
     this.heldSecrets.delete(task);
+    this.limitStrikes.delete(task);
     this.deps.room.drop(task);
   }
 
@@ -924,6 +940,7 @@ export class RunManager {
 
       // One read of the settings per turn: before the prompt and after it.
       const budget = await this.compaction.budget(run);
+      run.turnLimits = await this.turnLimits(run);
       // Compact first when this prompt would take the session over its budget.
       if (run.carry === undefined && needsCompaction(run.usage, budget, estimateTokens(raw))) {
         const done = await this.compaction.compact(run, "threshold", budget);
@@ -933,10 +950,23 @@ export class RunManager {
           continue;
         }
       }
-      const stopReason = await this.turn(run, session, this.withPreamble(run, this.withCarry(run, raw)));
+      const stopReason = await this.turn(
+        run,
+        session,
+        this.withPreamble(run, this.withCarry(run, raw, entry.kind === "owner")),
+      );
+      const fired = run.limitHit;
+      run.limitHit = undefined;
       if (stopReason === undefined) return;
       if (stopReason === "recovered") continue;
       if (run.paused !== undefined) break;
+      // A turn limit cut it: continue in a fresh session, or pause when it keeps happening.
+      if (fired !== undefined && stopReason === "cancelled") {
+        if (!(await this.afterLimit(run, fired))) break;
+        continue;
+      }
+      // A turn that ended by itself means the task is not stuck.
+      if (stopReason === "end_turn") this.limitStrikes.delete(run.task);
       if (entry.kind === "resume" && stopReason !== "cancelled") {
         run.resuming = false;
         run.resumeFailures = 0;
@@ -986,8 +1016,10 @@ export class RunManager {
     const release = await this.lockWorktrees(run);
     if (release === undefined) return undefined;
     try {
+      await this.startWatch(run);
       return await this.promptTurn(run, session, blocks);
     } finally {
+      this.stopWatch(run);
       release();
     }
   }
@@ -1296,7 +1328,7 @@ export class RunManager {
    * The first prompt of a fresh session: prefix, TASK.md, the note, the room, the diff stat,
    * then the prompt itself. A slash command stays whole and the carry waits for the next prompt.
    */
-  private withCarry(run: AgentRun, blocks: PromptBlock[]): PromptBlock[] {
+  private withCarry(run: AgentRun, blocks: PromptBlock[], fromOwner: boolean): PromptBlock[] {
     const carry = run.carry;
     if (carry === undefined) return blocks;
     const text = blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n");
@@ -1304,7 +1336,7 @@ export class RunManager {
     run.carry = undefined;
     run.needsBrief = false;
     return [
-      { type: "text", text: freshPrompt({ ...carry, pending: text === "" ? undefined : text }) },
+      { type: "text", text: freshPrompt({ ...carry, pending: text === "" ? undefined : text, fromOwner }) },
       ...blocks.filter((b) => b.type !== "text"),
     ];
   }
@@ -1315,7 +1347,8 @@ export class RunManager {
     run.mapper?.endTurn(cancelled);
     this.permissions.cancelAll(run);
     // A turn majhi cut (offline, a stall) says so in its own words.
-    if (cancelled && run.paused === undefined) this.live.system(run, "info", `Stopped @${run.agent}'s turn.`);
+    if (cancelled && run.paused === undefined && run.limitHit === undefined)
+      this.live.system(run, "info", `Stopped @${run.agent}'s turn.`);
     else if (stopReason === "max_tokens")
       this.live.system(run, "warn", `@${run.agent} stopped: it reached its output limit.`);
     else if (stopReason === "max_turn_requests")
@@ -1370,6 +1403,7 @@ export class RunManager {
       run.account = fm.account;
       run.accountKind = { tool: agent.account.tool, auth: agent.account.auth };
       run.context = fm.context;
+      run.agentTurns = fm.turns;
       // The cap goes to the CLI at launch (mid-turn compaction) and sizes the usage reports.
       await this.compaction.budget(run);
       // A free slot under the concurrency limits first. Stopped while waiting: leave quietly.
@@ -1493,6 +1527,10 @@ export class RunManager {
         if (internal !== undefined) break;
         run.mapper?.apply(event);
         this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
+        if (event.type === "tool" && run.prompting && !run.turnTools.has(event.toolCallId)) {
+          run.turnTools.add(event.toolCallId);
+          if (run.turnLimits?.maxToolCalls !== undefined) this.checkTurnLimit(run);
+        }
         break;
       case "usage":
         if (event.size > 0) {
@@ -1646,6 +1684,115 @@ export class RunManager {
         run.idleTimer.unref();
       })
       .catch(() => undefined);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Turn limits (PRV-96)
+
+  /** The turn limits for the run now: majhi's, then the org's, then the agent's, field by field. */
+  private async turnLimits(run: AgentRun): Promise<TurnLimits> {
+    const [settings, sections] = await Promise.all([
+      this.deps.config.settings(),
+      this.deps.config.sections(),
+    ]);
+    const org = this.deps.store.tasks.get(run.task)?.org;
+    return turnLimitsFor(
+      settings.turns,
+      org === undefined ? undefined : sections.orgs[org]?.turns,
+      run.agentTurns,
+    );
+  }
+
+  /** Before a turn is sent: notes the worktrees' HEADs and starts checking the turn's limits. */
+  private async startWatch(run: AgentRun): Promise<void> {
+    run.limitHit = undefined;
+    run.turnTools.clear();
+    run.waitSeenAt = 0;
+    run.turnStartedAt = this.now().getTime();
+    const limits = run.turnLimits;
+    if (limits === undefined || (limits.maxMs ?? limits.idleMs ?? limits.maxToolCalls) === undefined) return;
+    const task = this.deps.store.tasks.get(run.task);
+    run.turnHeads =
+      task === undefined ? undefined : await headsOf(checkpointRepos(task)).catch(() => undefined);
+    run.turnStartedAt = this.now().getTime();
+    if (run.limitTimer !== undefined) clearInterval(run.limitTimer);
+    run.limitTimer = setInterval(() => this.checkTurnLimit(run), LIMIT_CHECK_MS);
+    run.limitTimer.unref();
+  }
+
+  private stopWatch(run: AgentRun): void {
+    if (run.limitTimer !== undefined) clearInterval(run.limitTimer);
+    run.limitTimer = undefined;
+  }
+
+  /** Cancels the turn when it is over a limit. The loop hands off or pauses once the turn has ended. */
+  private checkTurnLimit(run: AgentRun): void {
+    const limits = run.turnLimits;
+    if (limits === undefined || run.limitHit !== undefined || !run.prompting) return;
+    if (run.closing || run.paused !== undefined || run.internal !== undefined || run.session === undefined)
+      return;
+    const now = this.now().getTime();
+    const waiting = (this.deps.processes?.running(run.task) ?? []).some(
+      (p) => p.wait && p.agent === run.agent,
+    );
+    const asking = run.pending.size > 0;
+    // Waiting on a process or on the owner is not idleness: the quiet time starts when it ends.
+    if (waiting || asking) run.waitSeenAt = now;
+    const fired = firedLimit(
+      {
+        now,
+        startedAt: run.turnStartedAt,
+        activeAt: Math.max(run.turnStartedAt, run.lastEventAt, run.waitSeenAt),
+        toolCalls: run.turnTools.size,
+        waiting,
+        asking,
+      },
+      limits,
+    );
+    if (fired === undefined) return;
+    run.limitHit = fired;
+    this.stopWatch(run);
+    void this.cancelRun(run);
+  }
+
+  /**
+   * After a turn limit cut a turn, with its checkpoint taken: pauses the run when this task hit a
+   * limit `MAX_STRIKES` times in a row without a new commit (false), else hands off to a fresh
+   * session that continues from the note (true).
+   */
+  private async afterLimit(run: AgentRun, fired: FiredLimit): Promise<boolean> {
+    const limits = run.turnLimits ?? { maxMs: undefined, idleMs: undefined, maxToolCalls: undefined };
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined) return false;
+    const heads = await headsOf(checkpointRepos(task)).catch(() => undefined);
+    // Unknown either way: count it as progress, so a git hiccup never pauses a task.
+    const progressed = heads === undefined || run.turnHeads === undefined || heads !== run.turnHeads;
+    const decision = afterLimit(this.limitStrikes.get(run.task) ?? 0, progressed);
+    this.limitStrikes.set(run.task, decision.strikes);
+    const what = limitPhrase(run.agent, fired, limits);
+    if (decision.action === "pause") {
+      this.pause(
+        run,
+        "error",
+        `${what} ${MAX_STRIKES} times in a row with no new commits, so it paused instead of continuing. Read the room, then resume the task or send new directions.`,
+      );
+      return false;
+    }
+    try {
+      // An idle agent may be stuck: majhi writes its note from saved state instead of asking it.
+      await this.compaction.afterTurnLimit(run, fired !== "idle", what.replace(/^@\S+ /, "the agent "));
+    } catch (err) {
+      this.live.system(
+        run,
+        "warn",
+        `Could not hand @${run.agent} over to a fresh session: ${errorMessage(err)}`,
+      );
+      return false;
+    }
+    run.queue.unshift({ kind: "notice", text: CONTINUE_FROM_NOTE });
+    this.live.refreshQueued(run);
+    this.live.system(run, "info", `${what}. Continued in a fresh session with a handoff note.`);
+    return true;
   }
 
   // ---------------------------------------------------------------------------

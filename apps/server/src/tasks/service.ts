@@ -51,13 +51,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { writeFileAtomic } from "../fs.ts";
 import { repoDiff } from "../git/diff.ts";
-import {
-  git,
-  localBranchExists,
-  remoteBranchExists,
-  remoteOf,
-  uncommitted,
-} from "../git/git.ts";
+import { git, localBranchExists, remoteBranchExists, remoteOf, uncommitted } from "../git/git.ts";
 import {
   localBranches,
   type MergeMethod,
@@ -101,13 +95,7 @@ import {
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
-import {
-  type BriefAgent,
-  type BriefConnection,
-  branchName,
-  renderPointer,
-  renderTaskMd,
-} from "./brief.ts";
+import { type BriefAgent, type BriefConnection, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
@@ -115,14 +103,9 @@ import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
 import { TaskPlans } from "./plans.ts";
+import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import {
-  blockedPaths,
-  checkReadMount,
-  projectsFor,
-  type ReadPolicy,
-  ReadRefused,
-} from "./read-mounts.ts";
-import {
+  childrenWaitOnParent,
   describeCycle,
   findCycle,
   NO_RELATED,
@@ -240,10 +223,7 @@ export class TaskService {
   private readonly chatRecallSeen = new Map<string, string>();
   private readonly wakeSeen = new Map<string, string>();
   /** The last facts read per task, for the team it had then: a status change rewrites TASK.md without new git diffs. */
-  private readonly lastFacts = new Map<
-    string,
-    { team: string; facts: TeamFacts }
-  >();
+  private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
   /** The review and paused cards majhi posts in a task's room. */
   readonly cards: OwnerCards;
 
@@ -288,8 +268,7 @@ export class TaskService {
       planner: this.planner,
       host: {
         start: (id) => this.start(id),
-        swap: (id, agent, replacement) =>
-          this.swapInTeam(id, agent, replacement),
+        swap: (id, agent, replacement) => this.swapInTeam(id, agent, replacement),
         linksChanged: (ids) => this.linksChanged(ids),
       },
     });
@@ -307,8 +286,7 @@ export class TaskService {
 
   get(id: string): Task {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined)
-      throw new UserError(`Task ${id} does not exist.`, 404);
+    if (task === undefined) throw new UserError(`Task ${id} does not exist.`, 404);
     return task;
   }
 
@@ -323,14 +301,10 @@ export class TaskService {
 
   async create(given: CreateInput): Promise<Task> {
     // A separate title becomes the first line, so the parser and the brief see one text as usual.
-    const input =
-      given.title === undefined
-        ? given
-        : { ...given, text: `${given.title}\n\n${given.text}` };
+    const input = given.title === undefined ? given : { ...given, text: `${given.title}\n\n${given.text}` };
     const { store, config, uploads } = this.deps;
     const loaded = await config.load();
-    if (loaded.state.status !== "loaded")
-      throw new UserError("Pick workspace roots first.", 409);
+    if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
     const tasksDir = loaded.state.config.tasksDir;
     const sections = await config.sections();
     const projects = await this.deps.projects.infos();
@@ -353,71 +327,45 @@ export class TaskService {
       input.byOwner === true,
     );
     const parsed = picks.parsed;
-    const orgs = new Set(
-      parsed.repos.map((r) => projects.find((p) => p.id === r.project)?.org),
-    );
+    const orgs = new Set(parsed.repos.map((r) => projects.find((p) => p.id === r.project)?.org));
     if (orgs.size > 1) {
       throw new UserError(
         `${parsed.warnings.find((w) => w.startsWith("Repos from")) ?? "Repos from more than one org"}. Make one task per org.`,
       );
     }
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
-    const kind =
-      input.kind ??
-      (input.readOnly === true && parsed.kind === "code" ? "ops" : parsed.kind);
+    const kind = input.kind ?? (input.readOnly === true && parsed.kind === "code" ? "ops" : parsed.kind);
     const investigation = input.readOnly === true || kind === "ops";
     // Every repo listed was protected and left out: nothing is left to make the task about.
-    if (
-      !investigation &&
-      parsed.repos.length === 0 &&
-      picks.refused.length > 0
-    ) {
+    if (!investigation && parsed.repos.length === 0 && picks.refused.length > 0) {
       throw new UserError(
         `${picks.refused.join(", ")} ${picks.refused.length === 1 ? "is" : "are"} protected: only the owner can add ${picks.refused.length === 1 ? "it" : "them"} to a task.`,
         409,
       );
     }
     if (kind === "code" && parsed.repos.length === 0) {
-      throw new UserError(
-        "A code task needs a project. Pick the repos it changes, or change the kind.",
-      );
+      throw new UserError("A code task needs a project. Pick the repos it changes, or change the kind.");
     }
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     const others = [
       ...dependsOn,
-      ...[input.parent, input.followUpOf].flatMap((t) =>
-        t === undefined ? [] : [t],
-      ),
+      ...[input.parent, input.followUpOf].flatMap((t) => (t === undefined ? [] : [t])),
     ];
     for (const other of others) {
-      if (store.tasks.get(other) === undefined)
-        throw new UserError(`Task ${other} does not exist.`, 404);
+      if (store.tasks.get(other) === undefined) throw new UserError(`Task ${other} does not exist.`, 404);
     }
-    const parentTask =
-      input.parent === undefined ? undefined : store.tasks.get(input.parent);
-    const followedTask =
-      input.followUpOf === undefined
-        ? undefined
-        : store.tasks.get(input.followUpOf);
+    const parentTask = input.parent === undefined ? undefined : store.tasks.get(input.parent);
+    const followedTask = input.followUpOf === undefined ? undefined : store.tasks.get(input.followUpOf);
     // A child with no repos of its own belongs to its parent's org, a fix task to its ops task's.
     const org =
       parsed.org ??
-      (parsed.repos.length === 0
-        ? (input.org ?? parentTask?.org ?? followedTask?.org)
-        : undefined);
+      (parsed.repos.length === 0 ? (input.org ?? parentTask?.org ?? followedTask?.org) : undefined);
     if (org !== undefined && sections.orgs[org] === undefined) {
-      throw new UserError(
-        `Org "${org}" does not exist any more. Update the project first.`,
-        409,
-      );
+      throw new UserError(`Org "${org}" does not exist any more. Update the project first.`, 409);
     }
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
-      if (
-        !Object.values(sections.orgs).some(
-          (o) => o.connections?.[id] !== undefined,
-        )
-      ) {
+      if (!Object.values(sections.orgs).some((o) => o.connections?.[id] !== undefined)) {
         throw new UserError(`There is no connection ${id}.`, 404);
       }
     }
@@ -425,9 +373,7 @@ export class TaskService {
     const asked = this.askedTeam({ input, parsed, agents, org });
     const views = asked === undefined ? await this.deps.accounts.list() : [];
     const accountStatus = new Map(views.map((v) => [v.id, v.status]));
-    const agent =
-      asked?.[0] ??
-      pickDefaultAgent({ agents, org, boss: sections.boss, accountStatus });
+    const agent = asked?.[0] ?? pickDefaultAgent({ agents, org, boss: sections.boss, accountStatus });
     if (agent === undefined && input.start) {
       throw new UserError(
         org === undefined
@@ -436,17 +382,10 @@ export class TaskService {
         409,
       );
     }
-    const planned = await planAttachments(
-      uploads,
-      input.attachments,
-      this.attachSource(input.from),
-      { org },
-    );
+    const planned = await planAttachments(uploads, input.attachments, this.attachSource(input.from), { org });
 
     const key =
-      org === undefined
-        ? LOCAL_TASK_PREFIX
-        : (orgKeys(sections.orgs).get(org) ?? LOCAL_TASK_PREFIX);
+      org === undefined ? LOCAL_TASK_PREFIX : (orgKeys(sections.orgs).get(org) ?? LOCAL_TASK_PREFIX);
     const id = store.tasks.allocateKey(key);
     const folder = join(tasksDir, id);
     const picked =
@@ -476,19 +415,12 @@ export class TaskService {
     try {
       await mkdir(folder);
     } catch {
-      throw new UserError(
-        `${folder} already exists. Move it away and try again.`,
-        409,
-      );
+      throw new UserError(`${folder} already exists. Move it away and try again.`, 409);
     }
     try {
       const attachmentsDir = join(folder, "attachments");
       const files = await takePlanned(uploads, planned, attachmentsDir);
-      const links = await fetchLinks(
-        parsed.links,
-        attachmentsDir,
-        this.deps.links,
-      );
+      const links = await fetchLinks(parsed.links, attachmentsDir, this.deps.links);
 
       const task: Task = {
         id,
@@ -499,20 +431,14 @@ export class TaskService {
         status: input.start ? "ready" : "inbox",
         folder,
         repos,
-        ...(investigation
-          ? { readMounts: this.investigationMounts(parsed, projects, at) }
-          : {}),
+        ...(investigation ? { readMounts: this.investigationMounts(parsed, projects, at) } : {}),
         ...(connections.length === 0 ? {} : { connections }),
         team: picked.team,
         mode: picked.mode,
         overrides: {},
         links: [
-          ...(input.parent === undefined
-            ? []
-            : [{ type: "parent" as const, task: input.parent }]),
-          ...(input.followUpOf === undefined
-            ? []
-            : [{ type: "follow-up" as const, task: input.followUpOf }]),
+          ...(input.parent === undefined ? [] : [{ type: "parent" as const, task: input.parent }]),
+          ...(input.followUpOf === undefined ? [] : [{ type: "follow-up" as const, task: input.followUpOf }]),
           ...dependsOn.map((t) => ({
             type: "depends-on" as const,
             task: t,
@@ -523,17 +449,9 @@ export class TaskService {
         createdAt: at,
         updatedAt: at,
       };
-      await this.writeBriefFiles(
-        task,
-        agents,
-        sections.orgs[org ?? ""]?.name,
-        this.relatedOf(task),
-      );
+      await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
       store.tasks.insert(task);
-      store.tasks.setRoomState(
-        id,
-        firstTurn(task.mode, this.members(task, agents)).state,
-      );
+      store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
       if (input.start) store.tasks.setStartWhenReady(id, true);
     } catch (err) {
       await rm(folder, { recursive: true, force: true });
@@ -554,19 +472,14 @@ export class TaskService {
       );
     }
     if (picked.line !== undefined) this.note(id, picked.line);
-    const linked = [input.parent, input.followUpOf].flatMap((t) =>
-      t === undefined ? [] : [t],
-    );
+    const linked = [input.parent, input.followUpOf].flatMap((t) => (t === undefined ? [] : [t]));
     if (linked.length > 0) await this.linksChanged(linked);
     let task = this.get(id);
     this.deps.room.publishTask(task);
     // A task that waits stays ready and starts by itself when its dependencies are met.
     const waiting = store.tasks.unmetDependencies(id);
     if (input.start && waiting.length > 0) {
-      this.note(
-        id,
-        `Waiting on ${waiting.join(", ")}. It starts when they are done.`,
-      );
+      this.note(id, `Waiting on ${waiting.join(", ")}. It starts when they are done.`);
     } else if (input.start) {
       try {
         task = await this.start(id);
@@ -593,16 +506,12 @@ export class TaskService {
     org: string | undefined;
   }): string[] | undefined {
     const { input, parsed, agents, org } = args;
-    const named = input.team ?? [
-      ...(input.agent === undefined ? [] : [input.agent]),
-      ...parsed.mentions,
-    ];
+    const named = input.team ?? [...(input.agent === undefined ? [] : [input.agent]), ...parsed.mentions];
     const team = [...new Set(named)];
     if (team.length === 0) return undefined;
     for (const id of team) {
       const found = agents.find((a) => a.id === id);
-      if (found === undefined)
-        throw new UserError(`Agent "${id}" does not exist or is invalid.`);
+      if (found === undefined) throw new UserError(`Agent "${id}" does not exist or is invalid.`);
       if (!canWorkIn(found, org)) {
         throw new UserError(
           org === undefined
@@ -684,20 +593,12 @@ export class TaskService {
   }
 
   /** The checkouts an investigation reads, read-only, for every agent of the task. */
-  private investigationMounts(
-    parsed: ParsedTask,
-    projects: readonly ProjectInfo[],
-    at: string,
-  ): ReadMount[] {
+  private investigationMounts(parsed: ParsedTask, projects: readonly ProjectInfo[], at: string): ReadMount[] {
     const mounts: ReadMount[] = [];
     for (const match of parsed.repos) {
       const project = projects.find((p) => p.id === match.project);
       if (project === undefined) continue;
-      if (!project.exists)
-        throw new UserError(
-          `${project.path} is not a git repo the server can see.`,
-          409,
-        );
+      if (!project.exists) throw new UserError(`${project.path} is not a git repo the server can see.`, 409);
       mounts.push({ path: project.path, at });
     }
     return mounts;
@@ -708,11 +609,7 @@ export class TaskService {
    * read rules is mounted read-only for that agent from now on, the room gets a quiet line, and
    * the agent's session restarts to see it. A path that does not pass gets a line saying why.
    */
-  private async grantMentionedReads(
-    task: Task,
-    agents: readonly string[],
-    text: string,
-  ): Promise<void> {
+  private async grantMentionedReads(task: Task, agents: readonly string[], text: string): Promise<void> {
     const paths = parsePathMentions(text);
     if (paths.length === 0) return;
     const loaded = await this.deps.config.load();
@@ -744,13 +641,7 @@ export class TaskService {
       for (const asked of paths) {
         try {
           const path = await checkReadMount(asked, policy);
-          if (
-            mounts.some(
-              (m) =>
-                m.path === path && (m.agent === undefined || m.agent === agent),
-            )
-          )
-            continue;
+          if (mounts.some((m) => m.path === path && (m.agent === undefined || m.agent === agent))) continue;
           mounts = [...mounts, { path, agent, at: this.now().toISOString() }];
           granted = true;
           this.note(task.id, `@${agent} can now read ${path} (read-only).`);
@@ -760,11 +651,7 @@ export class TaskService {
         }
       }
       if (!granted) continue;
-      this.deps.store.tasks.setReadMounts(
-        task.id,
-        mounts,
-        this.now().toISOString(),
-      );
+      this.deps.store.tasks.setReadMounts(task.id, mounts, this.now().toISOString());
       this.deps.runs.remount(task.id, agent);
     }
   }
@@ -779,19 +666,13 @@ export class TaskService {
     for (const match of parsed.repos) {
       const project = projects.find((p) => p.id === match.project);
       if (project === undefined) continue;
-      if (!project.exists)
-        throw new UserError(
-          `${project.path} is not a git repo the server can see.`,
-          409,
-        );
+      if (!project.exists) throw new UserError(`${project.path} is not a git repo the server can see.`, 409);
       // The base comes from the creator's pick for this repo or the project, never from prose like
       // "move off staging". The working branch is always a new task branch, never one that exists:
       // an agent must not commit on the owner's own branches.
       const base = bases.get(project.id) ?? project.base;
       if (base === undefined)
-        throw new UserError(
-          `Project "${project.id}" has no base branch. Set one on the project.`,
-        );
+        throw new UserError(`Project "${project.id}" has no base branch. Set one on the project.`);
       const branch = branchName(id, parsed.title);
       if (await branchExists(project.path, branch)) {
         throw new UserError(
@@ -812,9 +693,7 @@ export class TaskService {
   }
 
   /** The registered projects the task's agents read read-only: its org's, or all for a task without an org. */
-  private async readableProjects(
-    task: Task,
-  ): Promise<{ id: string; org: string; path: string }[]> {
+  private async readableProjects(task: Task): Promise<{ id: string; org: string; path: string }[]> {
     const all = await this.deps.projects.infos();
     return projectsFor(task.org ?? "root", all).map((p) => ({
       id: p.id,
@@ -861,18 +740,12 @@ export class TaskService {
     await this.ensureWorktrees(task);
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     store.tasks.setStartWhenReady(id, true);
-    if (task.status === "paused")
-      this.cards.settle(id, "paused", "Resumed", by);
+    if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
     // The owner resumed a task a budget paused: it is not paused again for the alerts so far.
-    if (
-      task.status === "paused" &&
-      task.pausedReason === "limit" &&
-      by === "owner"
-    ) {
+    if (task.status === "paused" && task.pausedReason === "limit" && by === "owner") {
       this.deps.onOwnerResumedLimit?.(id);
     }
-    if (task.status === "paused" && by === "owner")
-      this.deps.onOwnerResumed?.(id);
+    if (task.status === "paused" && by === "owner") this.deps.onOwnerResumed?.(id);
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -899,10 +772,7 @@ export class TaskService {
         store.tasks.setStatus(id, "ready", undefined, this.now().toISOString());
         this.deps.room.publishTask(this.get(id));
       }
-      throw new UserError(
-        `Waiting on ${waiting.join(", ")}. It starts when they are done.`,
-        409,
-      );
+      throw new UserError(`Waiting on ${waiting.join(", ")}. It starts when they are done.`, 409);
     }
     if (task.team.length === 0)
       throw new UserError(
@@ -913,8 +783,7 @@ export class TaskService {
 
   /** Who goes first when the task starts, by its mode: the lead, the pipeline's first step, the loop's builder. */
   private async firstAgents(task: Task): Promise<string[]> {
-    return firstTurn(task.mode, this.members(task, await this.frontmatters()))
-      .agents;
+    return firstTurn(task.mode, this.members(task, await this.frontmatters())).agents;
   }
 
   /** Creates the worktrees the task does not have yet, each from its base (or the branch it stacks on). */
@@ -942,32 +811,19 @@ export class TaskService {
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
-        store.tasks.setWorktree(
-          id,
-          repo.project,
-          path,
-          result.createdBranch,
-          result.startCommit,
-        );
+        store.tasks.setWorktree(id, repo.project, path, result.createdBranch, result.startCommit);
         if (stack !== undefined && result.createdBranch) {
           store.tasks.setBase(id, repo.project, stack.branch);
           store.tasks.setStack(id, repo.project, {
             ...stack,
             commit: await headOf(path),
           });
-          this.note(
-            id,
-            `${repo.project}: stacked on ${stack.task}'s branch ${stack.branch}.`,
-          );
+          this.note(id, `${repo.project}: stacked on ${stack.task}'s branch ${stack.branch}.`);
         }
         for (const w of result.warnings) this.warn(id, `${repo.project}: ${w}`);
       } catch (err) {
-        if (err instanceof WorktreeProblem)
-          throw new UserError(`${repo.project}: ${err.message}`, 409);
-        throw new UserError(
-          `${repo.project}: ${err instanceof Error ? err.message : String(err)}`,
-          409,
-        );
+        if (err instanceof WorktreeProblem) throw new UserError(`${repo.project}: ${err.message}`, 409);
+        throw new UserError(`${repo.project}: ${err instanceof Error ? err.message : String(err)}`, 409);
       }
     }
   }
@@ -985,34 +841,23 @@ export class TaskService {
       await memory.recall(task, scopes);
       await this.refreshBriefs([task.id]);
     } catch (err) {
-      this.warn(
-        task.id,
-        `Memory was not recalled: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.warn(task.id, `Memory was not recalled: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   /** The branch of a `ready` dependency that has the same project, for stacking (5.4a). */
-  private stackFor(
-    task: Task,
-    project: string,
-  ): { task: string; branch: string } | undefined {
+  private stackFor(task: Task, project: string): { task: string; branch: string } | undefined {
     for (const l of task.links) {
       if (l.type !== "depends-on" || l.when !== "ready") continue;
       const dep = this.deps.store.tasks.get(l.task);
-      const repo = dep?.repos.find(
-        (r) => r.project === project && r.worktree !== undefined,
-      );
-      if (dep !== undefined && repo !== undefined)
-        return { task: dep.id, branch: repo.branch };
+      const repo = dep?.repos.find((r) => r.project === project && r.worktree !== undefined);
+      if (dep !== undefined && repo !== undefined) return { task: dep.id, branch: repo.branch };
     }
     return undefined;
   }
 
   private async frontmatters(): Promise<AgentFrontmatter[]> {
-    return (await this.deps.agents.list()).flatMap((a) =>
-      a.ok ? [a.agent.frontmatter] : [],
-    );
+    return (await this.deps.agents.list()).flatMap((a) => (a.ok ? [a.agent.frontmatter] : []));
   }
 
   /** The team with each agent's role, lead first. An agent file that is gone counts as a Builder. */
@@ -1024,31 +869,18 @@ export class TaskService {
   }
 
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
-  async stop(
-    id: string,
-    reason: "owner" | "loop" | "blocked" = "owner",
-  ): Promise<Task> {
+  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner"): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
     await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.dropPendingShip(id, "you stopped the task");
-    if (
-      task.status === "running" ||
-      task.status === "paused" ||
-      task.status === "review"
-    ) {
-      this.deps.store.tasks.setStatus(
-        id,
-        "paused",
-        reason,
-        this.now().toISOString(),
-      );
+    if (task.status === "running" || task.status === "paused" || task.status === "review") {
+      this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review")
-      this.cards.paused(stopped, reason);
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason);
     this.deps.room.publishTask(stopped);
     return stopped;
   }
@@ -1067,10 +899,8 @@ export class TaskService {
     due?: string | null | undefined;
   }): Promise<Task> {
     const task = this.get(input.id);
-    if (input.agent !== undefined && input.agent !== task.team[0])
-      await this.changeAgent(task, input.agent);
-    if (input.mode !== undefined && input.mode !== task.mode)
-      await this.changeMode(task, input.mode);
+    if (input.agent !== undefined && input.agent !== task.team[0]) await this.changeAgent(task, input.agent);
+    if (input.mode !== undefined && input.mode !== task.mode) await this.changeMode(task, input.mode);
     if (input.priority !== undefined || input.due !== undefined)
       this.deps.store.tasks.setPlanning(
         task.id,
@@ -1081,18 +911,9 @@ export class TaskService {
     if (title === "") throw new UserError("The title cannot be empty.");
     const current = task.brief.trim().split(/\r?\n/);
     const body =
-      input.brief ??
-      (current[0]?.startsWith(task.title)
-        ? current.slice(1).join("\n")
-        : task.brief
-      ).trim();
+      input.brief ?? (current[0]?.startsWith(task.title) ? current.slice(1).join("\n") : task.brief).trim();
     const brief = body.trim() === "" ? title : `${title}\n\n${body.trim()}`;
-    this.deps.store.tasks.setText(
-      task.id,
-      title,
-      brief,
-      this.now().toISOString(),
-    );
+    this.deps.store.tasks.setText(task.id, title, brief, this.now().toISOString());
     await this.refreshBriefs([task.id]);
     this.deps.room.publishTask(this.get(task.id));
     this.deps.events.emit(["tasks"]);
@@ -1104,10 +925,7 @@ export class TaskService {
     const at = this.now().toISOString();
     this.deps.store.tasks.setMode(task.id, mode, at);
     const next = this.get(task.id);
-    const { state } = firstTurn(
-      mode,
-      this.members(next, await this.frontmatters()),
-    );
+    const { state } = firstTurn(mode, this.members(next, await this.frontmatters()));
     const { agentTurns, removed } = this.deps.store.tasks.roomState(task.id);
     this.deps.store.tasks.setRoomState(task.id, {
       ...state,
@@ -1121,19 +939,12 @@ export class TaskService {
   // Team (5.3)
 
   /** Adds an agent that can work in the task's org. With `lead`, it goes first. */
-  async addToTeam(
-    id: string,
-    agent: string,
-    options: { lead?: boolean; by?: string } = {},
-  ): Promise<Task> {
+  async addToTeam(id: string, agent: string, options: { lead?: boolean; by?: string } = {}): Promise<Task> {
     const task = this.get(id);
     const state = this.deps.store.tasks.roomState(id);
     const removed = state.removed ?? [];
     if (options.by !== undefined && removed.includes(agent))
-      throw new UserError(
-        `The owner removed @${agent} from ${id}. Only the owner can add it back.`,
-        409,
-      );
+      throw new UserError(`The owner removed @${agent} from ${id}. Only the owner can add it back.`, 409);
     const fm = await this.checkMember(task, agent);
     // The owner added it again: agents may mention it as usual.
     if (removed.includes(agent))
@@ -1143,11 +954,7 @@ export class TaskService {
       });
     const rest = task.team.filter((a) => a !== agent);
     const team =
-      options.lead === true
-        ? [agent, ...rest]
-        : task.team.includes(agent)
-          ? task.team
-          : [...rest, agent];
+      options.lead === true ? [agent, ...rest] : task.team.includes(agent) ? task.team : [...rest, agent];
     if (team.join() === task.team.join()) return task;
     this.deps.store.tasks.setTeam(id, team, this.now().toISOString());
     this.note(
@@ -1160,13 +967,9 @@ export class TaskService {
   /** Takes an agent off the team and closes its session. The last agent and a working agent cannot go. */
   async removeFromTeam(id: string, agent: string): Promise<Task> {
     const task = this.get(id);
-    if (!task.team.includes(agent))
-      throw new UserError(`@${agent} is not on ${id}.`, 404);
+    if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${id}.`, 404);
     if (task.team.length === 1)
-      throw new UserError(
-        `@${agent} is the only agent on ${id}. Swap it instead.`,
-        409,
-      );
+      throw new UserError(`@${agent} is the only agent on ${id}. Swap it instead.`, 409);
     if (this.deps.runs.working(id).includes(agent))
       throw new UserError(`@${agent} is working on ${id}. Stop it first.`, 409);
     await this.deps.runs.remove(id, agent);
@@ -1181,26 +984,17 @@ export class TaskService {
     this.deps.store.tasks.setOverrides(id, overrides, at);
     // Mentions do not bring it back, so the room cannot wake it again.
     const state = this.deps.store.tasks.roomState(id);
-    const removed = [
-      ...(state.removed ?? []).filter((a) => a !== agent),
-      agent,
-    ];
+    const removed = [...(state.removed ?? []).filter((a) => a !== agent), agent];
     this.deps.store.tasks.setRoomState(id, { ...state, removed });
     this.note(id, `Removed @${agent} from the team.`);
     return this.afterProcessesOf(id, held, await this.teamChanged(id));
   }
 
   /** Puts another agent in an agent's place in the team. The old session closes. */
-  async swapInTeam(
-    id: string,
-    agent: string,
-    replacement: string,
-  ): Promise<Task> {
+  async swapInTeam(id: string, agent: string, replacement: string): Promise<Task> {
     const task = this.get(id);
-    if (!task.team.includes(agent))
-      throw new UserError(`@${agent} is not on ${id}.`, 404);
-    if (task.team.includes(replacement))
-      throw new UserError(`@${replacement} is already on ${id}.`, 409);
+    if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${id}.`, 404);
+    if (task.team.includes(replacement)) throw new UserError(`@${replacement} is already on ${id}.`, 409);
     const fm = await this.checkMember(task, replacement);
     await this.deps.runs.remove(id, agent);
     const held = await this.stopProcessesOf(id, agent);
@@ -1218,19 +1012,13 @@ export class TaskService {
 
   /** Stops the processes of an agent leaving the team. True when one of them held the task running. */
   private async stopProcessesOf(id: string, agent: string): Promise<boolean> {
-    const held = (this.deps.processes?.waiting(id) ?? []).some(
-      (p) => p.agent === agent,
-    );
+    const held = (this.deps.processes?.waiting(id) ?? []).some((p) => p.agent === agent);
     await this.deps.processes?.stopAgent(id, agent);
     return held;
   }
 
   /** A stop by the task never checks for review itself (5.15), so a team change that ended a hold does. */
-  private async afterProcessesOf(
-    id: string,
-    held: boolean,
-    task: Task,
-  ): Promise<Task> {
+  private async afterProcessesOf(id: string, held: boolean, task: Task): Promise<Task> {
     if (!held) return task;
     await this.agentsIdle(id);
     return this.get(id);
@@ -1245,18 +1033,13 @@ export class TaskService {
     repos?: string[] | null | undefined;
   }): Promise<Task> {
     const task = this.get(input.task);
-    if (!task.team.includes(input.agent))
-      throw new UserError(`@${input.agent} is not on ${task.id}.`, 404);
+    if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on ${task.id}.`, 404);
     for (const repo of input.repos ?? []) {
-      if (!task.repos.some((r) => r.project === repo))
-        throw new UserError(`${task.id} has no repo ${repo}.`);
+      if (!task.repos.some((r) => r.project === repo)) throw new UserError(`${task.id} has no repo ${repo}.`);
     }
     const before: TeamOverride = task.overrides[input.agent] ?? {};
     const next: TeamOverride = { ...before };
-    const apply = <K extends keyof TeamOverride>(
-      key: K,
-      value: TeamOverride[K] | null | undefined,
-    ) => {
+    const apply = <K extends keyof TeamOverride>(key: K, value: TeamOverride[K] | null | undefined) => {
       if (value === undefined) return;
       if (value === null) delete next[key];
       else next[key] = value;
@@ -1267,18 +1050,11 @@ export class TaskService {
     const overrides = { ...task.overrides };
     if (Object.keys(next).length === 0) delete overrides[input.agent];
     else overrides[input.agent] = next;
-    this.deps.store.tasks.setOverrides(
-      task.id,
-      overrides,
-      this.now().toISOString(),
-    );
+    this.deps.store.tasks.setOverrides(task.id, overrides, this.now().toISOString());
     // An open session switches now to the value that applies. `auto` picks when a session starts,
     // and a cleared value with nothing in the agent's file leaves the session as it is.
     const file = (await this.frontmatters()).find((a) => a.id === input.agent);
-    const applies = (
-      value: string | null | undefined,
-      fromFile: string | undefined,
-    ) => {
+    const applies = (value: string | null | undefined, fromFile: string | undefined) => {
       if (value === undefined) return undefined;
       const next = value ?? fromFile;
       return next === AUTO ? undefined : next;
@@ -1291,16 +1067,10 @@ export class TaskService {
     };
     const now =
       Object.keys(live).length > 0 &&
-      (await this.deps.runs
-        .applyOptions(task.id, input.agent, live)
-        .catch(() => false));
+      (await this.deps.runs.applyOptions(task.id, input.agent, live).catch(() => false));
     const parts = [
-      input.model === undefined
-        ? undefined
-        : `model ${input.model ?? "from its file"}`,
-      input.effort === undefined
-        ? undefined
-        : `effort ${input.effort ?? "from its file"}`,
+      input.model === undefined ? undefined : `model ${input.model ?? "from its file"}`,
+      input.effort === undefined ? undefined : `effort ${input.effort ?? "from its file"}`,
       input.repos === undefined
         ? undefined
         : input.repos === null
@@ -1310,26 +1080,15 @@ export class TaskService {
             : `repos ${input.repos.join(", ")}`,
     ].filter((p) => p !== undefined);
     if (parts.length > 0) {
-      const when =
-        input.repos !== undefined || !now ? "" : " Applied to its session now.";
-      this.note(
-        task.id,
-        `@${input.agent} in this task: ${parts.join(", ")}.${when}`,
-      );
+      const when = input.repos !== undefined || !now ? "" : " Applied to its session now.";
+      this.note(task.id, `@${input.agent} in this task: ${parts.join(", ")}.${when}`);
     }
     return this.teamChanged(task.id);
   }
 
-  private async checkMember(
-    task: Task,
-    agent: string,
-  ): Promise<AgentFrontmatter> {
+  private async checkMember(task: Task, agent: string): Promise<AgentFrontmatter> {
     const fm = (await this.frontmatters()).find((a) => a.id === agent);
-    if (fm === undefined)
-      throw new UserError(
-        `Agent "${agent}" does not exist or is invalid.`,
-        404,
-      );
+    if (fm === undefined) throw new UserError(`Agent "${agent}" does not exist or is invalid.`, 404);
     if (!canWorkIn(fm, task.org)) {
       throw new UserError(
         `@${agent} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}. Change where it can work in Studio first.`,
@@ -1352,11 +1111,7 @@ export class TaskService {
    * The loop guard's pause (`loop`: the agents went in circles), or the idle watch's (`blocked`:
    * nobody is left to wake), so the owner decides how to continue.
    */
-  async pauseForOwner(
-    id: string,
-    text: string,
-    reason: "loop" | "blocked" = "loop",
-  ): Promise<void> {
+  async pauseForOwner(id: string, text: string, reason: "loop" | "blocked" = "loop"): Promise<void> {
     this.deps.room.post(id as TaskId, `error:${randomUUID()}`, {
       type: "system",
       level: "warn",
@@ -1385,14 +1140,11 @@ export class TaskService {
     start: boolean;
   }): Promise<Task[]> {
     const parent = this.get(input.task);
-    if (parent.status === "done")
-      throw new UserError(`${parent.id} is done.`, 409);
+    if (parent.status === "done") throw new UserError(`${parent.id} is done.`, 409);
     input.children.forEach((c, i) => {
       for (const d of c.dependsOn) {
         if (d >= i)
-          throw new UserError(
-            `Child ${i + 1} can only wait for children before it (got ${d + 1}).`,
-          );
+          throw new UserError(`Child ${i + 1} can only wait for children before it (got ${d + 1}).`);
       }
     });
     // Every entry is checked before the first child exists, so a bad one leaves nothing behind.
@@ -1402,9 +1154,7 @@ export class TaskService {
     );
     const made: Task[] = [];
     for (const child of input.children) {
-      const dependsOn = child.dependsOn.flatMap((d) =>
-        made[d] === undefined ? [] : [made[d].id],
-      );
+      const dependsOn = child.dependsOn.flatMap((d) => (made[d] === undefined ? [] : [made[d].id]));
       made.push(
         await this.create({
           text: child.text,
@@ -1424,12 +1174,7 @@ export class TaskService {
       // The children start one by one as the plan allows: overlap, links and limits are checked first.
       for (const t of made) {
         this.deps.store.tasks.setStartWhenReady(t.id, true);
-        this.deps.store.tasks.setStatus(
-          t.id,
-          "ready",
-          undefined,
-          this.now().toISOString(),
-        );
+        this.deps.store.tasks.setStatus(t.id, "ready", undefined, this.now().toISOString());
         this.deps.room.publishTask(this.get(t.id));
       }
       await this.orchestrator.advance();
@@ -1449,21 +1194,12 @@ export class TaskService {
     for (const stacked of store.tasks.stackedOn(id)) {
       const task = store.tasks.get(stacked.task);
       const repo = task?.repos.find((r) => r.project === stacked.project);
-      if (
-        task === undefined ||
-        task.status === "done" ||
-        repo?.worktree === undefined
-      )
-        continue;
+      if (task === undefined || task.status === "done" || repo?.worktree === undefined) continue;
       const worktree = repo.worktree;
-      const release = await this.deps.runs.locks.acquire(
-        [worktree],
-        `restack:${task.id}`,
-      );
+      const release = await this.deps.runs.locks.acquire([worktree], `restack:${task.id}`);
       try {
         const identity =
-          (await this.deps.config.sections()).orgs[task.org ?? "private"]
-            ?.identity ?? DEFAULT_IDENTITY;
+          (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
         const result = await restack({
           worktree,
           branch: repo.branch,
@@ -1477,10 +1213,7 @@ export class TaskService {
             branch: stacked.branch,
             commit: result.commit,
           });
-          this.note(
-            task.id,
-            `${repo.project}: rebased onto ${id}'s latest ${stacked.branch}.`,
-          );
+          this.note(task.id, `${repo.project}: rebased onto ${id}'s latest ${stacked.branch}.`);
           this.deps.room.publishTask(this.get(task.id));
         } else if (result.status === "skipped") {
           this.warn(
@@ -1507,17 +1240,11 @@ export class TaskService {
   /** Gives the task (the lead's place) to another agent that can work in its org. Its old sessions close; the room says so. */
   private async changeAgent(task: Task, agent: string): Promise<void> {
     if (this.deps.runs.working(task.id).length > 0) {
-      throw new UserError(
-        `An agent is working on ${task.id}. Stop it first.`,
-        409,
-      );
+      throw new UserError(`An agent is working on ${task.id}. Stop it first.`, 409);
     }
     const stored = await this.deps.agents.list();
-    const found = stored
-      .flatMap((a) => (a.ok ? [a.agent.frontmatter] : []))
-      .find((a) => a.id === agent);
-    if (found === undefined)
-      throw new UserError(`Agent "${agent}" does not exist or is invalid.`);
+    const found = stored.flatMap((a) => (a.ok ? [a.agent.frontmatter] : [])).find((a) => a.id === agent);
+    if (found === undefined) throw new UserError(`Agent "${agent}" does not exist or is invalid.`);
     if (!canWorkIn(found, task.org)) {
       throw new UserError(
         `@${agent} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}.`,
@@ -1526,15 +1253,8 @@ export class TaskService {
     await this.deps.runs.stop(task.id);
     // The new agent takes the lead's place; the rest of the team stays.
     const rest = task.team.slice(1).filter((a) => a !== agent);
-    this.deps.store.tasks.setTeam(
-      task.id,
-      [agent, ...rest],
-      this.now().toISOString(),
-    );
-    this.note(
-      task.id,
-      `The task moved from @${task.team[0] ?? "nobody"} to @${agent}.`,
-    );
+    this.deps.store.tasks.setTeam(task.id, [agent, ...rest], this.now().toISOString());
+    this.note(task.id, `The task moved from @${task.team[0] ?? "nobody"} to @${agent}.`);
   }
 
   /**
@@ -1574,8 +1294,7 @@ export class TaskService {
         409,
       );
     }
-    const when =
-      opts.agent === true ? "refuse" : (opts.whenUnshipped ?? "refuse");
+    const when = opts.agent === true ? "refuse" : (opts.whenUnshipped ?? "refuse");
     const unshipped = when === "keep" ? [] : await unshippedWork(task.repos);
     if (unshipped.length > 0) {
       const what = unshippedText(unshipped);
@@ -1595,18 +1314,8 @@ export class TaskService {
     await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.store.tasks.setPendingShip(id, undefined);
-    this.deps.store.tasks.setStatus(
-      id,
-      "done",
-      undefined,
-      this.now().toISOString(),
-    );
-    this.cards.settle(
-      id,
-      "review",
-      opts.reviewText ?? "Marked done",
-      opts.by ?? "owner",
-    );
+    this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
+    this.cards.settle(id, "review", opts.reviewText ?? "Marked done", opts.by ?? "owner");
     this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
@@ -1637,24 +1346,15 @@ export class TaskService {
     try {
       await this.ensureWorktrees(task);
       const sections = await this.deps.config.sections();
-      const identity =
-        sections.orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
-      const attribution = await attributionOf(
-        this.deps.config,
-        this.get(task.id),
-      );
+      const identity = sections.orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+      const attribution = await attributionOf(this.deps.config, this.get(task.id));
       for (const repo of this.get(task.id).repos) {
         if (repo.worktree === undefined) continue;
         await input.change({ project: repo.project, worktree: repo.worktree });
         await commitAll(
           repo.worktree,
           input.message,
-          commitBy(
-            identity,
-            task.id,
-            undefined,
-            attribution.repos[repo.project] !== false,
-          ),
+          commitBy(identity, task.id, undefined, attribution.repos[repo.project] !== false),
         );
       }
     } catch (err) {
@@ -1662,16 +1362,8 @@ export class TaskService {
       this.warn(task.id, `The change was not made: ${why}`);
       throw err;
     }
-    this.deps.store.tasks.setStatus(
-      task.id,
-      "review",
-      undefined,
-      this.now().toISOString(),
-    );
-    this.note(
-      task.id,
-      "majhi made this change itself, with no agent. Merge it to keep it.",
-    );
+    this.deps.store.tasks.setStatus(task.id, "review", undefined, this.now().toISOString());
+    this.note(task.id, "majhi made this change itself, with no agent. Merge it to keep it.");
     const ready = this.get(task.id);
     this.deps.room.publishTask(ready);
     await this.statusChanged(task.id);
@@ -1707,8 +1399,7 @@ export class TaskService {
       );
     }
     const plan = await this.shipPlan(task, input);
-    if (input.deleteAfter === true)
-      await this.assertDeletable(plan.ship.map((s) => s.repo));
+    if (input.deleteAfter === true) await this.assertDeletable(plan.ship.map((s) => s.repo));
     const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
     const identity = org?.identity ?? DEFAULT_IDENTITY;
     type Result = {
@@ -1719,10 +1410,7 @@ export class TaskService {
       conflicts?: string[];
       skipped?: boolean;
     };
-    const skipped: Result[] = [
-      ...plan.unchanged.map(skippedResult),
-      ...plan.held.map(heldResult),
-    ];
+    const skipped: Result[] = [...plan.unchanged.map(skippedResult), ...plan.held.map(heldResult)];
     const by = input.by ?? "owner";
     const report = (results: Result[]) => {
       for (const r of results) this.note(task.id, `${r.project}: ${r.detail}`);
@@ -1743,20 +1431,14 @@ export class TaskService {
     // Check every repo before merging any, so one that cannot merge leaves the others untouched.
     const blocked = new Map<string, { reason: string; conflicts?: string[] }>();
     for (const { repo, into } of plan.ship) {
-      const dirty =
-        repo.worktree === undefined
-          ? []
-          : await uncommitted(repo.worktree).catch(() => []);
+      const dirty = repo.worktree === undefined ? [] : await uncommitted(repo.worktree).catch(() => []);
       const blocker = dirty.some((l) => !l.startsWith("??"))
         ? {
-            reason:
-              "The task's worktree has uncommitted changes. Ask the agent to commit them first.",
+            reason: "The task's worktree has uncommitted changes. Ask the agent to commit them first.",
           }
-        : await mergeBlocker(repo.source, repo.branch, into).catch(
-            (err: unknown) => ({
-              reason: errorMessage(err),
-            }),
-          );
+        : await mergeBlocker(repo.source, repo.branch, into).catch((err: unknown) => ({
+            reason: errorMessage(err),
+          }));
       if (blocker !== undefined) blocked.set(repo.project, blocker);
     }
     if (blocked.size > 0) {
@@ -1775,10 +1457,7 @@ export class TaskService {
           project: repo.project,
           into,
           ok: false,
-          detail:
-            b.conflicts === undefined
-              ? b.reason
-              : `Nothing was merged. ${b.reason}`,
+          detail: b.conflicts === undefined ? b.reason : `Nothing was merged. ${b.reason}`,
           ...(b.conflicts === undefined ? {} : { conflicts: b.conflicts }),
         };
       });
@@ -1807,18 +1486,15 @@ export class TaskService {
         message: `Merge ${task.id}: ${task.title}`,
         scratch: join(task.folder, ".merge", repo.project),
         method: input.method,
-      }).catch((err: unknown): MergeOutcome => ({
-        ok: false,
-        reason: errorMessage(err),
-      }));
+      }).catch(
+        (err: unknown): MergeOutcome => ({
+          ok: false,
+          reason: errorMessage(err),
+        }),
+      );
       if (outcome.ok) {
         heads.set(repo.project, outcome.head);
-        this.deps.store.tasks.setShipped(
-          task.id,
-          repo.project,
-          outcome.head,
-          into,
-        );
+        this.deps.store.tasks.setShipped(task.id, repo.project, outcome.head, into);
         results.push({
           project: repo.project,
           into,
@@ -1833,9 +1509,7 @@ export class TaskService {
         into,
         ok: false,
         detail: outcome.reason,
-        ...(outcome.conflicts === undefined
-          ? {}
-          : { conflicts: outcome.conflicts }),
+        ...(outcome.conflicts === undefined ? {} : { conflicts: outcome.conflicts }),
       });
     }
     report(results);
@@ -1859,16 +1533,13 @@ export class TaskService {
       settle,
       by,
     });
-    if (input.deleteAfter !== true)
-      return { results: [...results, ...skipped], task: after };
+    if (input.deleteAfter !== true) return { results: [...results, ...skipped], task: after };
     const deleted = await this.deleteAfterShip(task.id, heads);
     return {
       results: [
         ...results.map((r) => {
           const extra = deleted.get(r.project);
-          return extra === undefined
-            ? r
-            : { ...r, detail: `${r.detail} ${extra}` };
+          return extra === undefined ? r : { ...r, detail: `${r.detail} ${extra}` };
         }),
         ...skipped,
       ],
@@ -1925,9 +1596,7 @@ export class TaskService {
       confirmProtected?: string | undefined;
     },
   ): Promise<ShipPlan> {
-    const repos = task.repos.filter(
-      (r) => pick.project === undefined || r.project === pick.project,
-    );
+    const repos = task.repos.filter((r) => pick.project === undefined || r.project === pick.project);
     if (repos.length === 0) {
       throw new UserError(
         pick.project === undefined
@@ -1943,11 +1612,7 @@ export class TaskService {
         409,
       );
     }
-    const guarded = new Set(
-      (await this.deps.projects.infos())
-        .filter((p) => p.protected)
-        .map((p) => p.id),
-    );
+    const guarded = new Set((await this.deps.projects.infos()).filter((p) => p.protected).map((p) => p.id));
     const plan = holdProtected(found, guarded, pick);
     for (const { repo, into } of plan.ship) {
       const refusal = await targetRefusal(repo, into, dirname(task.folder));
@@ -1972,10 +1637,7 @@ export class TaskService {
    * is still at the commit that was shipped (`heads`, by project). Says in the room what went and
    * what stayed, and returns that line by project.
    */
-  async deleteAfterShip(
-    id: string,
-    heads: ReadonlyMap<string, string>,
-  ): Promise<Map<string, string>> {
+  async deleteAfterShip(id: string, heads: ReadonlyMap<string, string>): Promise<Map<string, string>> {
     const task = this.get(id);
     const stacked = this.deps.store.tasks.stackedOn(task.id);
     const out = new Map<string, string>();
@@ -1985,16 +1647,13 @@ export class TaskService {
       const done = await deleteAfterShip({
         repo,
         head,
-        stacked: stacked.some(
-          (s) => s.project === repo.project && s.branch === repo.branch,
-        ),
+        stacked: stacked.some((s) => s.project === repo.project && s.branch === repo.branch),
       }).catch((err: unknown) => ({
         worktreeRemoved: false,
         branchDeleted: false,
         detail: `Kept ${repo.branch} and its worktree: ${errorMessage(err)}`,
       }));
-      if (done.worktreeRemoved)
-        this.deps.store.tasks.clearWorktree(task.id, repo.project);
+      if (done.worktreeRemoved) this.deps.store.tasks.clearWorktree(task.id, repo.project);
       this.note(task.id, `${repo.project}: ${done.detail}`);
       out.set(repo.project, done.detail);
     }
@@ -2016,19 +1675,13 @@ export class TaskService {
     const task = this.get(id);
     return Promise.all(
       task.repos.map(async (r) => {
-        const project = await this.deps.projects
-          .get(r.project)
-          .catch(() => undefined);
+        const project = await this.deps.projects.get(r.project).catch(() => undefined);
         const remote = mrRemoteName(project?.remotes);
         return {
           project: r.project,
           base: r.base,
-          branches: (
-            await localBranches(r.source).catch(() => [r.base])
-          ).filter((b) => b !== r.branch),
-          remote: (
-            await remoteBranches(r.source, remote).catch(() => [])
-          ).filter((b) => b !== r.branch),
+          branches: (await localBranches(r.source).catch(() => [r.base])).filter((b) => b !== r.branch),
+          remote: (await remoteBranches(r.source, remote).catch(() => [])).filter((b) => b !== r.branch),
         };
       }),
     );
@@ -2037,9 +1690,7 @@ export class TaskService {
   /** Subtasks of a task that are not done, in link order. */
   private openSubtasks(id: string): string[] {
     const { store } = this.deps;
-    return store.tasks
-      .children(id)
-      .filter((c) => store.tasks.get(c)?.status !== "done");
+    return store.tasks.children(id).filter((c) => store.tasks.get(c)?.status !== "done");
   }
 
   /** The first message names an untitled chat. */
@@ -2047,26 +1698,15 @@ export class TaskService {
     if (!isOwnerChat(task) || !DEFAULT_CHAT_TITLES.includes(task.title)) return;
     const title = chatTitleFrom(text);
     if (title === undefined) return;
-    this.deps.store.tasks.setText(
-      task.id,
-      title,
-      task.brief,
-      this.now().toISOString(),
-    );
+    this.deps.store.tasks.setText(task.id, title, task.brief, this.now().toISOString());
     this.deps.room.publishTask(this.get(task.id));
   }
 
   /** Renames a chat. The brief stays: it marks the task as a chat. */
   renameChat(id: string, title: string): Task {
     const task = this.get(id);
-    if (!isOwnerChat(task))
-      throw new UserError(`Task ${id} is not a chat.`, 409);
-    this.deps.store.tasks.setText(
-      id,
-      title.trim(),
-      task.brief,
-      this.now().toISOString(),
-    );
+    if (!isOwnerChat(task)) throw new UserError(`Task ${id} is not a chat.`, 409);
+    this.deps.store.tasks.setText(id, title.trim(), task.brief, this.now().toISOString());
     // The owner's title stays: majhi never names this chat again.
     this.deps.store.chats.markOwnerTitled(id);
     const renamed = this.get(id);
@@ -2078,18 +1718,9 @@ export class TaskService {
   /** Gives a chat a title majhi made. False, and nothing changes, when the owner renamed it. */
   autoTitleChat(id: string, title: string): boolean {
     const task = this.deps.store.tasks.get(id);
-    if (
-      task === undefined ||
-      !isOwnerChat(task) ||
-      this.deps.store.chats.get(id).titledBy === "owner"
-    )
+    if (task === undefined || !isOwnerChat(task) || this.deps.store.chats.get(id).titledBy === "owner")
       return false;
-    this.deps.store.tasks.setText(
-      id,
-      title,
-      task.brief,
-      this.now().toISOString(),
-    );
+    this.deps.store.tasks.setText(id, title, task.brief, this.now().toISOString());
     this.deps.room.publishTask(this.get(id));
     this.deps.events.emit(["tasks"]);
     return true;
@@ -2099,15 +1730,8 @@ export class TaskService {
   async reopen(id: string): Promise<Task> {
     const task = this.get(id);
     if (task.status !== "done") return task;
-    const status = task.repos.some((r) => r.worktree !== undefined)
-      ? "review"
-      : "inbox";
-    this.deps.store.tasks.setStatus(
-      id,
-      status,
-      undefined,
-      this.now().toISOString(),
-    );
+    const status = task.repos.some((r) => r.worktree !== undefined) ? "review" : "inbox";
+    this.deps.store.tasks.setStatus(id, status, undefined, this.now().toISOString());
     if (!isOwnerChat(task)) this.note(id, "Reopened.");
     const reopened = this.get(id);
     if (status === "review") this.cards.review(reopened);
@@ -2124,9 +1748,7 @@ export class TaskService {
    */
   async remove(id: string, force: boolean, confirm?: string): Promise<void> {
     const task = this.get(id);
-    const trees = task.repos.flatMap((r) =>
-      r.worktree === undefined ? [] : [r.worktree],
-    );
+    const trees = task.repos.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree]));
     const dirty = await dirtyWorktrees(trees);
     if (dirty.length > 0 && !force) {
       throw discardRefusal(
@@ -2157,15 +1779,10 @@ export class TaskService {
       }
     }
     for (const repo of task.repos) {
-      if (repo.worktree !== undefined)
-        await removeWorktree(repo.source, repo.worktree, force);
+      if (repo.worktree !== undefined) await removeWorktree(repo.source, repo.worktree, force);
     }
     // The folder is only ever `<tasks_dir>/<task id>`; refuse to delete anything else.
-    if (
-      basename(task.folder) === id &&
-      task.folder.includes(sep) &&
-      task.folder !== sep
-    ) {
+    if (basename(task.folder) === id && task.folder.includes(sep) && task.folder !== sep) {
       await rm(task.folder, { recursive: true, force: true });
     }
     const { store } = this.deps;
@@ -2211,10 +1828,7 @@ export class TaskService {
       } else if (q.freeText) {
         validated[q.id] = answer;
       } else {
-        throw new UserError(
-          `"${answer}" is not a valid option for: ${q.question}`,
-          409,
-        );
+        throw new UserError(`"${answer}" is not a valid option for: ${q.question}`, 409);
       }
     }
 
@@ -2260,9 +1874,7 @@ export class TaskService {
   // Owner cards: review, paused, plain-text questions
 
   /** What the review card's buttons may do now, with the reason when not. */
-  async reviewOptions(
-    id: string,
-  ): Promise<{ base?: string; merge: ShipOption; done: DoneOption }> {
+  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: DoneOption }> {
     const task = this.get(id);
     const base = task.repos[0]?.base;
     return {
@@ -2288,25 +1900,13 @@ export class TaskService {
   private async workShipped(repo: TaskRepo): Promise<boolean> {
     if (repo.mr !== undefined && repo.mr.state !== "closed") return true;
     if (!(await localBranchExists(repo.source, repo.branch))) return true;
-    const ahead = await commitsSinceStart(repo.source, repo).catch(
-      () => undefined,
-    );
+    const ahead = await commitsSinceStart(repo.source, repo).catch(() => undefined);
     if (ahead === 0) return true;
-    const project = await this.deps.projects
-      .get(repo.project)
-      .catch(() => undefined);
+    const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     const remote = mrRemoteName(project?.remotes);
-    for (const ref of [
-      `refs/remotes/${remote}/${repo.base}`,
-      `refs/remotes/${remote}/${repo.branch}`,
-    ]) {
+    for (const ref of [`refs/remotes/${remote}/${repo.base}`, `refs/remotes/${remote}/${repo.branch}`]) {
       if (
-        await git(repo.source, [
-          "merge-base",
-          "--is-ancestor",
-          repo.branch,
-          ref,
-        ]).then(
+        await git(repo.source, ["merge-base", "--is-ancestor", repo.branch, ref]).then(
           () => true,
           () => false,
         )
@@ -2316,16 +1916,12 @@ export class TaskService {
     return false;
   }
 
-  private async mergeOption(
-    task: Task,
-  ): Promise<{ ok: boolean; why?: string }> {
+  private async mergeOption(task: Task): Promise<{ ok: boolean; why?: string }> {
     const shipped = await this.doneAndShipped(task);
     if (shipped !== undefined) return { ok: false, why: shipped };
-    if (task.repos.length === 0)
-      return { ok: false, why: "The task has no repo to merge." };
+    if (task.repos.length === 0) return { ok: false, why: "The task has no repo to merge." };
     const trees = task.repos.filter((r) => r.worktree !== undefined);
-    if (trees.length === 0)
-      return { ok: false, why: "The task has no worktree yet." };
+    if (trees.length === 0) return { ok: false, why: "The task has no worktree yet." };
     if (this.deps.runs.working(task.id).length > 0)
       return {
         ok: false,
@@ -2339,9 +1935,7 @@ export class TaskService {
       else ahead += n;
     }
     if (!known || ahead > 0) return { ok: true };
-    const dirty = await dirtyWorktrees(
-      trees.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree])),
-    );
+    const dirty = await dirtyWorktrees(trees.flatMap((r) => (r.worktree === undefined ? [] : [r.worktree])));
     return {
       ok: false,
       why:
@@ -2352,8 +1946,7 @@ export class TaskService {
   }
 
   private async doneOption(task: Task): Promise<DoneOption> {
-    if (task.status === "done")
-      return { ok: false, why: `${task.id} is done.` };
+    if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
     const open = this.openSubtasks(task.id);
     if (open.length === 0) {
       const unshipped = await unshippedWork(task.repos);
@@ -2367,26 +1960,15 @@ export class TaskService {
   }
 
   /** One of the choices under an agent's plain-text question: sent to that agent as the owner's answer. */
-  async answerQuestion(
-    task: string,
-    item: string,
-    choice: string,
-  ): Promise<RoomItem> {
+  async answerQuestion(task: string, item: string, choice: string): Promise<RoomItem> {
     const card = this.deps.room.get(task, item);
-    if (card?.type !== "owner-question")
-      throw new UserError("That is not a question card.", 404);
-    if (card.state !== "pending")
-      throw new UserError("This question was already answered.", 409);
-    if (!card.choices.includes(choice))
-      throw new UserError(`"${choice}" is not one of the choices.`, 409);
+    if (card?.type !== "owner-question") throw new UserError("That is not a question card.", 404);
+    if (card.state !== "pending") throw new UserError("This question was already answered.", 409);
+    if (!card.choices.includes(choice)) throw new UserError(`"${choice}" is not one of the choices.`, 409);
     const current = this.get(task);
-    if (current.status === "done")
-      throw new UserError(`Task ${current.id} is done.`, 409);
+    if (current.status === "done") throw new UserError(`Task ${current.id} is done.`, 409);
     if (!current.team.includes(card.agent))
-      throw new UserError(
-        `@${card.agent} is not on ${current.id} any more.`,
-        409,
-      );
+      throw new UserError(`@${card.agent} is not on ${current.id} any more.`, 409);
     const { id: _id, task: _task, seq: _seq, at: _at, ...fields } = card;
     // Marked before anything is awaited, so a second click finds it answered.
     this.deps.room.post(current.id, item, {
@@ -2425,11 +2007,7 @@ export class TaskService {
     const entries = [];
     for (const taskId of ids.reverse()) {
       const task = store.tasks.get(taskId);
-      if (
-        task === undefined ||
-        (task.status !== "inbox" && task.status !== "ready")
-      )
-        continue;
+      if (task === undefined || (task.status !== "inbox" && task.status !== "ready")) continue;
       const waiting = store.tasks.unmetDependencies(taskId);
       const plan = await this.planner.plan(task);
       // A link that only holds the task back does not count as a reason to wait.
@@ -2446,8 +2024,7 @@ export class TaskService {
       const v = plan.verdict;
       const because =
         v.action === "start"
-          ? (v.note ??
-            "no overlap with the running tasks, and the account has room")
+          ? (v.note ?? "no overlap with the running tasks, and the account has room")
           : v.action === "switch"
             ? `${v.because}; @${v.agent.agent} on ${v.agent.account} has room`
             : v.action === "wait"
@@ -2473,23 +2050,16 @@ export class TaskService {
     const { store } = this.deps;
     const task = this.get(input.task);
     const target = this.get(input.target);
-    if (task.id === target.id)
-      throw new UserError(`${task.id} cannot be linked to itself.`, 409);
+    if (task.id === target.id) throw new UserError(`${task.id} cannot be linked to itself.`, 409);
     const rows = store.tasks.allLinks();
     if (input.type === "parent") {
-      const existing = rows.find(
-        (r) => r.task === task.id && r.type === "parent",
-      );
+      const existing = rows.find((r) => r.task === task.id && r.type === "parent");
       if (existing !== undefined && existing.other !== target.id) {
-        throw new UserError(
-          `${task.id} is already part of ${existing.other}. Remove that link first.`,
-          409,
-        );
+        throw new UserError(`${task.id} is already part of ${existing.other}. Remove that link first.`, 409);
       }
     }
     const cycle = findCycle(rows, input.type, task.id, target.id);
-    if (cycle !== undefined)
-      throw new UserError(describeCycle(input.type, cycle), 409);
+    if (cycle !== undefined) throw new UserError(describeCycle(input.type, cycle), 409);
     store.tasks.putLink({
       task: task.id,
       type: input.type,
@@ -2500,18 +2070,11 @@ export class TaskService {
     return this.get(task.id);
   }
 
-  async unlink(input: {
-    task: string;
-    type: TaskLink["type"];
-    target: string;
-  }): Promise<Task> {
+  async unlink(input: { task: string; type: TaskLink["type"]; target: string }): Promise<Task> {
     const { store } = this.deps;
     this.get(input.task);
     if (!store.tasks.removeLink(input.task, input.type, input.target)) {
-      throw new UserError(
-        `${input.task} has no ${input.type} link to ${input.target}.`,
-        404,
-      );
+      throw new UserError(`${input.task} has no ${input.type} link to ${input.target}.`, 404);
     }
     // Removing the last thing a task waited for, or the last unfinished child, can release it.
     await this.linksChanged([input.task, input.target]);
@@ -2540,11 +2103,7 @@ export class TaskService {
     await this.orchestrator.advance();
     if (parent !== undefined) await this.finishParentIfDone(parent);
     await this.plans.settle(task).catch(() => undefined);
-    await this.refreshBriefs([
-      id,
-      ...held.map((l) => l.task),
-      ...(parent === undefined ? [] : [parent]),
-    ]);
+    await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
     this.deps.events.emit(["tasks"]);
   }
 
@@ -2563,21 +2122,14 @@ export class TaskService {
   ): void {
     const { store } = this.deps;
     if (task.status !== "done") return;
-    const open = task.repos.filter(
-      (r) => r.mr !== undefined && r.mr.state !== "merged",
-    );
+    const open = task.repos.filter((r) => r.mr !== undefined && r.mr.state !== "merged");
     if (open.length === 0) return;
     for (const link of held) {
       if (link.type !== "depends-on" || link.when === "ready") continue;
       const waiting = store.tasks.get(link.task);
       if (waiting?.status !== "inbox" && waiting?.status !== "ready") continue;
       store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(
-        waiting.id,
-        "paused",
-        "blocked",
-        this.now().toISOString(),
-      );
+      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -2615,9 +2167,7 @@ export class TaskService {
             {
               id,
               role: fm.role,
-              ...(fm.model === undefined || fm.model === AUTO
-                ? {}
-                : { model: fm.model }),
+              ...(fm.model === undefined || fm.model === AUTO ? {} : { model: fm.model }),
               account: fm.account,
             },
           ];
@@ -2631,12 +2181,7 @@ export class TaskService {
   private async finishParentIfDone(parent: string): Promise<void> {
     const { store } = this.deps;
     const task = store.tasks.get(parent);
-    if (
-      task === undefined ||
-      task.status === "done" ||
-      !store.tasks.childrenDone(parent)
-    )
-      return;
+    if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
     const unshipped = await unshippedWork(task.repos);
     if (unshipped.length > 0) {
       const text = `Every subtask is done, but ${parent} stays open: ${unshippedText(unshipped)} Ship it, or close it from the review card.`;
@@ -2663,19 +2208,9 @@ export class TaskService {
       if (l.type !== "depends-on") continue;
       const waiting = store.tasks.get(l.task);
       if (waiting === undefined) continue;
-      if (
-        waiting.status !== "inbox" &&
-        waiting.status !== "ready" &&
-        waiting.status !== "paused"
-      )
-        continue;
+      if (waiting.status !== "inbox" && waiting.status !== "ready" && waiting.status !== "paused") continue;
       store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(
-        waiting.id,
-        "paused",
-        "blocked",
-        this.now().toISOString(),
-      );
+      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -2712,9 +2247,7 @@ export class TaskService {
   /** The facts last read for this team, or fresh ones when there are none yet. */
   private async knownFacts(task: Task): Promise<TeamFacts | undefined> {
     const known = this.lastFacts.get(task.id);
-    return known?.team === task.team.join(",")
-      ? known.facts
-      : this.readFacts(task);
+    return known?.team === task.team.join(",") ? known.facts : this.readFacts(task);
   }
 
   /** The connections the task's team may hold (5.14), for TASK.md. Never a value. */
@@ -2768,9 +2301,7 @@ export class TaskService {
         await this.briefConnections(task, agents),
       );
       // The folder can be gone by hand; the links still stand.
-      await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(
-        () => undefined,
-      );
+      await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);
     }
   }
 
@@ -2779,11 +2310,7 @@ export class TaskService {
    * team facts and returns a short block for the prompt when they changed since the last one this
    * agent got. A `brief` prompt makes the agent read TASK.md, so it only records the block.
    */
-  async beforePrompt(turn: {
-    task: string;
-    agent: string;
-    brief: boolean;
-  }): Promise<string | undefined> {
+  async beforePrompt(turn: { task: string; agent: string; brief: boolean }): Promise<string | undefined> {
     try {
       const task = this.deps.store.tasks.get(turn.task);
       if (task === undefined || task.team[0] !== turn.agent) return undefined;
@@ -2819,9 +2346,7 @@ export class TaskService {
     await this.refreshBriefs([task.id]);
     const text = memory.recalledText(task.id).trim();
     // The first prompt of a chat has TASK.md already; later ones need the block.
-    return before === undefined || text === ""
-      ? undefined
-      : `## Memory\n\n${text}`;
+    return before === undefined || text === "" ? undefined : `## Memory\n\n${text}`;
   }
 
   private relatedOf(task: Task): Related {
@@ -2842,8 +2367,7 @@ export class TaskService {
       const other = rel(l.task);
       if (other === undefined) continue;
       if (l.type === "parent") related.parent = other;
-      else if (l.type === "depends-on")
-        related.depends.push({ ...other, when: l.when ?? "merged" });
+      else if (l.type === "depends-on") related.depends.push({ ...other, when: l.when ?? "merged" });
     }
     for (const l of store.tasks.linksTo(task.id)) {
       if (l.type !== "parent") continue;
@@ -2864,6 +2388,18 @@ export class TaskService {
     this.deps.room.publishTask(this.get(id));
     this.deps.events.emit(["tasks"]);
     return pending;
+  }
+
+  /** Every open subtask of the parent waits for the parent alone, so the parent is the one to move. */
+  private childrenWaitOnParent(parent: string): boolean {
+    const { tasks } = this.deps.store;
+    return childrenWaitOnParent(
+      parent,
+      tasks.children(parent).flatMap((id) => {
+        const child = tasks.get(id);
+        return child === undefined ? [] : [{ status: child.status, unmet: tasks.unmetDependencies(id) }];
+      }),
+    );
   }
 
   /** An ask, choice, approval or permission card of the task still waits for the owner. */
@@ -2906,32 +2442,24 @@ export class TaskService {
     // it wakes the agent, and the task reaches review when the agents are idle again.
     if (this.ownerAnswerPending(id)) return;
     // A parent whose subtasks are not all done is not finished: its lead is told as they finish.
+    // Unless the only ones left wait for the parent itself: then only its review lets them start.
     if (
       this.deps.store.tasks.children(id).length > 0 &&
-      !this.deps.store.tasks.childrenDone(id)
+      !this.deps.store.tasks.childrenDone(id) &&
+      !this.childrenWaitOnParent(id)
     )
       return;
     // An agent waits for a background process: it is woken when that ends (5.15).
     const waiting = this.deps.processes?.waiting(id) ?? [];
     if (waiting.length > 0) {
-      const fresh = waiting.filter(
-        (p) => !this.waitNoted.has(`${id} ${p.id} ${p.startedAt}`),
-      );
+      const fresh = waiting.filter((p) => !this.waitNoted.has(`${id} ${p.id} ${p.startedAt}`));
       for (const p of fresh) this.waitNoted.add(`${id} ${p.id} ${p.startedAt}`);
       if (fresh.length > 0) {
-        this.note(
-          id,
-          `Waiting for ${waiting.map((p) => `${p.id} \`${p.name}\``).join(", ")}.`,
-        );
+        this.note(id, `Waiting for ${waiting.map((p) => `${p.id} \`${p.name}\``).join(", ")}.`);
       }
       return;
     }
-    this.deps.store.tasks.setStatus(
-      id,
-      "review",
-      undefined,
-      this.now().toISOString(),
-    );
+    this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
     const reviewed = this.get(id);
     this.cards.review(reviewed);
     this.deps.room.publishTask(reviewed);
@@ -2939,9 +2467,7 @@ export class TaskService {
     await this.statusChanged(id);
     await this.deps
       .onReview?.(id)
-      .catch((err: unknown) =>
-        this.warn(id, `Could not ship: ${errorMessage(err)}`),
-      );
+      .catch((err: unknown) => this.warn(id, `Could not ship: ${errorMessage(err)}`));
   }
 
   /**
@@ -2973,26 +2499,11 @@ export class TaskService {
       return;
     }
     if (!task.team.includes(p.agent)) return;
-    if (
-      task.status !== "running" &&
-      task.status !== "review" &&
-      task.status !== "paused"
-    )
-      return;
+    if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
     if (task.status === "paused" && waitsForOwner(task.pausedReason)) return;
     if (task.status === "review") {
-      this.deps.store.tasks.setStatus(
-        task.id,
-        "running",
-        undefined,
-        this.now().toISOString(),
-      );
-      this.cards.settle(
-        task.id,
-        "review",
-        `${p.id} ended, so @${p.agent} works on`,
-        "majhi",
-      );
+      this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
+      this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
       this.deps.events.emit(["tasks"]);
       await this.statusChanged(task.id);
@@ -3009,25 +2520,12 @@ export class TaskService {
    * An agent paused on its own (offline, or an error it cannot get past), or autonomous mode's gate
    * held it (`owner`, `limit`): a running task pauses with it.
    */
-  async pausedByRuns(
-    id: string,
-    reason: "offline" | "error" | "limit" | "owner",
-  ): Promise<void> {
+  async pausedByRuns(id: string, reason: "offline" | "error" | "limit" | "owner"): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (
-      task === undefined ||
-      (task.status !== "running" && task.status !== "review")
-    )
-      return;
+    if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
     // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
-    if (reason === "error")
-      this.dropPendingShip(id, "the agent stopped with an error");
-    this.deps.store.tasks.setStatus(
-      id,
-      "paused",
-      reason,
-      this.now().toISOString(),
-    );
+    if (reason === "error") this.dropPendingShip(id, "the agent stopped with an error");
+    this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     const paused = this.get(id);
     this.cards.paused(paused, reason);
     this.deps.room.publishTask(paused);
@@ -3037,18 +2535,8 @@ export class TaskService {
   /** A paused agent resumes by itself: a task majhi paused runs again. Tasks the owner stopped stay stopped. */
   async resumedByRuns(id: string): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (
-      task === undefined ||
-      task.status !== "paused" ||
-      waitsForOwner(task.pausedReason)
-    )
-      return;
-    this.deps.store.tasks.setStatus(
-      id,
-      "running",
-      undefined,
-      this.now().toISOString(),
-    );
+    if (task === undefined || task.status !== "paused" || waitsForOwner(task.pausedReason)) return;
+    this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     this.cards.settle(id, "paused", "Resumed by itself", "majhi");
     this.deps.room.publishTask(this.get(id));
     await this.statusChanged(id);
@@ -3058,20 +2546,15 @@ export class TaskService {
   fresh(id: string, agent: string | undefined): Promise<RoomItem> {
     const task = this.get(id);
     const target = agent ?? task.team[0];
-    if (target === undefined)
-      throw new UserError(`Task ${id} has no agent.`, 409);
-    if (!task.team.includes(target))
-      throw new UserError(`@${target} is not on this task.`);
+    if (target === undefined) throw new UserError(`Task ${id} has no agent.`, 409);
+    if (!task.team.includes(target)) throw new UserError(`@${target} is not on this task.`);
     return this.deps.runs.fresh(task, target);
   }
 
   /** The folder and org a caller may attach files from, or undefined for the owner's own calls. */
   private attachSource(from: string | undefined): AttachSource | undefined {
-    const task =
-      from === undefined ? undefined : this.deps.store.tasks.get(from);
-    return task === undefined
-      ? undefined
-      : { task: task.id, folder: task.folder, org: task.org };
+    const task = from === undefined ? undefined : this.deps.store.tasks.get(from);
+    return task === undefined ? undefined : { task: task.id, folder: task.folder, org: task.org };
   }
 
   /**
@@ -3080,24 +2563,13 @@ export class TaskService {
    * is posted, so a bad entry fails at once and not after the owner approved. The target org is
    * checked when the command runs.
    */
-  async checkAttachments(
-    entries: readonly string[],
-    from: string | undefined,
-  ): Promise<void> {
+  async checkAttachments(entries: readonly string[], from: string | undefined): Promise<void> {
     if (entries.length === 0) return;
-    await planAttachments(
-      this.deps.uploads,
-      entries,
-      this.attachSource(from),
-      undefined,
-    );
+    await planAttachments(this.deps.uploads, entries, this.attachSource(from), undefined);
   }
 
   /** `uploads.create`: copies a file from the caller's task folder into the upload store. */
-  async uploadFile(
-    path: string,
-    from: string | undefined,
-  ): Promise<Attachment> {
+  async uploadFile(path: string, from: string | undefined): Promise<Attachment> {
     const source = this.attachSource(from);
     if (source === undefined) {
       throw new UserError(
@@ -3131,14 +2603,11 @@ export class TaskService {
     if (input.text.trim() === "" && input.attachments.length === 0)
       throw new UserError("Write a message or attach a file.");
     // Writing in a finished chat continues it. Other tasks stay done until the owner reopens them.
-    if (task.status === "done" && isOwnerChat(task))
-      task = await this.reopen(task.id);
-    if (task.status === "done")
-      throw new UserError(`Task ${task.id} is done.`, 409);
+    if (task.status === "done" && isOwnerChat(task)) task = await this.reopen(task.id);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
     const targets = await this.ownerTargets(task, input.text, input.agent);
     const agent = targets[0];
-    if (agent === undefined)
-      throw new UserError(`Task ${task.id} has no agent.`, 409);
+    if (agent === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
     // A task that cannot start says so now, before the message is stored.
     const starts = task.status !== "running";
     if (starts) this.checkStartable(task);
@@ -3149,13 +2618,8 @@ export class TaskService {
       this.attachSource(input.from),
       { org: task.org },
     );
-    const attachments = await takePlanned(
-      this.deps.uploads,
-      planned,
-      join(task.folder, "attachments"),
-    );
-    if (attachments.length > 0)
-      this.deps.store.tasks.addAttachments(task.id, attachments);
+    const attachments = await takePlanned(this.deps.uploads, planned, join(task.folder, "attachments"));
+    if (attachments.length > 0) this.deps.store.tasks.addAttachments(task.id, attachments);
     // The owner wrote back: a review card and plain-text questions stop waiting.
     this.cards.settle(task.id, "review", `Replied to @${agent}`, "owner");
     this.cards.replied(task.id);
@@ -3170,8 +2634,7 @@ export class TaskService {
     // A task that was never started gets its brief before this message, in the room and in the queue.
     if (starts) {
       const first = await this.firstAgents(task);
-      for (const [i, a] of first.entries())
-        this.deps.runs.queueBrief(task, a, { ownBrief: i > 0 });
+      for (const [i, a] of first.entries()) this.deps.runs.queueBrief(task, a, { ownBrief: i > 0 });
     }
     // The message shows at once. Starting the task (worktrees, memory, the session) and sending
     // it happen in the background, after earlier messages of this task.
@@ -3187,10 +2650,7 @@ export class TaskService {
       try {
         await this.deliver(id, item.id, targets, input, attachments.length > 0);
       } catch (err) {
-        this.warn(
-          id,
-          `Your message did not reach @${agent}: ${errorMessage(err)}`,
-        );
+        this.warn(id, `Your message did not reach @${agent}: ${errorMessage(err)}`);
       }
     });
     return item;
@@ -3228,17 +2688,10 @@ export class TaskService {
    * The agent gets `text`, with whatever detail it needs; the room gets no owner message, so the
    * caller posts its own plain line. Like a message, it wakes the task.
    */
-  async tellAgent(input: {
-    task: string;
-    agent: string;
-    text: string;
-    settled: string;
-  }): Promise<void> {
+  async tellAgent(input: { task: string; agent: string; text: string; settled: string }): Promise<void> {
     const task = this.get(input.task);
-    if (task.status === "done")
-      throw new UserError(`Task ${task.id} is done.`, 409);
-    if (!task.team.includes(input.agent))
-      throw new UserError(`@${input.agent} is not on this task.`);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
+    if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on this task.`);
     this.cards.settle(task.id, "review", input.settled, "owner");
     if (task.status !== "running") await this.start(task.id);
     const state = this.deps.store.tasks.roomState(task.id);
@@ -3257,34 +2710,16 @@ export class TaskService {
    * A message from a schedule or trigger to the task's lead. Like an owner message it wakes the
    * task, but the room shows a plain line saying where it came from, not an owner message.
    */
-  async postFromScheduler(input: {
-    task: string;
-    text: string;
-    from: string;
-  }): Promise<void> {
+  async postFromScheduler(input: { task: string; text: string; from: string }): Promise<void> {
     const task = this.get(input.task);
-    if (task.status === "done")
-      throw new UserError(`Task ${task.id} is done.`, 409);
+    if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
     const lead = task.team[0];
-    if (lead === undefined)
-      throw new UserError(`Task ${task.id} has no agent.`, 409);
-    this.note(
-      task.id,
-      `Message from scheduler "${input.from}" to @${lead}: ${input.text}`,
-    );
-    this.cards.settle(
-      task.id,
-      "review",
-      `Message from scheduler "${input.from}"`,
-      "majhi",
-    );
+    if (lead === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
+    this.note(task.id, `Message from scheduler "${input.from}" to @${lead}: ${input.text}`);
+    this.cards.settle(task.id, "review", `Message from scheduler "${input.from}"`, "majhi");
     // A schedule is not the owner: it resumes no pause of a budget or of autonomous mode by hand.
     if (task.status !== "running") await this.start(task.id, "majhi");
-    this.deps.runs.notify(
-      task.id,
-      lead,
-      `Scheduled message from "${input.from}": ${input.text}`,
-    );
+    this.deps.runs.notify(task.id, lead, `Scheduled message from "${input.from}": ${input.text}`);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
   }
@@ -3293,14 +2728,9 @@ export class TaskService {
    * Who an owner message goes to (5.3): the requested agent; else every @mentioned agent, adding
    * the ones not on the team when they may work in its org; else the lead.
    */
-  private async ownerTargets(
-    task: Task,
-    text: string,
-    requested: string | undefined,
-  ): Promise<string[]> {
+  private async ownerTargets(task: Task, text: string, requested: string | undefined): Promise<string[]> {
     if (requested !== undefined) {
-      if (!task.team.includes(requested))
-        throw new UserError(`@${requested} is not on this task.`);
+      if (!task.team.includes(requested)) throw new UserError(`@${requested} is not on this task.`);
       return [requested];
     }
     const agents = await this.frontmatters();
@@ -3327,18 +2757,23 @@ export class TaskService {
     return this.deps.runs.answerPermission(id, item, option);
   }
 
-  items(id: string, limit: number, beforeSeq: number | undefined) {
+  items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {
     this.get(id);
     this.deps.room.flush(id);
+    if (afterSeq !== undefined) return this.deps.store.room.pageAfter(id, limit, afterSeq);
     return this.deps.store.room.page(id, limit, beforeSeq);
   }
 
+  /** The page around one item, for a search match far back in a long room. */
+  itemsAround(id: string, item: string, limit: number) {
+    this.get(id);
+    this.deps.room.flush(id);
+    const page = this.deps.store.room.around(id, item, Math.ceil(limit / 2));
+    return page ?? { items: [], older: false, newer: false };
+  }
+
   /** Full-text search over every task's room. Items still in the room's write buffer show up once it flushes. */
-  searchRooms(
-    query: string,
-    limit: number,
-    org: string | undefined,
-  ): RoomSearchHit[] {
+  searchRooms(query: string, limit: number, org: string | undefined): RoomSearchHit[] {
     return this.deps.store.room.search(query, limit, org);
   }
 
@@ -3355,10 +2790,7 @@ export class TaskService {
   }
 }
 
-function briefTeam(
-  task: Task,
-  agents: readonly AgentFrontmatter[],
-): BriefAgent[] {
+function briefTeam(task: Task, agents: readonly AgentFrontmatter[]): BriefAgent[] {
   return task.team.flatMap((id) => {
     const fm = agents.find((a) => a.id === id);
     if (fm === undefined) return [];
@@ -3386,9 +2818,7 @@ async function headOf(worktree: string): Promise<string> {
 async function branchExists(source: string, branch: string): Promise<boolean> {
   if (await localBranchExists(source, branch)) return true;
   const remote = await remoteOf(source).catch(() => undefined);
-  return (
-    remote !== undefined && (await remoteBranchExists(source, remote, branch))
-  );
+  return remote !== undefined && (await remoteBranchExists(source, remote, branch));
 }
 
 /** What a clean merge did, for the room and the Ship panel. */
@@ -3410,29 +2840,19 @@ function mergedDetail(
 }
 
 /** Uncommitted changes, one line per file: `<worktree folder>: <git status line>`. */
-function changeLines(
-  dirty: readonly { path: string; changes: string[] }[],
-): string[] {
-  return dirty.flatMap((d) =>
-    d.changes.map((c) => `${basename(d.path)}: ${c}`),
-  );
+function changeLines(dirty: readonly { path: string; changes: string[] }[]): string[] {
+  return dirty.flatMap((d) => d.changes.map((c) => `${basename(d.path)}: ${c}`));
 }
 
 /** At most this many changed files in a refusal. */
 const DISCARD_LIST_MAX = 200;
 
 /** A 409 that lists every uncommitted change a forced removal would delete. */
-function discardRefusal(
-  message: string,
-  dirty: readonly { path: string; changes: string[] }[],
-): UserError {
+function discardRefusal(message: string, dirty: readonly { path: string; changes: string[] }[]): UserError {
   const lines = changeLines(dirty);
   const shown =
     lines.length > DISCARD_LIST_MAX
-      ? [
-          ...lines.slice(0, DISCARD_LIST_MAX),
-          `and ${lines.length - DISCARD_LIST_MAX} more`,
-        ]
+      ? [...lines.slice(0, DISCARD_LIST_MAX), `and ${lines.length - DISCARD_LIST_MAX} more`]
       : lines;
   return new UserError(message, 409, shown);
 }

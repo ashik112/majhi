@@ -75,6 +75,31 @@ export const LimitsSettingsSchema = z.strictObject({
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
 export const LimitsPatchSchema = z.strictObject(limitsFields).partial();
 
+/** A duration, or `off`. */
+const DurationOrOffSchema = z.union([DurationSchema, z.literal("off")]);
+
+/**
+ * Turn limits (PRV-96): a turn that runs too long, goes quiet or makes too many tool calls is
+ * cancelled and continues in a fresh session with a handoff note. Orgs and agents override each
+ * field. `off`, or 0 tool calls, turns a limit off.
+ */
+const turnsFields = {
+  /** The longest a turn may run. */
+  max_length: DurationOrOffSchema,
+  /** How long a turn may go without output or tool activity. */
+  idle: DurationOrOffSchema,
+  /** Tool calls in one turn. 0 turns it off. */
+  max_tool_calls: z.number().int().min(0).max(100_000),
+};
+export const TurnsSettingsSchema = z.strictObject({
+  max_length: turnsFields.max_length.default("2h"),
+  idle: turnsFields.idle.default("25m"),
+  max_tool_calls: turnsFields.max_tool_calls.default(0),
+});
+export type TurnsSettings = z.infer<typeof TurnsSettingsSchema>;
+export const TurnsPatchSchema = z.strictObject(turnsFields).partial();
+export type TurnsPatch = z.infer<typeof TurnsPatchSchema>;
+
 /** Resume after sleep, restarts, lost internet and crashes (5.7). */
 export const ResumeSettingsSchema = z.strictObject({
   /** Resume interrupted runs on their own. Orgs can turn it off. */
@@ -411,6 +436,7 @@ export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;
 export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
   limits: LimitsSettingsSchema,
+  turns: TurnsSettingsSchema,
   resume: ResumeSettingsSchema,
   commits: CommitsSettingsSchema,
   rooms: RoomSettingsSchema,

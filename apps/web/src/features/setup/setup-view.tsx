@@ -18,6 +18,7 @@ import { useBoss } from "@/features/boss/boss-context";
 import { EditRootsDialog } from "@/features/roots/edit-roots-dialog";
 import { useMountNow } from "@/features/roots/use-mount-now";
 import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
+import { useBackups } from "@/lib/backup-queries";
 import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { useContainers } from "@/lib/container-queries";
@@ -29,6 +30,7 @@ import { useAccounts, useAgentHealth, useAgents, useOrgs } from "@/lib/studio-qu
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ApprovalsSection, policyStatus } from "./approvals-panel";
+import { BackupsSection } from "./backups-panel";
 import { ContainersSection } from "./containers-panel";
 import { DecisionsSection, firstProvider } from "./decisions-panel";
 import { EditorSection } from "./editor-panel";
@@ -38,7 +40,7 @@ import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } fr
 import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
 import { isSetupSection, SECTION_ABOUT, SECTION_TITLE, SETUP_GROUPS, type SetupSection } from "./sections";
-import { ContextSection, TeamsSection } from "./settings-panel";
+import { ContextSection, TeamsSection, TurnsSection } from "./settings-panel";
 import {
   OverviewSection,
   PageButton,
@@ -64,6 +66,7 @@ export function SetupView() {
   const settings = useSettings();
   const decisions = useDecisionsStatus();
   const containers = useContainers();
+  const backups = useBackups();
   const appearance = useAppearance();
   const boss = useBoss();
   const [param, setParam] = useSearchParam("section");
@@ -166,12 +169,14 @@ export function SetupView() {
     context:
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
+    turns: s && turnsStatus(s.turns),
     teams: s && `${s.rooms.review_rounds} review rounds`,
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
+    backups: backupsStatus(backups.data),
     history: "Undo any change",
   };
 
@@ -241,6 +246,9 @@ export function SetupView() {
           {section === "context" && (
             <WithSettings settings={settings}>{(data) => <ContextSection settings={data} />}</WithSettings>
           )}
+          {section === "turns" && (
+            <WithSettings settings={settings}>{(data) => <TurnsSection settings={data} />}</WithSettings>
+          )}
           {section === "teams" && (
             <WithSettings settings={settings}>{(data) => <TeamsSection settings={data} />}</WithSettings>
           )}
@@ -270,6 +278,7 @@ export function SetupView() {
               <AppearanceControls className="max-w-[320px]" />
             </DetailSection>
           )}
+          {section === "backups" && <BackupsSection />}
           {section === "history" && <HistorySection />}
         </DetailPane>
       </ListDetail>
@@ -297,6 +306,11 @@ function containersStatus(data: ReturnType<typeof useContainers>["data"]): strin
   if (!data.available) return "Off";
   const n = data.containers.filter((c) => c.status === "running").length;
   return n === 0 ? "Nothing running" : `${n} running`;
+}
+
+function backupsStatus(data: ReturnType<typeof useBackups>["data"]): string | undefined {
+  if (data === undefined) return undefined;
+  return data.pending ? "Restore waiting" : data.lastDaily ? "Daily, 7 kept" : "No snapshot yet";
 }
 
 function WithSettings({
@@ -339,4 +353,14 @@ function SectionRow({
       )}
     </button>
   );
+}
+
+/** "2h turns, idle 25m", or "No limits". */
+function turnsStatus(t: Settings["turns"]): string {
+  const parts = [
+    ...(t.max_length === "off" ? [] : [`${t.max_length} turns`]),
+    ...(t.idle === "off" ? [] : [`idle ${t.idle}`]),
+    ...(t.max_tool_calls > 0 ? [`${t.max_tool_calls} tool calls`] : []),
+  ];
+  return parts.length === 0 ? "No limits" : parts.join(", ");
 }

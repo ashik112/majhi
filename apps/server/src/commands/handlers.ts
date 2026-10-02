@@ -18,6 +18,7 @@ import { sameRule } from "../admin/policy.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
+import { backupHandlers } from "../backup/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -144,6 +145,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
+    ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
 
     "config.get": async () => (await config.load()).state,
@@ -594,7 +596,9 @@ export function createHandlers({
       item: await services.tasks.answerChoice(input.task, input.item, input.option),
     }),
     "tasks.plan": (input) => services.tasks.plan(input.id),
-    "room.items": async (input) => services.tasks.items(input.task, input.limit, input.beforeSeq),
+    "room.items": async (input) =>
+      services.tasks.items(input.task, input.limit, input.beforeSeq, input.afterSeq),
+    "room.around": async (input) => services.tasks.itemsAround(input.task, input.item, input.limit),
     "room.search": async (input) => services.tasks.searchRooms(input.query, input.limit, input.org),
     "room.files": (input) => services.tasks.searchFiles(input.task, input.query),
     "processes.stop": async (input) => {
@@ -698,6 +702,8 @@ export function createHandlers({
       await services.secretService.remove(input.name);
       return { removed: input.name };
     },
+    // The passphrase is used once to encrypt the export: not logged, kept or put in an error.
+    "secrets.exportKey": (input) => services.keyExports.export(input.passphrase),
     "history.list": (input) => config.historyEntries(input.limit),
     "history.undo": async (input, ctx) => {
       const done = await config.undo(input.commit, {
@@ -726,6 +732,7 @@ export function createHandlers({
       const patch = {
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
+        ...(input.turns === undefined ? {} : { turns: input.turns }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.commits === undefined ? {} : { commits: input.commits }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),

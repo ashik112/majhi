@@ -1,5 +1,6 @@
 import { type AgentLive, collapseHome, type ProcessInfo, type RoomItem, type Task } from "@majhi/shared";
 import { Copy } from "lucide-react";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -136,6 +137,15 @@ function BranchCard({ task }: { task: Task }) {
               value={repo.worktree}
               label={`Copy worktree path of ${repo.project}`}
               onCopy={() => void copy(repo.worktree ?? "", shown(repo.worktree ?? ""))}
+              action={
+                <OpenInEditor
+                  path={repo.worktree}
+                  name={`worktree of ${repo.project}`}
+                  size="icon-sm"
+                  variant="ghost"
+                  className="-mt-1 size-6 shrink-0 opacity-60 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                />
+              }
             >
               {shown(repo.worktree)}
             </CopyValue>
@@ -173,17 +183,21 @@ function CopyValue({
   children,
   label,
   onCopy,
+  action,
 }: {
   children: React.ReactNode;
   value: string;
   label: string;
   onCopy: () => void;
+  /** Another icon button, placed before the copy button. */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="group flex items-start gap-1">
       <span className="min-w-0 flex-1 font-mono [overflow-wrap:anywhere] text-xs leading-[1.45]">
         {children}
       </span>
+      {action}
       <Button
         variant="ghost"
         size="icon-sm"

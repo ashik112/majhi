@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type AccountLoad,
   ASK_WAIT_MS,
+  describeOverlap,
   estimateWaitMs,
   fitsAccount,
   humanWait,
@@ -72,6 +73,16 @@ describe("overlap", () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ task: "ACM-1", level: "heavy" });
+  });
+
+  it('names the files, not ".", when the overlap sits in the repo root', () => {
+    const o = overlapWith(["package.json", "apps/web/src/page.ts"], ["package.json", "README.md"]);
+    expect(o.modules).toContain(".");
+    expect(describeOverlap(o)).toBe("package.json");
+    expect(describeOverlap({ level: "little", files: [], modules: ["."] })).toBe("files in the repo root");
+    expect(describeOverlap({ level: "heavy", files: [], modules: ["apps/web/src", "."] })).toBe(
+      "apps/web/src, files in the repo root",
+    );
   });
 
   it("only calls a link redundant when the paths are known and disjoint", () => {

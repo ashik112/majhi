@@ -138,6 +138,62 @@ describe("lead orchestration: parallel planning", () => {
     expect((await lines("ACM-1")).filter((l) => l.includes("waits for ACM-1"))).toEqual([]);
   });
 
+  it("sends a finished parent to review when its only open subtask waits for it", async () => {
+    w = await taskWorld();
+    const release = hold();
+    await w.h.cmd("tasks.create", {
+      text: "change apps/server/src/runs/manager.ts in api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
+    await until(async () => (await status("ACM-1")) === "running", "parent running");
+    const res = await w.h.cmd("tasks.split", {
+      task: "ACM-1",
+      children: [{ text: "change apps/web/src/page.ts in api", repos: [{ project: "acme-api" }] }],
+      start: false,
+    });
+    expect(res.status).toBe(200);
+    // The subtask holds an older link to its parent, as one made before subtasks stopped waiting for it.
+    const link = await w.h.cmd("tasks.link", {
+      task: "ACM-2",
+      type: "depends-on",
+      target: "ACM-1",
+      when: "ready",
+    });
+    expect(link.status).toBe(200);
+    expect(await status("ACM-2")).not.toBe("done");
+
+    release();
+    await until(async () => (await status("ACM-1")) === "review", "parent in review");
+    const cards = (await roomItems("ACM-1")).filter((i) => i.type === "review");
+    expect(cards.filter((c) => c.state === "pending")).toHaveLength(1);
+  });
+
+  it("keeps a parent running while a subtask that waits for something else is open", async () => {
+    w = await taskWorld();
+    const release = hold();
+    await w.h.cmd("tasks.create", {
+      text: "change apps/server/src/runs/manager.ts in api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
+    await until(async () => (await status("ACM-1")) === "running", "parent running");
+    await w.h.cmd("tasks.split", {
+      task: "ACM-1",
+      children: [
+        { text: "change apps/web/src/page.ts in api", repos: [{ project: "acme-api" }] },
+        { text: "change apps/web/src/other.ts in api", repos: [{ project: "acme-api" }] },
+      ],
+      start: false,
+    });
+    await w.h.cmd("tasks.link", { task: "ACM-2", type: "depends-on", target: "ACM-1", when: "ready" });
+    await w.h.cmd("tasks.link", { task: "ACM-3", type: "depends-on", target: "ACM-2", when: "ready" });
+    release();
+    await new Promise((r) => setTimeout(r, 200));
+    // ACM-3 waits for its sibling too, so the parent is not the only thing holding the subtasks.
+    expect(await status("ACM-1")).toBe("running");
+  });
+
   it("asks the owner in one card when the wait would be long, and starts on the answer", async () => {
     w = await taskWorld();
     hold();

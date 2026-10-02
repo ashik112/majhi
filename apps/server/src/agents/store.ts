@@ -4,6 +4,7 @@ import type { Agent } from "@majhi/shared";
 import { parse } from "yaml";
 import { AGENTS_DIR_NAME } from "../config/service.ts";
 import { errorCode } from "../errors.ts";
+import { fileSignature } from "../fs.ts";
 import { parseAgentFile, serializeAgent } from "./file.ts";
 
 export type StoredAgent =
@@ -13,6 +14,12 @@ export type StoredAgent =
 /** Reads and writes `<majhi home>/agents/<id>.md`. No warnings and no history here. */
 export class AgentStore {
   readonly dir: string;
+  /**
+   * Each file as last parsed, with the signature it had. Every caller lists the agents, so without
+   * this a health check read and parsed every file a dozen times. A hand edit changes the
+   * signature and is read at once. Entries of files no longer listed are dropped.
+   */
+  private readonly parsed = new Map<string, { signature: string; stored: StoredAgent }>();
 
   constructor(majhiHome: string) {
     this.dir = join(majhiHome, AGENTS_DIR_NAME);
@@ -32,6 +39,7 @@ export class AgentStore {
       throw err;
     }
     const files = names.filter((n) => n.endsWith(".md") && !n.startsWith(".")).sort();
+    for (const name of this.parsed.keys()) if (!files.includes(name)) this.parsed.delete(name);
     return Promise.all(files.map((name) => this.readFile(name)));
   }
 
@@ -62,12 +70,20 @@ export class AgentStore {
     return rm(this.path(id), { force: true });
   }
 
+  /** A copy, so a caller that changes what it got cannot change what the next one gets. */
   private async readFile(name: string): Promise<StoredAgent> {
-    const text = await readFile(join(this.dir, name), "utf8");
+    const path = join(this.dir, name);
+    const signature = await fileSignature(path);
+    const known = this.parsed.get(name);
+    if (known?.signature === signature) return structuredClone(known.stored);
+    const text = await readFile(path, "utf8");
     const id = name.replace(/\.md$/, "");
     const parsed = parseAgentFile(name, text);
-    if (parsed.ok) return { ok: true, id, file: name, agent: parsed.agent };
-    return { ok: false, id, file: name, errors: parsed.errors, account: rawAccount(text) };
+    const stored: StoredAgent = parsed.ok
+      ? { ok: true, id, file: name, agent: parsed.agent }
+      : { ok: false, id, file: name, errors: parsed.errors, account: rawAccount(text) };
+    this.parsed.set(name, { signature, stored: structuredClone(stored) });
+    return stored;
   }
 }
 

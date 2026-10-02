@@ -25,6 +25,7 @@ import type { Decisions } from "../decisions/api.ts";
 import { DECIDE_SERVER_NAME } from "../decisions/service.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import { type RepairResult, repairWorktree } from "../git/worktrees.ts";
 import type { ProcessLaunch } from "../processes/manager.ts";
 import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
@@ -152,7 +153,8 @@ export async function launch(
   const admin = on(ADMIN_SERVER_NAME) ? deps.admin?.attach(caller, fm, boss) : undefined;
   const decide = on(DECIDE_SERVER_NAME) ? deps.decisions?.attachTool(run.task, run.agent) : undefined;
   const rooms = deps.rooms?.attach(caller, gated);
-  const notices: string[] = [];
+  // Before the mounts: they read each worktree's entry in its repo.
+  const notices: string[] = await repairWorktrees(task);
   let serena: StdioServerSpec | undefined;
   const firstWorktree = worktrees[0];
   if (on(SERENA_SERVER_NAME) && deps.serena !== undefined && firstWorktree !== undefined) {
@@ -295,6 +297,36 @@ export async function readOnlyRepos(config: ConfigService, task: Task): Promise<
       .filter((r) => projects[r.project]?.protected === true && r.writes !== true)
       .map((r) => r.project),
   );
+}
+
+/**
+ * Gives each task worktree back its entry in the source repo when that entry went missing, since
+ * every git command in it fails otherwise. Never stops the start: what it did or could not do comes
+ * back as lines for the room.
+ */
+export async function repairWorktrees(task: Task): Promise<string[]> {
+  const lines: string[] = [];
+  for (const repo of task.repos) {
+    if (repo.worktree === undefined) continue;
+    const result = await repairWorktree(repo.source, repo.worktree, repo.branch).catch(
+      (err: unknown): RepairResult => ({
+        status: "skipped",
+        reason: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    if (result.status === "repaired") {
+      lines.push(
+        `Repaired the git link of ${repo.worktree}: its entry in ${repo.source} was missing. ` +
+          "Files and uncommitted changes are as they were.",
+      );
+    } else if (result.status === "skipped") {
+      lines.push(
+        `Git does not work in ${repo.worktree}: its entry in ${repo.source} is missing, and majhi ` +
+          `could not repair it (${result.reason}).`,
+      );
+    }
+  }
+  return lines;
 }
 
 /** majhi's hooks folder, read-only. Every run has it: the hooks keep its git on its own branches. */
