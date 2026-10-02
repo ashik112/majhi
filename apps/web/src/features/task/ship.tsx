@@ -289,7 +289,7 @@ function FixLink({ fix, onGo }: { fix: ShipFix; onGo: () => void }) {
   return (
     <PageLink page="orgs" search={{ org: fix.org }} className={common} onClick={onGo}>
       <Wrench aria-hidden="true" className="size-3" />
-      Fix it in Orgs
+      Fix it in Workspaces
     </PageLink>
   );
 }

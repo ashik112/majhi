@@ -52,7 +52,7 @@ export function ChangeAgent({ task, busy }: { task: Task; busy: boolean }) {
     },
   }));
   if (items.length === 0) {
-    items.push({ label: "No agent can work in this org", onSelect: () => {}, disabled: true });
+    items.push({ label: "No agent can work in this workspace", onSelect: () => {}, disabled: true });
   }
 
   return (

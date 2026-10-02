@@ -69,7 +69,7 @@ export function TaskHeader({
         )}
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
-          <span className="truncate">{org?.name ?? "No org"}</span>
+          <span className="truncate">{org?.name ?? "No workspace"}</span>
         </span>
         {task.kind !== "chat" && <ScheduleButton task={task} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
