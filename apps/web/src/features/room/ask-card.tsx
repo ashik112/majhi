@@ -13,7 +13,7 @@ type Question = Ask["questions"][number];
 /** How long a one-click answer waits before it is sent, so a slip can be undone. */
 const UNDO_MS = 5000;
 
-const RECOMMENDED = /^\s*\(?recommended\)?\s*[:\-]?\s*|\s*\(recommended\)\s*$/i;
+const RECOMMENDED = /^\s*\(?recommended\)?\s*[:-]?\s*|\s*\(recommended\)\s*$/i;
 
 /** An option as shown: its label without a "Recommended:" prefix, and whether it was recommended. */
 export function optionView(q: Question, option: Question["options"][number]) {
@@ -30,7 +30,8 @@ export function PendingAsk({ item }: { item: Ask }) {
   const single = item.questions.length === 1;
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = { ...(item.answers ?? {}) };
-    if (!single) for (const q of item.questions) if (!(q.id in initial) && q.default) initial[q.id] = q.default;
+    if (!single)
+      for (const q of item.questions) if (!(q.id in initial) && q.default) initial[q.id] = q.default;
     return initial;
   });
   /** Questions whose answer is typed text, not an option. */
@@ -114,7 +115,9 @@ export function PendingAsk({ item }: { item: Ask }) {
                       Recommended
                     </span>
                   )}
-                  {on && !single && <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-accent" />}
+                  {on && !single && (
+                    <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                  )}
                 </button>
               );
             })}
@@ -162,7 +165,10 @@ export function PendingAsk({ item }: { item: Ask }) {
         </div>
       ))}
       {single && sending !== undefined && (
-        <p ref={status} className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-2 rounded-b-lg px-3.5 pt-1.5 pb-3 pl-[34px] text-sm text-fg-muted [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
+        <p
+          ref={status}
+          className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-2 rounded-b-lg px-3.5 pt-1.5 pb-3 pl-[34px] text-sm text-fg-muted [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]"
+        >
           <span className="min-w-0 flex-1 truncate">
             {send.isPending ? "Sending" : "Sending in 5 seconds"}: {sending.label}
           </span>

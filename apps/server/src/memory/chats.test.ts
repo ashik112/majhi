@@ -63,7 +63,7 @@ function setup(options: { fail?: boolean } = {}) {
         ) => {
           if (options.fail) throw new Error("model down");
           onRead();
-          reads.push({ task: task.id, texts: items.map((i) => ("text" in i ? i.text : "")) });
+          reads.push({ task: task.id, texts: items.map((i) => ("text" in i ? (i.text ?? "") : "")) });
           return {} as MemoryExtractOutput;
         },
       },

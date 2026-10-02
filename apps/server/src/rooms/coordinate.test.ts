@@ -4,6 +4,7 @@ import {
   asksOwner,
   firstTurn,
   type Member,
+  ownerQuestion,
   pipelineStages,
   planTurn,
   statusOnly,
@@ -278,5 +279,20 @@ describe("WorktreeLocks", () => {
     expect(locks.holder("/t/web")).toBeUndefined();
     const again = await locks.acquire(["/t/api"], "b");
     again();
+  });
+});
+
+describe("ownerQuestion", () => {
+  it("reads only the last paragraph, and not questions in parentheses, code or to other agents", () => {
+    expect(
+      ownerQuestion("Did the name resolve? It does now.\n\nI restarted the run as p10 (same prompt?)."),
+    ).toBeUndefined();
+    expect(ownerQuestion("The run failed.\n\nShould I switch to the hybrid picker?")).toBe(
+      "Should I switch to the hybrid picker?",
+    );
+    expect(ownerQuestion("Done.\n\n@builder can you rerun the tests?")).toBeUndefined();
+    expect(ownerQuestion("Two options.\n\nPlease decide which one to keep.")).toBe(
+      "Please decide which one to keep.",
+    );
   });
 });

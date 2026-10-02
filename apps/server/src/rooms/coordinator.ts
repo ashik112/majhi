@@ -24,6 +24,7 @@ import {
   asksOwner,
   loopPair,
   type Member,
+  ownerQuestion,
   planTurn,
   routesMentions,
   statusOnly,
@@ -46,6 +47,8 @@ export interface CoordinatorDeps {
   agents: AgentStore;
   config: ConfigService;
   decisions?: Decisions | undefined;
+  /** Whether the agent waits on a background run it started (`wait: true`): then it asks nobody. */
+  waitsOnProcess?: ((task: string, agent: string) => boolean) | undefined;
 }
 
 /**
@@ -150,9 +153,12 @@ export class RoomCoordinator {
     }
     for (const h of plan.handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
     // Addressed to the owner in plain text: majhi puts the buttons under it.
+    // The agent kept working: a question it asked before and nobody answered no longer waits.
+    this.movedOn(task.id, turn.agent);
+    const busy = this.deps.waitsOnProcess?.(task.id, turn.agent) === true;
     const toOwner =
       mentions.includes(OWNER_HANDLE) || (plan.handoffs.length === 0 && text !== "" && asksOwner(text));
-    const questioned = !asked && !waiting && toOwner;
+    const questioned = !asked && !waiting && !busy && toOwner;
     if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
       this.say(task.id, "info", `${plan.toOwner} Over to you.`);
@@ -296,13 +302,41 @@ export class RoomCoordinator {
 
   /** Reply, and a button per choice read from the message, under an agent's plain-text question. */
   private postQuestion(task: TaskId, agent: string, text: string): void {
+    const question = ownerQuestion(text) ?? firstLine(text);
     this.deps.room.post(task, `question:${randomUUID()}`, {
       type: "owner-question",
       agent,
+      text: question.slice(0, 600),
       // Merging, shipping and asking for changes live on the review card; no second set of buttons.
       choices: readChoices(text).filter((c) => !REVIEW_CARD_CHOICE.test(c)),
       state: "pending",
     });
+  }
+
+  /**
+   * Once at startup: unanswered plain-text questions that kept neither the question nor choices
+   * (made before cards stored their text) show as an empty Reply and can only mislead. They stop
+   * waiting.
+   */
+  sweepEmptyQuestions(): number {
+    let swept = 0;
+    for (const t of this.deps.store.tasks.list(false)) {
+      for (const q of this.deps.store.room.pendingOfType(t.id, "owner-question")) {
+        if (q.type !== "owner-question" || q.choices.length > 0 || (q.text ?? "").trim() !== "") continue;
+        this.deps.room.post(t.id as TaskId, q.id, { ...q, state: "moved-on" });
+        swept += 1;
+      }
+    }
+    return swept;
+  }
+
+  /** This agent's unanswered plain-text questions stop waiting: it went on without an answer. */
+  private movedOn(task: TaskId, agent: string): void {
+    this.deps.room.flush(task);
+    for (const q of this.deps.store.room.pendingOfType(task, "owner-question")) {
+      if (q.type !== "owner-question" || q.agent !== agent) continue;
+      this.deps.room.post(task, q.id, { ...q, state: "moved-on" });
+    }
   }
 
   /** An ask card or a plain-text question to the owner still waits for an answer. */

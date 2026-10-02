@@ -379,11 +379,18 @@ export function QuestionActions({
   if (item.state !== "pending" || owner === undefined || owner.task.status === "done") return null;
   // With no choices, the review card's Ask for changes already offers the same reply.
   if (item.choices.length === 0 && owner.task.status === "review") return null;
+  // An old card that kept neither the question nor choices would be a bare Reply: say nothing.
+  if (item.choices.length === 0 && (item.text ?? "").trim() === "") return null;
   return (
     <fieldset
       aria-label={`Answer @${item.agent}`}
-      className="m-0 flex flex-wrap gap-2 border-0 p-0 pl-[34px]"
+      className="m-0 flex flex-wrap items-center gap-2 border-0 p-0 pl-[34px]"
     >
+      {item.text !== undefined && item.text.trim() !== "" && (
+        <legend className="mb-1.5 w-full text-sm text-fg text-pretty">
+          <span className="font-medium">@{item.agent} asks:</span> {item.text}
+        </legend>
+      )}
       {item.choices.map((choice) => (
         <Button key={choice} size="sm" disabled={pick.isPending} onClick={() => pick.mutate(choice)}>
           {choice}

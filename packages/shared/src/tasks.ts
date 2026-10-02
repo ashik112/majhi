@@ -709,13 +709,16 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
   }),
   /**
    * An agent addressed the owner in plain text instead of the ask tool: Reply, and one button per
-   * choice read from its message. `replied`: the owner wrote back instead.
+   * choice read from its message. `replied`: the owner wrote back instead. `moved-on`: the agent
+   * kept working without an answer (a later turn, a background run), so nothing waits on the owner.
    */
   RoomItemBase.extend({
     type: z.literal("owner-question"),
     agent: IdSchema,
+    /** The question itself, so the card says what is asked wherever it shows. */
+    text: z.string().max(600).optional(),
     choices: z.array(z.string()).max(6),
-    state: z.enum(["pending", "answered", "replied"]),
+    state: z.enum(["pending", "answered", "replied", "moved-on"]),
     chosen: z.string().optional(),
   }),
   /** The lead's plan (`record_plan`), shown as one line. Not the ACP to-do list, which is `plan`. */

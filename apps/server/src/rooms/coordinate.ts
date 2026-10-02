@@ -299,14 +299,34 @@ export function plainText(text: string): string {
  * read. The decision model is not asked: on Laya no wording of this question was reliable.
  */
 export function asksOwner(text: string): boolean {
-  const t = plainText(text);
-  if (/(^|\s)@owner\b/i.test(t)) return true;
+  return ownerQuestion(text) !== undefined;
+}
+
+/**
+ * The words that ask the owner something, or undefined. Only the message's last paragraph counts:
+ * a status report with a question in the middle ("did the name resolve? It does now.") asks nothing.
+ * Questions in parentheses, code and quotes are not read, nor ones addressed to another agent.
+ */
+export function ownerQuestion(text: string): string | undefined {
+  const t = plainText(text).replace(/\([^)]*\)/g, " ");
+  if (/(^|\s)@owner\b/i.test(t)) return lastParagraph(t);
+  const last = lastParagraph(t);
   if (
     /\b(let me know|please (confirm|decide|approve|advise|choose)|your (call|decision|approval|go-ahead))\b/i.test(
-      t,
+      last,
     )
   )
-    return true;
-  const questions = t.match(/[^.!?\n]*\?/g) ?? [];
-  return questions.some((q) => !/(^|\s)@(?!owner\b)[a-z0-9][a-z0-9-]*/i.test(q));
+    return last;
+  const questions = (last.match(/[^.!?\n]*\?/g) ?? [])
+    .map((q) => q.trim())
+    .filter((q) => q !== "" && !/(^|\s)@(?!owner\b)[a-z0-9][a-z0-9-]*/i.test(q));
+  return questions.length === 0 ? undefined : questions.join(" ");
+}
+
+function lastParagraph(text: string): string {
+  const parts = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
+  return (parts.at(-1) ?? "").slice(0, 600);
 }

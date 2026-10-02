@@ -637,7 +637,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     config,
     decisions,
+    waitsOnProcess: (task, agent) => processes.waiting(task).some((p) => p.agent === agent),
   });
+  coordinator.sweepEmptyQuestions();
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const resilience = new Resilience({
     runs,
