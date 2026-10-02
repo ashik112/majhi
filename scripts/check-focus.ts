@@ -79,7 +79,7 @@ try {
 
   // 1. Commands rank above search results.
   await page.keyboard.press("ControlOrMeta+k");
-  const box = page.getByRole("searchbox");
+  const box = page.getByPlaceholder("Search, or run a command");
   await box.fill("retry");
   await page.getByRole("option").first().waitFor();
   console.log("typed 'retry', sections:", await page.locator("[role=listbox] h2").allTextContents());
