@@ -11,7 +11,7 @@ export interface BitbucketOptions {
 }
 
 /**
- * Bitbucket Cloud through its REST API. The token is `user:app-password` (basic auth), or a
+ * Bitbucket Cloud through its REST API. The token is `email:api-token` (an Atlassian API token, basic auth), or a
  * workspace or repository access token (bearer), whichever the owner saved.
  */
 export class BitbucketHost implements MrHostClient {

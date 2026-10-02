@@ -383,7 +383,7 @@ export const commands = {
       account: z.string().trim().min(1).max(255),
       /** A `Host` alias from the detected SSH logins. Absent: the host's default key. */
       ssh: z.string().trim().min(1).max(255).optional(),
-      /** A pasted token (GitLab personal access token, Bitbucket `user:app-password`), saved in secrets. */
+      /** A pasted token (GitLab personal access token, Bitbucket `email:api-token`), saved in secrets. */
       token: z.string().min(1).max(4096).optional(),
     }),
     output: OrgViewSchema,

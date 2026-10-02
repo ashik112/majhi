@@ -25,7 +25,7 @@ export const mrKindOf = (kind: GitHost): MrHost => (kind === "other" ? "gitlab" 
 
 /**
  * The value saved for a token and the API call that proves it: GitHub `/user`, GitLab `/api/v4/user`,
- * Bitbucket `/2.0/user` with `username:app-password`.
+ * Bitbucket `/2.0/user` with `email:api-token` (Atlassian API token; app passwords stopped working in June 2026).
  */
 export function tokenRequest(
   host: string,

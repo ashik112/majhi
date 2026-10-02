@@ -80,6 +80,6 @@ export function tokenPageUrl(
   if (kind === "github") return `https://github.com/settings/tokens/new?description=${name}&scopes=repo`;
   if (kind === "gitlab")
     return `https://${host}/-/user_settings/personal_access_tokens?name=${name}&scopes=api`;
-  if (kind === "bitbucket") return "https://bitbucket.org/account/settings/app-passwords/new";
+  if (kind === "bitbucket") return "https://id.atlassian.com/manage-profile/security/api-tokens";
   return undefined;
 }

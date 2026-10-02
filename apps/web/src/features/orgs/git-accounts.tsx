@@ -345,7 +345,7 @@ function TokenFix({ org, status }: { org: string; status: GitAccountStatus }) {
       {create && (
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <ExternalButton href={create}>
-            Create {bitbucket ? "an app password" : "a token"} on {status.host}
+            {bitbucket ? "Create an Atlassian API token for Bitbucket" : `Create a token on ${status.host}`}
           </ExternalButton>
           <span className="text-sm text-fg-faint">
             Log in to {status.host} as <span className="font-mono text-fg-muted">{status.account}</span>{" "}
@@ -358,7 +358,7 @@ function TokenFix({ org, status }: { org: string; status: GitAccountStatus }) {
           aria-label={`Token for ${status.account} on ${status.host}`}
           type="password"
           autoComplete="new-password"
-          placeholder={bitbucket ? "username:app-password" : "Paste the token"}
+          placeholder={bitbucket ? "Atlassian email:API token" : "Paste the token"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />

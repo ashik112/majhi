@@ -16,7 +16,7 @@ function mrHostOfName(name: string): MrHost | undefined {
 
 /**
  * Offers a `gh` or `glab` login found on this Mac as the org's token, with one click. For Bitbucket,
- * which has no login to find, it asks for an app password in a field. Nothing shows when the org
+ * which has no login to find, it asks for an Atlassian API token in a field. Nothing shows when the org
  * already has a token for the host.
  */
 export function GitLoginOffer({
@@ -86,7 +86,7 @@ export function GitLoginOffer({
   );
 }
 
-/** Bitbucket needs an app password: `username:app-password`. It is saved as a secret for this org. */
+/** Bitbucket needs an Atlassian API token with Bitbucket scopes: `email:api-token`. It is saved as a secret for this org. */
 function BitbucketField({ org }: { org: string }) {
   const [value, setValue] = useState("");
   const [failure, setFailure] = useState<string>();
@@ -97,14 +97,14 @@ function BitbucketField({ org }: { org: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-sm text-fg-soft">
-        {HOST_LABEL.bitbucket} needs an app password. Paste it as username:app-password.
+        {HOST_LABEL.bitbucket} needs an Atlassian API token with Bitbucket scopes. Paste it as email:token.
       </span>
       <div className="flex items-center gap-2">
         <Input
-          aria-label="Bitbucket app password"
+          aria-label="Bitbucket API token"
           type="password"
           autoComplete="new-password"
-          placeholder="username:app-password"
+          placeholder="Atlassian email:API token"
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
