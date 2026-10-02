@@ -730,6 +730,7 @@ export function createHandlers({
       const patch = {
         ...(input.context === undefined ? {} : { context: input.context }),
         ...(input.limits === undefined ? {} : { limits: input.limits }),
+        ...(input.turns === undefined ? {} : { turns: input.turns }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.commits === undefined ? {} : { commits: input.commits }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),

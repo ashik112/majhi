@@ -15,6 +15,7 @@ import {
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
+  TurnsPatchSchema,
 } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 import { PricesConfigSchema } from "./usage.ts";
@@ -36,6 +37,8 @@ export const MajhiConfigSchema = z.strictObject({
   /** Defaults for every org (5.13). Written only when the owner changes a value. */
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
+  /** Turn limits: length, idle time and tool calls per turn (PRV-96). */
+  turns: TurnsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   /** Agent attribution in commits (5.7). */
   commits: CommitsPatchSchema.optional(),

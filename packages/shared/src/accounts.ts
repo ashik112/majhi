@@ -3,7 +3,13 @@ import { AgentToolRefSchema } from "./agent-tools.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds } from "./connections.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
-import { CommitsPatchSchema, ContextPatchSchema, ResumePatchSchema, RoomPatchSchema } from "./settings.ts";
+import {
+  CommitsPatchSchema,
+  ContextPatchSchema,
+  ResumePatchSchema,
+  RoomPatchSchema,
+  TurnsPatchSchema,
+} from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
 /**
@@ -159,6 +165,8 @@ export const OrgConfigSchema = z.looseObject({
   commits: CommitsPatchSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
   rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
+  /** Overrides majhi's turn limits for this org's agents, field by field (PRV-96). */
+  turns: TurnsPatchSchema.optional(),
   /** Overrides the model and effort tiers of `decisions.tiers` for this org's agents (5.12). */
   tiers: TiersPatchSchema.optional(),
   /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
@@ -242,6 +250,8 @@ export const AgentFrontmatterSchema = z.strictObject({
       compact_at: z.number().gt(0).lt(1).optional(),
     })
     .optional(),
+  /** Overrides the org's and majhi's turn limits for this agent, field by field (PRV-96). */
+  turns: TurnsPatchSchema.optional(),
   origin: z.enum(["setup", "owner"]).default("owner"),
 });
 export type AgentFrontmatter = z.infer<typeof AgentFrontmatterSchema>;
@@ -416,6 +426,8 @@ export const OrgViewSchema = z.object({
   commits: OrgConfigSchema.shape.commits,
   /** This org's own loop guard, when it overrides majhi's. */
   rooms: OrgConfigSchema.shape.rooms,
+  /** This org's own turn limits, when it overrides majhi's. */
+  turns: OrgConfigSchema.shape.turns,
   /** This org's own fallback tiers, when it overrides majhi's. */
   tiers: OrgConfigSchema.shape.tiers,
   /** The default team for new tasks, when set. */
