@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { EMOJI_FONT } from "@/components/agent-avatar";
 import { AttachmentChips, DropHint } from "@/components/ui/attachment-chips";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -39,6 +40,8 @@ interface PopupOption {
   key: string;
   insert: string;
   label: string;
+  /** An agent's emoji, before the label. */
+  emoji?: string | undefined;
   note?: string | undefined;
 }
 
@@ -122,6 +125,7 @@ export function Composer({
               key: `agent:${a.info.id}`,
               insert: a.info.id,
               label: `@${a.info.id}`,
+              emoji: a.info.emoji,
               note: `${a.info.role} · ${a.info.account}${a.onTeam ? "" : " · joins the task"}`,
             })),
             ...files.map((f) => ({
@@ -306,6 +310,11 @@ export function Composer({
                   i === activeIndex && "bg-selected",
                 )}
               >
+                {option.emoji && (
+                  <span aria-hidden="true" className="shrink-0 text-sm" style={{ fontFamily: EMOJI_FONT }}>
+                    {option.emoji}
+                  </span>
+                )}
                 <span className="min-w-0 truncate font-mono text-sm text-fg">{option.label}</span>
                 {option.note && <span className="ml-auto truncate text-xs text-fg-faint">{option.note}</span>}
               </div>

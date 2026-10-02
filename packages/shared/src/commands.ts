@@ -77,6 +77,7 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
+import { EmojiSchema } from "./emoji.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
   GitAppsSetInputSchema,
@@ -776,10 +777,11 @@ export const commands = {
     summary: "Change some of an agent's settings or its instructions, keeping everything else as it is",
     input: z.object({
       id: IdSchema,
-      /** Only the fields to change. `null` removes an optional field (model, effort, fallback). */
+      /** Only the fields to change. `null` removes an optional field (emoji, model, effort, fallback). */
       set: z
         .object({
           role: AgentFrontmatterSchema.shape.role,
+          emoji: EmojiSchema.nullable(),
           account: IdSchema,
           model: z.string().trim().min(1).nullable(),
           effort: z.string().trim().min(1).nullable(),

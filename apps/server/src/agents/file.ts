@@ -64,9 +64,11 @@ function stringifyFrontmatter(f: AgentFrontmatter): string {
     id: f.id,
     scope: f.scope,
     role: f.role,
+    emoji: f.emoji,
     account: f.account,
     model: f.model,
     effort: f.effort,
+    tier: f.tier,
     models: f.models,
     where: f.where,
     perms: f.perms,
@@ -75,6 +77,7 @@ function stringifyFrontmatter(f: AgentFrontmatter): string {
     skills: f.skills,
     fallback: f.fallback,
     context: f.context,
+    turns: f.turns,
     origin: f.origin,
   };
   for (const key of Object.keys(ordered)) if (ordered[key] === undefined) delete ordered[key];

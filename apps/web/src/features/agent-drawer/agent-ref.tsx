@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { AgentEmoji } from "@/components/agent-avatar";
 import { useAgentIndex } from "@/lib/agent-index";
 import type { AppSearch } from "@/router";
 
@@ -13,7 +14,7 @@ export function AgentRef({ id }: { id: string }) {
       title={`@${id}: ${info.role} on ${info.account}`}
       className="md-mention"
     >
-      @{id}
+      <AgentEmoji id={id} className="mr-1" />@{id}
     </Link>
   );
 }

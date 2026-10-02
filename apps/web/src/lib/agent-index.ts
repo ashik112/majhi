@@ -4,6 +4,8 @@ import { useAgents } from "./studio-queries";
 export interface AgentInfo {
   id: string;
   role: Role;
+  /** Shown on the avatar in place of the initial. */
+  emoji: string | undefined;
   account: string;
   model: string | undefined;
   effort: string | undefined;
@@ -27,6 +29,7 @@ export function indexAgents(entries: AgentEntry[]): ReadonlyMap<string, AgentInf
     map.set(fm.id, {
       id: fm.id,
       role: fm.role,
+      emoji: fm.emoji,
       account: fm.account,
       model: fm.model,
       effort: fm.effort,

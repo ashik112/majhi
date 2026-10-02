@@ -196,6 +196,15 @@ export function useUpdateAgent() {
   });
 }
 
+/** Changes some fields only, such as the emoji. Refetches so every avatar shows it at once. */
+export function useEditAgent() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"agents.edit">, ApiRequestError, CommandInput<"agents.edit">>({
+    mutationFn: (input) => cmd("agents.edit", input),
+    onSuccess: () => refresh(client, queryKeys.agents),
+  });
+}
+
 export function useDuplicateAgent() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"agents.duplicate">, ApiRequestError, CommandInput<"agents.duplicate">>({
