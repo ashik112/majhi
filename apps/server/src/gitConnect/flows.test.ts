@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import { KEEP_ENDED_MS, MAX_FLOW_MS, SignInFlows } from "./flows.ts";
+
+const owner = { actor: { kind: "owner" as const } };
+
+function clock(start = Date.parse("2026-10-02T10:00:00Z")) {
+  let now = start;
+  return { now: () => now, tick: (ms: number) => (now += ms) };
+}
+
+function device(flows: SignInFlows, org = "acme", host = "github.com", expiresInMs = 900_000) {
+  return flows.start({
+    org,
+    kind: "github",
+    host,
+    expiresInMs,
+    meta: owner,
+    secret: { kind: "device", clientId: "Ov23liAcmeExample01", deviceCode: "dev", intervalMs: 5000 },
+    shown: { userCode: "WDJB-MJHT", verificationUri: "https://github.com/login/device" },
+  });
+}
+
+describe("SignInFlows", () => {
+  it("moves pending to exactly one end state and never back", () => {
+    const flows = new SignInFlows();
+    const f = device(flows);
+    expect(flows.denied(f.id)).toBe(true);
+    expect(flows.done(f.id, { account: "octo-acme", alsoUsedBy: [] })).toBe(false);
+    expect(flows.cancel(f.id)).toBe(false);
+    expect(flows.failed(f.id, "x")).toBe(false);
+    expect(flows.get(f.id)?.status.state).toBe("denied");
+  });
+
+  it("ends as expired when read past the deadline, never longer than 15 minutes", () => {
+    const c = clock();
+    const flows = new SignInFlows(c.now);
+    const f = device(flows, "acme", "github.com", 60 * 60_000);
+    expect(f.expiresAt - c.now()).toBe(MAX_FLOW_MS);
+    c.tick(MAX_FLOW_MS - 1);
+    expect(flows.get(f.id)?.status.state).toBe("pending");
+    c.tick(1);
+    expect(flows.get(f.id)?.status.state).toBe("expired");
+  });
+
+  it("a confirm waiting past the deadline expires and drops the held token", () => {
+    const c = clock();
+    const flows = new SignInFlows(c.now);
+    const f = device(flows);
+    expect(
+      flows.toConfirm(f.id, { account: "octo-acme", alsoUsedBy: ["globex"] }, { token: "gho_held" }),
+    ).toBe(true);
+    c.tick(900_000);
+    const after = flows.get(f.id);
+    expect(after?.status.state).toBe("expired");
+    expect(after?.held).toBeUndefined();
+  });
+
+  it("keeps ended flows for 10 minutes, then drops them", () => {
+    const c = clock();
+    const flows = new SignInFlows(c.now);
+    const f = device(flows);
+    flows.cancel(f.id);
+    c.tick(KEEP_ENDED_MS - 1);
+    expect(flows.get(f.id)?.status.state).toBe("cancelled");
+    c.tick(1);
+    expect(flows.get(f.id)).toBeUndefined();
+  });
+
+  it("takes a Bitbucket state once", () => {
+    const flows = new SignInFlows();
+    const f = flows.start({
+      org: "acme",
+      kind: "bitbucket",
+      host: "bitbucket.org",
+      expiresInMs: 600_000,
+      meta: owner,
+      secret: { kind: "browser", key: "AcmeConsumerKey01", state: "st-1", used: false },
+      shown: {},
+    });
+    expect(flows.takeState("st-2")).toBeUndefined();
+    expect(flows.takeState("st-1")?.id).toBe(f.id);
+    expect(flows.takeState("st-1")).toBeUndefined();
+  });
+
+  it("announces every change with the public status only", () => {
+    const seen: string[] = [];
+    const flows = new SignInFlows(Date.now, (flow) => seen.push(JSON.stringify(flow.status)));
+    const f = device(flows);
+    flows.toConfirm(f.id, { account: "octo-acme", alsoUsedBy: ["globex"] }, { token: "gho_held_secret" });
+    flows.done(f.id, { account: "octo-acme", alsoUsedBy: ["globex"] });
+    expect(seen.map((s) => JSON.parse(s).state)).toEqual(["pending", "confirm", "done"]);
+    expect(seen.join("")).not.toMatch(/gho_held_secret|dev"/);
+  });
+});

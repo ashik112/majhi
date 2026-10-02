@@ -329,6 +329,39 @@ describe("majhi-tasks", () => {
     expect(made.isError).toBe(true);
     release();
   });
+
+  it("puts the starting branch on the first line of a create result", async () => {
+    const { h, servers, release } = await world();
+    const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
+    const waiting = await tasks.callTool({
+      name: "create",
+      arguments: {
+        title: "Add screenshots to the api docs",
+        text: "Take them with the Playwright tool, then work on main later.",
+        repos: [{ project: "acme-api" }],
+        start: false,
+        ownerAsked: false,
+        reason: "x",
+      },
+    });
+    expect(text(waiting)).toMatch(/Waiting for the owner/);
+    const cards = async () =>
+      ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).filter(
+        (i) => i.type === "approval" && i.command === "tasks.create",
+      );
+    const card = (await cards())[0];
+    if (card === undefined) throw new Error("no approval card");
+    expect((await h.cmd("room.approve", { task: "ACM-1", item: card.id, decision: "approve" })).status).toBe(
+      200,
+    );
+    // The card and the agent's message both lead with it; the task JSON after it is cut.
+    expect((await cards())[0]).toMatchObject({
+      state: "applied",
+      result: expect.stringMatching(/^Starting branch: main\. \{/),
+    });
+    release();
+  });
+
   describe("start", () => {
     const call = (tasks: Client, id: string) =>
       tasks.callTool({ name: "start", arguments: { id, ownerAsked: false, reason: "Next step" } });

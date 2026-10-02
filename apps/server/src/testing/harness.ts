@@ -52,6 +52,8 @@ export interface HarnessOptions {
   connectionsRemote?: RemoteRunFn;
   /** How long after a turn ends a silent room is looked at. */
   idleWatchMs?: number;
+  /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
+  gitFetch?: typeof fetch;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -87,6 +89,7 @@ function build(
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
+    ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
   });
   const h: Harness = {
     dir,

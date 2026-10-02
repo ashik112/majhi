@@ -37,6 +37,7 @@ describe("mergeSettings", () => {
         floors: { window: 10, weekly: 5 },
         summary_at: "08:00",
         instructions: [],
+        pick: { size: "any" },
       },
     });
   });

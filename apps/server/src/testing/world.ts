@@ -36,6 +36,8 @@ export interface WorldOptions {
   containerDocker?: ContainerDocker;
   connectionsRemote?: RemoteRunFn;
   idleWatchMs?: number;
+  /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
+  gitFetch?: typeof fetch;
 }
 
 /**
@@ -55,6 +57,7 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.containerDocker === undefined ? {} : { containerDocker: options.containerDocker }),
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
+    ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
   });
   const world: World = {
     h,

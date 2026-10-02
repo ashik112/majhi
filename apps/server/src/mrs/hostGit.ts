@@ -1,3 +1,4 @@
+import type { GitAuth } from "@majhi/shared";
 import { editorPath } from "../editor/allowed.ts";
 import type { HostLink } from "../host/link.ts";
 
@@ -8,7 +9,7 @@ const HOST_PUSH_TIMEOUT_MS = 130_000;
 export interface HostGit {
   connected(): boolean;
   /** Pushes `branch` of the repo at `path` to `url`. Throws a message safe to show. */
-  push(input: { path: string; url: string; branch: string }): Promise<void>;
+  push(input: { path: string; url: string; branch: string; auth?: GitAuth | undefined }): Promise<void>;
 }
 
 /**
@@ -18,9 +19,13 @@ export interface HostGit {
 export function createHostGit(link: HostLink, allowed: () => Promise<readonly string[]>): HostGit {
   return {
     connected: () => link.status().connected,
-    push: async ({ path, url, branch }) => {
+    push: async ({ path, url, branch, auth }) => {
       const safe = await editorPath(path, await allowed());
-      await link.call("git.push", { path: safe, url, branch }, HOST_PUSH_TIMEOUT_MS);
+      await link.call(
+        "git.push",
+        { path: safe, url, branch, ...(auth === undefined ? {} : { auth }) },
+        HOST_PUSH_TIMEOUT_MS,
+      );
     },
   };
 }

@@ -33,8 +33,8 @@ export interface JobHandlers {
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
-  /** Throws an error whose message is safe to show. */
-  gitPush(params: { path: string; url: string; branch: string }): Promise<void>;
+  /** Throws an error whose message is safe to show. With `auth`, the workspace's credential is used. */
+  gitPush(params: Extract<HostJob, { method: "git.push" }>["params"]): Promise<void>;
   /** Throws an error whose message is safe to show. The secret is only ever in the return value. */
   gitCredential(params: { host: string; username: string }): Promise<string>;
   layaStatus(): LayaStatus;
@@ -49,19 +49,19 @@ export interface JobHandlers {
   notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
   /**
    * Opens an http(s) page in the default browser: `open` on macOS, `xdg-open` on Linux, `wslview`
-   * (else `explorer.exe`) on WSL. False when nothing could open it. Undefined until built.
+   * (else `explorer.exe`) on WSL. False when nothing could open it.
    */
   openUrl?: (params: Extract<HostJob, { method: "openUrl" }>["params"]) => Promise<boolean>;
   /**
    * Clones with the job's credential through majhi's own askpass, into a temporary sibling that is
    * renamed to `path` when done and removed on failure. Calls `progress` as git reports phases.
-   * Throws an error whose message is safe to show: never git's raw output or the token. Undefined until built.
+   * Throws an error whose message is safe to show: never git's raw output or the token.
    */
   gitClone?: (
     params: Extract<HostJob, { method: "git.clone" }>["params"],
     progress: (progress: Omit<HostProgress, "id">) => void,
   ) => Promise<{ head: string; branch: string }>;
-  /** `git ls-remote --symref` with the job's credential. Throws a safe sentence when unreachable. Undefined until built. */
+  /** `git ls-remote --symref` with the job's credential. Throws a safe sentence when unreachable. */
   gitLsRemote?: (
     params: Extract<HostJob, { method: "git.lsRemote" }>["params"],
   ) => Promise<{ empty: boolean; defaultBranch?: string | undefined }>;

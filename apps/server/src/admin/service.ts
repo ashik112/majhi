@@ -11,6 +11,7 @@ import {
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
+import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
@@ -19,6 +20,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { decide as decideMode, matchRule, modeFor, redact, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
@@ -723,8 +725,31 @@ function error(text: string): ToolResult {
 
 /** The whole output for the agent, without secrets, cut at a limit. */
 function textOf(output: unknown): string {
-  const text = JSON.stringify(redact(output), null, 2) ?? "ok";
+  const text = JSON.stringify(redact(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
+}
+
+/** A result that is one task with repos (tasks.create, tasks.update). */
+const TaskWithRepos = z.object({
+  id: z.string(),
+  brief: z.string(),
+  repos: z.array(z.object({ project: z.string(), base: z.string() })).min(1),
+});
+
+/**
+ * A task's repos, with their starting branch, right after its id and title: after the brief they
+ * are easy to miss, or cut. Still the task's JSON.
+ */
+function reposFirst(output: unknown): unknown {
+  if (!TaskWithRepos.safeParse(output).success) return output;
+  const { id, title, repos, ...rest } = output as Record<string, unknown>;
+  return { id, title, repos, ...rest };
+}
+
+/** "Starting branch: main. " for one task with repos, else nothing: the line's JSON cuts the repos. */
+function branchesOf(output: unknown): string {
+  const task = TaskWithRepos.safeParse(output);
+  return task.success ? `${startingBranches(task.data.repos)} ` : "";
 }
 
 /** "Mark PRV-38 done" reads as "mark PRV-38 done" after "You approved:"; "PRV-38 ..." keeps its case. */
@@ -736,6 +761,6 @@ function lowerFirst(text: string): string {
 
 /** One short line for the card. */
 function lineOf(output: unknown): string {
-  const text = JSON.stringify(redact(output)) ?? "ok";
+  const text = `${branchesOf(output)}${JSON.stringify(redact(output)) ?? "ok"}`;
   return text.length > LINE_MAX ? `${text.slice(0, LINE_MAX - 3)}...` : text;
 }

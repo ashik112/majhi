@@ -648,6 +648,17 @@ export class TaskRepo {
       .run();
   }
 
+  /** The branch a repo's worktree is cut from. Only before the worktree exists. */
+  setRepoBase(task: string, project: string, base: string, at: string): void {
+    this.db.transaction((tx) => {
+      tx.update(taskRepos)
+        .set({ base })
+        .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+        .run();
+      tx.update(tasks).set({ updatedAt: at }).where(eq(tasks.id, task)).run();
+    });
+  }
+
   /** The repo's MR as its host reports it. */
   setMr(task: string, project: string, mr: RepoMr): void {
     this.db

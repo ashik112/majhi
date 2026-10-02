@@ -90,6 +90,7 @@ describe("store", () => {
       "budget_alerts",
       "budget_resumes",
       "chat_state",
+      "clone_jobs",
       "decisions",
       "e2e_breaks",
       "e2e_runs",

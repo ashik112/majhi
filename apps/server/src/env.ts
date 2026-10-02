@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RuntimeOptions } from "@majhi/acp";
-import { expandHome } from "@majhi/shared";
+import { DEFAULT_MAJHI_ORIGIN, expandHome } from "@majhi/shared";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { formatIssues } from "./errors.ts";
@@ -71,6 +71,11 @@ const EnvSchema = z.object({
     .optional(),
   /** The name runners reach majhi at on their network. */
   MAJHI_RUNNER_MCP_HOST: z.string().trim().min(1).default("majhi-server"),
+  /**
+   * majhi's address as the owner's browser reaches it, for OAuth callbacks. Compose passes
+   * `http://127.0.0.1:${MAJHI_PORT}`, the host-side port, which the server itself cannot see.
+   */
+  MAJHI_ORIGIN: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Memory cap per run. */
   MAJHI_RUNNER_MEMORY: z
     .string()
@@ -102,6 +107,8 @@ export interface ServerEnv {
   runner: RunnerEnv;
   /** Laya in Docker (Phase 3), when configured. */
   laya?: { url: string; container?: string };
+  /** `MAJHI_ORIGIN` without a trailing slash: where the browser reaches majhi. */
+  origin: string;
 }
 
 export interface RunnerEnv {
@@ -154,6 +161,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
             ...(env.MAJHI_LAYA_CONTAINER === undefined ? {} : { container: env.MAJHI_LAYA_CONTAINER }),
           },
         }),
+    origin: (env.MAJHI_ORIGIN ?? DEFAULT_MAJHI_ORIGIN).replace(/\/+$/, ""),
     runner: {
       mode: env.MAJHI_RUNNER,
       image: env.MAJHI_RUNNER_IMAGE,

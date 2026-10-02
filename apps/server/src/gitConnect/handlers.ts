@@ -1,6 +1,19 @@
-import { DEFAULT_MAJHI_ORIGIN, oauthCallbackUrl } from "@majhi/shared";
-import type { CommandHandlers } from "../commands/handlers.ts";
+import { join } from "node:path";
+import { DEFAULT_GIT_HOST, type MrHost, type RemoteRepo } from "@majhi/shared";
+import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
+import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
+import type { HostLink } from "../host/link.ts";
+import type { RepoScanner } from "../scan/scanner.ts";
+import type { Services } from "../services.ts";
+import { appsView, setApp } from "./apps.ts";
+import { type HereIndex, hereOf, repoKeyOf } from "./here.ts";
+import { listOwners, listRepos } from "./hostRepos.ts";
+import { HostUnreachable } from "./http.ts";
+import { whoAmI } from "./oauth.ts";
+import { onboardingStatus } from "./onboarding.ts";
+import { targetState } from "./paths.ts";
+import { connectRemote, createProject, publishProject } from "./project.ts";
 
 /** The commands of git sign-in, remote repos, clone, new project and the onboarding status. */
 type GitConnectCommand =
@@ -20,39 +33,184 @@ type GitConnectCommand =
   | "projects.connectRemote"
   | "onboarding.status";
 
-/** Until the phase is built: every command answers 501, except two reads whose empty answer is true. */
-async function notBuilt(): Promise<never> {
-  throw new UserError("This command is not built yet.", 501);
+export interface GitConnectHandlerDeps {
+  config: ConfigService;
+  scanner: RepoScanner;
+  hostLink: HostLink;
+  services: Services;
+}
+
+/** Sign-in and the OAuth apps are the owner's: an agent never gets them, even past the agent-blocked set. */
+function ownerOnly(ctx: CommandContext, what: string): void {
+  if (ctx.meta.actor.kind === "agent") throw new UserError(`Only the owner can ${what}.`, 409);
+}
+
+const change = (ctx: CommandContext) => ({ command: ctx.command, meta: ctx.meta });
+
+/** Host errors become 409 sentences; anything else goes on. */
+function plain<T>(promise: Promise<T>): Promise<T> {
+  return promise.catch((err: unknown) => {
+    if (err instanceof HostUnreachable) throw new UserError(err.message, 409);
+    throw err;
+  });
 }
 
 /**
- * Stubs for the onboarding and git connect contract (docs/briefs/onboarding-and-git-connect.md).
- * The command table spreads these in. Sign-in, clone and the OAuth apps are the owner's: the
- * agent-blocked set in `approval-groups.ts` keeps the sign-in commands from agents, and the real
- * handlers must refuse an agent actor too.
+ * The onboarding and git connect commands (docs/briefs/onboarding-and-git-connect.md). The table
+ * in `commands/handlers.ts` spreads these in.
  */
-export function gitConnectHandlers(): Pick<CommandHandlers, GitConnectCommand> {
+export function gitConnectHandlers({
+  config,
+  scanner,
+  hostLink,
+  services,
+}: GitConnectHandlerDeps): Pick<CommandHandlers, GitConnectCommand> {
+  const gc = services.gitConnect;
+  const secrets = {
+    save: (input: { value: string; label: string }) => services.secretService.save(input),
+    set: (name: string, value: string) => services.secrets.set(name, value),
+    has: (name: string) => services.secrets.has(name),
+    delete: (name: string) => services.secrets.delete(name),
+  };
+  const view = async () => {
+    const apps = await gc.apps();
+    const ref = apps.bitbucket?.secretRef.replace(/^secret:/, "");
+    const saved = ref === undefined ? false : await services.secrets.has(ref).catch(() => false);
+    return appsView(apps, saved, gc.origin);
+  };
+
+  /** Projects, repos under the roots and SSH aliases, for marking remote repos already here. */
+  const hereIndex = async (): Promise<HereIndex> => {
+    const loaded = await config.load();
+    const scanned =
+      loaded.state.status === "loaded"
+        ? (
+            await scanner.scan(
+              {
+                config: loaded.state.config,
+                projectPaths: loaded.projectPaths,
+                hostHome: config.paths.hostHome,
+              },
+              false,
+            )
+          ).roots.flatMap((r) =>
+            r.repos.map((repo) => ({ path: repo.path, remotes: repo.remotes.map((x) => x.url) })),
+          )
+        : [];
+    return { projects: await gc.projectRemotes(), scanned, aliases: await gc.aliases() };
+  };
+  const firstRoot = async (): Promise<string | undefined> => {
+    const loaded = await config.load();
+    return loaded.state.status === "loaded" ? loaded.state.config.workspaces[0] : undefined;
+  };
+
   return {
-    "git.oauthApps.get": async () => ({
-      github: {},
-      gitlab: [],
-      bitbucket: { secretSaved: false },
-      origin: DEFAULT_MAJHI_ORIGIN,
-      bitbucketCallback: oauthCallbackUrl(DEFAULT_MAJHI_ORIGIN, "bitbucket"),
-    }),
-    "git.oauthApps.set": notBuilt,
-    "git.signIn.start": notBuilt,
-    "git.signIn.poll": notBuilt,
-    "git.signIn.cancel": notBuilt,
-    "git.signIn.confirm": notBuilt,
-    "git.signOut": notBuilt,
-    "git.remoteRepos": notBuilt,
-    "git.remoteOwners": notBuilt,
-    "projects.clone": notBuilt,
-    "projects.cloneStatus": async () => ({ jobs: [] }),
-    "projects.create": notBuilt,
-    "projects.publish": notBuilt,
-    "projects.connectRemote": notBuilt,
-    "onboarding.status": notBuilt,
+    "git.oauthApps.get": () => view(),
+
+    "git.oauthApps.set": async (input, ctx) => {
+      ownerOnly(ctx, "set majhi's apps on git hosts");
+      if (!(await config.sections()).exists) {
+        throw new UserError("Pick a project folder first: majhi.yaml does not exist yet.", 409);
+      }
+      await setApp({ config, secrets }, input, change(ctx));
+      return view();
+    },
+
+    "git.signIn.start": (input, ctx) => {
+      ownerOnly(ctx, "sign a workspace in to a git host");
+      return gc.signIn.start(input, ctx.meta);
+    },
+    "git.signIn.poll": async (input, ctx) => {
+      ownerOnly(ctx, "follow a sign-in");
+      return gc.signIn.poll(input.signIn);
+    },
+    "git.signIn.cancel": async (input, ctx) => {
+      ownerOnly(ctx, "cancel a sign-in");
+      return gc.signIn.cancel(input.signIn);
+    },
+    "git.signIn.confirm": async (input, ctx) => {
+      ownerOnly(ctx, "confirm a sign-in");
+      return gc.signIn.confirm(input.signIn);
+    },
+    "git.signOut": async (input, ctx) => {
+      ownerOnly(ctx, "sign a workspace out of a git host");
+      return gc.signIn.signOut(input, change(ctx));
+    },
+
+    "git.remoteRepos": async (input) => {
+      const host = input.host ?? DEFAULT_GIT_HOST[input.kind];
+      const kind: MrHost = input.kind;
+      const answer = await plain(
+        gc.tokens.withToken(input.org, kind, host, async (token, known) => {
+          const account = known ?? (await whoAmI(gc.fetch, kind, host, token));
+          const page = await listRepos(gc.fetch, kind, token, {
+            host,
+            account,
+            query: input.query,
+            page: input.page,
+            perPage: input.perPage,
+          });
+          return { account, page };
+        }),
+      );
+      if (answer.state === "signed-out") return { state: "signed-out", kind, host };
+      if (answer.state === "refused") return { state: "refused", kind, host, account: answer.account };
+      const index = await hereIndex();
+      const root = await firstRoot();
+      const repos: RemoteRepo[] = await Promise.all(
+        answer.value.page.repos.map(async (repo) => {
+          const folder = root === undefined ? undefined : join(root, input.org, repo.name);
+          const exists =
+            folder !== undefined && (await targetState(folder).catch(() => "missing" as const)) === "taken";
+          return {
+            ...repo,
+            here: hereOf(index, repoKeyOf(host, repo.fullName), exists ? folder : undefined),
+          };
+        }),
+      );
+      return {
+        state: "ok",
+        account: answer.value.account,
+        repos,
+        page: input.page,
+        ...(answer.value.page.nextPage === undefined ? {} : { nextPage: answer.value.page.nextPage }),
+      };
+    },
+
+    "git.remoteOwners": async (input) => {
+      const host = input.host?.toLowerCase() ?? DEFAULT_GIT_HOST[input.kind];
+      const answer = await plain(
+        gc.tokens.withToken(input.org, input.kind, host, async (token, known) => {
+          const account = known ?? (await whoAmI(gc.fetch, input.kind, host, token));
+          return { account, owners: await listOwners(gc.fetch, input.kind, host, token, account) };
+        }),
+      );
+      if (answer.state === "signed-out") return { state: "signed-out", kind: input.kind, host };
+      if (answer.state === "refused")
+        return { state: "refused", kind: input.kind, host, account: answer.account };
+      return { state: "ok", account: answer.value.account, owners: answer.value.owners };
+    },
+
+    "projects.clone": (input, ctx) => gc.clones.start(input, change(ctx)),
+    "projects.cloneStatus": async (input) => ({ jobs: gc.clones.list(input.clone) }),
+    "projects.create": (input, ctx) => createProject(gc.projectDeps, input, change(ctx)),
+    "projects.publish": (input, ctx) => plain(publishProject(gc.projectDeps, input, change(ctx))),
+    "projects.connectRemote": (input, ctx) => plain(connectRemote(gc.projectDeps, input, change(ctx))),
+
+    "onboarding.status": async () => {
+      const loaded = await config.load();
+      const sections = await config.sections();
+      const projects: Record<string, number> = {};
+      for (const p of Object.values(sections.projects)) projects[p.org] = (projects[p.org] ?? 0) + 1;
+      const agents = await services.agents.list();
+      return onboardingStatus({
+        roots: loaded.state.status === "loaded" ? loaded.state.config.workspaces : [],
+        orgs: sections.orgs,
+        accounts: await services.accounts.list(),
+        hasCaptain: agents.some((a) => a.status === "ok" && a.isBoss),
+        projects,
+        hostHelper: hostLink.isConnected(),
+      });
+    },
   };
 }

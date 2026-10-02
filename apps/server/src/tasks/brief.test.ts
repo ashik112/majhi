@@ -105,11 +105,25 @@ describe("the pointer file", () => {
 });
 
 describe("branch names", () => {
-  it("builds task/<key>-<slug> and drops links, mentions and from/on phrases", () => {
-    expect(slugify("@builder Add a Health endpoint to api from develop https://e.com/x")).toBe(
+  it("builds task/<key>-<slug> and drops links and mentions", () => {
+    expect(slugify("@builder Add a Health endpoint to api https://e.com/x")).toBe(
       "add-a-health-endpoint-to-api",
     );
     expect(branchName("GLX-420", "Fix the login redirect")).toBe("task/glx-420-fix-the-login-redirect");
+  });
+
+  // A title is prose: the words after from, on, base or branch are part of it (PRV-66 lost "branch").
+  it.each([
+    ["Task text picks the base branch by mistake", "task-text-picks-the-base-branch-by-mistake"],
+    [
+      "Screenshots taken with Playwright from the staging site",
+      "screenshots-taken-with-playwright-from-the-staging-site",
+    ],
+    ["Fix api, work on main later", "fix-api-work-on-main-later"],
+    ["Use the default branch name", "use-the-default-branch-name"],
+    ["Turn off caching", "turn-off-caching"],
+  ])("keeps every word of %s", (title, slug) => {
+    expect(slugify(title)).toBe(slug);
   });
 
   it("cuts the slug at 40 characters", () => {

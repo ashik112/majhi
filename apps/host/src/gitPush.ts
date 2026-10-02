@@ -4,6 +4,8 @@
  * errors are fixed sentences, and git's own output is scrubbed of `https://user:pass@` forms.
  */
 import { isAbsolute } from "node:path";
+import type { GitAuth } from "@majhi/shared";
+import type { GitAuthEnv } from "./gitAuth.ts";
 import type { RunFn } from "./ssh.ts";
 
 const PUSH_TIMEOUT_MS = 120_000;
@@ -15,12 +17,30 @@ export interface GitPushDeps {
   /** The helper's PATH, already extended with the usual tool folders (so `gh` is found). */
   path: string;
   kind: (path: string) => Promise<"file" | "directory" | undefined>;
+  /** The environment for a push with a workspace's own credential (gitAuth.ts). Without it such a push is refused. */
+  authEnv?: (auth: GitAuth) => Promise<GitAuthEnv>;
 }
 
 export interface PushParams {
   path: string;
   url: string;
   branch: string;
+  /** The workspace's own credential. Absent: the owner's saved login, as before. */
+  auth?: GitAuth | undefined;
+  /** Also set the branch's upstream to the remote whose URL this is. */
+  setUpstream?: boolean | undefined;
+}
+
+/** The URL without a user name: with a token, git takes the user name from majhi's askpass. */
+export function withoutUser(url: string): string {
+  try {
+    const u = new URL(url);
+    u.username = "";
+    u.password = "";
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
@@ -97,17 +117,39 @@ function userOf(url: string): string | undefined {
 
 /** `git push <url> <branch>` in `path` with the owner's own git config. Throws a message safe to show. */
 export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<void> {
-  const args = pushArgs(params);
+  const token = params.auth?.kind === "token";
+  const url = token ? withoutUser(params.url) : params.url;
+  const args = pushArgs({ url, branch: params.branch });
   if (!isAbsolute(params.path) || params.path.includes("\0")) throw new Error("The path must be absolute.");
   if ((await deps.kind(params.path)) !== "directory")
-    throw new Error(`There is no folder at ${params.path} on this Mac.`);
-  const run = await deps.run("git", ["-C", params.path, ...args], {
-    env: env(deps),
-    timeoutMs: PUSH_TIMEOUT_MS,
-  });
-  if (run.code === 0) return;
+    throw new Error(`There is no folder at ${params.path} on this computer.`);
+  if (params.auth !== undefined && params.auth.kind !== "token") {
+    throw new Error("The host helper pushes over https only. SSH pushes go from majhi itself.");
+  }
+  if (token && deps.authEnv === undefined)
+    throw new Error("This host helper cannot push with a workspace's token.");
+  const auth =
+    token && params.auth !== undefined && deps.authEnv !== undefined
+      ? await deps.authEnv(params.auth)
+      : undefined;
+  let run: Awaited<ReturnType<RunFn>>;
+  try {
+    run = await deps.run("git", ["-C", params.path, ...(auth?.config ?? []), ...args], {
+      env: auth?.env ?? env(deps),
+      timeoutMs: PUSH_TIMEOUT_MS,
+    });
+  } finally {
+    await auth?.cleanup();
+  }
+  if (run.code === 0) {
+    if (params.setUpstream === true) await setUpstream(deps, params.path, url, params.branch);
+    return;
+  }
   const text = stripCredentials(`${run.stderr}\n${run.stdout}`);
-  if (run.code === null) throw new Error("git push did not finish in time on this Mac.");
+  if (run.code === null) throw new Error("git push did not finish in time on this computer.");
+  if (token && isHttpsAuthFailure(text)) {
+    throw new Error(`${hostOf(params.url)} refused the workspace's token. Sign the workspace in again.`);
+  }
   if (isHttpsAuthFailure(text)) {
     const user = userOf(params.url);
     throw new Error(
@@ -116,6 +158,26 @@ export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<vo
   }
   const reason = text.trim().split("\n").slice(-3).join(" ").slice(0, 400);
   throw new Error(`git push failed: ${reason === "" ? "no output" : reason}`);
+}
+
+/**
+ * After a push to a URL: the remote whose URL it is gets the branch as its upstream, and its
+ * tracking ref is moved to what was pushed. Nothing happens when no remote has that URL.
+ */
+async function setUpstream(deps: GitPushDeps, path: string, url: string, branch: string): Promise<void> {
+  const opts = { env: env(deps), timeoutMs: 20_000 };
+  const remotes = await deps.run("git", ["-C", path, "remote"], opts);
+  for (const name of remotes.stdout.split("\n").filter((r) => /^[A-Za-z0-9._-]+$/.test(r))) {
+    const got = await deps.run("git", ["-C", path, "remote", "get-url", name], opts);
+    if (withoutUser(got.stdout.trim()) !== withoutUser(url)) continue;
+    await deps.run(
+      "git",
+      ["-C", path, "update-ref", `refs/remotes/${name}/${branch}`, `refs/heads/${branch}`],
+      opts,
+    );
+    await deps.run("git", ["-C", path, "branch", `--set-upstream-to=${name}/${branch}`, branch], opts);
+    return;
+  }
 }
 
 /** The saved https secret of `username` on `host`, from `git credential fill`. Throws a fixed sentence. */

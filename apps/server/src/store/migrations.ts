@@ -606,6 +606,35 @@ CREATE TABLE autonomy_sizes (
 );
 `,
   },
+  {
+    // Clone jobs (onboarding and git connect). One row per `projects.clone`, so a job a restart cut
+    // off is shown as failed ("majhi restarted") instead of vanishing. `root` is the workspace root
+    // the target is in, `created_folder` is 1 when the target did not exist before the job, so only
+    // a folder majhi made is removed after an interrupted clone. Retry is a new job.
+    id: 115,
+    name: "clone jobs",
+    sql: `
+CREATE TABLE clone_jobs (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  host TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  root TEXT NOT NULL,
+  path TEXT NOT NULL,
+  project TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('queued', 'cloning', 'registering', 'done', 'failed')),
+  phase TEXT,
+  percent INTEGER,
+  base TEXT,
+  reason TEXT,
+  created_folder INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  ended_at TEXT
+);
+CREATE INDEX clone_jobs_started ON clone_jobs (started_at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

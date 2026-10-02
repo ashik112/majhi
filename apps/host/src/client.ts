@@ -5,6 +5,7 @@ import {
   type HostInfo,
   type HostJob,
   HostJobSchema,
+  type HostProgress,
   type HostReply,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
@@ -123,6 +124,22 @@ export async function sendReply(options: LinkOptions, reply: HostReply): Promise
   } catch (err) {
     options.log(`reply to job ${reply.id} failed: ${describeFetchError(err)}`);
     throw err;
+  }
+}
+
+/** Posts progress of a running job. Never throws: progress that does not arrive is just skipped. */
+export async function sendProgress(options: LinkOptions, progress: HostProgress): Promise<void> {
+  const fetchFn = options.fetch ?? fetch;
+  try {
+    const res = await fetchFn(`${options.url}/api/host/progress`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await options.token()}`, "content-type": "application/json" },
+      body: JSON.stringify(progress),
+      signal: AbortSignal.timeout(REPLY_TIMEOUT_MS),
+    });
+    await res.body?.cancel();
+  } catch {
+    // Dropped: the next line of progress, or the reply, follows.
   }
 }
 
