@@ -4,8 +4,8 @@ import { plainText } from "./coordinate.ts";
 /**
  * Whether a mention asks a teammate to act (5.3). An agent that names a teammate only to report
  * status or say who it waits on should not wake it: that is how rooms went in circles. The words
- * catch plain status (`statusOnly`); for the rest the decision provider is asked one yes/no per
- * mentioned agent, and only a sure "no" keeps an agent asleep.
+ * catch plain status (`statusOnly`) and plain asks (`asksByWords`); for the rest the decision
+ * provider is asked one yes/no per mentioned agent, and only a sure "no" keeps an agent asleep.
  */
 
 /** How much of the message the provider reads: Laya's window is about 512 tokens. */
@@ -28,16 +28,78 @@ export const QUIET_MIN_LIFT = 0.5;
 
 /**
  * The message as the provider reads it: the agent's own words (no code, no quotes), and when that
- * is too long, the sentences that mention one of `agents`, with the first sentence for context.
+ * is too long, the first sentence for context, the sentences that mention one of `agents`, and the
+ * sentence after each: a handoff often puts the ask on the line after "@x:".
  */
 export function mentionText(text: string, agents: readonly string[], max = MENTION_STATE_MAX): string {
   const plain = plainText(text).replace(/\s+\n/g, "\n").trim();
   if (plain.length <= max) return plain;
-  const sentences = plain.split(/(?<=[.!?])\s+|\n+/).filter((s) => s.trim() !== "");
-  const names = agents.map((a) => `@${a.toLowerCase()}`);
-  const kept = sentences.filter((s, i) => i === 0 || names.some((n) => s.toLowerCase().includes(n)));
+  const sentences = sentencesOf(plain);
+  const mentions = agents.map((a) => `@${a.toLowerCase()}`);
+  const names = (s: string | undefined) =>
+    s !== undefined && mentions.some((n) => s.toLowerCase().includes(n));
+  const kept = sentences.filter((s, i) => i === 0 || names(s) || names(sentences[i - 1]));
   const joined = kept.join(" ");
   return joined.length <= max ? joined : `${joined.slice(0, max - 1)}…`;
+}
+
+/** Sentences of plain text, the way the room reads them. */
+function sentencesOf(plain: string): string[] {
+  return plain
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
+const PLEASE = /^(please|kindly)\b/i;
+/** Words that ask whoever is addressed for something. */
+const POLITE = /^(can you|could you|would you|will you|over to you|your turn|go ahead)\b/i;
+/** Verbs that give work, as a sentence addressed to a teammate starts: "@x: build ...". */
+const VERB =
+  /^(build|review|fix|add|implement|write|check|test|run|re-?run|take|pick|start|look|update|change|remove|delete|rename|investigate|verify|merge|commit|push|create|make|finish|continue|handle|refactor|rebase|retry|revert|deploy|ship|try|answer|confirm|decide|read|open|port|move|wire|set|use|own|draft|prepare|plan|split|document|help|resume|proceed|apply|address|debug|measure|compare|clean|carry|pull|install|upgrade|migrate|land|double-check|audit|research|explore|find|search|lint|format|stop|hold|pause|keep|tell|share|post|send|report|summarize|design|reply|respond|reproduce|profile|bump|regenerate|rewrite|restore|resolve|close|extract|rework|tidy|polish|finalize|align|unblock|sync|backport|deliver|wrap)\b/i;
+
+/** A sentence without list markers and emphasis, so "- **@x**: please" reads as "@x: please". */
+function bare(sentence: string): string {
+  return sentence
+    .replace(/[*_]{2,3}/g, "")
+    .replace(/^([-+>#]+|\d+[.)])\s*/, "")
+    .trim();
+}
+
+/**
+ * Whether the message asks `agent` for something by its words alone, so the decision provider is
+ * not asked and a wrong "no" cannot drop a handoff. A sentence that starts with the mention and
+ * goes on with "please", "can you" or a verb that gives work ("@x: please build", "@x, review the
+ * diff"), or whose next sentence does ("@x:" then the ask on the next line, "@x the build is up.
+ * Run the tests."). "@x please" anywhere, and a sentence that starts with "please" right after the
+ * one with the mention, count too. "Thanks @x" or "as @x said" ask nothing. Code and quotes are not read.
+ */
+export function asksByWords(text: string, agent: string): boolean {
+  const sentences = sentencesOf(plainText(text)).map(bare);
+  const name = agent.replace(/[^A-Za-z0-9_-]/g, "");
+  const mention = new RegExp(`(^|[^A-Za-z0-9_@/.-])@${name}(?![A-Za-z0-9_-])`, "i");
+  for (const [i, sentence] of sentences.entries()) {
+    const found = mention.exec(sentence);
+    if (found === null) continue;
+    const at = found.index + (found[1] ?? "").length;
+    const rest = sentence
+      .slice(at + name.length + 1)
+      .replace(/^\s*[:,–—-]?\s*/, "")
+      .trim();
+    const next = sentences[i + 1] ?? "";
+    const addressed = at === 0;
+    if (PLEASE.test(rest) || PLEASE.test(next)) return true;
+    if (addressed && (POLITE.test(rest) || VERB.test(rest) || VERB.test(next))) return true;
+    if (addressed && /^[.!]?$/.test(rest) && POLITE.test(next)) return true;
+  }
+  return false;
+}
+
+/** What the writer of a quieted mention is told, so a handoff it meant does not just vanish. */
+export function quietNote(quiet: readonly string[]): string {
+  const who = quiet.map((a) => `@${a}`).join(", ");
+  const them = quiet.length === 1 ? "them" : "any of them";
+  return `${who} ${quiet.length === 1 ? "was" : "were"} not woken: your message did not ask ${them} for anything. Use the majhi-room mention tool, or ask directly ("@name: please ..."), if you meant a handoff. Otherwise there is nothing to do.`;
 }
 
 /** The question key for the i-th agent asked. */

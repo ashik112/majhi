@@ -7,6 +7,18 @@
       "text": "@builder please fix the failing test in orders.test.ts and push a commit."
     },
     {
+      "from": "lead",
+      "to": "builder",
+      "expected": "act",
+      "text": "Plan v3 is recorded. The server part starts now.\n\n@builder: please build the server side of the export in this worktree, on branch task/acm-7-export."
+    },
+    {
+      "from": "lead",
+      "to": "builder",
+      "expected": "act",
+      "text": "The web part is merged into the task branch and the checks pass.\n\n@builder please take the Globex importer next."
+    },
+    {
       "from": "reviewer",
       "to": "builder",
       "expected": "act",

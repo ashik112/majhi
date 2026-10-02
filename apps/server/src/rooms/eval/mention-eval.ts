@@ -1,7 +1,7 @@
 /**
  * The mention eval: does a message ask the agent it mentions to act now? Against a labeled set
- * (`mention-eval.json`), for the words alone (`statusOnly`), the provider alone, and both as the
- * coordinator uses them (status wakes nobody; else a sure "no" keeps the agent asleep).
+ * (`mention-eval.json`), for the words alone (`statusOnly`), the provider alone, and all as the
+ * coordinator uses them (a plain ask wakes; status wakes nobody; else a sure "no" keeps the agent asleep).
  *
  *   tsx apps/server/src/rooms/eval/mention-eval.ts            Laya if installed, else the rules
  *   tsx apps/server/src/rooms/eval/mention-eval.ts --verbose  with each answer's probabilities
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { decider, Laya } from "../../decisions/eval/laya.ts";
 import { statusOnly } from "../coordinate.ts";
-import { mentionQuestion, readMentions } from "../mentions.ts";
+import { asksByWords, mentionQuestion, readMentions } from "../mentions.ts";
 
 const CaseSchema = z.object({
   from: z.string(),
@@ -48,7 +48,9 @@ async function main(): Promise<void> {
     const result = await decide(mentionQuestion(c.from, [c.to], c.text));
     const reading = readMentions([c.to], result);
     const model: Read = reading.act.length > 0 ? "act" : reading.quiet.length > 0 ? "no" : "unsure";
-    const shipped: "act" | "no" = words || model === "no" ? "no" : "act";
+    // A plain ask wakes before anything else is read, as in the coordinator.
+    const asks = asksByWords(c.text, c.to);
+    const shipped: "act" | "no" = !asks && (words || model === "no") ? "no" : "act";
 
     if (words) {
       tally.words.no += 1;

@@ -32,7 +32,7 @@ import {
   verdictOf,
   waitsOnly,
 } from "./coordinate.ts";
-import { mentionQuestion, QUIET_ON_NO, readMentions } from "./mentions.ts";
+import { asksByWords, mentionQuestion, QUIET_ON_NO, quietNote, readMentions } from "./mentions.ts";
 
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
@@ -60,12 +60,16 @@ export interface CoordinatorDeps {
 export class RoomCoordinator {
   /** (task, agent) pairs that posted an ask card in the turn now running. */
   private readonly askedInTurn = new Set<string>();
+  /** (task, agent) pairs told that a mention of theirs woke nobody, until their next turn ends. */
+  private readonly quietNoted = new Set<string>();
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
   async turnEnded(turn: { task: string; agent: string; text: string }): Promise<void> {
     const { store, runs } = this.deps;
     const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
+    // This turn answered a "not woken" note: it gets no second one.
+    const answersNote = this.quietNoted.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return;
     // Taken off the team: what it still says is posted, but it hands nothing on.
@@ -114,7 +118,7 @@ export class RoomCoordinator {
     const quiet =
       changed || waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
         ? []
-        : await this.quietMentions(task.id, turn.agent, text, named);
+        : await this.quietMentions(task.id, turn.agent, text, named, answersNote);
     const routed = mentions.filter((m) => !quiet.includes(m));
     const verdict = await this.verdict(task, turn.agent, role, text, routed);
     const plan = planTurn({
@@ -178,8 +182,17 @@ export class RoomCoordinator {
    * not woken, and the room says so in a quiet line. Plain status by the words alone; otherwise
    * the decision provider is asked, and only a sure "no" counts. Unsure, or no provider: none.
    */
-  private async quietMentions(task: string, from: string, text: string, asked: string[]): Promise<string[]> {
+  private async quietMentions(
+    task: string,
+    from: string,
+    text: string,
+    named: string[],
+    answersNote: boolean,
+  ): Promise<string[]> {
     const names = (agents: readonly string[]) => agents.map((a) => `@${a}`).join(", ");
+    // Asked in so many words: woken without asking the provider, so a wrong "no" cannot drop a handoff.
+    const asked = named.filter((a) => !asksByWords(text, a));
+    if (asked.length === 0) return [];
     if (statusOnly(text)) {
       this.say(task, "info", `@${from} only reported status to ${names(asked)}, so nobody was woken.`);
       return asked;
@@ -208,6 +221,12 @@ export class RoomCoordinator {
         "info",
         `@${from} mentioned ${names(quiet)} without asking for anything, so they were not woken.`,
       );
+      // The writer's turn is over, so the line above never reaches it. Not for the turn that
+      // answers such a note, so a "thanks @x" back cannot go round.
+      if (!answersNote) {
+        this.quietNoted.add(`${task}\u0000${from}`);
+        this.deps.runs.notify(task, from, quietNote(quiet));
+      }
     }
     return quiet;
   }

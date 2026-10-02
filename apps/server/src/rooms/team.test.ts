@@ -616,34 +616,43 @@ describe("mentions that ask for nothing", () => {
     );
   });
 
-  it("a sure no keeps the agent asleep, a request wakes it, and an unsure answer wakes it as before", async () => {
+  it("a sure no keeps the agent asleep and tells the writer, a plain ask wakes it without the provider, and an unsure answer wakes it as before", async () => {
     const { h, prompts, asked } = await mentionWorld(
       [
         // The first turn counts as a change: the worktree had no fingerprint before it.
         say("Reading the readme first."),
         say("Thanks @acme-builder, that is all from me for now."),
+        // The answer to majhi's note: once, so this "thanks" gets no second note.
+        say("Right, thanks @acme-builder."),
         say("@acme-builder please add a test for the readme links."),
         say("@acme-builder maybe glance at the readme."),
       ],
       (message) =>
-        message.startsWith("Thanks")
+        message.startsWith("Thanks") || message.startsWith("Right")
           ? { value: false, confidence: 0.95 }
-          : message.includes("please")
-            ? { value: true, confidence: 0.95 }
-            : { value: false, confidence: 0.6 },
+          : { value: false, confidence: 0.6 },
     );
     await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
-    await until(() => asked.length === 1, "the provider asked about the thanks");
-    await until(async () => (await status("ACM-1")) === "review", "review after the thanks");
-    expect(prompts["acme-builder"]).toBeUndefined();
-    expect(await systemTexts("ACM-1")).toContain(
-      "@acme-lead mentioned @acme-builder without asking for anything, so they were not woken.",
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 3, "the lead told about the quiet mention");
+    expect(prompts["acme-lead"]?.[2]).toContain(
+      "@acme-builder was not woken: your message did not ask them for anything.",
     );
+    await until(async () => (await status("ACM-1")) === "review", "review after the thanks");
+    expect(asked).toHaveLength(2);
+    expect(prompts["acme-builder"]).toBeUndefined();
+    expect(prompts["acme-lead"]).toHaveLength(3);
+    expect(
+      (await systemTexts("ACM-1")).filter(
+        (t) =>
+          t === "@acme-lead mentioned @acme-builder without asking for anything, so they were not woken.",
+      ),
+    ).toHaveLength(2);
 
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead carry on" });
     await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder woken by a request");
     await until(async () => (await status("ACM-1")) === "review", "review after the request");
+    expect(asked).toHaveLength(2);
 
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead one more thing" });
     await until(() => (prompts["acme-builder"]?.length ?? 0) === 2, "the builder woken when unsure");
@@ -657,5 +666,22 @@ describe("mentions that ask for nothing", () => {
       outcome?: { text: string };
     }[];
     expect(recent.filter((d) => d.use === "routing")).toHaveLength(3);
+  });
+
+  it("a handoff that asks in so many words wakes the teammate without the provider", async () => {
+    const { h, prompts, asked } = await mentionWorld(
+      [
+        say("Reading the readme first."),
+        say(
+          "Plan v3 is recorded. The server part starts now.\n\n@acme-builder: please build the server side of the export in this worktree, on branch task/acm-1-export.",
+        ),
+      ],
+      () => ({ value: false, confidence: 0.95 }),
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder woken by the handoff");
+    expect(asked).toEqual([]);
+    expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
   });
 });
