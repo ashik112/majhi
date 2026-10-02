@@ -1,5 +1,28 @@
 # Progress
 
+## Onboarding and git connect (plan)
+
+**Status.** The contract is on `feat/onboarding-contract`: schemas and commands in `packages/shared` (`git-signin.ts`, `remote-repos.ts`, `project-create.ts`, `onboarding.ts`, new host jobs in `host.ts`), stub handlers in `apps/server/src/gitConnect/` (501 until built), the Bitbucket callback route stub, the `signins` and `clones` event topics, and the host progress route. The brief is `docs/briefs/onboarding-and-git-connect.md`. Two agents build from it: server and host, and the onboarding UI against the stubs.
+
+### What will be built, in order
+
+1. OAuth apps (`git.oauthApps.get/set`) and `MAJHI_ORIGIN` for the callback URL.
+2. Sign-in: the flow store and its state machine, the GitHub and GitLab device flows, saving the token for one workspace (`git_accounts` token and `mr_tokens`), GitLab refresh.
+3. The Bitbucket authorization code flow and its callback.
+4. Host helper jobs: `openUrl`, `git.clone` with majhi's own askpass and progress, `git.lsRemote`, `git.push` with the workspace's credential.
+5. `git.remoteRepos` and `git.remoteOwners`.
+6. Clone jobs: the path rule `<root>/<workspace>/<repo>`, refusals, progress, registering.
+7. `projects.create`, `projects.publish`, `projects.connectRemote`.
+8. `onboarding.status`.
+9. Web, in parallel: the steps welcome, AI account, workspaces, git accounts, projects (on this computer, from a git host, new project), captain, arrive; skip per step; Hub setup reopens any step.
+
+### How it will be tested
+
+- Unit tests for the crucial parts only: the sign-in state machine (pending to done, denied, expired, cancelled, failed; `slow_down`), the token saved only for the named workspace and never in a result, log or URL, GitLab refresh rotation, the single-use Bitbucket `state`, the clone path rule (Private, a second root, nesting in a repo), clone refusals and job states, no folder left after a failed clone, the askpass never putting the token in argv, and connect pushing only to an empty remote.
+- Host APIs behind an injectable `fetch`; git against local bare repos. No test reaches a real git host.
+- Web: typecheck, then a browser pass through every step with the longest workspace names, at about 1100px wide.
+- Left for the owner: signing in to real GitHub, GitLab and Bitbucket accounts, and registering the three apps once.
+
 ## PRV-31: Back up majhi.db (built)
 
 **Status.** Built on `task/prv-31-back-up-majhi-db`, from `main`. Part of Phase 2c (SPEC: a daily snapshot of `majhi.db` kept for 7 days, with restore).
