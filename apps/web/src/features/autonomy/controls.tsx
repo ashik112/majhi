@@ -9,7 +9,7 @@ import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useOrgs } from "@/lib/studio-queries";
-import { budgetText, capText } from "./model";
+import { budgetText, capText, pickOrgsText, SIZE_LIMIT_WORD } from "./model";
 
 /** Turn on, Pause, Resume and the two stops, each with the line the history keeps. */
 export function useAutonomyActions() {
@@ -60,15 +60,19 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
       <div className="flex flex-col gap-4 p-5">
         <h2 className="text-md font-semibold">Turn on autonomous mode</h2>
         <p className="text-base text-fg-muted text-pretty">
-          The boss picks work from the board and the org backlogs, starts it, and decides its own cards within
-          these limits. Every decision lands in the log with one line why. You can pause or stop it at any
-          time.
+          The boss picks work from the board and the workspace backlogs, starts it, and decides its own cards
+          within these limits. Every decision lands in the log with one line why. You can pause or stop it at
+          any time.
         </p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-base">
           <dt className="text-fg-muted">Day cap</dt>
           <dd className="text-fg">
             {budgetText(settings.day)}
             <span className="ml-2 text-sm text-fg-faint">{capText(status.spend.total)} so far today</span>
+          </dd>
+          <dt className="text-fg-muted">Picks</dt>
+          <dd className="text-fg">
+            {SIZE_LIMIT_WORD[settings.pick.size]}. {pickOrgsText(settings.pick, name)}.
           </dd>
           <dt className="text-fg-muted">Accounts</dt>
           <dd className="text-fg">
@@ -79,7 +83,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-fg-faint">
               <tr>
-                <th className="pb-1 font-normal">Org</th>
+                <th className="pb-1 font-normal">Workspace</th>
                 <th className="pb-1 font-normal">Cap</th>
                 <th className="pb-1 font-normal">Push</th>
                 <th className="pb-1 font-normal">Merge</th>
@@ -105,7 +109,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
           </table>
         )}
         <p className="text-sm text-fg-faint">
-          Change these under Limits on the{" "}
+          Change these under Rules on the{" "}
           <PageLink page="autonomous" onClick={onClose} className="text-blue hover:underline">
             Autonomous page
           </PageLink>
@@ -221,13 +225,13 @@ export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () =
   );
 }
 
-/** The page header's controls: Turn on while off; Pause or Resume and the two stops while not. */
+/** The status bar's controls: Turn on while off; Pause or Resume, and Stop, which offers both stops. */
 export function ModeControls({ status }: { status: AutonomyStatus }) {
   const actions = useAutonomyActions();
-  const [open, setOpen] = useState<"on" | "stop-now">();
+  const [open, setOpen] = useState<"on" | "stop">();
   const mode = status.mode;
   return (
-    <>
+    <div className="flex shrink-0 items-center gap-2">
       {mode === "off" && (
         <Button variant="primary" onClick={() => setOpen("on")}>
           Turn on
@@ -243,27 +247,13 @@ export function ModeControls({ status }: { status: AutonomyStatus }) {
           Resume
         </Button>
       )}
-      {(mode === "on" || mode === "paused") && (
-        <Button disabled={actions.busy} onClick={() => actions.stop("graceful")}>
-          Stop gracefully
-        </Button>
-      )}
       {mode !== "off" && (
-        <Button disabled={actions.busy} onClick={() => setOpen("stop-now")}>
-          Stop now
+        <Button disabled={actions.busy} onClick={() => setOpen("stop")}>
+          Stop
         </Button>
       )}
       {open === "on" && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
-      {open === "stop-now" && (
-        <ConfirmDialog
-          title="Stop autonomous mode now?"
-          body={STOP_NOW_BODY}
-          confirmLabel="Stop now"
-          busy={actions.busy}
-          onConfirm={() => actions.stop("now", () => setOpen(undefined))}
-          onCancel={() => setOpen(undefined)}
-        />
-      )}
-    </>
+      {open === "stop" && <OffDialog mode={mode} onClose={() => setOpen(undefined)} />}
+    </div>
   );
 }

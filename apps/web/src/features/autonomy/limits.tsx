@@ -96,7 +96,7 @@ export function LimitsCard({ status }: { status: AutonomyStatus }) {
         )}
       </CardHead>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
-        <span className="text-fg-soft">Day cap, all orgs together</span>
+        <span className="text-fg-soft">Day cap, all workspaces together</span>
         <span className="flex gap-1.5">
           <CapFields label="Day cap" value={form.day} onChange={(day) => edit({ day })} />
         </span>
@@ -133,7 +133,7 @@ export function LimitsCard({ status }: { status: AutonomyStatus }) {
       </div>
       {Object.keys(form.orgs).length > 0 && (
         <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-3 text-sm">
-          <span className="pb-1 text-xs text-fg-faint">Org</span>
+          <span className="pb-1 text-xs text-fg-faint">Workspace</span>
           <span className="pb-1 text-xs text-fg-faint">Cap a day</span>
           <span className="pb-1 text-xs text-fg-faint">Push</span>
           <span className="pb-1 text-xs text-fg-faint">Merge</span>
@@ -165,7 +165,7 @@ export function LimitsCard({ status }: { status: AutonomyStatus }) {
       )}
       <p className="text-xs text-fg-faint text-pretty">
         Push lets it push task branches and open MRs. Merge lets it merge into the base branch, and merge MRs
-        where the org's own merge policy allows. Days and the summary time follow {BROWSER_ZONE}, this
+        where the workspace's own merge policy allows. Days and the summary time follow {BROWSER_ZONE}, this
         browser's zone.
       </p>
       {(problem ?? save.error) && (

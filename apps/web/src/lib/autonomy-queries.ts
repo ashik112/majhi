@@ -53,7 +53,8 @@ type StatusCommand =
   | "autonomy.pause"
   | "autonomy.stop"
   | "autonomy.configure"
-  | "autonomy.forget";
+  | "autonomy.forget"
+  | "autonomy.exclude";
 
 /**
  * A command that answers with the new status: it goes into the cache at once, and the feed refetches.
@@ -65,7 +66,11 @@ export function useAutonomyCommand<N extends StatusCommand>(name: N) {
     mutationFn: ({ input, reason }) => cmd(name, input, { reason }),
     onSuccess: (status) => {
       client.setQueryData(statusKey, status);
-      return client.invalidateQueries({ queryKey: queryKeys.autonomy });
+      return Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.autonomy }),
+        // A task's mark Not for autonomous mode shows on its card and in its header.
+        ...(name === "autonomy.exclude" ? [client.invalidateQueries({ queryKey: queryKeys.tasks })] : []),
+      ]);
     },
   });
 }

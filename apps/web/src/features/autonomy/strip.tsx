@@ -28,7 +28,8 @@ export function AutonomyStrip() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const actions = useAutonomyActions();
   const [stopOpen, setStopOpen] = useState(false);
-  if (!status || status.mode === "off") return null;
+  // The Autonomous page has its own status bar with the same readout and controls.
+  if (!status || status.mode === "off" || pathname === PAGE_PATH.autonomous) return null;
 
   const mode = status.mode;
   const lamp = MODE_LAMP[mode];

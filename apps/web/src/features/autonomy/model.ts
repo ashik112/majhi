@@ -3,11 +3,14 @@ import type {
   AutonomyEventKind,
   AutonomyMode,
   AutonomyPatch,
+  AutonomyPick,
   AutonomySettings,
   AutonomySummary,
   Budget,
   CapUse,
   TaskPriority,
+  TaskSize,
+  TaskSizeLimit,
 } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
 import { readStored, writeStored } from "@/features/memory/storage";
@@ -273,4 +276,56 @@ export function limitsPatch(
     patch.floors = { window: window.value, weekly: weekly.value };
   if (draft.summaryAt !== settings.summary_at) patch.summary_at = draft.summaryAt;
   return { patch };
+}
+
+// The pick rules ------------------------------------------------------------
+
+export const SIZE_LIMIT_WORD: Record<TaskSizeLimit, string> = {
+  small: "Small only",
+  medium: "Up to medium",
+  any: "Any size",
+};
+
+export const SIZE_WORD: Record<TaskSize, string> = { small: "Small", medium: "Medium", large: "Large" };
+
+/** The workspaces line: "Every workspace", "Acme, Private", "No workspace". */
+export function pickOrgsText(pick: AutonomyPick, name: (id: string) => string): string {
+  if (pick.orgs === undefined) return "Every workspace";
+  if (pick.orgs.length === 0) return "No workspace";
+  return pick.orgs.map(name).join(", ");
+}
+
+export interface PickDraft {
+  size: TaskSizeLimit;
+  /** Undefined: every org. */
+  orgs: string[] | undefined;
+}
+
+export function pickDraft(pick: AutonomyPick): PickDraft {
+  return { size: pick.size, orgs: pick.orgs === undefined ? undefined : [...pick.orgs] };
+}
+
+/** The `autonomy.configure` input for the pick rules, or undefined when nothing changed. */
+export function pickPatch(draft: PickDraft, pick: AutonomyPick): AutonomyPatch | undefined {
+  const sameOrgs =
+    draft.orgs === undefined
+      ? pick.orgs === undefined
+      : pick.orgs !== undefined && [...draft.orgs].sort().join(" ") === [...pick.orgs].sort().join(" ");
+  if (draft.size === pick.size && sameOrgs) return undefined;
+  return {
+    pick: {
+      ...(draft.size === pick.size ? {} : { size: draft.size }),
+      ...(sameOrgs ? {} : { orgs: draft.orgs ?? null }),
+    },
+  };
+}
+
+// The log --------------------------------------------------------------------
+
+export type LogFilter = "all" | "decisions" | "tasks";
+
+/** Whether an event belongs in the log under this filter. Decisions are filtered by the server. */
+export function inLog(event: Pick<AutonomyEvent, "kind">, filter: LogFilter): boolean {
+  if (filter === "tasks") return event.kind === "task";
+  return true;
 }

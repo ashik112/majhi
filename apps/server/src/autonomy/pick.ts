@@ -17,7 +17,7 @@ export function orgName(org: string, names: OrgNames): string {
 /** Why the org rule keeps autonomous mode out of this org, or undefined when it may work there. */
 export function orgProblem(pick: AutonomyPick, org: string, names: OrgNames): string | undefined {
   if (pick.orgs === undefined || pick.orgs.includes(org)) return undefined;
-  return `${orgName(org, names)} is not one of the orgs autonomous mode may work in`;
+  return `${orgName(org, names)} is not one of the workspaces autonomous mode may work in`;
 }
 
 /** Why the rules leave a backlog task out, or undefined when the boss may take it. */
@@ -38,13 +38,13 @@ export function leftOutWhy(
 export function pickLines(pick: AutonomyPick, names: OrgNames): string[] {
   const orgs =
     pick.orgs === undefined
-      ? "every org"
+      ? "every workspace"
       : pick.orgs.length === 0
-        ? "no org at all"
+        ? "no workspace at all"
         : `only ${pick.orgs.map((o) => orgName(o, names)).join(", ")}`;
   return [
     `Task size: ${limitWord(pick.size)}${pick.size === "any" ? ". Take large tasks too, splitting them when that helps." : ". Larger tasks, and tasks whose size is not known, are not started."}`,
-    `Orgs: ${orgs}.`,
+    `Workspaces (orgs): ${orgs}.`,
     "Tasks the owner marked Not for autonomous mode are left alone.",
   ];
 }

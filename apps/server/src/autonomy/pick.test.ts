@@ -140,20 +140,22 @@ describe("the org rule", () => {
     const start = await t.call("majhi_tasks_start", { id: acme });
     expect(start).toEqual({
       isError: true,
-      text: "Refused: Acme is not one of the orgs autonomous mode may work in.",
+      text: "Refused: Acme is not one of the workspaces autonomous mode may work in.",
     });
     const create = await t.call("majhi_tasks_create", {
       text: "Add a health check",
       repos: [{ project: "acme-api" }],
       start: false,
     });
-    expect(create.text).toBe("Refused: Acme is not one of the orgs autonomous mode may work in.");
+    expect(create.text).toBe("Refused: Acme is not one of the workspaces autonomous mode may work in.");
     // A task with no org is Private, which the rule allows.
     const own = await t.call("majhi_tasks_create", { text: "Write the release notes", start: false });
     expect(own.isError).toBe(false);
     // Back to every org.
     expect((await t.configure({ orgs: null })).settings.pick).toEqual({ size: "any" });
-    expect((await t.call("majhi_tasks_start", { id: acme })).text).not.toContain("orgs autonomous mode");
+    expect((await t.call("majhi_tasks_start", { id: acme })).text).not.toContain(
+      "workspaces autonomous mode",
+    );
     // An org that does not exist is refused.
     expect((await t.h.cmd("autonomy.configure", { pick: { orgs: ["nowhere"] } })).status).toBe(404);
   });
@@ -208,7 +210,7 @@ describe("what the boss reads", () => {
     expect(pick.backlog.map((b) => [b.id, b.size])).toEqual([[small, "small"]]);
     expect(pick.leftOut).toBe(3);
     expect(pick.rules[0]).toContain("Task size: Up to medium");
-    expect(pick.rules[1]).toBe("Orgs: only Acme.");
+    expect(pick.rules[1]).toBe("Workspaces (orgs): only Acme.");
 
     const status = await t.status();
     const row = (id: string) => status.backlog.find((b) => b.task === id);
@@ -216,7 +218,7 @@ describe("what the boss reads", () => {
     expect(row(small)?.leftOut).toBeUndefined();
     expect(row(big)?.leftOut).toBe("It is large, and the size rule is Up to medium");
     expect(row(marked)).toMatchObject({ noAutonomy: true, leftOut: "Marked Not for autonomous mode" });
-    expect(row(own)?.leftOut).toBe("Private is not one of the orgs autonomous mode may work in");
+    expect(row(own)?.leftOut).toBe("Private is not one of the workspaces autonomous mode may work in");
   });
 });
 
