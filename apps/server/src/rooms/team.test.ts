@@ -79,12 +79,17 @@ async function systemTexts(task: string): Promise<string[]> {
   return (await items(task)).flatMap((i) => (i.type === "system" ? [i.text] : []));
 }
 
+/**
+ * Polls until `check` holds. The deadline is wall-clock, not a poll count: a turn ending runs git
+ * and the decision chain before it wakes the next agent, which takes seconds on a busy machine.
+ * Kept under the test timeout so a real hang still names what it waited for.
+ */
 async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
+  const deadline = Date.now() + 15_000;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 5));
   }
-  throw new Error(`Timed out waiting for ${what}`);
 }
 
 /** Nobody works and nothing waits in any queue: no further agent turn is scheduled. */
