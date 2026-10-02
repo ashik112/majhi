@@ -24,7 +24,6 @@ test("the sidebar links to every page, and the old addresses land on the new one
     ["Skills", "/skills"],
     ["Hub setup", "/setup"],
     ["Projects and links", "/projects"],
-    ["Orgs", "/orgs"],
   ] as const) {
     await nav(page)
       .getByRole("link", { name: new RegExp(`^${name}`) })
@@ -35,6 +34,14 @@ test("the sidebar links to every page, and the old addresses land on the new one
       "page",
     );
   }
+
+  // Workspaces open from the switcher at the top.
+  await page.getByRole("button", { name: /^Workspace: / }).click();
+  await page
+    .getByRole("menu", { name: "Workspaces" })
+    .getByRole("menuitem", { name: "Manage workspaces" })
+    .click();
+  await expect(page).toHaveURL(/\/orgs$/);
 
   await page.goto("/repos");
   await expect(page).toHaveURL(/\/projects$/);
@@ -64,7 +71,7 @@ test("keys: g then a letter goes to a page, ? lists the keys", async ({ page }) 
   await expect(board(page)).toBeVisible();
   for (const [keys, path] of [
     ["a", "/agents"],
-    ["c", "/accounts"],
+    ["u", "/accounts"],
     ["h", "/usage"],
     ["s", "/setup"],
     ["p", "/projects"],
@@ -163,22 +170,29 @@ test("the board shows the task in Inbox; j and Enter open it, n adds a chat task
   await expect(inbox.getByRole("link").first()).toBeFocused();
 });
 
-test("the org filter is remembered, keeps URLs clean, and narrows the board, the count and the dialog", async ({
+test("the workspace filter is remembered, keeps URLs clean, and narrows the board, the count and the dialog", async ({
   page,
 }) => {
   await page.goto("/");
-  const orgs = page.getByRole("group", { name: "Filter by org" });
-  await expect(orgs.getByRole("button", { name: /All orgs/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(orgs.getByRole("button", { name: /Globex/ })).toContainText("1");
+  const switcher = page.getByRole("button", { name: /^Workspace: / });
+  const menu = page.getByRole("menu", { name: "Workspaces" });
+  await expect(switcher).toHaveAccessibleName("Workspace: All workspaces. Change workspace");
+  await switcher.click();
+  await expect(menu.getByRole("menuitemradio", { name: /All workspaces/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(menu.getByRole("menuitemradio", { name: /Globex/ })).toContainText("1");
 
-  await orgs.getByRole("button", { name: /Globex/ }).click();
+  await menu.getByRole("menuitemradio", { name: /Globex/ }).click();
   await expect(page).not.toHaveURL(/org=/);
-  await expect(orgs.getByRole("button", { name: /Globex/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(switcher).toHaveAccessibleName("Workspace: Globex. Change workspace");
   await expect(page.getByRole("link", { name: /fix the login redirect/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Explain how sessions/ })).toHaveCount(0);
   await expect(page.getByText("1 open")).toBeVisible();
 
-  // The filter goes with the owner to a page and back, and the dialog opens on that org's projects.
+  // The filter goes with the owner to a page and back, and the dialog opens on that workspace's projects.
   await nav(page)
     .getByRole("link", { name: /^Agents/ })
     .click();
@@ -192,7 +206,10 @@ test("the org filter is remembered, keeps URLs clean, and narrows the board, the
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
 
-  await orgs.getByRole("button", { name: /All orgs/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  // Picking All keeps the owner on the page they are on.
+  await switcher.click();
+  await menu.getByRole("menuitemradio", { name: /All workspaces/ }).click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await nav(page).getByRole("link", { name: "Board" }).click();
   await expect(page.getByRole("link", { name: /Explain how sessions/ })).toBeVisible();
 });

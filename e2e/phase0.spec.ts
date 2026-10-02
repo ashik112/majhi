@@ -17,7 +17,7 @@ test.beforeEach(async ({ context }, info) => {
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 const rows = (page: Page) => page.locator("[data-repo-row]");
 const row = (page: Page, name: string) => rows(page).filter({ hasText: name });
-const chosenRoots = (page: Page) => page.getByRole("list", { name: "Roots", exact: true });
+const chosenRoots = (page: Page) => page.getByRole("list", { name: "Folders", exact: true });
 const folders = (page: Page, where: string) => page.getByRole("listbox", { name: `Folders in ${where}` });
 
 /** The helper connects a moment after `/health` answers; tests that browse folders wait for it. */
@@ -36,10 +36,10 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
 }) => {
   await waitForHelper(request);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Pick your workspace roots" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pick your project folders" })).toBeVisible();
   const progress = page.getByRole("navigation", { name: "Setup progress" });
   await expect(progress).toContainText(/Step 1 of \d+/);
-  await expect(progress.locator('[aria-current="step"]')).toHaveText("Workspace roots");
+  await expect(progress.locator('[aria-current="step"]')).toHaveText("Project folders");
 
   const suggested = page.getByRole("list", { name: "Suggested" });
   const work = suggested.getByRole("button", { name: "~/Work, 3 repos" });
@@ -56,7 +56,7 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await work.click();
   await expect(work).toHaveAttribute("aria-pressed", "true");
   await expect(chosenRoots(page).getByRole("listitem")).toHaveText([/^~\/Work/]);
-  await page.getByRole("button", { name: /Save roots/ }).click();
+  await page.getByRole("button", { name: /Save folders/ }).click();
 
   // Step 2 (first account) follows; Phase 0 only cares about the repos, so skip the rest of setup.
   await expect(progress).toContainText("Step 2 of 4");
@@ -75,7 +75,7 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await expect(row(page, "gamma-infra")).toContainText("bitbucket-acme");
   await expect(row(page, "gamma-infra")).toContainText("ops/gamma-infra");
 
-  await expect(page.getByText("Roots saved")).toBeHidden();
+  await expect(page.getByText("Folders saved")).toBeHidden();
   await shot(page, "repos");
 });
 
@@ -91,7 +91,7 @@ test("the folder browser marks repos, goes up with Backspace, and adds the folde
   const filter = page.getByRole("combobox", { name: "Filter folders" });
   await expect(filter).toBeFocused();
   const home = folders(page, "~");
-  await expect(home.getByRole("option", { name: "Work, 3 repos, already a root" })).toBeVisible();
+  await expect(home.getByRole("option", { name: "Work, 3 repos, already added" })).toBeVisible();
   await expect(home.getByRole("option", { name: "Empty", exact: true })).toBeVisible();
   // The home folder itself is too wide to mount.
   await expect(page.getByRole("button", { name: /Use this folder/ })).toBeDisabled();
@@ -181,7 +181,7 @@ test("a root that does not exist shows the restart card with make up", async ({ 
 
   const card = page.getByRole("region", { name: /Restart majhi/ });
   await expect(card).toBeVisible();
-  await expect(card.getByRole("list", { name: "Roots not mounted yet" })).toHaveText(/~\/Missing/);
+  await expect(card.getByRole("list", { name: "Folders not mounted yet" })).toHaveText(/~\/Missing/);
   await expect(card.getByText("make up", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Reload" })).toBeVisible();
   // Let the entrance motion settle so the capture shows the resting card.
@@ -206,8 +206,8 @@ test("without the host helper the roots form falls back to typed paths", async (
   await page.goto("/settings/roots");
 
   await expect(page.getByText("Folder browsing needs the majhi host helper")).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Workspace root 1" })).toHaveValue("~/Work");
-  await expect(page.getByRole("textbox", { name: "Workspace root 3" })).toHaveValue("~/Missing");
+  await expect(page.getByRole("textbox", { name: "Project folder 1" })).toHaveValue("~/Work");
+  await expect(page.getByRole("textbox", { name: "Project folder 3" })).toHaveValue("~/Missing");
   await expect(page.getByRole("button", { name: "Browse folders" })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "online" })).toContainText("helper off");
   await shot(page, "helper-offline");

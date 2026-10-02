@@ -81,11 +81,11 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
     log(page).getByText("echo: The owner approved: Create org Globex.", { exact: false }),
   ).toBeVisible();
 
-  // The org shows on the Orgs page.
+  // The org shows on the Workspaces page.
   await page.keyboard.press("Meta+j");
   await expect(drawer(page)).toHaveCount(0);
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
   await expect(page.getByText("Globex").first()).toBeVisible();
   // Private is a normal org card, first, and cannot be removed.
   const priv = page.getByRole("region", { name: "Private" });
@@ -108,7 +108,7 @@ test("Cmd J opens the boss over any page; a change waits for approval, then appl
   await page.keyboard.press("Control+j");
   await expect(drawer(page)).toHaveCount(0);
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
   await expect(page.getByText("Globex")).toHaveCount(0);
 });
 

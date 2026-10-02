@@ -91,12 +91,12 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await page.goto("/");
 
   // Step 1
-  await expect(page.getByRole("heading", { name: "Pick your workspace roots" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pick your project folders" })).toBeVisible();
   await page
     .getByRole("list", { name: "Suggested" })
     .getByRole("button", { name: /^~\/Work/ })
     .click();
-  await page.getByRole("button", { name: /Save roots/ }).click();
+  await page.getByRole("button", { name: /Save folders/ }).click();
 
   // Step 2: sign in through the terminal
   const progress = page.getByRole("navigation", { name: "Setup progress" });
@@ -155,11 +155,11 @@ test("Accounts and Agents: an org, two Claude accounts, three agents, each healt
   const form = page.getByRole("form", { name: "Add an account" });
   // With no other org, the account starts in Private.
   await expect(form.getByRole("combobox", { name: "Belongs to" })).toHaveValue("private");
-  await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: "New org..." });
-  const orgForm = page.getByRole("form", { name: "New org" });
-  await orgForm.getByRole("textbox", { name: "Org name" }).fill("Acme");
-  await expect(orgForm.getByRole("textbox", { name: "Org id" })).toHaveValue("acme");
-  await orgForm.getByRole("button", { name: "Create org" }).click();
+  await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: "New workspace..." });
+  const orgForm = page.getByRole("form", { name: "New workspace" });
+  await orgForm.getByRole("textbox", { name: "Workspace name" }).fill("Acme");
+  await expect(orgForm.getByRole("textbox", { name: "Workspace id" })).toHaveValue("acme");
+  await orgForm.getByRole("button", { name: "Create workspace" }).click();
   await expect(orgForm).toBeHidden();
   await expect(form.getByRole("combobox", { name: "Belongs to" })).toHaveValue("acme");
 
