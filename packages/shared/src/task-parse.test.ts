@@ -141,6 +141,29 @@ describe("prose is not a base or a branch", () => {
     expect(p).not.toHaveProperty("branch");
   });
 
+  // Whole briefs the way leads write them (PRV-64 got base "Playwright", PRV-66 got base "branch").
+  it.each([
+    "Add screenshots to the api docs\n\nTake them with the Playwright tool. The ones taken with Playwright last week are stale.",
+    "Task text picks the base branch by mistake\n\nThe parser reads the base branch from prose. Use the default branch instead, and work on main later.",
+    "Tidy the web footer\n\nProduct names like Acme Cloud, GitHub, Docker and Playwright show up here.\nThe branch protection on main stays. Rebase on develop is not needed, branch: none.",
+    "Branch develop from main\n\nbase: staging\nbranch: feature/x\nfrom release/1.2",
+  ])("reads only prose, never a base or a branch, in: %s", (text) => {
+    const p = parseTaskText(text, ctx);
+    expect(Object.keys(p).sort()).toEqual(
+      [
+        "kind",
+        "links",
+        "mentions",
+        "repos",
+        "title",
+        "warnings",
+        ...(p.org === undefined ? [] : ["org"]),
+      ].sort(),
+    );
+    expect(p.title).toBe(text.split("\n")[0]);
+    expect(p.warnings).toEqual([]);
+  });
+
   it("does not turn on /profile into a code task", () => {
     const text = "Investigate why the page is down in prod. Check the screenshots on /profile";
     expect(parseTaskText(text, ctx).kind).toBe("ops");

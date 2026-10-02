@@ -85,8 +85,7 @@ The UI reference is `design/ui-demo.dc.html`. It is a prototype written in a can
 **Left column: task box and task list**
 - Task box: a multiline input. While typing, it parses the text live and shows chips for what it understood:
   - repos, matched by project aliases
-  - base branch: phrases like `from develop`, `base: main`, `off release/2.1`
-  - working branch: phrases like `on feature/x` or `branch fix/y` (must contain a slash to count)
+  - never a base or working branch: words in the title or text are prose ("taken with Playwright", "work on main later", "the default branch"). The base is the project's, or the one picked for a repo on purpose (a project chip's branch, `repos[].base` on create); a picked base the repo does not have falls back to the project's with a warning. Until the task starts, its base can change (`tasks.update` with `base`). The working branch is always a new `task/<key>-<slug>`, the slug keeping every title word
   - @mentioned agents (these become the team instead of the org default)
   - links (fetched and given to the team)
   - attached files and pasted images

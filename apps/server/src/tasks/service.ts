@@ -69,6 +69,7 @@ import {
 } from "../git/merge.ts";
 import { commitsSinceStart } from "../git/since-start.ts";
 import {
+  baseExists,
   createWorktree,
   dirtyWorktrees,
   removeWorktree,
@@ -490,11 +491,12 @@ export class TaskService {
             fallback: agent,
             mode: input.mode,
           });
-    const repos = investigation
-      ? []
-      : (await this.planRepos(id, parsed, projects, picks.bases)).map((r) =>
-          picks.writes.has(r.project) ? { ...r, writes: true } : r,
-        );
+    const repoPlan = investigation
+      ? { repos: [], warnings: [] }
+      : await this.planRepos(id, parsed, projects, picks.bases);
+    const repos = repoPlan.repos.map((r) =>
+      picks.writes.has(r.project) ? { ...r, writes: true } : r,
+    );
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
@@ -565,7 +567,7 @@ export class TaskService {
       throw err;
     }
 
-    for (const w of parsed.warnings) this.warn(id, w);
+    for (const w of [...parsed.warnings, ...repoPlan.warnings]) this.warn(id, w);
     if (picks.refused.length > 0) {
       this.warn(
         id,
@@ -799,8 +801,9 @@ export class TaskService {
     parsed: ParsedTask,
     projects: readonly ProjectInfo[],
     bases: ReadonlyMap<string, string> = new Map(),
-  ): Promise<TaskRepo[]> {
+  ): Promise<{ repos: TaskRepo[]; warnings: string[] }> {
     const repos: TaskRepo[] = [];
+    const warnings: string[] = [];
     for (const match of parsed.repos) {
       const project = projects.find((p) => p.id === match.project);
       if (project === undefined) continue;
@@ -812,7 +815,19 @@ export class TaskService {
       // The base comes from the creator's pick for this repo or the project, never from prose like
       // "move off staging". The working branch is always a new task branch, never one that exists:
       // an agent must not commit on the owner's own branches.
-      const base = bases.get(project.id) ?? project.base;
+      const picked = bases.get(project.id);
+      let base = picked ?? project.base;
+      // A picked base the repo does not have falls back to the project's, said in the room.
+      if (
+        picked !== undefined &&
+        picked !== project.base &&
+        !(await baseExists(project.path, picked))
+      ) {
+        base = project.base;
+        warnings.push(
+          `${project.id} has no branch ${picked}. Starting from ${project.base ?? "the project's base"} instead. To change it before the task starts, update its base.`,
+        );
+      }
       if (base === undefined)
         throw new UserError(
           `Project "${project.id}" has no base branch. Set one on the project.`,
@@ -833,7 +848,7 @@ export class TaskService {
         createdBranch: true,
       });
     }
-    return repos;
+    return { repos, warnings };
   }
 
   /** The registered projects the task's agents read read-only: its org's, or all for a task without an org. */
@@ -1079,8 +1094,9 @@ export class TaskService {
   }
 
   /**
-   * Changes the title and the description, and the owner's priority and deadline (null clears
-   * one). Key, folder and branch stay; TASK.md is written again.
+   * Changes the title and the description, the owner's priority and deadline (null clears
+   * one), and the starting branch before the task starts. Key, folder and branch stay; TASK.md is
+   * written again.
    */
   async update(input: {
     id: string;
@@ -1090,8 +1106,14 @@ export class TaskService {
     mode?: CoordinationMode | undefined;
     priority?: TaskPriority | null | undefined;
     due?: string | null | undefined;
+    base?: string | undefined;
+    project?: string | undefined;
   }): Promise<Task> {
     const task = this.get(input.id);
+    if (input.base !== undefined)
+      await this.changeBase(task, input.base, input.project);
+    else if (input.project !== undefined)
+      throw new UserError("project goes with base: give the new base too.");
     if (input.agent !== undefined && input.agent !== task.team[0])
       await this.changeAgent(task, input.agent);
     if (input.mode !== undefined && input.mode !== task.mode)
@@ -1122,6 +1144,53 @@ export class TaskService {
     this.deps.room.publishTask(this.get(task.id));
     this.deps.events.emit(["tasks"]);
     return this.get(task.id);
+  }
+
+  /**
+   * Moves a repo's starting branch while the task waits: in the inbox or ready, before its worktree
+   * exists. The new base must be in the repo. The task branch name stays.
+   */
+  private async changeBase(
+    task: Task,
+    base: string,
+    project: string | undefined,
+  ): Promise<void> {
+    if (task.repos.length === 0)
+      throw new UserError(`${task.id} has no repo, so it has no starting branch.`);
+    if (project === undefined && task.repos.length > 1)
+      throw new UserError(
+        `${task.id} has more than one repo. Say which with project: ${task.repos.map((r) => r.project).join(", ")}.`,
+      );
+    const repo =
+      project === undefined
+        ? task.repos[0]
+        : task.repos.find((r) => r.project === project);
+    if (repo === undefined)
+      throw new UserError(`${task.id} has no repo ${project}.`, 404);
+    if (repo.base === base) return;
+    if (
+      (task.status !== "inbox" && task.status !== "ready") ||
+      repo.worktree !== undefined
+    )
+      throw new UserError(
+        `${task.id} has started, so its starting branch stays ${repo.base}. Only a task that has not started can change it.`,
+        409,
+      );
+    if (!(await baseExists(repo.source, base)))
+      throw new UserError(
+        `${repo.project} has no branch ${base}. The starting branch stays ${repo.base}.`,
+        409,
+      );
+    this.deps.store.tasks.setRepoBase(
+      task.id,
+      repo.project,
+      base,
+      this.now().toISOString(),
+    );
+    this.note(
+      task.id,
+      `Starting branch${task.repos.length > 1 ? ` of ${repo.project}` : ""}: ${base}, was ${repo.base}.`,
+    );
   }
 
   /** A new coordination mode starts its own turn order; the loop guard's count and the removed agents stay. */

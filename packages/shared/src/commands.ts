@@ -902,11 +902,18 @@ export const commands = {
   "tasks.update": {
     risk: "change",
     summary:
-      "Change a task's title, description (the text after the title line), its agent, or the owner's priority (high, normal, low) and deadline (due, YYYY-MM-DD). Its key, folder and branch stay. TASK.md is rewritten",
+      "Change a task's title, description (the text after the title line), its agent, the owner's priority (high, normal, low) and deadline (due, YYYY-MM-DD), or the starting branch (base) while it has not started. Its key, folder and branch stay. TASK.md is rewritten",
     input: z.object({
       id: TaskIdSchema,
       title: z.string().trim().min(1).max(300).optional(),
       brief: z.string().max(100_000).optional(),
+      /**
+       * The branch the task's worktree is cut from. Only before the task starts (no worktree yet).
+       * Refused when the repo has no such branch.
+       */
+      base: LocalBranchSchema.optional(),
+      /** The repo whose base changes. Needed when the task has more than one. */
+      project: IdSchema.optional(),
       /** Gives the task to another agent. Refused while an agent of the task is working. */
       agent: IdSchema.optional(),
       /** How the team takes turns (5.3). */

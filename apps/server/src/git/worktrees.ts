@@ -136,6 +136,21 @@ async function tryFetch(source: string, remote: string, ref: string): Promise<st
 }
 
 /** The remote copy of the base when there is one, else the local branch, tag or commit. */
+/**
+ * Whether a task could start from `base` in `source`: a remote or local branch, or a commit,
+ * as this machine knows them now. No fetch, so it is fast enough to run on create.
+ */
+export async function baseExists(source: string, base: string): Promise<boolean> {
+  const remote = await remoteOf(source).catch(() => undefined);
+  return resolveBase(source, remote, base).then(
+    () => true,
+    (err: unknown) => {
+      if (err instanceof WorktreeProblem) return false;
+      throw err;
+    },
+  );
+}
+
 async function resolveBase(source: string, remote: string | undefined, base: string): Promise<string> {
   if (remote !== undefined && (await remoteBranchExists(source, remote, base))) return `${remote}/${base}`;
   if (await localBranchExists(source, base)) return base;
