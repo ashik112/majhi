@@ -10,11 +10,13 @@ import { release } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { HostInfo, LayaQuestion } from "@majhi/shared";
-import { type LinkOptions, pollLoop, sendReply } from "./client.ts";
+import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
 import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
+import { ensureAskpass, gitAuthEnv } from "./gitAuth.ts";
+import { type GitCloneDeps, gitClone, gitLsRemote } from "./gitClone.ts";
 import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
 import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
@@ -23,6 +25,7 @@ import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
 import { showNotification } from "./notify.ts";
+import { isWsl, openUrl } from "./openUrl.ts";
 import { findExecutable, toolPath } from "./paths.ts";
 import { composeEnv, createRemounter, dockerStep, type ExecFn, type RemountOptions } from "./remount.ts";
 import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
@@ -160,7 +163,18 @@ async function main(): Promise<void> {
     },
     find: (name) => findExecutable(name, path),
   };
-  const gitPushDeps: GitPushDeps = { run: runCommand, home: config.home, path, kind: pathKind };
+  // majhi's own askpass for clones and pushes with a workspace's token (see gitAuth.ts).
+  const askpass = await ensureAskpass(config.majhiHome);
+  const authDeps = { majhiHome: config.majhiHome, askpass, path, home: config.home };
+  const gitPushDeps: GitPushDeps = {
+    run: runCommand,
+    home: config.home,
+    path,
+    kind: pathKind,
+    authEnv: (auth) => gitAuthEnv(authDeps, auth),
+  };
+  const gitCloneDeps: GitCloneDeps = { ...authDeps, run: runCommand, socket: gitDeps.socket };
+  const wsl = process.platform === "linux" && isWsl(release(), process.env);
   // The server resumes turns that stalled while the Mac slept when it sees this change.
   let wokeAt: string | undefined;
   const info = (): HostInfo => {
@@ -236,7 +250,22 @@ async function main(): Promise<void> {
     }),
     gitToken: (params: { via: "gh" | "glab"; host: string }) =>
       readGitToken(gitDeps, params.via, params.host),
-    gitPush: (params: { path: string; url: string; branch: string }) => gitPush(gitPushDeps, params),
+    gitPush: (params: Parameters<typeof gitPush>[1]) => gitPush(gitPushDeps, params),
+    openUrl: (params: { url: string }) =>
+      openUrl(
+        {
+          run: runCommand,
+          platform: process.platform,
+          wsl,
+          path,
+          env: process.env,
+          find: (name) => findExecutable(name, path),
+        },
+        params.url,
+      ),
+    gitClone: (params: Parameters<typeof gitClone>[1], progress: Parameters<typeof gitClone>[2]) =>
+      gitClone(gitCloneDeps, params, progress),
+    gitLsRemote: (params: Parameters<typeof gitLsRemote>[1]) => gitLsRemote(gitCloneDeps, params),
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
     notify: async (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
       showNotification(
@@ -263,7 +292,12 @@ async function main(): Promise<void> {
     signal: controller.signal,
     onJob: (job) => {
       log(`job ${job.method} ${job.id}`);
-      void runJob(job, handlers, (reply) => sendReply(link, reply));
+      void runJob(
+        job,
+        handlers,
+        (reply) => sendReply(link, reply),
+        (progress) => sendProgress(link, progress),
+      );
     },
   });
 }
