@@ -126,6 +126,25 @@ describe("host jobs", () => {
     expect(logs.at(-1)).toMatch(/^remount: done in \d+\.\ds$/);
   });
 
+  it("answers secretsKey.restore before it restarts majhi", async () => {
+    const restore = {
+      ...handlers(fakeExec()),
+      secretsKeyRestore: async () => ({
+        result: { written: true, restarts: true },
+        after: async () => {
+          events.push("restart");
+        },
+      }),
+    };
+    await runJob(
+      { id: "j1", method: "secretsKey.restore", params: { key: "AGE-SECRET-KEY-1TEST" } },
+      restore,
+      reply,
+    );
+    expect(events).toEqual(["reply ok", "restart"]);
+    expect(replies).toEqual([{ id: "j1", ok: true, result: { written: true, restarts: true } }]);
+  });
+
   it("keeps the old override and skips the restart when generating the mounts fails", async () => {
     await writeFile(join(repo, OVERRIDE_FILE), "old");
     await runJob({ id: "j2", method: "remount", params: {} }, handlers(fakeExec("run")), reply);

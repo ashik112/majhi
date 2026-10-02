@@ -71,7 +71,7 @@ export function KeyExportForm({ onDone }: { onDone: (detail: string) => void }) 
       <p className="text-sm text-fg-faint text-pretty">
         {mismatch
           ? "The two passphrases differ."
-          : "majhi does not keep the passphrase. To restore, age -d the file with it into ~/.config/majhi/secrets.key."}
+          : "majhi does not keep the passphrase. To restore the key on Health, you need the file and this passphrase."}
       </p>
       {error && (
         <p role="alert" className="text-sm text-red">

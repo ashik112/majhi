@@ -148,3 +148,15 @@ export async function regenerateAndUp(
   onStep("Starting the new majhi and waiting until it is healthy");
   await step("restart majhi", ["compose", "up", "-d", "--wait"], UP_TIMEOUT_MS);
 }
+
+/**
+ * Recreates majhi's server container and waits until it is healthy. A running container keeps the
+ * files it mounted, so a replaced secrets key file only reaches majhi this way.
+ */
+export async function recreateServer(options: RemountOptions, prefix: string): Promise<void> {
+  await dockerStep(options, prefix)(
+    "restart majhi",
+    ["compose", "up", "-d", "--force-recreate", "--wait", "server"],
+    UP_TIMEOUT_MS,
+  );
+}

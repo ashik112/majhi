@@ -96,6 +96,7 @@ import {
   GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
+  KEY_EXPORT_MAX_LENGTH,
   KEY_EXPORT_PASSPHRASE_MIN,
   SSH_PASSPHRASE_MAX,
   SshStatusSchema,
@@ -1688,6 +1689,18 @@ export const commands = {
     }),
     output: z.object({ fileName: z.string(), content: z.string() }),
   },
+  "secrets.restoreKey": {
+    risk: "change",
+    summary:
+      "Restore the secrets key from its export: decrypt the file with its passphrase, check that the key opens secrets.age, then have the host helper write it to the key file and restart majhi. Only when the key file is missing or does not open secrets.age",
+    input: z.object({
+      /** The export's text, as `secrets.exportKey` made it. Never logged, stored or returned. */
+      content: z.string().min(1).max(KEY_EXPORT_MAX_LENGTH, "This file is too big to be a key export"),
+      /** Used once to decrypt the export. Never logged, stored or returned. */
+      passphrase: z.string().min(1, "Type the passphrase").max(SSH_PASSPHRASE_MAX),
+    }),
+    output: z.object({ detail: z.string() }),
+  },
 
   // Connections (5.14)---------------------------------------------------------
   "connections.types": {
@@ -1941,6 +1954,8 @@ export const commands = {
           z.object({ kind: z.literal("sign-in"), account: z.string() }),
           /** The form that exports the secrets key: it needs a passphrase only the owner types. */
           z.object({ kind: z.literal("key-export") }),
+          /** The form that restores the secrets key from its export: the file and its passphrase. */
+          z.object({ kind: z.literal("key-restore") }),
         ])
         .optional(),
     }),

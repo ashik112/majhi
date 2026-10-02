@@ -87,6 +87,25 @@ export type SecretsKeyBackup = z.infer<typeof SecretsKeyBackupSchema>;
 /** Shortest passphrase for a secrets key export. The file leaves the Mac, so it must hold up offline. */
 export const KEY_EXPORT_PASSPHRASE_MIN = 12;
 export const KEY_EXPORT_FILE_NAME = "majhi-secrets-key.age";
+/** Largest export majhi reads back. One is under 1 KB; the rest leaves room for comment lines. */
+export const KEY_EXPORT_MAX_LENGTH = 16 * 1024;
+
+/** One `AGE-SECRET-KEY-1...` line: the secrets key itself. Never logged, stored elsewhere or echoed. */
+export const SecretsKeyLineSchema = z
+  .string()
+  .max(256)
+  .regex(/^AGE-SECRET-KEY-1[0-9A-Z]+$/, "Not a secrets key");
+
+/** What a `secretsKey.restore` did. The helper answers before it restarts majhi. */
+export const SecretsKeyRestoreSchema = z.object({
+  /** False when the key file already held this key, so nothing was written. */
+  written: z.boolean(),
+  /** Where the helper kept the old key file, when there was one. */
+  keptAside: z.string().optional(),
+  /** False when the helper cannot run Docker, so majhi loads the key at the next `make up`. */
+  restarts: z.boolean(),
+});
+export type SecretsKeyRestore = z.infer<typeof SecretsKeyRestoreSchema>;
 
 /** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
 export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
@@ -460,6 +479,18 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("secretsKey.save"),
     params: z.object({ expected: KeyFingerprintSchema }),
   }),
+  /**
+   * Put a secrets key the server decrypted from its export into the key file, restart majhi so Docker
+   * mounts the file again, then save the key to the Keychain. The helper writes only when the file is
+   * missing or does not decrypt secrets.age, refuses a key that does not decrypt secrets.age, and
+   * keeps the old file aside. Answered before the restart. `key` must never be logged, stored
+   * anywhere else or echoed in an error, on either side.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("secretsKey.restore"),
+    params: z.object({ key: SecretsKeyLineSchema }),
+  }),
 ]);
 export type HostJob = z.infer<typeof HostJobSchema>;
 export type HostMethod = HostJob["method"];
@@ -472,6 +503,7 @@ export const HostResultSchemas = {
   "ssh.reload": SshStatusSchema,
   "ssh.unlock": SshStatusSchema,
   "secretsKey.save": SecretsKeyBackupSchema,
+  "secretsKey.restore": SecretsKeyRestoreSchema,
   "version.changes": z.object({
     head: z.string(),
     dirty: z.boolean(),

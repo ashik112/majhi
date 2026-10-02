@@ -25,6 +25,27 @@ export function generateKey(): Promise<string> {
 }
 
 /**
+ * How the key file and secrets.age fit together.
+ * - `ok`: the key file holds a key that opens secrets.age, or there is no secrets.age yet.
+ * - `missing`: no key and no secrets.age. `make up` makes a new key.
+ * - `lost`: no key, but secrets.age exists. Only its own key can read it.
+ * - `wrong`: the key file holds a key that does not open secrets.age.
+ */
+export type SecretsKeyState = "ok" | "missing" | "lost" | "wrong";
+
+/** True when the identity decrypts the file. False for a line age cannot read as an identity. */
+async function decrypts(identity: string, sealed: Uint8Array): Promise<boolean> {
+  try {
+    const decrypter = new Decrypter();
+    decrypter.addIdentity(identity);
+    await decrypter.decrypt(sealed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * API keys, encrypted with age in `<majhi home>/secrets.age`. The identity
  * lives in a separate key file outside the majhi home, so the file it protects
  * never sits next to it. Values are never logged and never returned to callers
@@ -50,6 +71,21 @@ export class SecretStore {
   async fingerprint(): Promise<string | undefined> {
     const identity = await this.readIdentity();
     return identity === undefined ? undefined : keyFingerprint(identity);
+  }
+
+  /** Whether there is a key, and whether it opens secrets.age. */
+  async keyState(): Promise<SecretsKeyState> {
+    const identity = await this.readIdentity();
+    const sealed = await this.readSealed();
+    if (identity === undefined) return sealed === undefined ? "missing" : "lost";
+    if (sealed === undefined) return "ok";
+    return (await decrypts(identity, sealed)) ? "ok" : "wrong";
+  }
+
+  /** True when this identity opens secrets.age, or when there is no secrets.age yet. */
+  async opens(identity: string): Promise<boolean> {
+    const sealed = await this.readSealed();
+    return sealed === undefined || (await decrypts(identity, sealed));
   }
 
   /**
@@ -104,13 +140,8 @@ export class SecretStore {
 
   private async read(): Promise<Secrets> {
     const identity = await this.requireIdentity();
-    let bytes: Uint8Array;
-    try {
-      bytes = new Uint8Array(await readFile(this.file));
-    } catch (err) {
-      if (errorCode(err) === "ENOENT") return {};
-      throw err;
-    }
+    const bytes = await this.readSealed();
+    if (bytes === undefined) return {};
     const decrypter = new Decrypter();
     decrypter.addIdentity(identity);
     let text: string;
@@ -123,6 +154,16 @@ export class SecretStore {
       );
     }
     return SecretsSchema.parse(JSON.parse(text));
+  }
+
+  /** secrets.age as it is on disk. Undefined when there is none yet. */
+  private async readSealed(): Promise<Uint8Array | undefined> {
+    try {
+      return new Uint8Array(await readFile(this.file));
+    } catch (err) {
+      if (errorCode(err) === "ENOENT") return undefined;
+      throw err;
+    }
   }
 
   private async write(secrets: Secrets): Promise<void> {
