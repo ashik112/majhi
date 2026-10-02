@@ -82,6 +82,7 @@ import {
   GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
+  KEY_EXPORT_PASSPHRASE_MIN,
   SSH_PASSPHRASE_MAX,
   SshStatusSchema,
   UpdateStatusSchema,
@@ -1509,8 +1510,21 @@ export const commands = {
     input: z.object({ name: IdSchema }),
     output: z.object({ removed: IdSchema }),
   },
+  "secrets.exportKey": {
+    risk: "change",
+    summary:
+      "Export the secrets key encrypted with a passphrase, as an age file to keep off this Mac. Decrypting it gives the key file back",
+    input: z.object({
+      /** Used once to encrypt the export. Never logged, stored or returned. */
+      passphrase: z
+        .string()
+        .min(KEY_EXPORT_PASSPHRASE_MIN, `Use at least ${KEY_EXPORT_PASSPHRASE_MIN} characters`)
+        .max(SSH_PASSPHRASE_MAX),
+    }),
+    output: z.object({ fileName: z.string(), content: z.string() }),
+  },
 
-  // Connections (5.14) ---------------------------------------------------------
+  // Connections (5.14)---------------------------------------------------------
   "connections.types": {
     risk: "read",
     summary:
@@ -1748,7 +1762,13 @@ export const commands = {
       ok: z.boolean(),
       detail: z.string(),
       /** Something the UI does next, like opening the sign-in terminal, which only the browser can show. */
-      open: z.object({ kind: z.literal("sign-in"), account: z.string() }).optional(),
+      open: z
+        .discriminatedUnion("kind", [
+          z.object({ kind: z.literal("sign-in"), account: z.string() }),
+          /** The form that exports the secrets key: it needs a passphrase only the owner types. */
+          z.object({ kind: z.literal("key-export") }),
+        ])
+        .optional(),
     }),
   },
   "system.version": {
