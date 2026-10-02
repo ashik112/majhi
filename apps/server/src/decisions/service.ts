@@ -198,9 +198,9 @@ export class DecisionService implements Decisions {
   async rateTask(request: RateTaskRequest): Promise<TaskRating | undefined> {
     try {
       const result = await this.decide(difficultyQuestion(request), {
-        use: "model-pick",
-        task: request.task,
-        agent: request.agent,
+        use: request.use ?? "model-pick",
+        ...(request.task === undefined ? {} : { task: request.task }),
+        ...(request.agent === undefined ? {} : { agent: request.agent }),
       });
       const a = result.answers.difficulty;
       if (a === undefined) return undefined;

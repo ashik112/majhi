@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ToolIdSchema, UsageWindowSchema } from "./accounts.ts";
 import { IdSchema } from "./ids.ts";
 import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from "./settings.ts";
-import { RoomItemSchema, TaskIdSchema, TaskStatusSchema } from "./tasks.ts";
+import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } from "./tasks.ts";
 
 /**
  * Autonomous mode (PRV-74): the boss runs the desk like the owner would, inside the caps, the
@@ -77,6 +77,8 @@ export const AutonomyNowSchema = z.object({
   org: IdSchema.optional(),
   status: TaskStatusSchema,
   agents: z.array(z.object({ id: IdSchema, nowDoing: z.string().optional() })),
+  /** The boss's one-line reason for taking it on, when the call that started or created it gave one. */
+  why: z.string().optional(),
 });
 export type AutonomyNow = z.infer<typeof AutonomyNowSchema>;
 
@@ -93,6 +95,32 @@ export const QueueItemSchema = z.object({
   after: z.string().optional(),
 });
 export type QueueItem = z.infer<typeof QueueItemSchema>;
+
+/**
+ * How much work a task is, from the decision provider's rating (Laya's `trivial` counts as small).
+ * The pick rules compare it with `pick.size`.
+ */
+export const TaskSizeSchema = z.enum(["small", "medium", "large"]);
+export type TaskSize = z.infer<typeof TaskSizeSchema>;
+
+/** An inbox or ready task autonomous mode could take, as the pick rules see it. */
+export const AutonomyBacklogItemSchema = z.object({
+  task: TaskIdSchema,
+  title: z.string(),
+  org: IdSchema.optional(),
+  status: TaskStatusSchema,
+  priority: TaskPrioritySchema.optional(),
+  due: z.string().optional(),
+  /** Absent: not rated yet, or the rating was not sure enough to count. */
+  size: TaskSizeSchema.optional(),
+  /** How the size is known, one line: "Laya rated it medium (0.62)", "Not rated yet". */
+  sizeNote: z.string(),
+  /** The owner marked it Not for autonomous mode. */
+  noAutonomy: z.boolean(),
+  /** Why the pick rules leave it out, one line. Absent: the boss may take it. */
+  leftOut: z.string().optional(),
+});
+export type AutonomyBacklogItem = z.infer<typeof AutonomyBacklogItemSchema>;
 
 /** A card in an autonomous task that only the owner can decide, and why autonomous mode left it. */
 export const AutonomyWaitingSchema = z.object({
@@ -204,6 +232,8 @@ export const AutonomyStatusSchema = z.object({
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
   queue: z.array(QueueItemSchema),
+  /** Inbox and ready tasks in the order the boss reads them, each with its size and whether the rules leave it out. */
+  backlog: z.array(AutonomyBacklogItemSchema),
   /** When the boss last set the queue, UTC ISO. */
   queuedAt: z.string().optional(),
   holds: z.array(AutonomyHoldSchema),
@@ -269,6 +299,9 @@ export const AutonomyGuideResultSchema = z.object({
 });
 
 export const AutonomyStopInputSchema = z.object({ how: z.enum(["now", "graceful"]) });
+
+/** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
+export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });
 
 /** The boss's own tools: no approval card, only for the boss in its autonomy chat while the mode is not off. */
 export const AUTONOMY_BOSS_COMMANDS = ["autonomy.plan", "autonomy.note", "autonomy.answer"] as const;

@@ -220,7 +220,7 @@ export const DecisionResultSchema = z.object({
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 
 /** What a decision was for, in the log. */
-export const DecisionUseSchema = z.enum(["tool", "model-pick", "owner", "routing", "memory"]);
+export const DecisionUseSchema = z.enum(["tool", "model-pick", "owner", "routing", "memory", "task-size"]);
 
 /** What majhi did with a decision, recorded by the code that asked. */
 export const DecisionOutcomeSchema = z.object({

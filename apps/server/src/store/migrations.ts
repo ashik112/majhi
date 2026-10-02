@@ -539,6 +539,25 @@ CREATE TABLE autonomy_summaries (
 );
 `,
   },
+  {
+    // What autonomous mode may pick (PRV-74 follow-up). `tasks.no_autonomy` is the owner's mark Not
+    // for autonomous mode. `autonomy_tasks.why` keeps the boss's reason for taking a task on.
+    // `autonomy_sizes` caches each task's size as the decision provider rated it; `key` is a hash of
+    // the title and brief, so an edited task is rated again.
+    id: 113,
+    name: "autonomy pick rules",
+    sql: `
+ALTER TABLE tasks ADD COLUMN no_autonomy INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE autonomy_tasks ADD COLUMN why TEXT;
+CREATE TABLE autonomy_sizes (
+  task TEXT PRIMARY KEY REFERENCES tasks (id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  size TEXT,
+  note TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

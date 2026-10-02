@@ -347,6 +347,23 @@ export const AutonomyInstructionSchema = z.strictObject({
 export type AutonomyInstruction = z.infer<typeof AutonomyInstructionSchema>;
 
 const PercentLeftSchema = z.number().int().min(0).max(100);
+
+/**
+ * The largest task autonomous mode may start, by the size the decision provider rated it (Laya):
+ * `small` (a small change in one or two files), `medium` (a feature or fix across several files) or
+ * `any`. Under `small` or `medium`, a task whose size is not known is not started.
+ */
+export const TaskSizeLimitSchema = z.enum(["small", "medium", "any"]);
+export type TaskSizeLimit = z.infer<typeof TaskSizeLimitSchema>;
+
+/** What autonomous mode may pick: the task sizes, and the orgs it works in. Tasks marked `noAutonomy` are left alone too. */
+export const AutonomyPickSchema = z.strictObject({
+  size: TaskSizeLimitSchema.default("any"),
+  /** The orgs it may work in, `private` for tasks with no org. Absent: every org. */
+  orgs: z.array(BudgetIdSchema).max(100).optional(),
+});
+export type AutonomyPick = z.infer<typeof AutonomyPickSchema>;
+
 const autonomyFields = {
   /** Spend per day of everything autonomous mode runs, from midnight in `tz`. Always set. */
   day: BudgetSchema,
@@ -358,6 +375,7 @@ const autonomyFields = {
   /** An IANA zone like Europe/Berlin: the browser that saved the settings knows it. Absent: the server's. */
   tz: z.string().trim().min(1).max(64),
   instructions: z.array(AutonomyInstructionSchema).max(50),
+  pick: AutonomyPickSchema,
 };
 export const AutonomySettingsSchema = z.strictObject({
   day: autonomyFields.day.default({ cost: 20 }),
@@ -366,6 +384,7 @@ export const AutonomySettingsSchema = z.strictObject({
   summary_at: autonomyFields.summary_at.default("08:00"),
   tz: autonomyFields.tz.optional(),
   instructions: autonomyFields.instructions.default([]),
+  pick: autonomyFields.pick.default({ size: "any" }),
 });
 export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
 /** What majhi.yaml may hold and what majhi writes. */
@@ -388,6 +407,10 @@ export const AutonomyPatchSchema = z
     floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }).partial(),
     summary_at: ClockSchema,
     tz: autonomyFields.tz,
+    /** `orgs: null` lets it work in every org again. */
+    pick: z
+      .strictObject({ size: TaskSizeLimitSchema, orgs: z.array(BudgetIdSchema).max(100).nullable() })
+      .partial(),
   })
   .partial();
 export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;

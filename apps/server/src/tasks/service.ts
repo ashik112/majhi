@@ -183,6 +183,8 @@ export interface TaskDeps {
   onDone?: (task: Task) => void | Promise<void>;
   /** A task is about to be removed (Phase 5): its worktrees and branch are still there. */
   onRemoving?: (task: Task) => Promise<void>;
+  /** Throws when the task may not be closed or removed now: autonomous mode's chat while the mode is not off. */
+  guardRemoval?: (task: Task, action: "close" | "remove") => void;
   /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
   onReview?: (id: string) => Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
@@ -1559,6 +1561,7 @@ export class TaskService {
   ): Promise<Task> {
     const task = this.get(id);
     if (task.status === "done") return task;
+    this.deps.guardRemoval?.(task, "close");
     const open = this.openSubtasks(id);
     if (open.length > 0) {
       const list = `${open.slice(0, 5).join(", ")}${open.length > 5 ? ", ..." : ""}`;
@@ -2124,6 +2127,7 @@ export class TaskService {
    */
   async remove(id: string, force: boolean, confirm?: string): Promise<void> {
     const task = this.get(id);
+    this.deps.guardRemoval?.(task, "remove");
     const trees = task.repos.flatMap((r) =>
       r.worktree === undefined ? [] : [r.worktree],
     );

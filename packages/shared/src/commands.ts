@@ -39,6 +39,7 @@ import {
   AutonomyAnswerResultSchema,
   AutonomyEventSchema,
   AutonomyEventsInputSchema,
+  AutonomyExcludeInputSchema,
   AutonomyGuideInputSchema,
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
@@ -2174,7 +2175,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, org caps, per-org push and merge permission, account floors, summary time or time zone. Owner only",
+      "Change autonomous mode's day cap, org caps, per-org push and merge permission, account floors, summary time, time zone, or what it may pick (the largest task size, the orgs it works in). Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
@@ -2189,6 +2190,13 @@ export const commands = {
     risk: "change",
     summary: "Remove a standing instruction of autonomous mode. Owner only",
     input: z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) }),
+    output: AutonomyStatusSchema,
+  },
+  "autonomy.exclude": {
+    risk: "change",
+    summary:
+      "Mark a task Not for autonomous mode (exclude true), so the boss in autonomous mode leaves it alone, or clear the mark. Owner only",
+    input: AutonomyExcludeInputSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.plan": {

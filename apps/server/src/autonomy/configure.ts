@@ -1,6 +1,7 @@
 import type { AutonomyFilePatchSchema, AutonomyOrg, AutonomyPatch, AutonomySettings } from "@majhi/shared";
 import type { z } from "zod";
 import type { ConfigSections } from "../config/sections.ts";
+import { limitWord } from "./sizes.ts";
 import { capText } from "./spend.ts";
 
 /**
@@ -26,8 +27,14 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
     else orgs[id] = next;
   }
   const tz = patch.tz ?? current.tz;
+  const pickOrgs = patch.pick?.orgs === undefined ? current.pick.orgs : (patch.pick.orgs ?? undefined);
+  const pick = {
+    size: patch.pick?.size ?? current.pick.size,
+    ...(pickOrgs === undefined ? {} : { orgs: [...new Set(pickOrgs)] }),
+  };
   return {
     ...current,
+    pick,
     day: patch.day ?? current.day,
     orgs,
     floors: {
@@ -50,6 +57,7 @@ export function toFile(
     ...(patch.floors === undefined ? {} : { floors: next.floors }),
     ...(patch.summary_at === undefined ? {} : { summary_at: next.summary_at }),
     ...(patch.tz === undefined ? {} : { tz: next.tz }),
+    ...(patch.pick === undefined ? {} : { pick: next.pick }),
   };
 }
 
@@ -72,6 +80,12 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   if (patch.floors?.weekly !== undefined) parts.push(`the weekly floor to ${patch.floors.weekly}%`);
   if (patch.summary_at !== undefined) parts.push(`the daily summary to ${patch.summary_at}`);
   if (patch.tz !== undefined) parts.push(`the time zone to ${patch.tz}`);
+  if (patch.pick?.size !== undefined) parts.push(`the task size it takes to ${limitWord(patch.pick.size)}`);
+  if (patch.pick?.orgs === null) parts.push("the orgs it works in to all");
+  else if (patch.pick?.orgs !== undefined) {
+    const names = patch.pick.orgs.map((id) => sections.orgs[id]?.name ?? id);
+    parts.push(`the orgs it works in to ${names.length === 0 ? "none" : names.join(", ")}`);
+  }
   return parts.length === 0
     ? "changed nothing in autonomous mode"
     : `set autonomous mode's ${parts.join(", ")}`;

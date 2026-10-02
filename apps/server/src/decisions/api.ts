@@ -14,8 +14,11 @@ import type { Difficulty, TaskBrief } from "../runs/difficulty.ts";
  */
 
 export interface RateTaskRequest extends TaskBrief {
-  task: string;
-  agent: string;
+  /** Absent for a task not made yet (autonomous mode sizing a task it would create). */
+  task?: string | undefined;
+  agent?: string | undefined;
+  /** What the rating is for, as the decision log shows it. Default `model-pick`. */
+  use?: "model-pick" | "task-size";
 }
 
 /** How much work the provider says a task is, whether or not it counts. The caller applies the bar. */

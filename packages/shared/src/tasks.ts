@@ -245,6 +245,8 @@ export const TaskSchema = z.object({
   priority: TaskPrioritySchema.optional(),
   /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
   due: DaySchema.optional(),
+  /** The owner marked it Not for autonomous mode: the boss in autonomous mode leaves it alone. */
+  noAutonomy: z.boolean().optional(),
   /** Absolute path of the task folder. */
   folder: z.string(),
   repos: z.array(TaskRepoSchema),
@@ -386,6 +388,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   pausedReason: true,
   priority: true,
   due: true,
+  noAutonomy: true,
   team: true,
   mode: true,
   updatedAt: true,

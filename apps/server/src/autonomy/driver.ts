@@ -20,6 +20,8 @@ export const HEARTBEAT_MS = 60 * 60_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
 const REASONS_MAX = 50;
+/** How long a tick waits for backlog sizes to be rated before it goes with what is known. */
+const SIZE_FILL_MS = 30_000;
 const SEEN_MAX = 2_000;
 
 export interface DriverDeps {
@@ -124,17 +126,22 @@ export class AutonomyDriver {
       this.reasons = [];
       return;
     }
-    const chat = autonomy.chat();
+    this.sending = this.deliver().finally(() => {
+      this.sending = undefined;
+    });
+    return this.sending;
+  }
+
+  private async deliver(): Promise<void> {
+    // A chat that was removed or closed is made again first: a tick never goes into nothing.
+    const chat = await this.deps.autonomy.tickChat();
     if (chat === undefined) return;
     if (this.deps.runs.working(chat).length > 0) {
       this.afterTurn = true;
       return;
     }
     const reasons = this.reasons.splice(0);
-    this.sending = this.send(chat, reasons).finally(() => {
-      this.sending = undefined;
-    });
-    return this.sending;
+    if (reasons.length > 0) await this.send(chat, reasons);
   }
 
   private async send(chat: string, reasons: string[]): Promise<void> {
@@ -142,6 +149,8 @@ export class AutonomyDriver {
     const status = await autonomy.status();
     const boss = status.boss?.id;
     if (boss === undefined) return;
+    // Sizes not known yet are rated first, so the size rule and the digest can use them.
+    const pick = await autonomy.pickable(SIZE_FILL_MS);
     const text = digest({
       now: this.now(),
       tz: status.spend.tz,
@@ -153,7 +162,9 @@ export class AutonomyDriver {
       tasks: status.now,
       cards: autonomy.answerable(),
       waiting: status.waiting,
-      backlog: autonomy.backlog(),
+      backlog: pick.backlog,
+      leftOut: pick.leftOut,
+      rules: pick.rules,
       queue: status.queue,
     });
     await this.deps.tasks.tellAgent({

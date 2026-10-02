@@ -34,6 +34,8 @@ export const tasks = sqliteTable("tasks", {
   priority: text("priority"),
   /** The owner's deadline, `YYYY-MM-DD`; NULL for none. */
   due: text("due"),
+  /** The owner marked it Not for autonomous mode (migration 113). */
+  noAutonomy: integer("no_autonomy", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -201,4 +203,5 @@ export const autonomyTasks = sqliteTable("autonomy_tasks", {
   held: text("held"),
   heldScope: text("held_scope"),
   resumedAt: text("resumed_at"),
+  why: text("why"),
 });

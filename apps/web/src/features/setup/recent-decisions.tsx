@@ -24,6 +24,7 @@ const USE: Record<DecisionRecord["use"], string> = {
   tool: "Agent tool",
   owner: "Asked here",
   memory: "Memory",
+  "task-size": "Task size",
 };
 
 /** What the owner can name as right: what the code that asked listed, else the question's options. */

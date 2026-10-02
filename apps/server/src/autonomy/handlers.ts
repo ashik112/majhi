@@ -11,6 +11,7 @@ type AutonomyCommand =
   | "autonomy.configure"
   | "autonomy.guide"
   | "autonomy.forget"
+  | "autonomy.exclude"
   | "autonomy.plan"
   | "autonomy.note"
   | "autonomy.answer";
@@ -33,7 +34,11 @@ async function bossOnly(ctx: CommandContext): Promise<never> {
 /** The `autonomy.*` commands (PRV-74). The command table spreads these in. */
 export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandlers, AutonomyCommand> {
   return {
-    "autonomy.status": () => autonomy.status(),
+    "autonomy.status": async () => {
+      // The page lists each backlog task's size: the ones not rated yet are rated in the background.
+      autonomy.fillSizes();
+      return autonomy.status();
+    },
     "autonomy.events": async (input) => autonomy.events(input),
     "autonomy.start": async (_input, ctx) => {
       ownerOnly(ctx);
@@ -58,6 +63,10 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
     "autonomy.forget": async (input, ctx) => {
       ownerOnly(ctx);
       return autonomy.forget(input.id, ctx);
+    },
+    "autonomy.exclude": async (input, ctx) => {
+      ownerOnly(ctx);
+      return autonomy.exclude(input.task, input.exclude);
     },
     "autonomy.plan": (_input, ctx) => bossOnly(ctx),
     "autonomy.note": (_input, ctx) => bossOnly(ctx),

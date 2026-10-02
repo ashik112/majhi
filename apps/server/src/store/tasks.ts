@@ -179,6 +179,7 @@ export class TaskRepo {
       status: row.status,
       ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
       ...priorityAndDue(row),
+      ...(row.noAutonomy ? { noAutonomy: true } : {}),
       folder: row.folder,
       repos: repos.map((r) => ({
         project: r.project,
@@ -286,6 +287,7 @@ export class TaskRepo {
       if (row.pausedReason !== null)
         summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
       Object.assign(summary, priorityAndDue(row));
+      if (row.noAutonomy) summary.noAutonomy = true;
       if (autonomous.has(row.id)) summary.autonomous = true;
       return summary;
     });
@@ -440,6 +442,11 @@ export class TaskRepo {
     if (patch.priority !== undefined) set.priority = patch.priority === "normal" ? null : patch.priority;
     if (patch.due !== undefined) set.due = patch.due;
     this.db.update(tasks).set(set).where(eq(tasks.id, id)).run();
+  }
+
+  /** The owner's mark Not for autonomous mode. It does not move the task in the lists. */
+  setNoAutonomy(id: string, on: boolean): void {
+    this.db.update(tasks).set({ noAutonomy: on }).where(eq(tasks.id, id)).run();
   }
 
   /** Replaces the title and brief text of a task. */

@@ -41,6 +41,8 @@ export interface AutonomyTaskRow {
   heldScope?: string;
   /** When the owner last resumed it by hand. */
   resumedAt?: string;
+  /** The boss's one-line reason for taking it on. */
+  why?: string;
 }
 
 interface TaskDbRow {
@@ -49,6 +51,7 @@ interface TaskDbRow {
   held: string | null;
   held_scope: string | null;
   resumed_at: string | null;
+  why: string | null;
 }
 
 function taskOf(r: TaskDbRow): AutonomyTaskRow {
@@ -58,6 +61,7 @@ function taskOf(r: TaskDbRow): AutonomyTaskRow {
     ...(r.held === "owner" || r.held === "limit" ? { held: r.held } : {}),
     ...present("heldScope", r.held_scope),
     ...present("resumedAt", r.resumed_at),
+    ...present("why", r.why),
   };
 }
 
@@ -162,12 +166,13 @@ export class AutonomyRepo {
     return this.db.prepare("SELECT 1 FROM autonomy_tasks WHERE task = ?").get(task) !== undefined;
   }
 
-  /** Adds the task. False when it was autonomous already, or no longer exists. */
-  join(task: string, at: string): boolean {
+  /** Adds the task, with the boss's reason. False when it was autonomous already, or no longer exists. */
+  join(task: string, at: string, why?: string): boolean {
     try {
       return (
-        this.db.prepare("INSERT OR IGNORE INTO autonomy_tasks (task, since) VALUES (?, ?)").run(task, at)
-          .changes > 0
+        this.db
+          .prepare("INSERT OR IGNORE INTO autonomy_tasks (task, since, why) VALUES (?, ?, ?)")
+          .run(task, at, why ?? null).changes > 0
       );
     } catch {
       // The task was removed meanwhile: its foreign key refuses the row.

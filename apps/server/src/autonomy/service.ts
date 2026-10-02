@@ -4,6 +4,7 @@ import {
   AUTONOMY_CHAT_BRIEF,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
+  type AutonomyBacklogItem,
   type AutonomyEvent,
   type AutonomyHold,
   type AutonomyInstruction,
@@ -22,6 +23,7 @@ import {
   commands,
   detectSecrets,
   type GitLoginsResult,
+  isAutonomyChat,
   PRIVATE,
   type RoomItem,
   type Task,
@@ -42,7 +44,7 @@ import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
-import { type AnswerableCard, answerableText, type BacklogTask } from "./digest.ts";
+import { type AnswerableCard, answerableText, type BacklogTask, backlogOrder } from "./digest.ts";
 import {
   callOrg,
   connectionOwner,
@@ -52,8 +54,10 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
+import { leftOutWhy, type OrgNames, orgProblem, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason } from "./repo.ts";
+import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
   capHoldFor,
@@ -84,6 +88,8 @@ export interface AutonomyDeps {
   notify?: (summary: AutonomySummary, line: string) => void;
   /** The kind of action a schedule or trigger has now, for an update that leaves it as it is. */
   automationAction?: (kind: "schedule" | "trigger", id: string) => string | undefined;
+  /** Rates how much work a task is (the decision provider), for the size rule. */
+  rateSize?: SizeRater;
   now?: () => Date;
 }
 
@@ -121,6 +127,10 @@ export interface ToolResult {
  */
 export class AutonomyService {
   readonly repo: AutonomyRepo;
+  /** Each backlog task's size, for the pick rules. */
+  readonly sizes: TaskSizes;
+  /** Sizes are being rated in the background for the page. */
+  private filling = false;
   private holds: AutonomyHold[];
   private holdsQueue: Promise<unknown> = Promise.resolve();
   private finishing = false;
@@ -130,6 +140,7 @@ export class AutonomyService {
 
   constructor(private readonly deps: AutonomyDeps) {
     this.repo = new AutonomyRepo(deps.store.raw);
+    this.sizes = new TaskSizes(deps.store.raw, deps.rateSize, () => this.now());
     this.holds = this.repo.state().holds;
   }
 
@@ -149,6 +160,60 @@ export class AutonomyService {
 
   isAutonomous(task: string): boolean {
     return this.repo.isAutonomous(task);
+  }
+
+  /**
+   * The chat a tick goes to, while the mode is on. When the chat was removed, closed or belongs to
+   * an earlier boss, majhi makes (or reopens) one first and says so in the feed, so a tick never
+   * wakes the boss into a chat that is gone. Undefined: the mode is not on, or there is no boss.
+   */
+  async tickChat(): Promise<string | undefined> {
+    if (this.repo.state().mode !== "on") return undefined;
+    const before = this.repo.state().chat;
+    const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
+    const boss = await this.bossId();
+    if (boss === undefined) return undefined;
+    if (found !== undefined && found.status !== "done" && found.team[0] === boss) return found.id;
+    try {
+      const chat = await this.ensureChat();
+      const why =
+        found === undefined
+          ? before === undefined
+            ? "it had none"
+            : `${before} was removed`
+          : found.status === "done"
+            ? `${found.id} was closed`
+            : `${found.id} belongs to another boss`;
+      this.event({
+        kind: "mode",
+        text:
+          chat.id === before
+            ? `Reopened the boss's chat ${chat.id}: ${why}`
+            : `The boss works in a new chat, ${chat.id}: ${why}`,
+      });
+      return chat.id;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The owner closes or removes a task: while the mode is not off, the boss's autonomy chat stays,
+   * because autonomous mode wakes the boss there. Off, it may go; the next start makes a new one.
+   */
+  guardChat(task: Pick<Task, "id" | "kind" | "brief">, action: "close" | "remove"): void {
+    let state: { mode: AutonomyMode; chat?: string };
+    try {
+      state = this.repo.state();
+    } catch {
+      // The database closed under a shutdown.
+      return;
+    }
+    if (state.mode === "off" || task.id !== state.chat || !isAutonomyChat(task)) return;
+    throw new UserError(
+      `${task.id} is the chat autonomous mode works in, so it cannot be ${action === "close" ? "closed" : "removed"} while autonomous mode is ${state.mode}. Stop autonomous mode first; the next start makes a new chat.`,
+      409,
+    );
   }
 
   useDriver(driver: DriverHooks): void {
@@ -555,8 +620,12 @@ export class AutonomyService {
     const call = { command, input, reason };
     // A read passes nothing between orgs: only the text limits apply, and no org's files are read.
     const read = commands[command].risk === "read";
-    const world = read ? undefined : (await this.context(caller, command, input)).world;
-    const why = world === undefined ? textLimit(call) : hardLimit(call, world);
+    const ctx = read ? undefined : await this.context(caller, command, input);
+    const world = ctx?.world;
+    const why =
+      world === undefined
+        ? textLimit(call)
+        : (hardLimit(call, world) ?? (await this.pickRefusal(caller, command, input, world.org, ctx)));
     if (why === undefined) return undefined;
     this.event({
       kind: "refused",
@@ -569,6 +638,91 @@ export class AutonomyService {
       ...(world === undefined ? this.orgOfTask(caller.task) : { org: world.org }),
     });
     return why;
+  }
+
+  /**
+   * The owner's pick rules (PRV-74 follow-up), for the boss and the agents in its autonomy chat while
+   * the mode is not off: no call that touches a task marked Not for autonomous mode, nothing about
+   * tasks in an org it may not work in, and no start of a task larger than the size rule allows.
+   */
+  private async pickRefusal(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    org: string,
+    ctx: { sections: ConfigSections } | undefined,
+  ): Promise<string | undefined> {
+    const state = this.repo.state();
+    if (state.mode === "off" || state.chat === undefined || caller.task !== state.chat) return undefined;
+    if (command.startsWith("autonomy.")) return undefined;
+    const sections = ctx?.sections ?? (await this.deps.config.sections());
+    const { pick } = (await this.deps.config.settings()).autonomy;
+    const names = orgNames(sections);
+    const group = command.split(".", 1)[0];
+    const starts = startsWork(command, input);
+    // The task the call is about, and a new task's parent.
+    const touched = [targetOf(command, input), str(input.parent), str(input.followUpOf)].flatMap((id) => {
+      const t = id === undefined || id === state.chat ? undefined : this.deps.store.tasks.get(id);
+      return t === undefined ? [] : [t];
+    });
+    const marked = touched.find((t) => t.noAutonomy === true);
+    if (marked !== undefined) {
+      return `Refused: the owner marked ${marked.id} Not for autonomous mode, so autonomous mode leaves it alone.`;
+    }
+    if (group === "tasks" || group === "team" || starts) {
+      const outside = orgProblem(pick, org, names);
+      if (outside !== undefined) return `Refused: ${outside}.`;
+    }
+    if (!starts || pick.size === "any") return undefined;
+    const big = await this.sizeRefusal(command, input);
+    return big === undefined ? undefined : `Refused: ${big}. Pick work the size rule allows.`;
+  }
+
+  /** For a call that starts work: why the size rule keeps it from starting. */
+  private async sizeRefusal(
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<string | undefined> {
+    const { pick } = (await this.deps.config.settings()).autonomy;
+    const existing = (id: string | undefined) =>
+      id === undefined ? undefined : this.deps.store.tasks.get(id);
+    const check = (label: string, of: SizeOf) => {
+      const problem = sizeProblem(pick.size, of);
+      return problem === undefined ? undefined : `${label} was not started: ${problem}`;
+    };
+    if (command === "tasks.start") {
+      const task = existing(str(input.id));
+      return task === undefined ? undefined : check(task.id, await this.sizes.of(task));
+    }
+    if (command === "team.add" || command === "tasks.addAgent") {
+      const task = existing(str(input.task) ?? str(input.id));
+      // An autonomous task passed the rule when it started.
+      if (task === undefined || this.repo.isAutonomous(task.id)) return undefined;
+      return check(task.id, await this.sizes.of(task));
+    }
+    const texts =
+      command === "tasks.create"
+        ? [input]
+        : command === "tasks.split" && Array.isArray(input.children)
+          ? (input.children as unknown[]).map((c) => (typeof c === "object" && c !== null ? c : {}))
+          : [];
+    for (const raw of texts as Record<string, unknown>[]) {
+      const text = str(raw.text) ?? "";
+      const title =
+        text
+          .split("\n")
+          .find((l) => l.trim() !== "")
+          ?.trim() ?? "";
+      const repos = (Array.isArray(raw.repos) ? raw.repos : []).flatMap((r) => {
+        const project =
+          typeof r === "object" && r !== null ? str((r as { project?: unknown }).project) : undefined;
+        return project === undefined ? [] : [project];
+      });
+      const of = await this.sizes.rateText({ title, brief: text, kind: "code", repos });
+      const problem = check(`"${clip(title, 60)}"`, of);
+      if (problem !== undefined) return problem;
+    }
+    return undefined;
   }
 
   /** While paused or stopping, calls that start work are refused. */
@@ -737,7 +891,7 @@ export class AutonomyService {
    * After a call of an autonomous caller ran (rule 2): tasks the boss creates, splits or starts from
    * its chat join, and so do tasks an agent of an autonomous task creates or splits.
    */
-  adopt(caller: AutonomyCaller, command: CommandName, output: unknown): void {
+  adopt(caller: AutonomyCaller, command: CommandName, output: unknown, reason = ""): void {
     if (this.repo.state().mode !== "on") return;
     const ids: string[] = [];
     const id = (o: unknown) => (typeof o === "object" && o !== null ? (o as { id?: unknown }).id : undefined);
@@ -754,7 +908,8 @@ export class AutonomyService {
     }
     let joined = false;
     for (const task of ids) {
-      if (!this.repo.join(task, this.now().toISOString())) continue;
+      if (!this.repo.join(task, this.now().toISOString(), reason === "" ? undefined : clip(reason, 240)))
+        continue;
       joined = true;
       const t = this.deps.store.tasks.get(task);
       const verb =
@@ -824,6 +979,10 @@ export class AutonomyService {
         throw new UserError(`Org "${id}" does not exist.`, 404);
       }
     }
+    for (const id of patch.pick?.orgs ?? []) {
+      if (id !== PRIVATE && sections.orgs[id] === undefined)
+        throw new UserError(`Org "${id}" does not exist.`, 404);
+    }
     if (patch.tz !== undefined && !validZone(patch.tz)) {
       throw new UserError(`${patch.tz} is not a time zone. Use one like Europe/Berlin.`, 400);
     }
@@ -891,6 +1050,29 @@ export class AutonomyService {
     return this.status();
   }
 
+  /** The owner marks a task Not for autonomous mode, or clears the mark. */
+  async exclude(task: string, exclude: boolean): Promise<AutonomyStatus> {
+    const found = this.deps.store.tasks.get(task);
+    if (found === undefined) throw new UserError(`There is no task ${task}.`, 404);
+    if (found.id === this.repo.state().chat) {
+      throw new UserError(`${task} is the chat autonomous mode works in.`, 409);
+    }
+    if ((found.noAutonomy === true) !== exclude) {
+      this.deps.store.tasks.setNoAutonomy(task, exclude);
+      this.event({
+        kind: "guide",
+        text: exclude
+          ? `Marked ${task} Not for autonomous mode: ${found.title}`
+          : `Cleared the mark Not for autonomous mode on ${task}: ${found.title}`,
+        task,
+        ...orgOf(found),
+      });
+      this.deps.events.emit(["autonomy", "tasks"]);
+      if (!exclude) this.wake(`The owner let autonomous mode take ${task} again`);
+    }
+    return this.status();
+  }
+
   // ---------------------------------------------------------------------------
   // The driver's inputs (rule 8)
 
@@ -914,22 +1096,112 @@ export class AutonomyService {
     return out;
   }
 
-  /** Inbox and ready tasks across orgs, chats left out. The digest orders and cuts them. */
-  backlog(): BacklogTask[] {
+  /** Inbox and ready tasks across orgs, chats left out, in the order the boss takes them. */
+  backlog(): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
-    return this.deps.store.tasks.list(false).flatMap((t) => {
-      if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return [];
-      return [
-        {
-          id: t.id,
-          title: t.title,
-          ...(t.org === undefined ? {} : { org: t.org }),
-          ...(t.priority === undefined ? {} : { priority: t.priority }),
-          ...(t.due === undefined ? {} : { due: t.due }),
-          createdAt: ages.get(t.id) ?? t.updatedAt,
-        },
-      ];
+    return backlogOrder(
+      this.deps.store.tasks.list(false).flatMap((t) => {
+        if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return [];
+        const task = this.deps.store.tasks.get(t.id);
+        if (task === undefined) return [];
+        return [
+          {
+            id: t.id,
+            title: t.title,
+            ...(t.org === undefined ? {} : { org: t.org }),
+            ...(t.priority === undefined ? {} : { priority: t.priority }),
+            ...(t.due === undefined ? {} : { due: t.due }),
+            createdAt: ages.get(t.id) ?? t.updatedAt,
+            task,
+          },
+        ];
+      }),
+    );
+  }
+
+  /** The backlog with each task's size and why the pick rules leave it out, if they do. */
+  private async rated(): Promise<
+    { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined }[]
+  > {
+    const [settings, sections] = await Promise.all([
+      this.deps.config.settings(),
+      this.deps.config.sections(),
+    ]);
+    const { pick } = settings.autonomy;
+    const names = orgNames(sections);
+    return this.backlog().map((item) => {
+      const size = this.sizes.known(item.task) ?? { note: "Not rated yet" };
+      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names) };
     });
+  }
+
+  /**
+   * What the tick shows the boss: the backlog the pick rules allow, with sizes, how many they leave
+   * out, and the rules in words. Sizes not known yet are rated first, for up to `fillMs`.
+   */
+  async pickable(fillMs: number): Promise<{ backlog: BacklogTask[]; leftOut: number; rules: string[] }> {
+    if (fillMs > 0) {
+      const marked = (t: Task) => t.noAutonomy === true;
+      await this.sizes.fill(
+        this.backlog()
+          .map((b) => b.task)
+          .filter((t) => !marked(t)),
+        fillMs,
+      );
+    }
+    const [settings, sections] = await Promise.all([
+      this.deps.config.settings(),
+      this.deps.config.sections(),
+    ]);
+    const rows = await this.rated();
+    return {
+      backlog: rows.flatMap(({ item, size, leftOut }) => {
+        if (leftOut !== undefined) return [];
+        const { task: _task, ...rest } = item;
+        return [{ ...rest, ...(size.size === undefined ? {} : { size: size.size }) }];
+      }),
+      leftOut: rows.filter((r) => r.leftOut !== undefined).length,
+      rules: pickLines(settings.autonomy.pick, orgNames(sections)),
+    };
+  }
+
+  /** The backlog as the page lists it: at most 100 tasks. */
+  private async backlogView(): Promise<AutonomyBacklogItem[]> {
+    return (await this.rated()).slice(0, 100).map(({ item, size, leftOut }) => ({
+      task: item.id,
+      title: item.title,
+      ...(item.org === undefined ? {} : { org: item.org }),
+      status: item.task.status,
+      ...(item.priority === undefined ? {} : { priority: item.priority }),
+      ...(item.due === undefined ? {} : { due: item.due }),
+      ...(size.size === undefined ? {} : { size: size.size }),
+      sizeNote: size.note,
+      noAutonomy: item.task.noAutonomy === true,
+      ...(leftOut === undefined ? {} : { leftOut }),
+    }));
+  }
+
+  /** Rates the sizes the page shows in the background, one pass at a time, and tells open pages. */
+  fillSizes(): void {
+    if (this.filling) return;
+    this.filling = true;
+    const tasks = this.backlog()
+      .slice(0, 100)
+      .map((b) => b.task)
+      .filter((t) => t.noAutonomy !== true && this.sizes.known(t) === undefined);
+    if (tasks.length === 0) {
+      this.filling = false;
+      return;
+    }
+    void this.sizes
+      .fill(tasks, 120_000)
+      .then((rated) => {
+        if (rated) this.deps.events.emit(["autonomy"]);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.filling = false;
+      });
   }
 
   /** The driver woke the boss: the feed and the chat say why. */
@@ -1134,6 +1406,7 @@ export class AutonomyService {
           }),
       now: this.nowList(),
       queue: after.queue,
+      backlog: await this.backlogView(),
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,
       spend: m.spend,
@@ -1162,7 +1435,8 @@ export class AutonomyService {
 
   /** The autonomous tasks that are not done and what their agents do, running ones first. */
   nowList(): AutonomyNow[] {
-    const ids = new Set(this.repo.tasks().map((r) => r.task));
+    const why = new Map(this.repo.tasks().map((r) => [r.task, r.why]));
+    const ids = new Set(why.keys());
     return this.deps.tasks
       .list(false)
       .filter((t) => ids.has(t.id))
@@ -1176,6 +1450,7 @@ export class AutonomyService {
           const doing = this.deps.room.getLive(t.id, a)?.nowDoing;
           return { id: a, ...(doing === undefined ? {} : { nowDoing: doing }) };
         }),
+        ...(why.get(t.id) === undefined ? {} : { why: why.get(t.id) }),
       }));
   }
 
@@ -1245,6 +1520,19 @@ export class AutonomyService {
       text: redactText(text),
     });
   }
+}
+
+function orgNames(sections: Pick<ConfigSections, "orgs">): OrgNames {
+  return Object.fromEntries(Object.entries(sections.orgs).map(([id, o]) => [id, o.name]));
+}
+
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** The existing task a call is about: `id` for `tasks.*`, else `task`. */
+function targetOf(command: string, input: Record<string, unknown>): string | undefined {
+  return command.startsWith("tasks.") ? (str(input.id) ?? str(input.task)) : str(input.task);
 }
 
 function orgOf(task: { org?: string | undefined } | undefined): { org?: string } {

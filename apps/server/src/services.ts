@@ -569,6 +569,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await promotion.release(task);
     },
     onRemoving: (task) => promotion.release(task),
+    // Bound below: autonomous mode keeps its chat while the mode is not off.
+    guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => pendingShips.reviewReached(id),
     usage: usageRepo,
@@ -688,6 +690,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     notify: (summary, line) => notifier.autonomySummary(summary.day, line),
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
+    // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
+    rateSize: (t) =>
+      decisions.rateTask({
+        ...(t.id === undefined ? {} : { task: t.id }),
+        title: t.title,
+        brief: t.brief,
+        kind: t.kind,
+        repos: t.repos,
+        role: "Builder",
+        use: "task-size",
+      }),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   autonomy.useDriver(

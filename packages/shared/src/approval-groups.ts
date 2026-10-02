@@ -32,6 +32,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.configure",
   "autonomy.guide",
   "autonomy.forget",
+  "autonomy.exclude",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

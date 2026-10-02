@@ -14,6 +14,7 @@ const STATUS: AutonomyStatus = {
   boss: { id: "boss", chat: CHAT, working: false },
   now: [],
   queue: [],
+  backlog: [],
   holds: [],
   spend: {
     day: "2026-10-01",
@@ -29,13 +30,16 @@ const STATUS: AutonomyStatus = {
 
 /** A driver over fakes: the mode, whether the boss works and the day cap are the test's to set. */
 function fakes() {
-  const state = { mode: "on" as AutonomyMode, busy: false, capped: false };
+  const state = { mode: "on" as AutonomyMode, busy: false, capped: false, chat: CHAT as string | undefined };
   const ticks: string[][] = [];
   const told: string[] = [];
+  const toldIn: string[] = [];
   const autonomy = {
     repo: { state: () => ({ mode: state.mode, queue: [], holds: [] }), tasks: () => [] },
     mode: () => state.mode,
     chat: () => CHAT,
+    tickChat: async () => (state.mode === "on" ? state.chat : undefined),
+    pickable: async () => ({ backlog: [], leftOut: 0, rules: ["Task size: Any size."] }),
     isAutonomous: (task: string) => task === "ACM-1",
     dayCapped: () => state.capped,
     openTasks: () => [],
@@ -49,16 +53,17 @@ function fakes() {
     // A fake with only what the driver reads.
     autonomy: autonomy as unknown as AutonomyService,
     tasks: {
-      tellAgent: async (input: { text: string }) => {
+      tellAgent: async (input: { task: string; text: string }) => {
         told.push(input.text);
+        toldIn.push(input.task);
       },
     },
-    runs: { working: (task: string) => (task === CHAT && state.busy ? ["boss"] : []) },
+    runs: { working: (task: string) => (task === state.chat && state.busy ? ["boss"] : []) },
     room: { onWrite: () => {} },
     store: { tasks: { get: () => undefined, list: () => [] } } as unknown as Store,
     events: new EventHub(),
   });
-  return { driver, state, ticks, told };
+  return { driver, state, ticks, told, toldIn };
 }
 
 beforeEach(() => {
@@ -127,6 +132,23 @@ describe("the driver", () => {
   });
 });
 
+describe("the driver and a chat that is gone", () => {
+  it("wakes the boss in the chat majhi made again, and sends nothing when there is none", async () => {
+    const f = fakes();
+    // The service made a new chat because the old one was removed.
+    f.state.chat = "LOCAL-2";
+    f.driver.wake("ACM-1 is ready for review");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.toldIn).toEqual(["LOCAL-2"]);
+    // No chat could be made (no boss): nothing is told, nothing ticks.
+    f.state.chat = undefined;
+    f.driver.wake("ACM-2 is done");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.toldIn).toEqual(["LOCAL-2"]);
+    expect(f.ticks).toHaveLength(1);
+  });
+});
+
 describe("the digest", () => {
   const long = (n: number) => `${"Rework the billing export so the totals match ".repeat(4)}${n}`;
 
@@ -187,6 +209,12 @@ describe("the digest", () => {
         title: long(i),
         createdAt: "2026-09-01T00:00:00Z",
       })),
+      leftOut: 12,
+      rules: [
+        "Task size: Up to medium.",
+        "Orgs: only Acme.",
+        "Tasks marked Not for autonomous mode are left alone.",
+      ],
       queue: Array.from({ length: 20 }, (_, i) => ({ title: long(i), why: long(i) })),
     };
     const text = digest(input);
@@ -195,6 +223,32 @@ describe("the digest", () => {
     expect(text).toContain("Autonomous mode, Thu 1 Oct, 14:00 (Europe/Berlin).");
     expect(text).toMatch(/- and \d+ more/);
     expect(text).toMatch(/- \d+ earlier/);
+  });
+
+  it("shows the pick rules, each backlog task's size, and how many the rules leave out", () => {
+    const text = digest({
+      now: new Date("2026-10-01T12:00:00Z"),
+      tz: "UTC",
+      reasons: ["Autonomous mode turned on"],
+      spend: STATUS.spend,
+      holds: [],
+      accounts: [],
+      instructions: [],
+      tasks: [],
+      cards: [],
+      waiting: [],
+      backlog: [
+        { id: "ACM-1", org: "acme", title: "Fix the login form", size: "small", createdAt: "2026-09-01" },
+        { id: "ACM-2", org: "acme", title: "Tidy the README", createdAt: "2026-09-02" },
+      ],
+      leftOut: 3,
+      rules: ["Task size: Up to medium.", "Orgs: only Acme."],
+      queue: [],
+    });
+    expect(text).toContain("- Task size: Up to medium.\n- Orgs: only Acme.");
+    expect(text).toContain("- ACM-1 (acme) [small] Fix the login form");
+    expect(text).toContain("- ACM-2 (acme) [size not known] Tidy the README");
+    expect(text).toContain("- 3 more left out by the pick rules");
   });
 
   it("orders the backlog by priority, then the nearest due date, then age", () => {

@@ -97,7 +97,7 @@ export interface AutonomyGate {
     reason: string,
     item: string,
   ): void;
-  adopt(caller: "boss" | "agent", command: CommandName, output: unknown): void;
+  adopt(caller: "boss" | "agent", command: CommandName, output: unknown, reason?: string): void;
   bossTool(
     caller: AdminCaller,
     command: CommandName,
@@ -298,7 +298,7 @@ export class AdminService {
       }
       if (auto !== undefined && autonomy !== undefined) {
         autonomy.ran(caller, command, input, ask.reason, done);
-        if (done.ok) autonomy.adopt(auto, command, done.output);
+        if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
@@ -367,7 +367,7 @@ export class AdminService {
       result: done.ok ? lineOf(done.output) : done.error,
     });
     autonomy.approved(caller, command, input, verdict.why, ask.reason, id, done);
-    if (done.ok) autonomy.adopt(auto, command, done.output);
+    if (done.ok) autonomy.adopt(auto, command, done.output, ask.reason);
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
@@ -450,7 +450,8 @@ export class AdminService {
       this.audit(item, "allow", "owner", done.ok ? undefined : `Failed: ${done.error}`);
       // The owner approved what the boss or an autonomous task's agent asked: its tasks join.
       const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(item);
-      if (done.ok && auto !== undefined) this.autonomy?.adopt(auto, item.command as CommandName, done.output);
+      if (done.ok && auto !== undefined)
+        this.autonomy?.adopt(auto, item.command as CommandName, done.output, item.reason ?? "");
       const applied = this.update(item, {
         state: done.ok ? "applied" : "failed",
         ...(done.commit === undefined ? {} : { commit: done.commit }),

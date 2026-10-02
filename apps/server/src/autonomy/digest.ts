@@ -9,6 +9,7 @@ import type {
   QueueItem,
   RoomItem,
   TaskPriority,
+  TaskSize,
   UsageWindow,
 } from "@majhi/shared";
 import { capText } from "./spend.ts";
@@ -30,6 +31,8 @@ export interface BacklogTask {
   priority?: TaskPriority | undefined;
   due?: string | undefined;
   createdAt: string;
+  /** Its size, when known. */
+  size?: TaskSize | undefined;
 }
 
 /** A card the boss may answer with majhi_autonomy_answer. */
@@ -52,7 +55,12 @@ export interface DigestInput {
   tasks: readonly AutonomyNow[];
   cards: readonly AnswerableCard[];
   waiting: readonly AutonomyWaiting[];
+  /** The backlog the pick rules allow. */
   backlog: readonly BacklogTask[];
+  /** How many backlog tasks the pick rules leave out. */
+  leftOut: number;
+  /** The owner's pick rules, one line each. */
+  rules: readonly string[];
   queue: readonly QueueItem[];
 }
 
@@ -118,6 +126,8 @@ function build(input: DigestInput, scale: number): string {
       "none",
     ),
     "",
+    "The owner's pick rules (majhi refuses a start or create that breaks them):",
+    ...input.rules.map((r) => `- ${r}`),
     ...list(
       "The owner's standing instructions",
       input.instructions.map((i) => i.text),
@@ -148,17 +158,19 @@ function build(input: DigestInput, scale: number): string {
     ),
     "",
     ...list(
-      "Backlog, top first",
+      "Backlog the rules allow, top first",
       backlogOrder(input.backlog).map((b) => {
         const tags = [
+          b.size ?? "size not known",
           b.priority === undefined || b.priority === "normal" ? undefined : b.priority,
           b.due === undefined ? undefined : `due ${b.due}`,
         ].filter((t) => t !== undefined);
-        return `${b.id}${b.org === undefined ? "" : ` (${b.org})`}${tags.length === 0 ? "" : ` [${tags.join(", ")}]`} ${b.title}`;
+        return `${b.id}${b.org === undefined ? "" : ` (${b.org})`} [${tags.join(", ")}] ${b.title}`;
       }),
       max(BASE.backlog),
       "empty",
     ),
+    ...(input.leftOut > 0 ? [`- ${input.leftOut} more left out by the pick rules`] : []),
     ...list(
       "Your queue",
       input.queue.map(
