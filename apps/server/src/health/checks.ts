@@ -205,12 +205,16 @@ async function checkMajhiHome(dir: string, home: string): Promise<Check> {
   }
 }
 
+/** The git version of this image: it cannot change while majhi runs, so one run is kept (a failure is not). */
+let gitVersion: Promise<string> | undefined;
+
 async function checkGit(): Promise<Check> {
   const base = { id: "git", group: "majhi", name: "Git" } as const;
   try {
-    const { stdout } = await run("git", ["--version"], { timeout: TOOL_TIMEOUT_MS });
-    return { ...base, status: "pass", detail: stdout.trim() };
+    gitVersion ??= run("git", ["--version"], { timeout: TOOL_TIMEOUT_MS }).then(({ stdout }) => stdout.trim());
+    return { ...base, status: "pass", detail: await gitVersion };
   } catch (err) {
+    gitVersion = undefined;
     const detail =
       errorCode(err) === "ENOENT"
         ? "git is missing from the majhi image. Run `make up` to rebuild it."
