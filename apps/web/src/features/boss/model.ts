@@ -2,6 +2,7 @@ import {
   type ApprovalMode,
   type CommandOutput,
   detectSecrets,
+  MIN_CONTEXT_CAP,
   type RiskClass,
   type RoomItem,
   type Settings,
@@ -86,6 +87,8 @@ export function historyRow(entry: HistoryEntryView, now: number): HistoryRow {
 
 /** The settings form holds text, so a half-typed number stays as typed. Percentages are whole numbers. */
 export interface SettingsForm {
+  /** In thousands of tokens; 0 is no cap. */
+  contextCap: string;
   compactAt: string;
   compactTarget: string;
   maxTurns: string;
@@ -103,6 +106,7 @@ const percent = (fraction: number) => String(Math.round(fraction * 100));
 
 export function formFromSettings(s: Settings): SettingsForm {
   return {
+    contextCap: String(s.context.cap / 1000),
     compactAt: percent(s.context.compact_at),
     compactTarget: percent(s.context.compact_target),
     maxTurns: String(s.context.max_turns),
@@ -118,7 +122,7 @@ export function formFromSettings(s: Settings): SettingsForm {
 }
 
 export type SettingsPatch = {
-  context?: { compact_at?: number; compact_target?: number; max_turns?: number };
+  context?: { cap?: number; compact_at?: number; compact_target?: number; max_turns?: number };
   limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
   resume?: { auto?: boolean };
   commits?: { attribution?: boolean };
@@ -134,6 +138,16 @@ function whole(text: string, min: number, max: number, what: string): { value?: 
   return { value };
 }
 
+/** The cap in thousands of tokens as typed: 0 for no cap, else at least 20. Returns tokens. */
+export function capFromField(text: string): { value?: number; error?: string } {
+  const k = whole(text, 0, 10_000, "Context cap");
+  if (k.value === undefined) return k;
+  if (k.value !== 0 && k.value * 1000 < MIN_CONTEXT_CAP) {
+    return { error: `Use 0 for no cap, or at least ${MIN_CONTEXT_CAP / 1000}` };
+  }
+  return { value: k.value * 1000 };
+}
+
 /**
  * The fields of the form that differ from the current settings, as a `settings.set` input, and the
  * problems that stop it from being saved.
@@ -147,6 +161,7 @@ export function patchFromForm(
   const context: NonNullable<SettingsPatch["context"]> = {};
   const limits: NonNullable<SettingsPatch["limits"]> = {};
 
+  const cap = capFromField(form.contextCap);
   const at = whole(form.compactAt, 1, 99, "Compact at");
   const target = whole(form.compactTarget, 1, 99, "Target after compaction");
   const turns = whole(form.maxTurns, 0, 10_000, "Turns before a fresh session");
@@ -157,6 +172,7 @@ export function patchFromForm(
   const rounds = whole(form.reviewRounds, 1, 50, "Review rounds");
   if (agentTurns.error) errors.maxAgentTurns = agentTurns.error;
   if (rounds.error) errors.reviewRounds = rounds.error;
+  if (cap.error) errors.contextCap = cap.error;
   if (at.error) errors.compactAt = at.error;
   if (target.error) errors.compactTarget = target.error;
   if (turns.error) errors.maxTurns = turns.error;
@@ -169,6 +185,7 @@ export function patchFromForm(
   const idle = form.idleTimeout.trim();
   if (!/^[1-9][0-9]*(s|m|h)$/.test(idle)) errors.idleTimeout = "Use a number and s, m or h, like 10m";
 
+  if (cap.value !== undefined && cap.value !== current.context.cap) context.cap = cap.value;
   if (at.value !== undefined && at.value / 100 !== current.context.compact_at)
     context.compact_at = at.value / 100;
   if (target.value !== undefined && target.value / 100 !== current.context.compact_target) {

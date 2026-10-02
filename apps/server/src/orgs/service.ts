@@ -150,7 +150,12 @@ function view(
   if (org.color !== undefined) out.color = org.color;
   if (org.base !== undefined) out.base = org.base;
   if (org.identity !== undefined) out.identity = org.identity;
-  if (org.context?.compact_at !== undefined) out.context = { compact_at: org.context.compact_at };
+  if (org.context?.compact_at !== undefined || org.context?.cap !== undefined) {
+    out.context = {
+      ...(org.context.compact_at === undefined ? {} : { compact_at: org.context.compact_at }),
+      ...(org.context.cap === undefined ? {} : { cap: org.context.cap }),
+    };
+  }
   if (org.resume?.auto !== undefined) out.resume = { auto: org.resume.auto };
   if (org.commits?.attribution !== undefined) out.commits = { attribution: org.commits.attribution };
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };

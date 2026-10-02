@@ -2,6 +2,12 @@ import type { AccountUsage } from "@majhi/shared";
 import type { AccountRuntime, Command, RuntimeOptions, ToolSpec } from "../index.ts";
 import type { UsageMode } from "../turn-usage.ts";
 
+/** The context cap of one session: tokens, and the share of it at which majhi compacts. */
+export interface ContextCap {
+  tokens: number;
+  compactAt: number;
+}
+
 /** What a tool's auth status command reported. */
 export interface AuthStatus {
   signedIn: boolean;
@@ -46,4 +52,9 @@ export interface ToolDef extends ToolSpec {
   runEnv?: Record<string, string>;
   /** How the adapter's per-prompt `usage` counts (see turn-usage.ts). */
   turnUsage: UsageMode;
+  /**
+   * Makes the CLI compact inside a turn at a context cap, as env for the adapter. Absent when the
+   * CLI has no such setting. `info.midTurnCapMin` is the smallest cap it honours.
+   */
+  capEnv?(cap: ContextCap): Record<string, string>;
 }

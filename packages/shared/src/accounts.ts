@@ -152,7 +152,7 @@ export const OrgConfigSchema = z.looseObject({
     })
     .optional(),
   /** Overrides the majhi-wide context budget for this org's agents (5.13). */
-  context: ContextPatchSchema.pick({ compact_at: true }).optional(),
+  context: ContextPatchSchema.pick({ compact_at: true, cap: true }).optional(),
   /** Overrides whether this org's runs resume on their own (5.7). */
   resume: ResumePatchSchema.optional(),
   /** Overrides whether this org's commits name the agent and the task (5.7). */
@@ -240,6 +240,7 @@ export const AgentFrontmatterSchema = z.strictObject({
   context: z
     .strictObject({
       compact_at: z.number().gt(0).lt(1).optional(),
+      cap: ContextPatchSchema.shape.cap,
     })
     .optional(),
   origin: z.enum(["setup", "owner"]).default("owner"),
@@ -303,6 +304,11 @@ export const ToolInfoSchema = z.object({
   loginHint: z.string(),
   /** Name of the API key, for the paste field: "Anthropic API key". */
   apiKeyLabel: z.string(),
+  /**
+   * Smallest context cap the CLI compacts at inside a turn. Absent when the CLI cannot be capped
+   * mid-turn: only majhi's compaction between turns keeps its sessions under the cap.
+   */
+  midTurnCapMin: z.number().int().nonnegative().optional(),
 });
 export type ToolInfo = z.infer<typeof ToolInfoSchema>;
 
@@ -408,7 +414,7 @@ export const OrgViewSchema = z.object({
   /** The task key prefix: the configured `key`, else the one derived from the name. */
   key: z.string(),
   identity: OrgConfigSchema.shape.identity,
-  /** This org's own `compact_at`, when it overrides majhi's. */
+  /** This org's own `compact_at` and `cap`, when they override majhi's. */
   context: OrgConfigSchema.shape.context,
   /** This org's own `resume.auto`, when it overrides majhi's. */
   resume: OrgConfigSchema.shape.resume,

@@ -3,7 +3,7 @@ import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId } from "@majh
 import type { GateWrite } from "../connections/gate.ts";
 import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
-import type { Usage } from "./context.ts";
+import type { ContextBudget, ContextOverride, Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
 
 /** What the drive loop sends next. */
@@ -93,8 +93,10 @@ export class AgentRun {
   account: string | undefined;
   /** The account's tool and auth, for the turn rows (Phase 2c). Known once a session was started. */
   accountKind: { tool: ToolId; auth: AuthMode } | undefined;
-  /** The agent's own `context.compact_at`, read at session start. */
-  compactAt: number | undefined;
+  /** The agent's own `context` overrides (`compact_at`, `cap`), read at session start. */
+  context: ContextOverride | undefined;
+  /** The budget as of the last read: the session start, then each turn. The cap sizes usage reports. */
+  budget: ContextBudget | undefined;
   /** Turns in the current session. */
   turns = 0;
   /** The last usage the agent reported in this session. */

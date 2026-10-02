@@ -820,7 +820,15 @@ export const AgentLiveSchema = z.object({
   turnAt: z.string().optional(),
   /** Messages waiting for its next turn. */
   queued: z.number().int().nonnegative(),
-  usage: z.object({ used: z.number().nonnegative(), size: z.number().positive() }).optional(),
+  usage: z
+    .object({
+      used: z.number().nonnegative(),
+      /** What `used` is measured against: the context cap, or the model's window when there is no cap. */
+      size: z.number().positive(),
+      /** The model's window, when the cap makes `size` smaller. */
+      window: z.number().positive().optional(),
+    })
+    .optional(),
   model: z.string().optional(),
   effort: z.string().optional(),
   /** Slash commands the agent advertises over ACP. */

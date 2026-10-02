@@ -268,7 +268,7 @@ tools: [serena, majhi-memory, majhi-room]
 connections: [globex-k8s-prod, globex-newrelic]   # org connections this agent may use
 skills: [nextjs-app-router, write-tests]
 fallback: globex-builder
-context: { compact_at: 0.8 }   # optional, overrides the org default (see 5.13)
+context: { compact_at: 0.8, cap: 150000 }   # optional, overrides the org default (see 5.13)
 origin: setup            # setup | owner
 ---
 Frontend builder. Match attached designs exactly and reuse existing components.
@@ -280,7 +280,7 @@ Frontend builder. Match attached designs exactly and reuse existing components.
 workspaces: [~/Work, ~/private]   # one or more roots, owner picks them
 tasks_dir: ~/Work/.majhi             # default: <first root>/.majhi
 decisions: { provider: laya, fallback: acp, acp_agent: dispatcher }   # laya | jev | acp | rules
-context: { compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
+context: { cap: 200000, compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
 boss: majhi-boss                  # which root agent is the boss (5.16)
 limits: { agents_max: 6, idle_timeout: 10m, per_account: 2 }   # see 5.17
 accounts:
@@ -487,7 +487,8 @@ Decision models answer typed questions against a state in one pass, with probabi
 No agent session may keep growing until its window is full. Every session has a budget, and majhi compacts it before it gets expensive.
 
 - **Signal.** majhi reads ACP `usage_update` (`used` and `size`) for every session. Both adapters send it today (`claude-agent-acp`, `codex-acp`). Gate on this provider-reported number, not on a byte estimate. If an agent sends no usage, estimate from majhi's own token counts and label the number as estimated.
-- **Threshold.** Compact when `used / size` reaches `compact_at` (default 0.8). The default lives in `majhi.yaml`, orgs can override it, and agents can override their org. The check runs at the end of every turn and before sending any new prompt: if the last reading plus the size of the prompt about to be sent crosses the threshold, compact first.
+- **Cap.** `context.cap` is the most tokens a session may use, whatever the model's window (default 200000; 0 is no cap). It merges majhi, org, agent like `compact_at`. `size` below is the cap when it is smaller than the window. Inside a turn the CLI enforces it where it can (see DECISIONS.md, PRV-47); majhi's own compaction runs between turns.
+- **Threshold.** Compact when `used / size` reaches `compact_at` (default 0.8) of the cap. The default lives in `majhi.yaml`, orgs can override it, and agents can override their org. The check runs at the end of every turn and before sending any new prompt: if the last reading plus the size of the prompt about to be sent crosses the threshold, compact first.
 - **How to compact, in order:**
   1. **Native compaction.** If the agent advertises a `compact` slash command over ACP (Claude Code and Codex both do today), majhi sends it with a short note on what to keep: the task, key decisions, remaining work, files touched, and the next step. The session stays the same, so the agent does not re-read anything. majhi then waits for the next `usage_update` and checks that usage fell below `compact_target` (default 0.4).
   2. **Handoff to a fresh session.** If native compaction is missing, fails, or leaves usage above the target, majhi asks the agent for a handoff note with a fixed template: original task, what is done, key decisions, remaining work, files touched, one concrete next step. The note is saved to `<task>/.handoffs/<agent>-<n>.md`. majhi closes the session and opens a new one with, in this order: the stable prefix (instructions, TASK.md header), TASK.md, the handoff note, a short room summary, the current diff stat, then the pending prompt verbatim. The agent is told to continue silently from where it left off.

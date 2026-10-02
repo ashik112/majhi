@@ -239,9 +239,15 @@ export function linkTargets(
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
 
-/** The context meter: share of the window in use, 0 to 1, and "42k of 200k". */
+/** The context meter: share of the cap in use, 0 to 1, and "42k of 200k", with "(1M window)" when the cap is under the model's window. */
 export function contextMeter(usage: AgentLive["usage"]): { share: number; label: string } | undefined {
   if (usage === undefined || usage.size <= 0) return undefined;
   const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)));
-  return { share: Math.min(1, usage.used / usage.size), label: `${k(usage.used)} of ${k(usage.size)}` };
+  const m = (n: number) => (n >= 1_000_000 ? `${Math.round(n / 100_000) / 10}M` : k(n));
+  const window =
+    usage.window !== undefined && usage.window > usage.size ? ` (${m(usage.window)} window)` : "";
+  return {
+    share: Math.min(1, usage.used / usage.size),
+    label: `${k(usage.used)} of ${k(usage.size)}${window}`,
+  };
 }

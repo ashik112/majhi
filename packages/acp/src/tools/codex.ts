@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { killTree } from "../exec.ts";
-import type { ToolDef, UsageContext } from "./types.ts";
+import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
   .looseObject({
@@ -132,13 +132,23 @@ function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
   });
 }
 
+/**
+ * Codex compacts inside a turn once the conversation reaches `model_auto_compact_token_limit`
+ * (codex-cli 0.158.0). codex-acp 2.0.0 merges the JSON in `CODEX_CONFIG` into every session's config.
+ */
+export function codexCapEnv({ tokens, compactAt }: ContextCap): Record<string, string> {
+  return { CODEX_CONFIG: JSON.stringify({ model_auto_compact_token_limit: Math.round(tokens * compactAt) }) };
+}
+
 export const codex: ToolDef = {
+  capEnv: codexCapEnv,
   info: {
     id: "codex",
     name: "Codex",
     authModes: ["login", "api-key"],
     loginHint: "Open the link, enter the code shown here, then press Enter.",
     apiKeyLabel: "OpenAI API key",
+    midTurnCapMin: 0,
   },
   configHomeVar: "CODEX_HOME",
   apiKeyVar: "CODEX_API_KEY",

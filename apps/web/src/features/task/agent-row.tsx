@@ -280,11 +280,11 @@ function LimitLine({
 export function ContextMeter({ share, label, agent }: { share: number; label: string; agent: string }) {
   const percent = Math.round(share * 100);
   return (
-    <span className="flex items-center gap-2" title={`Context: ${label} tokens`}>
+    <span className="flex items-center gap-2" title={`Context: ${label}`}>
       <meter
         className="sr-only"
         aria-label={`Context of @${agent}`}
-        aria-valuetext={`${label} tokens`}
+        aria-valuetext={label}
         min={0}
         max={100}
         value={percent}

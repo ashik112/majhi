@@ -38,16 +38,18 @@ export class Compaction {
     private readonly host: CompactionHost,
   ) {}
 
-  /** The run's budget now: majhi's settings, then the org's `compact_at`, then the agent's. */
+  /** The run's budget now: majhi's settings, then the org's `compact_at` and `cap`, then the agent's. */
   async budget(run: AgentRun): Promise<ContextBudget> {
     const { config, store } = this.deps;
     const [settings, sections] = await Promise.all([config.settings(), config.sections()]);
     const org = store.tasks.get(run.task)?.org;
-    return budgetFor(
+    const budget = budgetFor(
       settings.context,
       org === undefined ? undefined : sections.orgs[org]?.context,
-      run.compactAt === undefined ? undefined : { compact_at: run.compactAt },
+      run.context,
     );
+    run.budget = budget;
+    return budget;
   }
 
   /**

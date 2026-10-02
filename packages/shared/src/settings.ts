@@ -8,8 +8,22 @@ import { NotifyKindSchema } from "./notify.ts";
  * section means "use the defaults".
  */
 
-/** Context budget (5.13). Orgs and agents can override `compact_at`. */
+/** Smallest context cap that makes sense: below this a session cannot hold its own brief. */
+export const MIN_CONTEXT_CAP = 20_000;
+
+/** Context budget (5.13). Orgs and agents can override `compact_at` and `cap`. */
 const contextFields = {
+  /**
+   * Most tokens a session may use, whatever the model's window allows. 0 means no cap: the
+   * model's full window. `compact_at` and `compact_target` are shares of the cap.
+   */
+  cap: z
+    .number()
+    .int()
+    .refine(
+      (n) => n === 0 || n >= MIN_CONTEXT_CAP,
+      `Use 0 for no cap, or at least ${MIN_CONTEXT_CAP} tokens`,
+    ),
   /** Compact when used / size reaches this. */
   compact_at: z.number().gt(0).lt(1),
   /** Native compaction must bring usage under this, else majhi hands off to a fresh session. */
@@ -18,6 +32,7 @@ const contextFields = {
   max_turns: z.number().int().min(0),
 };
 export const ContextSettingsSchema = z.strictObject({
+  cap: contextFields.cap.default(200_000),
   compact_at: contextFields.compact_at.default(0.8),
   compact_target: contextFields.compact_target.default(0.4),
   max_turns: contextFields.max_turns.default(40),

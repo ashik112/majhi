@@ -39,6 +39,7 @@ import { diffStat } from "./checkpoint.ts";
 import { Compaction } from "./compaction.ts";
 import {
   type ContextBudget,
+  capUsage,
   estimateText,
   estimateTokens,
   isContextError,
@@ -1368,7 +1369,9 @@ export class RunManager {
       const { fm } = agent;
       run.account = fm.account;
       run.accountKind = { tool: agent.account.tool, auth: agent.account.auth };
-      run.compactAt = fm.context?.compact_at;
+      run.context = fm.context;
+      // The cap goes to the CLI at launch (mid-turn compaction) and sizes the usage reports.
+      await this.compaction.budget(run);
       // A free slot under the concurrency limits first. Stopped while waiting: leave quietly.
       if (!(await this.takeSlot(run))) return false;
       const opened = await launch(deps, run, agent);
@@ -1493,8 +1496,9 @@ export class RunManager {
         break;
       case "usage":
         if (event.size > 0) {
-          run.noteUsage({ used: event.used, size: event.size });
-          this.setLive(run, { usage: { used: event.used, size: event.size } });
+          const usage = capUsage(event.used, event.size, run.budget?.cap ?? 0);
+          run.noteUsage(usage);
+          this.setLive(run, { usage });
         }
         break;
       case "turn":

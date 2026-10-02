@@ -33,6 +33,7 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../tasks/read-mounts.ts";
 import { gitAttribution } from "./attribution.ts";
+import type { ContextBudget } from "./context.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
 
 /** An agent file and the account it runs on, checked. */
@@ -119,7 +120,7 @@ export interface Launched {
  */
 export async function launch(
   deps: LaunchDeps,
-  run: { task: string; agent: string; freshNext: boolean },
+  run: { task: string; agent: string; freshNext: boolean; budget?: ContextBudget | undefined },
   agent: ResolvedAgent,
 ): Promise<Launched> {
   const { fm, boss } = agent;
@@ -192,6 +193,9 @@ export async function launch(
       ...(effort === undefined ? {} : { effort }),
       ...(mcpServers.length === 0 ? {} : { mcpServers }),
       ...(held === undefined ? {} : { env: held.env }),
+      ...(run.budget === undefined || run.budget.cap <= 0
+        ? {}
+        : { contextCap: { tokens: run.budget.cap, compactAt: run.budget.compactAt } }),
     });
   } catch (err) {
     if (held !== undefined) await removeRunFiles(held.dir);

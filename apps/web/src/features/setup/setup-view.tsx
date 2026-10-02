@@ -164,7 +164,8 @@ export function SetupView() {
     decisions: firstProvider(decisions.data),
     memory: s && (s.memory.housekeeper ? `Housekeeper @${s.memory.housekeeper}` : "Housekeeper: the boss"),
     context:
-      s && `Compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
+      s &&
+      `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
     teams: s && `${s.rooms.review_rounds} review rounds`,
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),

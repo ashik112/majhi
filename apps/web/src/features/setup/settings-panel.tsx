@@ -129,7 +129,7 @@ function NumberField({
 
 /** Context budget, agent limits, resume and commits: four sections, each saved on its own. */
 export function ContextSection({ settings }: { settings: Settings }) {
-  const context = useSettingsDraft(settings, ["compactAt", "compactTarget", "maxTurns"]);
+  const context = useSettingsDraft(settings, ["contextCap", "compactAt", "compactTarget", "maxTurns"]);
   const limits = useSettingsDraft(settings, ["agentsMax", "perAccount", "perTask", "idleTimeout"]);
   const resume = useSettingsDraft(settings, ["resumeAuto"]);
   const commits = useSettingsDraft(settings, ["commitsAttribution"]);
@@ -138,10 +138,16 @@ export function ContextSection({ settings }: { settings: Settings }) {
       <Section
         first
         title="Context budget"
-        note="When an agent's context is compacted, and when it starts fresh"
+        note="How much context an agent may use, when it is compacted, and when it starts fresh"
         draft={context}
       >
         <div className={GRID}>
+          <NumberField
+            label="Context cap (k tokens)"
+            hint="0 is no cap: the model's full window. Orgs and agents can set their own."
+            name="contextCap"
+            draft={context}
+          />
           <NumberField label="Compact at %" name="compactAt" draft={context} />
           <NumberField label="Target after %" name="compactTarget" draft={context} />
           <NumberField label="Fresh after turns" name="maxTurns" draft={context} />
