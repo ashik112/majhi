@@ -5,8 +5,8 @@ import { git } from "../git/git.ts";
 /**
  * Checkpoints (SPEC 5.7): after every turn that changed files, a WIP commit on the task branch
  * in each touched worktree, `wip(<task>): checkpoint N`, authored as the org and committed by the
- * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with hooks and
- * signing off, so the owner's setup cannot block or prompt.
+ * agent that ran the turn, with a `Majhi-Task` trailer. Never pushed. Git runs with signing off,
+ * and `git` keeps hooks and filters off, so the owner's setup cannot block or prompt.
  */
 
 export interface Identity {
@@ -65,7 +65,7 @@ export function checkpointMessage(task: string, n: number): string {
 }
 
 function quiet(): string[] {
-  return ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"];
+  return ["-c", "commit.gpgsign=false"];
 }
 
 /** Author and committer by environment, which wins over the server's own `GIT_*` variables and the repo's config. */
@@ -179,6 +179,15 @@ export async function commitCheckpoint(
 async function forkPoint(repo: CheckpointRepo): Promise<string> {
   const out = await git(repo.worktree, ["merge-base", "HEAD", repo.base]).catch(() => "");
   return out.trim() || "HEAD";
+}
+
+/** Every worktree's HEAD commit, joined, so two readings differ exactly when a repo got a commit. */
+export async function headsOf(repos: readonly CheckpointRepo[]): Promise<string> {
+  const heads: string[] = [];
+  for (const repo of repos) {
+    heads.push((await git(repo.worktree, ["rev-parse", "HEAD"]).catch(() => "")).trim());
+  }
+  return heads.join(" ");
 }
 
 /** `git diff --stat` from the fork point to the working tree, per repo, headed by the project. */

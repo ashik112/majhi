@@ -48,6 +48,11 @@ describe("host jobs", () => {
     e2eRun: async () => {
       throw new Error("An e2e run is already in progress on this Mac.");
     },
+    secretsKeySave: async () => {
+      throw new Error(
+        "The key at /Users/a/.config/majhi/secrets.key is not the key majhi uses, so it was not saved.",
+      );
+    },
     editorOpen: async ({ path }) => {
       if (path === "/gone") throw new Error("There is nothing at /gone on this Mac.");
     },

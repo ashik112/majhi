@@ -14,6 +14,7 @@ import { describeError } from "@/lib/errors";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { useAccounts, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useShipOptions } from "@/lib/task-queries";
+import { questionLine } from "./dock-caption";
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -183,6 +184,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   blocked: "A task it waits on changed. See the room for what to do.",
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
+  "signed-out": "An account is signed out. Sign in, then resume.",
   limit: "A weekly budget reached 100%. It continues when the budget is raised or on Monday.",
 };
 
@@ -226,7 +228,7 @@ function PendingPause({
         <CirclePause aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
         <span className="min-w-0 break-words">
           <span className="font-medium">Paused.</span>{" "}
-          <span className="text-fg-muted">{PAUSE_WHY[item.reason]}</span>
+          <span className="text-fg-muted">{item.why ?? PAUSE_WHY[item.reason]}</span>
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2 pl-6">
@@ -379,18 +381,21 @@ export function QuestionActions({
   if (item.state !== "pending" || owner === undefined || owner.task.status === "done") return null;
   // With no choices, the review card's Ask for changes already offers the same reply.
   if (item.choices.length === 0 && owner.task.status === "review") return null;
-  // An old card that kept neither the question nor choices would be a bare Reply: say nothing.
-  if (item.choices.length === 0 && (item.text ?? "").trim() === "") return null;
+  const line = questionLine(item);
   return (
     <fieldset
       aria-label={`Answer @${item.agent}`}
       className="m-0 flex flex-wrap items-center gap-2 border-0 p-0 pl-[34px]"
     >
-      {item.text !== undefined && item.text.trim() !== "" && (
-        <legend className="mb-1.5 w-full text-sm text-fg text-pretty">
-          <span className="font-medium">@{item.agent} asks:</span> {item.text}
-        </legend>
-      )}
+      <legend className="mb-1.5 w-full text-sm text-fg text-pretty">
+        {line.text === undefined ? (
+          <span className="font-medium">{line.who} asked for you.</span>
+        ) : (
+          <>
+            <span className="font-medium">{line.who} asks:</span> {line.text}
+          </>
+        )}
+      </legend>
       {item.choices.map((choice) => (
         <Button key={choice} size="sm" disabled={pick.isPending} onClick={() => pick.mutate(choice)}>
           {choice}

@@ -3,9 +3,18 @@ export const SETUP_GROUPS = [
   { label: "Setup", sections: ["overview", "roots", "ssh"] },
   {
     label: "How majhi works",
-    sections: ["decisions", "memory", "context", "teams", "approvals", "notifications", "containers"],
+    sections: [
+      "decisions",
+      "memory",
+      "context",
+      "turns",
+      "teams",
+      "approvals",
+      "notifications",
+      "containers",
+    ],
   },
-  { label: "More", sections: ["editor", "e2e", "appearance", "history"] },
+  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
@@ -19,6 +28,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   decisions: "Decisions",
   memory: "Memory",
   context: "Context and limits",
+  turns: "Turns",
   teams: "Teams",
   approvals: "Approvals",
   notifications: "Notifications",
@@ -26,6 +36,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   e2e: "Background e2e",
   containers: "Containers",
   appearance: "Appearance",
+  backups: "Backups",
   history: "History",
 };
 
@@ -37,6 +48,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   decisions: "Who answers the small typed questions agents ask, like which model fits a task.",
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
+  turns: "How long one agent turn may run, stay idle or call tools before it continues in a fresh session.",
   teams: "How long agents in a room may pass work around without you.",
   approvals: "What agents may do without asking you, and what they asked for lately.",
   notifications:
@@ -45,6 +57,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   e2e: "Run the full e2e suite in the background after each merge into main, and where it runs.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
+  backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",
   history: "Every change to majhi.yaml, by you, the boss or a hand edit.",
 };
 

@@ -2,6 +2,7 @@ import { ContextSettingsSchema, type RoomItem } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
   budgetFor,
+  capUsage,
   compactCommand,
   estimateTokens,
   IMAGE_TOKENS,
@@ -24,6 +25,7 @@ const defaults = ContextSettingsSchema.parse({});
 describe("the context budget", () => {
   it("merges compact_at as majhi default, then org, then agent", () => {
     expect(budgetFor(defaults, undefined, undefined)).toEqual({
+      cap: 200_000,
       compactAt: 0.8,
       compactTarget: 0.4,
       maxTurns: 40,
@@ -35,6 +37,45 @@ describe("the context budget", () => {
       compactAt: 0.9,
       maxTurns: 0,
     });
+  });
+
+  it("merges the cap as majhi default, then org, then agent, and 0 is no cap", () => {
+    expect(budgetFor(defaults, undefined, undefined).cap).toBe(200_000);
+    expect(budgetFor(defaults, { cap: 100_000 }, undefined).cap).toBe(100_000);
+    expect(budgetFor(defaults, { cap: 100_000 }, { cap: 300_000 }).cap).toBe(300_000);
+    expect(budgetFor(defaults, { cap: 100_000 }, { cap: 0 }).cap).toBe(0);
+    expect(budgetFor(defaults, { compact_at: 0.7 }, {}).cap).toBe(200_000);
+    expect(budgetFor({ ...defaults, cap: 0 }, undefined, undefined).cap).toBe(0);
+    // The two overrides are independent of each other.
+    expect(budgetFor(defaults, { cap: 100_000 }, { compact_at: 0.6 })).toMatchObject({
+      cap: 100_000,
+      compactAt: 0.6,
+    });
+  });
+
+  it("measures usage against the cap, and keeps the model's window for the meter", () => {
+    expect(capUsage(50_000, 1_000_000, 200_000)).toEqual({ used: 50_000, size: 200_000, window: 1_000_000 });
+    expect(capUsage(50_000, 1_000_000, 0)).toEqual({ used: 50_000, size: 1_000_000 });
+    // A cap above the window changes nothing: the model is the smaller limit.
+    expect(capUsage(50_000, 200_000, 300_000)).toEqual({ used: 50_000, size: 200_000 });
+    expect(capUsage(50_000, 200_000, 200_000)).toEqual({ used: 50_000, size: 200_000 });
+  });
+
+  it("compacts at compact_at of the cap, not of the model's window", () => {
+    const b = budgetFor(defaults, undefined, undefined);
+    expect(needsCompaction(capUsage(159_999, 1_000_000, b.cap), b)).toBe(false);
+    expect(needsCompaction(capUsage(160_000, 1_000_000, b.cap), b)).toBe(true);
+    expect(needsCompaction(capUsage(150_000, 1_000_000, b.cap), b, 10_000)).toBe(true);
+    // No cap: 160k of a 1M window is far from the threshold.
+    const open = budgetFor({ ...defaults, cap: 0 }, undefined, undefined);
+    expect(needsCompaction(capUsage(160_000, 1_000_000, open.cap), open)).toBe(false);
+    expect(needsCompaction(capUsage(800_000, 1_000_000, open.cap), open)).toBe(true);
+  });
+
+  it("checks native compaction against the target share of the cap", () => {
+    const b = budgetFor(defaults, undefined, undefined);
+    expect(reachedTarget(capUsage(79_999, 1_000_000, b.cap), b)).toBe(true);
+    expect(reachedTarget(capUsage(80_000, 1_000_000, b.cap), b)).toBe(false);
   });
 
   it("keeps the target under a low org or agent threshold", () => {

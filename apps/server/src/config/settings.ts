@@ -17,6 +17,7 @@ import {
   RoomPatchSchema,
   type Settings,
   SettingsSchema,
+  TurnsPatchSchema,
 } from "@majhi/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
@@ -27,6 +28,7 @@ import { ConfigConflictError } from "./write.ts";
 export const SettingsPatchSchema = z.object({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
+  turns: TurnsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   commits: CommitsPatchSchema.optional(),
   rooms: RoomPatchSchema.optional(),
@@ -48,6 +50,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
   return SettingsSchema.parse({
     context: raw.context ?? {},
     limits: raw.limits ?? {},
+    turns: raw.turns ?? {},
     resume: raw.resume ?? {},
     commits: raw.commits ?? {},
     rooms: raw.rooms ?? {},
@@ -84,6 +87,7 @@ export async function readSettings(file: string): Promise<Settings> {
   const parsed = SettingsPatchSchema.safeParse({
     context: record.context,
     limits: record.limits,
+    turns: record.turns,
     resume: record.resume,
     commits: record.commits,
     rooms: record.rooms,

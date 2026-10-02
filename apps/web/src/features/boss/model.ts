@@ -2,6 +2,7 @@ import {
   type ApprovalMode,
   type CommandOutput,
   detectSecrets,
+  MIN_CONTEXT_CAP,
   type RiskClass,
   type RoomItem,
   type Settings,
@@ -86,6 +87,8 @@ export function historyRow(entry: HistoryEntryView, now: number): HistoryRow {
 
 /** The settings form holds text, so a half-typed number stays as typed. Percentages are whole numbers. */
 export interface SettingsForm {
+  /** In thousands of tokens; 0 is no cap. */
+  contextCap: string;
   compactAt: string;
   compactTarget: string;
   maxTurns: string;
@@ -97,12 +100,31 @@ export interface SettingsForm {
   commitsAttribution: boolean;
   maxAgentTurns: string;
   reviewRounds: string;
+  /** Turn limits (PRV-96): each on or off, with its value kept while off. */
+  turnLengthOn: boolean;
+  turnLength: string;
+  turnIdleOn: boolean;
+  turnIdle: string;
+  turnToolsOn: boolean;
+  turnTools: string;
 }
+
+/** The fields of the form that are switches. */
+export type SettingsSwitch =
+  | "resumeAuto"
+  | "commitsAttribution"
+  | "turnLengthOn"
+  | "turnIdleOn"
+  | "turnToolsOn";
+
+/** What a limit's field shows while it is off, so turning it on starts from the default. */
+const TURN_DEFAULTS = { length: "2h", idle: "25m", tools: "300" } as const;
 
 const percent = (fraction: number) => String(Math.round(fraction * 100));
 
 export function formFromSettings(s: Settings): SettingsForm {
   return {
+    contextCap: String(s.context.cap / 1000),
     compactAt: percent(s.context.compact_at),
     compactTarget: percent(s.context.compact_target),
     maxTurns: String(s.context.max_turns),
@@ -114,15 +136,22 @@ export function formFromSettings(s: Settings): SettingsForm {
     commitsAttribution: s.commits.attribution,
     maxAgentTurns: String(s.rooms.max_agent_turns),
     reviewRounds: String(s.rooms.review_rounds),
+    turnLengthOn: s.turns.max_length !== "off",
+    turnLength: s.turns.max_length === "off" ? TURN_DEFAULTS.length : s.turns.max_length,
+    turnIdleOn: s.turns.idle !== "off",
+    turnIdle: s.turns.idle === "off" ? TURN_DEFAULTS.idle : s.turns.idle,
+    turnToolsOn: s.turns.max_tool_calls > 0,
+    turnTools: s.turns.max_tool_calls > 0 ? String(s.turns.max_tool_calls) : TURN_DEFAULTS.tools,
   };
 }
 
 export type SettingsPatch = {
-  context?: { compact_at?: number; compact_target?: number; max_turns?: number };
+  context?: { cap?: number; compact_at?: number; compact_target?: number; max_turns?: number };
   limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
   resume?: { auto?: boolean };
   commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };
+  turns?: { max_length?: string; idle?: string; max_tool_calls?: number };
 };
 
 export type SettingsErrors = Partial<Record<keyof SettingsForm, string>>;
@@ -132,6 +161,16 @@ function whole(text: string, min: number, max: number, what: string): { value?: 
   const value = Number(text);
   if (value < min || value > max) return { error: `${what} must be between ${min} and ${max}` };
   return { value };
+}
+
+/** The cap in thousands of tokens as typed: 0 for no cap, else at least 20. Returns tokens. */
+export function capFromField(text: string): { value?: number; error?: string } {
+  const k = whole(text, 0, 10_000, "Context cap");
+  if (k.value === undefined) return k;
+  if (k.value !== 0 && k.value * 1000 < MIN_CONTEXT_CAP) {
+    return { error: `Use 0 for no cap, or at least ${MIN_CONTEXT_CAP / 1000}` };
+  }
+  return { value: k.value * 1000 };
 }
 
 /**
@@ -147,6 +186,7 @@ export function patchFromForm(
   const context: NonNullable<SettingsPatch["context"]> = {};
   const limits: NonNullable<SettingsPatch["limits"]> = {};
 
+  const cap = capFromField(form.contextCap);
   const at = whole(form.compactAt, 1, 99, "Compact at");
   const target = whole(form.compactTarget, 1, 99, "Target after compaction");
   const turns = whole(form.maxTurns, 0, 10_000, "Turns before a fresh session");
@@ -157,6 +197,7 @@ export function patchFromForm(
   const rounds = whole(form.reviewRounds, 1, 50, "Review rounds");
   if (agentTurns.error) errors.maxAgentTurns = agentTurns.error;
   if (rounds.error) errors.reviewRounds = rounds.error;
+  if (cap.error) errors.contextCap = cap.error;
   if (at.error) errors.compactAt = at.error;
   if (target.error) errors.compactTarget = target.error;
   if (turns.error) errors.maxTurns = turns.error;
@@ -169,6 +210,7 @@ export function patchFromForm(
   const idle = form.idleTimeout.trim();
   if (!/^[1-9][0-9]*(s|m|h)$/.test(idle)) errors.idleTimeout = "Use a number and s, m or h, like 10m";
 
+  if (cap.value !== undefined && cap.value !== current.context.cap) context.cap = cap.value;
   if (at.value !== undefined && at.value / 100 !== current.context.compact_at)
     context.compact_at = at.value / 100;
   if (target.value !== undefined && target.value / 100 !== current.context.compact_target) {
@@ -194,6 +236,22 @@ export function patchFromForm(
   if (rounds.value !== undefined && rounds.value !== current.rooms.review_rounds)
     rooms.review_rounds = rounds.value;
   if (Object.keys(rooms).length > 0) patch.rooms = rooms;
+
+  const turnsPatch: NonNullable<SettingsPatch["turns"]> = {};
+  const duration = /^[1-9][0-9]*(s|m|h)$/;
+  const length = form.turnLength.trim();
+  const quiet = form.turnIdle.trim();
+  if (form.turnLengthOn && !duration.test(length)) errors.turnLength = "Use a number and s, m or h, like 2h";
+  if (form.turnIdleOn && !duration.test(quiet)) errors.turnIdle = "Use a number and s, m or h, like 25m";
+  const tools = form.turnToolsOn ? whole(form.turnTools, 1, 100_000, "Tool calls") : { value: 0 };
+  if (tools.error) errors.turnTools = tools.error;
+  const nextLength = form.turnLengthOn ? length : "off";
+  const nextIdle = form.turnIdleOn ? quiet : "off";
+  if (!errors.turnLength && nextLength !== current.turns.max_length) turnsPatch.max_length = nextLength;
+  if (!errors.turnIdle && nextIdle !== current.turns.idle) turnsPatch.idle = nextIdle;
+  if (tools.value !== undefined && tools.value !== current.turns.max_tool_calls)
+    turnsPatch.max_tool_calls = tools.value;
+  if (Object.keys(turnsPatch).length > 0) patch.turns = turnsPatch;
   return { patch, errors };
 }
 

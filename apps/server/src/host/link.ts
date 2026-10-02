@@ -8,6 +8,7 @@ import {
   type HostReply,
   HostResultSchemas,
   type HostStatus,
+  type SecretsKeyBackup,
   type SshStatus,
 } from "@majhi/shared";
 import type { z } from "zod";
@@ -31,6 +32,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   remount: (value) => HostResultSchemas.remount.safeParse(value),
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
+  "secretsKey.save": (value) => HostResultSchemas["secretsKey.save"].safeParse(value),
   "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
   "e2e.run": (value) => HostResultSchemas["e2e.run"].safeParse(value),
   notify: (value) => HostResultSchemas.notify.safeParse(value),
@@ -116,6 +118,11 @@ export class HostLink {
    */
   noteSsh(ssh: SshStatus): void {
     if (this.info !== undefined) this.info = { ...this.info, ssh };
+  }
+
+  /** Keeps a fresh Keychain status until the next poll brings the same. */
+  noteSecretsKey(secretsKey: SecretsKeyBackup): void {
+    if (this.info !== undefined) this.info = { ...this.info, secretsKey };
   }
 
   /** Called with the wake time each time the helper reports a new wake from sleep. Returns an unsubscribe. */

@@ -129,7 +129,12 @@ export function overlapsOf(
 /** "apps/server/src/runs" style summary for a room line. */
 export function describeOverlap(o: Overlap): string {
   const where = o.modules.length > 0 ? o.modules : o.files.map(moduleOf);
-  return [...new Set(where)].slice(0, 3).join(", ");
+  // The repo root is not a place worth naming: say which files, or that they sit at the root.
+  const rootFiles = o.files.filter((f) => moduleOf(f) === ".");
+  const named = where.flatMap((m) =>
+    m === "." ? (rootFiles.length > 0 ? rootFiles : ["files in the repo root"]) : [m],
+  );
+  return [...new Set(named)].slice(0, 3).join(", ");
 }
 
 // ---------------------------------------------------------------------------

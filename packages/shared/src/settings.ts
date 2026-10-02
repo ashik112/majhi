@@ -9,8 +9,22 @@ import { NotifyKindSchema } from "./notify.ts";
  * section means "use the defaults".
  */
 
-/** Context budget (5.13). Orgs and agents can override `compact_at`. */
+/** Smallest context cap that makes sense: below this a session cannot hold its own brief. */
+export const MIN_CONTEXT_CAP = 20_000;
+
+/** Context budget (5.13). Orgs and agents can override `compact_at` and `cap`. */
 const contextFields = {
+  /**
+   * Most tokens a session may use, whatever the model's window allows. 0 means no cap: the
+   * model's full window. `compact_at` and `compact_target` are shares of the cap.
+   */
+  cap: z
+    .number()
+    .int()
+    .refine(
+      (n) => n === 0 || n >= MIN_CONTEXT_CAP,
+      `Use 0 for no cap, or at least ${MIN_CONTEXT_CAP} tokens`,
+    ),
   /** Compact when used / size reaches this. */
   compact_at: z.number().gt(0).lt(1),
   /** Native compaction must bring usage under this, else majhi hands off to a fresh session. */
@@ -19,6 +33,7 @@ const contextFields = {
   max_turns: z.number().int().min(0),
 };
 export const ContextSettingsSchema = z.strictObject({
+  cap: contextFields.cap.default(200_000),
   compact_at: contextFields.compact_at.default(0.8),
   compact_target: contextFields.compact_target.default(0.4),
   max_turns: contextFields.max_turns.default(40),
@@ -60,6 +75,31 @@ export const LimitsSettingsSchema = z.strictObject({
 });
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
 export const LimitsPatchSchema = z.strictObject(limitsFields).partial();
+
+/** A duration, or `off`. */
+const DurationOrOffSchema = z.union([DurationSchema, z.literal("off")]);
+
+/**
+ * Turn limits (PRV-96): a turn that runs too long, goes quiet or makes too many tool calls is
+ * cancelled and continues in a fresh session with a handoff note. Orgs and agents override each
+ * field. `off`, or 0 tool calls, turns a limit off.
+ */
+const turnsFields = {
+  /** The longest a turn may run. */
+  max_length: DurationOrOffSchema,
+  /** How long a turn may go without output or tool activity. */
+  idle: DurationOrOffSchema,
+  /** Tool calls in one turn. 0 turns it off. */
+  max_tool_calls: z.number().int().min(0).max(100_000),
+};
+export const TurnsSettingsSchema = z.strictObject({
+  max_length: turnsFields.max_length.default("2h"),
+  idle: turnsFields.idle.default("25m"),
+  max_tool_calls: turnsFields.max_tool_calls.default(0),
+});
+export type TurnsSettings = z.infer<typeof TurnsSettingsSchema>;
+export const TurnsPatchSchema = z.strictObject(turnsFields).partial();
+export type TurnsPatch = z.infer<typeof TurnsPatchSchema>;
 
 /** Resume after sleep, restarts, lost internet and crashes (5.7). */
 export const ResumeSettingsSchema = z.strictObject({
@@ -397,6 +437,7 @@ export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;
 export const SettingsSchema = z.object({
   context: ContextSettingsSchema,
   limits: LimitsSettingsSchema,
+  turns: TurnsSettingsSchema,
   resume: ResumeSettingsSchema,
   commits: CommitsSettingsSchema,
   rooms: RoomSettingsSchema,

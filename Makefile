@@ -21,11 +21,18 @@ up:
 	@mkdir -p "$(HOME)/.majhi" "$(HOME)/.ssh"
 	@touch "$(HOME)/.ssh/config" "$(HOME)/.ssh/known_hosts"
 	$(COMPOSE) --profile runner $(LAYA_BUILD) build
+	@# A key the macOS Keychain still holds (the host helper keeps a copy) comes back before a new one is made.
 	@if [ ! -s "$(SECRETS_KEY)" ]; then \
-		echo "Creating the secrets key at $(SECRETS_KEY)"; \
 		mkdir -p "$$(dirname "$(SECRETS_KEY)")" && chmod 700 "$$(dirname "$(SECRETS_KEY)")"; \
-		( umask 077; docker run --rm --pull never majhi-server:dev node dist/cli.js gen-key > "$(SECRETS_KEY).tmp" ) \
-			&& chmod 600 "$(SECRETS_KEY).tmp" && mv "$(SECRETS_KEY).tmp" "$(SECRETS_KEY)" \
+		if [ -x /usr/bin/security ] && ( umask 077; /usr/bin/security find-generic-password -s "majhi secrets key" -a secrets.key -w > "$(SECRETS_KEY).tmp" 2>/dev/null ) \
+			&& grep -q '^AGE-SECRET-KEY-1' "$(SECRETS_KEY).tmp"; then \
+			echo "Putting back the secrets key from the Keychain at $(SECRETS_KEY)"; \
+		else \
+			echo "Creating the secrets key at $(SECRETS_KEY)"; \
+			( umask 077; docker run --rm --pull never majhi-server:dev node dist/cli.js gen-key > "$(SECRETS_KEY).tmp" ) \
+				|| { rm -f "$(SECRETS_KEY).tmp"; exit 1; }; \
+		fi; \
+		chmod 600 "$(SECRETS_KEY).tmp" && mv "$(SECRETS_KEY).tmp" "$(SECRETS_KEY)" \
 			|| { rm -f "$(SECRETS_KEY).tmp"; exit 1; }; \
 	fi
 	@sh scripts/host.sh install

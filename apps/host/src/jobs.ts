@@ -8,6 +8,7 @@ import type {
   LayaDecideResult,
   LayaStatus,
   RootSuggestion,
+  SecretsKeyBackup,
   SshStatus,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
@@ -26,6 +27,8 @@ export interface JobHandlers {
   restart(): void;
   /** Throws an error whose message is safe to show. It never holds the passphrase. */
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
+  /** Throws an error whose message is safe to show. It never holds the key. */
+  secretsKeySave(params: { expected: string }): Promise<SecretsKeyBackup>;
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
@@ -125,6 +128,9 @@ export async function runJob(job: HostJob, handlers: JobHandlers, reply: SendRep
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });
+        return;
+      case "secretsKey.save":
+        await reply({ id: job.id, ok: true, result: await handlers.secretsKeySave(job.params) });
         return;
       case "remount": {
         const remount = handlers.remount;

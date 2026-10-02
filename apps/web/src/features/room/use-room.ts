@@ -5,6 +5,7 @@ import { reconnectDelay, wsUrl } from "@/lib/events-model";
 import { setTaskInCache } from "@/lib/task-queries";
 import {
   emptyRoom,
+  newestSeq,
   oldestSeq,
   parseRoomMessage,
   type RoomState,
@@ -32,12 +33,17 @@ function remember(taskId: string, state: RoomState): void {
  */
 export function useRoom(taskId: string) {
   const client = useQueryClient();
-  const [state, dispatch] = useReducer(roomReducer, taskId, (id) => ({
-    ...(roomCache.get(id) ?? emptyRoom),
-    connection: "connecting" as const,
-  }));
+  const [state, dispatch] = useReducer(roomReducer, taskId, (id) => {
+    // A window around a search match is not kept: the room opens at its newest messages again.
+    const cached = roomCache.get(id);
+    return {
+      ...(cached === undefined || cached.newer ? emptyRoom : cached),
+      connection: "connecting" as const,
+    };
+  });
   useEffect(() => remember(taskId, state), [taskId, state]);
   const loadingOlder = useRef(false);
+  const loadingNewer = useRef(false);
   const latest = useRef(state);
   latest.current = state;
 
@@ -98,5 +104,47 @@ export function useRoom(taskId: string) {
     }
   }, [taskId]);
 
-  return { state, dispatch, loadOlder };
+  /** Replaces the room's items with the page around a search match; false when it is not in the room. */
+  const loadAround = useCallback(
+    async (item: string) => {
+      try {
+        const page = await cmd("room.around", { task: taskId, item, limit: 100 });
+        if (page.items.length === 0) return false;
+        dispatch({ type: "window", items: page.items, older: page.older, newer: page.newer });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [taskId],
+  );
+
+  /** While around a match: the next page of newer items. */
+  const loadNewer = useCallback(async () => {
+    const current = latest.current;
+    if (loadingNewer.current || !current.newer) return;
+    const afterSeq = newestSeq(current.items);
+    if (afterSeq === undefined) return;
+    loadingNewer.current = true;
+    try {
+      const page = await cmd("room.items", { task: taskId, limit: 100, afterSeq });
+      dispatch({ type: "newer", items: page.items, more: page.more });
+    } catch {
+      // The next scroll to the bottom tries again.
+    } finally {
+      loadingNewer.current = false;
+    }
+  }, [taskId]);
+
+  /** Leaves a window around a match for the newest messages. */
+  const loadLatest = useCallback(async () => {
+    try {
+      const page = await cmd("room.items", { task: taskId, limit: 200 });
+      dispatch({ type: "latest", items: page.items, more: page.more });
+    } catch {
+      // The button stays; try again.
+    }
+  }, [taskId]);
+
+  return { state, dispatch, loadOlder, loadAround, loadNewer, loadLatest };
 }
