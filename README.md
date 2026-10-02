@@ -18,6 +18,12 @@ Give a task in one sentence. A team of agents plans it, builds it, reviews it, a
 
 *Majhi* (মাঝি) is the boatman who steers while others row. You steer. The agents row.
 
+<p align="center">
+  <img src="docs/assets/screenshots/onboarding.png" alt="majhi's first-run journey: a rickshaw-art river at night, the captain steering a boat while robot agents row, each setup step a painted signboard" width="100%">
+  <br>
+  <sub>The first run is a river journey, painted in Dhaka rickshaw art: the captain steers, the agents row, and every setup step is a stop on the way.</sub>
+</p>
+
 ## Why it exists
 
 AI agents can now write real code. Running them for real work is still a mess: one subscription per client, a different GitHub or GitLab login for each, SSH keys, tokens, and the constant risk of one client's code or secrets ending up in another client's work. Most tools give you one agent in one terminal and leave the rest to you.
