@@ -19,6 +19,11 @@ export class GitLoginService {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /** When the logins were last detected, or undefined before the first answer. */
+  checkedAt(): string | undefined {
+    return this.cached === undefined ? undefined : new Date(this.cached.at).toISOString();
+  }
+
   async list(refresh = false): Promise<GitLoginsResult> {
     if (this.link === undefined || !this.link.isConnected()) {
       throw new UserError(

@@ -26,10 +26,21 @@ import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
-import { fetchPublicProfile, setGitAccount, useSavedLogin } from "../orgs/gitAccount.ts";
+import { hostNameOf } from "../mrs/remote.ts";
+import {
+  checkSavedLogin,
+  checkToken,
+  fetchProbe,
+  fetchPublicProfile,
+  setGitAccount,
+  tokenRequest,
+  useSavedLogin,
+} from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
+import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
 import { commitBy } from "../runs/checkpoint.ts";
+import { readGitMeta } from "../scan/gitMeta.ts";
 import { classifyHost } from "../scan/remote.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
@@ -103,6 +114,25 @@ export function createHandlers({
       await orgs.update({ id, mr_tokens: tokens }, ctx.command, ctx.meta);
     },
   });
+  const gitChecks = new CheckCache();
+  const readSaved = async (host: string, account: string) =>
+    (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret;
+  /** Host names of the remotes of an org's projects, with ~/.ssh/config aliases resolved. */
+  const usedHosts = async (id: string): Promise<string[]> => {
+    const aliases = await sshConfigHosts(config.paths.hostHome).catch(() => []);
+    const projects = (await services.projects.infos()).filter((p) => p.org === id && p.exists);
+    const hosts = new Set<string>();
+    for (const p of projects) {
+      const meta = await readGitMeta(p.path).catch(() => undefined);
+      for (const remote of meta?.remotes ?? []) {
+        const name = hostNameOf(remote.url)?.toLowerCase();
+        if (name === undefined) continue;
+        const real = aliases.find((a) => a.alias.toLowerCase() === name)?.hostName?.toLowerCase() ?? name;
+        if (real.includes(".")) hosts.add(real);
+      }
+    }
+    return [...hosts];
+  };
   const viewOf = async (id: string) => {
     const org = (await orgs.list()).find((o) => o.id === id);
     if (org === undefined) throw new UserError(`Org "${id}" does not exist.`, 404);
@@ -173,12 +203,14 @@ export function createHandlers({
             const org = (await config.sections()).orgs[id];
             return org === undefined
               ? undefined
-              : { identity: org.identity, accounts: org.git_accounts ?? [] };
+              : { identity: org.identity, accounts: org.git_accounts ?? [], mrTokens: org.mr_tokens };
           },
           logins: () => services.gitLogins.list().then((r) => r.hosts),
           adopt: async (via, host) => (await useGitLogin(adoptDeps(ctx), { id: input.id, via, host })).ref,
           saveSecret: (secret) => services.secretService.save(secret),
           publicProfile: fetchPublicProfile,
+          probe: fetchProbe,
+          classify: classifyHost,
           write: async (id, patch) => {
             await orgs.update({ id, ...patch }, ctx.command, ctx.meta);
           },
@@ -200,10 +232,8 @@ export function createHandlers({
               ? undefined
               : { identity: org.identity, accounts: org.git_accounts ?? [] };
           },
-          readSecret: async (host, account) =>
-            (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret,
-          probe: async (url, headers) =>
-            (await fetch(url, { headers, signal: AbortSignal.timeout(8000), redirect: "error" })).status,
+          readSecret: readSaved,
+          probe: fetchProbe,
           saveSecret: (secret) => services.secretService.save(secret),
           write: async (id, patch) => {
             const current = (await config.sections()).orgs[id]?.mr_tokens ?? {};
@@ -220,6 +250,57 @@ export function createHandlers({
         },
         classifyHost,
         input,
+      );
+    },
+
+    "orgs.gitStatus": async (input) => {
+      if (input.refresh === true) gitChecks.clear();
+      return gitStatus(
+        {
+          org: async (id) => {
+            const org = (await config.sections()).orgs[id];
+            return org === undefined
+              ? undefined
+              : {
+                  accounts: org.git_accounts ?? [],
+                  mrTokens: org.mr_tokens ?? {},
+                  dismissed: org.dismissed_logins ?? [],
+                };
+          },
+          usedHosts,
+          logins: async () => {
+            if (!hostLink.isConnected()) return undefined;
+            const { hosts } = await services.gitLogins.list(input.refresh === true);
+            return { hosts, checkedAt: services.gitLogins.checkedAt() ?? new Date().toISOString() };
+          },
+          checkToken: (host, kind, account, ref) =>
+            gitChecks.get(`token\n${host}\n${ref}`, async () => {
+              const value = await services.secrets.get(ref.replace(/^secret:/, "")).catch(() => undefined);
+              if (value === undefined) return { state: "refused" as const };
+              return checkToken(fetchProbe, tokenRequest(host, kind, account, value));
+            }),
+          savedLogin: (host, kind, account) =>
+            gitChecks.get(`saved\n${host}\n${account.toLowerCase()}`, () =>
+              checkSavedLogin({ readSecret: readSaved, probe: fetchProbe }, host, kind, account),
+            ),
+          classify: classifyHost,
+        },
+        input.id,
+      );
+    },
+
+    "orgs.dismissGitLogin": async (input, ctx) => {
+      const org = (await config.sections()).orgs[input.id];
+      if (org === undefined) throw new UserError(`Org "${input.id}" does not exist.`, 404);
+      const host = input.host.toLowerCase();
+      const current = org.dismissed_logins ?? [];
+      if (current.some((d) => d.host === host && d.account.toLowerCase() === input.account.toLowerCase())) {
+        return viewOf(input.id);
+      }
+      return orgs.update(
+        { id: input.id, dismissed_logins: [...current, { host, account: input.account }] },
+        ctx.command,
+        ctx.meta,
       );
     },
 

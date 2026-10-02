@@ -11,6 +11,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "orgs.update": (i) => `Change org ${str(i.id)}`,
   "orgs.setGitAccount": (i) =>
     `Use ${str(i.account)} on ${str(i.host)} for org ${str(i.id)}${i.ssh ? ` (SSH ${str(i.ssh)})` : ""}${i.token ? ", with a pasted token" : ""}`,
+  "orgs.dismissGitLogin": (i) => `Stop offering ${str(i.account)} on ${str(i.host)} to org ${str(i.id)}`,
   "orgs.removeGitAccount": (i) => `Remove ${str(i.account)} on ${str(i.host)} from org ${str(i.id)}`,
   "orgs.rename": (i) => `Rename org ${str(i.id)} to ${str(i.newId)}`,
   "agents.rename": (i) => `Rename agent ${str(i.id)} to ${str(i.newId)}`,

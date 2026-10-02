@@ -1,6 +1,8 @@
 import { type GitAccount, OrgConfigSchema } from "@majhi/shared";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  checkSavedLogin,
+  fetchProbe,
   type GitAccountDeps,
   identityToFill,
   type SavedLoginDeps,
@@ -25,6 +27,10 @@ describe("git accounts", () => {
       },
       saveSecret: async () => ({ ref: "secret:pasted" }),
       publicProfile: async () => ({ name: "Acme Dev", email: "dev@acme.example" }),
+      probe: async () => {
+        throw new Error("no network in tests");
+      },
+      classify: () => "gitlab",
       write: async (id, patch) => {
         writes.push({ id, patch });
       },
@@ -97,7 +103,7 @@ describe("useSavedLogin", () => {
       },
       probe: async (url, headers) => {
         probes.push({ url, auth: headers.authorization });
-        return status;
+        return { status, body: status === 200 ? { login: "acme-dev" } : undefined };
       },
       saveSecret: async (s) => {
         saved.push(s.label);
@@ -128,7 +134,7 @@ describe("useSavedLogin", () => {
     const { deps, writes, saved } = setup(401);
     const out = await useSavedLogin(deps, classify, { id: "acme", host: "github.com", account: "acme-dev" });
     expect(out.saved).toBe(false);
-    expect(out.reason).toContain("Paste a token");
+    expect(out.reason).toContain("Make a token instead");
     expect(out.reason).not.toContain("tok123");
     expect(writes).toEqual([]);
     expect(saved).toEqual([]);
@@ -146,5 +152,155 @@ describe("useSavedLogin", () => {
       useSavedLogin(other.deps, classify, { id: "acme", host: "github.com", account: "globex-dev" }),
     ).rejects.toThrow();
     expect(other.writes).toEqual([]);
+  });
+});
+
+describe("SSH route spelling", () => {
+  it("reads the host name and default as the default key, and keeps an alias", () => {
+    const parse = (ssh: string) =>
+      OrgConfigSchema.parse({
+        name: "Acme",
+        git_accounts: [{ host: "gitlab.com", account: "sample-user", ssh }],
+      }).git_accounts?.[0]?.ssh;
+    expect(parse("gitlab.com")).toBe("default");
+    expect(parse("GitLab.com")).toBe("default");
+    expect(parse("default")).toBe("default");
+    expect(parse("gl-acme")).toBe("gl-acme");
+  });
+
+  it("writes the host name as default", async () => {
+    const writes: Array<{ git_accounts: GitAccount[] }> = [];
+    await setGitAccount(
+      {
+        org: async () => ({ identity: { name: "A", email: "a@acme.example" }, accounts: [] }),
+        logins: async () => [],
+        adopt: async () => "secret:x",
+        saveSecret: async () => ({ ref: "secret:x" }),
+        publicProfile: async () => undefined,
+        probe: async () => ({ status: 500, body: undefined }),
+        classify: () => "gitlab",
+        write: async (_id, patch) => {
+          writes.push(patch);
+        },
+      },
+      { id: "acme", host: "gitlab.com", account: "sample-user", ssh: "gitlab.com" },
+    );
+    expect(writes[0]?.git_accounts).toEqual([{ host: "gitlab.com", account: "sample-user", ssh: "default" }]);
+  });
+});
+
+describe("a pasted token", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const setup = () => {
+    const orgs: Record<string, { accounts: GitAccount[]; mrTokens?: Record<string, string> }> = {
+      acme: { accounts: [{ host: "gitlab.com", account: "sample-user", ssh: "default" }] },
+      globex: { accounts: [], mrTokens: { gitlab: "secret:globex" } },
+    };
+    const writes: Array<{ id: string; patch: unknown }> = [];
+    const saved: string[] = [];
+    const deps: GitAccountDeps = {
+      org: async (id) => {
+        const org = orgs[id];
+        return org === undefined
+          ? undefined
+          : {
+              identity: { name: "A", email: "a@acme.example" },
+              accounts: org.accounts,
+              mrTokens: org.mrTokens,
+            };
+      },
+      logins: async () => [],
+      adopt: async () => "secret:adopted",
+      saveSecret: async (s) => {
+        saved.push(s.label);
+        return { ref: "secret:pasted" };
+      },
+      publicProfile: async () => undefined,
+      probe: fetchProbe,
+      classify: () => "gitlab",
+      write: async (id, patch) => {
+        writes.push({ id, patch });
+      },
+    };
+    const input = { id: "acme", host: "gitlab.com", account: "sample-user", token: "sample-token" };
+    return { deps, writes, saved, input };
+  };
+  const answer = (status: number, body: unknown) =>
+    vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("https://gitlab.com/api/v4/user");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sample-token");
+      return new Response(status === 200 ? JSON.stringify(body) : "{}", { status });
+    });
+
+  it("is saved for that org only, after the host says whose it is", async () => {
+    const { deps, writes, saved, input } = setup();
+    vi.stubGlobal("fetch", answer(200, { username: "sample-user" }));
+    await setGitAccount(deps, input);
+    expect(saved).toEqual(["acme gitlab.com sample-user token"]);
+    expect(writes).toEqual([
+      {
+        id: "acme",
+        patch: {
+          git_accounts: [
+            { host: "gitlab.com", account: "sample-user", ssh: "default", token: "secret:pasted" },
+          ],
+          mr_tokens: { gitlab: "secret:pasted" },
+        },
+      },
+    ]);
+  });
+
+  it("is never saved when the host refuses it, or it belongs to someone else", async () => {
+    for (const fetch of [answer(401, undefined), answer(200, { username: "someone-else" })]) {
+      const { deps, writes, saved, input } = setup();
+      vi.stubGlobal("fetch", fetch);
+      const failure = await setGitAccount(deps, input).catch((e: unknown) => e);
+      expect(failure).toBeInstanceOf(Error);
+      expect(String(failure)).not.toContain("sample-token");
+      expect(saved).toEqual([]);
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it("is never saved when the host cannot be reached", async () => {
+    const { deps, writes, saved, input } = setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+    await expect(setGitAccount(deps, input)).rejects.toThrow(/could not reach gitlab.com/);
+    expect(saved).toEqual([]);
+    expect(writes).toEqual([]);
+  });
+});
+
+describe("the silent saved-login check", () => {
+  it("answers none, never an error, when the Mac has no saved login", async () => {
+    const probe = vi.fn();
+    const out = await checkSavedLogin(
+      {
+        readSecret: async () => {
+          throw new Error("This Mac has no saved login for sample-user on gitlab.com.");
+        },
+        probe,
+      },
+      "gitlab.com",
+      "gitlab",
+      "sample-user",
+    );
+    expect(out).toBe("none");
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("tells a token the host takes from a plain password", async () => {
+    const deps = (status: number) => ({
+      readSecret: async () => "saved-secret",
+      probe: async () => ({ status, body: status === 200 ? { username: "sample-user" } : undefined }),
+    });
+    expect(await checkSavedLogin(deps(200), "gitlab.com", "gitlab", "sample-user")).toBe("token");
+    expect(await checkSavedLogin(deps(401), "gitlab.com", "gitlab", "sample-user")).toBe("login");
   });
 });

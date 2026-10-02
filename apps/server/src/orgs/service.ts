@@ -75,6 +75,7 @@ export class OrgService {
       "lead_start",
       "mr_tokens",
       "git_accounts",
+      "dismissed_logins",
     ] as const) {
       const value = patch[field];
       if (value === null) delete next[field];

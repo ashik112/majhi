@@ -106,6 +106,22 @@ describe("chooseRoute with an org git account", () => {
     ).toEqual({ state: "org-missing", account: "globex-dev" });
   });
 
+  it("an org route saved as the host name pushes over the host's default key", () => {
+    const logins = [
+      { via: "ssh" as const, alias: "gl-other", account: "sample-user" },
+      { via: "ssh" as const, account: "sample-user" },
+    ];
+    expect(
+      chooseRoute({
+        host: "gitlab.com",
+        explicit: undefined,
+        org: { account: "sample-user", ssh: "gitlab.com" },
+        owner: "acme",
+        logins,
+      }),
+    ).toEqual({ state: "auto", account: "sample-user" });
+  });
+
   it("an org without a binding ignores other orgs' accounts", () => {
     expect(chooseRoute({ explicit: undefined, org: undefined, owner: "acme", logins: [acme] })).toEqual({
       state: "auto",

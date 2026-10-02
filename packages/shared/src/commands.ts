@@ -61,6 +61,7 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
+import { GitStatusSchema } from "./git-accounts.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -387,6 +388,27 @@ export const commands = {
     }),
     output: OrgViewSchema,
   },
+  "orgs.gitStatus": {
+    risk: "read",
+    summary:
+      "An org's git accounts per host: how each pushes (SSH key or this Mac's saved login), whether its merge request token works and as whom (one call to the host's API), and the hosts its projects use that have no account yet, with the logins found on this Mac. Never returns a token",
+    input: z.object({
+      id: IdSchema,
+      /** Detect this Mac's logins again and recheck tokens, skipping the cache. */
+      refresh: z.boolean().optional(),
+    }),
+    output: GitStatusSchema,
+  },
+  "orgs.dismissGitLogin": {
+    risk: "change",
+    summary: "Stop offering a login found on this Mac as an org's account on a host. Only that org changes",
+    input: z.object({
+      id: IdSchema,
+      host: z.string().trim().min(1).max(255),
+      account: z.string().trim().min(1).max(255),
+    }),
+    output: OrgViewSchema,
+  },
   "orgs.removeGitAccount": {
     risk: "change",
     summary: "Remove an org's git account for a host. Its token secret is left in secrets",
@@ -522,6 +544,7 @@ export const commands = {
       lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
       git_accounts: OrgConfigSchema.shape.git_accounts.nullable().optional(),
+      dismissed_logins: OrgConfigSchema.shape.dismissed_logins.nullable().optional(),
     }),
     output: OrgViewSchema,
   },

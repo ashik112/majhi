@@ -72,17 +72,62 @@ export type AuthMode = z.infer<typeof AuthModeSchema>;
 // ---------------------------------------------------------------------------
 // majhi.yaml sections
 
+/** The SSH route value that means the host's own default key, not a `~/.ssh/config` alias. */
+export const DEFAULT_SSH_ROUTE = "default";
+
+/**
+ * One spelling for an SSH route: the host name itself (`gitlab.com`, as the project route picker
+ * saves it) and `default` both mean the host's default key and become `default`. An alias stays.
+ */
+export function normalizeSshRoute(host: string, ssh: string | undefined): string | undefined {
+  if (ssh === undefined) return undefined;
+  const value = ssh.trim();
+  if (value === "") return undefined;
+  const lower = value.toLowerCase();
+  return lower === DEFAULT_SSH_ROUTE || lower === host.trim().toLowerCase() ? DEFAULT_SSH_ROUTE : value;
+}
+
+/**
+ * Whether a detected login is the SSH route an account names: `default` is the host's own key (no
+ * alias), an alias is that alias, and no route at all takes any SSH key.
+ */
+export function sshRouteMatches(
+  route: string | undefined,
+  login: { via: string; alias?: string | undefined },
+): boolean {
+  if (login.via !== "ssh") return false;
+  if (route === undefined) return true;
+  return route === DEFAULT_SSH_ROUTE ? login.alias === undefined : login.alias === route;
+}
+
 /** One git account an org pushes and opens MRs as on one host. */
-export const GitAccountSchema = z.strictObject({
-  /** The git host name, like `gitlab.com`. */
+export const GitAccountSchema = z
+  .strictObject({
+    /** The git host name, like `gitlab.com`. */
+    host: z.string().trim().toLowerCase().min(1).max(255),
+    account: z.string().trim().min(1).max(255),
+    /**
+     * The SSH route: `default` for the host's default key, a `Host` alias, or absent for any key
+     * that logs in as the account. The host name is read and written as `default`.
+     */
+    ssh: z.string().trim().min(1).max(255).optional(),
+    /** The account's own token for MRs and the API. */
+    token: SecretRefSchema.optional(),
+  })
+  .transform(
+    ({ ssh, ...rest }): { host: string; account: string; ssh?: string; token?: string | undefined } => {
+      const route = normalizeSshRoute(rest.host, ssh);
+      return route === undefined ? rest : { ...rest, ssh: route };
+    },
+  );
+export type GitAccount = z.infer<typeof GitAccountSchema>;
+
+/** A detected login the owner said No to for one org, so it is not offered there again. */
+export const DismissedLoginSchema = z.strictObject({
   host: z.string().trim().toLowerCase().min(1).max(255),
   account: z.string().trim().min(1).max(255),
-  /** The SSH route: a `Host` alias, or absent for the host's default key. */
-  ssh: z.string().trim().min(1).max(255).optional(),
-  /** The account's own token for MRs and the API. */
-  token: SecretRefSchema.optional(),
 });
-export type GitAccount = z.infer<typeof GitAccountSchema>;
+export type DismissedLogin = z.infer<typeof DismissedLoginSchema>;
 
 export const OrgConfigSchema = z.looseObject({
   name: z.string().trim().min(1),
@@ -126,6 +171,8 @@ export const OrgConfigSchema = z.looseObject({
   mr_tokens: z.partialRecord(MrHostSchema, SecretRefSchema).optional(),
   /** The git accounts of this org per host. They decide the push key, token and commit identity. */
   git_accounts: z.array(GitAccountSchema).optional(),
+  /** Detected logins the owner declined for this org. */
+  dismissed_logins: z.array(DismissedLoginSchema).optional(),
   /** The clusters, MCP servers, hosts and accounts this org's agents may reach (5.14), by id. */
   connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
 });

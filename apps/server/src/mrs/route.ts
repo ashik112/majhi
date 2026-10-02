@@ -1,4 +1,4 @@
-import type { GitHostLogins, GitLogin } from "@majhi/shared";
+import { type GitHostLogins, type GitLogin, normalizeSshRoute, sshRouteMatches } from "@majhi/shared";
 import { hostNameOf, repoSlug } from "./remote.ts";
 
 /** How majhi reaches a remote to push: the owner's pick, a key it found, or nothing it can use. */
@@ -13,6 +13,8 @@ export type PushRoute =
   | { state: "none" };
 
 export interface RouteInput {
+  /** The remote's host name, so an org route saved as the host name reads as its default key. */
+  host?: string | undefined;
   /** The SSH alias the owner picked for the remote. It always wins. */
   explicit: string | undefined;
   /** The git account the project's org bound for this host. Wins over the automatic choice. */
@@ -26,14 +28,13 @@ export interface RouteInput {
 }
 
 /** The SSH route to push with. Prefers the account that owns the repo's namespace, else the only one. */
-export function chooseRoute({ explicit, org, owner, logins, httpsOk }: RouteInput): PushRoute {
+export function chooseRoute({ host, explicit, org, owner, logins, httpsOk }: RouteInput): PushRoute {
   if (explicit !== undefined && explicit !== "") return { state: "picked", alias: explicit };
   const ssh = logins.filter((l) => l.via === "ssh");
   if (org !== undefined) {
+    const route = normalizeSshRoute(host ?? "", org.ssh);
     const mine = ssh.filter(
-      (l) =>
-        l.account.toLowerCase() === org.account.toLowerCase() &&
-        (org.ssh === undefined || (org.ssh === "default" ? l.alias === undefined : l.alias === org.ssh)),
+      (l) => l.account.toLowerCase() === org.account.toLowerCase() && sshRouteMatches(route, l),
     );
     const first = mine.find((l) => l.alias === undefined) ?? mine[0];
     if (first === undefined) {

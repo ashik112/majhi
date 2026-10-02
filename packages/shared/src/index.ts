@@ -11,6 +11,7 @@ export * from "./config.ts";
 export * from "./connections.ts";
 export * from "./containers.ts";
 export * from "./decisions.ts";
+export * from "./git-accounts.ts";
 export * from "./host.ts";
 export * from "./media.ts";
 export * from "./memory.ts";
