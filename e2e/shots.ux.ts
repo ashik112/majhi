@@ -14,6 +14,7 @@ const summary = (
   id,
   title,
   kind: "code",
+  mode: "lead",
   org: "globex",
   status,
   team: ["globex-lead", "globex-builder"],
@@ -60,6 +61,8 @@ const FULL: Task = {
   org: "globex",
   status: "running",
   folder: "/Users/you/.majhi/tasks/GLX-412",
+  mode: "lead",
+  overrides: {},
   repos: [
     {
       project: "alpha-api",
@@ -86,6 +89,7 @@ const item = (n: number, rest: Record<string, unknown>): RoomItem =>
 const ROOM: RoomServerMessage = {
   type: "snapshot",
   more: false,
+  processes: [],
   agents: [{ agent: "globex-lead", status: "idle", queued: 0, model: "opus-5.5", commands: [] }],
   items: [
     item(1, { type: "agent", agent: "globex-lead", text: "Done. I changed `src/export.ts`." }),

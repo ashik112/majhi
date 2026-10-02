@@ -268,7 +268,7 @@ function NamesSection({
       }}
     >
       <div className={GRID}>
-        <Field label="Org">
+        <Field label="Workspace">
           {(props) => (
             <Select {...props} value={draft.org} onChange={(e) => set({ org: e.target.value })}>
               {orgs.map((o) => (
@@ -283,8 +283,8 @@ function NamesSection({
           label="Base branch"
           hint={
             repo?.branch
-              ? `Blank uses the org's base, then the repo's default. Checked out now: ${repo.branch}.`
-              : "Blank uses the org's base, then the repo's default."
+              ? `Blank uses the workspace's base, then the repo's default. Checked out now: ${repo.branch}.`
+              : "Blank uses the workspace's base, then the repo's default."
           }
         >
           {(props) => (
@@ -307,7 +307,7 @@ function NamesSection({
               value={draft.commits}
               onChange={(e) => set({ commits: e.target.value as AttributionChoice })}
             >
-              <option value="default">Use the org's setting</option>
+              <option value="default">Use the workspace's setting</option>
               <option value="on">On</option>
               <option value="off">Off</option>
             </Select>

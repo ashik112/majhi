@@ -36,6 +36,8 @@ export interface RunOptions {
   timeoutMs: number;
   /** Written to the program's stdin, then closed. Absent: stdin is closed at once. */
   input?: string;
+  /** Where the program runs. Absent: the helper's own folder. */
+  cwd?: string;
 }
 
 /** Never rejects. `code` is null when the command could not start or timed out. */

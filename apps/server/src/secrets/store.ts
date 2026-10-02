@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from "age-encryption";
+import { armor, Decrypter, Encrypter, generateIdentity, identityToRecipient } from "age-encryption";
 import { z } from "zod";
 import { errorCode, UserError } from "../errors.ts";
 
@@ -12,6 +13,11 @@ const SecretsSchema = z.record(z.string(), z.string());
 type Secrets = z.infer<typeof SecretsSchema>;
 
 const IDENTITY_PREFIX = "AGE-SECRET-KEY-1";
+
+/** The first 16 hex characters of the SHA-256 of an identity line. The host helper computes the same. */
+export function keyFingerprint(identity: string): string {
+  return createHash("sha256").update(identity).digest("hex").slice(0, 16);
+}
 
 /** A new age identity, one line, for `majhi gen-key`. */
 export function generateKey(): Promise<string> {
@@ -38,6 +44,23 @@ export class SecretStore {
   /** True when the key file exists and holds an identity. */
   async available(): Promise<boolean> {
     return (await this.readIdentity()) !== undefined;
+  }
+
+  /** The key's fingerprint, to compare it with a backup. Undefined when secrets are not set up. */
+  async fingerprint(): Promise<string | undefined> {
+    const identity = await this.readIdentity();
+    return identity === undefined ? undefined : keyFingerprint(identity);
+  }
+
+  /**
+   * The key file's content, encrypted with a passphrase (age scrypt) and armored, so it can leave
+   * the Mac. `age -d` with the passphrase gives back a key file majhi reads as is.
+   */
+  async exportKey(passphrase: string): Promise<string> {
+    const identity = await this.requireIdentity();
+    const encrypter = new Encrypter();
+    encrypter.setPassphrase(passphrase);
+    return armor.encode(await encrypter.encrypt(`${identity}\n`));
   }
 
   async get(name: string): Promise<string | undefined> {

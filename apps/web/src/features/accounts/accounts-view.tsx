@@ -207,7 +207,7 @@ export function AccountsView() {
             <DetailPane label="No accounts">
               <div className="flex max-w-[480px] flex-col items-start gap-3 pt-6">
                 <h2 className="text-md font-semibold">
-                  {orgFilter === undefined ? "No accounts yet" : "This org has no accounts yet"}
+                  {orgFilter === undefined ? "No accounts yet" : "This workspace has no accounts yet"}
                 </h2>
                 <p className="text-base text-fg-muted text-pretty">
                   Add one to sign in to Claude Code or Codex, or paste an API key. Agents need an account to

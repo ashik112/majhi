@@ -11,6 +11,8 @@ import { type Check, collectChecks, type ToolCache } from "./checks.ts";
 
 /** Loading keys and asking the Keychain can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
+/** The Keychain can be slow to answer the first time after a login. */
+const KEYCHAIN_CALL_TIMEOUT_MS = 30_000;
 
 export interface HealthDeps {
   env: ServerEnv;
@@ -131,6 +133,20 @@ export class HealthService {
       if (id.startsWith("connection:")) {
         const result = await services.connectionTests.test(id.slice("connection:".length));
         return { ok: result.ok, detail: result.ok ? `It works again. ${result.detail}` : result.detail };
+      }
+      if (id === "secrets-key-keychain") {
+        const expected = await services.secrets.fingerprint();
+        if (expected === undefined) return { ok: false, detail: "There is no secrets key to save yet." };
+        const saved = await hostLink.call("secretsKey.save", { expected }, KEYCHAIN_CALL_TIMEOUT_MS);
+        hostLink.noteSecretsKey(saved);
+        return {
+          ok: true,
+          detail: 'Saved a copy of the secrets key in the Keychain as "majhi secrets key".',
+        };
+      }
+      if (id === "secrets-key-export") {
+        // The passphrase is the owner's to type, so the browser shows the form.
+        return { ok: true, detail: "Choose a passphrase for the export.", open: { kind: "key-export" } };
       }
       if (id === "host-helper") {
         await hostLink.call("restart", {});

@@ -115,15 +115,15 @@ export function RootsSection({
     roots?.map((r) => ({ path: r.path, scan: r })) ?? configured.map((path) => ({ path, scan: undefined }));
   return (
     <DetailSection
-      title="Roots"
+      title="Folders"
       note={<StateWord state={state} className="text-sm" />}
       className="border-t-0"
       actions={actions}
     >
       {list.length === 0 ? (
-        <p className="text-base text-fg-muted">No roots yet. Add the folders that hold your repos.</p>
+        <p className="text-base text-fg-muted">No folders yet. Add the folders that hold your repos.</p>
       ) : (
-        <ul aria-label="Workspace roots" className="m-0 flex max-w-[860px] list-none flex-col p-0">
+        <ul aria-label="Project folders" className="m-0 flex max-w-[860px] list-none flex-col p-0">
           {list.map(({ path, scan }) => {
             const tone: DotTone =
               scan === undefined ? "neutral" : !scan.mounted || scan.error ? "coral" : "green";

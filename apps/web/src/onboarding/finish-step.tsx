@@ -23,8 +23,8 @@ export function FinishStep({ isLast, onComplete, onSkip }: OnboardingStepProps) 
       <div className="flex flex-col gap-2">
         <h1 className="text-lg font-semibold text-balance">Finish with the boss</h1>
         <p className="text-base text-fg-muted text-pretty">
-          Say what you want next. The boss can create orgs, agents and projects for you. Each change waits for
-          your approval, and every change can be undone. Open this chat any time with Cmd J.
+          Say what you want next. The boss can create workspaces, agents and projects for you. Each change
+          waits for your approval, and every change can be undone. Open this chat any time with Cmd J.
         </p>
       </div>
       <div className="flex h-[420px] min-h-0 flex-col rounded-xl border border-line-strong bg-card p-3">

@@ -1,4 +1,4 @@
-import type { NotifyKind, PausedReason, RoomItem } from "@majhi/shared";
+import type { NotifyKind, PausedReason, PendingNotice, RoomItem } from "@majhi/shared";
 
 /** What the owner is told about one item, before settings decide where it goes. */
 export interface Attention {
@@ -26,6 +26,7 @@ export function pathOf(task: Subject): string {
 const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   limit: "paused: the account hit its usage limit",
   error: "paused after an error",
+  "signed-out": "paused: an account is signed out",
   loop: "stopped: the agents are going in circles",
   blocked: "is blocked and waits for you",
 };
@@ -76,6 +77,23 @@ export function attentionOf(item: RoomItem, who: string): Attention | undefined 
     default:
       return undefined;
   }
+}
+
+/**
+ * The notifications list (`notify.pending`): every waiting item of a task that is still open, with
+ * the line its notification shows. `subject` gives undefined for a task that is gone or done.
+ */
+export function pendingNotices(
+  items: readonly RoomItem[],
+  subject: (task: string) => Subject | undefined,
+): PendingNotice[] {
+  return items.flatMap((item) => {
+    const task = subject(item.task);
+    const attention = task === undefined ? undefined : attentionOf(item, subjectName(task));
+    return attention === undefined
+      ? []
+      : [{ task: item.task, item: item.id, kind: attention.kind, text: attention.text, at: item.at }];
+  });
 }
 
 /** "4 things need you". */

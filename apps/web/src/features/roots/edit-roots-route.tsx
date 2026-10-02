@@ -29,7 +29,7 @@ export function EditRootsRoute() {
             home={pending.state.home}
             continueLabel="Show repos now"
             onBack={() => {
-              toast("Roots mounted");
+              toast("Folders mounted");
               goHome();
             }}
             onContinue={goHome}
@@ -74,7 +74,7 @@ export function EditRootsRoute() {
             setPending(result);
             return;
           }
-          toast("Roots saved");
+          toast("Folders saved");
           goHome();
         }}
         onCancel={goHome}
@@ -86,7 +86,7 @@ export function EditRootsRoute() {
 function FormSkeleton() {
   return (
     <main aria-busy="true" className="flex flex-1 justify-center px-6 pt-[10vh]">
-      <span className="sr-only">Loading workspace roots</span>
+      <span className="sr-only">Loading project folders</span>
       <div className="flex w-full max-w-[600px] flex-col gap-6">
         <div className="flex flex-col gap-2.5">
           <Skeleton className="h-5 w-48" />

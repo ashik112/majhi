@@ -82,7 +82,7 @@ function RosterList({ rows, org }: { rows: readonly RosterRow[]; org: string | u
   if (rows.length === 0) {
     return (
       <p className="px-1 text-sm text-fg-faint text-pretty">
-        No agent works in this org yet. Add one in Agents.
+        No agent works in this workspace yet. Add one in Agents.
       </p>
     );
   }

@@ -96,7 +96,7 @@ test("register a repo as a project from the Projects page", async ({ page, reque
   await page.goto("/projects");
   await page.getByRole("button", { name: "Register alpha-api" }).click();
   const dialog = page.getByRole("dialog", { name: "Register alpha-api" });
-  await dialog.getByRole("combobox", { name: "Org" }).selectOption({ label: "Acme" });
+  await dialog.getByRole("combobox", { name: "Workspace" }).selectOption({ label: "Acme" });
   const id = dialog.getByRole("textbox", { name: "Project id" });
   await expect(id).toHaveValue("alpha-api");
   await id.fill("api");
@@ -293,7 +293,7 @@ test("agent attribution in commits can be turned off for majhi, an org and a pro
 
   // An org: "Use majhi's setting / On / Off".
   await page.goto("/orgs");
-  await page.getByRole("navigation", { name: "Orgs" }).getByRole("button", { name: /^Acme/ }).click();
+  await page.getByRole("navigation", { name: "Workspaces" }).getByRole("button", { name: /^Acme/ }).click();
   const orgSelect = page.getByRole("combobox", { name: "Agent attribution in commits" });
   await expect(orgSelect).toHaveValue("default");
   await orgSelect.selectOption({ label: "On" });

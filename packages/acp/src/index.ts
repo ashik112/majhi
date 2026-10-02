@@ -123,5 +123,6 @@ export { localSpawner, type RunMount, type Spawned, type Spawner, type SpawnRequ
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
+export type { ContextCap } from "./tools/types.ts";
 export { TurnMeter, type TurnUsage, type UsageMode } from "./turn-usage.ts";
 export { readUsage } from "./usage.ts";

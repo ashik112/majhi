@@ -50,7 +50,10 @@ function tryParse(text: string, ctx: Parameters<typeof parseTaskText>[1]): Parse
 
 const KINDS: readonly { id: TaskKind; hint: string }[] = [
   { id: "code", hint: "Changes a project: worktree, branch, review, ship." },
-  { id: "ops", hint: "Investigates with the org's connections and writes a report. Projects are read only." },
+  {
+    id: "ops",
+    hint: "Investigates with the workspace's connections and writes a report. Projects are read only.",
+  },
   { id: "chat", hint: "One agent, no project." },
 ];
 
@@ -121,11 +124,11 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const orgsChosen = new Set(chosen.map((id) => projects.data?.find((p) => p.id === id)?.org));
   const warnings = [
     ...(parsed?.warnings ?? []).filter((w) => !w.startsWith("Repos from")),
-    ...(orgsChosen.size > 1 ? [`Repos from more than one org: ${[...orgsChosen].join(", ")}`] : []),
+    ...(orgsChosen.size > 1 ? [`Repos from more than one workspace: ${[...orgsChosen].join(", ")}`] : []),
   ];
   // The kind the words suggest for the chosen projects, until the owner picks one. A pick that no
   // longer fits the projects falls back.
-  const inferred = taskKindOf(deferred, chosen.length > 0, parsed?.branch);
+  const inferred = taskKindOf(deferred, chosen.length > 0);
   const kind = kindPick !== undefined && kindFits(kindPick, chosen.length) ? kindPick : inferred;
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);

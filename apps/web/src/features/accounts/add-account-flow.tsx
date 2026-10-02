@@ -138,7 +138,7 @@ function AccountForm({
     if (!tool || busy) return;
     const parsedId = IdSchema.safeParse(shownId);
     if (!parsedId.success) return setProblem(parsedId.error.issues[0]?.message ?? "Invalid id");
-    if (org === NEW_ORG) return setProblem("Create the org first, or pick another");
+    if (org === NEW_ORG) return setProblem("Create the workspace first, or pick another");
     if (effectiveAuth === "api-key" && apiKey.trim().length < 8) return setProblem("Paste the API key");
     setProblem(undefined);
 
@@ -201,7 +201,7 @@ function AccountForm({
                 {o.name}
               </option>
             ))}
-            <option value={NEW_ORG}>New org...</option>
+            <option value={NEW_ORG}>New workspace...</option>
           </Select>
         )}
       </Field>
@@ -212,7 +212,7 @@ function AccountForm({
           onCancel={() => setOrg(PRIVATE)}
         />
       )}
-      <Field label="Account id" hint="Suggested from the tool and org. You can change it.">
+      <Field label="Account id" hint="Suggested from the tool and workspace. You can change it.">
         {(p) => (
           <Input
             {...p}

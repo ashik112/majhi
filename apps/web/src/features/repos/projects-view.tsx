@@ -245,7 +245,7 @@ function Loaded({ home }: { home: string }) {
                   {problemRoots.length > 0 && (
                     <>
                       <Dot tone="amber" size={6} />
-                      <span className="sr-only">A workspace root needs you. </span>
+                      <span className="sr-only">A project folder needs you. </span>
                     </>
                   )}
                   <span className="tnum">{notRegistered}</span>
@@ -265,7 +265,7 @@ function Loaded({ home }: { home: string }) {
                 {terms.length > 0
                   ? "No project matches."
                   : orgFilter !== undefined && projectList.length > 0
-                    ? "This org has no projects yet."
+                    ? "This workspace has no projects yet."
                     : "No projects yet. Register a repo to use it in tasks."}
               </p>
             ) : (
@@ -413,7 +413,7 @@ function ScanDetail({
             <p className="truncate text-sm text-fg-muted">
               {searching
                 ? `${plural(count, "repo")} not registered match the search.`
-                : `${plural(count, "repo")} in your workspace roots ${count === 1 ? "is" : "are"} not registered yet.`}
+                : `${plural(count, "repo")} in your project folders ${count === 1 ? "is" : "are"} not registered yet.`}
             </p>
           </div>
         </div>
@@ -422,7 +422,7 @@ function ScanDetail({
       <div aria-busy={scanning} className={cn("flex flex-col transition-opacity", scanning && "opacity-70")}>
         {!searching && (
           <DetailSection
-            title="Workspace roots"
+            title="Project folders"
             note={
               <>
                 Scanned{" "}
@@ -436,11 +436,11 @@ function ScanDetail({
             actions={
               <Button size="sm" onClick={() => setEditingRoots(true)}>
                 <FolderCog aria-hidden="true" />
-                Edit roots
+                Edit folders
               </Button>
             }
           >
-            <ul aria-label="Workspace roots" className="flex flex-col">
+            <ul aria-label="Project folders" className="flex flex-col">
               {roots.map((root) => (
                 <li
                   key={root.path}
@@ -489,7 +489,7 @@ function ScanDetail({
             . It looks 4 levels deep and skips hidden folders and node_modules.
           </p>
         ) : count === 0 ? (
-          <p className="pt-5 text-base text-fg-muted">Every repo in your workspace roots is registered.</p>
+          <p className="pt-5 text-base text-fg-muted">Every repo in your project folders is registered.</p>
         ) : (
           unregistered.map((root, i) => (
             <RootList

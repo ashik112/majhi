@@ -9,6 +9,7 @@ import {
   ModelTierSchema,
   type OrgView,
   TOOL_CATALOG,
+  type ToolInfo,
   type ToolSetting,
   toolSetting,
   withToolSetting,
@@ -18,6 +19,7 @@ import { Check } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { DetailSection } from "@/components/ui/list-detail";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { PageLink } from "@/components/ui/page-link";
@@ -25,6 +27,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
+import { capFromField } from "@/features/boss/model";
 import { useConnections } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
@@ -55,6 +58,7 @@ const SECTIONS = {
   tools: ["tools"],
   connections: ["connections"],
   fallback: ["fallback"],
+  context: ["contextCap"],
   instructions: ["instructions"],
 } as const satisfies Record<string, readonly (keyof AgentDraft)[]>;
 
@@ -187,6 +191,12 @@ export function AgentSettings({
         candidates={fallbackCandidates(agents, entry).map(entryId)}
         onChange={(patch) => change("fallback", patch)}
         {...sectionProps("fallback")}
+      />
+      <ContextSection
+        draft={view("context")}
+        tool={accounts.find((a) => a.id === view("role").account)?.tool}
+        onChange={(patch) => change("context", patch)}
+        {...sectionProps("context")}
       />
       <InstructionsSection
         draft={view("instructions")}
@@ -331,7 +341,7 @@ function RoleSection({
           />
           {worksOutsideScope(draft.scope, draft.where) && (
             <p className="text-sm text-amber text-pretty">
-              This agent will use {draft.account} on other orgs' code. Allowed because you said so.
+              This agent will use {draft.account} on other workspaces' code. Allowed because you said so.
             </p>
           )}
         </div>
@@ -526,8 +536,8 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
     return (
       <DetailSection title="Connections">
         <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every connection of the task's org, and can attach one of another org to a task.
-          Each attach shows in the room.
+          A root agent gets every connection of the task's workspace, and can attach one of another workspace
+          to a task. Each attach shows in the room.
         </p>
       </DetailSection>
     );
@@ -537,12 +547,12 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
   return (
     <SettingsSection
       title="Connections"
-      note="What it may reach outside its repos. Only this org's connections."
+      note="What it may reach outside its repos. Only this workspace's connections."
       {...section}
     >
       {own.length === 0 ? (
         <p className="text-sm text-fg-muted text-pretty">
-          This org has no connections yet.{" "}
+          This workspace has no connections yet.{" "}
           <PageLink page="connections" className="text-fg underline-offset-2 hover:underline">
             Add one
           </PageLink>
@@ -562,7 +572,7 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
       {gone.length > 0 && (
         <p className="text-sm text-amber text-pretty">
           Lists {gone.join(", ")}, which {gone.length === 1 ? "is not a connection" : "are not connections"}{" "}
-          of this org. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
+          of this workspace. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
           <button
             type="button"
             className="cursor-pointer text-fg underline-offset-2 hover:underline"
@@ -606,6 +616,56 @@ function FallbackSection({
           </Select>
         )}
       </Field>
+    </SettingsSection>
+  );
+}
+
+/** What the cap does for this agent's CLI inside a turn: majhi's own compaction runs between turns. */
+function midTurnNote(tool: ToolInfo | undefined, capK: number | undefined): string | undefined {
+  if (tool === undefined) return undefined;
+  if (tool.midTurnCapMin === undefined) {
+    return `${tool.name} cannot be capped inside a turn. majhi compacts it at the end of each turn, so one long turn can pass the cap.`;
+  }
+  if (capK !== undefined && capK > 0 && capK * 1000 < tool.midTurnCapMin) {
+    return `${tool.name} does not compact inside a turn below ${tool.midTurnCapMin / 1000}k. majhi compacts it at the end of each turn.`;
+  }
+  return undefined;
+}
+
+function ContextSection({
+  draft,
+  tool,
+  onChange,
+  ...section
+}: SectionProps & { tool: ToolInfo["id"] | undefined }) {
+  const tools = useTools().data;
+  const info = tools?.find((t) => t.id === tool);
+  const text = draft.contextCap.trim();
+  const parsed = text === "" ? undefined : capFromField(text);
+  const note = midTurnNote(info, parsed?.value === undefined ? undefined : parsed.value / 1000);
+  return (
+    <SettingsSection
+      title="Context cap"
+      note="Most tokens a session may use, whatever the model allows. Each tool call re-sends the context, so a lower cap spends less."
+      {...section}
+    >
+      <Field
+        label="Cap (k tokens)"
+        hint="Blank uses the org's or majhi's setting. 0 is no cap: the model's full window."
+        {...(parsed?.error === undefined ? {} : { error: parsed.error })}
+      >
+        {(p) => (
+          <Input
+            {...p}
+            inputMode="numeric"
+            className="font-mono @[560px]:max-w-[calc(50%-6px)]"
+            placeholder="Inherit"
+            value={draft.contextCap}
+            onChange={(e) => onChange({ contextCap: e.target.value })}
+          />
+        )}
+      </Field>
+      {note !== undefined && <p className="m-0 text-sm text-amber text-pretty">{note}</p>}
     </SettingsSection>
   );
 }

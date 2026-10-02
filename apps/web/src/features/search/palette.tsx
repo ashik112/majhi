@@ -10,13 +10,14 @@ import { useBoss } from "@/features/boss/boss-context";
 import { GLOBAL } from "@/features/memory/model";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { AskBox } from "@/features/setup/decisions-panel";
+import { PAGE_KEYWORDS, PAGE_LABEL } from "@/features/shell/nav";
 import { openTaskIds } from "@/features/shell/use-shortcuts";
 import { useCandidates } from "@/features/task/team-controls";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { useMemorySearch } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
+import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { MIN_SEARCH_LENGTH, useDebounced, useRoomSearch } from "@/lib/search-queries";
 import { useStartTask, useTask, useTasks, useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
@@ -202,8 +203,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "roots",
-      name: "Manage workspace roots",
-      keywords: "folders projects repos paths",
+      name: "Manage project folders",
+      keywords: "folders projects repos paths roots",
       run: () => go("/settings/roots"),
     },
     {
@@ -233,6 +234,15 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
   ];
 
+  // Every page, found by its name once something is typed.
+  const pages: PaletteCommand[] = (Object.keys(PAGE_LABEL) as PageName[]).map((name) => ({
+    id: `page:${name}`,
+    name: PAGE_LABEL[name],
+    keywords: `page go open ${PAGE_KEYWORDS[name]}`,
+    hint: "Page",
+    run: () => go(PAGE_PATH[name]),
+  }));
+
   const entries = ((): Entry[] => {
     const out: Entry[] = [];
     const taskList = tasks ?? [];
@@ -257,6 +267,19 @@ export function Palette({ onClose }: { onClose: () => void }) {
         });
       }
       if (typed !== "") {
+        for (const p of matchCommands(pages, typed, false)) {
+          out.push({
+            key: `cmd:${p.id}`,
+            section: "Pages",
+            run: p.run,
+            node: (
+              <span className="flex w-full min-w-0 items-baseline gap-2">
+                <span className="min-w-0 truncate text-base">{p.name}</span>
+                <span className="ml-auto shrink-0 text-xs text-fg-faint">{p.hint}</span>
+              </span>
+            ),
+          });
+        }
         out.push(...fromTasks(taskList.filter((t) => matchesQuery(t, typed)).slice(0, MAX_TASKS), "Tasks"));
       }
     }

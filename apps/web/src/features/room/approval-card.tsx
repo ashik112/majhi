@@ -27,7 +27,7 @@ type Scope = "task" | "org";
 /** What a card says when a saved rule ran it without asking. */
 const AUTO_LABEL: Record<Scope, string> = {
   task: "Auto-allowed for this task",
-  org: "Auto-allowed in the org",
+  org: "Auto-allowed in the workspace",
 };
 
 type Item<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;

@@ -103,7 +103,7 @@ export function OrgDetail({
           className="border-t-0"
         >
           {accounts.length === 0 ? (
-            <p className="text-sm text-fg-faint">No accounts yet. Agents in this org need one.</p>
+            <p className="text-sm text-fg-faint">No accounts yet. Agents in this workspace need one.</p>
           ) : (
             <ul aria-label={`Accounts of ${org.name}`} className="flex flex-col">
               {accounts.map((account) => {
@@ -191,7 +191,7 @@ export function OrgDetail({
         }
       >
         {projects.length === 0 ? (
-          <p className="text-sm text-fg-faint">No repos registered for this org yet.</p>
+          <p className="text-sm text-fg-faint">No repos registered for this workspace yet.</p>
         ) : (
           <ul aria-label={`Projects of ${org.name}`} className="flex flex-col">
             {projects.map((p) => (

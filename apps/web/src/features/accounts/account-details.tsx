@@ -250,7 +250,7 @@ export function AccountDetail({
           <Fact label="Signs in with">
             {account.auth === "login" ? "The tool's own sign-in" : "An API key, kept in majhi's secrets"}
           </Fact>
-          <Fact label="Org">
+          <Fact label="Workspace">
             <span className="inline-flex items-center gap-2">
               <OrgBadge label={badgeLetters(orgKey ?? org.name)} color={org.color} size="xs" />
               {org.name}
@@ -258,7 +258,7 @@ export function AccountDetail({
           </Fact>
         </dl>
         <p className="text-sm text-fg-faint text-pretty">
-          To use another org or sign-in, add a new account there and move the agents over.
+          To use another workspace or sign-in, add a new account there and move the agents over.
         </p>
       </DetailSection>
     </DetailPane>

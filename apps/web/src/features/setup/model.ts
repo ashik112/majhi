@@ -69,7 +69,7 @@ export function agentsCard(agents: readonly AgentEntry[] | undefined, orgs: read
   const scopes = new Set(ok.map((a) => (a.status === "ok" ? a.agent.frontmatter.scope : "")));
   const orgScopes = orgs.filter((o) => scopes.has(o.id)).length;
   const detail = `${ok.length} ${ok.length === 1 ? "agent" : "agents"}${
-    orgScopes > 0 ? ` across ${orgScopes} ${orgScopes === 1 ? "org" : "orgs"}` : ""
+    orgScopes > 0 ? ` across ${orgScopes} ${orgScopes === 1 ? "workspace" : "workspaces"}` : ""
   }`;
   if (broken > 0) return { pill: "Needs you", tone: "coral", detail: `${detail}, ${broken} with errors` };
   return { pill: ok.length > 0 ? "Ready" : "None yet", tone: ok.length > 0 ? "green" : "coral", detail };

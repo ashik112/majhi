@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMentions, parsePathMentions } from "./rooms.ts";
-import { parseTaskText, TITLE_MAX } from "./task-parse.ts";
+import { parseTaskText, TITLE_MAX, taskKindOf } from "./task-parse.ts";
 import { type ParseContext, ParsedTaskSchema } from "./tasks.ts";
 
 const ctx: ParseContext = {
@@ -16,7 +16,6 @@ describe("repos", () => {
   it("finds a project by alias", () => {
     const p = parseTaskText("add a health endpoint to api from develop", ctx);
     expect(p.repos).toEqual([{ project: "acme-api", match: "api" }]);
-    expect(p.base).toBe("develop");
     expect(p.kind).toBe("code");
     expect(p.org).toBe("acme");
     expect(p.warnings).toEqual([]);
@@ -52,7 +51,7 @@ describe("repos", () => {
     ]);
   });
 
-  it("ignores names inside links, mentions, and base or branch phrases", () => {
+  it("ignores names inside links, mentions and paths", () => {
     const p = parseTaskText("see https://github.com/acme/api/issues/4 and ask @builder on feat/web", ctx);
     expect(p.repos).toEqual([]);
     expect(p.kind).toBe("chat");
@@ -117,52 +116,35 @@ describe("orgs", () => {
   });
 });
 
-describe("base and branch", () => {
-  it.each([
-    ["api from develop", "develop"],
-    ["api base: main", "main"],
-    ["api base main", "main"],
-    ["api base:main", "main"],
-    ["api off release/2.1", "release/2.1"],
-    ["api FROM Develop.", "Develop"],
-    ["api from origin/main, please", "origin/main"],
-  ])("reads the base from %s", (text, base) => {
-    expect(parseTaskText(text, ctx).base).toBe(base);
-  });
-
-  it("skips plain speech after from and off", () => {
-    expect(parseTaskText("copy the logic from the billing module in api", ctx).base).toBeUndefined();
-    expect(parseTaskText("api from scratch", ctx).base).toBeUndefined();
-  });
-
-  it("takes the first real base phrase", () => {
-    expect(parseTaskText("from the top, api from develop, off main", ctx).base).toBe("develop");
-  });
-
-  it.each([
-    ["api on feature/health", "feature/health"],
-    ["api branch fix/y", "fix/y"],
-    ["api branch: fix/y.", "fix/y"],
-  ])("reads the working branch from %s", (text, branch) => {
-    expect(parseTaskText(text, ctx).branch).toBe(branch);
-  });
-
-  it("needs a slash in the working branch", () => {
-    expect(parseTaskText("api on develop", ctx).branch).toBeUndefined();
-    expect(parseTaskText("work on api", ctx).branch).toBeUndefined();
-    expect(parseTaskText("api branch hotfix", ctx).branch).toBeUndefined();
-  });
-
-  it("reads base and branch together", () => {
+describe("prose is not a base or a branch", () => {
+  it("has no base or branch field", () => {
     const p = parseTaskText("api from develop on feature/x", ctx);
-    expect(p.base).toBe("develop");
-    expect(p.branch).toBe("feature/x");
+    expect(p).not.toHaveProperty("base");
+    expect(p).not.toHaveProperty("branch");
+    expect(ParsedTaskSchema.shape).not.toHaveProperty("base");
+    expect(ParsedTaskSchema.shape).not.toHaveProperty("branch");
   });
 
-  it("does not read phrases inside links", () => {
-    const p = parseTaskText("see https://example.com/from/develop and https://example.com/on/feat/x", ctx);
-    expect(p.base).toBeUndefined();
-    expect(p.branch).toBeUndefined();
+  // Keywords are hyphen-free here on purpose: these are the briefs that used to trip the parser.
+  it.each([
+    ["the words X on /profile", "chat"],
+    ["move the code from acme-web into this project", "code"],
+    ["API base URLs are resolved once at startup from window.location.hostname", "code"],
+    ["the screenshot was taken with Playwright", "chat"],
+    ["work on main later", "chat"],
+    ["use the default branch", "chat"],
+    ["api branch fix/y", "code"],
+  ])("reads %s only as prose", (text, kind) => {
+    const p = parseTaskText(text, ctx);
+    expect(p.kind).toBe(kind);
+    expect(p).not.toHaveProperty("base");
+    expect(p).not.toHaveProperty("branch");
+  });
+
+  it("does not turn on /profile into a code task", () => {
+    const text = "Investigate why the page is down in prod. Check the screenshots on /profile";
+    expect(parseTaskText(text, ctx).kind).toBe("ops");
+    expect(taskKindOf(text, false)).toBe("ops");
   });
 });
 

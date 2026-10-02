@@ -7,6 +7,7 @@ import {
   ContainersFilePatchSchema,
   ContextPatchSchema,
   DecisionPatchSchema,
+  E2ePatchSchema,
   EditorPatchSchema,
   LimitsPatchSchema,
   MemoryPatchSchema,
@@ -16,6 +17,7 @@ import {
   RoomPatchSchema,
   type Settings,
   SettingsSchema,
+  TurnsPatchSchema,
 } from "@majhi/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
@@ -26,6 +28,7 @@ import { ConfigConflictError } from "./write.ts";
 export const SettingsPatchSchema = z.object({
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
+  turns: TurnsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   commits: CommitsPatchSchema.optional(),
   rooms: RoomPatchSchema.optional(),
@@ -33,6 +36,7 @@ export const SettingsPatchSchema = z.object({
   decisions: DecisionPatchSchema.optional(),
   memory: MemoryPatchSchema.optional(),
   editor: EditorPatchSchema.optional(),
+  e2e: E2ePatchSchema.optional(),
   cleanup: CleanupPatchSchema.optional(),
   notifications: NotificationsPatchSchema.optional(),
   containers: ContainersFilePatchSchema.optional(),
@@ -46,12 +50,14 @@ export function mergeSettings(raw: SettingsPatch): Settings {
   return SettingsSchema.parse({
     context: raw.context ?? {},
     limits: raw.limits ?? {},
+    turns: raw.turns ?? {},
     resume: raw.resume ?? {},
     commits: raw.commits ?? {},
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
     memory: raw.memory ?? {},
     editor: raw.editor ?? {},
+    e2e: raw.e2e ?? {},
     cleanup: raw.cleanup ?? {},
     notifications: raw.notifications ?? {},
     containers: raw.containers ?? {},
@@ -81,12 +87,14 @@ export async function readSettings(file: string): Promise<Settings> {
   const parsed = SettingsPatchSchema.safeParse({
     context: record.context,
     limits: record.limits,
+    turns: record.turns,
     resume: record.resume,
     commits: record.commits,
     rooms: record.rooms,
     policy: record.policy,
     memory: record.memory,
     editor: record.editor,
+    e2e: record.e2e,
     cleanup: record.cleanup,
     notifications: record.notifications,
     containers: record.containers,

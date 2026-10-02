@@ -111,7 +111,7 @@ test("Esc stops a slow turn, and a queued message waits until the next send", as
   await composer(page).fill("echo: queued one");
   await composer(page).press("Enter");
   await expect(log.getByText("echo: queued one")).toBeVisible();
-  await expect(log.getByText("Queued for the agent's next turn")).toBeVisible();
+  await expect(log.getByText(/Waiting for @acme-slow's current turn/)).toBeVisible();
 
   await composer(page).press("Escape");
   await expect(log.getByText("Stopped @acme-slow's turn.")).toBeVisible();
@@ -120,7 +120,7 @@ test("Esc stops a slow turn, and a queued message waits until the next send", as
   // and the queued message did not go.
   await expect(room(page).getByRole("region", { name: "Plan of acme-slow" })).toBeVisible();
   await expect(log.getByText(/Tests passed/)).toHaveCount(0);
-  await expect(log.getByText("Queued for the agent's next turn")).toBeVisible();
+  await expect(log.getByText("Queued for @acme-slow's next turn")).toBeVisible();
   await expect(log.getByText("echo: echo: queued one")).toHaveCount(0);
   const cancelled = await getTask(request, id);
   expect(cancelled.status).toBe("running");
@@ -130,7 +130,7 @@ test("Esc stops a slow turn, and a queued message waits until the next send", as
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(log.getByText("echo: echo: queued one")).toBeVisible();
   await expect(log.getByText("echo: echo: two")).toBeVisible();
-  await expect(log.getByText("Queued for the agent's next turn")).toHaveCount(0);
+  await expect(log.getByText("Queued for @acme-slow's next turn")).toHaveCount(0);
 });
 
 test("a command the agent may not run asks inline: Deny fails the tool and the turn goes on", {

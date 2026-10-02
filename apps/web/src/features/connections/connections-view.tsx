@@ -166,8 +166,8 @@ export function ConnectionsView() {
                 <h2 className="text-md font-semibold">No connections yet</h2>
                 <p className="text-base text-fg-muted text-pretty">
                   Add a cluster, an MCP server like New Relic, an SSH host, API keys, a mailbox or a browser.
-                  Agents of the org can then debug and report with it, and every change they make asks you
-                  first.
+                  Agents of the workspace can then debug and report with it, and every change they make asks
+                  you first.
                 </p>
                 <Button variant="primary" onClick={() => setAdding(orgFilter ?? "")}>
                   New connection

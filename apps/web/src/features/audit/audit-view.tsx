@@ -28,7 +28,7 @@ import {
 } from "./model";
 
 const COLUMNS = "140px 80px 80px 120px minmax(150px,1fr) 100px 130px minmax(200px,1.4fr)";
-const HEADS = ["Time", "Org", "Task", "Kind", "What", "Decision", "By", "Detail"];
+const HEADS = ["Time", "Workspace", "Task", "Kind", "What", "Decision", "By", "Detail"];
 
 /**
  * The audit log: what majhi pushed, merged and was allowed to do, newest first. The filters live in
@@ -204,10 +204,10 @@ function Filters({
       aria-label="Filter the audit log"
       className="mb-3 grid shrink-0 grid-cols-2 items-end gap-x-3 gap-y-2 min-[900px]:grid-cols-4 min-[1280px]:grid-cols-7"
     >
-      <Labelled label="Org">
+      <Labelled label="Workspace">
         {(id) => (
           <Select id={id} value={filters.org ?? ""} onChange={(e) => set({ org: e.target.value })}>
-            <option value="">All orgs</option>
+            <option value="">All workspaces</option>
             {orgs.map((o) => (
               <option key={o} value={o}>
                 {o}

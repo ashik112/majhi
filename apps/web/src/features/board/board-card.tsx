@@ -7,12 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { UsageBar } from "@/components/ui/usage-bar";
-import { dueText, PRIORITY_WORD } from "@/features/autonomy/model";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { orgSearch } from "@/lib/org-filter";
 import { prefetchTask } from "@/lib/task-queries";
+import { useNow } from "@/lib/use-now";
 import { taskLamp } from "../tasks/model";
+import { fullTime, openDue, shortAgo } from "../tasks/schedule";
+import { DueChip, PriorityChip } from "../tasks/schedule-chips";
+import { CardMenu } from "../tasks/schedule-editor";
 import { cardLine, cardProgress, partOf, plainTitle } from "./model";
 
 export function cardDomId(id: string): string {
@@ -54,6 +57,7 @@ export const BoardCard = memo(function BoardCard({
   index: number;
 }) {
   const client = useQueryClient();
+  const now = useNow(60_000);
   const lamp = taskLamp(task);
   const line = cardLine(task);
   const progress = cardProgress(task);
@@ -95,6 +99,19 @@ export const BoardCard = memo(function BoardCard({
         )}
         {task.kind === "chat" && <span className="shrink-0 text-xs text-fg-faint">chat</span>}
         <AvatarStack ids={task.team} working={task.working} size={18} max={3} className="ml-auto shrink-0" />
+        {/* The age of the last change; the card's menu takes its place on hover and focus. */}
+        <span className="relative flex h-5 min-w-5 shrink-0 items-center justify-end">
+          <span
+            title={`Updated ${fullTime(task.updatedAt)}`}
+            className="tnum font-mono text-xs text-fg-faint transition-opacity duration-150 group-focus-within:opacity-0 group-hover:opacity-0 group-has-[[data-open],[aria-expanded=true]]:opacity-0"
+          >
+            {shortAgo(task.updatedAt, now)}
+          </span>
+          <CardMenu
+            task={task}
+            className="absolute top-0 right-0 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 data-open:opacity-100 has-[[aria-expanded=true]]:opacity-100"
+          />
+        </span>
       </span>
       <Link
         to="/t/$taskId"
@@ -113,7 +130,7 @@ export const BoardCard = memo(function BoardCard({
           {line.text}
         </span>
       )}
-      <TaskChips task={task} />
+      <TaskChips task={task} now={now} />
       {progress ? (
         <span className="flex items-center gap-2">
           <UsageBar
@@ -138,27 +155,24 @@ export const BoardCard = memo(function BoardCard({
   );
 });
 
-/** Autonomous mode runs it, and the owner's priority and deadline. Nothing shows for a normal task. */
-function TaskChips({ task }: { task: Pick<TaskSummary, "autonomous" | "priority" | "due" | "status"> }) {
-  const now = Date.now();
-  const due = task.due !== undefined && task.status !== "done" ? dueText(task.due, now) : undefined;
-  const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
-  if (!task.autonomous && priority === undefined && due === undefined) return null;
+/** The owner's priority and due date, and the Auto mark. Nothing shows for a normal task without a date. */
+function TaskChips({
+  task,
+  now,
+}: {
+  task: Pick<TaskSummary, "autonomous" | "priority" | "due" | "status">;
+  now: number;
+}) {
+  const due = openDue(task, now);
+  const priority = task.priority ?? "normal";
+  if (!task.autonomous && priority === "normal" && due === undefined) return null;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
+      <PriorityChip priority={priority} />
+      {due && <DueChip due={due} />}
       {task.autonomous && (
         <Badge title="Autonomous mode runs this task" className="h-[18px]">
           Auto
-        </Badge>
-      )}
-      {priority && (
-        <Badge tone={priority === "high" ? "amber" : "neutral"} className="h-[18px]">
-          {PRIORITY_WORD[priority]} priority
-        </Badge>
-      )}
-      {due && (
-        <Badge tone={due.late ? "red" : due.soon ? "amber" : "neutral"} className="h-[18px]">
-          {due.text}
         </Badge>
       )}
     </span>

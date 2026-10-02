@@ -1,5 +1,5 @@
 import { type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
 import { roomItems } from "./schema.ts";
@@ -12,6 +12,17 @@ export type RoomPayload = RoomItem extends infer T
   : never;
 
 const PayloadSchema = z.record(z.string(), z.unknown());
+
+/** Item types that wait for the owner while their `state` is pending. */
+const OWNER_WAIT_TYPES: RoomItem["type"][] = [
+  "approval",
+  "permission",
+  "secret-request",
+  "ask",
+  "choice",
+  "owner-question",
+];
+const PENDING = sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`;
 
 /** Room items: one row per (task, id), replaced in place, with a per-task `seq` that grows on every write. */
 export class RoomRepo {
@@ -74,6 +85,40 @@ export class RoomRepo {
     return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
+  /** The next `limit` items after `afterSeq`, newest first, and whether newer ones exist beyond them. */
+  pageAfter(task: string, limit: number, afterSeq: number): { items: RoomItem[]; more: boolean } {
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, task), gt(roomItems.seq, afterSeq)))
+      .orderBy(asc(roomItems.seq))
+      .limit(limit + 1)
+      .all();
+    return { items: rows.slice(0, limit).flatMap(readable).reverse(), more: rows.length > limit };
+  }
+
+  /**
+   * The page around one item: up to `half` items before it, the item, and up to `half` after, newest
+   * first. `older` and `newer` say whether the room holds more on either side. Undefined when there
+   * is no such item (or it cannot be read).
+   */
+  around(
+    task: string,
+    id: string,
+    half: number,
+  ): { items: RoomItem[]; older: boolean; newer: boolean } | undefined {
+    const row = this.db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, task), eq(roomItems.id, id)))
+      .get();
+    const target = row === undefined ? undefined : toItem(row);
+    if (target === undefined) return undefined;
+    const before = this.page(task, half, target.seq);
+    const after = this.pageAfter(task, half, target.seq);
+    return { items: [...after.items, target, ...before.items], older: before.more, newer: after.more };
+  }
+
   /** Owner messages and handoffs waiting for the agent's next turn, in the order they were sent. */
   queuedFor(task: string, agent: string): RoomItem[] {
     return this.db
@@ -126,21 +171,20 @@ export class RoomRepo {
     const rows = this.db
       .selectDistinct({ task: roomItems.task })
       .from(roomItems)
-      .where(
-        and(
-          inArray(roomItems.type, [
-            "approval",
-            "permission",
-            "secret-request",
-            "ask",
-            "choice",
-            "owner-question",
-          ]),
-          sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
-        ),
-      )
+      .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
       .all();
     return new Set(rows.map((r) => r.task));
+  }
+
+  /** The items behind `tasksWaitingOnOwner`, in every task, oldest first. One query. */
+  waitingOnOwner(): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
+      .orderBy(asc(roomItems.at))
+      .all()
+      .flatMap(readable);
   }
 
   /** Approval cards that ran a config change and can be undone through this commit. */

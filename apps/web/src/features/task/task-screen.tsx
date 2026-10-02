@@ -156,6 +156,9 @@ function TaskView({ taskId }: { taskId: string }) {
               state={room.state}
               dispatch={room.dispatch}
               loadOlder={room.loadOlder}
+              loadAround={room.loadAround}
+              loadNewer={room.loadNewer}
+              loadLatest={room.loadLatest}
               onShowChanges={showChanges}
               focusItem={shown === "room" ? item : undefined}
               onFocused={clearItem}
@@ -165,7 +168,9 @@ function TaskView({ taskId }: { taskId: string }) {
             <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
           )}
           {shown === "report" && <ReportTab task={data} />}
-          {shown === "context" && <ContextTab task={data} agents={room.state.agents} />}
+          {shown === "context" && (
+            <ContextTab task={data} agents={room.state.agents} items={room.state.items} />
+          )}
           {shown === "memory" && <TaskMemory task={data} />}
           {shown === "terminal" && <TaskTerminal task={data} />}
         </div>

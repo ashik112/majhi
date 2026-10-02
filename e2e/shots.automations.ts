@@ -22,7 +22,7 @@ test("an empty page, then a schedule with a Berlin clock", async ({ page }) => {
   await page.getByRole("button", { name: "New schedule" }).first().click();
   const form = page.getByRole("dialog", { name: "New schedule" });
   await form.getByLabel("Name", { exact: true }).fill("Nightly check");
-  await form.getByLabel("Org", { exact: true }).selectOption({ label: "Globex" });
+  await form.getByLabel("Workspace", { exact: true }).selectOption({ label: "Globex" });
   await form.getByLabel("Phrase").fill("weekdays at 9:00");
   await form.getByLabel("Time zone").selectOption("Europe/Berlin");
   await form.getByLabel("Project").selectOption("alpha-api");
@@ -63,7 +63,7 @@ test("a trigger, Run now and its history", async ({ page }) => {
   await page.getByRole("button", { name: "New trigger" }).first().click();
   const form = page.getByRole("dialog", { name: "New trigger" });
   await form.getByLabel("Name", { exact: true }).fill("Follow up when a task is done");
-  await form.getByLabel("Org", { exact: true }).selectOption({ label: "Globex" });
+  await form.getByLabel("Workspace", { exact: true }).selectOption({ label: "Globex" });
   await form.getByLabel("Fires when").selectOption("task.status");
   await form.getByLabel("Becomes").selectOption("done");
   await form.getByLabel("Project").selectOption("alpha-api");

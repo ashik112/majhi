@@ -1,12 +1,12 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { ALL_ORGS, parseOrgParam } from "@/features/shell/model";
 import { useOrgs } from "./studio-queries";
 
 /**
  * The global org filter is app state, remembered in this browser, not a URL parameter: as `?org=`
  * it rode along on every link and followed the owner to pages that group by org anyway. The
- * sidebar shows it; the board and usage follow it.
+ * sidebar's workspace switcher sets it; the board, chats and the list pages follow it.
  */
 const KEY = "majhi.org";
 const listeners = new Set<() => void>();
@@ -42,20 +42,15 @@ export function orgSearch(_org: string | undefined): { org?: string } {
   return {};
 }
 
-/** The global org filter, `undefined` for every org. Picking one shows the board. */
+/**
+ * The global org filter, `undefined` for every org. Picking one keeps the owner on the page they are
+ * on: the page follows the filter, or ignores it when it does not group by org.
+ */
 export function useOrgFilter(): { org: string | undefined; setOrg: (org: string | undefined) => void } {
   const stored = useSyncExternalStore(subscribe, () => memory);
   const orgs = useOrgs().data;
-  const navigate = useNavigate();
   const org = parseOrgParam(stored, orgs ?? []);
-  const setOrg = useCallback(
-    (next: string | undefined) => {
-      write(next);
-      void navigate({ to: "/" });
-    },
-    [navigate],
-  );
-  return { org, setOrg };
+  return { org, setOrg: write };
 }
 
 /**

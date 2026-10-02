@@ -41,7 +41,7 @@ export function useMountNow(home: string): {
 
   const modal = restarting ? (
     <Modal
-      label="Mounting workspace roots"
+      label="Mounting project folders"
       onClose={() => setRestarting(null)}
       className="w-[640px] border-0 bg-transparent shadow-none"
     >
@@ -52,7 +52,7 @@ export function useMountNow(home: string): {
           continueLabel="Close"
           onBack={() => {
             setRestarting(null);
-            toast("Roots mounted");
+            toast("Folders mounted");
           }}
           onContinue={() => setRestarting(null)}
         />

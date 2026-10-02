@@ -27,7 +27,7 @@ export function scopeLabel(scope: string, orgNames: ReadonlyMap<string, string>)
 export function scopeText(scope: string, orgNames: ReadonlyMap<string, string>): string {
   const kind = scopeKind(scope);
   if (kind === "global") return "Global";
-  return `${kind === "org" ? "Org" : "Project"} ${scopeLabel(scope, orgNames)}`;
+  return `${kind === "org" ? "Workspace" : "Project"} ${scopeLabel(scope, orgNames)}`;
 }
 
 /** What a fact is, in two words: what the owner said, a debugging playbook, or a lesson an agent learned. */
@@ -46,7 +46,7 @@ export function scopeOptions(
   return [
     { scope: "global", label: "Global: applies everywhere" },
     ...orgs.flatMap((org) => [
-      { scope: `org:${org}`, label: `Org ${orgNames.get(org) ?? org}` },
+      { scope: `org:${org}`, label: `Workspace ${orgNames.get(org) ?? org}` },
       ...[...projectOrgs]
         .filter(([, o]) => o === org)
         .map(([p]) => p)

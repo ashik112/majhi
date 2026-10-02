@@ -143,7 +143,7 @@ export function ScheduleForm({
               />
             )}
           </Field>
-          <Field label="Org" hint={schedule === undefined ? undefined : "An org cannot change."}>
+          <Field label="Workspace" hint={schedule === undefined ? undefined : "A workspace cannot change."}>
             {(p) => (
               <Select
                 {...p}

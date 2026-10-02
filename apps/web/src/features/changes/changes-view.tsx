@@ -1,6 +1,7 @@
 import type { RepoDiff, RepoDiffFile, RoomItem, Task } from "@majhi/shared";
 import { ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
+import { OpenInEditor } from "@/components/open-in-editor";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { plural } from "@/lib/format";
@@ -54,7 +55,9 @@ export function ChangesView({ task, onSent }: { task: Task; onSent: (item: RoomI
 
 function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
   const totals = repoTotals(repo);
-  const mr = task.repos.find((r) => r.project === repo.project)?.mr;
+  const taskRepo = task.repos.find((r) => r.project === repo.project);
+  const mr = taskRepo?.mr;
+  const worktree = taskRepo?.worktree;
   return (
     <section
       aria-label={`Changes in ${repo.project}`}
@@ -62,6 +65,15 @@ function RepoSection({ repo, task }: { repo: RepoDiff; task: Task }) {
     >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <h2 className="font-mono text-sm font-semibold">{repo.project}</h2>
+        {worktree && (
+          <OpenInEditor
+            path={worktree}
+            name={`worktree of ${repo.project}`}
+            size="icon-sm"
+            variant="ghost"
+            className="size-6 self-center"
+          />
+        )}
         <span className="font-mono text-xs text-fg-faint">
           {repo.since === undefined
             ? `${repo.branch} against ${repo.base}`

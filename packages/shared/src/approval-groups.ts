@@ -22,6 +22,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "room.cancel",
   "room.fresh",
   "ssh.unlock",
+  "secrets.exportKey",
   "boss.chat",
   "chats.create",
   "chats.rename",
@@ -33,6 +34,9 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.guide",
   "autonomy.forget",
   "autonomy.exclude",
+  // A restore replaces the whole database: the owner's call.
+  "backup.restore",
+  "backup.cancelRestore",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

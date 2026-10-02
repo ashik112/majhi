@@ -86,8 +86,10 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   const { account, options } = start;
   await prepareHome(account);
   // A connection's variables first: majhi's own (PATH, HOME, the account's) always win.
-  const env = { ...start.env, ...buildEnv(account, options.base, start.git) };
-  const adapter = options.adapters?.[account.tool] ?? getTool(account.tool).adapter;
+  const tool = getTool(account.tool);
+  const capEnv = start.contextCap === undefined ? undefined : tool.capEnv?.(start.contextCap);
+  const env = { ...start.env, ...capEnv, ...buildEnv(account, options.base, start.git) };
+  const adapter = options.adapters?.[account.tool] ?? tool.adapter;
 
   const spawned = await (options.spawner ?? localSpawner)({
     command: adapter,

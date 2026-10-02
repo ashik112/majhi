@@ -52,8 +52,8 @@ export function OrgsView() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Orgs"
-        subtitle="An org keeps one body of work apart: its accounts, agents and projects. Private is yours and always there."
+        title="Workspaces"
+        subtitle="A workspace keeps one body of work apart: its accounts, agents and projects. Private is yours and always there."
       />
       {orgs.isError ? (
         <p role="alert" className="p-8 text-base text-red">
@@ -62,7 +62,7 @@ export function OrgsView() {
       ) : (
         <ListDetail>
           <ListPane
-            label="Orgs"
+            label="Workspaces"
             footer={
               <Button
                 variant="ghost"
@@ -71,7 +71,7 @@ export function OrgsView() {
                 onClick={() => setAdding(true)}
               >
                 <Plus aria-hidden="true" />
-                New org
+                New workspace
               </Button>
             }
           >
@@ -101,10 +101,10 @@ export function OrgsView() {
             )}
           </ListPane>
           {adding ? (
-            <DetailPane label="New org">
+            <DetailPane label="New workspace">
               <div className="flex max-w-[480px] flex-col gap-4 pt-5">
                 <div className="flex flex-col gap-1">
-                  <h2 className="text-md font-semibold">New org</h2>
+                  <h2 className="text-md font-semibold">New workspace</h2>
                   <p className="text-base text-fg-muted">
                     A client, a team or a side project. Its accounts, agents and projects stay apart from the
                     rest.

@@ -33,7 +33,7 @@ import { TreeView } from "./tree-view";
 function boardKeyTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return true;
   if (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return false;
-  return target.closest("dialog, [role='menu']") === null;
+  return target.closest("dialog, [role='menu'], [role='dialog']") === null;
 }
 
 /** A column shows its cards when it has any; Done only when the owner opens it. The rest are rails. */

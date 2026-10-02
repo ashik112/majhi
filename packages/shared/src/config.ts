@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
+import { E2ePatchSchema } from "./e2e.ts";
 import {
   AutonomyFilePatchSchema,
   BudgetsFilePatchSchema,
@@ -15,6 +16,7 @@ import {
   PolicyPatchSchema,
   ResumePatchSchema,
   RoomPatchSchema,
+  TurnsPatchSchema,
 } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 import { PricesConfigSchema } from "./usage.ts";
@@ -36,6 +38,8 @@ export const MajhiConfigSchema = z.strictObject({
   /** Defaults for every org (5.13). Written only when the owner changes a value. */
   context: ContextPatchSchema.optional(),
   limits: LimitsPatchSchema.optional(),
+  /** Turn limits: length, idle time and tool calls per turn (PRV-96). */
+  turns: TurnsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   /** Agent attribution in commits (5.7). */
   commits: CommitsPatchSchema.optional(),
@@ -45,6 +49,8 @@ export const MajhiConfigSchema = z.strictObject({
   memory: MemoryPatchSchema.optional(),
   /** Which editor "Open in editor" uses: VS Code or Cursor. */
   editor: EditorPatchSchema.optional(),
+  /** Background e2e after a merge into main: which projects run the suite (PRV-72). */
+  e2e: E2ePatchSchema.optional(),
   /** Cleanup of done tasks: after how many days (PRV-39). */
   cleanup: CleanupPatchSchema.optional(),
   /** Notifications when something needs the owner. */

@@ -133,7 +133,7 @@ function Head({ entry, orgs, health, onHealth, onSelect }: AgentDetailProps) {
   const home = useConfig().data?.home;
   const [dialog, setDialog] = useState<"duplicate" | "rename" | "health" | "remove" | null>(null);
   const org = orgs.find((o) => o.id === f.scope);
-  const orgName = f.scope === ROOT_SCOPE ? "Root, works in every org" : (org?.name ?? f.scope);
+  const orgName = f.scope === ROOT_SCOPE ? "Root, works in every workspace" : (org?.name ?? f.scope);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex min-w-0 items-center gap-3">

@@ -1,4 +1,4 @@
-import { type Task, TaskPrioritySchema } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, FolderGit2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -12,6 +12,7 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
+import { ScheduleButton } from "../tasks/schedule-editor";
 import { CostText } from "../usage/cost";
 import { Brief } from "./brief";
 import { TaskAction } from "./task-action";
@@ -68,9 +69,9 @@ export function TaskHeader({
         )}
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
-          <span className="truncate">{org?.name ?? "No org"}</span>
+          <span className="truncate">{org?.name ?? "No workspace"}</span>
         </span>
-        {task.kind !== "chat" && <PriorityAndDue task={task} />}
+        {task.kind !== "chat" && <ScheduleButton task={task} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
           <TaskAction task={task} yourTurn={yourTurn} />
@@ -99,59 +100,6 @@ function TaskCost({ taskId }: { taskId: string }) {
       <span className="sr-only">Cost so far: </span>
       <CostText totals={all} className="text-fg-soft" />
       <span className="tabular-nums">· {formatTokens(all.totalTokens)} tokens</span>
-    </span>
-  );
-}
-
-const SMALL_FIELD =
-  "h-6 w-auto rounded-sm border border-line-control bg-field px-1.5 text-xs text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none disabled:opacity-50";
-
-/** The owner's priority and deadline. Autonomous mode takes high first, then the nearest deadline. */
-function PriorityAndDue({ task }: { task: Task }) {
-  const update = useUpdateTask();
-  const toast = useToast();
-  // Typing a date fires a change per digit, so the day is saved when the field is left or on Enter.
-  const [due, setDue] = useState<string>();
-  const failed = (e: Error) => toast("Could not change the task", { detail: e.message, tone: "error" });
-  const saveDue = () => {
-    const next = due;
-    setDue(undefined);
-    if (next === undefined || next === (task.due ?? "")) return;
-    update.mutate({ id: task.id, due: next === "" ? null : next }, { onError: failed });
-  };
-  return (
-    <span className="flex shrink-0 items-center gap-1.5">
-      <select
-        aria-label="Priority"
-        value={task.priority ?? "normal"}
-        disabled={update.isPending}
-        onChange={(e) => {
-          const priority = TaskPrioritySchema.parse(e.target.value);
-          update.mutate(
-            { id: task.id, priority: priority === "normal" ? null : priority },
-            { onError: failed },
-          );
-        }}
-        className={SMALL_FIELD}
-      >
-        <option value="high">High priority</option>
-        <option value="normal">Normal priority</option>
-        <option value="low">Low priority</option>
-      </select>
-      <input
-        type="date"
-        aria-label="Due"
-        title="Due: the owner's deadline"
-        value={due ?? task.due ?? ""}
-        disabled={update.isPending}
-        onChange={(e) => setDue(e.target.value)}
-        onBlur={saveDue}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") saveDue();
-          if (e.key === "Escape") setDue(undefined);
-        }}
-        className={SMALL_FIELD}
-      />
     </span>
   );
 }

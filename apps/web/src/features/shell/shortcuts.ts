@@ -79,7 +79,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("t", PAGE_PATH.automations, "Go to automations (timers)"),
   go("s", PAGE_PATH.setup, "Go to hub setup"),
   go("p", PAGE_PATH.projects, "Go to projects and links"),
-  go("o", PAGE_PATH.orgs, "Go to orgs"),
+  go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),
   { id: "next-task", keys: ["]"], what: "Next task", group: "Task", press: { key: "]" }, scope: "task" },
   { id: "prev-task", keys: ["["], what: "Previous task", group: "Task", press: { key: "[" }, scope: "task" },

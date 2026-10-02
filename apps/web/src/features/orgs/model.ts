@@ -5,6 +5,7 @@ import {
   OrgConfigSchema,
   type OrgView,
 } from "@majhi/shared";
+import { capFromField } from "../boss/model";
 
 export const MERGE_LABEL: Record<MergePolicy, string> = {
   never: "Never, you merge on the host",
@@ -22,6 +23,8 @@ export interface OrgDraft {
   identityEmail: string;
   /** Resume interrupted work on its own: majhi's setting, or this org's own. */
   resume: "default" | "on" | "off";
+  /** This org's context cap in thousands of tokens, `0` for no cap, `""` for majhi's setting. */
+  contextCap: string;
   /** Agent attribution in commits: majhi's setting, or this org's own. */
   commits: "default" | "on" | "off";
   /** When majhi merges the org's MRs. */
@@ -41,10 +44,16 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     identityName: org.identity?.name ?? "",
     identityEmail: org.identity?.email ?? "",
     resume: org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off",
+    contextCap: capToField(org.context?.cap),
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     merge: org.merge,
     leadStart: org.leadStart,
   };
+}
+
+/** A cap in tokens as the form shows it: thousands, blank when not set. */
+export function capToField(cap: number | undefined): string {
+  return cap === undefined ? "" : String(cap / 1000);
 }
 
 export type OrgCheck =
@@ -60,7 +69,7 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   const input: CommandInput<"orgs.update"> = { id: org.id };
 
   const name = draft.name.trim();
-  if (name === "") errors.name = "Give the org a name";
+  if (name === "") errors.name = "Give the workspace a name";
   else if (name !== org.name) input.name = name;
 
   const color = draft.color.trim();
@@ -98,6 +107,17 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   const resume = org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off";
   if (draft.resume !== resume)
     input.resume = draft.resume === "default" ? null : { auto: draft.resume === "on" };
+
+  const cap = draft.contextCap.trim();
+  if (cap !== capToField(org.context?.cap)) {
+    const parsed = cap === "" ? {} : capFromField(cap);
+    if (parsed.error !== undefined) errors.contextCap = parsed.error;
+    else {
+      const { cap: _old, ...rest } = org.context ?? {};
+      const next = parsed.value === undefined ? rest : { ...rest, cap: parsed.value };
+      input.context = Object.keys(next).length > 0 ? next : null;
+    }
+  }
 
   const commits = org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off";
   if (draft.commits !== commits)

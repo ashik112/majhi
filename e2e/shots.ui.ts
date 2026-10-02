@@ -18,7 +18,7 @@ test("health", async ({ page }) => {
 
 test("orgs", async ({ page }) => {
   await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Orgs", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
   await page.waitForTimeout(700);
   await shot(page, "orgs");
 });
@@ -69,7 +69,7 @@ test("accounts: account details and add account", async ({ page }) => {
 
 test("orgs: edit in place", async ({ page }) => {
   await page.goto("/orgs");
-  await page.getByRole("navigation", { name: "Orgs" }).getByRole("button", { name: /^Acme/ }).click();
+  await page.getByRole("navigation", { name: "Workspaces" }).getByRole("button", { name: /^Acme/ }).click();
   await expect(page.getByRole("form", { name: "Settings of Acme" })).toBeVisible();
   await shot(page, "orgs-edit");
 });

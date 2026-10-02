@@ -109,8 +109,18 @@ export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
 /**
  * Why a task is paused. `owner`: you stopped it. `loop`: majhi's loop guard paused agents going in
  * circles. `blocked`: a task it waits on changed. owner, loop and blocked wait for you to continue.
+ * `signed-out`: no agent could start because its account is signed out; it resumes by itself once
+ * the account is healthy again. An account at its limit, or any other failed start, pauses as `error`.
  */
-export const PausedReasonSchema = z.enum(["limit", "offline", "error", "owner", "loop", "blocked"]);
+export const PausedReasonSchema = z.enum([
+  "limit",
+  "offline",
+  "error",
+  "owner",
+  "loop",
+  "blocked",
+  "signed-out",
+]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
 /** Paused until the owner continues it: never resumed by majhi on its own. */
@@ -445,10 +455,6 @@ export const ParsedTaskSchema = z.object({
   title: z.string(),
   /** Projects matched by id or alias, in order of first mention. `match` is the text that matched. */
   repos: z.array(z.object({ project: IdSchema, match: z.string() })),
-  /** `from develop`, `base: main`, `off release/2.1`. */
-  base: z.string().optional(),
-  /** `on feature/x`, `branch fix/y`. Must contain a slash. */
-  branch: z.string().optional(),
   /** `@agent-id` mentions of known agents. */
   mentions: z.array(IdSchema),
   links: z.array(z.string()),
@@ -740,6 +746,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
     type: z.literal("paused"),
     reason: PausedReasonSchema,
+    /** The cause in words, when it is more specific than the reason ("claude-acme is signed out"). */
+    why: z.string().optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),
@@ -823,11 +831,21 @@ export const AgentLiveSchema = z.object({
   turnAt: z.string().optional(),
   /** Messages waiting for its next turn. */
   queued: z.number().int().nonnegative(),
-  usage: z.object({ used: z.number().nonnegative(), size: z.number().positive() }).optional(),
+  usage: z
+    .object({
+      used: z.number().nonnegative(),
+      /** What `used` is measured against: the context cap, or the model's window when there is no cap. */
+      size: z.number().positive(),
+      /** The model's window, when the cap makes `size` smaller. */
+      window: z.number().positive().optional(),
+    })
+    .optional(),
   model: z.string().optional(),
   effort: z.string().optional(),
   /** Slash commands the agent advertises over ACP. */
   commands: z.array(z.object({ name: z.string(), description: z.string().optional() })),
+  /** The last start failed (signed out, at its limit, a missing runner image, a crash). Cleared when it starts. */
+  couldNotStart: z.boolean().optional(),
 });
 export type AgentLive = z.infer<typeof AgentLiveSchema>;
 

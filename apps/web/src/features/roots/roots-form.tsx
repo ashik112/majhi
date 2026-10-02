@@ -26,12 +26,12 @@ export interface RootsFormProps {
 
 const COPY = {
   "first-run": {
-    title: "Pick your workspace roots",
-    body: "A workspace root is a folder that holds your git repos, like ~/Work. majhi finds every repo inside it.",
-    submit: "Save roots",
+    title: "Pick your project folders",
+    body: "A project folder holds your git repos, like ~/Work. majhi finds every repo inside it.",
+    submit: "Save folders",
   },
   edit: {
-    title: "Workspace roots",
+    title: "Project folders",
     body: "majhi scans these folders for git repos.",
     submit: "Save changes",
   },
@@ -128,7 +128,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
         noValidate
         onSubmit={submit}
         onKeyDown={onFormKeyDown}
-        aria-label="Workspace roots"
+        aria-label="Project folders"
         className="flex flex-col rounded-xl border border-line-strong bg-card"
       >
         {helper === "online" ? (
@@ -206,7 +206,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
             <p className="flex items-center gap-1.5 text-base text-red">
               <CircleAlert aria-hidden="true" className="size-3.5 shrink-0" />
               {save.error.unreachable
-                ? "majhi is not responding. Your roots were not saved."
+                ? "majhi is not responding. Your folders were not saved."
                 : save.error.message}
             </p>
             {save.error.details.length > 0 && (
@@ -240,8 +240,8 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel }: Root
       {helper !== "checking" && (
         <p className="text-sm text-fg-faint text-pretty">
           {autoRemount
-            ? "When you save, majhi restarts for a few seconds to mount new roots."
-            : "majhi mounts each root into its container when it starts, so a new root needs a restart. You get the command after you save."}
+            ? "When you save, majhi restarts for a few seconds to mount new folders."
+            : "majhi mounts each folder into its container when it starts, so a new folder needs a restart. You get the command after you save."}
         </p>
       )}
     </>

@@ -86,7 +86,7 @@ export function TypedRoots({
 
   return (
     <fieldset className="flex flex-col gap-2 p-4 pb-3">
-      <legend className="sr-only">Workspace roots</legend>
+      <legend className="sr-only">Project folders</legend>
       <p className="flex items-start gap-2 pb-1.5 text-sm leading-6 text-fg-muted">
         <Info aria-hidden="true" className="mt-[5px] size-3.5 shrink-0 text-fg-faint" />
         <span>
@@ -96,7 +96,7 @@ export function TypedRoots({
       </p>
       <div className="flex items-center justify-between pb-0.5">
         <span aria-hidden="true" className="text-sm text-fg-muted">
-          Roots
+          Folders
         </span>
         <span className="flex items-center gap-1.5 text-xs text-fg-faint">
           <Kbd>Enter</Kbd> adds a row
@@ -126,7 +126,7 @@ export function TypedRoots({
                     onKeyDown={(e) => onRowKeyDown(e, index, row)}
                     autoFocus={index === 0}
                     placeholder={index === 0 ? "~/Work" : "~/personal or /absolute/path"}
-                    aria-label={`Workspace root ${index + 1}`}
+                    aria-label={`Project folder ${index + 1}`}
                     aria-invalid={error ? true : undefined}
                     aria-describedby={error ? errorId : undefined}
                     className="h-10 pl-9 font-mono"
@@ -136,7 +136,7 @@ export function TypedRoots({
                   variant="ghost"
                   size="icon"
                   onClick={() => removeRow(index)}
-                  aria-label={`Remove workspace root ${index + 1}`}
+                  aria-label={`Remove project folder ${index + 1}`}
                   title="Remove"
                   disabled={rows.length === 1 && row.value === ""}
                 >
@@ -156,7 +156,7 @@ export function TypedRoots({
       <div>
         <Button variant="ghost" size="sm" onClick={() => addRowAfter(rows.length - 1)} className="-ml-1">
           <Plus aria-hidden="true" />
-          Add another root
+          Add another folder
         </Button>
       </div>
       {submitted && check.formError && (

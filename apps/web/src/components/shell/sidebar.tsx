@@ -1,11 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Layers } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
+import { Bell } from "@/components/shell/bell";
+import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
-import { OrgBadge } from "@/components/ui/org-badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { OffDialog, TurnOnDialog } from "@/features/autonomy/controls";
@@ -13,7 +13,8 @@ import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
 import { useBoss } from "@/features/boss/boss-context";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
-import { accountsNeedingYou, agentsRightNow, healthCheckedText, orgRows } from "@/features/shell/model";
+import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
+import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
@@ -22,51 +23,35 @@ import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
-import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
-import { useAccounts, useOrgs } from "@/lib/studio-queries";
+import { useAccounts } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
-
-const NAV: readonly { page: PageName; label: string }[] = [
-  { page: "board", label: "Board" },
-  { page: "chats", label: "Chats" },
-  { page: "agents", label: "Agents" },
-  { page: "accounts", label: "Accounts" },
-  { page: "connections", label: "Connections" },
-  { page: "usage", label: "Health and usage" },
-  { page: "audit", label: "Audit log" },
-  { page: "skills", label: "Skills" },
-  { page: "memory", label: "Memory" },
-  { page: "automations", label: "Automations" },
-  { page: "setup", label: "Hub setup" },
-  { page: "projects", label: "Projects and links" },
-  { page: "orgs", label: "Orgs" },
-];
 
 const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
 
+/**
+ * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows (Board,
+ * Chats, Boss, Autonomous), the pages set up once (Setup), the ones opened rarely (System), and the
+ * agents' lamps at the foot.
+ */
 export function Sidebar() {
   return (
     <aside
       aria-label="Sidebar"
       className={cn(
-        "relative z-20 flex h-full w-[228px] shrink-0 flex-col gap-4 rounded-2xl px-3 pt-4 pb-3",
+        "relative z-20 flex h-full w-[228px] shrink-0 flex-col gap-3 rounded-2xl px-3 pt-4 pb-3 [@media(max-height:799px)]:gap-2.5 [@media(max-height:799px)]:pt-3",
         GLASS,
       )}
     >
       <Brand />
-      {/* The middle scrolls when an update notice or many orgs need the room; the lamps stay at the foot. */}
-      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pb-6 scroll-fade">
+      <WorkspaceSwitcher />
+      {/* The middle scrolls only when an update notice or a short window needs the room. */}
+      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pt-0.5 pb-2 scroll-fade">
         <UpdateNotice />
         <MainNav />
-        <div className="flex shrink-0 flex-col gap-1">
-          <BossButton />
-          <AutonomyRow />
-        </div>
-        <OrgList />
       </div>
       <AgentsNow />
     </aside>
@@ -85,7 +70,7 @@ function Brand() {
         ? "majhi is not answering. Start it with make up."
         : "Checking the server";
   return (
-    <div className="flex items-center gap-2.5 px-1.5">
+    <div className="flex items-center gap-2 pl-1.5">
       <Link
         to="/"
         search={{}}
@@ -121,12 +106,14 @@ function Brand() {
         </span>
         {helperOff && <span className="text-amber">helper off</span>}
       </span>
+      <Bell />
     </div>
   );
 }
 
+type NavBadge = { text: string; alert?: boolean; dot?: boolean };
+
 function MainNav() {
-  const { org } = useOrgFilter();
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -137,73 +124,90 @@ function MainNav() {
   const projects = useProjects().data;
   const toReview = pendingFacts.length;
   const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
-  const badge: Partial<Record<PageName, { text: string; alert?: boolean; dot?: boolean }>> = {};
+  const badge: Partial<Record<PageName, NavBadge>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
   if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
+  const isActive = (to: string) =>
+    to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
 
   return (
-    <nav aria-label="Main" className="flex flex-col gap-px">
-      {NAV.map((item) => {
-        const to = PAGE_PATH[item.page];
-        const shown = badge[item.page];
-        const active = to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
-        if (item.page === "memory" && toReview > 0 && reviewAt !== undefined)
-          return (
-            <div key={item.page} className="relative flex">
-              <Link
-                to={to}
-                search={orgSearch(org)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  ITEM,
-                  "h-8 flex-1 px-2.5 text-body font-medium",
-                  active ? ROW_SELECTED : "text-fg-muted",
-                )}
-              >
-                <span>{item.label}</span>
-              </Link>
-              {/* Its own link: the lessons that wait, on the Lessons tab of their project. */}
-              <Link
-                to={to}
-                search={{ project: reviewAt, tab: "lessons" }}
-                title="Open the lessons that wait for you"
-                className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-lamp-needs transition-colors duration-150 hover:bg-raised hover:underline"
-              >
-                {toReview} to review
-              </Link>
-            </div>
-          );
-        return (
-          <Link
-            key={item.page}
-            to={to}
-            search={orgSearch(org)}
-            aria-current={active ? "page" : undefined}
-            className={cn(ITEM, "h-8 px-2.5 text-body font-medium", active ? ROW_SELECTED : "text-fg-muted")}
-          >
-            <span>{item.label}</span>
-            {shown && (
-              <span
-                className={cn(
-                  "tnum ml-auto flex items-center gap-1.5 text-xs font-normal",
-                  shown.alert ? "text-lamp-needs" : "text-fg-faint",
-                )}
-              >
-                {shown.dot && (
-                  <>
-                    <Lamp state="needs" size={6} />
-                    <span className="sr-only">An account needs you. </span>
-                  </>
-                )}
-                {shown.text}
-              </span>
-            )}
-          </Link>
-        );
-      })}
+    <nav aria-label="Main" className="flex flex-col gap-4 [@media(max-height:799px)]:gap-2.5">
+      <div className="flex flex-col gap-px">
+        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
+        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
+        <BossButton />
+        <AutonomyRow />
+      </div>
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label} className="flex flex-col gap-px">
+          <SectionLabel className="mb-1 px-2.5">{group.label}</SectionLabel>
+          {group.pages.map((page) =>
+            page === "memory" && toReview > 0 && reviewAt !== undefined ? (
+              <div key={page} className="relative flex">
+                <NavRow page={page} active={isActive(PAGE_PATH[page])} className="flex-1" />
+                {/* Its own link: the lessons that wait, on the Lessons tab of their project. */}
+                <Link
+                  to={PAGE_PATH.memory}
+                  search={{ project: reviewAt, tab: "lessons" }}
+                  title="Open the lessons that wait for you"
+                  className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-lamp-needs transition-colors duration-150 hover:bg-raised hover:underline"
+                >
+                  {toReview} to review
+                </Link>
+              </div>
+            ) : (
+              <NavRow key={page} page={page} active={isActive(PAGE_PATH[page])} badge={badge[page]} />
+            ),
+          )}
+        </div>
+      ))}
     </nav>
+  );
+}
+
+function NavRow({
+  page,
+  active,
+  badge,
+  className,
+}: {
+  page: PageName;
+  active: boolean;
+  badge?: NavBadge | undefined;
+  className?: string;
+}) {
+  return (
+    <Link
+      to={PAGE_PATH[page]}
+      search={{}}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        ITEM,
+        "h-8 shrink-0 px-2.5 text-body font-medium",
+        active ? ROW_SELECTED : "text-fg-muted",
+        className,
+      )}
+    >
+      <span className="min-w-0 truncate">{PAGE_LABEL[page]}</span>
+      {badge && (
+        <span
+          className={cn(
+            "tnum ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs font-normal",
+            badge.alert ? "text-lamp-needs" : "text-fg-faint",
+          )}
+        >
+          {badge.dot && (
+            <>
+              <Lamp state="needs" size={6} />
+              <span className="sr-only">An account needs you. </span>
+            </>
+          )}
+          {badge.text}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -217,8 +221,8 @@ function BossButton() {
       onClick={toggle}
       className={cn(
         ITEM,
-        "h-8 shrink-0 gap-2 border border-line-strong bg-field px-2.5 text-body font-medium",
-        open ? "border-accent-line bg-accent-wash text-fg" : "text-fg-soft",
+        "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
+        open ? ROW_SELECTED : "text-fg-muted",
       )}
     >
       <span>Boss</span>
@@ -274,50 +278,7 @@ function AutonomyRow() {
   );
 }
 
-function OrgList() {
-  const orgs = useOrgs().data;
-  const tasks = useTasks().data;
-  const { org, setOrg } = useOrgFilter();
-  const rows = useMemo(() => orgRows(orgs ?? [], tasks ?? []), [orgs, tasks]);
-  return (
-    <div className="flex shrink-0 flex-col gap-1">
-      <SectionLabel className="mb-1 ml-2.5">Orgs</SectionLabel>
-      <fieldset aria-label="Filter by org" className="m-0 flex min-w-0 flex-col gap-px border-0 p-0">
-        {rows.map((row) => {
-          const active = row.id === org;
-          return (
-            <button
-              key={row.id ?? "all"}
-              type="button"
-              aria-pressed={active}
-              onClick={() => setOrg(row.id)}
-              className={cn(
-                ITEM,
-                "h-8 shrink-0 gap-2.5 px-2.5 text-base",
-                active ? cn(ROW_SELECTED, "font-medium") : "text-fg-soft",
-              )}
-            >
-              {row.id === undefined ? (
-                <span
-                  aria-hidden="true"
-                  className="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-line-control bg-raised text-fg-soft"
-                >
-                  <Layers className="size-3" strokeWidth={2.25} />
-                </span>
-              ) : (
-                <OrgBadge label={row.badge} color={row.color} size="sm" />
-              )}
-              <span className="min-w-0 truncate">{row.name}</span>
-              <span className="tnum ml-auto font-mono text-sm text-fg-faint">{row.open}</span>
-            </button>
-          );
-        })}
-      </fieldset>
-    </div>
-  );
-}
-
-/** Four lamps with counts: every agent counted once. The Appearance button sits on its last line. */
+/** Four lamps with counts, every agent counted once, and the Appearance button. */
 function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
@@ -334,17 +295,19 @@ function AgentsNow() {
     { label: "Idle", title: "Idle", count: pulse.idle, lamp: "idle" },
   ];
   return (
-    <section
-      aria-label="Agents right now"
-      className="mt-auto flex shrink-0 flex-col gap-2 border-t border-line pt-3"
-    >
-      <SectionLabel className="px-1">Agents right now</SectionLabel>
-      <ul className="grid grid-cols-2 gap-1">
+    <section aria-label="Agents right now" className="flex shrink-0 flex-col gap-1 border-t border-line pt-2">
+      {/* Below 800px of window height the lamps fold into one line with their counts, so the
+          navigation keeps its room. */}
+      <div className="flex items-center gap-2 pl-1 [@media(max-height:799px)]:hidden">
+        <SectionLabel className="min-w-0 flex-1 truncate">Agents right now</SectionLabel>
+        <AppearanceButton />
+      </div>
+      <ul className="grid grid-cols-2 gap-x-3 px-1 [@media(max-height:799px)]:hidden">
         {rows.map((row) => (
           <li
             key={row.label}
             title={`${row.title}: ${row.count}`}
-            className="flex h-7 min-w-0 items-center gap-2 rounded-md border border-line bg-field px-2 text-xs"
+            className="flex h-6 min-w-0 items-center gap-2 text-xs"
           >
             <Lamp state={row.lamp} dim={row.count === 0} size={7} />
             <span className={cn("min-w-0 truncate", row.count > 0 ? "text-fg-soft" : "text-fg-faint")}>
@@ -358,10 +321,25 @@ function AgentsNow() {
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2 pl-1">
-        <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">
-          {healthCheckedText(accounts ?? [], now)}
-        </span>
+      <p className="truncate px-1 text-xs text-fg-faint [@media(max-height:799px)]:hidden">
+        {healthCheckedText(accounts ?? [], now)}
+      </p>
+      <div className="hidden items-center gap-3 pl-1 [@media(max-height:799px)]:flex">
+        <ul aria-label="Agents right now" className="flex min-w-0 flex-1 items-center gap-3">
+          {rows.map((row) => (
+            <li
+              key={row.label}
+              title={`${row.title}: ${row.count}`}
+              className="flex h-7 items-center gap-1.5"
+            >
+              <Lamp state={row.lamp} dim={row.count === 0} size={7} />
+              <span className="sr-only">{row.label}</span>
+              <span className={cn("tnum font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}>
+                {row.count}
+              </span>
+            </li>
+          ))}
+        </ul>
         <AppearanceButton />
       </div>
     </section>

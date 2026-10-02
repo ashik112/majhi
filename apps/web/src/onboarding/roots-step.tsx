@@ -26,7 +26,7 @@ export function RootsStep({ isLast, onComplete }: OnboardingStepProps) {
         home={pending.state.home}
         continueLabel={continueLabel}
         onBack={() => {
-          toast("Roots mounted");
+          toast("Folders mounted");
           onComplete();
         }}
         onContinue={onComplete}
@@ -61,7 +61,7 @@ export function RootsStep({ isLast, onComplete }: OnboardingStepProps) {
           setPending(result);
           return;
         }
-        toast("Roots saved");
+        toast("Folders saved");
         onComplete();
       }}
     />

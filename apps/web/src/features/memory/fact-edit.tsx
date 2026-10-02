@@ -60,7 +60,10 @@ export function EditFactDialog({
             />
           )}
         </Field>
-        <Field label="Where it holds" hint="Agents of that org or project get it. Other orgs never do.">
+        <Field
+          label="Where it holds"
+          hint="Agents of that workspace or project get it. Other workspaces never do."
+        >
           {(props) => (
             <Select {...props} value={scope} onChange={(e) => setScope(e.target.value)}>
               {shown.map((o) => (

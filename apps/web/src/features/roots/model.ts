@@ -56,7 +56,7 @@ export function checkRoots(draft: RootsDraft, home: string): RootsCheck {
   }
 
   const check: RootsCheck = { rowErrors };
-  if (workspaces.length === 0 && rowErrors.size === 0) check.formError = "Add at least one workspace root";
+  if (workspaces.length === 0 && rowErrors.size === 0) check.formError = "Add at least one project folder";
 
   const tasksDir = draft.tasksDir.trim();
   let tasksDirValue: string | undefined;
@@ -107,7 +107,7 @@ export function checkNewRoot(
 ): { value: string } | { error: string } {
   const parsed = ConfigPath.safeParse(value);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid path" };
-  if (chosenPaths(rows, home).has(expandHome(parsed.data, home))) return { error: "Already a root" };
+  if (chosenPaths(rows, home).has(expandHome(parsed.data, home))) return { error: "Already added" };
   return { value: parsed.data };
 }
 

@@ -30,7 +30,7 @@ import { PriceTable } from "./price-table";
 type By = Extract<UsageDimension, "org" | "agent" | "model" | "project" | "task">;
 
 const BY: readonly { value: By; label: string }[] = [
-  { value: "org", label: "Org" },
+  { value: "org", label: "Workspace" },
   { value: "agent", label: "Agent" },
   { value: "model", label: "Model" },
   { value: "project", label: "Project" },
@@ -255,7 +255,7 @@ function rowLink(by: By, key: string | null, org: string | undefined) {
 function RowLabel({ by, row }: { by: By; row: UsageBreakdown["rows"][number] }): ReactNode {
   const orgs = useOrgs().data ?? [];
   if (row.key === null)
-    return <span className="text-sm text-fg-faint">{by === "org" ? "No org" : "None"}</span>;
+    return <span className="text-sm text-fg-faint">{by === "org" ? "No workspace" : "None"}</span>;
   if (by === "org") {
     const org = orgs.find((o) => o.id === row.key);
     return (
