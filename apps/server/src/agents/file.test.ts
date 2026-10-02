@@ -81,6 +81,7 @@ describe("serializeAgent", () => {
       id: "lead",
       scope: "root",
       role: "Root" as const,
+      emoji: "\u{1F9D1}\u200D\u2708\uFE0F",
       account: "claude-personal",
       model: "auto",
       effort: "high",

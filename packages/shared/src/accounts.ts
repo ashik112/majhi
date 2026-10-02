@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AgentToolRefSchema } from "./agent-tools.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds } from "./connections.ts";
+import { EmojiSchema } from "./emoji.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
 import {
@@ -229,6 +230,8 @@ export const AgentFrontmatterSchema = z.strictObject({
   /** An org id, or `root`. */
   scope: OrgIdSchema,
   role: RoleSchema,
+  /** One emoji shown in place of the initial on the agent's avatar. Absent means the initial. */
+  emoji: EmojiSchema.optional(),
   account: IdSchema,
   /** A model id from the account's ACP model list, or `auto`. Absent means the agent's ACP default. */
   model: z.string().trim().min(1).optional(),

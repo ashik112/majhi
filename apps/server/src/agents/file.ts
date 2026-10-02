@@ -64,6 +64,7 @@ function stringifyFrontmatter(f: AgentFrontmatter): string {
     id: f.id,
     scope: f.scope,
     role: f.role,
+    emoji: f.emoji,
     account: f.account,
     model: f.model,
     effort: f.effort,
