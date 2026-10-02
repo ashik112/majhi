@@ -535,6 +535,8 @@
  * mid-line. Each edge fades only while there is more to scroll that way: a scroll-driven animation
  * grows the top fade as the area leaves the top and shrinks the bottom one as it reaches the end.
  * `scroll-fade-end` fades the bottom edge only, for areas whose top holds a sticky header.
+ * Both fades start at 0: a box with nothing to scroll has an inactive scroll timeline, so the
+ * animation never applies and the box stays unfaded. The bottom fade's 22px lives in the keyframes.
  */
 @property --fade-top {
   syntax: "<length>";
@@ -544,7 +546,7 @@
 @property --fade-bottom {
   syntax: "<length>";
   inherits: false;
-  initial-value: 22px;
+  initial-value: 0px;
 }
 @keyframes fade-top-in {
   to {
@@ -552,6 +554,9 @@
   }
 }
 @keyframes fade-bottom-out {
+  from {
+    --fade-bottom: 22px;
+  }
   to {
     --fade-bottom: 0px;
   }

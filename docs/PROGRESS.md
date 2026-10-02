@@ -71,7 +71,6 @@
 - **Automations.** While the mode is on, schedules and triggers that start tasks or run commands, and every automation resume and run now, are left for the owner. Tasks an automation starts are not autonomous, so they would run outside the caps, the run gate and Stop. The follow-up is to track them as autonomous; then the boss can create them too.
 - **No end-to-end day.** No test runs a whole autonomous day with the fake agent: the boss picking a task, a builder shipping it, the summary next morning. The parts are covered by the tests above.
 - **The fake boss never plans.** In a dry run with the fake agent, the boss never calls its own tools, so the Queue stays empty and no decision rows appear. Those tools are covered by `approvals.test.ts`.
-- **`scroll-fade`.** It dims the bottom 22 px of a box that does not overflow, because a scroll timeline with nothing to scroll leaves the fade at its start value. The reply boxes no longer use it; other boxes that rarely overflow still show it.
 
 ### Rules that hold
 
