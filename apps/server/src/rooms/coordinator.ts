@@ -62,6 +62,8 @@ export class RoomCoordinator {
   private readonly askedInTurn = new Set<string>();
   /** (task, agent) pairs told that a mention of theirs woke nobody, until their next turn ends. */
   private readonly quietNoted = new Set<string>();
+  /** Who each (task, agent) handed work to with the mention tool in the turn now running. */
+  private readonly toolHandoffs = new Map<string, Set<string>>();
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
@@ -70,6 +72,9 @@ export class RoomCoordinator {
     const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
     // This turn answered a "not woken" note: it gets no second one.
     const answersNote = this.quietNoted.delete(`${turn.task}\u0000${turn.agent}`);
+    // Teammates this turn already handed work to with the tool: its closing message does not wake them twice.
+    const handedByTool = this.toolHandoffs.get(`${turn.task}\u0000${turn.agent}`) ?? new Set<string>();
+    this.toolHandoffs.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return;
     // Taken off the team: what it still says is posted, but it hands nothing on.
@@ -155,13 +160,15 @@ export class RoomCoordinator {
       void this.deps.tasks.pauseForOwner(task.id, plan.pause).catch(() => undefined);
       return;
     }
-    for (const h of plan.handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    const handoffs = plan.handoffs.filter((h) => !handedByTool.has(h.to));
+    for (const h of handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    const handedOn = handoffs.length > 0 || handedByTool.size > 0;
     // Addressed to the owner in plain text: majhi puts the buttons under it.
     // The agent kept working: a question it asked before and nobody answered no longer waits.
     this.movedOn(task.id, turn.agent);
     const busy = this.deps.waitsOnProcess?.(task.id, turn.agent) === true;
     const toOwner =
-      mentions.includes(OWNER_HANDLE) || (plan.handoffs.length === 0 && text !== "" && asksOwner(text));
+      mentions.includes(OWNER_HANDLE) || (!handedOn && text !== "" && asksOwner(text));
     const questioned = !asked && !waiting && !busy && toOwner;
     if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
@@ -169,7 +176,7 @@ export class RoomCoordinator {
       return;
     }
     // Lead delegates: in a team, a message nobody else is woken by may still be for the owner.
-    if (task.mode === "lead" && plan.handoffs.length === 0 && task.team.length > 1 && text !== "") {
+    if (task.mode === "lead" && !handedOn && task.team.length > 1 && text !== "") {
       const others = runs.working(task.id).filter((a) => a !== turn.agent);
       if (others.length > 0 && !questioned && asksOwner(text)) {
         this.say(task.id, "warn", `@${turn.agent} needs you: ${firstLine(text)}`);
@@ -258,6 +265,8 @@ export class RoomCoordinator {
     }
     this.deps.store.tasks.setRoomState(task.id, { ...state, agentTurns: state.agentTurns + 1 });
     this.deps.runs.handoff(task, { from: caller.agent, to, via: "tool", text });
+    const key = `${task.id}\u0000${caller.agent}`;
+    this.toolHandoffs.set(key, (this.toolHandoffs.get(key) ?? new Set<string>()).add(to));
     return `Handed to @${to}. It gets your message on its next turn.`;
   }
 
