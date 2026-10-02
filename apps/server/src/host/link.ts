@@ -34,6 +34,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
   "secretsKey.save": (value) => HostResultSchemas["secretsKey.save"].safeParse(value),
   "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
+  "e2e.run": (value) => HostResultSchemas["e2e.run"].safeParse(value),
   notify: (value) => HostResultSchemas.notify.safeParse(value),
   "git.logins": (value) => HostResultSchemas["git.logins"].safeParse(value),
   "git.token": (value) => HostResultSchemas["git.token"].safeParse(value),

@@ -26,6 +26,7 @@ describe("mergeSettings", () => {
       },
       memory: { auto_threshold: 0.4, review_all: false, chat_idle_minutes: 30 },
       editor: { app: "vscode" },
+      e2e: { projects: {} },
       cleanup: { after_days: 30 },
       notifications: { mac: true, browser: true, sound: false, muted: [] },
       containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },

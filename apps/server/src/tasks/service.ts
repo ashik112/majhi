@@ -186,6 +186,8 @@ export interface TaskDeps {
   onRemoving?: (task: Task) => Promise<void>;
   /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
   onReview?: (id: string) => Promise<void>;
+  /** majhi merged a task's branch into `into` of `project`. Never awaited (background e2e, PRV-72). */
+  onMerged?: (merge: { task: string; project: string; into: string }) => void | Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;
   /** Resolves when every queued usage row is written. */
@@ -1820,6 +1822,9 @@ export class TaskService {
           outcome.head,
           into,
         );
+        void Promise.resolve(
+          this.deps.onMerged?.({ task: task.id, project: repo.project, into }),
+        ).catch(() => undefined);
         results.push({
           project: repo.project,
           into,

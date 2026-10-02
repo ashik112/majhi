@@ -67,7 +67,16 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   // An "Update when they finish" from before a restart goes on waiting.
   void system.restore().catch(() => undefined);
   const dispatch = createDispatcher(
-    createHandlers({ config, scanner: new RepoScanner(), hostLink, services, sshHosts, health, system }),
+    createHandlers({
+      config,
+      scanner: new RepoScanner(),
+      hostLink,
+      services,
+      sshHosts,
+      health,
+      ...(services.e2e === undefined ? {} : { e2e: services.e2e }),
+      system,
+    }),
     (name) => services.events.emit(topicsFor(name)),
   );
   services.admin.bind(dispatch);
@@ -141,6 +150,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.watcher.start();
       services.usageSweeper.start();
       services.mrPoller.start();
+      services.e2e?.start();
       services.resilience.start();
       services.automation.scheduler.start();
       services.automation.triggerEngine.start();

@@ -14,7 +14,7 @@ export const SETUP_GROUPS = [
       "containers",
     ],
   },
-  { label: "More", sections: ["editor", "appearance", "backups", "history"] },
+  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
@@ -33,6 +33,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   approvals: "Approvals",
   notifications: "Notifications",
   editor: "Editor",
+  e2e: "Background e2e",
   containers: "Containers",
   appearance: "Appearance",
   backups: "Backups",
@@ -53,6 +54,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   notifications:
     "A Mac banner and a browser notification when an agent needs you: approvals, questions, stops.",
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
+  e2e: "Run the full e2e suite in the background after each merge into main, and where it runs.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
   backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",

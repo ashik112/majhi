@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 import type { HostInfo, LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
+import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
 import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
@@ -126,6 +127,15 @@ async function main(): Promise<void> {
     kind: pathKind,
     isExecutable: async (file) => (await findExecutable(basename(file), dirname(file))) !== undefined,
   });
+  const e2eRun = createE2eRunner({
+    run: runCommand,
+    majhiHome: config.majhiHome,
+    home: config.home,
+    path,
+    platform: process.platform,
+    find: findExecutable,
+    log,
+  });
   const laya = createLaya({
     majhiHome: config.majhiHome,
     home: config.home,
@@ -207,6 +217,7 @@ async function main(): Promise<void> {
     remount,
     sshReload: () => ssh.reload(),
     editorOpen,
+    e2eRun,
     versionChanges: async (params: { from: string }) => {
       if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");
       const repo = await readRepo(gitContext);

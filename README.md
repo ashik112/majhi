@@ -39,6 +39,7 @@ majhi turns that into a desk you can run all day:
 | **Work across repos** | One task can span several repos, with linked pull requests merged in the right order. Big tasks split into subtasks that wait for each other. |
 | **Previews and services** | Agents build and run your app and its databases in their own containers, so you can open a live preview of each task. |
 | **Automate the routine** | Schedules like "weekdays at 9:00" and triggers that react to what happens, to start tasks or wake agents without you. |
+| **Checks after every merge** | After a merge into main, majhi runs the whole e2e suite by itself, at low priority, so nobody waits on it. The result shows on Health and in the room of the task that merged. A break opens one task with the failing specs and the traces. |
 | **It learns your codebase** | Lasting facts from each task are kept per repo and recalled in the next one, so agents stop relearning the same things. |
 | **Run everything by asking** | The boss agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
 | **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
@@ -72,10 +73,6 @@ majhi hands them to **Laya**, an open model that runs on your machine (natively 
     <td align="center"><sub><b>One box to start work.</b> Pick the project and the team.</sub></td>
   </tr>
 </table>
-
-## Coming next
-
-- **Background checks on every merge**, with a task opened automatically when something breaks.
 
 ## Install
 

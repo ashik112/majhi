@@ -75,6 +75,7 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
+import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
   DirListingSchema,
@@ -1632,7 +1633,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to true or false), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -1642,6 +1643,7 @@ export const commands = {
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),
+      e2e: E2ePatchSchema.optional(),
       cleanup: CleanupPatchSchema.optional(),
       notifications: NotificationsPatchSchema.optional(),
       containers: ContainersPatchSchema.optional(),
@@ -1753,6 +1755,13 @@ export const commands = {
         }),
       ),
     }),
+  },
+  "e2e.status": {
+    risk: "read",
+    summary:
+      "The background e2e suite on main: the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
+    input: Empty,
+    output: E2eStatusSchema,
   },
   "health.fix": {
     risk: "change",

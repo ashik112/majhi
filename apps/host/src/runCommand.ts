@@ -22,11 +22,18 @@ export const runCommand: RunFn = (file, args, options) =>
     };
     const child = spawn(file, [...args], {
       env: options.env,
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
     });
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      // Its own process group (`detached`), so what it started goes too: a test run is a tree.
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
       finish(null);
     }, options.timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => {

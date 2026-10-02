@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
+import { E2eSettingsSchema } from "./e2e.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
 /**
@@ -443,6 +444,7 @@ export const SettingsSchema = z.object({
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
   editor: EditorSettingsSchema,
+  e2e: E2eSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
   budgets: BudgetsSettingsSchema,

@@ -24,6 +24,7 @@ import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
+import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
@@ -85,6 +86,8 @@ export interface HandlerDeps {
   sshHosts?: SshHostProbe;
   /** `health.run` and `health.fix`. Without it they answer 501. */
   health?: HealthService;
+  /** `e2e.status`. Without it the command answers 501. */
+  e2e?: E2eService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
 }
@@ -96,6 +99,7 @@ export function createHandlers({
   services,
   sshHosts,
   health,
+  e2e,
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
@@ -738,6 +742,7 @@ export function createHandlers({
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),
+        ...(input.e2e === undefined ? {} : { e2e: input.e2e }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.notifications === undefined ? {} : { notifications: input.notifications }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
@@ -801,6 +806,7 @@ export function createHandlers({
         input.days ?? (await config.settings()).cleanup.after_days,
         actorName(ctx.meta.actor),
       ),
+    "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),
