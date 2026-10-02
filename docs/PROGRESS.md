@@ -346,9 +346,47 @@ How to try it: press `Cmd/Ctrl K` and type "acc", "memory" or a word from a room
 
 Phase 9 as a whole: token receipts, tool gating, Serena and cache-friendly prompts (part 1); the palette, shortcuts and the performance pass (part 2); budgets with alerts (PRV-40), the audit log page (PRV-41) and phone access on the local network (PRV-42, not started) are child tasks.
 
+### PRV-84: server memory under 200 MB, and a search match opens fast
+
+Branch `task/prv-84-server-memory-over-200-mb-after-opening`. Two problems left over from Phase 9 part 2: server memory after opening tasks sat on the 200 MB target, and a room-search match 5,990 messages back took 11 s to scroll into view.
+
+**Memory: what was found.** Heap snapshots of the server with no agents, idle and after opening tasks:
+
+- No cache, per-task room list or set of prepared statements grows with the tasks opened. After a full garbage collection the live heap is about 44 MB, and most of that is the 4 MB server bundle's own source text. A room of 6,000 items costs the server one page of 200 items.
+- The growth is memory the process holds on to after it was used. V8 let its young generation grow to its default of 16 MB (up to 48 MB with its two halves and promoted garbage), and glibc kept several malloc arenas.
+- One request made it much worse: `health.run`, which the web client sends on every page load (the sidebar reads it). Thirty calls added 21 MB of resident memory, 300 added about 120 MB, with the JS heap flat. Each call ran `config.load()` and the agent file listing about 18 times, and each listing read and parsed every agent file again (about 290 file reads per request). The native buffers of those reads were what stayed resident.
+
+**Memory: what changed.**
+
+- The Dockerfile starts the server with `--max-semi-space-size=2` and `MALLOC_ARENA_MAX=2`; `pnpm --filter @majhi/server start` and `scripts/perf.ts` do the same. Alone these two took idle memory from 173 to 131 MB and the opened state from 194 to 153 MB in a probe.
+- `AgentStore` keeps each parsed agent file with the file's signature (inode, size, and change times to the nanosecond) and reads a file again only when the signature changes. `ConfigService.load` does the same for `majhi.yaml`. A hand edit still shows at once. Both return copies, and entries of removed agent files are dropped, so the cache holds at most one entry per file. Test: `agents/store.test.ts`.
+
+**Search match: what changed.** The room used to load older pages of 100 until the match existed (about 60 round trips and a growing list of 6,000 rows to draw), and the new `?item=` address then cleared and hid rows above the newest 40 for a moment. Now `room.around` returns the 50 items before and after the match in one request, the room shows that window, loads older pages as you scroll up and newer ones as you scroll down (`room.items` takes `afterSeq`), and a "Latest messages" button goes back to the end. Live messages are not added to the window, so it never has a gap; sending a message leaves the window for the newest messages. A window is not kept in the room cache.
+
+Measured with `scripts/perf.ts` on the same machine, same seed (rooms of 40, 600 and 6,000 items). "After" is two runs:
+
+| | Before | After | Target |
+|---|---|---|---|
+| Server RSS, idle after start | 174 MB | 130 and 132 MB | under 200 |
+| Server RSS, after opening three tasks | 236 MB | 156 and 164 MB | under 200 |
+| Server RSS, at the end of the run | 249 MB | 164 and 174 MB | under 200 |
+| Scroll to a match 5,990 messages back | 13.6 s, in view | 0.9 and 1.0 s, in view | |
+| Task switch, room of 6,000 (reopened median) | 83 ms | 80 and 79 ms | under 100 |
+| Room update, room of 6,000 (median) | 16 ms | 13 and 20 ms | under 50 |
+| Room update, after 1,550 rows are loaded (median) | 18 ms | 20 and 19 ms | under 50 |
+
+The memory margin is 36 to 70 MB under the target, where it was a few MB over. Run it as before: `pnpm --filter @majhi/web build && pnpm --filter @majhi/server build && pnpm exec tsx scripts/perf.ts`.
+
+Left:
+
+- Memory after opening tasks still grows by about 25 to 30 MB from the first open (heap growth that the garbage collector has not reclaimed yet), then stays level. A longer soak with real agents and several tasks has not been run.
+- The bundle's source text is 8.5 MB of the heap; minifying the server bundle would save a few MB but make stack traces harder to read, so it was not done.
+- Other commands that call `config.load()` or list agents many times per request now cost far less, but `health.run` still spawns `git` and `ssh-add` on every call.
+
+
 Left and known issues:
 
-- Server memory after opening tasks sits at the 200 MB line (178 to 204 MB), and reached 211 MB after the script made the server try to start an agent. It is not clearly under the target; nothing was changed for it.
+- Server memory after opening tasks sat at the 200 MB line (178 to 204 MB), and reached 211 MB after the script made the server try to start an agent. Fixed in PRV-84 (see its section above): 156 to 164 MB after opening three tasks.
 - "Install skill from link" only opens the Skills page: skills are Phase 6 and the page's install field is still disabled. The command works once that lands.
 - A match far back in a long room loads older pages 100 at a time, so it takes seconds.
 - `mrs/flow.test.ts` ("a task closed with merge requests not merged") fails on `main` (`b9c85f24`) and on this branch alike; it is not from Phase 9.

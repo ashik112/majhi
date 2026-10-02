@@ -24,6 +24,11 @@ export interface RoomState {
   processes: ProcessInfo[];
   /** True when older items exist on the server. */
   more: boolean;
+  /**
+   * True while the items are a window around a search match and newer ones exist on the server
+   * beyond the last one held. Items that arrive live are then not added (they would leave a gap).
+   */
+  newer: boolean;
   /** False until the first snapshot. */
   loaded: boolean;
   connection: Connection;
@@ -34,6 +39,7 @@ export const emptyRoom: RoomState = {
   agents: [],
   processes: [],
   more: false,
+  newer: false,
   loaded: false,
   connection: "connecting",
 };
@@ -62,6 +68,13 @@ export function mergeItems(current: readonly RoomItem[], incoming: readonly Room
   return out;
 }
 
+/** The highest seq we hold, the cursor for the next newer page of `room.items`. */
+export function newestSeq(items: readonly RoomItem[]): number | undefined {
+  let max: number | undefined;
+  for (const item of items) if (max === undefined || item.seq > max) max = item.seq;
+  return max;
+}
+
 /** The lowest seq we hold, the cursor for `room.items`. */
 export function oldestSeq(items: readonly RoomItem[]): number | undefined {
   let min: number | undefined;
@@ -78,6 +91,12 @@ function upsertAgent(agents: readonly AgentLive[], next: AgentLive): AgentLive[]
 export type RoomAction =
   | { type: "message"; message: RoomServerMessage }
   | { type: "older"; items: readonly RoomItem[]; more: boolean }
+  /** The next newer page, while the items are a window around a match. */
+  | { type: "newer"; items: readonly RoomItem[]; more: boolean }
+  /** The page around a search match replaces the items. */
+  | { type: "window"; items: readonly RoomItem[]; older: boolean; newer: boolean }
+  /** The newest page replaces a window, and live updates apply again. */
+  | { type: "latest"; items: readonly RoomItem[]; more: boolean }
   | { type: "local"; item: RoomItem }
   /** Takes an item out, like a message shown before the server had it that then failed. */
   | { type: "drop"; id: string }
@@ -132,10 +151,23 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
       return { ...state, items: state.items.filter((item) => item.id !== action.id) };
     case "older":
       return { ...state, items: mergeItems(state.items, action.items), more: action.more };
+    case "newer":
+      return {
+        ...state,
+        items: mergeItems(state.items, action.items),
+        newer: action.more,
+      };
+    case "window":
+      return { ...state, items: mergeItems([], action.items), more: action.older, newer: action.newer };
+    case "latest":
+      return { ...state, items: mergeItems([], action.items), more: action.more, newer: false };
     case "message": {
       const message = action.message;
       switch (message.type) {
         case "snapshot":
+          // Around a match, the newest page would leave a gap: only the rest of the state is taken.
+          if (state.newer)
+            return { ...state, agents: message.agents, processes: message.processes, loaded: true };
           // Older pages we already loaded stay; `more` only means something before them.
           return {
             ...state,
@@ -145,8 +177,12 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
             more: state.loaded && state.items.length > message.items.length ? state.more : message.more,
             loaded: true,
           };
-        case "item":
-          return { ...state, items: withStored(state.items, [message.item]) };
+        case "item": {
+          // Around a match, only an item already held changes; a new one would leave a gap.
+          const item = message.item;
+          if (state.newer && !state.items.some((i) => i.id === item.id)) return state;
+          return { ...state, items: withStored(state.items, [item]) };
+        }
         case "agent":
           return { ...state, agents: upsertAgent(state.agents, message.agent) };
         case "processes":

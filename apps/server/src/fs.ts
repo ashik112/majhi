@@ -24,3 +24,12 @@ export async function writeFileAtomic(path: string, text: string): Promise<void>
     throw err;
   }
 }
+
+/**
+ * What identifies the contents of a file on disk: a write, a hand edit or a rename over it changes
+ * one of these (the times to the nanosecond). Throws like `stat` when the file is not there.
+ */
+export async function fileSignature(path: string): Promise<string> {
+  const s = await stat(path, { bigint: true });
+  return `${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
+}
