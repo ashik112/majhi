@@ -7,6 +7,9 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/cn";
 import { orgSearch } from "@/lib/org-filter";
+import { useNow } from "@/lib/use-now";
+import { fullTime, openDue, shortAgo } from "../tasks/schedule";
+import { DueChip, PriorityChip } from "../tasks/schedule-chips";
 import { orgTile } from "./board-card";
 import { buildTree, type Column, cardProgress, plainTitle, visibleRows, waitingText } from "./model";
 
@@ -23,6 +26,7 @@ export function TreeView({
   empty: string;
 }) {
   const navigate = useNavigate();
+  const now = useNow(60_000);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const rows = useMemo(() => visibleRows(buildTree(columns), collapsed), [columns, collapsed]);
 
@@ -49,12 +53,16 @@ export function TreeView({
   }
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the arrow keys move between the rows inside
-    <div onKeyDown={onKeyDown} className="min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-6 scroll-fade">
+    <div
+      onKeyDown={onKeyDown}
+      className="@container min-h-0 flex-1 overflow-y-auto px-8 pt-4 pb-6 scroll-fade"
+    >
       <ul aria-label="Tasks" className="mx-auto flex max-w-[1100px] flex-col">
         {rows.map(({ task, depth, hasChildren }) => {
           const tile = orgTile(task, orgs);
           const progress = cardProgress(task);
           const waiting = task.waitingOn.length > 0 && (task.status === "inbox" || task.status === "ready");
+          const due = openDue(task, now);
           const open = () =>
             navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
           return (
@@ -80,20 +88,22 @@ export function TreeView({
                 data-row=""
                 onClick={open}
                 title={task.title}
-                className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md px-2 text-left text-base hover:bg-raised focus-visible:bg-raised"
+                className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-base hover:bg-raised focus-visible:bg-raised"
               >
                 <OrgBadge label={tile.label} color={tile.color} size="sm" />
-                <span className="w-24 shrink-0 truncate font-mono text-xs text-fg-muted">{task.id}</span>
+                <span className="w-20 shrink-0 truncate font-mono text-xs text-fg-muted">{task.id}</span>
                 <span className="min-w-0 flex-1 truncate font-medium">{plainTitle(task.title)}</span>
+                {task.priority && <PriorityChip priority={task.priority} compact />}
+                {due && <DueChip due={due} short />}
                 {task.repos.slice(0, 1).map((repo) => (
                   <span
                     key={repo.project}
-                    className="shrink-0 rounded-[5px] bg-selected px-[7px] py-[3px] font-mono text-xs leading-[14px] text-fg-soft"
+                    className="hidden shrink-0 rounded-[5px] bg-selected px-[7px] py-[3px] font-mono text-xs leading-[14px] text-fg-soft @[900px]:inline"
                   >
                     {repo.project}
                   </span>
                 ))}
-                <span className="w-40 shrink-0 truncate text-right text-sm text-fg-muted">
+                <span className="w-28 shrink-0 truncate text-right text-sm text-fg-muted @[900px]:w-40">
                   {waiting ? (
                     <span className="text-fg-faint">{waitingText(task.waitingOn)}</span>
                   ) : (
@@ -101,6 +111,12 @@ export function TreeView({
                   )}
                 </span>
                 <AvatarStack ids={task.team} working={task.working} size={20} max={3} className="shrink-0" />
+                <span
+                  title={`Updated ${fullTime(task.updatedAt)}`}
+                  className="tnum w-10 shrink-0 text-right font-mono text-xs text-fg-faint"
+                >
+                  {shortAgo(task.updatedAt, now)}
+                </span>
                 <span className="flex w-32 shrink-0 justify-end">
                   <StatusBadge status={task.status} pausedReason={task.pausedReason} />
                 </span>
