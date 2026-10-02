@@ -1,4 +1,5 @@
-import { readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { errorCode } from "../errors.ts";
 import {
   FETCH_TIMEOUT_MS,
@@ -264,8 +265,105 @@ export function removeWorktree(source: string, path: string, force: boolean): Pr
         );
         if (!missing && !force) throw new WorktreeProblem(err instanceof Error ? err.message : String(err));
       }
-      await git(source, ["worktree", "prune"]).catch(() => undefined);
+      // Only this worktree's own entry. A `git worktree prune` would also drop the entry of a live
+      // task whose folder is out of reach for a moment, and its checkout stops being a git repo.
+      const own = await entryFor(source, path).catch(() => undefined);
+      if (own !== undefined) await rm(own, { recursive: true, force: true });
     }
     await rm(path, { recursive: true, force: true });
   });
+}
+
+export type RepairResult =
+  | { status: "fine" }
+  | { status: "repaired"; entry: string }
+  | { status: "skipped"; reason: string };
+
+/**
+ * Gives a task worktree back its entry in the source repo's `.git/worktrees` when that entry is
+ * gone (or now belongs to another checkout) while the folder and its branch are fine. Every git
+ * command in the folder fails until then. The entry is written as `git worktree add` writes it and
+ * the index is rebuilt from the branch tip, so the files and uncommitted changes stay as they are.
+ */
+export function repairWorktree(source: string, path: string, branch: string): Promise<RepairResult> {
+  return queue.run(source, async () => {
+    const link = await readGitLink(path);
+    if (link === undefined) return { status: "fine" };
+    if (await pointsBack(link, path)) return { status: "fine" };
+    if (!(await isGitRepo(source))) return { status: "skipped", reason: `${source} is not a git repo` };
+    const entries = join(await commonDir(source), "worktrees");
+    if (!(await samePath(dirname(link), entries)))
+      return { status: "skipped", reason: `its .git file points outside ${source}` };
+    if (!(await localBranchExists(source, branch)))
+      return { status: "skipped", reason: `its branch ${branch} is missing` };
+    const elsewhere = await checkedOutAt(source, branch);
+    if (elsewhere !== undefined && !(await samePath(elsewhere, path)))
+      return { status: "skipped", reason: `its branch ${branch} is checked out at ${elsewhere}` };
+
+    // The old name when it is free, so the folder's `.git` file stays as it was.
+    const entry = await freeEntry(entries, basename(link));
+    await mkdir(entry, { recursive: true });
+    await writeFile(join(entry, "gitdir"), `${join(resolve(path), ".git")}\n`);
+    await writeFile(join(entry, "commondir"), "../..\n");
+    await writeFile(join(entry, "HEAD"), `ref: refs/heads/${branch}\n`);
+    if (entry !== link) await writeFile(join(path, ".git"), `gitdir: ${entry}\n`);
+    await git(path, ["reset", "--quiet"]);
+    return { status: "repaired", entry };
+  });
+}
+
+/** Where the worktree's `.git` file points, absolute. Undefined when there is no such file. */
+async function readGitLink(path: string): Promise<string | undefined> {
+  const text = await readFile(join(path, ".git"), "utf8").catch(() => undefined);
+  const target = /^gitdir: (.+)$/m.exec(text ?? "")?.[1]?.trim();
+  if (target === undefined || target === "") return undefined;
+  return isAbsolute(target) ? target : resolve(path, target);
+}
+
+/** True when the entry exists and records `path` as its worktree. */
+async function pointsBack(entry: string, path: string): Promise<boolean> {
+  const recorded = await readFile(join(entry, "gitdir"), "utf8").catch(() => undefined);
+  return recorded !== undefined && (await samePath(dirname(recorded.trim()), path));
+}
+
+/** The entry in the source repo's `.git/worktrees` whose worktree is `path`. */
+async function entryFor(source: string, path: string): Promise<string | undefined> {
+  const entries = join(await commonDir(source), "worktrees");
+  const names = await readdir(entries).catch(() => [] as string[]);
+  for (const name of names) {
+    if (await pointsBack(join(entries, name), path)) return join(entries, name);
+  }
+  return undefined;
+}
+
+async function commonDir(source: string): Promise<string> {
+  return (await git(source, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+}
+
+/** The worktree (or main checkout) that has `branch` checked out, if any. */
+async function checkedOutAt(source: string, branch: string): Promise<string | undefined> {
+  let current: string | undefined;
+  for (const line of (await git(source, ["worktree", "list", "--porcelain"])).split("\n")) {
+    if (line.startsWith("worktree ")) current = line.slice("worktree ".length);
+    else if (line === `branch refs/heads/${branch}`) return current;
+  }
+  return undefined;
+}
+
+async function freeEntry(entries: string, name: string): Promise<string> {
+  for (let n = 0; ; n++) {
+    const entry = join(entries, n === 0 ? name : `${name}${n}`);
+    if (
+      !(await stat(entry).then(
+        () => true,
+        () => false,
+      ))
+    )
+      return entry;
+  }
+}
+
+async function samePath(a: string, b: string): Promise<boolean> {
+  if (resolve(a) === resolve(b)) return true;
+  return sameDir(a, b).catch(() => false);
 }
