@@ -14,6 +14,8 @@ import { serveAcp } from "./fake-turn.ts";
 const Flags = z.object({
   tool: z.enum(["claude", "codex"]),
   signedIn: z.boolean(),
+  /** Signed in, but the token expired and cannot be refreshed: runs and usage reads fail on auth. */
+  expired: z.boolean(),
   broken: z.boolean(),
   models: z.array(z.string().min(1)),
   efforts: z.array(z.string().min(1)),
@@ -56,6 +58,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
   const raw: {
     tool?: string | undefined;
     signedIn: boolean;
+    expired: boolean;
     broken: boolean;
     models: string[];
     efforts: string[];
@@ -77,6 +80,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     };
   } = {
     signedIn: false,
+    expired: false,
     broken: false,
     models: ["fake-model-a", "fake-model-b"],
     efforts: ["low", "medium", "high"],
@@ -96,6 +100,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     if (a === "--tool") raw.tool = argv[++i];
     else if (a === "--signed-in") raw.signedIn = true;
     else if (a === "--broken") raw.broken = true;
+    else if (a === "--expired") raw.expired = true;
     else if (a === "--models") raw.models = (argv[++i] ?? "").split(",").filter(Boolean);
     else if (a === "--efforts") raw.efforts = (argv[++i] ?? "").split(",").filter(Boolean);
     else if (a === "--slow") raw.slowMs = Number(argv[++i]);
@@ -135,6 +140,8 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
   return { flags: Flags.parse(raw), rest: argv.slice(i) };
 }
 
+const CODEX_EXPIRED =
+  "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.";
 const CLAUDE_VERSION = "2.1.284 (Claude Code)";
 const CODEX_VERSION = "codex-cli 0.158.0";
 
@@ -149,7 +156,8 @@ function credentialFile(flags: Flags): string {
 }
 
 function isSignedIn(flags: Flags): boolean {
-  if (flags.signedIn) return true;
+  // Like the real CLI: an expired token still reads as signed in until something tries to use it.
+  if (flags.signedIn || flags.expired) return true;
   const key = flags.tool === "claude" ? process.env.ANTHROPIC_API_KEY : process.env.CODEX_API_KEY;
   if (key) return true;
   return existsSync(credentialFile(flags));
@@ -222,6 +230,10 @@ async function serveCodexAppServer(flags: Flags): Promise<number> {
         result: { userAgent: "fake", codexHome: homeFor(flags), platformFamily: "unix", platformOs: "linux" },
       });
     } else if (method === "account/rateLimits/read") {
+      if (flags.expired) {
+        reply({ id, error: { code: -32600, message: CODEX_EXPIRED } });
+        continue;
+      }
       if (!isSignedIn(flags)) {
         reply({
           id,
@@ -274,6 +286,13 @@ async function runCli(flags: Flags, argv: string[]): Promise<number> {
       return signedIn ? 0 : 1;
     }
     if (line === "usage") {
+      // What the SDK answers when the token could not be refreshed: no plan, no limits.
+      if (flags.expired) {
+        process.stdout.write(
+          JSON.stringify({ subscription_type: null, rate_limits_available: false, rate_limits: null }),
+        );
+        return 0;
+      }
       if (!isSignedIn(flags)) {
         console.error("Not signed in");
         return 1;
@@ -331,6 +350,7 @@ function serve(flags: Flags): void {
     turnCost: flags.turnCost,
     usageModel: flags.usageModel,
     signedIn: () => isSignedIn(flags),
+    expired: flags.expired,
   });
 }
 

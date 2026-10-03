@@ -107,6 +107,8 @@ export interface ServeOptions {
   loadSession: boolean;
   images: boolean;
   signedIn: () => boolean;
+  /** Every prompt fails on auth, after the CLI's own error line. */
+  expired: boolean;
   /** Tokens each turn adds to the session's reported usage. 0: the fixed readings 1k, 20k, 42k. */
   risingUsage: number;
   /** `/compact` answers but does not lower usage. */
@@ -600,6 +602,19 @@ export function serveAcp(o: ServeOptions): void {
       prompt: async (params) => {
         const s = sessions.get(params.sessionId);
         if (!s) throw RequestError.invalidParams(undefined, "Unknown session");
+        if (o.expired) {
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: {
+              type: "text",
+              text:
+                o.tool === "claude"
+                  ? "Failed to authenticate: OAuth session expired and could not be refreshed"
+                  : "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.",
+            },
+          });
+          throw RequestError.authRequired();
+        }
         const text = params.prompt.map((b) => (b.type === "text" ? b.text : `[${b.type}]`)).join("\n");
         const images = params.prompt.filter((b) => b.type === "image").length;
         s.cancel = new AbortController();

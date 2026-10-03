@@ -90,6 +90,7 @@ export interface AccountProbe {
   models?: Omit<AccountModels, "account">;
 }
 
+export { isAuthFailure, looksSignedOut, SignInExpired } from "./auth-failure.ts";
 export { buildEnv, type GitAttribution, type GitIdentity, RUN_GIT_CONFIG } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";

@@ -1,3 +1,4 @@
+import { looksSignedOut } from "@majhi/acp";
 import type { AccountStatus } from "@majhi/shared";
 
 /** Why an agent could not start: its account is signed out or at its limit, or something else failed. */
@@ -14,8 +15,6 @@ export interface AccountProbe {
   resetsAt?: string | undefined;
 }
 
-const SIGNED_OUT =
-  /not logged in|logged out|signed out|sign in|log ?in (required|again)|run \/?login|unauthori[sz]ed|invalid (api key|credentials)|authentication (failed|required|error)|(token|session) (has )?expired|\b401\b/i;
 const LIMIT = /usage limit|rate limit|limit reached|out of (credits|usage)|quota/i;
 
 /** The first line of an error, which is what the room shows. */
@@ -42,7 +41,7 @@ export function classifyStartFailure(input: {
 }): StartFailure {
   const { account, message, probe } = input;
   if (account !== undefined) {
-    if (probe?.status === "needs-login" || (probe?.status !== "at-limit" && SIGNED_OUT.test(message)))
+    if (probe?.status === "needs-login" || (probe?.status !== "at-limit" && looksSignedOut(message)))
       return { kind: "signed-out", text: `${account} is signed out. Sign in, then resume.` };
     if (probe?.status === "at-limit" || LIMIT.test(message)) {
       const until = probe?.resetsAt === undefined ? undefined : clockOf(probe.resetsAt);
