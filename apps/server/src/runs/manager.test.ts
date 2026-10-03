@@ -237,6 +237,51 @@ describe("failures and restarts", () => {
       await fresh.cleanup().catch(() => undefined);
     }
   });
+
+  it("starts no session after shutdown, and keeps what was queued for the restart", async () => {
+    w = await taskWorld();
+    const res = await w.h.cmd("tasks.create", {
+      text: "fix api",
+      repos: [{ project: "acme-api" }],
+      start: false,
+    });
+    expect(res.body).toMatchObject({ id: "ACM-1" });
+    await runs().closeAll();
+
+    // A hook still running at shutdown wakes an agent with no run yet, and a request queues an owner message.
+    runs().notify("ACM-1", "acme-builder", "A background process ended.");
+    await send("after shutdown");
+    await runs().idle();
+    expect(w.h.runtime.starts).toEqual([]);
+    const queued = services().store.room.queuedFor("ACM-1", "acme-builder");
+    expect(queued.map((i) => (i.type === "owner" ? i.text : i.type))).toEqual(["after shutdown"]);
+  });
+
+  it("closes a session whose launch was still going when shutdown came", async () => {
+    w = await taskWorld();
+    const { runtime } = w.h;
+    const start = runtime.startSession.bind(runtime);
+    let launching = false;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    runtime.startSession = async (s) => {
+      launching = true;
+      await gate;
+      return start(s);
+    };
+    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
+    await until(() => launching, "the launch");
+
+    await runs().closeAll();
+    release();
+    await runs().idle();
+    const session = runtime.sessions[0];
+    expect(session?.closed).toBe(true);
+    expect(session?.prompts).toEqual([]);
+    expect(services().store.runs.forTask("ACM-1")).toEqual([]);
+  });
 });
 
 describe("start-up messages", () => {
