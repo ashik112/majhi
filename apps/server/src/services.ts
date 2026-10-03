@@ -532,6 +532,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     limited: limitedRun,
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
+    slotPolicy: { fair: () => autonomy.slotsFair(), owner: (task) => autonomy.ownerRuns(task) },
     onLoopEnd: (task) => autonomy.loopEnded(task),
     // Bound below: the captain's lanes are built after the task service.
     accountFor: (task, agent) => lanes.accountFor(task, agent),

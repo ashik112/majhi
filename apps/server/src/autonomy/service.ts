@@ -57,6 +57,8 @@ import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
+import { ancestorsOf } from "../tasks/planner.ts";
+import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
@@ -74,6 +76,7 @@ import {
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
+import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -560,6 +563,28 @@ export class AutonomyService {
     }
   }
 
+  /** True while the mode is On: agent slots are shared evenly across workspaces (5.18). */
+  slotsFair(): boolean {
+    try {
+      return this.repo.state().mode === "on";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * True for a task the owner runs: one the captain did not take on, or one the owner resumed by
+   * hand. Its runs go first for a slot and are never stopped to rebalance.
+   */
+  ownerRuns(task: string): boolean {
+    try {
+      const row = this.repo.task(task);
+      return row === undefined || row.resumedAt !== undefined;
+    } catch {
+      return true;
+    }
+  }
+
   /** What holds the task's runs now, without recording it. */
   holdFor(task: string): { reason: HeldReason; why: string; scope?: string } | undefined {
     const { mode, since } = this.repo.state();
@@ -608,10 +633,12 @@ export class AutonomyService {
     const found = this.deps.store.tasks.get(id);
     this.roomWait.delete(id);
     if (found !== undefined && found.status !== "done") {
-      const full = await this.noRoomFor(found);
+      const noRoom = await this.noRoomFor(found);
+      const full =
+        noRoom === undefined ? await this.repoRuleFor(found, `${id} waits.`) : `${noRoom} ${id} waits.`;
       if (full !== undefined) {
         this.roomWait.add(id);
-        this.event({ kind: "task", text: `${full} ${id} waits.`, task: id, ...orgOf(found) });
+        this.event({ kind: "task", text: full, task: id, ...orgOf(found) });
         return;
       }
     }
@@ -1086,14 +1113,17 @@ export class AutonomyService {
         : lines.every((l) => l !== undefined)
           ? lines[0]
           : undefined;
-    if (full === undefined) return undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
         : command === "tasks.create"
           ? "Filed without starting: it waits in the backlog."
           : "Split without starting: the subtasks wait in the backlog.";
-    const line = `${full} ${then}`;
+    const line =
+      full !== undefined
+        ? `${full} ${then}`
+        : await this.repoRuleCall(command, input, sections, world.org, then);
+    if (line === undefined) return undefined;
     this.event({
       kind: "decision",
       text: `${summarize(command, input)}: ${line}`,
@@ -1104,6 +1134,79 @@ export class AutonomyService {
       org: world.org,
     });
     return line;
+  }
+
+  /**
+   * The repo rule for a start the captain asked for: the one line when another task running or in
+   * review already changes one of its repos on the same base branch, with no plan showing disjoint
+   * areas. A new task (no id yet) is judged on its repos and the paths its text names.
+   */
+  private async repoRuleCall(
+    command: CommandName,
+    input: Record<string, unknown>,
+    sections: ConfigSections,
+    org: string,
+    then: string,
+  ): Promise<string | undefined> {
+    if (command === "tasks.start") {
+      const id = str(input.id);
+      const task = id === undefined ? undefined : this.deps.store.tasks.get(id);
+      return task === undefined ? undefined : this.repoRuleFor(task, then);
+    }
+    if (command !== "tasks.create" || !Array.isArray(input.repos) || input.readOnly === true)
+      return undefined;
+    const text = `${str(input.title) ?? ""}\n${str(input.text) ?? ""}`;
+    const areas = areasOf(likelyPaths(text));
+    const repos = (input.repos as { project?: unknown; base?: unknown; writes?: unknown }[]).flatMap((r) =>
+      typeof r.project === "string"
+        ? [
+            {
+              project: r.project,
+              base:
+                (typeof r.base === "string" ? r.base : undefined) ??
+                sections.projects[r.project]?.base ??
+                sections.orgs[org]?.base ??
+                "",
+              areas,
+            },
+          ]
+        : [],
+    );
+    const candidate: RepoRuleTask = { id: "", repos };
+    const label = str(input.title) ?? "this task";
+    return repoRuleLine(label, candidate, await this.writers([]), then);
+  }
+
+  /** Tasks running or in review, except `skip` (a task's own ancestors hold its work). */
+  private async writers(skip: readonly string[]): Promise<RepoRuleTask[]> {
+    const out: RepoRuleTask[] = [];
+    for (const s of this.deps.store.tasks.list(false)) {
+      if ((s.status !== "running" && s.status !== "review") || skip.includes(s.id)) continue;
+      const task = this.deps.store.tasks.get(s.id);
+      if (task === undefined) continue;
+      out.push(await this.repoUses(task));
+    }
+    return out;
+  }
+
+  private async repoUses(task: Task): Promise<RepoRuleTask> {
+    const fps = await this.deps.tasks.footprints(task).catch(() => []);
+    return {
+      id: task.id,
+      repos: task.repos
+        .filter((r) => r.writes !== false)
+        .map((r) => ({
+          project: r.project,
+          base: r.base,
+          areas: areasOf(fps.find((f) => f.project === r.project)?.paths ?? []),
+        })),
+    };
+  }
+
+  /** The repo rule for an existing task the captain starts or resumes: a line, or undefined when it may go. */
+  async repoRuleFor(task: Task, then: string): Promise<string | undefined> {
+    const skip = [task.id, ...ancestorsOf(task, (id) => this.deps.store.tasks.get(id))];
+    return repoRuleLine(task.id, await this.repoUses(task), await this.writers(skip), then);
   }
 
   /** Decides a call that would wait for the owner, while the mode is on (rule 4). */

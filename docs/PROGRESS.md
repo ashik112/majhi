@@ -1,5 +1,13 @@
 # Progress
 
+## Captain step 6: workspaces never collide (built)
+
+- **Fair slots:** while Autonomous is On, `fairOrder` (`runs/limits.ts`) orders the line for a slot: the owner's own runs first, then the workspace with the fewest running agents, with workspaces that share an account taking its slots in turn. A workspace with nothing waiting leaves its share. Nothing running is stopped. Per-account and per-task limits stay hard caps.
+- **Repo rule:** `autonomy/repo-rule.ts`. The captain's start, create-with-start and resume refuse with one line when a running or in-review task changes the same repo and base, unless the top-level areas differ. The owner's starts are not checked.
+- **Ships:** `mrs/ship-queue.ts` runs ships into the same project and branch one at a time, in order.
+- **Tests:** `runs/fair-slots.test.ts`, `autonomy/repo-rule.test.ts`, `mrs/ship-queue.test.ts`, and the repo rule through the captain's tools in `autonomy/slots.test.ts`.
+- **Left:** `tasks.split` children are not checked against the repo rule.
+
 ## One Captain page (built)
 
 The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomous switch and today's spend as a sub-row. `/captain` has the tabs Today, Chat, Log and Rules (`?tab=`); `/autonomous` redirects to the matching tab.

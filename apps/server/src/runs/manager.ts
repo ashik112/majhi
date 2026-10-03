@@ -145,6 +145,11 @@ export interface RunDeps {
    * or stopping, `limit` under a cap, with the line to say. The run then pauses with that reason.
    */
   held?: (task: string, agent: string) => Promise<{ reason: "owner" | "limit"; why: string } | undefined>;
+  /**
+   * Autonomous mode's say in the line for a slot: `fair` while it is On (slots are shared evenly
+   * across workspaces), and `owner` for a task the owner runs, which always goes first (5.18).
+   */
+  slotPolicy?: { fair(): boolean; owner(task: string): boolean };
   /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
   onLoopEnd?: (task: string, agent: string) => void;
   /**
@@ -231,6 +236,7 @@ export class RunManager {
         return run !== undefined && run.session !== undefined && !run.turning;
       },
       evict: (key) => this.evict(key),
+      fair: () => deps.slotPolicy?.fair() ?? false,
       onQueue: (positions) => this.showLine(positions),
       now: () => this.now().getTime(),
     });
@@ -1945,7 +1951,14 @@ export class RunManager {
       if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
       return true;
     }
-    const granted = await this.slots.acquire({ key, task: run.task, account: run.account ?? run.agent });
+    const task = this.deps.store.tasks.get(run.task);
+    const granted = await this.slots.acquire({
+      key,
+      task: run.task,
+      account: run.account ?? run.agent,
+      workspace: task?.org ?? "",
+      owner: this.deps.slotPolicy?.owner(run.task) ?? true,
+    });
     run.queuedNoted = false;
     if (!granted || run.closing) {
       if (granted) this.slots.release(key);

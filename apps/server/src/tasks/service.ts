@@ -105,6 +105,7 @@ import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
+import type { Footprint } from "./planning.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import {
@@ -312,6 +313,11 @@ export class TaskService {
       return open.get(id);
     };
     return pendingNotices(this.deps.store.room.waitingOnOwner(), subject);
+  }
+
+  /** What the task has changed per project, or names in its description (the repo rule reads it). */
+  footprints(task: Task): Promise<Footprint[]> {
+    return this.planner.footprints(task);
   }
 
   get(id: string): Task {
