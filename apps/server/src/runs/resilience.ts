@@ -104,6 +104,16 @@ export class Resilience {
     return org?.resume?.auto ?? settings.resume.auto;
   }
 
+  /** `resume.handoff` for the task's org: whether the fallback takes over at an account's limit. */
+  async handoffOn(task: Task): Promise<boolean> {
+    const [settings, sections] = await Promise.all([
+      this.deps.config.settings(),
+      this.deps.config.sections(),
+    ]);
+    const org = sections.orgs[task.org ?? "private"];
+    return org?.resume?.handoff ?? settings.resume.handoff;
+  }
+
   /**
    * At server start: tasks waiting on work that finished while majhi was down start, and turns
    * that were cut by the restart or a crash continue.

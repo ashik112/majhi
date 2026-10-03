@@ -4,15 +4,26 @@ import { join } from "node:path";
 import {
   getTool,
   isAuthFailure,
+  type LimitFailure,
+  limitFailure,
   type PermissionAsk,
   type PromptBlock,
   type RuntimeOptions,
   type SessionEvent,
 } from "@majhi/acp";
-import type { Attachment, HandoffVia, ProcessInfo, RoomItem, SlotCapacity, Task } from "@majhi/shared";
+import type {
+  AccountLimit,
+  Attachment,
+  HandoffVia,
+  ProcessInfo,
+  RoomItem,
+  SlotCapacity,
+  Task,
+} from "@majhi/shared";
 import { durationMs, isAutonomyChat } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
+import { limitFor } from "../accounts/status.ts";
 import type { AdminAccess } from "../admin/access.ts";
 import { ADMIN_PREAMBLE, isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
@@ -48,10 +59,11 @@ import {
   needsCompaction,
   rotationDue,
 } from "./context.ts";
-import { checkpointRepos, checkpointTurn } from "./durable.ts";
+import { buildCarry, checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
+import { handedOffLine, limitPauseText } from "./limit.ts";
 import { capacityOf, Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
@@ -167,6 +179,24 @@ export interface RunDeps {
    * cause in words when the reason alone does not say it (a start that failed).
    */
   onPaused?: (task: string, reason: PauseReason, why?: string) => void;
+  /**
+   * The account `agent` runs on in this task when a limit error holds it now, with the mark. Asked
+   * between turns, before a start.
+   */
+  accountLimit?: (
+    task: string,
+    agent: string,
+  ) => Promise<{ account: string; limit: AccountLimit } | undefined>;
+  /** A turn or a start hit the account's usage limit: marks it `at-limit` and returns the mark that holds. */
+  markLimit?: (account: string, failure: LimitFailure) => Promise<AccountLimit | undefined>;
+  /**
+   * The agent that takes `agent`'s place when its account hit its limit: its `fallback`, when it may
+   * work in the task, is signed in and not at a limit, is not on the team, and the org's
+   * `resume.handoff` is on. Else undefined.
+   */
+  fallbackFor?: (task: string, agent: string) => Promise<string | undefined>;
+  /** Puts `to` in `from`'s place in the task's team, same position and overrides. False when it could not. */
+  takeOver?: (task: string, from: string, to: string) => Promise<boolean>;
   /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
   /** A turn failed on its account's sign-in: the account is `needs-login` from now, with `detail` for Accounts. */
@@ -932,6 +962,12 @@ export class RunManager {
 
   /** Pauses the run when a budget or autonomous mode's gate holds its task. True when it paused. */
   private async pauseIfLimited(run: AgentRun): Promise<boolean> {
+    // The agent's own account is at a usage limit: the fallback takes over, or the run waits for the reset.
+    const held = await this.deps.accountLimit?.(run.task, run.agent);
+    if (held !== undefined && !run.closing) {
+      await this.handOffOrPause(run, held.account, held.limit);
+      return true;
+    }
     const why = await this.deps.limited?.(run.task, run.agent);
     if (run.closing) return false;
     // The paused card carries the cause (a daily cap, a budget, an account limit), not a side line.
@@ -939,9 +975,9 @@ export class RunManager {
       this.pause(run, "limit", why, true);
       return true;
     }
-    const held = await this.deps.held?.(run.task, run.agent);
-    if (held === undefined || run.closing) return false;
-    this.pause(run, held.reason, held.why, true);
+    const gate = await this.deps.held?.(run.task, run.agent);
+    if (gate === undefined || run.closing) return false;
+    this.pause(run, gate.reason, gate.why, true);
     return true;
   }
 
@@ -955,7 +991,7 @@ export class RunManager {
       if (run.turning || run.paused !== undefined || run.closing || run.held || run.queue.length === 0)
         continue;
       // Idle between turns, so nothing else releases the process: a budget pause can last days.
-      if ((await this.pauseIfLimited(run)) && !run.turning) {
+      if ((await this.pauseIfLimited(run)) && !run.turning && !run.closing) {
         this.evict(this.key(run.task, run.agent));
         this.setLive(run, { status: "paused", nowDoing: undefined });
       }
@@ -963,10 +999,22 @@ export class RunManager {
   }
 
   /** Runs paused by a budget, for the lift to look at. */
-  pausedForLimit(): { task: string; agent: string }[] {
+  pausedForLimit(): { task: string; agent: string; account?: string }[] {
     return [...this.runs.values()]
       .filter((r) => r.paused === "limit" && !r.closing)
-      .map((r) => ({ task: r.task, agent: r.agent }));
+      .map((r) => ({
+        task: r.task,
+        agent: r.agent,
+        ...(r.limitAccount === undefined ? {} : { account: r.limitAccount }),
+      }));
+  }
+
+  /** Says once, in the room, that a paused run's account limit passed and it waits for the owner. */
+  noteLimitReset(task: string, agent: string, text: string): void {
+    const run = this.runs.get(this.key(task, agent));
+    if (run?.paused !== "limit" || run.closing || run.limitResetSaid) return;
+    run.limitResetSaid = true;
+    this.live.system(run, "info", text);
   }
 
   /** Continues a run a budget paused: its queued prompts go on, with no extra "continue" prompt. */
@@ -992,6 +1040,8 @@ export class RunManager {
 
   private resumeQueue(run: AgentRun, why: string): void {
     run.paused = undefined;
+    run.limitAccount = undefined;
+    run.limitResetSaid = false;
     this.live.system(run, "info", `Resuming @${run.agent}: ${why}.`);
     this.deps.onResumed?.(run.task);
     if (run.turning) run.redrive = true;
@@ -1011,7 +1061,7 @@ export class RunManager {
           const failure = run.startFailure;
           // A resume of an agent that ran before tries a crashed adapter once more. A sign-in or a limit does not pass by retrying.
           if (failure !== undefined && !(failure.kind === "error" && run.resuming))
-            this.startFailed(run, failure);
+            await this.startFailed(run, failure);
           else this.resumeFailed(run, "the agent could not start");
           return;
         }
@@ -1073,10 +1123,27 @@ export class RunManager {
           run.queue.unshift(entry);
           this.live.refreshQueued(run);
         }
+        // The account hit its usage limit: the fallback takes the queue over, or the run waits for the reset.
+        const mark = run.limitMark;
+        run.limitMark = undefined;
+        if (mark !== undefined && run.account !== undefined)
+          await this.handOffOrPause(run, run.account, mark);
         return;
       }
       if (stopReason === "recovered") continue;
       if (run.paused !== undefined) break;
+      // A turn that ended with the CLI's limit line as its whole answer did not do its work.
+      if (stopReason === "end_turn" && run.account !== undefined && run.accountKind !== undefined) {
+        const said = limitFailure(undefined, run.mapper?.finalText() ?? "", run.accountKind.tool, this.now());
+        if (said !== undefined) {
+          const mark = await this.markAccountLimit(run.account, said);
+          this.markTurn(run, false, false);
+          run.queue.unshift(entry);
+          this.live.refreshQueued(run);
+          await this.handOffOrPause(run, run.account, mark);
+          return;
+        }
+      }
       // A turn limit cut it: continue in a fresh session, or pause when it keeps happening.
       if (fired !== undefined && stopReason === "cancelled") {
         if (!(await this.afterLimit(run, fired))) break;
@@ -1202,6 +1269,18 @@ export class RunManager {
         await this.signedOutMidTurn(run, run.account, said === "" ? message : said);
         return undefined;
       }
+      // The account's usage, rate or credit limit: the turn stays in flight and its prompt goes back to the queue.
+      const limit =
+        run.account === undefined || run.accountKind === undefined
+          ? undefined
+          : limitFailure(err, said, run.accountKind.tool, this.now());
+      if (limit !== undefined && run.account !== undefined) {
+        await this.checkpoint(run);
+        run.limitMark = await this.markAccountLimit(run.account, limit);
+        this.markTurn(run, false, false);
+        run.requeue = true;
+        return undefined;
+      }
       if (looksLikeNetworkError(message)) {
         run.interrupted = true;
         this.markTurn(run, false, false);
@@ -1241,6 +1320,106 @@ export class RunManager {
     // A turn cut by majhi (offline, a stall) keeps its in-flight mark, so it continues later.
     this.markTurn(run, false, run.paused === undefined);
     return stopReason;
+  }
+
+  /** Marks the account at its limit and returns the mark that holds, which a running mark can extend. */
+  private async markAccountLimit(account: string, failure: LimitFailure): Promise<AccountLimit> {
+    const marked = await this.deps.markLimit?.(account, failure).catch(() => undefined);
+    return marked ?? limitFor(failure, undefined, this.now());
+  }
+
+  /**
+   * The run's account is at a usage limit. The agent's fallback takes its place when it can (the
+   * room says so in one line); else the run pauses as `limit` with its prompts queued, and the lift
+   * resumes it at the reset.
+   */
+  private async handOffOrPause(run: AgentRun, account: string, mark: AccountLimit): Promise<void> {
+    if (await this.takeOverFor(run, mark)) return;
+    this.pauseForAccount(run, account, mark);
+  }
+
+  private pauseForAccount(run: AgentRun, account: string, mark: AccountLimit): void {
+    this.markTurn(run, false, false);
+    run.limitAccount = account;
+    run.limitResetSaid = false;
+    this.pause(run, "limit", limitPauseText(account, mark.until, this.now()), true);
+  }
+
+  /**
+   * Gives the run's work to its agent's fallback: the fallback takes its place in the team, gets a
+   * handoff note built from saved state and the queue, and the run's session ends. False when no
+   * fallback can take over, and nothing changed.
+   */
+  private async takeOverFor(run: AgentRun, mark: AccountLimit): Promise<boolean> {
+    const { deps } = this;
+    const to = await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined);
+    if (to === undefined || run.closing) return false;
+    if (!(await deps.takeOver?.(run.task, run.agent, to).catch(() => false))) return false;
+    const task = deps.store.tasks.get(run.task);
+    const next = this.runFor(run.task, to);
+    if (task !== undefined) {
+      try {
+        const built = await buildCarry(
+          deps,
+          task,
+          to,
+          undefined,
+          `@${run.agent}'s account hit its usage limit`,
+        );
+        next.carry = built.carry;
+        next.freshNext = true;
+      } catch (err) {
+        this.live.system(run, "warn", `Could not write the handoff note for @${to}: ${errorMessage(err)}`);
+      }
+    }
+    // The pending prompt goes first, then what the fallback had queued.
+    const moved = run.queue.splice(0).filter((e) => e.kind !== "fresh" && e.kind !== "processes");
+    const carried: QueueEntry[] = [];
+    for (const entry of moved) {
+      if (entry.kind === "owner" || entry.kind === "handoff") {
+        if (next.queue.some((e) => e.kind === entry.kind && "itemId" in e && e.itemId === entry.itemId))
+          continue;
+        this.retarget(run.task, entry.itemId, run.agent, to);
+      }
+      carried.push(entry);
+    }
+    if (carried.length === 0) carried.push({ kind: "continue" });
+    next.queue = [...carried, ...next.queue];
+    next.held = false;
+    next.paused = undefined;
+    this.live.system(run, "warn", handedOffLine(run.agent, to, mark.until, this.now()));
+    this.retire(run);
+    this.live.refreshQueued(next);
+    void this.drive(next);
+    return true;
+  }
+
+  /** A queued message for `from` now belongs to `to`: the room shows it as waiting for `to`. */
+  private retarget(task: string, itemId: string, from: string, to: string): void {
+    const item = this.deps.room.get(task, itemId);
+    if (item?.type === "owner" && item.queued && item.to === from) {
+      this.deps.room.post(task, itemId, { ...ownerPayload(item, {}), to });
+    } else if (item?.type === "handoff" && item.queued && item.to === from) {
+      this.deps.room.post(task, itemId, { ...handoffPayload(item), to });
+    }
+  }
+
+  /**
+   * Ends a run from inside its own loop, for a team change: what `remove` does, without waiting for
+   * the loop that is calling it.
+   */
+  private retire(run: AgentRun): void {
+    run.closing = true;
+    run.held = true;
+    run.clearTimers();
+    run.lockWait?.abort();
+    const session = run.session;
+    const runId = run.runId ?? 0;
+    this.endSession(run, "handoff");
+    void session?.close().catch(() => undefined);
+    this.deps.store.runs.setInFlight(run.task, run.agent, runId, false);
+    this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
+    this.runs.delete(this.key(run.task, run.agent));
   }
 
   /**
@@ -1761,7 +1940,7 @@ export class RunManager {
    * A start failed for a reason that retrying does not fix. The task pauses when no other agent of
    * it is up. When one is, the task goes on and the room says which agent is out.
    */
-  private startFailed(run: AgentRun, failure: StartFailure): void {
+  private async startFailed(run: AgentRun, failure: StartFailure): Promise<void> {
     const up = [...this.runs.values()].some(
       (r) =>
         r.task === run.task &&
@@ -1770,6 +1949,19 @@ export class RunManager {
         !r.closing &&
         (r.session !== undefined || WORKING.has(r.live.status)),
     );
+    // At its limit: the account is marked, and the fallback takes over, or the run waits for the reset.
+    if (failure.kind === "limit" && run.account !== undefined) {
+      const mark = await this.markAccountLimit(run.account, {
+        detail: failure.text,
+        ...(failure.resetsAt === undefined ? {} : { resetsAt: failure.resetsAt }),
+      });
+      if (run.closing) return;
+      if (await this.takeOverFor(run, mark)) return;
+      if (!up) {
+        this.pauseForAccount(run, run.account, mark);
+        return;
+      }
+    }
     if (up) {
       this.live.system(run, "warn", `@${run.agent} is out: ${failure.text}`);
       return;

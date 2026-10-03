@@ -6,6 +6,8 @@ export interface StartFailure {
   kind: "signed-out" | "limit" | "error";
   /** One line for the room: what is wrong, and for a sign-in what to do. */
   text: string;
+  /** When a failed start's limit lifts (ISO), when the account's usage says. */
+  resetsAt?: string | undefined;
 }
 
 /** What a fresh health check of the agent's account says. */
@@ -49,6 +51,7 @@ export function classifyStartFailure(input: {
         kind: "limit",
         text:
           until === undefined ? `${account} is at its limit` : `${account} is at its limit until ${until}`,
+        ...(probe?.resetsAt === undefined ? {} : { resetsAt: probe.resetsAt }),
       };
     }
   }

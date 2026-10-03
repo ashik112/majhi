@@ -157,6 +157,7 @@ describe("classifying a failed start", () => {
     ).toEqual({
       kind: "limit",
       text: "claude-acme is at its limit until 3:40 PM",
+      resetsAt,
     });
     expect(
       classifyStartFailure({ account: "claude-acme", message: "usage limit reached", probe: undefined }).text,
