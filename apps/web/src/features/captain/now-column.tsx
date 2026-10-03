@@ -1,7 +1,7 @@
 import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
 import { PRIVATE } from "@majhi/shared";
 import { Ban } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
@@ -17,47 +17,51 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { RecentLog } from "./log";
 
-// Whole rows only: the column never shows half a decision or half a task.
+// Each section shows a few whole rows; the rest open in place. The column scrolls as one.
 const SHOWN_DECISIONS = 2;
+const SHOWN_ROWS = 3;
 
-/** A box of the Now column: a heading with a count and an action, and a body that scrolls inside it. */
+/** One section of the Now column: a heading with a count and an action, then its rows. */
 function Box({
   title,
   count,
   aside,
   label,
-  className,
-  empty = false,
   children,
 }: {
-  /** Nothing to list: the box takes only the room of its note, so the others keep theirs. */
-  empty?: boolean;
   title: string;
   count?: number | undefined;
   aside?: ReactNode;
   label?: string;
-  className?: string;
   children: ReactNode;
 }) {
   return (
     <section
       aria-label={label ?? title}
-      className={cn(
-        "flex min-h-[72px] flex-[1_1_0] flex-col overflow-hidden rounded-xl",
-        GLASS,
-        className,
-        empty && "min-h-0 flex-none",
-      )}
+      className="flex min-w-0 flex-col border-b border-line px-4 py-3 last:border-b-0"
     >
-      <div className="flex min-h-9 shrink-0 items-center gap-2 px-3.5 pt-2">
+      <div className="flex min-h-7 items-center gap-2">
         <h2 className="text-base font-semibold text-fg">{title}</h2>
         {count !== undefined && <span className="tnum font-mono text-sm text-fg-faint">{count}</span>}
         {aside && <div className="ml-auto flex min-w-0 items-center gap-2 text-sm">{aside}</div>}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-2.5 scroll-fade">
-        {children}
-      </div>
+      {children}
     </section>
+  );
+}
+
+/** "Show 11 more" under a list that shows only its first rows. */
+function More({ hidden, open, onToggle }: { hidden: number; open: boolean; onToggle: () => void }) {
+  if (hidden <= 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="mt-1 cursor-pointer self-start text-sm text-blue hover:underline"
+    >
+      {open ? "Show fewer" : `Show ${hidden} more`}
+    </button>
   );
 }
 
@@ -71,7 +75,6 @@ function NeedsYou() {
     <Box
       title="Needs you"
       count={decisions === undefined ? undefined : total}
-      className="flex-none"
       aside={
         total > SHOWN_DECISIONS ? (
           <PageLink page="decisions" className="text-blue hover:underline">
@@ -157,17 +160,13 @@ function Running({
   // Running first; paused tasks follow with their badge, so one click opens them to resume.
   const running = autonomy.now.filter((t) => t.status === "running");
   const paused = autonomy.now.filter((t) => t.status === "paused");
-  const list = [...running, ...paused];
+  const all = [...running, ...paused];
+  const [open, setOpen] = useState(false);
+  const list = open ? all : all.slice(0, SHOWN_ROWS);
   const title = paused.length > 0 ? `Running ${running.length} · Paused ${paused.length}` : "Running";
   return (
-    <Box
-      title={title}
-      label="Running"
-      count={paused.length > 0 ? undefined : running.length}
-      className="max-h-[232px] flex-none"
-      empty={list.length === 0}
-    >
-      {list.length === 0 ? (
+    <Box title={title} label="Running" count={paused.length > 0 ? undefined : running.length}>
+      {all.length === 0 ? (
         <p className="text-sm text-fg-muted">Nothing running.</p>
       ) : (
         <ul className="flex flex-col">
@@ -183,6 +182,7 @@ function Running({
           ))}
         </ul>
       )}
+      <More hidden={all.length - SHOWN_ROWS} open={open} onToggle={() => setOpen(!open)} />
     </Box>
   );
 }
@@ -197,11 +197,13 @@ function Next({
   names: (org: string | undefined) => string | undefined;
 }) {
   const exclude = useExclude();
-  const list = autonomy.queue;
+  const all = autonomy.queue;
+  const [open, setOpen] = useState(false);
+  const list = open ? all : all.slice(0, SHOWN_ROWS);
   const marked = new Map(autonomy.backlog.map((b) => [b.task, b.noAutonomy]));
   return (
-    <Box title="Next" count={list.length} className="max-h-[232px] flex-none" empty={list.length === 0}>
-      {list.length === 0 ? (
+    <Box title="Next" count={all.length}>
+      {all.length === 0 ? (
         <p className="text-sm text-fg-muted">
           {autonomy.mode === "off" ? "Nothing is planned while Autonomous is off." : "Nothing planned yet."}
         </p>
@@ -237,13 +239,14 @@ function Next({
           })}
         </ol>
       )}
+      <More hidden={all.length - SHOWN_ROWS} open={open} onToggle={() => setOpen(!open)} />
     </Box>
   );
 }
 
 /**
  * The Now column: what needs the owner, what runs, what is next and what the captain did lately.
- * Each box scrolls inside itself, so the column never grows past the screen.
+ * The column scrolls as one panel; each section shows its first rows and opens the rest in place.
  */
 export function NowColumn({
   captain,
@@ -263,8 +266,14 @@ export function NowColumn({
     return captain.orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
   };
   return (
-    // The column scrolls as one panel when it does not fit; each box keeps whole rows.
-    <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain">
+    // One panel that scrolls as a whole: no box scrolls on its own, so every section is reachable.
+    <div
+      aria-label="Now"
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain rounded-2xl scroll-fade",
+        GLASS,
+      )}
+    >
       <NeedsYou />
       {autonomy ? (
         <>
@@ -277,7 +286,6 @@ export function NowColumn({
       <Box
         title="Did recently"
         label="Did recently"
-        className="min-h-[260px]"
         aside={
           <>
             {onSummary && (

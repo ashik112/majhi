@@ -803,3 +803,20 @@ test("the delegation grid toggles a cell and takes a budget", async ({ page }) =
   await budget.blur();
   expect((await saved).postDataJSON()).toMatchObject({ orgs: { goama: { cap: { cost: 25 } } } });
 });
+
+test("the Now column scrolls as one panel down to Did recently", async ({ page }) => {
+  for (const [w, h] of [
+    [1100, 760],
+    [1280, 720],
+  ] as const) {
+    await open(page, "/captain", w, h, "dark", REAL_ON);
+    const panel = page.getByLabel("Now", { exact: true });
+    const recent = page.getByRole("region", { name: "Did recently" });
+    await panel.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect(recent.locator("li").last()).toBeInViewport();
+    await recent.getByRole("heading", { name: "Did recently" }).scrollIntoViewIfNeeded();
+    await expect(recent.getByRole("heading", { name: "Did recently" })).toBeInViewport();
+    await page.screenshot({ path: `${SHOTS}/now-scrolled-${w}-dark.png` });
+    await noPageScroll(page);
+  }
+});

@@ -100,7 +100,7 @@ export function CaptainView() {
         onDelegation={() => setOpen("delegation")}
         onSummary={openSummary}
       />
-      <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
         <section
           aria-label="Conversation"
           className={`flex min-h-0 min-w-0 flex-col rounded-2xl p-4 max-[999px]:min-h-[520px] ${GLASS}`}
