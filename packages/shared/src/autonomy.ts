@@ -234,7 +234,9 @@ export const AutonomySummarySchema = z.object({
   needs: z
     .object({
       count: z.number().int().nonnegative(),
-      top: z.array(z.object({ id: z.string(), title: z.string(), org: z.string().optional() })).max(SUMMARY_TITLES),
+      top: z
+        .array(z.object({ id: z.string(), title: z.string(), org: z.string().optional() }))
+        .max(SUMMARY_TITLES),
     })
     .optional(),
   /** The first three entries of the captain's queue: what it plans next, and why. */

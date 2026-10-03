@@ -423,15 +423,86 @@ function autonomy(s: Scenario): AutonomyStatus {
       to: iso(60),
       at: iso(55),
       shipped,
+      shipGroups: ["private", "pyzasoft", "goama", "ideeza"].map((org, n) => {
+        const mine = shipped.filter((s) => s.org === org);
+        return {
+          org,
+          name: ["Private", "Pyzasoft", "Goama", "Ideeza"][n] as string,
+          count: mine.length,
+          titles: mine.slice(0, 3).map((s) => s.title),
+        };
+      }),
       spent: {
         total: { used: { tokens: 19_000_000, cost: 80.56 }, cap: { cost: 50 }, percent: 161, reached: true },
-        orgs: [],
+        orgs: [
+          {
+            org: "private",
+            name: "Private",
+            used: { tokens: 6_000_000, cost: 31.1 },
+            cap: { cost: 100 },
+            percent: 31,
+            reached: false,
+          },
+          {
+            org: "pyzasoft",
+            name: "Pyzasoft",
+            used: { tokens: 9_000_000, cost: 38.2 },
+            cap: { cost: 30 },
+            percent: 127,
+            reached: true,
+          },
+          { org: "goama", name: "Goama", used: { tokens: 3_000_000, cost: 8.4 }, percent: 0, reached: false },
+          {
+            org: "ideeza",
+            name: LONG,
+            used: { tokens: 1_000_000, cost: 2.86 },
+            cap: { cost: 20 },
+            percent: 14,
+            reached: false,
+          },
+        ],
       },
       unsure: Array.from({ length: 9 }, (_, i) => ({
-        text: `Skipped PYZ-${50 + i}: the certificates need the owner's VPN`,
+        text:
+          i === 1
+            ? `Skipped PYZ-${50 + i}: the certificates need the owner's VPN and a second signing key that only the owner holds`
+            : `Skipped PYZ-${50 + i}: the certificates need the owner's VPN`,
         task: `PYZ-${50 + i}`,
       })),
       waiting: [],
+      needs: {
+        count: 5,
+        top: [
+          {
+            id: "room:PRV-14:1",
+            title: "Ready to ship. Move the notes export to the queued worker",
+            org: "private",
+          },
+          { id: "room:PYZ-310:1", title: `Ready to ship. ${LONG_TASK}`, org: "pyzasoft" },
+          { id: "room:GOA-432:1", title: "Approve running the migration in Goama", org: "goama" },
+        ],
+      },
+      next: [
+        {
+          title: "Signed download links for finished exports",
+          task: "GOA-432",
+          org: "goama",
+          why: "Next child of the export work and it waits on nothing",
+        },
+        {
+          title: "Document the export API for partners",
+          task: "GOA-437",
+          org: "goama",
+          why: "Low priority filler for when the builders are idle",
+        },
+        {
+          title: "Tidy the README and the setup script",
+          task: "PRV-91",
+          org: "private",
+          why: "Small, cheap model",
+        },
+      ],
+      upkeep: 14,
       decisions: 23,
     },
     lastTick: iso(4),
@@ -721,6 +792,25 @@ test("the header says what is true, and the summary is one line", async ({ page 
   await expect(page.locator("#main").getByRole("switch", { name: "Autonomous" })).toBeChecked();
   const header = page.locator("header").first();
   await expect(header.getByText("Pyzasoft")).toBeVisible();
+});
+
+test("the summary sheet is short: groups, three of each list, notes expand, the time changes there", async ({
+  page,
+}) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  await page.getByRole("button", { name: /^Yesterday: shipped 30/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Daily summary" });
+  await expect(sheet.getByRole("region", { name: "Shipped" }).locator("p")).toHaveCount(5);
+  await expect(
+    sheet.getByRole("region", { name: "Needs you" }).getByRole("link", { name: "All 5 in Decisions" }),
+  ).toBeVisible();
+  await expect(sheet.getByRole("region", { name: "Next" }).locator("p")).toHaveCount(3);
+  await expect(sheet.getByText("(over)")).toHaveCount(2);
+  const notes = sheet.getByRole("region", { name: "Notes" });
+  await expect(notes.locator("p")).toHaveCount(3);
+  await notes.getByRole("button", { name: "+6 more" }).click();
+  await expect(notes.locator("p")).toHaveCount(9);
+  await expect(sheet.getByLabel("Made every day at")).toHaveValue("08:00");
 });
 
 test("Needs you shows two whole rows and links to the rest, answered inline", async ({ page }) => {

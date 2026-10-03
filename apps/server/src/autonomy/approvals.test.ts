@@ -400,7 +400,12 @@ describe("the captain's own tools", () => {
         type: "ask",
         agent: "acme-builder",
         questions: [
-          { id: "q1", question: "Which database?", options: [{ id: "pg", label: "Postgres" }], freeText: false },
+          {
+            id: "q1",
+            question: "Which database?",
+            options: [{ id: "pg", label: "Postgres" }],
+            freeText: false,
+          },
         ],
         state: "pending",
       });
@@ -410,18 +415,30 @@ describe("the captain's own tools", () => {
     ask(first);
     ask(second);
     events.typing.report(tab, first);
-    const held = await t.call("majhi_autonomy_answer", { task: first, item: "ask:db", answers: { q1: "pg" } });
+    const held = await t.call("majhi_autonomy_answer", {
+      task: first,
+      item: "ask:db",
+      answers: { q1: "pg" },
+    });
     expect(held).toEqual({
       isError: true,
       text: `waiting: you are typing in ${first}. The captain tries again when you send or leave.`,
     });
     expect(room.get(first, "ask:db")).toMatchObject({ state: "pending" });
     // Another task is not held.
-    const other = await t.call("majhi_autonomy_answer", { task: second, item: "ask:db", answers: { q1: "pg" } });
+    const other = await t.call("majhi_autonomy_answer", {
+      task: second,
+      item: "ask:db",
+      answers: { q1: "pg" },
+    });
     expect(other.isError).toBe(false);
     // Sending or leaving ends the wait.
     events.typing.report(tab, undefined);
-    const after = await t.call("majhi_autonomy_answer", { task: first, item: "ask:db", answers: { q1: "pg" } });
+    const after = await t.call("majhi_autonomy_answer", {
+      task: first,
+      item: "ask:db",
+      answers: { q1: "pg" },
+    });
     expect(after.isError).toBe(false);
   });
 });

@@ -131,7 +131,14 @@ describe("buildSummary lists", () => {
       const org = orgs[i % 4] ?? "acme";
       const id = `T-${i}`;
       tasks.set(id, { title: `Task ${i}`, ...(org === "private" ? {} : { org }) });
-      events.push({ seq: i, at: "2026-10-01T12:00:00.000Z", kind: "task", text: id, task: id, status: "done" });
+      events.push({
+        seq: i,
+        at: "2026-10-01T12:00:00.000Z",
+        kind: "task",
+        text: id,
+        task: id,
+        status: "done",
+      });
     }
     const summary = buildSummary(
       input({
@@ -163,7 +170,9 @@ describe("buildSummary lists", () => {
     const over = { used: { tokens: 9, cost: 80.56 }, cap, percent: 161, reached: true };
     const summary = buildSummary(input({ spent: { total: over, orgs: [{ ...over, org: "acme" }] } }));
     expect(summary.spent.orgs[0]).toMatchObject({ org: "acme", name: "Acme", percent: 161 });
-    expect(summaryLine(summary)).toBe("Daily summary for 2026-10-02: shipped 0, spent $80.56 of $50.00 (over).");
+    expect(summaryLine(summary)).toBe(
+      "Daily summary for 2026-10-02: shipped 0, spent $80.56 of $50.00 (over).",
+    );
   });
 });
 
@@ -288,8 +297,13 @@ describe("the daily summary", () => {
     w = await bossWorld({ real: false, runClock: () => now });
     const { h } = w;
     expect(
-      (await h.cmd("autonomy.configure", { tz: "UTC", summary_at: "08:00", orgs: { acme: { authority: RUNS } } }))
-        .status,
+      (
+        await h.cmd("autonomy.configure", {
+          tz: "UTC",
+          summary_at: "08:00",
+          orgs: { acme: { authority: RUNS } },
+        })
+      ).status,
     ).toBe(200);
     expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
     const autonomy = h.majhi.services.autonomy;

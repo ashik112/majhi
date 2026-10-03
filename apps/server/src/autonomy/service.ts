@@ -126,7 +126,10 @@ export interface AutonomyDeps {
   /** The captain's lanes (5.18): autonomous mode wakes the captain in each workspace's own. */
   lanes: Lanes;
   /** The captain's upkeep lines in a span (UTC ISO, `to` excluded), for the daily summary. */
-  upkeepBetween?: (from: string, to: string) => { chore: string; task?: string | undefined; outcome: string }[];
+  upkeepBetween?: (
+    from: string,
+    to: string,
+  ) => { chore: string; task?: string | undefined; outcome: string }[];
   /** What waits in the owner's Decisions inbox, in its order, for the daily summary. */
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */

@@ -14,6 +14,7 @@ export function Sheet({
   actions,
   onClose,
   wide = false,
+  footer,
   children,
 }: {
   title: string;
@@ -23,6 +24,8 @@ export function Sheet({
   onClose: () => void;
   /** 760 px instead of 560 px, for a table. */
   wide?: boolean;
+  /** Pinned under the body, outside its scroll. */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -47,6 +50,7 @@ export function Sheet({
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pt-3 pb-6 scroll-fade">
         {children}
       </div>
+      {footer && <footer className="shrink-0 border-t border-line-strong px-5 py-2.5">{footer}</footer>}
     </Modal>
   );
 }

@@ -223,7 +223,7 @@ On Linux (Debian 12, arm64, with no Docker and no systemd), on `2cf75320`:
 - Every action has a key: doing it twice changes nothing. Two failures in a row turn the chore off for the workspace and tell the owner; Turn on brings it back.
 - Events carry their cause: the captain's own ships, cards and lane writes start nothing.
 - Right before a push, merge, card answer or post, the workspace's choice, its hours and freezes, the stop switch and presence are read again.
-- Presence: no action in a task the owner acted in during the last 10 minutes (any non-read command naming it, or a task they just made).
+- Presence: the captain waits only while the owner is typing in that task (step 8; the 10-minute rule is gone). See SPEC 5.18.
 - "Stop the captain" (`captain.stop`) stops autonomous mode now, cancels every lane's turn and ends runs at their next step; nothing acts until `captain.resume`. Autonomous mode cannot turn on while stopped.
 
 **What the owner notices**
