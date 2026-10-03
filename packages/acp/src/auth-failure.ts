@@ -27,6 +27,25 @@ const SIGNED_OUT: readonly RegExp[] = [
   /\b(access token|token|session) (has )?expired\b/i,
 ];
 
+/**
+ * The subset that says a sign-in existed and stopped working: the token expired, was revoked or
+ * could not be refreshed. A usage read that says only "authentication required" may mean no
+ * credentials at all, which the CLI's status command already tells.
+ */
+const EXPIRED: readonly RegExp[] = [
+  /\bfailed to authenticate\b/i,
+  /\boauth (session|token)\b.*\b(expired|revoked|invalid)\b/i,
+  /\bcould not be refreshed\b/i,
+  /\brefresh token (has expired|expired|was already used|is invalid|was revoked)\b/i,
+  /\b(log|sign) ?out and (log|sign) ?in again\b/i,
+  /\b(access token|token|session) (has )?expired\b/i,
+];
+
+/** Whether an error says the sign-in expired or was revoked, rather than that there is none. */
+export function looksExpired(text: string): boolean {
+  return EXPIRED.some((re) => re.test(text));
+}
+
 /** Longer lines are an agent's prose, not a CLI's error. */
 const ERROR_LINE_MAX = 400;
 
