@@ -1,15 +1,19 @@
 import {
   type CardAction,
   type DecisionAnswerInput,
+  type DecisionDetail,
   type DecisionRecommendInput,
   type OwnerDecision,
   PRIVATE,
+  type RepoDiff,
   parseDecisionId,
   type RoomItem,
+  type ShipOptions,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
 import { buildDecisions, type DecisionSources, type Recommendation } from "./build.ts";
+import { splitReady } from "./plain.ts";
 
 /** The paths a decision is answered through: the same ones its card uses. */
 export interface DecisionActions {
@@ -18,7 +22,14 @@ export interface DecisionActions {
   answerChoice(task: string, item: string, option: string): Promise<unknown>;
   answerPermission(task: string, item: string, option: string): unknown;
   decideApproval(task: string, item: string, decision: "approve" | "reject"): Promise<unknown>;
-  cardAction(task: string, item: string, action: CardAction): Promise<unknown>;
+  /** Resolves with what each repo's merge did; the card stays pending when one failed. */
+  cardAction(
+    task: string,
+    item: string,
+    action: CardAction,
+  ): Promise<{ results?: readonly { project: string; ok: boolean; detail: string }[] | undefined }>;
+  /** The owner's words to the task's lead: the task goes back to running. */
+  askChanges(task: string, text: string, lead: string | undefined): Promise<unknown>;
   answerCap(org: string, chore: string, answer: "raise" | "leave"): Promise<unknown>;
   answerBudget(scope: string, answer: "raise" | "leave"): Promise<unknown>;
 }
@@ -39,10 +50,17 @@ export interface InboxDeps {
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
   actions: DecisionActions;
+  /** Workspace names by id, for the sentences that name one. */
+  orgNames?: () => Promise<Readonly<Record<string, string>>>;
+  /** The agent's last message in the task. */
+  lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
+  diff?: (task: string) => Promise<RepoDiff[]>;
+  shipOptions?: (task: string) => Promise<ShipOptions>;
   now?: () => Date;
 }
 
 /** Recommendations of decisions that are gone are kept this long, then forgotten. */
+const NO_NAMES: Readonly<Record<string, string>> = {};
 const KEEP_MS = 14 * 24 * 3_600_000;
 
 /**
@@ -54,7 +72,12 @@ export class InboxService {
 
   async list(org?: string): Promise<OwnerDecision[]> {
     const { deps } = this;
-    const [caps, budgets, signedOut] = await Promise.all([deps.caps(), deps.budgets(), deps.signedOut()]);
+    const [caps, budgets, signedOut, names] = await Promise.all([
+      deps.caps(),
+      deps.budgets(),
+      deps.signedOut(),
+      deps.orgNames?.() ?? NO_NAMES,
+    ]);
     const all = buildDecisions({
       items: deps.items(),
       subject: deps.subject,
@@ -62,6 +85,7 @@ export class InboxService {
       budgets,
       signedOut,
       recommendations: deps.recommendations.all(),
+      orgName: (org) => names[org],
     });
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
@@ -72,8 +96,12 @@ export class InboxService {
   async answer(input: DecisionAnswerInput): Promise<OwnerDecision[]> {
     const decision = (await this.list()).find((d) => d.id === input.id);
     if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
-    if (!decision.options.some((o) => o.id === input.option)) {
+    const option = decision.options.find((o) => o.id === input.option);
+    if (option === undefined) {
       throw new UserError(`"${input.option}" is not one of the options. Open the task to answer it.`, 400);
+    }
+    if (option.text === true && (input.text === undefined || input.text.trim() === "")) {
+      throw new UserError("Write your answer first.", 400);
     }
     const parsed = parseDecisionId(input.id);
     if (parsed === undefined) throw new UserError("That is not a decision id.", 400);
@@ -115,15 +143,108 @@ export class InboxService {
       case "approval":
         await actions.decideApproval(item.task, item.id, input.option === "reject" ? "reject" : "approve");
         return;
-      case "review":
-        await actions.cardAction(item.task, item.id, input.option === "done" ? "done" : "merge");
+      case "review": {
+        if (input.option === "changes") {
+          await actions.askChanges(item.task, (input.text ?? "").trim(), item.lead);
+          return;
+        }
+        const out = await actions.cardAction(item.task, item.id, input.option === "done" ? "done" : "merge");
+        const failed = out.results?.find((r) => !r.ok);
+        if (failed !== undefined) {
+          throw new UserError(`Could not merge ${failed.project}: ${failed.detail}`, 409);
+        }
         return;
+      }
       case "paused":
         await actions.cardAction(item.task, item.id, "resume");
         return;
       default:
         throw new UserError("That decision is answered in the task. Open it.", 400);
     }
+  }
+
+  /**
+   * What the owner needs to decide one decision without opening the task. Read for the selected
+   * decision only: the diff and the room are not free to read for every row.
+   */
+  async detail(id: string): Promise<DecisionDetail> {
+    const decision = (await this.list()).find((d) => d.id === id);
+    if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 404);
+    const { deps } = this;
+    const out: DecisionDetail = { id };
+    const parsed = parseDecisionId(id);
+    if (parsed?.kind !== "room") return out;
+    const item = deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
+    const handback = deps.lastAgentMessage?.(parsed.task);
+    if (handback !== undefined) out.handback = handback;
+    if (item?.type === "ask") {
+      out.questions = item.questions.map((q) => ({
+        question: q.question,
+        options: q.options.map((o) => o.label),
+        freeText: q.freeText,
+      }));
+    }
+    if (item?.type === "review") {
+      const workspace = decision.org === undefined ? undefined : (await deps.orgNames?.())?.[decision.org];
+      const checks = item.ready === undefined ? undefined : splitReady(item.ready, workspace).checks;
+      if (checks !== undefined) out.checks = checks;
+      if (deps.diff !== undefined) Object.assign(out, await this.readDiff(parsed.task));
+      const blocked = await this.blockedOptions(parsed.task, decision);
+      if (Object.keys(blocked).length > 0) out.blocked = blocked;
+    }
+    return out;
+  }
+
+  private async readDiff(task: string): Promise<Pick<DecisionDetail, "diff" | "repos">> {
+    let diffs: RepoDiff[];
+    try {
+      diffs = (await this.deps.diff?.(task)) ?? [];
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "unknown error";
+      return { diff: { files: 0, additions: 0, deletions: 0, top: [], uncommitted: false, error: reason } };
+    }
+    if (diffs.length === 0) return {};
+    const many = diffs.length > 1;
+    const files = diffs.flatMap((d) =>
+      d.files.map((f) => ({
+        path: many ? `${d.project}/${f.path}` : f.path,
+        additions: f.additions,
+        deletions: f.deletions,
+      })),
+    );
+    const error = diffs.find((d) => d.error !== undefined)?.error;
+    const omitted = diffs.reduce((n, d) => n + d.omitted, 0);
+    return {
+      diff: {
+        files: files.length + omitted,
+        additions: files.reduce((n, f) => n + f.additions, 0),
+        deletions: files.reduce((n, f) => n + f.deletions, 0),
+        top: [...files].sort((a, b) => b.additions + b.deletions - (a.additions + a.deletions)).slice(0, 6),
+        uncommitted: diffs.some((d) => d.uncommitted),
+        ...(error === undefined ? {} : { error }),
+      },
+      repos: diffs.map((d) => ({ project: d.project, branch: d.branch, into: d.base })),
+    };
+  }
+
+  /** Why Merge or Mark done cannot be taken now, for the options this review decision offers. */
+  private async blockedOptions(task: string, decision: OwnerDecision): Promise<Record<string, string>> {
+    const blocked: Record<string, string> = {};
+    let ship: ShipOptions;
+    try {
+      if (this.deps.shipOptions === undefined) return blocked;
+      ship = await this.deps.shipOptions(task);
+    } catch {
+      return blocked;
+    }
+    const offers = (id: string) => decision.options.some((o) => o.id === id);
+    if (offers("merge") && !ship.merge.ok) blocked.merge = ship.merge.why ?? "It cannot merge now.";
+    if (offers("done")) {
+      const left = ship.done.unshipped ?? [];
+      if (!ship.done.ok) blocked.done = ship.done.why ?? "It cannot be marked done now.";
+      else if (left.length > 0) blocked.done = "Some commits are not merged yet. Merge first.";
+    }
+    return blocked;
   }
 
   /**

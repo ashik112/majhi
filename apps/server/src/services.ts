@@ -868,6 +868,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .filter((a) => a.status === "needs-login" || a.status === "unreachable")
         .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
     recommendations: new RecommendationRepo(store.raw),
+    orgNames: async () =>
+      Object.fromEntries(Object.entries((await config.sections()).orgs).map(([id, o]) => [id, o.name])),
+    lastAgentMessage: (task) => {
+      room.flush(task);
+      for (const item of store.room.page(task, 60).items) {
+        if (item.type === "agent" && item.text.trim() !== "") {
+          return { agent: item.agent, text: item.text.trim(), at: item.at };
+        }
+      }
+      return undefined;
+    },
+    diff: (task) => tasks.diff(task),
+    shipOptions: (task) => mrs.shipOptions(task),
     actions: {
       answerAsk: (task, item, answers) => tasks.answerAsk(task, item, answers),
       answerQuestion: (task, item, choice) => tasks.answerQuestion(task, item, choice),
@@ -875,6 +888,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerPermission: (task, item, option) => tasks.answerPermission(task, item, option),
       decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
       cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
+      askChanges: (task, text, lead) =>
+        tasks.send({ task, text, attachments: [], mode: "queue", ...(lead === undefined ? {} : { agent: lead }) }),
       answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
     },

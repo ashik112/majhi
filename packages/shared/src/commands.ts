@@ -115,7 +115,12 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
-import { DecisionAnswerInputSchema, DecisionListSchema, DecisionRecommendInputSchema } from "./inbox.ts";
+import {
+  DecisionAnswerInputSchema,
+  DecisionDetailSchema,
+  DecisionListSchema,
+  DecisionRecommendInputSchema,
+} from "./inbox.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -661,6 +666,13 @@ export const commands = {
       "Answer a decision with one of its options, through the same path as its card (answer, approve, resume, raise or leave). Owner only",
     input: DecisionAnswerInputSchema,
     output: DecisionListSchema,
+  },
+  "decisions.detail": {
+    risk: "read",
+    summary:
+      "What the owner needs to decide one decision without opening its task: the agent's last message, the diff stat and top files, the branch and target, what the captain checked, the full questions, and options that cannot be taken now with the reason",
+    input: z.object({ id: z.string().min(1).max(300) }),
+    output: DecisionDetailSchema,
   },
   "decisions.recommend": {
     risk: "change",
