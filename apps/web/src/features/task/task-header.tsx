@@ -18,6 +18,7 @@ import { Brief } from "./brief";
 import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
+import { TrackerChip } from "./tracker-chip";
 
 /**
  * One line with the back link, key, status, project, org and the main action; the title; the brief;
@@ -71,6 +72,7 @@ export function TaskHeader({
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
           <span className="truncate">{org?.name ?? "No workspace"}</span>
         </span>
+        <TrackerChip task={task.id} />
         {task.kind !== "chat" && <ScheduleButton task={task} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />

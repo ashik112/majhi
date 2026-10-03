@@ -1,4 +1,4 @@
-import type { Task } from "@majhi/shared";
+import { type Task, TRACKER_LABEL } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { EllipsisVertical } from "lucide-react";
 import { useState } from "react";
@@ -8,7 +8,9 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
+import { useOrgs } from "@/lib/studio-queries";
 import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/lib/task-queries";
+import { useTrackerCommand, useTrackerLink } from "@/lib/tracker-queries";
 import { unshippedBody } from "./unshipped";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
@@ -18,6 +20,37 @@ export function TaskMenu({ task }: { task: Task }) {
   const toast = useToast();
   const open = useOpenInEditor();
   const editor = useEditorLabel();
+  const tracker = useOrgs().data?.find((o) => o.id === task.org)?.tracker;
+  const link = useTrackerLink(task.id);
+  const push = useTrackerCommand("trackers.push");
+  const unlink = useTrackerCommand("trackers.unlink");
+  const trackerItems =
+    link !== undefined
+      ? [
+          {
+            label: `Unlink from ${link.key}`,
+            onSelect: () =>
+              unlink.mutate(
+                { id: task.id },
+                { onError: (e) => toast("Could not unlink", { detail: e.message, tone: "error" }) },
+              ),
+          },
+        ]
+      : tracker !== undefined
+        ? [
+            {
+              label: `Push to ${TRACKER_LABEL[tracker.type]}`,
+              onSelect: () =>
+                push.mutate(
+                  { id: task.id },
+                  {
+                    onSuccess: (l) => toast(`Pushed to ${TRACKER_LABEL[l.type]}`, { detail: l.key }),
+                    onError: (e) => toast("Could not push", { detail: e.message, tone: "error" }),
+                  },
+                ),
+            },
+          ]
+        : [];
   return (
     <>
       <Menu
@@ -44,6 +77,7 @@ export function TaskMenu({ task }: { task: Task }) {
                 },
               ),
           },
+          ...trackerItems,
           { label: "Remove task", onSelect: () => setConfirm("remove"), tone: "danger" },
         ]}
       />
