@@ -51,7 +51,7 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 2. Cut the noise wakes. The captain can message its leads (`tasks.tell`); resolving a merge conflict follows the Merge row.
 3. Findings store, and a follow-ups playbook that imports the memory follow-ups.
 4. Own work row with Propose, and batch approval in Decisions.
-5. Project knowledge card per repo, refreshed on merge, with a readiness score.
+5. Project knowledge card per repo, refreshed on merge, with a readiness score. (Built 2026-10-04.)
 6. Playbooks as data; the upkeep chores move onto them.
 7. Checked hand-off before ship decisions.
 8. Outcomes, scorecard, trust ladder and auto-mute.
