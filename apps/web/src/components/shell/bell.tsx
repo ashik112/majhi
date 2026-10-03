@@ -8,6 +8,7 @@ import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { type AttentionItem, attentionItems } from "@/features/shell/model";
 import { useAgentIndex } from "@/lib/agent-index";
+import { useCaptainAsks } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { GLASS_STRONG } from "@/lib/glass";
@@ -23,6 +24,7 @@ function useAttentionItems(): AttentionItem[] {
   const accounts = useAccounts().data;
   const agents = useAgentIndex();
   const pending = usePendingNotices().data;
+  const asks = useCaptainAsks().data?.asks;
   const now = useNow(60_000);
   return useMemo(
     () =>
@@ -32,8 +34,9 @@ function useAttentionItems(): AttentionItem[] {
         accounts: accounts ?? [],
         now,
         pending: pending ?? [],
+        asks: asks ?? [],
       }),
-    [tasks, agents, accounts, pending, now],
+    [tasks, agents, accounts, pending, asks, now],
   );
 }
 
@@ -188,7 +191,7 @@ function NoticeRow({ item, onOpen }: { item: AttentionItem; onOpen: () => void }
               <span className="min-w-0 truncate">{item.task.chat === true ? "Chat" : item.task.title}</span>
             </>
           ) : (
-            <span>Accounts</span>
+            <span>{item.where ?? "Accounts"}</span>
           )}
         </span>
       </span>

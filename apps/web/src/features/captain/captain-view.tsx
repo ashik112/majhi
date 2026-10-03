@@ -11,7 +11,7 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { clockTime } from "@/features/autonomy/model";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
-import { useCaptainCommand, useCaptainStatus } from "@/lib/captain-queries";
+import { useCaptainAsks, useCaptainCommand, useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { badgeLetters } from "@/lib/format";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
@@ -91,6 +91,7 @@ export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
   const autonomy = useAutonomyStatus().data;
+  const asks = useCaptainAsks().data?.asks ?? [];
   const orgs = useOrgs().data ?? [];
   const accounts = useAccounts().data ?? [];
   const now = useNow(30_000);
@@ -164,6 +165,7 @@ export function CaptainView() {
                     autonomyOn={status.autonomy === "on"}
                     dayCap={autonomy?.settings.day.cost}
                     zone={zone}
+                    asks={asks.filter((a) => a.org === org.org)}
                   />
                 );
               })}

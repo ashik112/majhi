@@ -860,6 +860,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       tasks,
       runs,
       room,
+      quiet: (task) => idleWatch.quiet(task),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),

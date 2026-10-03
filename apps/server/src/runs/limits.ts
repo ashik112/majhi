@@ -1,4 +1,4 @@
-import type { LimitsSettings } from "@majhi/shared";
+import type { LimitsSettings, SlotCapacity, SlotRoom } from "@majhi/shared";
 
 /**
  * Concurrency limits on agent processes (SPEC 5.17): `agents_max` across majhi, `per_account`
@@ -104,6 +104,59 @@ export function planGrants(
   return plan;
 }
 
+/** The slots as they are now: who holds one and who waits in line. */
+export interface SlotState {
+  holders: readonly Pick<SlotRequest, "account">[];
+  waiting: readonly Pick<SlotRequest, "account">[];
+}
+
+function room(inUse: number, waiting: number, limit: number): SlotRoom {
+  return { inUse, waiting, limit, free: Math.max(0, limit - inUse - waiting) };
+}
+
+/**
+ * Free slots overall and on each account. A start waiting in line counts like one holding a slot, so
+ * a slot is free only when nobody is ahead for it. Idle holders count as in use: they keep their slot
+ * until their idle timeout. `accounts` lists the accounts to report even when nothing uses them.
+ */
+export function capacityOf(
+  state: SlotState,
+  limits: Pick<Limits, "agents_max" | "per_account">,
+  accounts: readonly string[] = [],
+): SlotCapacity {
+  const names = [
+    ...new Set([...accounts, ...state.holders.map((h) => h.account), ...state.waiting.map((w) => w.account)]),
+  ];
+  return {
+    agents: room(state.holders.length, state.waiting.length, limits.agents_max),
+    accounts: names.sort().map((account) => ({
+      account,
+      ...room(
+        state.holders.filter((h) => h.account === account).length,
+        state.waiting.filter((w) => w.account === account).length,
+        limits.per_account,
+      ),
+    })),
+  };
+}
+
+function inUseLine(r: SlotRoom): string {
+  return `${r.inUse} of ${r.limit} in use${r.waiting === 0 ? "" : `, ${r.waiting} waiting`}`;
+}
+
+/**
+ * Why a start on these accounts would only wait in line, in one line, or undefined when each of them
+ * and majhi as a whole have a free slot.
+ */
+export function noRoomLine(capacity: SlotCapacity, accounts: readonly string[]): string | undefined {
+  for (const account of [...new Set(accounts)]) {
+    const r = capacity.accounts.find((a) => a.account === account);
+    if (r !== undefined && r.free === 0) return `No free slot on ${account}: ${inUseLine(r)}.`;
+  }
+  if (capacity.agents.free === 0) return `No free agent slot: ${inUseLine(capacity.agents)}.`;
+  return undefined;
+}
+
 interface Waiter {
   req: SlotRequest;
   resolve: (granted: boolean) => void;
@@ -163,6 +216,11 @@ export class Slots {
 
   holds(key: string): boolean {
     return this.holders.has(key);
+  }
+
+  /** Who holds a slot and who waits, for `capacityOf`. */
+  state(): SlotState {
+    return { holders: [...this.holders.values()], waiting: this.waiting.map((w) => w.req) };
   }
 
   /** 1-based place in line, or undefined when not waiting. */

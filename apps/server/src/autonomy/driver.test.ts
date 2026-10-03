@@ -45,7 +45,15 @@ const STATUS: AutonomyStatus = {
  * workspaces run: Acme (lane LOCAL-1) and Globex (lane LOCAL-9).
  */
 function fakes() {
-  const state = { mode: "on" as AutonomyMode, busy: false, capped: false, chat: CHAT as string | undefined };
+  const state = {
+    mode: "on" as AutonomyMode,
+    busy: false,
+    capped: false,
+    chat: CHAT as string | undefined,
+    /** Autonomous tasks whose agents wait for a slot or start. */
+    queued: new Set<string>(),
+    running: new Set<string>(),
+  };
   const ticks: string[][] = [];
   const tickOrgs: string[] = [];
   const told: string[] = [];
@@ -81,9 +89,17 @@ function fakes() {
         toldIn.push(input.task);
       },
     },
-    runs: { working: (task: string) => (task === state.chat && state.busy ? ["boss"] : []) },
+    runs: {
+      working: (task: string) => (task === state.chat && state.busy ? ["boss"] : []),
+      busy: (task: string) => state.queued.has(task),
+    },
     room: { onWrite: () => {} },
-    store: { tasks: { get: () => undefined, list: () => [] } } as unknown as Store,
+    store: {
+      tasks: {
+        get: (id: string) => (state.running.has(id) ? { id, status: "running", org: "acme" } : undefined),
+        list: () => [],
+      },
+    } as unknown as Store,
     events: new EventHub(),
   });
   return { driver, state, ticks, tickOrgs, told, toldIn };
@@ -182,6 +198,21 @@ describe("the driver per lane", () => {
     f.driver.loopEnded(CHAT);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.toldIn).toEqual(["LOCAL-9", "LOCAL-1"]);
+  });
+});
+
+describe("the stuck check", () => {
+  it("never wakes the captain for a running task whose agents wait for a slot, only for one nobody works on", async () => {
+    const f = fakes();
+    f.state.running.add("ACM-1");
+    f.state.queued.add("ACM-1");
+    f.driver.loopEnded("ACM-1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toEqual([]);
+    f.state.queued.delete("ACM-1");
+    f.driver.loopEnded("ACM-1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toEqual([["ACM-1 is running, but no agent is working on it"]]);
   });
 });
 

@@ -48,6 +48,7 @@ import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import type { RoomService } from "../room/service.ts";
+import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
@@ -160,6 +161,8 @@ export class AutonomyService {
   private sweep: NodeJS.Timeout | undefined;
   /** Wakes the captain with ticks, and hears every mode change. */
   private driver: DriverHooks | undefined;
+  /** Tasks a resume left held because no agent slot was free; the minute sweep tries them again. */
+  private readonly roomWait = new Set<string>();
 
   constructor(private readonly deps: AutonomyDeps) {
     this.repo = new AutonomyRepo(deps.store.raw);
@@ -308,6 +311,7 @@ export class AutonomyService {
     const { mode } = this.repo.state();
     if (mode !== "off") await this.refreshHolds();
     if (mode === "stopping") await this.maybeFinishStop();
+    await this.resumeWaiting();
     this.driver?.sweep();
     await this.dailySummary();
   }
@@ -585,8 +589,21 @@ export class AutonomyService {
     this.repo.release(task);
   }
 
-  /** Restarts a task the gate held: its held runs go on, and a paused task runs again. */
+  /**
+   * Restarts a task the gate held: its held runs go on, and a paused task runs again. With no free
+   * agent slot for its accounts it stays held and goes on from the minute sweep once one is free.
+   */
   private async resumeTask(id: string, why: string): Promise<void> {
+    const found = this.deps.store.tasks.get(id);
+    this.roomWait.delete(id);
+    if (found !== undefined && found.status !== "done") {
+      const full = await this.noRoomFor(found);
+      if (full !== undefined) {
+        this.roomWait.add(id);
+        this.event({ kind: "task", text: `${full} ${id} waits.`, task: id, ...orgOf(found) });
+        return;
+      }
+    }
     this.repo.release(id);
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "done") return;
@@ -613,6 +630,30 @@ export class AutonomyService {
       this.deps.runs.notify(id, lead, "Autonomous mode resumed this task. Continue from where you stopped.");
     }
     this.event({ kind: "task", text: `${id} resumed: ${why}`, task: id, ...orgOf(task) });
+  }
+
+  /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
+  private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
+    const accountOf = new Map(
+      (await this.deps.agents.list()).flatMap((s) =>
+        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
+      ),
+    );
+    const accounts = [...new Set(task.team.flatMap((a) => accountOf.get(a) ?? []))];
+    return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+  }
+
+  /** Tasks a resume left for want of a slot go on once one is free, while the mode is on. */
+  private async resumeWaiting(): Promise<void> {
+    if (this.repo.state().mode !== "on") {
+      this.roomWait.clear();
+      return;
+    }
+    for (const id of [...this.roomWait]) {
+      const org = this.deps.store.tasks.get(id)?.org ?? PRIVATE;
+      if (capHoldFor(this.holds, org) !== undefined) continue;
+      await this.resumeTask(id, "an agent slot is free");
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -906,6 +947,61 @@ export class AutonomyService {
       this.teamAccounts(command, input, world, sections),
     );
     return hold === undefined ? undefined : `Not started: ${hold.text}. It can start when that lifts.`;
+  }
+
+  /**
+   * The captain starts or resumes a task only when its accounts and majhi have a free agent slot,
+   * counting the starts already waiting in line (5.17): with none, the start would only wait. The
+   * line says so and what happens to the task. Only the captain's own calls: the owner's starts,
+   * and agents of its tasks starting their subtasks, are never held by this.
+   */
+  async noRoom(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<string | undefined> {
+    const starts =
+      command === "tasks.start" ||
+      ((command === "tasks.create" || command === "tasks.split") && input.start === true);
+    if (!starts || (await this.callerKind(caller)) !== "boss") return undefined;
+    const { world, sections } = await this.context(caller, command, input);
+    const named = this.teamAccounts(command, input, world, sections);
+    // A new task with no team named gets one picked when it is made: it has room when any account
+    // of the workspace's agents has a free slot.
+    const candidates =
+      named.length > 0
+        ? []
+        : [
+            ...new Set(
+              Object.values(world.agents).flatMap((a) => (a.scope === world.org ? [a.account] : [])),
+            ),
+          ];
+    const capacity = await this.deps.runs.capacity([...named, ...candidates]);
+    const lines = candidates.map((a) => noRoomLine(capacity, [a]));
+    const full =
+      candidates.length === 0
+        ? noRoomLine(capacity, named)
+        : lines.every((l) => l !== undefined)
+          ? lines[0]
+          : undefined;
+    if (full === undefined) return undefined;
+    const then =
+      command === "tasks.start"
+        ? `${str(input.id) ?? "The task"} waits.`
+        : command === "tasks.create"
+          ? "Filed without starting: it waits in the backlog."
+          : "Split without starting: the subtasks wait in the backlog.";
+    const line = `${full} ${then}`;
+    this.event({
+      kind: "decision",
+      text: `${summarize(command, input)}: ${line}`,
+      task: caller.task,
+      agent: caller.agent,
+      command,
+      outcome: "left",
+      org: world.org,
+    });
+    return line;
   }
 
   /** Decides a call that would wait for the owner, while the mode is on (rule 4). */

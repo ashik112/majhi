@@ -192,3 +192,49 @@ export const CaptainChoreInputSchema = z.object({
   org: z.string().min(1).max(63),
   chore: CaptainChoreSchema,
 });
+
+/**
+ * A chore reached its daily cap in a workspace, and the captain asks the owner whether to raise it
+ * for today: one per chore, workspace and day. `kind` says which cap it reached, actions or runs.
+ * "Raise" doubles the chore's caps for that day only; "Leave it" keeps them.
+ */
+export const CaptainCapAskSchema = z.object({
+  org: z.string(),
+  chore: CaptainChoreSchema,
+  /** The workspace's day, `YYYY-MM-DD`. */
+  day: z.string(),
+  kind: z.enum(["actions", "runs"]),
+  /** The cap it reached. */
+  cap: z.number().int().positive(),
+  /** The cap for the rest of the day after "Raise". */
+  raiseTo: z.number().int().positive(),
+  /** "Pyzasoft: the captain answered its 20 questions for today. Raise the limit for today?" */
+  text: z.string(),
+  at: z.string(),
+});
+export type CaptainCapAsk = z.infer<typeof CaptainCapAskSchema>;
+
+/** `captain.asks`: what the captain asks the owner about its caps today. */
+export const CaptainAsksSchema = z.object({ asks: z.array(CaptainCapAskSchema) });
+
+export const CaptainCapAnswerInputSchema = z.object({
+  org: z.string().min(1).max(63),
+  chore: CaptainChoreSchema,
+  answer: z.enum(["raise", "leave"]),
+});
+
+/** Agent slots under the concurrency limits (5.17): held by running agents, waiting in line, free. */
+export const SlotRoomSchema = z.object({
+  inUse: z.number().int().nonnegative(),
+  waiting: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+  free: z.number().int().nonnegative(),
+});
+export type SlotRoom = z.infer<typeof SlotRoomSchema>;
+
+/** `tasks.slots`: free agent slots overall (`agents_max`) and per account (`per_account`), for planning. */
+export const SlotCapacitySchema = z.object({
+  agents: SlotRoomSchema,
+  accounts: z.array(SlotRoomSchema.extend({ account: z.string() })),
+});
+export type SlotCapacity = z.infer<typeof SlotCapacitySchema>;

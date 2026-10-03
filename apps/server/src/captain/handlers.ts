@@ -8,7 +8,9 @@ type CaptainCommand =
   | "captain.stop"
   | "captain.resume"
   | "captain.undo"
-  | "captain.choreOn";
+  | "captain.choreOn"
+  | "captain.asks"
+  | "captain.answerCap";
 
 /** The stop switch, Undo and the chores' switches are the owner's: the captain never reaches them. */
 function ownerOnly(ctx: CommandContext): void {
@@ -37,6 +39,11 @@ export function captainHandlers(captain: CaptainService): Pick<CommandHandlers, 
     "captain.choreOn": async (input, ctx) => {
       ownerOnly(ctx);
       return captain.choreOn(input.org, input.chore);
+    },
+    "captain.asks": async () => captain.asks(),
+    "captain.answerCap": async (input, ctx) => {
+      ownerOnly(ctx);
+      return captain.answerCap(input.org, input.chore, input.answer);
     },
   };
 }

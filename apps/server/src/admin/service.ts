@@ -76,6 +76,16 @@ export interface AutonomyGate {
     input: Record<string, unknown>,
     raw: Record<string, unknown>,
   ): Promise<string | undefined>;
+  /**
+   * The captain's call that would start a task while no agent slot is free for its accounts: the
+   * line that says so, ending with what happens to the task. Undefined when there is room, or the
+   * call is no captain's start.
+   */
+  noRoom(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<string | undefined>;
   decide(
     caller: AdminCaller,
     command: CommandName,
@@ -222,7 +232,8 @@ export class AdminService {
       const refused =
         (await this.autonomy.refusal(caller, command, input, ask.reason)) ??
         this.autonomy.blockedStart(command, parsed) ??
-        (await this.autonomy.heldStart(caller, command, parsed, input));
+        (await this.autonomy.heldStart(caller, command, parsed, input)) ??
+        (await this.autonomy.noRoom(caller, command, input));
       if (refused !== undefined) return error(refused);
     }
     const done = await this.execute(command, input, metaFor(caller.agent, ask.reason, caller.task));
@@ -262,6 +273,14 @@ export class AdminService {
         (await autonomy.refusal(caller, command, input, ask.reason)) ??
         autonomy.blockedStart(command, parsed);
       if (refused !== undefined) return error(refused);
+      // The captain starts work only where a slot is free (5.17): a start would only wait in line.
+      // A task it files stays in the backlog instead of starting.
+      const full = await autonomy.noRoom(caller, command, input);
+      if (full !== undefined) {
+        if (command === "tasks.start") return error(full);
+        const filed = await this.callCommand(caller, command, { ...input, start: false }, ask);
+        return filed.isError ? filed : { ...filed, text: `${filed.text}\n${full}` };
+      }
     }
     const { policy } = await this.deps.config.settings();
     const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);

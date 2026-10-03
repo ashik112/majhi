@@ -28,8 +28,13 @@ const SEEN_MAX = 2_000;
 export interface DriverDeps {
   autonomy: AutonomyService;
   tasks: Pick<TaskService, "tellAgent">;
-  runs: Pick<RunManager, "working">;
+  runs: Pick<RunManager, "working" | "busy">;
   room: Pick<RoomService, "onWrite">;
+  /**
+   * A running task where nothing waits: no owner card, no background process, no subtask that moves
+   * (the idle watch's own check). Absent: only the runs are looked at.
+   */
+  quiet?: (task: string) => boolean;
   store: Store;
   events: EventHub;
   now?: () => Date;
@@ -146,7 +151,8 @@ export class AutonomyDriver {
 
   /**
    * A run's loop ended. The captain's in a lane: a tick that waited there goes now. An autonomous
-   * task's that is still running with nobody working: the captain looks, in its workspace's lane.
+   * task's that is still running with nobody working, queued or starting, and nothing pending: the
+   * captain looks, in its workspace's lane.
    */
   loopEnded(task: string): void {
     const laneOrg = this.deps.autonomy.laneOrg(task);
@@ -159,9 +165,10 @@ export class AutonomyDriver {
     }
     if (!this.deps.autonomy.isAutonomous(task)) return;
     const found = this.deps.store.tasks.get(task);
-    if (found?.status === "running" && this.deps.runs.working(task).length === 0) {
-      this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE);
-    }
+    // Stuck only when nobody works, nobody waits for a slot or a gate, and nothing is pending.
+    if (found?.status !== "running" || this.deps.runs.busy(task)) return;
+    if (this.deps.quiet !== undefined && !this.deps.quiet(task)) return;
+    this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE);
   }
 
   /** Sends a lane's batch now, or after the captain's turn there. One send per lane at a time. */
