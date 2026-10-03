@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import type { RuntimeOptions } from "@majhi/acp";
 import {
   type AccountConfig,
+  type AccountLimit,
   type AccountModels,
   type AccountUsage,
   type AccountView,
@@ -20,7 +21,7 @@ import { SECRETS_NOT_SET_UP, type SecretStore } from "../secrets/store.ts";
 import type { AccountCache } from "./cache.ts";
 import type { AccountProbes } from "./health.ts";
 import { accountHome, accountRuntime, secretName } from "./homes.ts";
-import { statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
+import { limitActive, limitFor, statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
 import type { AccountUsageReader } from "./usage.ts";
 
 export interface AccountCreate {
@@ -45,6 +46,8 @@ export interface AccountDeps {
   onRemoving?: (id: string) => void;
   /** An account's status may have changed outside a check, so open screens refetch. */
   onChanged?: () => void;
+  /** The clock of limit marks, so tests can let time pass. */
+  now?: () => Date;
 }
 
 /** First free id of `<tool>-<org>`, `<tool>-<org>-2`, `-3`... Private accounts use `<tool>-private`. */
@@ -195,6 +198,45 @@ export class AccountService {
     return fresh;
   }
 
+  /**
+   * A run hit the account's usage or rate limit: the account is `at-limit` until the error's
+   * reset, else the full window's reset, else a short while. Returns the mark.
+   */
+  async markLimit(
+    id: string,
+    failure: { detail: string; resetsAt?: string | undefined },
+  ): Promise<AccountLimit> {
+    const cached = await this.deps.cache.get(id);
+    const limit = limitFor(failure, cached.usage, this.now(), cached.limit);
+    await this.deps.cache.setLimit(id, limit);
+    this.deps.onChanged?.();
+    return limit;
+  }
+
+  /** The mark that holds the account now, or undefined when it is not at its limit. */
+  async limitOf(id: string): Promise<AccountLimit | undefined> {
+    const { limit } = await this.deps.cache.get(id);
+    return limitActive(limit, this.now()) ? limit : undefined;
+  }
+
+  /** Clears the marks whose time has passed, and tells open screens. Returns the accounts it cleared. */
+  async expireLimits(): Promise<string[]> {
+    const { accounts } = await this.deps.config.sections();
+    const cleared: string[] = [];
+    for (const id of Object.keys(accounts)) {
+      const { limit } = await this.deps.cache.get(id);
+      if (limit === undefined || limitActive(limit, this.now())) continue;
+      await this.deps.cache.setLimit(id, undefined);
+      cleared.push(id);
+    }
+    if (cleared.length > 0) this.deps.onChanged?.();
+    return cleared;
+  }
+
+  private now(): Date {
+    return this.deps.now?.() ?? new Date();
+  }
+
   /** Whether the account is known to need a new sign-in. From the last check, never a probe. */
   async needsLogin(id: string): Promise<boolean> {
     return statusFromHealth((await this.deps.probes.cached(id)).health) === "needs-login";
@@ -233,8 +275,9 @@ export class AccountService {
       home: accountHome(this.deps.majhiHome, id),
       hiddenModels: config.hidden_models ?? [],
       agentCount: users.length,
-      status: statusFromHealthAndUsage(cached.health, cached.usage),
+      status: statusFromHealthAndUsage(cached.health, cached.usage, cached.limit, this.now()),
     };
+    if (limitActive(cached.limit, this.now())) view.limit = cached.limit;
     if (cached.signedInAs !== undefined) view.signedInAs = cached.signedInAs;
     if (cached.health !== undefined) view.lastHealth = cached.health;
     if (cached.usage !== undefined) view.usage = cached.usage;

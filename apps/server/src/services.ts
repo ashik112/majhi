@@ -334,6 +334,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
     onChanged: () => events.emit(["accounts"]),
+    now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
   const backup = new BackupService({
