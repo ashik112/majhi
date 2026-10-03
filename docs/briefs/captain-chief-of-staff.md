@@ -118,7 +118,7 @@ Each step ships on its own and is usable without the next.
 
 1. **Captain's own slot and "Captain" labels.** Smallest change, fixes the five-minute wait and "You stopped it".
 2. **One switch** (1) and the move of today's mode and stop states, with resume on turn-on.
-3. **Authority table** (2) replacing the three levels and the push and merge switches.
+3. **Authority table** (2) replacing the three levels and the push and merge switches. Built: rows stored as `authority` per workspace, old fields still read; Hub setup and the Limits screen no longer carry push and merge.
 4. **Budgets and Limits screen** (3), with budget decisions.
 5. **Decisions inbox** (4) and alerts for decisions only.
 6. **Collision rules** (7): fair slots per workspace and account, the repo rule.

@@ -388,6 +388,23 @@ for (const [w, h] of [
   }
 }
 
+for (const [w, h, theme] of [
+  [1440, 900, "dark"],
+  [1100, 760, "light"],
+  [1100, 760, "dark"],
+  [1440, 900, "light"],
+] as const) {
+  test(`the long-named workspace card ${w} ${theme}`, async ({ page }) => {
+    await open(page, "/captain", w, h, theme, { status: captain() });
+    const long = page.getByRole("region", { name: /^Northwind Traders International/ });
+    await long.scrollIntoViewIfNeeded();
+    await expect(long.getByRole("group", { name: /^Push in/ })).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/captain-long-${w}-${theme}.png` });
+    await noPageScroll(page);
+  });
+}
+
 test("captain log at 1100", async ({ page }) => {
   await open(page, "/captain", 1100, 700, "dark", { status: captain() });
   await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Log" }).click();

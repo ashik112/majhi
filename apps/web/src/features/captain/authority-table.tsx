@@ -38,7 +38,7 @@ export function AuthorityTable({ org, autonomyOn }: { org: CaptainOrg; autonomyO
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-sm text-fg-soft">Who decides in {org.name}?</span>
+        <span className="text-sm text-fg-soft">Who decides here?</span>
         <span className="flex shrink-0 items-center gap-3 text-sm">
           {AUTHORITY_PRESETS.map((preset) => (
             <button
