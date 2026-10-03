@@ -646,7 +646,7 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 | Ship finished work | A task reaches review and its checks pass | Merge and push "Captain decides": ships by the workspace's ship rule. "Ask me": asks. |
 | Approval cards | A card arrives | Answers routine ones by the workspace's Approvals rules. Risky ones and the never list go to the owner. |
 | Agents' questions | An agent asks | Answers from the brief, memory or code. Real choices go to the owner. |
-| Memory | Daily | Keeps, merges and drops waiting memories. Asks about doubtful ones. |
+| Memory | Daily, and when 10 memories wait for review in a workspace (at most four runs a day) | Keeps, merges and drops waiting memories, all of them in one run. Private also reviews global memories; a client workspace never sees them. Asks about doubtful ones. |
 | Projects | A new repo appears, and daily | Registers it in the right workspace with base and remotes. Asks when unsure. Never touches protected repos. |
 | Task triage | Daily | Sets priority and due dates, marks duplicates and stale tasks. Suggests closing; never closes. |
 | Cleanup | Daily | Removes worktrees and containers of done tasks. Never removes uncommitted work. |
@@ -670,7 +670,7 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 - One run per chore per workspace at a time. A trigger during a run joins it.
 - Every action checks the current state first, so running it twice changes nothing.
 - Two failures in a row turn that chore off for the workspace and tell the owner.
-- Daily caps per chore and workspace (for example five ships, one memory run).
+- Daily caps per chore and workspace (for example five ships, four memory runs).
 - The captain's lane rests when its budget or its account's window runs out; rules and Laya keep routine upkeep moving, judgment calls wait.
 - The Autonomous switch turns every lane's own action off at once and pauses the tasks it started.
 - A soak test with the fake agent replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails if a run passes its caps, an event re-triggers itself, or an action repeats. It runs on every merge.

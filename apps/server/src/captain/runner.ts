@@ -10,7 +10,7 @@ import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { choresOf } from "./levels.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, FAILURES_OFF, RUN_CAPS } from "./rules.ts";
+import { DAILY_CAPS, FAILURES_OFF, RUN_CAPS, runActions } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -120,8 +120,9 @@ export class ChoreRun {
   /** Ends the run when it reached a cap or the captain was stopped. */
   check(): void {
     if (this.deps.stopped()) throw new RunEnd("stopped", "Stop the captain is on");
-    if (this.actions >= RUN_CAPS.actions) {
-      throw new RunEnd("capped", `reached its cap of ${RUN_CAPS.actions} actions in one run`);
+    const actions = runActions(this.chore);
+    if (this.actions >= actions) {
+      throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
     }
     const minutes = (this.deps.now().getTime() - this.started) / 60_000;
     if (minutes >= RUN_CAPS.minutes) {

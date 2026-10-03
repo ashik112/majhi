@@ -13,7 +13,7 @@ import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, PRESENCE_MS, RUN_CAPS } from "./rules.ts";
+import { DAILY_CAPS, PRESENCE_MS, RUN_CAPS, runActions } from "./rules.ts";
 import { CaptainService } from "./service.ts";
 
 /**
@@ -523,7 +523,7 @@ describe("the captain's soak test", () => {
     // No run passed a cap, and none is left open.
     expect(runs.filter((r) => r.status === "running")).toEqual([]);
     for (const r of runs) {
-      expect(r.actions).toBeLessThanOrEqual(RUN_CAPS.actions);
+      expect(r.actions).toBeLessThanOrEqual(runActions(r.chore));
       expect(r.tokens).toBeLessThanOrEqual(RUN_CAPS.tokens);
       const minutes = (Date.parse(r.endedAt ?? r.startedAt) - Date.parse(r.startedAt)) / 60_000;
       expect(minutes).toBeLessThanOrEqual(RUN_CAPS.minutes);

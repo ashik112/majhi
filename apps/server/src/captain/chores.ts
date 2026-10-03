@@ -1,5 +1,5 @@
 import type { CaptainChore } from "@majhi/shared";
-import type { CaptainPorts, QuestionCard } from "./ports.ts";
+import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
 import { branchAllowed, presenceWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 
@@ -13,9 +13,14 @@ import type { ChoreRun } from "./runner.ts";
 const DUE_SOON_DAYS = 2;
 /** A task no one changed for this long is suggested for closing. */
 const STALE_DAYS = 30;
-/** At most this many memories per run. */
-const FACTS_PER_RUN = 20;
+/** Waiting memories are read and looked at this many at a time. */
+const FACTS_PER_CHUNK = 20;
 const DAY_MS = 86_400_000;
+
+/** The log key of the memory chore's look at one memory: a memory it looked at is not counted as waiting. */
+export function memoryKey(fact: number): string {
+  return `memory:${fact}`;
+}
 
 export function createChores(
   ports: CaptainPorts,
@@ -23,6 +28,31 @@ export function createChores(
 ): Record<CaptainChore, (run: ChoreRun) => Promise<void>> {
   /** Why presence keeps the captain out of this task now. */
   const away = (task: string) => presenceWhy(ports.ownerAt(task), now());
+
+  /** Keeps, merges or drops one waiting memory, or leaves it for the owner. */
+  const curateOne = async (run: ChoreRun, fact: PendingFact) => {
+    run.check();
+    const words = clip(fact.text, 80);
+    await run.act({
+      key: memoryKey(fact.id),
+      text: `Looked at a waiting memory: ${words}`,
+      reason: "Memories that wait are kept, merged or dropped by the captain's upkeep",
+      do: async () => {
+        const r = await ports.curate(run.org, fact);
+        const undo = r.event === undefined ? undefined : { kind: "memory" as const, event: r.event };
+        switch (r.outcome) {
+          case "kept":
+            return { text: `Kept a memory: ${words}`, undo };
+          case "merged":
+            return { text: `Merged a memory into one it repeats: ${words}`, undo };
+          case "dropped":
+            return { text: `Dropped a memory: ${words}`, undo };
+          default:
+            return { text: `Not sure about a memory, so it waits for you: ${words}`, outcome: "asked" };
+        }
+      },
+    });
+  };
 
   return {
     async ship(run) {
@@ -207,28 +237,18 @@ export function createChores(
 
     async memory(run) {
       const { org } = run;
-      for (const fact of (await ports.pendingFacts(org)).slice(0, FACTS_PER_RUN)) {
-        run.check();
-        const words = clip(fact.text, 80);
-        await run.act({
-          key: `memory:${fact.id}`,
-          text: `Looked at a waiting memory: ${words}`,
-          reason: "Memories that wait are kept, merged or dropped once a day",
-          do: async () => {
-            const r = await ports.curate(org, fact);
-            const undo = r.event === undefined ? undefined : { kind: "memory" as const, event: r.event };
-            switch (r.outcome) {
-              case "kept":
-                return { text: `Kept a memory: ${words}`, undo };
-              case "merged":
-                return { text: `Merged a memory into one it repeats: ${words}`, undo };
-              case "dropped":
-                return { text: `Dropped a memory: ${words}`, undo };
-              default:
-                return { text: `Not sure about a memory, so it waits for you: ${words}`, outcome: "asked" };
-            }
-          },
-        });
+      // Every waiting memory it has not looked at, a chunk at a time, read again before each chunk
+      // so what a step merged away is not looked at. One it looked at in this run is not tried again.
+      const looked = new Set<number>();
+      for (;;) {
+        const chunk = (await ports.pendingFacts(org))
+          .filter((f) => !looked.has(f.id) && !run.done(memoryKey(f.id)))
+          .slice(0, FACTS_PER_CHUNK);
+        if (chunk.length === 0) return;
+        for (const fact of chunk) {
+          looked.add(fact.id);
+          await curateOne(run, fact);
+        }
       }
     },
 
