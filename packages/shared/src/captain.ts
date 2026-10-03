@@ -11,12 +11,6 @@ import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
  * from running away. The rules are in docs/PROGRESS.md under Phase 13.
  */
 
-export const LEVEL_LABEL = {
-  ask: "Only when I ask",
-  tidy: "Keeps things tidy",
-  runs: "Runs it",
-} as const satisfies Record<z.infer<typeof CaptainLevelSchema>, string>;
-
 /** The upkeep chores (the table in 5.18). */
 export const CaptainChoreSchema = z.enum([
   "ship",
@@ -142,7 +136,7 @@ export const CaptainOrgSchema = z.object({
   name: z.string(),
   /** Who decides each row, defaults applied and old settings carried over. */
   authority: AuthoritySchema,
-  /** What holds now: every row is "ask" while Autonomous is not On. */
+  /** What holds now: every row but upkeep is "ask" while Autonomous is not On. */
   effective: AuthoritySchema,
   /** The settings as saved, for "More rules". */
   rules: AutonomyOrgSchema,

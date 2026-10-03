@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { CaptainPanel } from "@/features/captain/panel";
+import { Conversation } from "@/features/captain/conversation";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS_STRONG } from "@/lib/glass";
@@ -24,7 +24,7 @@ export function BossDrawer() {
     const before = document.activeElement;
     const timer = window.setTimeout(() => {
       const field = panel.current?.querySelector<HTMLElement>("textarea");
-      (field ?? panel.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'))?.focus();
+      (field ?? panel.current?.querySelector<HTMLElement>('[aria-pressed="true"]'))?.focus();
     }, 0);
     return () => {
       window.clearTimeout(timer);
@@ -36,8 +36,6 @@ export function BossDrawer() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs on the tab only
   useEffect(() => {
     if (!open) return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active.getAttribute("role") === "tab") return;
     const timer = window.setTimeout(
       () => panel.current?.querySelector<HTMLElement>("textarea")?.focus(),
       150,
@@ -64,9 +62,9 @@ export function BossDrawer() {
           <X aria-hidden="true" />
         </Button>
       </header>
-      <CaptainPanel />
+      <Conversation />
       <p className="shrink-0 text-xs text-fg-faint">
-        <Kbd>{MOD_KEY} J</Kbd> opens and closes this. Arrow keys switch tabs. Changes wait for your approval.
+        <Kbd>{MOD_KEY} J</Kbd> opens and closes this. Pick All or a workspace to choose where a message goes.
       </p>
     </aside>
   );

@@ -255,9 +255,9 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "captain-today",
-      name: "Captain: what it is doing today",
-      keywords: "autonomous autopilot away summary running next queue",
-      run: () => go(PAGE_PATH.captain, { tab: "today" }),
+      name: "Captain: what it is doing now",
+      keywords: "autonomous autopilot away summary running next queue decisions",
+      run: () => go(PAGE_PATH.captain, {}),
     },
     {
       id: "captain-log",
@@ -267,8 +267,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "captain-rules",
-      name: "Captain: rules",
-      keywords: "autonomous authority who decides what pick leave alone standing instructions",
+      name: "Captain: delegation",
+      keywords: "autonomous rules authority who decides what budget leave alone standing instructions",
       run: () => go(PAGE_PATH.captain, { tab: "rules" }),
     },
   ];

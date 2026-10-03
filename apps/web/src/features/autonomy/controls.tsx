@@ -103,11 +103,11 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
         </dl>
         {noWorkspace && (
           <p className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber text-pretty">
-            Nothing would happen yet. On the{" "}
+            Nothing would happen yet. Open{" "}
             <PageLink page="captain" search={{ tab: "rules" }} onClick={onClose} className="underline">
-              Rules tab of the Captain page
+              Delegation on the Captain page
             </PageLink>
-            , choose "Captain decides" for something in one workspace, then come back.
+            , let the captain decide something in one workspace, then come back.
           </p>
         )}
         {paused.length > 0 && (
@@ -183,7 +183,7 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
         <p className="text-base text-fg-muted text-pretty">
           {stopping
             ? "Its tasks are finishing the step they are on."
-            : "The captain stops starting work, answering and shipping by itself. It still answers when you talk to it."}
+            : "The captain stops starting work, answering and shipping by itself. It still answers when you talk to it, and keeps memory and cleanup going."}
           {working.length > 0 && !stopping && (
             <span className="text-fg-faint"> Working now: {taskList(working)}.</span>
           )}

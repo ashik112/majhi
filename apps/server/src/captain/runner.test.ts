@@ -1,4 +1,10 @@
-import { ALL_ASK, type Authority, type AutonomyMode, type CaptainCapAsk, type CaptainChore } from "@majhi/shared";
+import {
+  ALL_ASK,
+  type Authority,
+  type AutonomyMode,
+  type CaptainCapAsk,
+  type CaptainChore,
+} from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";

@@ -1,6 +1,13 @@
-import type { Authority, AuthorityRow, AutonomyOrg, AutonomyOrgPatch, Freeze } from "@majhi/shared";
+import type {
+  Authority,
+  AuthorityRow,
+  AutonomyMode,
+  AutonomyOrg,
+  AutonomyOrgPatch,
+  Freeze,
+} from "@majhi/shared";
 
-/** The rows of the authority table, in the order the page shows them. */
+/** The rows of the delegation grid, in the order it shows them. */
 export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
   "start",
   "questions",
@@ -11,19 +18,19 @@ export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
 ];
 
 export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string }> = {
-  start: { label: "Start work", hint: "Pick tasks from the backlog and start them" },
-  questions: { label: "Answer agents' questions", hint: "When the brief or the code settles them" },
-  approvals: { label: "Answer routine approval cards", hint: "Only what your rules allow" },
-  upkeep: { label: "Upkeep", hint: "Memory, projects, triage, cleanup, stuck tasks" },
-  merge: { label: "Merge", hint: "Into the base branch, after the checks pass" },
-  push: { label: "Push", hint: "Push branches and open merge requests" },
+  start: { label: "Start work", hint: "Takes tasks from the backlog" },
+  questions: { label: "Answer questions", hint: "When the brief or the code settles them" },
+  approvals: { label: "Approvals", hint: "Routine cards your rules allow" },
+  upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, stuck tasks" },
+  merge: { label: "Merge", hint: "Into the base branch, after checks pass" },
+  push: { label: "Push", hint: "Branches and merge requests" },
 };
 
-/** The two quick presets above the table. */
+/** The two quick presets in a workspace's column menu. */
 export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Authority }[] = [
   {
     label: "Hands off",
-    help: "The captain decides everything except pushing",
+    help: "Captain decides everything except pushing",
     rows: {
       start: "decide",
       questions: "decide",
@@ -112,4 +119,30 @@ export function upperFirst(text: string): string {
 export function shortDay(day: string): string {
   const d = new Date(`${day}T12:00:00Z`);
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/**
+ * The one sentence under the title that is true right now. Off: what still runs and what waits.
+ * On: what runs and what is next. Both end with how many decisions wait for the owner.
+ */
+export function statusSentence(input: {
+  mode: AutonomyMode;
+  /** Whether any workspace lets the captain do upkeep, which keeps running while Off. */
+  upkeep: boolean;
+  running: number;
+  next: number;
+  decisions: number;
+}): string {
+  const waits =
+    input.decisions === 0
+      ? "Nothing waits for you."
+      : `${input.decisions} ${input.decisions === 1 ? "decision waits" : "decisions wait"} for you.`;
+  switch (input.mode) {
+    case "off":
+      return `Off: it only answers when you ask${input.upkeep ? ", and keeps memory and cleanup going" : ""}. ${waits}`;
+    case "stopping":
+      return `Turning off: tasks finish their step, then pause. ${waits}`;
+    default:
+      return `On: ${input.running} running, ${input.next} next. ${waits}`;
+  }
 }
