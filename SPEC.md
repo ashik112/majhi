@@ -356,7 +356,7 @@ projects:
 - Working directory: the task folder `<tasks_dir>/<task-id>/`, so the agent sees every repo in the task.
 - majhi is the ACP client: it creates sessions, sends prompts, streams updates to the room, and answers permission requests according to the agent's permissions (auto-allow what is permitted, ask the owner otherwise).
 - Model and effort per run, highest priority first: the owner's override for this task, then the agent's fixed `model` and `effort`, then, for `auto`, the role's model and effort tiers (Hub setup, overridable per org and agent), moved at most one step by how much work the decision provider (5.12) rates the task, resolved against the newest models the account offers (or the agent's `models` list). When the rating does not count (the gate below), the role's tiers apply unchanged. majhi applies the choice with `session/set_config_option`. The chosen model and effort, and why, are posted as a room event and recorded on the run.
-- Attach MCP servers per agent from its `tools` list: `serena`, `majhi-memory`, `majhi-room`, `majhi-tasks`, `majhi-projects`, `majhi-connections`, `majhi-decide` (on by default for every agent, 5.12), `majhi-processes` (on for every agent, 5.15), plus any others the owner adds.
+- Attach MCP servers per agent from its `tools` list: `serena`, `majhi-memory`, `majhi-room`, `majhi-tasks`, `majhi-projects`, `majhi-connections`, `majhi-decide` (off unless the agent lists it, 5.12), `majhi-processes` (on for every agent, 5.15), plus any others the owner adds.
 
 ### 5.2 Accounts, per-agent homes and skills
 
@@ -502,7 +502,7 @@ Decision models answer typed questions against a state in one pass, with probabi
   - **Routing:** which org, repos and team a new task or tracker item belongs to (Dispatcher); whether an agent message needs the owner.
   - **Memory:** is a proposed fact a duplicate, and which scope fits it.
   - **Safety:** flag text from attachments, links or tracker items that looks like instructions to the agent. This is a warning on top of wrapping that text as data (section 6), never a replacement for it.
-  - **Any agent, as a tool.** Every agent gets the `majhi-decide` MCP tool by default (the owner can remove it per agent): `decide(state, questions)`, where each question is `choice` (pick from options), `score` (rate on a rubric) or `noul` (is this statement true). It returns typed answers, probabilities, confidence, and which provider answered. Agents use it for quick judgment calls instead of spending reasoning tokens: classify an alert, triage a log line, pick which service to check first, decide whether a finding needs the owner. Limits:
+  - **Any agent, as a tool.** An agent gets the `majhi-decide` MCP tool only when its `tools` list names it (off by default: no agent called it in five days, and its schema costs context in every session): `decide(state, questions)`, where each question is `choice` (pick from options), `score` (rate on a rubric) or `noul` (is this statement true). It returns typed answers, probabilities, confidence, and which provider answered. Agents use it for quick judgment calls instead of spending reasoning tokens: classify an alert, triage a log line, pick which service to check first, decide whether a finding needs the owner. Limits:
     - The state is trimmed to the provider's window (about 512 tokens for Laya's English checkpoint) and the answer says when it was trimmed.
     - At most 20 options per question.
     - A per-run rate limit catches loops.
