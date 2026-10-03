@@ -281,7 +281,9 @@ test("every sidebar item opens its page", async ({ page }) => {
   }
 
   // Captain opens its page, and the chat button beside it opens the drawer; Workspaces open from the switcher.
-  await nav(page).getByRole("link", { name: /^Captain/ }).click();
+  await nav(page)
+    .getByRole("link", { name: /^Captain/ })
+    .click();
   await expect(page).toHaveURL(/\/captain$/);
   const chat = nav(page).getByRole("button", { name: "Open the captain chat" });
   await chat.click();

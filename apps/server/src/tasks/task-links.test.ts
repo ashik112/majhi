@@ -16,7 +16,8 @@ const texts = async (task: string) => (await items(task)).map((i: { text?: strin
 describe("tasks.link and tasks.unlink", () => {
   it("refuses self links, a second parent, unknown tasks and cycles with the cycle named", async () => {
     w = await taskWorld();
-    for (const t of ["one api", "two api", "three api"]) await create(t, { repos: [{ project: "acme-api" }] });
+    for (const t of ["one api", "two api", "three api"])
+      await create(t, { repos: [{ project: "acme-api" }] });
     const self = await w.h.cmd("tasks.link", { task: "ACM-1", type: "depends-on", target: "ACM-1" });
     expect(self.status).toBe(409);
     expect((await w.h.cmd("tasks.link", { task: "ACM-1", type: "parent", target: "ACM-9" })).status).toBe(

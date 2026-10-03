@@ -117,7 +117,10 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   ]) {
     await expect(heading).toHaveText(step);
     // A step with nothing to do yet (git, with no projects) offers Continue instead of Skip.
-    await page.getByRole("button", { name: /^(Skip for now|Continue)$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^(Skip for now|Continue)$/ })
+      .first()
+      .click();
   }
 
   // The captain, with the suggested defaults
