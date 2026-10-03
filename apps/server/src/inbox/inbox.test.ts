@@ -324,7 +324,12 @@ describe("answering a decision", () => {
     ["room:ACM-1:ap1", "approve", undefined, "approval ACM-1 ap1 approve"],
     ["room:ACM-2:rv1", "merge", undefined, "card ACM-2 rv1 merge"],
     ["room:ACM-2:rv1", "done", undefined, "card ACM-2 rv1 done"],
-    ["room:ACM-2:rv1", "changes", "  Use the shared helper.  ", "changes ACM-2 acme-builder Use the shared helper."],
+    [
+      "room:ACM-2:rv1",
+      "changes",
+      "  Use the shared helper.  ",
+      "changes ACM-2 acme-builder Use the shared helper.",
+    ],
     ["room:ACM-2:pa1", "resume", undefined, "card ACM-2 pa1 resume"],
     ["cap:acme:memory:2026-10-04", "raise", undefined, "cap acme memory raise"],
     ["budget:acme:2026-10-04", "leave", undefined, "budget acme leave"],

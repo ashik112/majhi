@@ -102,6 +102,7 @@ export function useReviewNow(org: string, chore: CaptainRunnableChore, waiting: 
 
   // The status says when the run began and when it ended.
   const seen = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the phase and the status time re-run it
   useEffect(() => {
     const current = runs.get(key);
     if (current === undefined || current.phase === "done") {

@@ -889,7 +889,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
       cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
       askChanges: (task, text, lead) =>
-        tasks.send({ task, text, attachments: [], mode: "queue", ...(lead === undefined ? {} : { agent: lead }) }),
+        tasks.send({
+          task,
+          text,
+          attachments: [],
+          mode: "queue",
+          ...(lead === undefined ? {} : { agent: lead }),
+        }),
       answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
     },

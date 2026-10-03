@@ -9,8 +9,8 @@ import { useProjects } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { MemoryDetail } from "./memory-detail";
 import { MemoryList } from "./memory-list";
-import { MemoryReviewActions } from "./review-actions";
 import { GLOBAL, MEMORY_TABS, type MemoryTab, memoryCounts } from "./model";
+import { MemoryReviewActions } from "./review-actions";
 import { readStored, writeStored } from "./storage";
 
 const PROJECT_KEY = "majhi.memory.project";

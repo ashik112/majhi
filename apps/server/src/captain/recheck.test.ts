@@ -27,12 +27,7 @@ describe("recheck of memories handed to the owner", () => {
     const keys = (db.prepare("SELECT key FROM captain_actions ORDER BY id").all() as { key: string }[]).map(
       (r) => r.key,
     );
-    expect(keys).toEqual([
-      "memory:7:handed-before-recheck",
-      "memory:8",
-      "memory:9",
-      "ship:ready:ACM-1:abc",
-    ]);
+    expect(keys).toEqual(["memory:7:handed-before-recheck", "memory:8", "memory:9", "ship:ready:ACM-1:abc"]);
     // It does not run twice: a memory handed over again by the new rule keeps its key.
     insert(db, "memory:7", "memory", "asked", "2026-10-05T10:00:00.000Z");
     expect(migrate(db, MIGRATIONS)).toEqual([]);

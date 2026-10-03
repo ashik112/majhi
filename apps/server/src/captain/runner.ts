@@ -169,7 +169,11 @@ export class ChoreRun {
       );
     }
     const daily = dailyCaps(this.chore, this.deps.repo.capRaised(this.org, this.chore, this.ws.day)).actions;
-    if (!this.manual && daily !== undefined && this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily) {
+    if (
+      !this.manual &&
+      daily !== undefined &&
+      this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily
+    ) {
       askToRaise(this.deps, this.ws, this.chore, "actions", daily);
       throw new RunEnd(
         "capped",
@@ -374,7 +378,8 @@ export class ChoreRunner {
       }
       if (ws.rest !== undefined) return no(`${ws.name} is resting: ${ws.rest}`);
       const off = deps.repo.chore(org, chore).offAt;
-      if (off !== undefined) return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
+      if (off !== undefined)
+        return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
       const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;
       if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {
         if (!manual) {

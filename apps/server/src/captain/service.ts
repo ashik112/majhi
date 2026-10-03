@@ -485,9 +485,7 @@ export class CaptainService {
     const started = await this.runner.startNow(org, chore);
     if (!started.ran) return { started: false, text: started.why, overCap: false };
     this.deps.events.emit(["captain"]);
-    void started.done
-      .catch(() => undefined)
-      .finally(() => this.deps.events.emit(["captain"]));
+    void started.done.catch(() => undefined).finally(() => this.deps.events.emit(["captain"]));
     const label = CHORE_LABEL[chore].toLowerCase();
     return {
       started: true,

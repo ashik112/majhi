@@ -251,7 +251,9 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
         : own;
     // Reasons stored before the authority table name levels that no screen has any more.
     const chosen =
-      picked === undefined ? undefined : { ...picked, reason: plainText(picked.reason, workspace).slice(0, 600) };
+      picked === undefined
+        ? undefined
+        : { ...picked, reason: plainText(picked.reason, workspace).slice(0, 600) };
     return chosen === undefined
       ? { options }
       : { options: withPrimary(options, chosen.option), suggestion: chosen };

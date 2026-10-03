@@ -9,7 +9,7 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Message box";
+export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -103,6 +103,21 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
   { id: "board-move", keys: ["j", "k", "h", "l"], what: "Move between cards (arrows too)", group: "Board" },
+  {
+    id: "decisions-move",
+    keys: ["j", "k"],
+    what: "Next or previous decision (arrows too)",
+    group: "Decisions",
+  },
+  { id: "decisions-main", keys: ["Enter"], what: "Take the main action", group: "Decisions" },
+  {
+    id: "decisions-pick",
+    keys: ["1", "2", "3"],
+    what: "Pick the answer with that number",
+    group: "Decisions",
+  },
+  { id: "decisions-reply", keys: ["r"], what: "Write a reply", group: "Decisions" },
+  { id: "decisions-open", keys: ["o"], what: "Open the task", group: "Decisions" },
   { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
 ];
 
