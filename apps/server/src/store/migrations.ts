@@ -727,6 +727,28 @@ INSERT INTO autonomy_summaries (day, at, summary) SELECT day, at, summary FROM a
 DROP TABLE autonomy_summaries_moved;
 `,
   },
+  {
+    // A task's link to its tracker item (5.11). The org is the task's own, so a rename follows it.
+    // `stage` and `mrs` record what majhi already wrote back, so each is written once.
+    id: 118,
+    name: "tracker links",
+    sql: `
+CREATE TABLE tracker_links (
+  task TEXT PRIMARY KEY REFERENCES tasks (id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  key TEXT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  status TEXT NOT NULL,
+  stage TEXT,
+  mrs TEXT NOT NULL DEFAULT '[]',
+  synced_at TEXT NOT NULL,
+  error TEXT
+);
+CREATE INDEX tracker_links_key ON tracker_links (type, key);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
