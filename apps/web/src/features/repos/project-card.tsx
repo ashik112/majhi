@@ -168,7 +168,10 @@ function Readiness({ card }: { card: ProjectCard }) {
           {score}/{max}
         </Badge>
       </div>
-      <ul aria-label="Readiness checklist" className="m-0 flex list-none flex-col p-0">
+      <ul
+        aria-label="Readiness checklist"
+        className="m-0 grid list-none gap-x-6 gap-y-1.5 p-0 @[620px]:grid-cols-2"
+      >
         {items.map((i) => (
           <ReadinessRow key={i.id} item={i} />
         ))}
@@ -179,7 +182,7 @@ function Readiness({ card }: { card: ProjectCard }) {
 
 function ReadinessRow({ item }: { item: ReadinessItem }) {
   return (
-    <li className="flex min-w-0 items-start gap-2 border-t border-line py-1.5 text-sm first:border-t-0">
+    <li className="flex min-w-0 items-start gap-2 text-sm">
       {item.ok ? (
         <Check aria-label="Done" className="mt-0.5 size-3.5 shrink-0 text-green" />
       ) : (
@@ -188,7 +191,7 @@ function ReadinessRow({ item }: { item: ReadinessItem }) {
       <div className="flex min-w-0 flex-col">
         <span className="text-fg">{item.label}</span>
         <span className="min-w-0 text-xs text-fg-faint text-pretty">
-          {item.ok ? item.detail : `${item.detail} ${item.fix ?? ""}`}
+          {(item.ok ? item.detail : `${item.detail} ${item.fix ?? ""}`).replaceAll("`", "")}
         </span>
       </div>
     </li>
