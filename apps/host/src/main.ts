@@ -164,6 +164,7 @@ async function main(): Promise<void> {
     agent: platform.sshAgent,
     keyring: platform.keyring,
     log,
+    runtimeDir: process.env.XDG_RUNTIME_DIR,
   });
   const editorOpen = createEditorOpener({
     run: deps.run,

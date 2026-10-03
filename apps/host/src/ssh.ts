@@ -8,10 +8,10 @@
  * Logs name key files and the first characters of fingerprints, never key
  * contents and never a passphrase.
  */
-import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { collapseHome, expandHome, type SshStatus } from "@majhi/shared";
+import { collapseHome, expandHome, type SshStatus, sshUnlockCommand } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
 import type { Logger } from "./log.ts";
 import {
@@ -72,7 +72,12 @@ export interface SshDeps {
   keyring: Pick<Keyring, "read" | "write" | "remove">;
   log: Logger;
   now?: () => Date;
-  /** Where the askpass's throwaway folder goes. */
+  /**
+   * `$XDG_RUNTIME_DIR`. The askpass's throwaway folder goes there while the folder exists: it is the
+   * owner's alone, and in memory under systemd.
+   */
+  runtimeDir?: string | undefined;
+  /** Where the askpass's throwaway folder goes otherwise. Absent: the system's temp folder. */
   tmpRoot?: string;
   /** Report only: skip everything that changes the agent or the keyring. */
   dryRun?: boolean;
@@ -167,6 +172,14 @@ export function parseFingerprints(output: string): string[] {
 /** `SHA256:AbCdEfGh...` shortened for the log. */
 export function shortFingerprint(fingerprint: string): string {
   return fingerprint.replace(/^SHA256:/, "").slice(0, 8);
+}
+
+/** True when the file is there. For the askpass's own folder, which is never the owner's. */
+function onDisk(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** `text` as one single-quoted sh word. */
@@ -276,16 +289,28 @@ export function createSsh(deps: SshDeps): Ssh {
     return res.code === 0 ? parseFingerprints(res.stdout)[0] : undefined;
   }
 
+  /** `$XDG_RUNTIME_DIR` while it is a folder, else `tmpRoot`. Looked up each time: logging out removes it. */
+  async function askpassRoot(): Promise<string> {
+    const runtime = deps.runtimeDir;
+    if (runtime === undefined || !isAbsolute(runtime)) return tmpRoot;
+    const folder = await stat(runtime).then(
+      (s) => s.isDirectory(),
+      () => false,
+    );
+    return folder ? runtime : tmpRoot;
+  }
+
   /**
    * `ssh-add key` with its passphrase, through the askpass in a private folder that is removed
    * after. `wrong` when ssh-add asked again, which it does only for a wrong passphrase.
+   * `not-asked` when it stopped before it ran the askpass, so the passphrase was never tried.
    */
   async function addWithPassphrase(
     session: Session,
     key: string,
     passphrase: string,
-  ): Promise<"added" | "wrong" | "failed"> {
-    const dir = await mkdtemp(join(tmpRoot, "majhi-askpass-"));
+  ): Promise<"added" | "wrong" | "failed" | "not-asked"> {
+    const dir = await mkdtemp(join(await askpassRoot(), "majhi-askpass-"));
     try {
       await chmod(dir, 0o700);
       const script = join(dir, "askpass.sh");
@@ -299,14 +324,16 @@ export function createSsh(deps: SshDeps): Ssh {
       };
       // Apple's ssh-add keeps the passphrase in the Keychain as it adds the key.
       const args = session.keeping === "apple" ? ["--apple-use-keychain", key] : [key];
-      // The result is judged by the exit code alone. Output is dropped: it names the key and nothing we need.
+      // The result is judged by the exit code and the askpass's marks. Output is logged only when
+      // ssh-add never asked, to say why; it never holds the passphrase.
       const res = await deps.run(session.sshAdd, args, { env, timeoutMs: COMMAND_TIMEOUT_MS * 3 });
       if (res.code === 0) return "added";
-      const askedAgain = await access(join(dir, "again")).then(
-        () => true,
-        () => false,
-      );
-      return askedAgain ? "wrong" : "failed";
+      if (!(await onDisk(join(dir, "asked")))) {
+        const why = res.stderr.trim().split("\n").at(-1) || `exit ${res.code ?? "none"}`;
+        log(`ssh-add stopped before it asked for the passphrase of ${collapseHome(key, home)}: ${why}`);
+        return "not-asked";
+      }
+      return (await onDisk(join(dir, "again"))) ? "wrong" : "failed";
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -328,7 +355,7 @@ export function createSsh(deps: SshDeps): Ssh {
       log(`loaded ${label} with its kept passphrase`);
       return "added";
     }
-    if (added === "failed") {
+    if (added === "failed" || added === "not-asked") {
       log(`ssh-add could not load ${path} with its kept passphrase`);
       return "add-failed";
     }
@@ -446,7 +473,15 @@ export function createSsh(deps: SshDeps): Ssh {
     }
     const session = await openSession("The SSH agent is not running.");
     if ("error" in session) throw new SshUnlockError(session.error);
-    if ((await addWithPassphrase(session, expandHome(key, home), passphrase)) !== "added") {
+    const added = await addWithPassphrase(session, expandHome(key, home), passphrase);
+    if (added === "not-asked") {
+      // Apple's tools mean macOS. Linux and WSL2 share one command.
+      const command = sshUnlockCommand(shown, session.keeping === "apple" ? "macos" : "linux");
+      throw new SshUnlockError(
+        `The passphrase was not tried: ssh-add stopped before it asked for it. Unlock ${shown} in a terminal: ${command}`,
+      );
+    }
+    if (added !== "added") {
       log(`unlock of ${shown} failed`);
       throw new SshUnlockError(`That passphrase did not unlock ${shown}.`);
     }
