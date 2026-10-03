@@ -1,5 +1,8 @@
 # Shared by check.sh and host.sh, which source it: which OS this is, a time limit for calls that can
-# hang, and where Node 20 or newer is.
+# hang, where Node 20 or newer is, and whether systemd can run the host helper.
+
+# What majhi does without when the host helper is off.
+HELPER_OFF="no folder browser, remounts when roots change, updates, start at login, notifications or keyring copy of the secrets key"
 
 # macos, linux, wsl (Linux inside Windows, told apart like the helper's isWsl: the kernel release or
 # WSL_DISTRO_NAME) or other.
@@ -69,4 +72,20 @@ find_node() {
     fi
   done
   return 1
+}
+
+# Why systemd cannot run the host helper on Linux or WSL2, what is off then and the step that
+# turns it on, as one line. Nothing when systemd's user manager answers.
+systemd_problem() {
+  if with_timeout 5 systemctl --user show --property=Version >/dev/null 2>&1; then
+    return 0
+  fi
+  off="so the host helper is off: $HELPER_OFF, and majhi has no SSH agent for git."
+  if [ "$(host_os)" = wsl ]; then
+    printf '%s\n' "systemd is off in this distro, $off Add [boot] systemd=true to /etc/wsl.conf, run wsl --shutdown in Windows, then open the terminal and run make up again."
+  elif command -v systemctl >/dev/null 2>&1; then
+    printf '%s\n' "systemd's user manager is not answering (systemctl --user), $off Run make up from your own login session, not through su or sudo."
+  else
+    printf '%s\n' "This computer does not run systemd, $off"
+  fi
 }

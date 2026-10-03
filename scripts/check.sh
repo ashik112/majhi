@@ -9,7 +9,6 @@ set -eu
 
 OS=$(host_os)
 ENGINE_URL="https://docs.docker.com/engine/install/"
-HELPER_OFF="no folder browser, remounts when roots change, updates, start at login, notifications or keyring copy of the secrets key"
 
 fail() {
   printf '%s\n' "$*" >&2
@@ -123,11 +122,9 @@ check_warnings() {
     warn "$reason The secrets key has no copy in a keyring: export it on majhi's Health page (Export key) and keep the file safe."
   fi
 
-  if ! with_timeout 5 systemctl --user show --property=Version >/dev/null 2>&1; then
-    case $OS in
-      wsl) warn "systemd is off in this distro, so the host helper is off: $HELPER_OFF, and majhi has no SSH agent for git. Add [boot] systemd=true to /etc/wsl.conf, run wsl --shutdown in Windows, then open the terminal and run make up again." ;;
-      *) warn "systemd's user manager is not answering (systemctl --user), so the host helper is off: $HELPER_OFF, and majhi has no SSH agent for git. Run make up from your own login session, not through su or sudo." ;;
-    esac
+  problem=$(systemd_problem)
+  if [ -n "$problem" ]; then
+    warn "$problem"
   fi
 }
 

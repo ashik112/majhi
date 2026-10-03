@@ -54,7 +54,12 @@ export interface ScriptResult {
 export interface Sandbox {
   root: string;
   home: string;
+  /** The fakes. */
   bin: string;
+  /** Links to the real tools. */
+  tools: string;
+  /** The PATH a run gets unless the test passes its own: the fakes, then the tools. */
+  path: string;
   /** Writes `bin/<name>`, a /bin/sh script with this body. */
   fake(name: string, body: string): Promise<void>;
   /** Takes a fake away again, so the program is missing. */
@@ -63,6 +68,8 @@ export interface Sandbox {
   recorder(name: string, body?: string): Promise<void>;
   /** The calls a recorder saw, in order. */
   calls(name: string): Promise<string[]>;
+  /** Forgets the calls seen so far. */
+  clearCalls(): Promise<void>;
   /** Makes `uname` answer like this OS. */
   os(os: FakeOs): Promise<void>;
   run(script: string, args: string[], env?: Record<string, string>): Promise<ScriptResult>;
@@ -102,11 +109,14 @@ export async function scriptSandbox(homeName = "home"): Promise<Sandbox> {
     await chmod(path, 0o755);
   };
   const quote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
+  const defaultPath = `${bin}${delimiter}${tools}`;
 
   return {
     root,
     home,
     bin,
+    tools,
+    path: defaultPath,
     fake,
     remove: (name) => rm(join(bin, name), { force: true }),
     recorder: (name, body = "exit 0") =>
@@ -115,13 +125,17 @@ export async function scriptSandbox(homeName = "home"): Promise<Sandbox> {
       const text = await readFile(join(callsDir, name), "utf8").catch(() => "");
       return text.split("\n").filter((line) => line !== "");
     },
+    async clearCalls() {
+      await rm(callsDir, { recursive: true, force: true });
+      await mkdir(callsDir);
+    },
     os: (os) =>
       fake(
         "uname",
         `case "\${1:-}" in -r) echo ${UNAME[os].release} ;; -m) echo x86_64 ;; *) echo ${UNAME[os].system} ;; esac`,
       ),
     async run(script, args, env = {}) {
-      const options = { cwd: root, env: { PATH: `${bin}${delimiter}${tools}`, HOME: home, ...env } };
+      const options = { cwd: root, env: { PATH: defaultPath, HOME: home, ...env } };
       try {
         const { stdout, stderr } = await exec("/bin/sh", [join(SCRIPTS_DIR, script), ...args], options);
         return { code: 0, stdout, stderr };

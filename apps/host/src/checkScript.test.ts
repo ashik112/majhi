@@ -224,9 +224,13 @@ describe("scripts/check.sh: what only warns", () => {
     ]);
     await sb.os("linux");
     await docker({ info: ENGINE });
-    await sb.remove("systemctl");
     const [line] = warnings(await check());
     expect(line).toMatch(/^Warning: systemd's user manager is not answering \(systemctl --user\)/);
     expect(line).toMatch(/Run make up from your own login session, not through su or sudo\.$/);
+    // A distro without systemd has no step to take.
+    await sb.remove("systemctl");
+    expect(warnings(await check())).toEqual([
+      "Warning: This computer does not run systemd, so the host helper is off: no folder browser, remounts when roots change, updates, start at login, notifications or keyring copy of the secrets key, and majhi has no SSH agent for git.",
+    ]);
   });
 });
