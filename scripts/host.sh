@@ -28,10 +28,11 @@ LOG_DIR="$MAJHI_DIR/logs"
 RUN_DIR="$MAJHI_DIR/run"
 IMAGE="majhi-server:dev"
 REPO_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-# Remounts run `docker compose` the way `make up` did, so the helper keeps these settings, among them
-# the agent socket and Laya's GPU that `make up` picked (decisions 1 and 9 of the Linux brief), and
-# the secrets key file, which the helper also reads itself.
-PASSTHROUGH="COMPOSE_PROJECT_NAME SSH_AGENT_SOCK DOCKER_CONFIG DOCKER_HOST DOCKER_CONTEXT MAJHI_SSH_AGENT MAJHI_LAYA_GPU MAJHI_SECRETS_KEY"
+# Remounts and updates run `docker compose` the way `make up` did, so the helper keeps these settings,
+# among them the agent socket and Laya's GPU that `make up` picked (decisions 1 and 9 of the Linux
+# brief), the secrets key file, which the helper also reads itself, and Laya's mode and CUDA build
+# args, so an update rebuilds Laya too.
+PASSTHROUGH="COMPOSE_PROJECT_NAME SSH_AGENT_SOCK DOCKER_CONFIG DOCKER_HOST DOCKER_CONTEXT MAJHI_SSH_AGENT MAJHI_LAYA_GPU MAJHI_SECRETS_KEY MAJHI_LAYA MAJHI_LAYA_TORCH_INDEX MAJHI_LAYA_DEVICE"
 NL='
 '
 

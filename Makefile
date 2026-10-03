@@ -19,6 +19,8 @@ export MAJHI_SSH_AGENT := $(or $(MAJHI_SSH_AGENT),$(call dotenv,MAJHI_SSH_AGENT)
 # which run it natively (SPEC 5.12). `make up LAYA=docker` builds it on a Mac too, as the fallback;
 # `LAYA=off` skips it.
 LAYA ?= $(if $(filter Darwin-arm64,$(UNAME_S)-$(shell uname -m)),native,docker)
+# For the host helper, whose updates build and start Laya the same way.
+export MAJHI_LAYA := $(LAYA)
 export COMPOSE_PROFILES := $(if $(filter docker,$(LAYA)),laya,)
 LAYA_BUILD := $(if $(filter docker,$(LAYA)),--profile laya,)
 # `make up` gives Laya an NVIDIA GPU when Docker can use one: Docker has the NVIDIA Container Toolkit's

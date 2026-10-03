@@ -14,6 +14,12 @@ const MAX_LINES = 40;
 export const IMAGE = "majhi-server:dev";
 /** The image that ran before the last update, kept so a failed update can go back to it. */
 const PREVIOUS_IMAGE = "majhi-server:previous";
+/** Laya's image and container, built and started with the server's when Laya runs in Docker. */
+const LAYA_IMAGE = "majhi-laya:dev";
+const PREVIOUS_LAYA_IMAGE = "majhi-laya:previous";
+const LAYA_CONTAINER = "majhi-laya";
+/** PyTorch for CUDA when `.env` names no other, as in the Makefile. */
+const CUDA_TORCH_INDEX = "https://download.pytorch.org/whl/cu130";
 /** Lines of the server's log searched for why it did not start. */
 const LOG_LINES = 40;
 
@@ -90,19 +96,25 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     if (repo.dirty) await say("The folder has changes you have not committed. They are part of this build.");
 
     // The same environment `make up` gives compose, plus the commit the image should carry.
-    const env = { ...remount.env, MAJHI_COMMIT: repo.commit };
+    const base = { ...remount.env, MAJHI_COMMIT: repo.commit };
+    const laya = await layaInDocker(dockerStep({ ...remount, env: base }, "update"), base);
+    const env = laya ? await layaEnv(remount.repo, base) : base;
     const step = dockerStep({ ...remount, env }, "update");
-    const previous = await keepPrevious(step);
+    const images: Array<[string, string]> = [[IMAGE, PREVIOUS_IMAGE]];
+    if (laya) images.push([LAYA_IMAGE, PREVIOUS_LAYA_IMAGE]);
+    const previous: Kept[] = [];
+    for (const [image, keep] of images) {
+      const id = await keepPrevious(step, image, keep);
+      if (id !== undefined) previous.push({ image, id });
+    }
     const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
     await say("Building the new image. This takes a few minutes");
-    // The runner image too: agents run in it (it is never started by compose).
-    await buildWithRetries(
-      () => step("build", ["compose", "--profile", "runner", "build"], BUILD_TIMEOUT_MS),
-      {
-        say,
-        sleep: options.sleep ?? defaultSleep,
-      },
-    );
+    // The runner image too: agents run in it (it is never started by compose). Laya's as `make up` does.
+    const build = ["compose", "--profile", "runner", ...(laya ? ["--profile", "laya"] : []), "build"];
+    await buildWithRetries(() => step("build", build, BUILD_TIMEOUT_MS), {
+      say,
+      sleep: options.sleep ?? defaultSleep,
+    });
 
     try {
       await ensureSecretsKey(options, env, say);
@@ -110,12 +122,13 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     } catch (err) {
       const reason = await crashReason(step);
       if (reason !== undefined) await say(`The new majhi said: ${reason}`);
+      const server = previous.some((kept) => kept.image === IMAGE);
       await say(
-        previous === undefined
-          ? "No previous version to go back to"
-          : "The new majhi did not start. Going back to the previous version",
+        server
+          ? "The new majhi did not start. Going back to the previous version"
+          : "No previous version to go back to",
       );
-      if (previous !== undefined) {
+      if (server) {
         await goBack(step, remount.repo, previous, mounts).then(
           () => say("Went back to the previous version"),
           (back: unknown) => say(`Could not go back: ${errorMessage(back).split("\n", 1)[0]}`),
@@ -207,23 +220,65 @@ function defaultSleep(ms: number): Promise<void> {
 
 type Step = ReturnType<typeof dockerStep>;
 
+/** An image that ran before the update: its tag and the id the tag pointed at. */
+interface Kept {
+  image: string;
+  id: string;
+}
+
+/**
+ * Whether `make up` runs Laya in Docker. It records its mode in MAJHI_LAYA. A helper installed
+ * before that has no record: Laya is in Docker when `make up` gave it the GPU or its container exists.
+ */
+async function layaInDocker(step: Step, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const mode = env.MAJHI_LAYA?.trim();
+  if (mode) return mode === "docker";
+  if (env.MAJHI_LAYA_GPU === "nvidia") return true;
+  return step(
+    "find Laya's container",
+    ["container", "inspect", "--format", "{{.Id}}", LAYA_CONTAINER],
+    KEY_TIMEOUT_MS,
+  )
+    .then((out) => out.trim() !== "")
+    .catch(() => false);
+}
+
+/**
+ * The environment that builds and starts Laya as `make up` does: its profile, so `up` recreates it,
+ * and on an NVIDIA GPU the CUDA build args. `make up` records those; without the record they are
+ * worked out as the Makefile does, and a torch index in `.env` reaches compose on its own.
+ */
+async function layaEnv(repo: string, env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
+  const profiles = (env.COMPOSE_PROFILES ?? "").split(",").filter((p) => p !== "" && p !== "laya");
+  const out: NodeJS.ProcessEnv = { ...env, COMPOSE_PROFILES: [...profiles, "laya"].join(",") };
+  if (env.MAJHI_LAYA_GPU !== "nvidia") return out;
+  out.MAJHI_LAYA_DEVICE ||= "cuda";
+  if (!out.MAJHI_LAYA_TORCH_INDEX) {
+    const dotenv = await readFile(join(repo, ".env"), "utf8").catch(() => "");
+    if (!/^\s*MAJHI_LAYA_TORCH_INDEX\s*=/m.test(dotenv)) out.MAJHI_LAYA_TORCH_INDEX = CUDA_TORCH_INDEX;
+  }
+  return out;
+}
+
 /** Tags the image majhi runs now, so the build cannot orphan it. Undefined when there is none yet. */
-async function keepPrevious(step: Step): Promise<string | undefined> {
+async function keepPrevious(step: Step, image: string, keep: string): Promise<string | undefined> {
   const id = await step(
     "find the running image",
-    ["image", "inspect", "--format", "{{.Id}}", IMAGE],
+    ["image", "inspect", "--format", "{{.Id}}", image],
     KEY_TIMEOUT_MS,
   )
     .then((out) => out.trim())
     .catch(() => "");
   if (id === "") return undefined;
-  await step("keep the running image", ["tag", id, PREVIOUS_IMAGE], KEY_TIMEOUT_MS);
+  await step("keep the running image", ["tag", id, keep], KEY_TIMEOUT_MS);
   return id;
 }
 
-/** Puts the previous image and mounts back and starts majhi on them. */
-async function goBack(step: Step, repo: string, previous: string, mounts: string | undefined): Promise<void> {
-  await step("go back to the previous image", ["tag", previous, IMAGE], KEY_TIMEOUT_MS);
+/** Puts the previous images and mounts back and starts majhi on them. */
+async function goBack(step: Step, repo: string, previous: Kept[], mounts: string | undefined): Promise<void> {
+  for (const { image, id } of previous) {
+    await step("go back to the previous image", ["tag", id, image], KEY_TIMEOUT_MS);
+  }
   if (mounts !== undefined) {
     const target = join(repo, OVERRIDE_FILE);
     const temp = `${target}.${process.pid}.tmp`;
