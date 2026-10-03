@@ -46,8 +46,8 @@ const ORGS = `orgs:
     key: GLX
     base: develop
     identity:
-      name: Ashik
-      email: ashik@globex.example
+      name: Owner
+      email: owner@globex.example
   acme:
     name: Acme
     color: "#f0b455"

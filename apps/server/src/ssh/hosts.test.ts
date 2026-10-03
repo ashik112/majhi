@@ -6,7 +6,7 @@ import { classifyProbe, probeHosts, SshHostProbe, type SshRun, sshTargetOf, sshT
 
 describe("sshTargetOf", () => {
   it("keeps the alias or user@host of ssh remotes, and skips the rest", () => {
-    expect(sshTargetOf("gitlab-ashik112:group/repo.git")).toBe("gitlab-ashik112");
+    expect(sshTargetOf("gitlab-acme:group/repo.git")).toBe("gitlab-acme");
     expect(sshTargetOf("git@github.com:o/r.git")).toBe("git@github.com");
     expect(sshTargetOf("ssh://git@host.test:2222/o/r.git")).toBe("git@host.test");
     expect(sshTargetOf("ssh://host.test/o/r.git")).toBe("host.test");
@@ -88,8 +88,8 @@ describe("sshTargets", () => {
       await writeFile(join(dir, name, ".git", "config"), text);
       return join(dir, name);
     };
-    const a = await repo("a", ["gitlab-ashik112:g/a.git", "https://github.com/o/a.git"]);
-    const b = await repo("b", ["gitlab-ashik112:g/b.git", "git@github.com:o/b.git"]);
-    expect(await sshTargets([a, b, join(dir, "missing")])).toEqual(["git@github.com", "gitlab-ashik112"]);
+    const a = await repo("a", ["gitlab-acme:g/a.git", "https://github.com/o/a.git"]);
+    const b = await repo("b", ["gitlab-acme:g/b.git", "git@github.com:o/b.git"]);
+    expect(await sshTargets([a, b, join(dir, "missing")])).toEqual(["git@github.com", "gitlab-acme"]);
   });
 });

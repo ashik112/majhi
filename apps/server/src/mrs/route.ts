@@ -104,7 +104,7 @@ export function ownerOf(url: string): string {
   return repoSlug(url).split("/").slice(0, -1).join("/");
 }
 
-/** One plain line for the choices: `ashik-sample via github.com key`. */
+/** One plain line for the choices: `acme-dev via github.com key`. */
 export function describeLogin(host: string, login: GitLogin): string {
   return `${login.account} via ${login.alias ?? host} key`;
 }

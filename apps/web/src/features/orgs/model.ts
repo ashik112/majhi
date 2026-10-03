@@ -131,7 +131,7 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   return { ok: true, input: Object.keys(input).length > 1 ? input : undefined };
 }
 
-/** "Ashik <ashik@globex.example>", or undefined when no identity is set. */
+/** "Owner <owner@globex.example>", or undefined when no identity is set. */
 export function identityLabel(org: Pick<OrgView, "identity">): string | undefined {
   return org.identity ? `${org.identity.name} <${org.identity.email}>` : undefined;
 }

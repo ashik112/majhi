@@ -12,9 +12,9 @@ describe("parseGreeting", () => {
   it("reads the account from each host's greeting", () => {
     expect(
       parseGreeting(
-        "Hi ashik-sample! You've successfully authenticated, but GitHub does not provide shell access.",
+        "Hi acme-dev! You've successfully authenticated, but GitHub does not provide shell access.",
       ),
-    ).toBe("ashik-sample");
+    ).toBe("acme-dev");
     expect(parseGreeting("Welcome to GitLab, @acme-dev!")).toBe("acme-dev");
     expect(parseGreeting("logged in as globex-ci.\n\nYou can use git to connect to Bitbucket.")).toBe(
       "globex-ci",
