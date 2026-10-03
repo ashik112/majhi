@@ -1,5 +1,4 @@
-import type { RunFn } from "./ssh.ts";
-import { notificationScript, plainLine } from "./startup.ts";
+import type { Notifier } from "./platform/types.ts";
 
 export interface NotifyParams {
   title: string;
@@ -8,18 +7,6 @@ export interface NotifyParams {
   sound: boolean;
 }
 
-export interface NotifyDeps {
-  run: RunFn;
-  env: Record<string, string>;
-  /** `terminal-notifier`, when installed: the only way a click can open a page. */
-  terminalNotifier: string | undefined;
-  /** majhi's address, like http://127.0.0.1:7070. */
-  baseUrl: string;
-}
-
-const OSASCRIPT = "/usr/bin/osascript";
-const NOTIFY_TIMEOUT_MS = 10_000;
-
 /** The page a click opens: majhi's address and a path. Anything but a plain path gives nothing. */
 export function clickUrl(baseUrl: string, path: string | undefined): string | undefined {
   if (path === undefined || !/^\/(?!\/)/.test(path)) return undefined;
@@ -27,29 +14,30 @@ export function clickUrl(baseUrl: string, path: string | undefined): string | un
   return url.origin === new URL(baseUrl).origin ? url.href : undefined;
 }
 
+/** Text that is safe in any notifier: no control characters, one line, a bounded length. */
+export function plainLine(text: string, max = 300): string {
+  let flat = "";
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    flat += code < 32 || code === 127 || code === 0x2028 || code === 0x2029 ? " " : ch;
+  }
+  flat = flat.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 /**
- * Shows a notification. With `terminal-notifier` a click opens majhi at the page; `osascript` cannot
- * carry a click, so without it the notification shows and a click does nothing.
+ * Shows a notification through the OS's notifier, as plain lines, with a click that can open only a
+ * majhi page. `baseUrl` is majhi's address, like http://127.0.0.1:7070.
  */
-export async function showNotification(
-  deps: NotifyDeps,
+export function showNotification(
+  notifier: Notifier,
+  baseUrl: string,
   params: NotifyParams,
 ): Promise<{ clickable: boolean }> {
-  const url = clickUrl(deps.baseUrl, params.path);
-  const title = plainLine(params.title, 120);
-  const message = plainLine(params.message);
-  if (deps.terminalNotifier !== undefined && url !== undefined) {
-    const args = ["-title", title, "-message", message, "-open", url, "-group", "majhi"];
-    if (params.sound) args.push("-sound", "Glass");
-    const done = await deps.run(deps.terminalNotifier, args, { env: deps.env, timeoutMs: NOTIFY_TIMEOUT_MS });
-    if (done.code === 0) return { clickable: true };
-  }
-  const done = await deps.run(
-    OSASCRIPT,
-    ["-e", notificationScript(message, { title, sound: params.sound })],
-    { env: deps.env, timeoutMs: NOTIFY_TIMEOUT_MS },
-  );
-  if (done.code !== 0)
-    throw new Error("macOS did not show the notification. Check System Settings, Notifications.");
-  return { clickable: false };
+  return notifier.show({
+    title: plainLine(params.title, 120),
+    message: plainLine(params.message),
+    url: clickUrl(baseUrl, params.path),
+    sound: params.sound,
+  });
 }
