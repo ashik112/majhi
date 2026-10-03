@@ -864,7 +864,7 @@ WHERE status = 'paused'
     // The project knowledge card (SPEC 5.18, captain v2): one JSON card per project, rewritten when
     // the base branch moves. facts_hash tells whether the facts changed, so the model's paragraph is
     // only rewritten when they did.
-    id: 126,
+    id: 127,
     name: "project cards",
     sql: `
 CREATE TABLE project_cards (
