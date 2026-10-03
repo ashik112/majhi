@@ -28,6 +28,10 @@ const list = async (world: BossWorld, org?: string): Promise<Finding[]> =>
 describe("findings through a captain turn", () => {
   it("reports a finding twice (one finding), then proposes a task that waits in the inbox", async () => {
     const { w: world, h, chat } = await lane();
+    // The project card files its own readiness findings first; the turn's finding is the next id.
+    expect((await h.cmd("projects.cardRefresh", { project: "acme-api" })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 50));
+    const next = Math.max(0, ...(await list(world)).map((f) => f.id)) + 1;
     const script = await captainScript(
       world,
       [
@@ -56,7 +60,7 @@ describe("findings through a captain turn", () => {
                 reason: "seen again",
               },
             },
-            { tool: "majhi_findings_toTask", args: { id: 1, reason: "worth fixing" } },
+            { tool: "majhi_findings_toTask", args: { id: next, reason: "worth fixing" } },
             { say: "Reported and proposed." },
           ],
         },
