@@ -9,6 +9,7 @@ import { useProjects } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { MemoryDetail } from "./memory-detail";
 import { MemoryList } from "./memory-list";
+import { MemoryReviewActions } from "./review-actions";
 import { GLOBAL, MEMORY_TABS, type MemoryTab, memoryCounts } from "./model";
 import { readStored, writeStored } from "./storage";
 
@@ -76,7 +77,14 @@ export function MemoryView() {
       <PageHeader
         title="Memory"
         subtitle="What majhi keeps per project: a short brief, a record of each finished task, what those tasks left open, and lessons."
-      />
+      >
+        <MemoryReviewActions
+          facts={facts.data ?? []}
+          projectOrgs={projectOrgs}
+          orgs={orgs.data ?? []}
+          selected={selected}
+        />
+      </PageHeader>
       {failed ? (
         <p role="alert" className="p-8 text-base text-red">
           Could not load memory: {describeError(failed)}
