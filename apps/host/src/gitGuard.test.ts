@@ -1,14 +1,16 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { createE2eRunner } from "./e2e.ts";
 import { ensureAskpass } from "./gitAuth.ts";
 import { gitLsRemote } from "./gitClone.ts";
 import { gitPush } from "./gitPush.ts";
+import { commitSubjects, readRepo } from "./repoInfo.ts";
 import { runCommand } from "./runCommand.ts";
 
 const exec = promisify(execFile);
@@ -212,5 +214,100 @@ describe("the helper's git in a repo whose config names commands", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("the helper's git in a majhi checkout whose shared .git/config names commands", () => {
+  /**
+   * A checkout with two commits, the second signed, and what an agent could plant in its config:
+   * fsmonitor, a clean filter, a process filter and a signature check with its own program.
+   */
+  async function planted() {
+    const t = await setup();
+    const { dir, plain, script, say } = t;
+    const gpg = await script(
+      "gpg.sh",
+      `${say("gpg")}\ncat > /dev/null\nprintf '\\n[GNUPG:] SIG_CREATED D 1 8 00 1 X\\n' >&2\nprintf -- '-----BEGIN PGP SIGNATURE-----\\n\\nAAAA\\n-----END PGP SIGNATURE-----\\n'`,
+    );
+    const repo = join(dir, "majhi");
+    await plain(dir, "init", "-q", "-b", "main", repo);
+    await writeFile(join(repo, ".gitattributes"), "a.txt filter=a\nb.txt filter=b\n");
+    await writeFile(join(repo, "a.txt"), "one\n");
+    await writeFile(join(repo, "b.txt"), "one\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, ...ID, "commit", "-qm", "one");
+    const first = await plain(repo, "rev-parse", "HEAD");
+    await writeFile(join(repo, "a.txt"), "two\n");
+    await plain(repo, ...ID, "-c", `gpg.program=${gpg}`, "commit", "-S", "-qam", "two");
+    for (const [key, value] of [
+      ["core.fsmonitor", await script("fsmonitor.sh", `${say("fsmonitor")}\nexit 1`)],
+      ["filter.a.clean", await script("clean.sh", `${say("clean")}\nexit 1`)],
+      ["filter.a.smudge", await script("smudge.sh", `${say("smudge")}\nexit 1`)],
+      ["filter.b.process", await script("process.sh", `${say("process")}\nexit 1`)],
+      ["log.showSignature", "true"],
+      ["gpg.program", gpg],
+    ] as const) {
+      await plain(repo, "config", key, value);
+    }
+    // Signing the commit above ran the fake gpg: start the marker over.
+    await rm(join(dir, "ran"), { force: true });
+    return { ...t, repo, first };
+  }
+
+  /** Makes the checkout's files stat-dirty: same content, a new mtime, so status hashes them again. */
+  const touch = async (repo: string) => {
+    const later = new Date(Date.now() + 3_600_000);
+    for (const name of ["a.txt", "b.txt"]) await utimes(join(repo, name), later, later);
+  };
+
+  it("repo state and commit subjects run no fsmonitor, filter or signing program of the checkout's", async () => {
+    const { dir, plain, ran, repo, first } = await planted();
+    await touch(repo);
+    const ctx = { git: "git", repo, env: { PATH, HOME: dir, GIT_CONFIG_NOSYSTEM: "1" }, exec };
+    expect(await readRepo(ctx)).toEqual({ commit: await plain(repo, "rev-parse", "HEAD"), dirty: false });
+    expect(await commitSubjects(ctx, first)).toEqual(["two"]);
+    expect(await ran()).toBe("");
+
+    // The same checkout with plain git does run them, so the setup above is live.
+    await touch(repo);
+    await plain(repo, "status", "--porcelain").catch(() => undefined);
+    await plain(repo, "log", "--format=%s", `${first}..HEAD`);
+    expect((await ran()).split("\n")).toEqual(
+      expect.arrayContaining(["fsmonitor", "clean", "process", "gpg"]),
+    );
+  });
+
+  it("the e2e worktree's checkout runs no filter of the checkout's", async () => {
+    const { dir, plain, script, ran, repo, first } = await planted();
+    const git = (await exec("which", ["git"], { env: { PATH } })).stdout.trim();
+    // pnpm fails at once: the checkout is what is under test.
+    const pnpm = await script("pnpm", "exit 1");
+    const e2e = createE2eRunner({
+      run: runCommand,
+      majhiHome: join(dir, ".majhi"),
+      home: dir,
+      path: PATH,
+      platform: "linux",
+      find: async (name) => (name === "git" ? git : name === "pnpm" ? pnpm : undefined),
+      log: () => undefined,
+      freePort: async () => 54321,
+    });
+    const head = await plain(repo, "rev-parse", "HEAD");
+    // The first run adds the worktree, the second moves it with checkout and cleans it.
+    for (const [runId, commit] of [
+      ["run-1", first],
+      ["run-2", head],
+    ] as const) {
+      const result = await e2e({ runId, repo, commit, timeoutMs: 600_000 });
+      expect(result.error).toBe("pnpm install failed in the e2e worktree.");
+    }
+    const worktree = join(dir, ".majhi", "e2e", "worktree");
+    expect(await plain(worktree, "rev-parse", "HEAD")).toBe(head);
+    expect(await readFile(join(worktree, "a.txt"), "utf8")).toBe("two\n");
+    expect(await ran()).toBe("");
+
+    // The same checkout with plain git does run them, so the setup above is live.
+    await plain(repo, "worktree", "add", "-q", "--detach", join(dir, "plain"), first).catch(() => undefined);
+    expect((await ran()).split("\n")).toContain("smudge");
   });
 });

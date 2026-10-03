@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createE2eRunner, parseReport } from "./e2e.ts";
+import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { RunFn, RunOptions } from "./ssh.ts";
 
 const COMMIT = "abcdef0123456789abcdef0123456789abcdef01";
@@ -80,7 +81,8 @@ describe("e2e runner", () => {
   function runner(suite: (options: RunOptions) => Promise<number | null>, opts: { noCommit?: boolean } = {}) {
     const run: RunFn = async (file, args, options) => {
       calls.push({ file, args, options });
-      const git = args.indexOf("-c") === 0 ? args.slice(2) : args;
+      let git = args;
+      while (git[0] === "-c") git = git.slice(2);
       if (file.endsWith("/git")) {
         if (git[0] === "cat-file") return { code: opts.noCommit ? 1 : 0, stdout: "", stderr: "" };
         if (git[0] === "worktree" && git[1] === "add") {
@@ -124,9 +126,9 @@ describe("e2e runner", () => {
     const worktree = join(home, ".majhi", "e2e", "worktree");
     expect(add?.args).toContain(worktree);
     expect(add?.args).toContain(COMMIT);
-    // Never in the owner's checkout, and no git hooks of the owner's.
+    // Never in the owner's checkout, and with the helper's git guards: no hooks or fsmonitor.
     expect(add?.options.cwd).toBe(repo);
-    expect(add?.args.slice(0, 2)).toEqual(["-c", "core.hooksPath=/dev/null"]);
+    expect(add?.args.slice(0, GUARD_CONFIG.length)).toEqual(GUARD_CONFIG);
 
     const suite = calls.find((c) => c.args.includes("playwright") && c.args.includes("test"));
     expect(suite?.file).toBe("/usr/bin/nice");

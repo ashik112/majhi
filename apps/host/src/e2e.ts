@@ -2,6 +2,7 @@ import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:net";
 import { isAbsolute, join } from "node:path";
 import { E2E_MAX_SPECS, E2E_MAX_TRACES, type E2eRunResult } from "@majhi/shared";
+import { filtersOff, GUARD_CONFIG, GUARD_ENV, LIST_FILTERS, withConfig } from "./gitGuard.ts";
 import type { Logger } from "./log.ts";
 import type { RunFn } from "./ssh.ts";
 
@@ -169,12 +170,18 @@ export function createE2eRunner(deps: E2eDeps): E2eRunner {
       await mkdir(env.TMPDIR as string, { recursive: true });
 
       const worktree = join(root, "worktree");
-      const gitRun = (cwd: string, args: string[]) =>
-        deps.run(git, ["-c", "core.hooksPath=/dev/null", ...args], {
-          env: { PATH: deps.path, HOME: deps.home, GIT_TERMINAL_PROMPT: "0" },
+      // The helper's guards (gitGuard.ts), and no filter driver of the repo's or the worktree's own
+      // config on checkout: an agent outside a container can edit both.
+      const gitRun = async (cwd: string, args: string[]) => {
+        const opts = {
+          env: { PATH: deps.path, HOME: deps.home, GIT_TERMINAL_PROMPT: "0", ...GUARD_ENV },
           timeoutMs: GIT_TIMEOUT_MS,
           cwd,
-        });
+        };
+        const listed = await deps.run(git, [...GUARD_CONFIG, ...LIST_FILTERS], opts);
+        const off = filtersOff(listed.code === 0 ? listed.stdout : "");
+        return deps.run(git, [...GUARD_CONFIG, ...args], { ...opts, env: withConfig(opts.env, off) });
+      };
       const has = await gitRun(repo, ["cat-file", "-e", `${commit}^{commit}`]);
       if (has.code !== 0) return errored("The commit is not in the project's repository on this computer.");
       await mkdir(root, { recursive: true });

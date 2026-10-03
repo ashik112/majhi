@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
 import { createUpdater } from "./update.ts";
 
@@ -60,8 +61,10 @@ describe("update", () => {
         return { stdout: "server-1  | starting\nserver-1  | SqliteError: malformed JSON\n", stderr: "" };
       }
       if (file === "/usr/bin/git") {
+        const command = args.slice(GUARD_CONFIG.length)[0];
         return {
-          stdout: line.startsWith("rev-parse") ? `${HEAD}\n` : options.dirty ? " M a\n" : "",
+          stdout:
+            command === "rev-parse" ? `${HEAD}\n` : command === "status" && options.dirty ? " M a\n" : "",
           stderr: "",
         };
       }

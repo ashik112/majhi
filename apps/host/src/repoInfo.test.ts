@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
 import { commitSubjects, parseDockerRuntime, readRepo } from "./repoInfo.ts";
 
@@ -6,8 +7,10 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 
 function gitExec(answers: Record<string, string>, log: string[][] = []): ExecFn {
   return async (_file, args) => {
-    log.push([...args]);
-    const key = args.join(" ");
+    // Every call runs with the helper's guards; what follows them is the command.
+    expect(args.slice(0, GUARD_CONFIG.length)).toEqual(GUARD_CONFIG);
+    log.push(args.slice(GUARD_CONFIG.length));
+    const key = args.slice(GUARD_CONFIG.length).join(" ");
     const hit = Object.entries(answers).find(([k]) => key.startsWith(k));
     if (!hit) throw new Error("fatal: bad revision");
     return { stdout: hit[1], stderr: "" };
@@ -34,7 +37,10 @@ describe("commitSubjects", () => {
     const seen: string[][] = [];
     const out = await commitSubjects(ctx(gitExec({ log: "feat: two\nfix: one\n" }, seen)), "abcdef1");
     expect(out).toEqual(["feat: two", "fix: one"]);
-    expect(seen[0]).toEqual(["log", "--format=%s", "abcdef1..HEAD", "-n", "20"]);
+    expect(seen[0]).toEqual([
+      ...["log", "--no-ext-diff", "--no-textconv", "--no-show-signature"],
+      ...["--format=%s", "abcdef1..HEAD", "-n", "20"],
+    ]);
   });
 
   it("refuses anything that is not a commit id, so an argument cannot be injected", async () => {
