@@ -385,24 +385,15 @@ async function stub(page: Page, scene: Scene): Promise<{ calls: { name: string; 
     scene.status = { ...scene.status, settings: { ...scene.status.settings, pick } };
     return r.fulfill({ json: scene.status });
   });
-  await page.route("**/api/cmd/autonomy.pause", (r) => {
-    calls.push({ name: "autonomy.pause", body: null });
-    scene.status = status("paused");
+  await page.route("**/api/cmd/autonomy.stop", (r) => {
+    calls.push({ name: "autonomy.stop", body: r.request().postDataJSON() });
+    scene.status = status("off");
     return r.fulfill({ json: scene.status });
   });
   await page.route("**/api/cmd/autonomy.start", (r) => {
     calls.push({ name: "autonomy.start", body: null });
     scene.status = status("on");
     return r.fulfill({ json: scene.status });
-  });
-  await page.route("**/api/cmd/tasks.remove", (r) => {
-    calls.push({ name: "tasks.remove", body: r.request().postDataJSON() });
-    return r.fulfill({
-      status: 409,
-      json: {
-        error: `${CHAT} is the chat autonomous mode works in, so it cannot be removed while autonomous mode is on. Stop autonomous mode first; the next start makes a new chat.`,
-      },
-    });
   });
   await page.routeWebSocket(/\/api\/tasks\/([^/]+)\/room$/, (ws) => {
     const snapshot: RoomServerMessage = {
@@ -523,32 +514,12 @@ test("Rules saves the size rule", async ({ page }) => {
   await expect(card.getByRole("button", { name: "Small only" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Pause, then Resume", async ({ page }) => {
+test("turning Autonomous off offers pausing its tasks or letting them finish", async ({ page }) => {
   const { calls } = await open(page, 1440, 900, "dark", { status: status("on") });
-  const bar = page.locator("header").first();
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
-  await expect(bar).toContainText("Paused");
-  await page.getByRole("button", { name: "Resume", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  expect(calls.map((c) => c.name).filter((n) => n === "autonomy.pause" || n === "autonomy.start")).toEqual([
-    "autonomy.pause",
-    "autonomy.start",
-  ]);
-  // Stop offers both stops; Stop now asks first.
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Stop gracefully" })).toBeVisible();
-  await page.getByRole("button", { name: "Stop now" }).click();
-  await expect(page.getByRole("heading", { name: "Stop autonomous mode now?" })).toBeVisible();
-});
-
-test("removing the captain's chat while the mode is on shows the refusal", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await stub(page, { status: status("on") });
-  await page.goto(`/chats/${CHAT}`);
-  await page.getByRole("button", { name: "Options for Autonomous mode" }).click();
-  await page.getByRole("menuitem", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByText("is the chat autonomous mode works in")).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/remove-chat-refused.png` });
+  await page.getByRole("switch", { name: "Autonomous" }).first().click();
+  await expect(page.getByRole("heading", { name: "Turn Autonomous off?" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Turn off and pause its tasks" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit budgets" })).toBeVisible();
+  await page.getByRole("button", { name: "Turn off and pause its tasks" }).click();
+  await expect.poll(() => calls.find((c) => c.name === "autonomy.stop")?.body).toEqual({ how: "now" });
 });

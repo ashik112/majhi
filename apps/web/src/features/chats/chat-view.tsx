@@ -41,6 +41,7 @@ export function ChatView({
   creating: boolean;
 }) {
   const task = useTask(taskId);
+  useLaneRedirect(task.data);
   if (task.isError) {
     return (
       <div className="flex min-w-0 flex-1 items-center justify-center p-6">

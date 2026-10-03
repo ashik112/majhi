@@ -48,6 +48,7 @@ export function TaskDrawer({ id }: { id: string }) {
 
 function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const task = useTask(id);
+  useLaneRedirect(task.data);
   const list = useTasks().data ?? [];
   const summary = list.find((t) => t.id === id);
   const { org: filter } = useOrgFilter();

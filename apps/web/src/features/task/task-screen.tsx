@@ -10,6 +10,7 @@ import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
 import { setPendingPermission } from "@/lib/attention";
+import { useLaneRedirect } from "@/lib/lane-link";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useReport, useTask } from "@/lib/task-queries";
@@ -35,6 +36,7 @@ export function TaskScreen() {
 
 function TaskView({ taskId }: { taskId: string }) {
   const task = useTask(taskId);
+  useLaneRedirect(task.data);
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
   const { file, item } = useSearch({ from: "/t/$taskId" });

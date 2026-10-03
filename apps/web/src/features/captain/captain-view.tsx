@@ -23,7 +23,7 @@ import { wsTab } from "./panel-model";
 import { WorkspaceCard } from "./workspace-card";
 
 const SUBTITLE =
-  'How much the captain does, per workspace. It acts on its own only while Autonomous is on, and never in a workspace set to "Only when I ask".';
+  "How much the captain does in each workspace. It acts on its own only while Autonomous is on.";
 
 /**
  * The Captain page: one card per workspace with how much the captain does there, its budget and

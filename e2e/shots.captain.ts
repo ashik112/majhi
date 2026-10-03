@@ -398,22 +398,13 @@ test("changing a level and the budget saves them", async ({ page }) => {
   await expect(globex.getByRole("radio", { name: /Only when I ask/ })).toBeChecked();
 });
 
-test("Stop the captain asks first, then Resume", async ({ page }) => {
+test("the Autonomous switch asks before turning off", async ({ page }) => {
   const { calls } = await open(page, "/captain", 1440, 900, "dark", { status: captain() });
-  await page.getByRole("button", { name: "Stop the captain" }).click();
-  await expect(page.getByRole("heading", { name: "Stop the captain?" })).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/captain-stop-confirm.png` });
-  await page.getByRole("dialog").getByRole("button", { name: "Stop the captain" }).click();
-  await expect(page.getByRole("button", { name: "Resume the captain" })).toBeVisible();
-  await expect(page.locator("header").first()).toContainText("Stopped");
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `${SHOTS}/captain-stopped.png` });
-  await page.getByRole("button", { name: "Resume the captain" }).click();
-  await expect(page.getByRole("button", { name: "Stop the captain" })).toBeVisible();
-  expect(calls.map((c) => c.name).filter((n) => n === "captain.stop" || n === "captain.resume")).toEqual([
-    "captain.stop",
-    "captain.resume",
-  ]);
+  await page.getByRole("switch", { name: "Autonomous" }).first().click();
+  await expect(page.getByRole("heading", { name: "Turn Autonomous off?" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/captain-off-dialog.png` });
+  await page.getByRole("button", { name: "Turn off and pause its tasks" }).click();
+  await expect.poll(() => calls.find((c) => c.name === "autonomy.stop")?.body).toEqual({ how: "now" });
 });
 
 test("the sidebar Captain row opens the page, and its chat button still opens the captain chat", async ({

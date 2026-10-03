@@ -53,6 +53,27 @@ export function CaptainPanel({ className }: { className?: string }) {
   const tab = validTab(asked, threads);
   const tabs: PanelTab[] = useMemo(() => ["talk", "all", ...threads.map((t) => wsTab(t.org))], [threads]);
   const refs = useRef(new Map<PanelTab, HTMLButtonElement>());
+  const strip = useRef<HTMLDivElement>(null);
+  // Tabs hidden past an edge of the strip fade out there, so the strip reads as scrollable.
+  const [edges, setEdges] = useState({ start: false, end: false });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tabs change what overflows
+  useEffect(() => {
+    const el = strip.current;
+    if (el === null) return;
+    const measure = () =>
+      setEdges({
+        start: el.scrollLeft > 4,
+        end: el.scrollWidth - el.scrollLeft - el.clientWidth > 4,
+      });
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", measure);
+      observer.disconnect();
+    };
+  }, [tabs.length]);
 
   // The selected tab stays in view when there are more of them than the strip holds.
   useEffect(() => {
@@ -74,10 +95,18 @@ export function CaptainPanel({ className }: { className?: string }) {
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3", className)}>
       <div
+        ref={strip}
         role="tablist"
         aria-label="Captain"
         aria-orientation="horizontal"
         onKeyDown={onKeyDown}
+        style={
+          edges.start || edges.end
+            ? {
+                maskImage: `linear-gradient(to right, ${edges.start ? "transparent, black 28px" : "black, black 0"}, ${edges.end ? "black calc(100% - 28px), transparent" : "black 100%, black"})`,
+              }
+            : undefined
+        }
         className="-mx-1 flex shrink-0 gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <TabButton

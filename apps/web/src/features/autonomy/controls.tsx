@@ -9,8 +9,9 @@ import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
+import { formatMoney } from "@/lib/format";
 import { PAGE_PATH } from "@/lib/pages";
-import { budgetText, capText } from "./model";
+import { budgetText } from "./model";
 
 /** Autonomous has one switch: turning it on, and turning it off in one of two ways. */
 export function useAutonomyActions() {
@@ -90,7 +91,9 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
           <dt className="text-fg-muted">Budget</dt>
           <dd className="min-w-0 text-fg">
             {budgetText(day)}
-            <span className="ml-2 text-sm text-fg-faint">{capText(status.spend.total)} so far today</span>
+            <span className="ml-2 text-sm text-fg-faint">
+              {formatMoney(status.spend.total.used.cost)} spent today
+            </span>
           </dd>
           <dt className="text-fg-muted">Acts in</dt>
           <dd className={noWorkspace ? "text-amber" : "min-w-0 break-words text-fg"}>

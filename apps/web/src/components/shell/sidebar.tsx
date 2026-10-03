@@ -264,7 +264,7 @@ function AutonomyRow() {
   const active = pathname.startsWith(PAGE_PATH.autonomous);
   const lamp = MODE_LAMP[mode];
   return (
-    <div title={unavailable} className="flex shrink-0 items-center gap-1">
+    <div title={unavailable} className="mb-1 flex shrink-0 items-center gap-1">
       <Link
         to={PAGE_PATH.autonomous}
         search={{}}
