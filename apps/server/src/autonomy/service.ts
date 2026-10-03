@@ -1320,7 +1320,8 @@ export class AutonomyService {
   private async writers(skip: readonly string[]): Promise<RepoRuleTask[]> {
     const out: RepoRuleTask[] = [];
     for (const s of this.deps.store.tasks.list(false)) {
-      if ((s.status !== "running" && s.status !== "review") || skip.includes(s.id)) continue;
+      // Only work that is changing code now: a task in review waits for the owner and holds nothing.
+      if (s.status !== "running" || skip.includes(s.id)) continue;
       const task = this.deps.store.tasks.get(s.id);
       if (task === undefined) continue;
       out.push(await this.repoUses(task));
