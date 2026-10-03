@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { SHORTCUT_TABLE, type ShortcutDef, type ShortcutGroup } from "@/features/shell/shortcuts";
 import { MOD_KEY } from "@/lib/format";
 
-const GROUPS: readonly ShortcutGroup[] = ["Anywhere", "Task", "Message box", "Board", "Go to"];
+const GROUPS: readonly ShortcutGroup[] = ["Anywhere", "Task", "Message box", "Board", "Decisions", "Go to"];
 
 /** The `g` row only explains the chord; the pages below it carry the letters. */
 function listed(group: ShortcutGroup): ShortcutDef[] {

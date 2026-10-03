@@ -40,6 +40,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.resume",
   "captain.undo",
   "captain.choreOn",
+  "captain.runChore",
   "captain.answerCap",
   "captain.answerBudget",
   // The decisions inbox answers for the owner: the owner's click only.

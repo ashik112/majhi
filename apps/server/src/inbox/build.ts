@@ -12,6 +12,7 @@ import {
   signInDecisionId,
 } from "@majhi/shared";
 import { oneLine, PAUSE_TEXT, type Subject } from "../notify/attention.ts";
+import { plainText } from "./plain.ts";
 
 /** The captain's stored opinion on a decision. */
 export interface Recommendation {
@@ -29,6 +30,8 @@ export interface DecisionSources {
   /** Accounts the owner has to sign in again. */
   signedOut: readonly { id: string; at: string }[];
   recommendations: ReadonlyMap<string, Recommendation>;
+  /** A workspace's name, for the sentences that name it. */
+  orgName?: (org: string) => string | undefined;
 }
 
 /** "$40", "$7.50", "2M tokens", or both. */
@@ -59,22 +62,25 @@ const PAUSE_TITLE: Record<string, string> = {
 interface Draft {
   kind: OwnerDecisionKind;
   title: string;
+  /** What it is in a full sentence. Falls back to the title. */
+  sentence?: string;
   options: DecisionOption[];
   /** The suggestion that comes with the card itself. */
   suggestion?: DecisionSuggestion;
 }
 
 /** The first option is the primary one, the rest follow in their order. */
-function withPrimary(
-  options: readonly { id: string; label: string }[],
-  primary: string | undefined,
-): DecisionOption[] {
+function withPrimary(options: readonly DecisionOption[], primary: string | undefined): DecisionOption[] {
   const at = options.findIndex((o) => o.id === primary);
   const first = at === -1 ? 0 : at;
   const ordered = options
-    .map((o, i) => ({ ...o, i }))
-    .sort((a, b) => (a.i === first ? -1 : b.i === first ? 1 : a.i - b.i));
-  return ordered.map(({ id, label }, i) => (i === 0 ? { id, label, primary: true as const } : { id, label }));
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => (a.i === first ? -1 : b.i === first ? 1 : a.i - b.i))
+    .map(({ o }) => {
+      const { primary: _drop, ...rest } = o;
+      return rest;
+    });
+  return ordered.map((o, i) => (i === 0 ? { ...o, primary: true as const } : o));
 }
 
 /**
@@ -87,13 +93,19 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       if (item.state !== "pending") return undefined;
       const first = item.questions[0];
       const title = `@${item.agent} asks: ${oneLine(first?.question ?? "a question")}`;
+      const sentence = `@${item.agent} asks: ${first?.question ?? "a question"}`;
       // Several questions need the card; one question is answered here.
-      if (item.questions.length !== 1 || first === undefined) return { kind: "question", title, options: [] };
+      if (item.questions.length !== 1 || first === undefined)
+        return { kind: "question", title, sentence, options: [] };
       const suggested = first.options.some((o) => o.id === first.default) ? first.default : undefined;
+      const typed: DecisionOption[] = first.freeText
+        ? [{ id: "reply", label: "Write an answer", text: true }]
+        : [];
       return {
         kind: "question",
         title,
-        options: withPrimary(first.options, suggested),
+        sentence,
+        options: [...withPrimary(first.options, suggested), ...typed],
         ...(suggested === undefined
           ? {}
           : { suggestion: { option: suggested, reason: "The agent's suggestion", by: "agent" as const } }),
@@ -101,13 +113,19 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
     }
     case "choice":
       return item.state === "pending"
-        ? { kind: "question", title: oneLine(item.question), options: withPrimary(item.options, undefined) }
+        ? {
+            kind: "question",
+            title: oneLine(item.question),
+            sentence: item.question,
+            options: withPrimary(item.options, undefined),
+          }
         : undefined;
     case "owner-question":
       return item.state === "pending"
         ? {
             kind: "question",
             title: oneLine(item.text ?? `@${item.agent} is asking you something`),
+            sentence: item.text ?? `@${item.agent} is asking you something`,
             options: withPrimary(
               item.choices.map((label, i) => ({ id: `c${i}`, label })),
               undefined,
@@ -122,6 +140,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       return {
         kind: "approval",
         title: `@${item.agent} needs approval: ${oneLine(item.title)}`,
+        sentence: `@${item.agent} needs your approval: ${item.title}`,
         options: withPrimary(
           item.options.map((o) => ({ id: o.id, label: o.name })),
           allow?.id,
@@ -133,6 +152,10 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         ? {
             kind: "approval",
             title: oneLine(item.summary),
+            sentence:
+              item.reason === undefined || item.reason === ""
+                ? `@${item.agent} wants to: ${item.summary}`
+                : `@${item.agent} wants to: ${item.summary}. Its reason: ${item.reason}`,
             options: [
               { id: "approve", label: "Approve", primary: true },
               { id: "reject", label: "Reject" },
@@ -141,18 +164,43 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         : undefined;
     case "secret-request":
       return item.state === "pending"
-        ? { kind: "secret", title: `@${item.agent} needs a secret: ${oneLine(item.label)}`, options: [] }
+        ? {
+            kind: "secret",
+            title: `@${item.agent} needs a secret: ${oneLine(item.label)}`,
+            sentence: `@${item.agent} needs a secret from you: ${item.label}`,
+            options: [],
+          }
         : undefined;
     case "review": {
       if (item.state !== "pending") return undefined;
-      if (item.ready === undefined) return { kind: "ship", title: "Ready for review", options: [] };
-      const option =
-        subject.repos === 0 ? { id: "done", label: "Mark done" } : { id: "merge", label: "Merge" };
+      const who = item.lead === undefined ? "The team" : `@${item.lead}`;
+      const name = `"${subject.title}"`;
+      const repos = subject.repos ?? 1;
+      const merge = { id: "merge", label: "Merge" };
+      const done = { id: "done", label: "Mark done" };
+      const changes: DecisionOption = { id: "changes", label: "Ask for changes", text: true };
+      const own = repos === 0 ? [done, changes] : [merge, done, changes];
+      if (item.ready === undefined) {
+        return {
+          kind: "ship",
+          title: `Ready for review: ${oneLine(subject.title, 120)}`,
+          sentence:
+            repos === 0
+              ? `${who} finished ${name}. It has no repo, so there is nothing to merge: read it, then mark it done or ask for changes.`
+              : `${who} finished ${name} and waits for your review.`,
+          options: withPrimary(own, undefined),
+        };
+      }
+      const pick = repos === 0 ? "done" : "merge";
       return {
         kind: "ship",
-        title: item.why === undefined ? "Ready to ship" : `Ready to ship. ${oneLine(item.why, 100)}`,
-        options: [{ ...option, primary: true }],
-        suggestion: { option: option.id, reason: oneLine(item.ready, 160), by: "captain" },
+        title: `Ready to ship: ${oneLine(subject.title, 120)}`,
+        sentence:
+          repos === 0
+            ? `${who} finished ${name}. It has no repo, so it is ready to mark done.`
+            : `${who} finished ${name} and it is ready to merge.`,
+        options: withPrimary(own, pick),
+        suggestion: { option: pick, reason: item.ready, by: "captain" },
       };
     }
     case "paused": {
@@ -162,6 +210,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       return {
         kind: "paused",
         title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
+        sentence: `"${subject.title}" ${item.why === undefined ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : `is paused: ${item.why}`}`,
         options: [{ id: "resume", label: "Resume", primary: true }],
       };
     }
@@ -194,12 +243,17 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
    * The options and the suggestion. The captain's recommendation wins when it names an option the
    * decision has, else the card's own suggestion; the suggested option goes first, as the primary one.
    */
-  const decorate = (id: string, options: DecisionOption[], own?: DecisionSuggestion) => {
+  const decorate = (id: string, options: DecisionOption[], own?: DecisionSuggestion, workspace?: string) => {
     const stored = src.recommendations.get(id);
-    const chosen: DecisionSuggestion | undefined =
+    const picked: DecisionSuggestion | undefined =
       stored !== undefined && options.some((o) => o.id === stored.option)
         ? { option: stored.option, reason: stored.reason, by: "captain" }
         : own;
+    // Reasons stored before the authority table name levels that no screen has any more.
+    const chosen =
+      picked === undefined
+        ? undefined
+        : { ...picked, reason: plainText(picked.reason, workspace).slice(0, 600) };
     return chosen === undefined
       ? { options }
       : { options: withPrimary(options, chosen.option), suggestion: chosen };
@@ -211,6 +265,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     const draft = draftOf(item, subject);
     if (draft === undefined) continue;
     const id = decisionIdOf(item);
+    const workspace = subject.org === undefined ? undefined : src.orgName?.(subject.org);
     out.push({
       id,
       kind: draft.kind,
@@ -219,7 +274,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       taskTitle: subject.title,
       ...(subject.chat ? { chat: true as const } : {}),
       title: draft.title,
-      ...decorate(id, draft.options, draft.suggestion),
+      sentence: draft.sentence ?? draft.title,
+      ...decorate(id, draft.options, draft.suggestion, workspace),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
     });
@@ -236,7 +292,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       kind: "cap",
       org: ask.org,
       title: oneLine(ask.text),
-      ...decorate(id, options),
+      sentence: ask.text,
+      ...decorate(id, options, undefined, src.orgName?.(ask.org)),
       at: ask.at,
       link: { kind: "captain" },
     });
@@ -253,6 +310,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       kind: "budget",
       ...(ask.scope === "day" ? {} : { org: ask.scope }),
       title: oneLine(ask.text),
+      sentence: ask.text,
       ...decorate(id, options),
       at: ask.at,
       link: { kind: "limits" },
@@ -264,6 +322,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       id: signInDecisionId(account.id),
       kind: "sign-in",
       title: `Sign in ${account.id}: its agents cannot run until you do`,
+      sentence: `${account.id} is signed out. Its agents cannot run until you sign in again.`,
       options: [],
       at: account.at,
       link: { kind: "account", id: account.id },

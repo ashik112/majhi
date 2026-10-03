@@ -11,6 +11,7 @@ type CaptainCommand =
   | "captain.startFresh"
   | "captain.undo"
   | "captain.choreOn"
+  | "captain.runChore"
   | "captain.asks"
   | "captain.answerCap"
   | "captain.answerBudget";
@@ -49,6 +50,10 @@ export function captainHandlers(
     "captain.choreOn": async (input, ctx) => {
       ownerOnly(ctx);
       return captain.choreOn(input.org, input.chore);
+    },
+    "captain.runChore": async (input, ctx) => {
+      ownerOnly(ctx);
+      return captain.runChore(input.org, input.chore);
     },
     "captain.asks": async () => ({ ...(await captain.asks()), budgets: await autonomy.budgetAsks() }),
     "captain.answerCap": async (input, ctx) => {

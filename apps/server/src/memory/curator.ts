@@ -70,6 +70,23 @@ const CHATTER = "chatter";
 const SAME = "same";
 const CONTRADICTS = "contradicts";
 const UNRELATED = "unrelated";
+const ASK = "ask";
+/** What a review drops, by the kind the provider sorted the fact into, and the reason the log shows. */
+const DROP_REASON: Readonly<Record<string, string>> = {
+  "one-off": "a one-off symptom of one task",
+  generic: "generic advice",
+  majhi: "restates how majhi itself works",
+  flaky: "a flaky or timing note",
+};
+
+/**
+ * Whether an answer is firm enough to act on in a review: majhi's gate accepted it, or the provider's
+ * own top probability is at least one half. A review leans toward deciding, because a fact left
+ * waiting costs the owner a decision; the step is logged with its confidence and can be undone.
+ */
+function counts(a: Answer): boolean {
+  return a.gate?.accepted === true || a.confidence >= 0.5;
+}
 
 /** Scopes at or wider than `scope`: the fact's own, its org's and global. */
 function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScope[] {
@@ -118,6 +135,105 @@ export class Curator {
     } catch (err) {
       console.error(`Memory curation of fact ${fact.id} failed: ${errorMessage(err)}`);
     }
+  }
+
+  /**
+   * The captain's memory review (SPEC 5.18, Memory): one fact that waits, decided with a real bar so
+   * the owner is left only the judgment calls. In order: the rules, the repo docs, a near copy
+   * (cosine 0.92 or more, no model), then one call that sorts the fact into a kind. Only a durable,
+   * non-obvious fact for later tasks is kept. A one-off symptom, generic advice, a restatement of how
+   * majhi works and a flaky or timing note are dropped; the same point as another fact is merged into
+   * it. A fact that contradicts another, or that would change how agents behave broadly, and any
+   * fact the provider cannot sort, wait for the owner. Every step names its reason and can be undone.
+   * Never throws: the fact stays pending. `reason` is the short phrase the captain's log shows.
+   */
+  async review(fact: Fact): Promise<{ reason?: string }> {
+    try {
+      return await this.reviewOne(fact);
+    } catch (err) {
+      console.error(`Memory review of fact ${fact.id} failed: ${errorMessage(err)}`);
+      return {};
+    }
+  }
+
+  private async reviewOne(fact: Fact): Promise<{ reason?: string }> {
+    const { memory, decisions } = this.deps;
+    const task = fact.task === undefined ? undefined : this.deps.task(fact.task);
+    const rule = forbiddenReason(fact.text);
+    if (rule !== undefined) {
+      memory.drop(fact.id, {
+        reason: `${rule} Facts never hold secrets or personal data.`,
+        provider: "rules",
+      });
+      return { reason: "it holds a secret or personal data" };
+    }
+    const file = await this.deps.inDocs?.(task, fact.text);
+    if (file !== undefined) {
+      const reason = `already in the repo docs (${file})`;
+      memory.drop(fact.id, { reason, provider: REPO_DOCS });
+      return { reason };
+    }
+    const near = (await memory.neighbours({ fact }, coveringScopes(fact.scope, task?.org))).filter(
+      (n) => n.fact.id !== fact.id && (n.fact.status === "active" || n.fact.status === "pending"),
+    );
+    const top = near[0];
+    if (top !== undefined && top.cosine >= DUPLICATE_COSINE) {
+      const reason = `the same as fact ${top.fact.id}`;
+      memory.merge(fact.id, top.fact.id, { reason, confidence: top.cosine });
+      return { reason };
+    }
+    const settings = await this.deps.settings();
+    if (settings.review_all) return { reason: "you review every memory" };
+    const related = near.find((n) => n.cosine >= RELATED_COSINE && n.cosine < DUPLICATE_COSINE);
+    const result = await decisions
+      .decide(reviewRequest(fact, related?.fact), {
+        use: "memory",
+        ...(fact.task === undefined ? {} : { task: fact.task }),
+        ...(fact.agent === undefined ? {} : { agent: fact.agent }),
+      })
+      .catch(() => undefined);
+    // No answer: nothing is kept or dropped on a guess; the fact keeps waiting.
+    if (result === undefined) return { reason: "no provider answered" };
+    const { verdict, relation, private: secret } = result.answers;
+    const note = (reason: string, a: Answer | undefined) => ({
+      reason,
+      ...(a === undefined ? {} : { confidence: a.confidence }),
+      provider: result.provider,
+    });
+    const done = (text: string, reason: string, fellBack = false) => {
+      decisions.outcome(result.id, { text, fellBack });
+      return { reason };
+    };
+    if (secret?.value === true && counts(secret)) {
+      const reason = "it may hold a secret or personal data";
+      memory.drop(fact.id, note(reason, secret));
+      return done("Dropped: secret or personal data.", reason);
+    }
+    if (related !== undefined && relation !== undefined && counts(relation)) {
+      if (relation.value === CONTRADICTS) {
+        const reason = `it may contradict fact ${related.fact.id}`;
+        return done(`It may contradict fact ${related.fact.id}, so the owner decides.`, reason, true);
+      }
+      if (relation.value === SAME) {
+        const reason = `the same point as fact ${related.fact.id}`;
+        memory.merge(fact.id, related.fact.id, note(reason, relation));
+        return done(`Merged into fact ${related.fact.id}.`, reason);
+      }
+    }
+    const kind = verdict !== undefined && counts(verdict) ? String(verdict.value) : undefined;
+    if (kind === undefined) return done("Waits for the owner: not sure.", "not sure what it is", true);
+    if (kind === ASK) {
+      return done("Waits for the owner: a judgment call.", "it would change how agents behave broadly", true);
+    }
+    if (kind === KEEP) {
+      const reason = "a durable fact for later tasks";
+      memory.keep(fact.id, note(reason, verdict));
+      return done("Kept: a durable fact.", reason);
+    }
+    const why = DROP_REASON[kind];
+    if (why === undefined) return done("Waits for the owner: unknown kind.", "not sure what it is", true);
+    memory.drop(fact.id, note(why, verdict));
+    return done(`Dropped: ${why}.`, why);
   }
 
   /**
@@ -395,6 +511,71 @@ export function request(fact: Fact, nearest: Fact | undefined): DecideRequestInp
           true: "it holds a secret or personal data",
           false: "it holds neither",
         },
+      },
+    },
+  };
+}
+
+/**
+ * The review's one call per fact: what kind of fact it is (and so whether it is kept, dropped or left
+ * for the owner), how it relates to the nearest fact, and whether it holds a secret.
+ */
+export function reviewRequest(fact: Fact, nearest: Fact | undefined): DecideRequestInput {
+  return {
+    state: {
+      candidate: fact.text,
+      scope: fact.scope,
+      ...(nearest === undefined ? {} : { nearest: nearest.text }),
+    },
+    questions: {
+      verdict: {
+        type: "choice",
+        instructions:
+          "A memory is kept only if it is a durable, non-obvious fact that will help a future task in this scope and cannot be read from the code or docs. Most candidates are not. Sort the candidate.",
+        options: [
+          {
+            key: KEEP,
+            description:
+              "durable and non-obvious: a convention, a command, a decision or a constraint that will still hold",
+          },
+          {
+            key: "one-off",
+            description: "a symptom, incident, bug report or log of one task, true only for that moment",
+          },
+          {
+            key: "generic",
+            description: "generic advice any engineer already knows, like checking before acting",
+          },
+          {
+            key: "majhi",
+            description: "a restatement of how majhi itself, its agents, rooms, worktrees or cards behave",
+          },
+          { key: "flaky", description: "a flaky test, a timing or environment note" },
+          {
+            key: ASK,
+            description:
+              "a genuine judgment call: it would change how agents behave in many tasks, or conflicts with the owner's instructions",
+          },
+        ],
+      },
+      ...(nearest === undefined
+        ? {}
+        : {
+            relation: {
+              type: "choice" as const,
+              instructions: "Compared with the nearest fact, what does the candidate say?",
+              options: [
+                { key: SAME, description: "the same point, in other words" },
+                { key: CONTRADICTS, description: "it says the opposite, or replaces the nearest fact" },
+                { key: UNRELATED, description: "a different point, which can stand beside it" },
+              ],
+            },
+          }),
+      private: {
+        type: "noul" as const,
+        instructions:
+          "Does the candidate contain a secret (a key, token, password) or personal data (a name, email, phone)?",
+        criteria: { true: "it holds a secret or personal data", false: "it holds neither" },
       },
     },
   };

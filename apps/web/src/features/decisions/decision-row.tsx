@@ -1,62 +1,16 @@
-import { DECISION_KIND_LABEL, type DecisionLink, type OwnerDecision, PRIVATE } from "@majhi/shared";
+import { DECISION_KIND_LABEL, type OwnerDecision } from "@majhi/shared";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
-import { OrgBadge } from "@/components/ui/org-badge";
 import { useToast } from "@/components/ui/toast";
 import { useAnswerDecision } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
-import { badgeLetters, formatAgo } from "@/lib/format";
-import { useOrgs } from "@/lib/studio-queries";
+import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
-import type { BannerAction } from "../shell/model";
+import { WorkspaceName } from "./decision-list";
+import { actionOf, openLabel, workspaceOf } from "./model";
 
-/** Where "Open" goes, as the banner and the bell already navigate. */
-function actionOf(link: DecisionLink): BannerAction {
-  switch (link.kind) {
-    case "task":
-      return { kind: "task", id: link.id, ...(link.item === undefined ? {} : { item: link.item }) };
-    case "chat":
-      return { kind: "chat", id: link.id };
-    case "captain":
-      return { kind: "page", to: "/captain" };
-    case "limits":
-      return { kind: "page", to: "/limits" };
-    case "account":
-      return { kind: "page", to: "/accounts", search: { account: link.id } };
-  }
-}
-
-function openLabel(link: DecisionLink): string {
-  switch (link.kind) {
-    case "task":
-      return "Open task";
-    case "chat":
-      return "Open chat";
-    case "captain":
-      return "Open Captain";
-    case "limits":
-      return "Open Limits";
-    case "account":
-      return "Sign in";
-  }
-}
-
-/** The workspace a decision belongs to: its org, Private for a task of none, nothing for an account or the day's budget. */
-export function workspaceOf(decision: OwnerDecision): string | undefined {
-  return decision.org ?? (decision.task === undefined ? undefined : PRIVATE);
-}
-
-/** The chip: the workspace's tile and name, the name cut short when it is long. */
-export function WorkspaceChip({ id, className }: { id: string; className?: string }) {
-  const org = useOrgs().data?.find((o) => o.id === id);
-  return (
-    <span className={`flex min-w-0 items-center gap-1.5 ${className ?? ""}`}>
-      <OrgBadge label={badgeLetters(org?.key ?? id)} color={org?.color} size="xs" />
-      <span className="min-w-0 truncate text-xs font-medium text-fg-soft">{org?.name ?? id}</span>
-    </span>
-  );
-}
+export { workspaceOf };
 
 /** "Captain recommends Rebuild: keeps a backup branch" or "The agent suggests Rebuild". */
 function Suggestion({ decision, dense }: { decision: OwnerDecision; dense: boolean }) {
@@ -65,7 +19,7 @@ function Suggestion({ decision, dense }: { decision: OwnerDecision; dense: boole
   const label = decision.options.find((o) => o.id === suggestion.option)?.label ?? suggestion.option;
   const captain = suggestion.by === "captain";
   return (
-    <p className={`text-sm text-fg-muted text-pretty break-words ${dense ? "line-clamp-2" : ""}`}>
+    <p className={`text-sm text-fg-muted text-pretty break-words ${dense ? "line-clamp-2" : "line-clamp-3"}`}>
       {captain ? "Captain recommends " : "The agent suggests "}
       <span className="font-semibold text-fg">{label}</span>
       {captain && suggestion.reason !== "" && <>: {suggestion.reason}</>}
@@ -74,20 +28,18 @@ function Suggestion({ decision, dense }: { decision: OwnerDecision; dense: boole
 }
 
 /**
- * One decision: where it comes from, what it asks, what the captain thinks, and the answers as
- * buttons. Answering removes the row (the list refetches); an answer that fails says why and stays.
- * `compact` is the bell's popover: the title may take three lines.
+ * A compact decision, for the bell and the Captain page: where it comes from, what it asks, what the
+ * captain thinks and the answers as buttons. The line opens the decision on the Decisions page. A
+ * decision that needs typed words (Ask for changes) is answered there, not here.
  */
 export function DecisionRow({
   decision,
-  compact = false,
   dense = false,
-  showWorkspace = true,
   onOpen,
 }: {
   decision: OwnerDecision;
+  /** Tighter rows for a column that shares its height. */
   compact?: boolean;
-  /** Tighter rows for a column that shares its height: less padding, no repeated task title. */
   dense?: boolean;
   showWorkspace?: boolean;
   /** Runs before navigating, to close the popover. */
@@ -99,28 +51,19 @@ export function DecisionRow({
   const now = useNow(60_000);
   const workspace = workspaceOf(decision);
   const busy = answer.isPending;
-  const titleSaysKind = decision.title
-    .toLowerCase()
-    .startsWith(DECISION_KIND_LABEL[decision.kind].toLowerCase());
+  // Work to ship has several answers on its page; here the main one is enough.
+  const options = decision.options.filter(
+    (o) => o.text !== true && (decision.kind !== "ship" || o.primary === true),
+  );
   const send = (option: string) =>
     answer.mutate(
       { id: decision.id, option },
       { onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }) },
     );
-  const open = (
-    <Button
-      size="sm"
-      variant={decision.options.length === 0 ? "primary" : "ghost"}
-      data-notice=""
-      className={decision.options.length === 0 ? undefined : "ml-auto px-2"}
-      onClick={() => {
-        onOpen?.();
-        run(actionOf(decision.link));
-      }}
-    >
-      {openLabel(decision.link)}
-    </Button>
-  );
+  const decide = () => {
+    onOpen?.();
+    run({ kind: "page", to: "/decisions", search: { id: decision.id } });
+  };
 
   return (
     <div
@@ -129,37 +72,23 @@ export function DecisionRow({
     >
       <div className="flex min-w-0 items-center gap-2">
         <Lamp state={decision.kind === "paused" ? "paused" : "needs"} size={7} />
-        {showWorkspace && workspace !== undefined && (
-          <WorkspaceChip id={workspace} className="max-w-[45%] shrink-0" />
+        {workspace !== undefined && (
+          <WorkspaceName id={workspace} className="max-w-[45%] shrink-0 text-xs font-medium text-fg-soft" />
         )}
-        {decision.task !== undefined && (
-          <span className="flex min-w-0 items-baseline gap-1.5 text-xs text-fg-faint">
-            {decision.chat !== true && (
-              <span className="shrink-0 font-mono text-fg-muted">{decision.task}</span>
-            )}
-            {decision.taskTitle !== undefined && !(dense && decision.title.includes(decision.taskTitle)) && (
-              <span className="min-w-0 truncate">{decision.taskTitle}</span>
-            )}
-          </span>
-        )}
-        {/* What kind it is, unless the title already says so. In the popover, only where nothing else says whose it is. */}
-        {(compact ? workspace === undefined && decision.task === undefined : !titleSaysKind) && (
-          <span
-            className={`shrink-0 text-xs ${compact ? "font-medium text-fg-soft" : "ml-auto text-fg-faint"}`}
-          >
-            {DECISION_KIND_LABEL[decision.kind]}
-          </span>
-        )}
-        <span className={`tnum shrink-0 text-xs text-fg-faint ${compact || titleSaysKind ? "ml-auto" : ""}`}>
-          {formatAgo(decision.at, now)}
-        </span>
+        <span className="shrink-0 text-xs text-fg-faint">{DECISION_KIND_LABEL[decision.kind]}</span>
+        <span className="tnum ml-auto shrink-0 text-xs text-fg-faint">{formatAgo(decision.at, now)}</span>
       </div>
-      <p className={`text-base text-fg break-words text-pretty ${compact ? "line-clamp-3" : ""}`}>
-        {decision.title}
-      </p>
+      <button
+        type="button"
+        onClick={decide}
+        title="Open this decision"
+        className="m-0 w-full cursor-pointer rounded-sm p-0 text-left text-base text-fg break-words text-pretty line-clamp-3 hover:underline"
+      >
+        {decision.kind === "ship" && decision.taskTitle !== undefined ? decision.taskTitle : decision.title}
+      </button>
       <Suggestion decision={decision} dense={dense} />
       <div className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5">
-        {decision.options.map((option) => (
+        {options.map((option) => (
           <Button
             key={option.id}
             size="sm"
@@ -171,7 +100,18 @@ export function DecisionRow({
             {option.label}
           </Button>
         ))}
-        {open}
+        <Button
+          size="sm"
+          variant={options.length === 0 ? "primary" : "ghost"}
+          data-notice=""
+          className={options.length === 0 ? undefined : "ml-auto px-2"}
+          onClick={() => {
+            onOpen?.();
+            run(actionOf(decision.link));
+          }}
+        >
+          {openLabel(decision.link)}
+        </Button>
       </div>
     </div>
   );

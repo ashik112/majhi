@@ -30,6 +30,7 @@ import { describeError } from "@/lib/errors";
 import { useAccounts } from "@/lib/studio-queries";
 import { AUTHORITY_PRESETS, AUTHORITY_ROW_TEXT, AUTHORITY_ROWS_ORDER } from "./model";
 import { MoreRules } from "./more-rules";
+import { useStartReview } from "./review-now";
 
 const FIRST_COLUMN = "w-[184px] shrink-0";
 const COLUMN = "w-[116px] shrink-0";
@@ -164,6 +165,7 @@ function Grid({
       { [row]: value },
       `${org.name}: ${AUTHORITY_ROW_TEXT[row].label} is ${value === "decide" ? "the captain's" : "yours"}`,
     );
+  const review = useStartReview();
   const sticky = "sticky left-0 z-10 bg-glass-strong";
   return (
     <fieldset
@@ -187,6 +189,18 @@ function Grid({
                     onSelect: () => change(org, preset.rows, `${org.name}: ${preset.label}`),
                   })),
                   { label: "Hours, freezes and more", onSelect: () => onMore(org.org) },
+                  {
+                    label: "Review memories now",
+                    group: "Upkeep",
+                    disabled: org.authority.upkeep !== "decide" || review.pending,
+                    onSelect: () => review.start(org.org, "memory", 0),
+                  },
+                  {
+                    label: "Clean up now",
+                    group: "Upkeep",
+                    disabled: org.authority.upkeep !== "decide" || review.pending,
+                    onSelect: () => review.start(org.org, "cleanup", 0),
+                  },
                 ]}
               />
             </div>
@@ -222,6 +236,17 @@ function Grid({
           ))}
         </div>
       </div>
+      {orgs.flatMap((org) =>
+        org.chores
+          .filter((c) => c.running === true && (c.chore === "memory" || c.chore === "cleanup"))
+          .map((c) => (
+            <p key={`${org.org}:${c.chore}`} role="status" className="mt-2 text-xs text-fg-muted">
+              {c.chore === "memory"
+                ? `Reviewing memories in ${org.name}...`
+                : `Cleaning up finished tasks in ${org.name}...`}
+            </p>
+          )),
+      )}
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">
           Autonomous is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until

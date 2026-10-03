@@ -820,6 +820,23 @@ CREATE TABLE decision_recommendations (
     name: "drop captain presence",
     sql: "DROP TABLE captain_presence;",
   },
+  {
+    // One-time recheck of memories the old curator handed to the owner. A memory the chore looked at
+    // has a log key `memory:<id>` and is never looked at again, so what the old rule handed over
+    // ('asked', before the memory fix of 2026-10-04 01:27 +0600) would never be judged by the better
+    // rule. The key is renamed, so the log line stays and the next memory run looks at it once more.
+    id: 124,
+    name: "recheck memories handed to the owner",
+    sql: `
+UPDATE captain_actions
+SET key = key || ':handed-before-recheck'
+WHERE chore = 'memory'
+  AND outcome = 'asked'
+  AND key GLOB 'memory:[0-9]*'
+  AND key NOT LIKE 'memory:%:%'
+  AND at < '2026-10-03T19:27:50.000Z';
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

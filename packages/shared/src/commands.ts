@@ -57,6 +57,8 @@ import {
   CaptainChoreInputSchema,
   CaptainLogInputSchema,
   CaptainLogResultSchema,
+  CaptainRunChoreInputSchema,
+  CaptainRunChoreResultSchema,
   CaptainStatusSchema,
   CaptainUndoInputSchema,
   CaptainUndoResultSchema,
@@ -115,7 +117,12 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
-import { DecisionAnswerInputSchema, DecisionListSchema, DecisionRecommendInputSchema } from "./inbox.ts";
+import {
+  DecisionAnswerInputSchema,
+  DecisionDetailSchema,
+  DecisionListSchema,
+  DecisionRecommendInputSchema,
+} from "./inbox.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -661,6 +668,13 @@ export const commands = {
       "Answer a decision with one of its options, through the same path as its card (answer, approve, resume, raise or leave). Owner only",
     input: DecisionAnswerInputSchema,
     output: DecisionListSchema,
+  },
+  "decisions.detail": {
+    risk: "read",
+    summary:
+      "What the owner needs to decide one decision without opening its task: the agent's last message, the diff stat and top files, the branch and target, what the captain checked, the full questions, and options that cannot be taken now with the reason",
+    input: z.object({ id: z.string().min(1).max(300) }),
+    output: DecisionDetailSchema,
   },
   "decisions.recommend": {
     risk: "change",
@@ -2753,6 +2767,13 @@ export const commands = {
       "Turn an upkeep chore back on in a workspace after two failures in a row turned it off. Owner only",
     input: CaptainChoreInputSchema,
     output: CaptainStatusSchema,
+  },
+  "captain.runChore": {
+    risk: "change",
+    summary:
+      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; a run that goes past today's cap is allowed once because the owner asked, and the answer says so. The run goes on in the background: captain.status shows chores[].running. Owner only",
+    input: CaptainRunChoreInputSchema,
+    output: CaptainRunChoreResultSchema,
   },
   "captain.asks": {
     risk: "read",
