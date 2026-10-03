@@ -186,7 +186,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "e2e_latest",
     command: "e2e.status",
     description:
-      "The latest result of the full e2e suite, which majhi runs by itself in the background after each merge into main: per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
+      "The latest result of the full e2e suite, which majhi runs by itself in the background (after each merge into main, once a day, or when the owner starts it, per project): per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
   },
   {
     name: "link",

@@ -85,7 +85,7 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
-import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
+import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
@@ -1821,7 +1821,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to true or false), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to off, merge or daily; e2e.daily_at like 03:00), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -1948,9 +1948,20 @@ export const commands = {
   "e2e.status": {
     risk: "read",
     summary:
-      "The background e2e suite on main: the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
+      "The background e2e suite on main: when it runs per project (off, merge or daily), the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
     input: Empty,
     output: E2eStatusSchema,
+  },
+  "e2e.runNow": {
+    risk: "change",
+    summary:
+      "Queue a background e2e run of a project at its base branch's tip now, whatever its mode. The owner's alone: agents are refused",
+    input: z.object({ project: z.string().min(1) }),
+    output: z.object({
+      run: E2eRunSchema,
+      /** False when a run at the same commit was already queued or running: that one is returned. */
+      queued: z.boolean(),
+    }),
   },
   "health.fix": {
     risk: "change",
