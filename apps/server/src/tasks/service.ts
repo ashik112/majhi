@@ -153,9 +153,13 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
-  /** Previews and services (PRV-53): their containers go with the task, and their volumes when it is done or removed. */
+  /**
+   * Previews and services (PRV-53): they stop while the task does not run (review, paused) and
+   * start again when it runs. Their volumes go when it is done or removed.
+   */
   containers?: {
-    taskStopped(id: string): Promise<void>;
+    taskPaused(id: string): Promise<void>;
+    taskRunning(id: string): Promise<{ started: string[]; failed: string[] }>;
     taskEnded(id: string): Promise<void>;
   };
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
@@ -779,6 +783,7 @@ export class TaskService {
       this.deps.onOwnerResumedLimit?.(id);
     }
     if (task.status === "paused" && by === "owner") this.deps.onOwnerResumed?.(id);
+    await this.containersRunAgain(id);
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -906,8 +911,9 @@ export class TaskService {
   async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner", why?: string): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
+    // Before the processes stop: it notes which services ran, to start them again on resume.
+    await this.deps.containers?.taskPaused(id);
     await this.deps.processes?.stopTask(id);
-    await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
@@ -2535,6 +2541,7 @@ export class TaskService {
       return;
     }
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
+    await this.deps.containers?.taskPaused(id);
     const reviewed = this.get(id);
     this.cards.review(reviewed);
     this.deps.room.publishTask(reviewed);
@@ -2591,6 +2598,7 @@ export class TaskService {
       this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
       this.deps.events.emit(["tasks"]);
+      await this.containersRunAgain(task.id);
       await this.statusChanged(task.id);
     }
     this.deps.room.post(task.id, itemId, {
@@ -2616,6 +2624,7 @@ export class TaskService {
     if (reason === "error" || reason === "signed-out")
       this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
+    await this.deps.containers?.taskPaused(id);
     const paused = this.get(id);
     this.cards.paused(paused, reason, why);
     this.deps.room.publishTask(paused);
@@ -2629,7 +2638,21 @@ export class TaskService {
     this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     this.cards.settle(id, "paused", "Resumed by itself", "majhi");
     this.deps.room.publishTask(this.get(id));
+    await this.containersRunAgain(id);
     await this.statusChanged(id);
+  }
+
+  /** The task runs again: its services and preview that stopped with it start again, with one line in the room. */
+  private async containersRunAgain(id: string): Promise<void> {
+    const containers = this.deps.containers;
+    if (containers === undefined) return;
+    try {
+      const { started, failed } = await containers.taskRunning(id);
+      if (started.length > 0) this.note(id as TaskId, `Started ${started.join(", ")} again.`);
+      if (failed.length > 0) this.warn(id, `Did not start again: ${failed.join("; ")}`);
+    } catch (err) {
+      this.warn(id, `Services did not start again: ${errorMessage(err)}`);
+    }
   }
 
   /** "Fresh session" on an agent in the room (5.13). */

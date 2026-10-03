@@ -67,10 +67,28 @@ function verbOf(args: readonly string[]): string {
   return ["ps", "port", "inspect", "rm"].includes(first) ? first : `${first} ${args[1] ?? ""}`.trim();
 }
 
+/** The age filter of a build cache prune, in hours. */
+const PRUNE_UNTIL = /^until=[1-9][0-9]{0,4}h$/;
+
 /** Throws unless the call only reads, or only removes what majhi made. Creating goes through `create` and `attached`. */
-function assertReadOrRemove(args: readonly string[]): void {
+export function assertReadOrRemove(args: readonly string[]): void {
   const verb = verbOf(args);
   if (READ_VERBS.has(verb)) return;
+  if (verb === "buildx prune") {
+    // Exactly one shape: the cache of a majhi builder, by age. Never the default builder, never --all.
+    const [, , builderFlag, builder = "", force, filterFlag, filter = "", ...rest] = args;
+    if (
+      builderFlag !== "--builder" ||
+      !OWN_NAME.test(builder) ||
+      force !== "--force" ||
+      filterFlag !== "--filter" ||
+      !PRUNE_UNTIL.test(filter) ||
+      rest.length > 0
+    ) {
+      throw new ContainerRefused("Only the old build cache of a majhi builder can be pruned.");
+    }
+    return;
+  }
   if (!REMOVE_VERBS.has(verb)) throw new ContainerRefused(`The docker command ${verb} is not allowed.`);
   const rest = args.slice(verb.split(" ").length);
   for (const arg of rest) {
@@ -87,7 +105,7 @@ function assertReadOrRemove(args: readonly string[]): void {
  * (`cliEnv`) plus a config folder in `<majhiHome>/cache/docker`, where buildx keeps the metadata of the
  * task builders across restarts. Every argument of every call is scanned for host paths that no
  * container may see. Three doors, so no caller can send a call nobody checked:
- * - `exec`: reads and removals of `majhi-` things only.
+ * - `exec`: reads and removals of `majhi-` things only, and the old cache of a `majhi-` builder.
  * - `connect`: a container to a task's own network.
  * - `create` and `attached`: take `DockerParts` and run `assertSafe` themselves.
  */

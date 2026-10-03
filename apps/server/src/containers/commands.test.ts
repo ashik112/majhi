@@ -121,6 +121,28 @@ describe("a task that ends", () => {
     expect(docker.builders.size).toBe(1);
   });
 
+  it("starting it again starts its services again, on the same volume", async () => {
+    await running();
+    expect((await w.h.cmd("tasks.stop", { id: "ACM-1" })).status).toBe(200);
+    expect(docker.containers.size).toBe(0);
+    expect((await w.h.cmd("tasks.start", { id: "ACM-1" })).status).toBe(200);
+    expect([...docker.containers.keys()]).toEqual(["majhi-acm-1-db"]);
+    expect(docker.calls.filter((c) => c === "volume create")).toHaveLength(1);
+  });
+
+  it("going to review stops its services, and a reply starts them again", async () => {
+    await running();
+    const { tasks } = w.h.majhi.services;
+    // The fake agent's first turn may end and send the task to review by itself.
+    await until(() => w.h.majhi.services.runs.working("ACM-1").length === 0);
+    if (tasks.get("ACM-1").status === "running") await tasks.agentsIdle("ACM-1");
+    expect(tasks.get("ACM-1").status).toBe("review");
+    expect(docker.containers.size).toBe(0);
+    expect(docker.volumes.size).toBe(1);
+    expect((await w.h.cmd("tasks.start", { id: "ACM-1" })).status).toBe(200);
+    expect([...docker.containers.keys()]).toEqual(["majhi-acm-1-db"]);
+  });
+
   it("closing it removes the volumes, the builder and the preview image too", async () => {
     await running();
     expect((await w.h.cmd("tasks.close", { id: "ACM-1" })).status).toBe(200);
@@ -139,3 +161,11 @@ describe("a task that ends", () => {
     expect(docker.images.size).toBe(0);
   });
 });
+
+async function until(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error("Timed out");
+}

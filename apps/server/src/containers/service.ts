@@ -26,6 +26,7 @@ import {
 } from "./args.ts";
 import type { DockerCli } from "./docker.ts";
 import { containerNames } from "./names.ts";
+import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
 
 export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 
@@ -55,6 +56,17 @@ export type ServiceStartResult = { status: "started"; container: ContainerInfo }
 /** Asks for an image the owner has not allowed yet, through an approval card. */
 export type AskImage = (image: string) => Promise<"allowed" | "pending">;
 
+/** A service or the preview as an agent started it, so majhi can start it again the same way. */
+type StartedSpec =
+  | { kind: "service"; agent: string; input: ServiceStartInput }
+  | { kind: "preview"; agent: string; input: PreviewRunInput };
+
+/** What `taskRunning` started again, and what would not start, by name. */
+export interface Restarted {
+  started: string[];
+  failed: string[];
+}
+
 const PORT_POLL_MS = 400;
 /** The runner containers of a task are found by these labels. */
 const RUNNER_LABEL = "label=majhi.runner=1";
@@ -75,6 +87,12 @@ export class ContainerService {
   private readonly locks = new Map<string, Promise<unknown>>();
   /** The startup cleanup. A start waits for it, so the cleanup cannot sweep away what a start made. */
   private starting: Promise<void> = Promise.resolve();
+  /** How each task's services and preview were last started, by name (`preview` or the service's). */
+  private readonly specs = new Map<string, Map<string, StartedSpec>>();
+  /** What ran when the task stopped running. It starts again when the task runs again. */
+  private readonly parked = new Map<string, StartedSpec[]>();
+  /** Preview builds running, by task. The builder stops when the last one ends. */
+  private readonly builds = new Map<string, number>();
 
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
@@ -130,7 +148,12 @@ export class ContainerService {
         wait: true,
         managed: {
           container: { kind: "build", name: "preview build", image: names.previewImage },
-          spawn: () => docker.attached(parts, safety, { cwd: context }),
+          spawn: async () => {
+            const spawned = await docker.attached(parts, safety, { cwd: context });
+            this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+            spawned.child.once("exit", () => void this.buildEnded(task));
+            return spawned;
+          },
         },
       });
       this.deps.changed?.();
@@ -145,6 +168,8 @@ export class ContainerService {
     const names = containerNames(task);
     const settings = await this.deps.settings();
     await this.starting;
+    // A preview may need the task's services: what stopped with the task starts first.
+    await this.taskRunning(task, "preview");
     return this.locked(task, async () => {
       try {
         await docker.exec(["image", "inspect", names.previewImage]);
@@ -199,6 +224,7 @@ export class ContainerService {
         const tail = (now?.tail ?? []).slice(-8).join("\n");
         throw new UserError(`The preview did not stay up.${tail === "" ? "" : `\n${tail}`}`);
       }
+      this.remember(task, "preview", { kind: "preview", agent, input });
       this.deps.changed?.();
       return this.infoOf(now) as ContainerInfo;
     });
@@ -234,6 +260,8 @@ export class ContainerService {
     }
     const names = containerNames(task);
     await this.starting;
+    // The task's other services that stopped with it start again; this one starts as asked now.
+    await this.taskRunning(task, input.name);
     return this.locked(task, async () => {
       if (this.running(task, "service", input.name) !== undefined) {
         throw new UserError(
@@ -269,6 +297,7 @@ export class ContainerService {
         wait: false,
         managed: { container, spawn: () => docker.attached(parts, safety, { cwd: t.folder }) },
       });
+      this.remember(task, input.name, { kind: "service", agent, input });
       this.deps.changed?.();
       return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
     });
@@ -313,6 +342,65 @@ export class ContainerService {
   }
 
   // ---------------------------------------------------------------------------
+  // The task stops running, and runs again
+
+  /**
+   * The task stopped running (review, paused, stopped): its services and preview stop, and
+   * `taskRunning` starts them again the same way. Containers run with `--rm`, so stopping removes
+   * them; named volumes keep their data. The network goes and the builder stops, as on `taskStopped`.
+   */
+  async taskPaused(task: string): Promise<void> {
+    if (this.docker === undefined) return;
+    // Under the task's lock, so a `taskRunning` that comes meanwhile waits and sees all of it.
+    await this.locked(task, async () => {
+      const parked = this.parked.get(task) ?? [];
+      const specs = this.specs.get(task);
+      const running = this.all(task).filter(
+        (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
+      );
+      for (const p of running) {
+        const name = p.container?.name ?? "";
+        const spec = specs?.get(name);
+        if (spec !== undefined && !parked.some((s) => nameOf(s) === name)) parked.push(spec);
+      }
+      if (parked.length > 0) this.parked.set(task, parked);
+      for (const p of running) await this.deps.processes.stop(task, p.id, "task");
+      await this.taskStopped(task);
+    });
+  }
+
+  /**
+   * The task runs again: what `taskPaused` stopped starts again, services first (a preview joins
+   * their network). `except` is a name an agent starts anew now. Each failure is reported by name
+   * and the rest still start.
+   */
+  async taskRunning(task: string, except?: string): Promise<Restarted> {
+    const done: Restarted = { started: [], failed: [] };
+    if (this.docker === undefined) return done;
+    // After a `taskPaused` in flight. The starts below take the lock themselves.
+    const parked = await this.locked(task, async () => {
+      const found = this.parked.get(task);
+      this.parked.delete(task);
+      return found;
+    });
+    if (parked === undefined) return done;
+    const order = parked
+      .filter((s) => nameOf(s) !== except)
+      .sort((a, b) => Number(a.kind === "preview") - Number(b.kind === "preview"));
+    for (const spec of order) {
+      const name = nameOf(spec);
+      try {
+        if (spec.kind === "service") await this.serviceStart(task, spec.agent, spec.input);
+        else await this.previewRun(task, spec.agent, spec.input);
+        done.started.push(name);
+      } catch (err) {
+        done.failed.push(`${name}: ${errorMessage(err)}`);
+      }
+    }
+    return done;
+  }
+
+  // ---------------------------------------------------------------------------
   // Cleanup
 
   /**
@@ -343,6 +431,10 @@ export class ContainerService {
 
   /** The task is done or removed: everything of it goes, volumes, builder and preview image too. */
   async taskEnded(task: string): Promise<void> {
+    await this.locked(task, async () => {
+      this.parked.delete(task);
+      this.specs.delete(task);
+    });
     await this.taskStopped(task);
     const docker = this.docker;
     if (docker === undefined) return;
@@ -436,6 +528,45 @@ export class ContainerService {
     });
     this.networks.clear();
     this.deps.changed?.();
+  }
+
+  /**
+   * The weekly prune (`prune.ts`): majhi's preview images that no container uses and the build
+   * cache of the open tasks' builders, each older than a week. Runs when a week passed since the
+   * last one. Never volumes, and nothing majhi did not label or name. Undefined when it was not due.
+   */
+  async pruneIfDue(now = new Date()): Promise<{ images: number; builders: number } | undefined> {
+    const docker = this.docker;
+    if (docker === undefined) return undefined;
+    const home = this.deps.paths.majhiHome;
+    const last = await lastPrune(home);
+    if (last !== undefined && now.getTime() - last.getTime() < PRUNE_EVERY_MS) return undefined;
+    await this.starting;
+    let images = 0;
+    await this.quietly(async () => {
+      images = await pruneImages(docker, now);
+    });
+    let builders = 0;
+    const existing = new Set<string>();
+    await this.quietly(async () => {
+      const names = await this.lines(docker, ["buildx", "ls", "--format", "{{.Name}}"]);
+      for (const name of names) existing.add(name.replace(/\*$/, ""));
+    });
+    for (const task of this.deps.openTasks()) {
+      const builder = containerNames(task).builder;
+      if (!existing.has(builder)) continue;
+      // Under the task's lock, and never while it builds: a prune starts the builder, and it stops again.
+      await this.locked(task, async () => {
+        if ((this.builds.get(task) ?? 0) > 0) return;
+        await this.quietly(async () => {
+          await pruneBuilderCache(docker, builder);
+          builders++;
+        });
+        await this.stopBuilder(docker, builder);
+      });
+    }
+    await savePrune(home, now);
+    return { images, builders };
   }
 
   // ---------------------------------------------------------------------------
@@ -622,6 +753,28 @@ export class ContainerService {
     return undefined;
   }
 
+  private remember(task: string, name: string, spec: StartedSpec): void {
+    const specs = this.specs.get(task) ?? new Map<string, StartedSpec>();
+    specs.set(name, spec);
+    this.specs.set(task, specs);
+  }
+
+  /** A preview build ended: the builder stops once no other build of the task runs. Its cache stays. */
+  private async buildEnded(task: string): Promise<void> {
+    const left = (this.builds.get(task) ?? 1) - 1;
+    if (left > 0) {
+      this.builds.set(task, left);
+      return;
+    }
+    this.builds.delete(task);
+    const docker = this.docker;
+    if (docker === undefined) return;
+    // Under the task's lock: a build that starts meanwhile is counted before this looks.
+    await this.locked(task, async () => {
+      if ((this.builds.get(task) ?? 0) === 0) await this.stopBuilder(docker, containerNames(task).builder);
+    });
+  }
+
   /** Stops a builder's container, if the builder exists. Its cache and state stay. */
   private async stopBuilder(docker: ContainerDocker, builder: string): Promise<void> {
     try {
@@ -681,6 +834,8 @@ export class ContainerService {
     return next;
   }
 }
+
+const nameOf = (spec: StartedSpec): string => (spec.kind === "service" ? spec.input.name : "preview");
 
 function limitsOf(settings: ContainersSettings): Limits {
   return { cpus: settings.cpus, memory: settings.memory };
