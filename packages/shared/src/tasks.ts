@@ -725,11 +725,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** questionId -> the option id chosen, or free text typed. */
     answers: z.record(z.string(), z.string()).optional(),
   }),
-  /** A context budget event (5.13): compaction, handoff to a fresh session, or rotation. */
+  /**
+   * A context budget event (5.13): compaction, handoff to a fresh session, or rotation. `auto` is a
+   * compaction the agent's CLI did on its own inside a turn; `native` is one majhi asked for.
+   */
   RoomItemBase.extend({
     type: z.literal("context"),
     agent: IdSchema,
-    method: z.enum(["native", "handoff", "rotation", "fresh", "recovery"]),
+    method: z.enum(["native", "auto", "handoff", "rotation", "fresh", "recovery"]),
     /** Tokens before and after, when known. */
     before: z.number().nonnegative().optional(),
     after: z.number().nonnegative().optional(),

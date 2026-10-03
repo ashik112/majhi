@@ -346,12 +346,16 @@ export function cacheHitRate(t: Pick<UsageTotals, "inputTokens" | "cacheReadToke
 
 const Rate = z.number().min(0).max(1).nullable();
 
-/** A compaction as the receipt shows it. `reason` is how the context event ended up here (`threshold`'s native or handoff, a rotation, a fresh session, a recovery). */
+/**
+ * A compaction as the receipt shows it. `reason` is how the context event ended up here
+ * (`threshold`'s native or handoff, the CLI compacting on its own, a rotation, a fresh session, a
+ * recovery); `method` is whether the session went on (`native`) or was handed off.
+ */
 export const ReceiptCompactionSchema = z.object({
   at: z.string(),
   agent: z.string(),
   method: z.enum(["native", "handoff"]),
-  reason: z.enum(["native", "handoff", "rotation", "fresh", "recovery"]),
+  reason: z.enum(["native", "auto", "handoff", "rotation", "fresh", "recovery"]),
   /** Tokens in the context before and after, when known. */
   before: Count.nullable(),
   after: Count.nullable(),

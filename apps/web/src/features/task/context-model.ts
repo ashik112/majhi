@@ -18,6 +18,7 @@ export interface ContextEvent {
 /** What happened, and why, in a few words each. */
 export const EVENT_WORDS: Record<ContextReason, { what: string; why: string }> = {
   native: { what: "Compacted", why: "Reached the compact threshold" },
+  auto: { what: "Compacted on its own", why: "Its CLI reached the compact window inside a turn" },
   handoff: {
     what: "Moved to a fresh session",
     why: "Compacting did not bring it under the target, so it wrote a handoff note",

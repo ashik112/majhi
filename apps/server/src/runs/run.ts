@@ -5,6 +5,7 @@ import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
 import type { ContextBudget, ContextOverride, Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
+import { NativeWatch } from "./native.ts";
 import type { StartFailure } from "./start-failure.ts";
 import type { FiredLimit, TurnLimits } from "./turn-limits.ts";
 
@@ -127,6 +128,10 @@ export class AgentRun {
   private usageWaiters: (() => void)[] = [];
   /** Compactions while handling the current prompt (at most 2). */
   compactions = 0;
+  /** Set while majhi compacts the session itself, so the CLI's report of it is not taken for its own. */
+  selfCompacting = false;
+  /** Spots compactions the CLI does on its own inside a turn (PRV-103). */
+  readonly native = new NativeWatch();
   /** Given to the next prompt of a fresh session. */
   carry: Carry | undefined;
   /** The next session must be new: the old one was handed off. */

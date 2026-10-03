@@ -1566,6 +1566,7 @@ export class RunManager {
       this.rememberSecrets(run.task, opened.connections?.secrets ?? []);
       run.turns = 0;
       run.usage = undefined;
+      run.native.reset();
       run.runId = deps.store.runs.start({
         task: run.task,
         agent: run.agent,
@@ -1736,11 +1737,23 @@ export class RunManager {
         if (event.cost !== undefined && event.cost.currency.toUpperCase() === "USD")
           run.costNow = event.cost.amount;
         if (event.size > 0) {
+          const previous = run.usage?.used;
           const usage = capUsage(event.used, event.size, run.budget?.cap ?? 0);
           run.noteUsage(usage);
           this.setLive(run, { usage });
+          if (internal === undefined && !run.selfCompacting) {
+            const found = run.native.usage(previous, event.used);
+            if (found !== undefined) this.compaction.auto(run, found);
+          }
         }
         break;
+      case "compaction": {
+        // majhi's own `/compact` is recorded where majhi asked for it.
+        if (internal !== undefined || run.selfCompacting) break;
+        const found = run.native.report(event, run.usage?.used);
+        if (found !== undefined) this.compaction.auto(run, found);
+        break;
+      }
       case "turn":
         if (event.usage.model !== undefined) run.turnModel = event.usage.model;
         if (run.account !== undefined && run.accountKind !== undefined) {

@@ -33,9 +33,9 @@ export function contextOf(events: readonly EventRow[]): ReceiptContext {
   };
 }
 
-const REASONS = new Set(["native", "handoff", "rotation", "fresh", "recovery"]);
+const REASONS = new Set(["native", "auto", "handoff", "rotation", "fresh", "recovery"]);
 
-/** Compactions oldest first. Only native compaction keeps the session; every other reason is a handoff. */
+/** Compactions oldest first. Native compaction, majhi's or the CLI's own, keeps the session; every other reason is a handoff. */
 export function compactionsOf(events: readonly EventRow[]): ReceiptCompaction[] {
   return events
     .filter((e) => e.kind === "compaction" && e.agent !== null && REASONS.has(e.method ?? ""))
@@ -45,7 +45,7 @@ export function compactionsOf(events: readonly EventRow[]): ReceiptCompaction[] 
       return {
         at: e.at,
         agent: e.agent ?? "",
-        method: reason === "native" ? "native" : "handoff",
+        method: reason === "native" || reason === "auto" ? "native" : "handoff",
         reason,
         before: e.tokens,
         after: e.after_tokens,
