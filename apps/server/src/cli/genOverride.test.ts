@@ -47,11 +47,7 @@ describe("renderOverride", () => {
         ...base,
         config: { workspaces: ["/Users/me/Work"], tasksDir: "/Users/me/Work/.majhi" },
       },
-      [
-        "/Users/me/.ssh/id_ed25519.pub",
-        "/Users/me/.ssh/gitlab-ashik112.pub",
-        "/Users/me/.ssh/id_ed25519.pub",
-      ],
+      ["/Users/me/.ssh/id_ed25519.pub", "/Users/me/.ssh/gitlab-acme.pub", "/Users/me/.ssh/id_ed25519.pub"],
       undefined,
       OFF,
     );
@@ -59,8 +55,8 @@ describe("renderOverride", () => {
       "/Users/me/Work:/Users/me/Work",
       {
         type: "bind",
-        source: "/Users/me/.ssh/gitlab-ashik112.pub",
-        target: "/Users/me/.ssh/gitlab-ashik112.pub",
+        source: "/Users/me/.ssh/gitlab-acme.pub",
+        target: "/Users/me/.ssh/gitlab-acme.pub",
         read_only: true,
       },
       {
