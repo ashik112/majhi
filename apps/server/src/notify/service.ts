@@ -246,7 +246,12 @@ export class Notifier {
     settings: NotificationsSettings,
   ): Promise<void> {
     this.emit(event, settings);
-    if (settings.mac && this.deps.desktop !== undefined) {
+    // A tab that can pop browser notifications reports it on /api/events every 20 s. While one did
+    // within the last minute, that tab tells the owner (and its click focuses majhi), so the desktop
+    // banner would only repeat it. The server cannot see whether the tab popped, so a fresh report is
+    // the signal; with no tab, or none allowed to, the desktop banner goes out as before.
+    const tabTells = settings.browser && this.deps.events.tabs.popping(this.now());
+    if (settings.mac && !tabTells && this.deps.desktop !== undefined) {
       await this.deps
         .desktop({ title: "majhi", message: event.text, path: event.path, sound: settings.sound })
         .catch(() => undefined);
