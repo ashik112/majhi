@@ -55,7 +55,7 @@ export function DecisionsView() {
     return by;
   }, [all]);
   const subtitle =
-    all === undefined ? undefined : all.length === 0 ? "Nothing needs you." : `${all.length} waiting for you`;
+    all === undefined ? undefined : all.length === 0 ? "All answered." : `${all.length} waiting for you`;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -70,7 +70,7 @@ export function DecisionsView() {
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-6 scroll-fade">
           <div className="flex w-full max-w-[920px] min-w-0 flex-col gap-3">
-            {orgs.length > 1 && (
+            {orgs.length > 1 && all.length > 0 && (
               <fieldset className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0">
                 <legend className="sr-only">Workspace</legend>
                 <ChoiceChip pressed={org === undefined} onClick={() => setOrg(undefined)}>

@@ -96,6 +96,9 @@ export function DecisionRow({
   const now = useNow(60_000);
   const workspace = workspaceOf(decision);
   const busy = answer.isPending;
+  const titleSaysKind = decision.title
+    .toLowerCase()
+    .startsWith(DECISION_KIND_LABEL[decision.kind].toLowerCase());
   const send = (option: string) =>
     answer.mutate(
       { id: decision.id, option },
@@ -134,10 +137,15 @@ export function DecisionRow({
             )}
           </span>
         )}
-        {!compact && (
-          <span className="ml-auto shrink-0 text-xs text-fg-faint">{DECISION_KIND_LABEL[decision.kind]}</span>
+        {/* What kind it is, unless the title already says so. In the popover, only where nothing else says whose it is. */}
+        {(compact ? workspace === undefined && decision.task === undefined : !titleSaysKind) && (
+          <span
+            className={`shrink-0 text-xs ${compact ? "font-medium text-fg-soft" : "ml-auto text-fg-faint"}`}
+          >
+            {DECISION_KIND_LABEL[decision.kind]}
+          </span>
         )}
-        <span className={`tnum shrink-0 text-xs text-fg-faint ${compact ? "ml-auto" : ""}`}>
+        <span className={`tnum shrink-0 text-xs text-fg-faint ${compact || titleSaysKind ? "ml-auto" : ""}`}>
           {formatAgo(decision.at, now)}
         </span>
       </div>
