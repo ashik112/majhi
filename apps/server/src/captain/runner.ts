@@ -255,6 +255,11 @@ export class ChoreRunner {
 
   constructor(private readonly deps: RunnerDeps) {}
 
+  /** A run is going or starting. */
+  busy(): boolean {
+    return this.active.size > 0 || this.starting.size > 0;
+  }
+
   running(org: string, chore: CaptainChore): boolean {
     const key = `${org}:${chore}`;
     return this.active.has(key) || this.starting.has(key);

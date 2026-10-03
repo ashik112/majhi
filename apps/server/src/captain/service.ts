@@ -61,6 +61,10 @@ export interface CaptainDeps {
   identity: (org: string) => Promise<Identity>;
   /** Runs a command as the owner, for Undo through majhi's own paths. */
   ownerCommand: (command: string, input: unknown, meta: CommandMeta) => Promise<void>;
+  /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
+  taskOrg?: (task: string) => string | undefined;
+  /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
+  triggerMs?: number;
   now?: () => Date;
 }
 
@@ -216,31 +220,46 @@ export class CaptainService {
     const timer = setTimeout(() => {
       this.pending.delete(key);
       void this.runner.trigger({ org, chore, cause, why, subject }).catch(() => undefined);
-    }, TRIGGER_MS);
+    }, this.deps.triggerMs ?? TRIGGER_MS);
     timer.unref();
     this.pending.set(key, { timer, why, ...(subject === undefined ? {} : { subject }) });
   }
 
+  /** The workspace of a task, or undefined for a chat or a task that is gone. */
+  private orgOfTask(task: string): string | undefined {
+    if (this.deps.taskOrg !== undefined) return this.deps.taskOrg(task);
+    const found = this.deps.store.tasks.get(task);
+    if (found === undefined || found.kind === "chat") return undefined;
+    return found.org ?? PRIVATE;
+  }
+
+  /** Waits until no trigger is batched and no run is going: for tests and a clean shutdown. */
+  async settled(): Promise<void> {
+    for (let i = 0; i < 10_000; i++) {
+      if (this.pending.size === 0 && !this.runner.busy()) return;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
   /** A task reached review: the ship chore of its workspace looks. */
   reviewReached(task: string): void {
-    const found = this.deps.store.tasks.get(task);
-    if (found === undefined || found.kind === "chat") return;
-    const org = found.org ?? PRIVATE;
+    const org = this.orgOfTask(task);
+    if (org === undefined) return;
     const cause = this.causedByCaptain(task) ? "captain" : "agent";
     this.trigger(org, "ship", `${task} reached review`, cause, task);
   }
 
   /** A room item was written: a new card or question wakes the chore that answers it. */
   roomWrote(task: string, item: RoomItem, captain: string | undefined = this.boss): void {
-    let org: string;
+    let org: string | undefined;
     try {
+      // The captain's own lanes start nothing.
       if (this.deps.lanes.orgOf(task) !== undefined) return;
-      const found = this.deps.store.tasks.get(task);
-      if (found === undefined) return;
-      org = found.org ?? PRIVATE;
+      org = this.orgOfTask(task);
     } catch {
       return;
     }
+    if (org === undefined) return;
     const agent = "agent" in item && typeof item.agent === "string" ? item.agent : undefined;
     const cause = agent !== undefined && agent === captain ? "captain" : "agent";
     if (item.type === "approval" && item.state === "pending" && item.autonomy === undefined) {
@@ -261,13 +280,18 @@ export class CaptainService {
   }
 
   /** The owner acted in a task: the captain keeps out of it for 10 minutes. */
-  ownerActed(command: string, input: unknown, meta: CommandMeta): void {
+  ownerActed(command: string, input: unknown, meta: CommandMeta, output?: unknown): void {
     if (meta.actor.kind !== "owner") return;
     // Reading a room is not acting in it.
     if (command.startsWith("captain.") || !Object.hasOwn(commands, command)) return;
     if (commands[command as CommandName].risk === "read") return;
     const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-    const task = [fields.task, fields.id].find(
+    // A task the owner just made is one they act in too.
+    const made =
+      command === "tasks.create" && typeof output === "object" && output !== null
+        ? (output as { id?: unknown }).id
+        : undefined;
+    const task = [fields.task, fields.id, made].find(
       (v): v is string => typeof v === "string" && /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/.test(v),
     );
     if (task === undefined) return;

@@ -78,7 +78,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       system,
     }),
     (name) => services.events.emit(topicsFor(name)),
-    (name, input, meta) => services.captain.ownerActed(name, input, meta),
+    (name, input, meta, output) => services.captain.ownerActed(name, input, meta, output),
   );
   services.admin.bind(dispatch);
   services.bindCaptain(dispatch);
