@@ -134,6 +134,8 @@ const helperEnv: NodeJS.ProcessEnv = {
   MAJHI_URL: `http://127.0.0.1:${E2E_PORT}`,
   MAJHI_HOME,
   MAJHI_HOST_VERSION: "e2e",
+  // Its notifications are about test tasks (ACM-1): never on the owner's desktop.
+  MAJHI_HOST_NOTIFY: "off",
 };
 delete helperEnv.MAJHI_REPO;
 const helper = spawn(

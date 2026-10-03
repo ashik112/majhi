@@ -78,7 +78,19 @@ async function main(): Promise<void> {
   await ensureToken(config.majhiHome);
 
   const deps = processDeps(os, { home: config.home, majhiHome: config.majhiHome, log });
-  const platform = createPlatform(os, deps);
+  const real = createPlatform(os, deps);
+  // A helper next to a test server shows nothing on the owner's desktop: its tasks are test data.
+  const platform = config.notify
+    ? real
+    : {
+        ...real,
+        notifier: {
+          show: async (request: { title: string; message: string }) => {
+            log(`notify (off): ${request.title}: ${request.message}`);
+            return { clickable: false };
+          },
+        },
+      };
   const path = deps.path;
   const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =
