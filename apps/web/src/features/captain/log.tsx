@@ -67,7 +67,7 @@ export function CaptainLog({ status, now }: { status: CaptainStatus; now: number
           aria-label="Workspace"
           value={org}
           onChange={(e) => setOrg(e.target.value)}
-          className="ml-auto h-8 w-auto text-sm"
+          className="ml-auto h-8 w-[200px] text-sm"
         >
           <option value="">All workspaces</option>
           {status.orgs.map((o) => (

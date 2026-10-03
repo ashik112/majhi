@@ -260,7 +260,7 @@ test("every sidebar item opens its page", async ({ page }) => {
   for (const [name, path, heading] of [
     ["Board", "/", "Board"],
     ["Chats", "/chats", undefined],
-    ["Autonomous", "/autonomous", undefined],
+    ["Captain", "/captain", "Captain"],
     ["Agents", "/agents", "Agents"],
     ["Accounts", "/accounts", "Accounts"],
     ["Connections", "/connections", "Connections"],

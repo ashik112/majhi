@@ -29,28 +29,30 @@ export function RulesTab({ captain, now }: { captain: CaptainStatus; now: number
           <InstructionsCard status={autonomy} now={now} />
         </div>
       )}
-      {captain.orgs.map((org) => {
-        const view = orgs.find((o) => o.id === org.org);
-        return (
-          <WorkspaceCard
-            key={org.org}
-            org={org}
-            badge={
-              view === undefined
-                ? org.org === PRIVATE
-                  ? "PR"
-                  : badgeLetters(org.name)
-                : badgeLetters(view.key)
-            }
-            color={view?.color}
-            accounts={accounts}
-            autonomyOn={captain.autonomy === "on"}
-            dayCap={autonomy?.settings.day.cost}
-            zone={zone}
-            status={autonomy}
-          />
-        );
-      })}
+      <div className="grid min-w-0 items-start gap-3 min-[1360px]:grid-cols-2">
+        {captain.orgs.map((org) => {
+          const view = orgs.find((o) => o.id === org.org);
+          return (
+            <WorkspaceCard
+              key={org.org}
+              org={org}
+              badge={
+                view === undefined
+                  ? org.org === PRIVATE
+                    ? "PR"
+                    : badgeLetters(org.name)
+                  : badgeLetters(view.key)
+              }
+              color={view?.color}
+              accounts={accounts}
+              autonomyOn={captain.autonomy === "on"}
+              dayCap={autonomy?.settings.day.cost}
+              zone={zone}
+              status={autonomy}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
