@@ -4,231 +4,307 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>majhi</title>
-<meta name="description" content="You steer. The agents row. Run crews of AI coding agents for every client, from one desk, on your own machine.">
+<meta name="description" content="You steer. The agents row. Run crews of AI coding agents for every client from one desk, on your own machine.">
 <meta property="og:title" content="majhi">
-<meta property="og:description" content="You steer. The agents row. Crews of AI coding agents for every client, on your machine.">
+<meta property="og:description" content="You steer. The agents row. Crews of AI coding agents for every client, on your own machine.">
 <meta property="og:image" content="https://majhi.dev/assets/onboarding.webp">
 <meta property="og:url" content="https://majhi.dev">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#1d47c4">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@600;700;800&family=Hind+Siliguri:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
-:root{--saffron:#f2a83a;--ink:#1c1712;--cream:#f4efe4;--night:#0a0f22;--line:#1c1712}
+:root{
+  --red:#d42a3c; --red-deep:#a81c2e;
+  --green:#14874a; --green-deep:#0b6236; --green-lite:#28a65c;
+  --cobalt:#1d47c4; --cobalt-deep:#132f8f; --sky:#2a5fe0;
+  --yellow:#f6c419; --pink:#ef6aa6; --white:#fffdf6; --ink:#120e0b;
+}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;font:18px/1.5 "Inter Tight",system-ui,sans-serif;color:var(--ink);background:var(--cream);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--green);color:var(--white);font:19px/1.6 "Hind Siliguri",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+::selection{background:var(--yellow);color:var(--ink)}
 a{color:inherit}
-.mono{font:500 12px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:6px}
+img{max-width:100%}
 
-nav{position:fixed;inset:0 0 auto;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:22px 28px;pointer-events:none}
-nav>*{pointer-events:auto}
-.tilemark{width:44px;height:44px;border-radius:11px;background:var(--saffron);display:grid;place-items:center;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink)}
-.tilemark svg{width:28px}
-.mark{display:block}
-.navr{display:flex;gap:10px;align-items:center}
-.circle{width:40px;height:40px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
-.circle svg{width:18px;fill:var(--saffron)}
-.pill{background:var(--ink);color:var(--saffron);border-radius:999px;padding:11px 20px;font-weight:600;font-size:16px;text-decoration:none}
+/* rickshaw lettering: painted fill, black outline, hard painted shadow */
+.letter{font-family:"Baloo Da 2",sans-serif;font-weight:800;letter-spacing:-.01em;line-height:.98;
+  -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--ink)}
 
-.block{display:inline-flex;align-items:center;gap:10px;background:var(--saffron);color:var(--ink);border:2px solid var(--line);padding:14px 22px;font:600 15px/1 "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;box-shadow:6px 6px 0 var(--line);transition:transform .15s,box-shadow .15s;cursor:pointer}
-.block:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--line)}
-.block:active{transform:translate(4px,4px);box-shadow:2px 2px 0 var(--line)}
-.block.light{background:var(--cream)}
+/* scalloped painted borders, the trim of every rickshaw panel */
+.scallop{height:30px;background:
+  radial-gradient(circle at 15px 0,var(--ink) 14px,transparent 15px) 0 0/30px 30px repeat-x,
+  radial-gradient(circle at 15px 0,var(--red) 11px,transparent 12px) 0 0/30px 30px repeat-x;
+  position:relative}
+.scallop::after{content:"";position:absolute;left:0;right:0;top:3px;height:6px;background:radial-gradient(circle,var(--white) 2.4px,transparent 3px) 9px 0/30px 6px repeat-x}
+.scallop.up{transform:scaleY(-1)}
+.dots{height:12px;background:radial-gradient(circle,var(--white) 3px,transparent 3.6px) 0 50%/22px 12px repeat-x}
 
-.hero{position:relative;min-height:100vh;background:var(--saffron);overflow:hidden;display:flex;align-items:center;
-  background-image:radial-gradient(rgba(28,23,18,.22) 1.2px,transparent 1.2px);background-size:38px 38px}
-.word{position:relative;z-index:2;margin:0;padding-left:2vw;font:800 clamp(140px,27vw,440px)/.8 "Baloo Da 2",sans-serif;letter-spacing:-.04em;color:var(--ink);filter:url(#grain)}
-.heroText{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:28px;padding:0 5vw 0 2vw}
-.heroText h2{margin:0;font:500 clamp(30px,3.1vw,46px)/1.08 "Inter Tight";letter-spacing:-.025em}
-.heroText p{margin:0;font-size:19px;max-width:440px}
-.tag{position:absolute;z-index:2;left:30px;bottom:28px}
-.down{position:absolute;z-index:2;left:50%;bottom:24px;transform:translateX(-50%);width:28px;opacity:.8}
-.swarm{position:absolute;inset:0;z-index:1;pointer-events:none}
-.swarm svg{position:absolute;color:var(--cream);opacity:.85;animation:drift var(--d,18s) ease-in-out var(--o,0s) infinite alternate}
-.swarm svg.ink{color:var(--ink);opacity:.18}
-@keyframes drift{from{transform:translate(0,0) rotate(-14deg)}to{transform:translate(var(--x,40px),var(--y,-30px)) rotate(16deg)}}
+/* painted sign buttons */
+.sign{display:inline-flex;align-items:center;gap:10px;background:var(--yellow);color:var(--ink);font:700 18px/1 "Baloo Da 2";
+  padding:15px 24px 13px;border:3px solid var(--ink);border-radius:999px;text-decoration:none;box-shadow:4px 5px 0 var(--ink);
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s}
+.sign:hover{transform:translate(-1px,-2px);box-shadow:5px 7px 0 var(--ink)}
+.sign:active{transform:translate(3px,4px);box-shadow:1px 1px 0 var(--ink)}
+.sign.alt{background:var(--white)}
+.sign svg{width:20px;height:20px}
 
-.river{position:relative;height:120vh;background:var(--night) url("/assets/river-night.webp") center 70%/cover no-repeat;overflow:hidden;color:var(--cream)}
-.river::after{content:"";position:absolute;inset:0;background:linear-gradient(var(--night),transparent 30%,transparent 70%,var(--night))}
-.riverText{position:relative;z-index:3;text-align:center;padding:22vh 6vw 0}
-.riverText::before{content:"";position:absolute;z-index:-1;left:50%;top:18vh;width:min(1100px,96vw);height:440px;transform:translateX(-50%);background:radial-gradient(closest-side,rgba(6,10,28,.82),rgba(6,10,28,.55) 60%,transparent)}
-.riverText h2{margin:0 auto;max-width:1000px;font:800 clamp(44px,6vw,96px)/.95 "Baloo Da 2";letter-spacing:-.02em}
-.riverText h2 em{font-style:normal;color:var(--saffron)}
-.riverText p{max-width:620px;margin:26px auto 0;font-size:20px;opacity:.9}
-.boatlane{position:absolute;z-index:2;left:0;right:0;bottom:16vh;height:260px}
-.boatlane svg{position:absolute;bottom:0;width:min(46vw,560px);animation:sail 38s linear infinite}
-@keyframes sail{from{left:-50vw}to{left:105vw}}
+/* ---------- hero: a painted rickshaw panel ---------- */
+.hero{position:relative;min-height:100svh;overflow:hidden;background:var(--sky);border-bottom:6px solid var(--ink)}
+.hero .scene{position:absolute;inset:0;width:100%;height:100%}
+nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2";color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
+.tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
+.tile svg{width:27px}
+nav .grow{flex:1}
+nav .sign{padding:11px 18px 9px;font-size:16px}
+.copy{position:relative;z-index:5;max-width:760px;padding:clamp(20px,5vh,56px) clamp(18px,4vw,48px) 0}
+.copy h1{margin:0;font-size:clamp(46px,6vw,86px);color:var(--yellow)}
+.copy h1 span,.copy h1 em{white-space:nowrap}
+.copy h1 span{color:var(--white);display:block}
+.copy p{margin:20px 0 28px;font-size:21px;max-width:600px;color:var(--white);font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.35)}
+.actions{display:flex;gap:14px;flex-wrap:wrap}
+.boat{position:absolute;z-index:4;bottom:12%;width:min(40vw,520px);animation:sail 34s linear infinite}
+@keyframes sail{from{left:-42vw}to{left:104vw}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
 @keyframes bob{from{transform:translateY(2px) rotate(-.8deg)}to{transform:translateY(-6px) rotate(.7deg)}}
 @keyframes row{from{transform:translate(10px,-4px)}to{transform:translate(-14px,6px)}}
+.wave{animation:lap 5s ease-in-out infinite alternate}
+@keyframes lap{from{transform:translateX(-8px)}to{transform:translateX(10px)}}
+.sunrays{transform-box:fill-box;transform-origin:center;animation:turn 90s linear infinite}
+@keyframes turn{to{transform:rotate(360deg)}}
+.down{position:absolute;z-index:6;left:50%;bottom:22px;transform:translateX(-50%);width:58px;height:58px;display:grid;place-items:center;
+  background:var(--red);border:3px solid var(--ink);border-radius:50%;box-shadow:3px 4px 0 var(--ink);animation:nudge 2.4s ease-in-out infinite}
+.down svg{width:26px}
+@keyframes nudge{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,6px)}}
 
-.steps{padding:18vh 6vw 14vh;max-width:1400px;margin:0 auto}
-.step{display:grid;grid-template-columns:120px 1fr minmax(260px,380px);gap:32px;align-items:baseline;padding:44px 0;border-top:2px solid var(--ink)}
-.step:last-child{border-bottom:2px solid var(--ink)}
-.step .n{font:500 14px "IBM Plex Mono"}
-.step h3{margin:0;font:600 clamp(36px,5vw,76px)/.98 "Inter Tight";letter-spacing:-.035em}
-.step p{margin:0;font-size:18px;color:#4b443b}
+/* ---------- the crew: one painted sentence ---------- */
+.crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
+.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.22 "Baloo Da 2";color:var(--white)}
+.chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.15;color:var(--ink)}
+.chip.y{background:var(--yellow)}.chip.p{background:var(--pink)}.chip.c{background:#7fb3ff}.chip.r{background:#ff8a5c}
+.crew small{display:block;max-width:1120px;margin:34px auto 0;font:500 20px/1.6 "Hind Siliguri";color:#d9f3e2}
 
-.product{background:var(--cream);padding:4vh 6vw 18vh}
-.frame{max-width:1240px;margin:0 auto;border:2px solid var(--ink);box-shadow:14px 14px 0 var(--ink);background:#0b1020}
-.frame .bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:2px solid var(--ink);background:var(--cream)}
-.frame .bar i{width:12px;height:12px;border:2px solid var(--ink);border-radius:50%}
-.frame .bar span{margin-left:auto}
-.frame img{display:block;width:100%;height:auto}
-.caption{max-width:1240px;margin:34px auto 0;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.caption h2{margin:0;font:600 clamp(30px,3.4vw,52px)/1 "Inter Tight";letter-spacing:-.03em;max-width:680px}
-.caption p{margin:0;max-width:420px;color:#4b443b}
+/* ---------- the desk: product in a tin panel ---------- */
+.desk{background:var(--cobalt);padding:clamp(70px,11vh,120px) clamp(18px,5vw,70px)}
+.desk h2,.boats h2,.board h2{margin:0 0 12px;font-size:clamp(40px,5.2vw,74px);color:var(--yellow)}
+.desk .lead,.boats .lead{margin:0 0 44px;max-width:640px;font-size:20px;color:#e3eaff}
+.tin{position:relative;max-width:1240px;margin:0 auto;padding:18px;background:var(--red);border:4px solid var(--ink);border-radius:26px;box-shadow:8px 10px 0 var(--ink)}
+.tin::before{content:"";position:absolute;inset:7px;border-radius:19px;background:radial-gradient(circle,var(--white) 3px,transparent 3.6px) 0 0/22px 22px;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;padding:6px;pointer-events:none}
+.tin img{display:block;width:100%;height:auto;border:3px solid var(--ink);border-radius:12px}
+.inner{max-width:1240px;margin:0 auto}
 
-.boats{background:var(--saffron);padding:18vh 6vw;position:relative;overflow:hidden;
-  background-image:radial-gradient(rgba(28,23,18,.22) 1.2px,transparent 1.2px);background-size:38px 38px}
-.boats h2{margin:0;font:800 clamp(52px,8vw,132px)/.9 "Baloo Da 2";letter-spacing:-.03em;max-width:1100px}
-.facts{display:grid;grid-template-columns:repeat(3,1fr);margin-top:9vh;border-top:2px solid var(--ink)}
-.facts div{padding:26px 26px 0 0}
-.facts div+div{padding-left:26px;border-left:2px solid var(--ink)}
-.facts b{display:block;font:600 24px/1.15 "Inter Tight";letter-spacing:-.02em;margin:14px 0 8px}
-.facts p{margin:0;font-size:16px}
+/* ---------- every client in its own boat ---------- */
+.boats{background:var(--yellow);color:var(--ink);padding:clamp(70px,11vh,120px) clamp(18px,5vw,70px);overflow:hidden}
+.boats h2{color:var(--red)}
+.boats .lead{color:#3a2a00}
+.fleet{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(16px,3vw,40px);margin:10px 0 46px}
+.fleet figure{margin:0;text-align:center}
+.fleet svg{width:100%;height:auto;overflow:visible}
+.fleet figcaption{font:700 24px/1 "Baloo Da 2";margin-top:4px}
+.fleet .float{animation:bob 4s ease-in-out infinite alternate}
+.fleet figure:nth-child(2) .float{animation-delay:-1.3s}.fleet figure:nth-child(3) .float{animation-delay:-2.6s}
+.rules{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+.rules li{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start}
+.rules svg{width:40px}
+.rules b{display:block;font:700 22px/1.2 "Baloo Da 2";margin-bottom:4px}
+.rules span{font-size:17px;line-height:1.55;color:#3a2a00}
 
-.install{background:var(--ink);color:var(--cream);padding:18vh 6vw 14vh;text-align:center}
-.install h2{margin:0;font:800 clamp(56px,9vw,150px)/.9 "Baloo Da 2";letter-spacing:-.03em}
-.install h2 em{font-style:normal;color:var(--saffron)}
-.cmd{display:inline-flex;align-items:center;gap:18px;margin-top:7vh;border:2px solid var(--cream);padding:18px 18px 18px 24px;max-width:92vw;box-shadow:8px 8px 0 var(--saffron)}
-.cmd code{font:400 clamp(13px,1.4vw,18px) "IBM Plex Mono";white-space:nowrap;overflow:auto;text-align:left}
-.cmd code b{color:var(--saffron);font-weight:500}
-.install .small{margin-top:28px;opacity:.6}
+/* ---------- board: install as a painted number plate ---------- */
+.board{background:var(--red);padding:clamp(80px,13vh,140px) clamp(18px,5vw,70px);text-align:center}
+.board h2{color:var(--yellow)}
+.board .lead{margin:0 auto 40px;max-width:560px;font-size:20px;color:#ffe3e3}
+.plate{display:inline-flex;align-items:center;gap:16px;max-width:100%;background:var(--white);color:var(--ink);border:4px solid var(--ink);border-radius:18px;padding:12px 12px 12px 22px;box-shadow:7px 8px 0 var(--ink);position:relative}
+.plate::before{content:"";position:absolute;inset:6px;border:2px dashed var(--red);border-radius:12px;pointer-events:none}
+.plate code{font:500 clamp(13px,1.45vw,18px)/1.4 "JetBrains Mono",monospace;white-space:nowrap;overflow-x:auto;text-align:left;position:relative}
+.plate .sign{position:relative;padding:11px 16px 9px;font-size:15px}
+.board .fine{margin-top:26px;font-size:16px;color:#ffd6d6}
 
-footer{background:var(--ink);color:var(--cream);padding:28px;display:flex;align-items:center;gap:18px;border-top:1px solid rgba(244,239,228,.15);flex-wrap:wrap}
-footer .mark{color:var(--saffron);width:34px}
+footer{background:var(--ink);color:#e9e1d3;padding:30px clamp(18px,5vw,70px);display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:16px}
+footer .tile{width:36px;height:36px;border-width:2px;box-shadow:none}
+footer .tile svg{width:22px}
 footer .r{margin-left:auto;display:flex;gap:22px}
-footer a{text-decoration:none;opacity:.8}footer a:hover{opacity:1}
+footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--yellow)}
 
-@media (max-width:900px){
-  .hero{flex-direction:column;justify-content:center;align-items:flex-start;padding-top:90px}
-  .word{font-size:33vw;padding-left:4vw}
-  .heroText{padding:24px 6vw 90px}
-  .step{grid-template-columns:1fr;gap:12px}
-  .facts{grid-template-columns:1fr}
-  .facts div+div{border-left:0;padding-left:0;border-top:2px solid var(--ink);margin-top:20px}
-  .boatlane svg{width:80vw}
-  .river{height:110vh}
-  .down{display:none}
-  .tag{right:24px}
+@media (max-width:860px){
+  .copy{padding-top:24px}
+  .copy p{font-size:19px}
+  .boat{width:78vw;bottom:9%}
+  .fleet{grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .fleet figcaption{font-size:18px}
+  .rules{grid-template-columns:1fr}
+  nav .hide{display:none}
 }
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.boatlane svg{left:20vw}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{left:40vw}}
 </style>
 </head>
 <body>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <filter id="grain" x="-10%" y="-10%" width="120%" height="120%">
-      <feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="4" result="n"/>
-      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.25" result="speck"/>
-      <feComposite in="SourceGraphic" in2="speck" operator="in" result="grained"/>
-      <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="soft"/>
-      <feMerge><feMergeNode in="soft"/><feMergeNode in="grained"/></feMerge>
-    </filter>
+    <symbol id="lotus" viewBox="0 0 120 90">
+      <g stroke="#120e0b" stroke-width="4" stroke-linejoin="round">
+        <path d="M60 84 C30 84 14 70 6 56 C26 54 42 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C90 84 106 70 114 56 C94 54 78 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C40 70 30 52 34 30 C48 40 58 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C80 70 90 52 86 30 C72 40 62 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C50 62 50 36 60 8 C70 36 70 62 60 84 Z" fill="#ff9cc8"/>
+      </g>
+      <g fill="#fffdf6"><circle cx="60" cy="44" r="3"/><circle cx="44" cy="52" r="2.4"/><circle cx="76" cy="52" r="2.4"/></g>
+    </symbol>
   </defs>
 </svg>
 
-<nav>
-  <a href="#top" aria-label="majhi" class="tilemark"><svg viewBox="28 54 200 172" fill="#1c1712"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></a>
-  <div class="navr">
-    <a class="circle" href="https://github.com/ashik112/majhi" aria-label="majhi on GitHub"><svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
-    <a class="pill" href="#install">Get majhi</a>
-  </div>
-</nav>
-
 <header class="hero" id="top">
-  <div class="swarm" id="swarm"></div>
-  <h1 class="word">majhi</h1>
-  <div class="heroText">
-    <h2>You steer.<br>The agents row.</h2>
-    <p>Crews of AI coding agents for every client, run from one desk, on your own machine.</p>
-    <a class="block light" href="#install">Get on board</a>
+  <svg class="scene" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <!-- sky with painted white stars and dots -->
+    <rect width="1440" height="900" fill="#2a5fe0"/>
+    <g fill="#fffdf6" opacity=".9">
+      <circle cx="760" cy="90" r="4"/><circle cx="840" cy="150" r="3"/><circle cx="700" cy="210" r="3"/><circle cx="1360" cy="120" r="4"/><circle cx="1290" cy="300" r="3"/><circle cx="660" cy="330" r="3"/><circle cx="900" cy="300" r="3"/>
+    </g>
+    <!-- the sun: red disc, yellow ring, petal rays -->
+    <g transform="translate(1080 230)">
+      <g class="sunrays" stroke="#120e0b" stroke-width="4" stroke-linejoin="round" fill="#f6c419">
+        <path d="M0 -150 L22 -96 L-22 -96 Z"/><path d="M0 150 L22 96 L-22 96 Z"/><path d="M-150 0 L-96 22 L-96 -22 Z"/><path d="M150 0 L96 22 L96 -22 Z"/>
+        <path d="M-106 -106 L-52 -84 L-84 -52 Z"/><path d="M106 -106 L84 -52 L52 -84 Z"/><path d="M-106 106 L-84 52 L-52 84 Z"/><path d="M106 106 L52 84 L84 52 Z"/>
+      </g>
+      <circle r="96" fill="#f6c419" stroke="#120e0b" stroke-width="5"/>
+      <circle r="74" fill="#d42a3c" stroke="#120e0b" stroke-width="4"/>
+      <g fill="none" stroke="#f6c419" stroke-width="4" stroke-linecap="round"><path d="M-40 0 A40 40 0 0 1 40 0"/><path d="M-24 18 A26 26 0 0 0 24 18"/></g>
+      <g fill="#fffdf6"><circle cy="-85" r="3.5"/><circle cy="85" r="3.5"/><circle cx="-85" r="3.5"/><circle cx="85" r="3.5"/><circle cx="-60" cy="-60" r="3"/><circle cx="60" cy="-60" r="3"/><circle cx="-60" cy="60" r="3"/><circle cx="60" cy="60" r="3"/></g>
+    </g>
+    <!-- birds -->
+    <g fill="none" stroke="#120e0b" stroke-width="4" stroke-linecap="round"><path d="M760 140 q14 -14 28 0 q14 -14 28 0"/><path d="M830 196 q10 -10 20 0 q10 -10 20 0"/></g>
+
+    <g transform="translate(0 900) scale(1 .84) translate(0 -900)">
+    <!-- far bank: tree line, huts, palms -->
+    <path d="M-20 470 q40 -46 80 0 q40 -52 80 0 q40 -40 80 0 q40 -56 80 0 q40 -44 80 0 q40 -50 80 0 q40 -42 80 0 q40 -54 80 0 q40 -46 80 0 q40 -52 80 0 q40 -40 80 0 q40 -56 80 0 q40 -44 80 0 q40 -50 80 0 q40 -42 80 0 q40 -54 80 0 q40 -46 80 0 q40 -52 80 0 q40 -40 80 0 L1460 560 L-20 560 Z" fill="#0b6236" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/>
+    <rect x="-20" y="500" width="1480" height="90" fill="#14874a"/>
+    <path d="M-20 500 H1460" stroke="#120e0b" stroke-width="5"/>
+    <g stroke="#0b6236" stroke-width="5" stroke-linecap="round"><path d="M40 530 H240"/><path d="M300 548 H560"/><path d="M880 532 H1120"/><path d="M1180 552 H1400"/></g>
+    <!-- huts -->
+    <g stroke="#120e0b" stroke-width="5" stroke-linejoin="round">
+      <rect x="610" y="458" width="92" height="56" fill="#f6c419"/><path d="M594 462 L656 418 L718 462 Z" fill="#d42a3c"/><rect x="640" y="478" width="26" height="36" fill="#120e0b"/>
+      <rect x="1210" y="462" width="80" height="50" fill="#f6c419"/><path d="M1196 466 L1250 428 L1304 466 Z" fill="#d42a3c"/><rect x="1238" y="480" width="22" height="32" fill="#120e0b"/>
+    </g>
+    <g fill="#fffdf6"><circle cx="622" cy="470" r="3"/><circle cx="690" cy="470" r="3"/><circle cx="1222" cy="474" r="3"/><circle cx="1278" cy="474" r="3"/></g>
+    <!-- palms -->
+    <g stroke="#120e0b" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M520 512 C522 470 528 440 540 410" fill="none" stroke-width="9"/><path d="M520 512 C522 470 528 440 540 410" fill="none" stroke="#a8742c" stroke-width="5"/>
+      <path d="M540 410 C510 396 480 404 466 424 C496 414 518 416 540 410 Z" fill="#28a65c"/><path d="M540 410 C566 392 600 398 614 420 C586 410 562 412 540 410 Z" fill="#28a65c"/>
+      <path d="M540 410 C530 384 506 372 484 376 C508 388 524 398 540 410 Z" fill="#14874a"/><path d="M540 410 C556 384 582 376 604 382 C580 390 560 400 540 410 Z" fill="#14874a"/>
+      <path d="M1360 514 C1362 470 1356 440 1346 410" fill="none" stroke-width="9"/><path d="M1360 514 C1362 470 1356 440 1346 410" fill="none" stroke="#a8742c" stroke-width="5"/>
+      <path d="M1346 410 C1316 396 1288 404 1274 424 C1304 414 1326 416 1346 410 Z" fill="#28a65c"/><path d="M1346 410 C1372 392 1406 398 1420 420 C1392 410 1368 412 1346 410 Z" fill="#28a65c"/>
+      <path d="M1346 410 C1336 384 1312 372 1290 376 C1314 388 1330 398 1346 410 Z" fill="#14874a"/><path d="M1346 410 C1362 384 1388 376 1410 382 C1386 390 1366 400 1346 410 Z" fill="#14874a"/>
+    </g>
+
+    <!-- the river -->
+    <path d="M-20 590 H1460 V860 H-20 Z" fill="#132f8f"/>
+    <path d="M-20 588 H1460" stroke="#120e0b" stroke-width="5"/>
+    <path d="M-20 600 H1460" stroke="#fffdf6" stroke-width="7" stroke-dasharray="0 22" stroke-linecap="round"/>
+    <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round" opacity=".9">
+      <path d="M90 650 q30 -18 60 0"/><path d="M330 700 q34 -20 68 0"/><path d="M600 640 q26 -16 52 0"/><path d="M860 690 q34 -20 68 0"/><path d="M1130 650 q30 -18 60 0"/><path d="M1300 720 q30 -18 60 0"/>
+      <path d="M200 770 q36 -22 72 0"/><path d="M480 790 q30 -18 60 0"/><path d="M760 760 q36 -22 72 0"/><path d="M1020 790 q30 -18 60 0"/><path d="M1240 770 q36 -22 72 0"/>
+    </g>
+
+    <!-- near bank with lotuses -->
+    <path d="M-20 858 q120 -26 240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 V920 H-20 Z" fill="#14874a" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/>
+    <use href="#lotus" x="30" y="790" width="130" height="98"/>
+    <use href="#lotus" x="140" y="820" width="90" height="68"/>
+    <use href="#lotus" x="1250" y="796" width="130" height="98"/>
+    <use href="#lotus" x="1170" y="826" width="84" height="64"/>
+    </g>
+  </svg>
+
+  <nav>
+    <a class="brand" href="#top"><span class="tile"><svg viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
+    <span class="grow"></span>
+    <a class="sign alt hide" href="https://github.com/ashik112/majhi">GitHub</a>
+    <a class="sign" href="#install">Install</a>
+  </nav>
+
+  <div class="copy">
+    <h1 class="letter">You steer.<span>The agents row.</span></h1>
+    <p>Run a crew of AI coding agents for every client from one desk, on your own machine.</p>
+    <div class="actions">
+      <a class="sign" href="#install">Get majhi</a>
+      <a class="sign alt" href="https://github.com/ashik112/majhi"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a>
+    </div>
   </div>
-  <div class="tag mono">Early access · মাঝি, the boatman who steers</div>
-  <svg class="down" viewBox="0 0 24 24" fill="none" stroke="#1c1712" stroke-width="2.4"><path d="M5 9l7 7 7-7"/></svg>
+
+  <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
+    <g class="bob">
+      <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
+      <g class="stroke">
+        <g transform="translate(-72 -158) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <g transform="translate(40 -156) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <g transform="translate(154 -150) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <image href="/assets/fists.webp" x="-360" y="-380" width="720" height="411"/>
+      </g>
+    </g>
+  </svg>
+
+  <a class="down" href="#crew" aria-label="Scroll to how majhi works"><svg viewBox="0 0 24 24" fill="none" stroke="#fffdf6" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15M5 12l7 7 7-7"/></svg></a>
 </header>
 
-<section class="river" aria-label="The river">
-  <div class="riverText">
-    <h2>A captain and a crew<br>of agents, <em>in one boat.</em></h2>
-    <p>The majhi stands at the back with the long oar. He does not row. He reads the water and keeps everyone pointed at the ghat. That is your job now.</p>
-  </div>
-  <div class="boatlane" aria-hidden="true">
-    <svg viewBox="-360 -400 720 440">
-      <g class="bob">
-        <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
-        <g class="stroke">
-          <g transform="translate(-72 -158) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-          <g transform="translate(40 -156) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-          <g transform="translate(154 -150) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-          <image href="/assets/fists.webp" x="-360" y="-380" width="720" height="411"/>
-        </g>
-      </g>
-    </svg>
+<div class="scallop"></div>
+
+<section class="crew" id="crew">
+  <p>You say it in one sentence. A <span class="chip y">lead</span> plans it, <span class="chip c">builders</span> write it in their own containers, a <span class="chip p">reviewer</span> sends back what is not good enough, and you <span class="chip r">ship</span> it from one card.</p>
+  <small>The majhi stands at the back of the boat with the long oar. He does not row. He reads the water and keeps the boat pointed at the ghat. With majhi, that is your job. The captain agent handles the rest when you are away, inside the budget you set.</small>
+</section>
+
+<div class="scallop up"></div>
+
+<section class="desk">
+  <div class="inner">
+    <h2 class="letter">The desk</h2>
+    <p class="lead">Every client's tasks on one board, with each agent's state, the plan and every file change, live.</p>
+    <div class="tin"><img src="/assets/board.webp" alt="The majhi board: tasks from several clients and the state of every agent" loading="lazy" width="1440" height="900"></div>
   </div>
 </section>
 
-<section class="steps" aria-label="How it works">
-  <div class="step"><span class="n">01</span><h3>Say it in one sentence.</h3><p>"Fix the export timeout in the API, from develop." That is a whole task.</p></div>
-  <div class="step"><span class="n">02</span><h3>The crew plans, builds and reviews.</h3><p>A lead splits the work, builders write it in their own containers, a reviewer sends back what is not good enough.</p></div>
-  <div class="step"><span class="n">03</span><h3>You ship from one card.</h3><p>Merge, push or open the pull request on GitHub, GitLab or Bitbucket. Nothing leaves without your click.</p></div>
-</section>
-
-<section class="product" aria-label="The desk">
-  <div class="frame">
-    <div class="bar"><i></i><i></i><i></i><span class="mono">majhi · the desk</span></div>
-    <img src="/assets/board.webp" alt="The majhi board with tasks from several clients and every agent's status" loading="lazy">
-  </div>
-  <div class="caption">
-    <h2>Every client's work on one board. Every agent's state at a glance.</h2>
-    <p>Watch each step and file change live, stop a turn, queue a message, open a preview. Turn on autonomous mode and the captain works the backlog through the night, inside your budget.</p>
-  </div>
-</section>
-
-<section class="boats" aria-label="Clients stay apart">
-  <h2>Every client in its own boat.</h2>
-  <div class="facts">
-    <div><span class="mono">Sealed</span><b>Accounts, repos, keys and memory stay per workspace.</b><p>One client's code never reaches another's crew. Agents never see your SSH keys.</p></div>
-    <div><span class="mono">Cheap</span><b>Small decisions run free on your machine.</b><p>Laya, a local open model, makes the hundreds of small calls. Big models only get the real work.</p></div>
-    <div><span class="mono">Unsinkable</span><b>Sleep, Wi-Fi drops, usage limits.</b><p>Agents pause and resume on their own. Stuck work wakes the lead, not you.</p></div>
+<section class="boats">
+  <div class="inner">
+    <h2 class="letter">One boat per client</h2>
+    <p class="lead">Each workspace sails alone. Nothing crosses from one to another.</p>
+    <div class="fleet" aria-hidden="true">
+      <figure><svg viewBox="0 0 300 170"><g class="float"><path d="M20 92 H280 C272 140 214 160 150 160 C86 160 28 140 20 92 Z" fill="#d42a3c" stroke="#120e0b" stroke-width="6" stroke-linejoin="round"/><path d="M20 92 H280" stroke="#fffdf6" stroke-width="7" stroke-dasharray="0 18" stroke-linecap="round"/><circle cx="110" cy="62" r="22" fill="#fffdf6" stroke="#120e0b" stroke-width="6"/><rect x="160" y="40" width="44" height="44" rx="10" fill="#f6c419" stroke="#120e0b" stroke-width="6"/></g><path d="M0 164 q37 -12 75 0 t75 0 t75 0 t75 0" fill="none" stroke="#1d47c4" stroke-width="7" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
+      <figure><svg viewBox="0 0 300 170"><g class="float"><path d="M20 92 H280 C272 140 214 160 150 160 C86 160 28 140 20 92 Z" fill="#14874a" stroke="#120e0b" stroke-width="6" stroke-linejoin="round"/><path d="M20 92 H280" stroke="#fffdf6" stroke-width="7" stroke-dasharray="0 18" stroke-linecap="round"/><circle cx="110" cy="62" r="22" fill="#fffdf6" stroke="#120e0b" stroke-width="6"/><rect x="160" y="40" width="44" height="44" rx="10" fill="#ef6aa6" stroke="#120e0b" stroke-width="6"/></g><path d="M0 164 q37 -12 75 0 t75 0 t75 0 t75 0" fill="none" stroke="#1d47c4" stroke-width="7" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
+      <figure><svg viewBox="0 0 300 170"><g class="float"><path d="M20 92 H280 C272 140 214 160 150 160 C86 160 28 140 20 92 Z" fill="#1d47c4" stroke="#120e0b" stroke-width="6" stroke-linejoin="round"/><path d="M20 92 H280" stroke="#fffdf6" stroke-width="7" stroke-dasharray="0 18" stroke-linecap="round"/><circle cx="110" cy="62" r="22" fill="#fffdf6" stroke="#120e0b" stroke-width="6"/><rect x="160" y="40" width="44" height="44" rx="10" fill="#7fb3ff" stroke="#120e0b" stroke-width="6"/></g><path d="M0 164 q37 -12 75 0 t75 0 t75 0 t75 0" fill="none" stroke="#1d47c4" stroke-width="7" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
+    </div>
+    <ul class="rules">
+      <li><svg viewBox="0 0 120 90"><use href="#lotus"/></svg><div><b>Its own keys and logins</b><span>AI accounts, git identity, tokens and memory belong to one workspace. Agents never touch your SSH keys.</span></div></li>
+      <li><svg viewBox="0 0 120 90"><use href="#lotus"/></svg><div><b>Small calls cost nothing</b><span>Laya, a small open model on your machine, answers the many quick questions. Big models get the real work.</span></div></li>
+      <li><svg viewBox="0 0 120 90"><use href="#lotus"/></svg><div><b>It keeps rowing</b><span>Laptop asleep, Wi-Fi gone, usage limit hit: agents pause and pick up where they left off.</span></div></li>
+    </ul>
   </div>
 </section>
 
-<section class="install" id="install">
-  <h2>Get on <em>board.</em></h2>
-  <div class="cmd"><code><b>git clone</b> https://github.com/ashik112/majhi.git && cd majhi && <b>make up</b></code><button class="block" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up" style="box-shadow:4px 4px 0 var(--cream);border-color:var(--cream);padding:10px 14px">Copy</button></div>
-  <div class="small mono">Docker on a Mac · Linux and WSL2 soon · Claude Code and Codex</div>
+<div class="scallop"></div>
+
+<section class="board" id="install">
+  <h2 class="letter">Come aboard</h2>
+  <p class="lead">Docker on a Mac is all it needs. Linux and Windows through WSL2 are coming.</p>
+  <div class="plate"><code>git clone https://github.com/ashik112/majhi.git &amp;&amp; cd majhi &amp;&amp; make up</code><button class="sign" type="button" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
+  <p class="fine">Opens at 127.0.0.1:7070 with a short river journey to set up your folders, accounts and clients.</p>
 </section>
 
 <footer>
-  <svg class="mark" viewBox="28 54 200 172" fill="currentColor"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg>
-  <span class="mono" style="opacity:.6">Free for noncommercial use</span>
-  <div class="r"><a href="https://github.com/ashik112/majhi">GitHub</a><a href="https://github.com/ashik112">Commercial license</a></div>
+  <span class="tile"><svg viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
+  <span>majhi, মাঝি. Free for personal and noncommercial use.</span>
+  <div class="r"><a href="https://github.com/ashik112/majhi">Source</a><a href="https://github.com/ashik112">Commercial license</a></div>
 </footer>
 
 <script>
-// Little majhi marks drifting over the hero, like a crew on the water.
-const swarm=document.getElementById("swarm");
-let seed=7; const r=()=>((seed=(seed*16807)%2147483647)/2147483647);
-for(let i=0;i<34;i++){
-  const s=document.createElementNS("http://www.w3.org/2000/svg","svg");
-  s.setAttribute("viewBox","28 54 200 172");
-  s.innerHTML='<circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/>'; s.setAttribute('fill','currentColor');
-  if(r()<.35) s.classList.add("ink");
-  s.style.left=(r()*96)+"%"; s.style.top=(r()*92)+"%";
-  s.style.width=(22+r()*26)+"px";
-  s.style.setProperty("--d",(14+r()*16)+"s"); s.style.setProperty("--o",(-r()*20)+"s");
-  s.style.setProperty("--x",((r()-.5)*120)+"px"); s.style.setProperty("--y",((r()-.5)*90)+"px");
-  swarm.appendChild(s);
-}
 document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
-  try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{}
+  try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{b.textContent="Select and copy"}
 }));
 </script>
 </body>
