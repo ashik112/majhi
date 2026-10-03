@@ -354,6 +354,25 @@ describe("the key loader", () => {
       expect((await ssh.reload()).needsPassphrase).toEqual(["~/.ssh/id_work"]);
     });
 
+    it("does not blame the passphrase when ssh-add took it and still failed, and logs why", async () => {
+      const w = fakeWorld({ [KEY_B]: "pass" });
+      w.unlockWith[KEY_B] = "correct horse";
+      const run: RunFn = async (file, args, options) => {
+        if (options.env.SSH_ASKPASS_REQUIRE !== "force") return fakeRun(w)(file, args, options);
+        // ssh-add reads the passphrase once, then the agent refuses the key.
+        await ask(options, `Enter passphrase for ${KEY_B}: `);
+        return fail(1, `Could not add identity "${KEY_B}": agent refused operation`);
+      };
+      const ssh = setup(w, { run });
+      await ssh.reload();
+      await expect(ssh.unlock("~/.ssh/id_work", "correct horse")).rejects.toThrow(
+        "ssh-add could not load ~/.ssh/id_work. Unlock it in a terminal to see why: ssh-add --apple-use-keychain ~/.ssh/id_work",
+      );
+      expect(logs.join("\n")).toContain("agent refused operation");
+      expect(logs.join("\n")).not.toContain("correct horse");
+      expect(await readdir(tmp)).toEqual([]);
+    });
+
     it("refuses a key that is not waiting for a passphrase", async () => {
       const w = fakeWorld({ [KEY_A]: "none", [KEY_B]: "pass" });
       const ssh = setup(w);

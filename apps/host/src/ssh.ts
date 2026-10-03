@@ -304,6 +304,7 @@ export function createSsh(deps: SshDeps): Ssh {
    * `ssh-add key` with its passphrase, through the askpass in a private folder that is removed
    * after. `wrong` when ssh-add asked again, which it does only for a wrong passphrase.
    * `not-asked` when it stopped before it ran the askpass, so the passphrase was never tried.
+   * `failed` when it asked once and still failed, like an agent that refused the key.
    */
   async function addWithPassphrase(
     session: Session,
@@ -325,15 +326,19 @@ export function createSsh(deps: SshDeps): Ssh {
       // Apple's ssh-add keeps the passphrase in the Keychain as it adds the key.
       const args = session.keeping === "apple" ? ["--apple-use-keychain", key] : [key];
       // The result is judged by the exit code and the askpass's marks. Output is logged only when
-      // ssh-add never asked, to say why; it never holds the passphrase.
+      // ssh-add failed for another reason than a wrong passphrase, to say why; it never holds the passphrase.
       const res = await deps.run(session.sshAdd, args, { env, timeoutMs: COMMAND_TIMEOUT_MS * 3 });
       if (res.code === 0) return "added";
-      if (!(await onDisk(join(dir, "asked")))) {
-        const why = res.stderr.trim().split("\n").at(-1) || `exit ${res.code ?? "none"}`;
-        log(`ssh-add stopped before it asked for the passphrase of ${collapseHome(key, home)}: ${why}`);
-        return "not-asked";
-      }
-      return (await onDisk(join(dir, "again"))) ? "wrong" : "failed";
+      const asked = await onDisk(join(dir, "asked"));
+      if (asked && (await onDisk(join(dir, "again")))) return "wrong";
+      const why = res.stderr.trim().split("\n").at(-1) || `exit ${res.code ?? "none"}`;
+      const shown = collapseHome(key, home);
+      log(
+        asked
+          ? `ssh-add took the passphrase of ${shown} once, then stopped: ${why}`
+          : `ssh-add stopped before it asked for the passphrase of ${shown}: ${why}`,
+      );
+      return asked ? "failed" : "not-asked";
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -474,11 +479,16 @@ export function createSsh(deps: SshDeps): Ssh {
     const session = await openSession("The SSH agent is not running.");
     if ("error" in session) throw new SshUnlockError(session.error);
     const added = await addWithPassphrase(session, expandHome(key, home), passphrase);
+    // Apple's tools mean macOS. Linux and WSL2 share one command.
+    const command = sshUnlockCommand(shown, session.keeping === "apple" ? "macos" : "linux");
     if (added === "not-asked") {
-      // Apple's tools mean macOS. Linux and WSL2 share one command.
-      const command = sshUnlockCommand(shown, session.keeping === "apple" ? "macos" : "linux");
       throw new SshUnlockError(
         `The passphrase was not tried: ssh-add stopped before it asked for it. Unlock ${shown} in a terminal: ${command}`,
+      );
+    }
+    if (added === "failed") {
+      throw new SshUnlockError(
+        `ssh-add could not load ${shown}. Unlock it in a terminal to see why: ${command}`,
       );
     }
     if (added !== "added") {
