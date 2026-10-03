@@ -79,8 +79,8 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkGit().then((c) => [c]),
     checkRoots(state, home, ctx.host),
     [checkHostHelper(ctx.host)],
-    checkSshAgent(ctx.host.status?.info?.ssh, ctx.host).then((c) => [c]),
-    checkSshHosts(ctx.sshHosts, ctx.host),
+    checkSshAgent(ctx.host.status?.info?.ssh, ctx.host, ctx.env.sshAgentOff).then((c) => [c]),
+    checkSshHosts(ctx.sshHosts, ctx.host, ctx.env.sshAgentOff),
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
     checkSecrets(ctx.services),
@@ -275,10 +275,25 @@ export function checkHostHelper(host: HostSource): Check {
   return { ...base, status: "pass", detail: `Connected${version}, automatic remounts are on${runtime}` };
 }
 
-/** `ssh` is what the host helper last reported. It knows which keys need a passphrase. */
-export async function checkSshAgent(ssh: SshStatus | undefined, host?: HostSource): Promise<Check> {
+/**
+ * `ssh` is what the host helper last reported. It knows which keys need a passphrase. `agentOff`:
+ * the owner turned the agent off on purpose, which is no fault. The git host rows show what it breaks.
+ */
+export async function checkSshAgent(
+  ssh: SshStatus | undefined,
+  host?: HostSource,
+  agentOff = false,
+): Promise<Check> {
   const base = { id: "ssh-agent", group: "ssh", name: "SSH agent" } as const;
   const name = base.name;
+  if (agentOff) {
+    return {
+      ...base,
+      status: "pass",
+      detail:
+        "Turned off with MAJHI_SSH_AGENT=off, so git over SSH cannot use your keys. Run `make up` without that setting to turn it on.",
+    };
+  }
   const socket = process.env.SSH_AUTH_SOCK;
   const reload = host !== undefined && helperConnected(host) ? { fix: { label: "Reload SSH keys" } } : {};
   if (socket === undefined || socket === "") {
@@ -338,8 +353,15 @@ export function sshVerdict(
   return { name, status: "pass", detail: `Reachable, ${held}` };
 }
 
-/** One row per git host the registered projects use. Prints states only, never key material. */
-async function checkSshHosts(probe: CheckContext["sshHosts"], host: HostSource): Promise<Check[]> {
+/**
+ * One row per git host the registered projects use. Prints states only, never key material. With the
+ * agent off, reloading keys cannot help, so it is not offered.
+ */
+async function checkSshHosts(
+  probe: CheckContext["sshHosts"],
+  host: HostSource,
+  agentOff: boolean,
+): Promise<Check[]> {
   const results = await probe().catch(() => []);
   return results.map((r): Check => {
     const check: Check = {
@@ -349,7 +371,8 @@ async function checkSshHosts(probe: CheckContext["sshHosts"], host: HostSource):
       status: r.state === "reachable" ? "pass" : "warn",
       detail: `${r.state}: ${r.detail}`,
     };
-    if (r.state === "auth-failed" && helperConnected(host)) check.fix = { label: "Reload SSH keys" };
+    const reload = r.state === "auth-failed" && !agentOff && helperConnected(host);
+    if (reload) check.fix = { label: "Reload SSH keys" };
     return check;
   });
 }

@@ -40,6 +40,8 @@ const EnvSchema = z.object({
   /** Git commit the image was built from, baked in by the Dockerfile. */
   MAJHI_COMMIT: z.string().trim().min(1).optional(),
   MAJHI_SECRETS_KEY_FILE: AbsolutePath.default("/run/secrets/majhi_key"),
+  /** The SSH agent socket gen-override gave the server, or `off` (DECISIONS). Only `off` is read here. */
+  MAJHI_SSH_AGENT: z.string().trim().min(1).optional(),
   MAJHI_ADAPTER_CLAUDE: JsonCommand.optional(),
   MAJHI_ADAPTER_CODEX: JsonCommand.optional(),
   /** Replaces the Claude usage helper, for tests. */
@@ -97,6 +99,8 @@ export interface ServerEnv {
   commit: string;
   /** File holding the age identity that protects `secrets.age`. It may not exist. */
   secretsKeyFile: string;
+  /** `MAJHI_SSH_AGENT=off`: the owner turned off the SSH agent for majhi's git. */
+  sshAgentOff: boolean;
   /** How agent CLIs are started: the only host values they see, and adapter overrides for tests. */
   runtime: RuntimeOptions;
   /** `MAJHI_NET_PROBE`: how majhi checks it is online. */
@@ -150,6 +154,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
     version: env.MAJHI_VERSION ?? pkg.version,
     commit: env.MAJHI_COMMIT ?? "dev",
     secretsKeyFile: env.MAJHI_SECRETS_KEY_FILE,
+    sshAgentOff: env.MAJHI_SSH_AGENT === "off",
     runtime: { base: baseEnv(source), adapters, usage },
     ...(env.MAJHI_NET_PROBE === undefined ? {} : { netProbe: env.MAJHI_NET_PROBE }),
     ...(env.MAJHI_NET_PROBE_MS === undefined ? {} : { netProbeMs: env.MAJHI_NET_PROBE_MS }),

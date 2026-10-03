@@ -34,6 +34,14 @@ describe("parseEnv", () => {
     expect(parseEnv(base).commit).toBe("dev");
   });
 
+  it("knows when the owner turned the SSH agent off, and only then", () => {
+    const socket = "/home/o/.majhi/run/ssh-agent.sock";
+    expect(parseEnv({ ...base, MAJHI_SSH_AGENT: "off" }).sshAgentOff).toBe(true);
+    expect(parseEnv({ ...base, MAJHI_SSH_AGENT: socket }).sshAgentOff).toBe(false);
+    expect(parseEnv({ ...base, MAJHI_SSH_AGENT: "" }).sshAgentOff).toBe(false);
+    expect(parseEnv(base).sshAgentOff).toBe(false);
+  });
+
   it("reads adapter commands as JSON arrays", () => {
     const env = parseEnv({
       ...base,
