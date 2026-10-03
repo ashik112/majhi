@@ -502,7 +502,7 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
       <ul className="flex flex-col gap-2">
         {TOOL_CATALOG.map((tool) => (
           <li key={tool.name} className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="font-mono text-base">{tool.name}</div>
               <div className="text-sm text-fg-muted text-pretty">
                 {tool.summary}. {tool.rule}.
@@ -512,6 +512,7 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
               label={`${tool.name} setting`}
               value={toolSetting(draft.tools, tool.name)}
               segments={TOOL_SETTINGS}
+              className="shrink-0"
               onChange={(setting) => onChange({ tools: withToolSetting(draft.tools, tool.name, setting) })}
             />
           </li>
