@@ -20,7 +20,7 @@
 :root{
   --red:#d42a3c; --green:#14874a; --green-deep:#0b6236; --cobalt:#1d47c4; --navy:#132f8f; --sky:#2a5fe0;
   --yellow:#f6c419; --pink:#ef6aa6; --white:#fffdf6; --ink:#120e0b;
-  --trim:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='30'%3E%3Crect width='80' height='30' fill='%23d42a3c'/%3E%3Crect width='80' height='4' fill='%23120e0b'/%3E%3Crect y='26' width='80' height='4' fill='%23120e0b'/%3E%3Cpath d='M20 21 C10 14 10 8 15 8 C17.5 8 19.3 9.8 20 11.6 C20.7 9.8 22.5 8 25 8 C30 8 30 14 20 21 Z' fill='%23f6c419' stroke='%23120e0b' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M60 21 C50 14 50 8 55 8 C57.5 8 59.3 9.8 60 11.6 C60.7 9.8 62.5 8 65 8 C70 8 70 14 60 21 Z' fill='%23ef6aa6' stroke='%23120e0b' stroke-width='1.8' stroke-linejoin='round'/%3E%3Ccircle cx='40' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Ccircle cx='0' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Ccircle cx='80' cy='15' r='2.6' fill='%23fffdf6'/%3E%3C/svg%3E");
+  --trim:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40'%3E%3Cpath d='M0 5 Q80 11 160 5' stroke='%23120e0b' stroke-width='3.5' fill='none'/%3E%3Cpath d='M2 6 L30 7 L16 36 Z' fill='%23d42a3c' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M34 6 L62 7 L48 36 Z' fill='%23f6c419' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='48' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M66 6 L94 7 L80 36 Z' fill='%2314874a' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='80' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M98 6 L126 7 L112 36 Z' fill='%23ef6aa6' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='112' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M130 6 L158 7 L144 36 Z' fill='%231d47c4' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='144' cy='15' r='2.6' fill='%23fffdf6'/%3E%3C/svg%3E");
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -31,7 +31,7 @@ a{color:inherit}
 
 .letter{font-family:"Baloo Da 2",sans-serif;font-weight:800;letter-spacing:-.01em;line-height:.98;
   -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--ink)}
-.trim{height:30px;background:var(--trim) 0 0/80px 30px repeat-x}
+.trim{height:40px;margin-top:-1px;background:var(--trim) 0 0/160px 40px repeat-x,var(--below,var(--green))}
 
 .sign{display:inline-flex;align-items:center;gap:10px;background:var(--yellow);color:var(--ink);font:700 18px/1 "Baloo Da 2",sans-serif;
   padding:15px 24px 13px;border:3px solid var(--ink);border-radius:999px;text-decoration:none;box-shadow:4px 5px 0 var(--ink);cursor:pointer;
@@ -42,35 +42,38 @@ a{color:inherit}
 .sign svg{width:20px;height:20px}
 
 /* hero */
-.hero{position:relative;min-height:100svh;overflow:hidden;background:var(--sky)}
-.hero .scene{position:absolute;inset:0;width:100%;height:100%}
+.hero{position:relative;overflow:hidden;display:flex;flex-direction:column;
+  min-height:calc(100svh - 28px);background:#2a5fe0}
 nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2",sans-serif;color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
 .tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
 .tile svg{width:27px}
 nav .grow{flex:1}
 nav .sign{padding:11px 18px 9px;font-size:16px}
-.copy{position:relative;z-index:5;max-width:760px;padding:clamp(16px,4vh,48px) clamp(18px,4vw,48px) 0}
-.copy h1{margin:0;font-size:clamp(46px,6vw,86px);color:var(--yellow)}
+.copy{position:relative;z-index:5;max-width:760px;margin:auto 0;padding:clamp(4px,2vh,28px) clamp(18px,4vw,48px) clamp(20px,4vh,44px)}
+.copy h1{margin:0;font-size:clamp(46px,min(6vw,9vh),86px);color:var(--yellow)}
 .copy h1 span{color:var(--white);display:block;white-space:nowrap}
-.copy p{margin:20px 0 28px;font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
+.copy p{margin:clamp(12px,2vh,20px) 0 clamp(18px,3vh,28px);font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
 .actions{display:flex;gap:14px;flex-wrap:wrap}
-.boat{position:absolute;z-index:4;bottom:9%;width:min(40vw,520px);animation:sail 34s linear infinite}
-@keyframes sail{from{left:-42vw}to{left:104vw}}
+.sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,min(19vw,32vh),290px);animation:sway 9s ease-in-out infinite alternate}
+@keyframes sway{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
+.cloud{position:absolute;z-index:0;animation:drift 60s ease-in-out infinite alternate}
+@keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(60px)}}
+/* The scene is 3440x440 units and always scales by its height, so nothing is
+   cut top or bottom; wider screens just see more of the bank. 1cqh = 4.4 units. */
+.land{position:relative;z-index:4;flex:1 1 0;min-height:max(200px,13vw);max-height:520px;container-type:size;overflow:hidden}
+.landscape{position:absolute;inset:0;width:100%;height:100%}
+.birds{position:absolute;left:0;top:2cqh;height:10cqh;animation:fly 26s linear infinite}
+@keyframes fly{0%{transform:translate(-100%,0)}50%{transform:translate(50cqw,-1.5cqh)}100%{transform:translate(100cqw,0)}}
+/* hull centre sits at 79.5% of the boat box; river centre is 66% down the scene */
+.boat{--bh:min(58cqh,38cqw);position:absolute;z-index:1;left:0;height:var(--bh);aspect-ratio:720/440;top:calc(66cqh - var(--bh) * .795);animation:sail 36s linear infinite;animation-delay:-14s}
+@keyframes sail{from{transform:translateX(-100%)}to{transform:translateX(100cqw)}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
 @keyframes bob{from{transform:translateY(2px) rotate(-.8deg)}to{transform:translateY(-6px) rotate(.7deg)}}
 @keyframes row{from{transform:translate(10px,-4px)}to{transform:translate(-14px,6px)}}
 .wave{animation:lap 5s ease-in-out infinite alternate}
 @keyframes lap{from{transform:translateX(-8px)}to{transform:translateX(10px)}}
-.spin{transform-box:fill-box;transform-origin:center;animation:sway 9s ease-in-out infinite alternate}
-@keyframes sway{from{transform:rotate(-4deg)}to{transform:rotate(4deg)}}
-.fly{animation:fly 14s ease-in-out infinite alternate}
-@keyframes fly{from{transform:translate(0,0)}to{transform:translate(60px,-18px)}}
-.down{position:absolute;z-index:6;left:50%;bottom:22px;transform:translateX(-50%);width:58px;height:58px;display:grid;place-items:center;
-  background:var(--red);border:3px solid var(--ink);border-radius:50%;box-shadow:3px 4px 0 var(--ink);animation:nudge 2.4s ease-in-out infinite}
-.down svg{width:26px}
-@keyframes nudge{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,6px)}}
 
 /* one sentence */
 .crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
@@ -112,6 +115,11 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .fleet figure{margin:0;text-align:center}
 .fleet svg{width:100%;height:auto;overflow:visible}
 .fleet figcaption{font:800 26px/1 "Baloo Da 2",sans-serif;margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
+.points{list-style:none;margin:56px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.points li{display:grid;grid-template-columns:48px 1fr;gap:14px;align-items:start}
+.points svg{width:48px}
+.points b{display:block;font:700 23px/1.2 "Baloo Da 2",sans-serif;margin-bottom:4px}
+.points span{font-size:17px;line-height:1.55;color:#d9f3e2}
 .float{animation:bob 4s ease-in-out infinite alternate}
 .fleet figure:nth-child(2) .float{animation-delay:-1.3s}.fleet figure:nth-child(3) .float{animation-delay:-2.6s}
 
@@ -134,62 +142,43 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 
 @media (max-width:860px){
   .copy p{font-size:19px}
-  .boat{width:78vw;bottom:8%}
+  .cloud{display:none}
+  .land{max-height:none}
+  .sun{display:none}
   .row{grid-template-columns:1fr;gap:6px}
   .fleet{gap:12px}
+  .points{grid-template-columns:1fr;gap:24px}
   .fleet figcaption{font-size:19px}
   nav .hide{display:none}
-  .fly{display:none}
   .frame{width:84vw}
 }
-@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{left:40vw}.strip{overflow-x:auto}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{transform:translateX(calc(50cqw - 50%))}.birds{transform:translateX(60cqw)}.strip{overflow-x:auto}}
 </style>
 </head>
 <body>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="lotus" viewBox="0 0 120 90">
+      <g stroke="#120e0b" stroke-width="4" stroke-linejoin="round">
+        <path d="M60 84 C30 84 14 70 6 56 C26 54 42 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C90 84 106 70 114 56 C94 54 78 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C40 70 30 52 34 30 C48 40 58 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C80 70 90 52 86 30 C72 40 62 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C50 62 50 36 60 8 C70 36 70 62 60 84 Z" fill="#ff9cc8"/>
+      </g>
+      <g fill="#fffdf6"><circle cx="60" cy="44" r="3"/><circle cx="44" cy="52" r="2.4"/><circle cx="76" cy="52" r="2.4"/></g>
+    </symbol>
+</defs></svg>
+
 <header class="hero" id="top">
-  <svg class="scene" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-    <rect width="1440" height="900" fill="#2a5fe0"/>
-    <g fill="#fffdf6" opacity=".9"><circle cx="740" cy="70" r="4"/><circle cx="660" cy="230" r="3"/><circle cx="900" cy="330" r="3"/><circle cx="1380" cy="330" r="3"/><circle cx="1290" cy="40" r="4"/></g>
-    <g class="spin"><image href="/assets/h-sun.webp" x="990" y="40" width="300" height="280"/></g>
-    <g class="fly"><image href="/assets/h-birds.webp" x="690" y="110" width="250" height="106"/></g>
-
-    <!-- far bank: painted tree line, then the field -->
-    <g>
-      <image href="/assets/h-treeline.webp" x="-40" y="468" width="360" height="80"/>
-      <image href="/assets/h-treeline.webp" x="300" y="472" width="360" height="80"/>
-      <image href="/assets/h-treeline.webp" x="640" y="468" width="360" height="80"/>
-      <image href="/assets/h-treeline.webp" x="980" y="472" width="360" height="80"/>
-      <image href="/assets/h-treeline.webp" x="1320" y="468" width="360" height="80"/>
-    </g>
-    <rect x="-20" y="544" width="1480" height="100" fill="#14874a"/>
-    <path d="M-20 544 H1460" stroke="#120e0b" stroke-width="5"/>
-    <g stroke="#0b6236" stroke-width="5" stroke-linecap="round"><path d="M40 580 H240"/><path d="M300 600 H560"/><path d="M880 584 H1120"/><path d="M1180 604 H1400"/></g>
-    <image href="/assets/h-palm.webp" x="880" y="372" width="160" height="206"/>
-    <image href="/assets/h-hut.webp" x="700" y="478" width="150" height="134"/>
-    <image href="/assets/h-haystack.webp" x="1080" y="526" width="110" height="85"/>
-    <image href="/assets/h-banana.webp" x="1250" y="468" width="160" height="150"/>
-
-    <!-- the river -->
-    <path d="M-20 640 H1460 V880 H-20 Z" fill="#132f8f"/>
-    <path d="M-20 640 H1460" stroke="#120e0b" stroke-width="5"/>
-    <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round" opacity=".9">
-      <path d="M90 690 q30 -18 60 0"/><path d="M330 730 q34 -20 68 0"/><path d="M600 680 q26 -16 52 0"/><path d="M860 720 q34 -20 68 0"/><path d="M1130 690 q30 -18 60 0"/><path d="M1300 740 q30 -18 60 0"/>
-      <path d="M200 780 q36 -22 72 0"/><path d="M480 800 q30 -18 60 0"/><path d="M760 770 q36 -22 72 0"/><path d="M1020 800 q30 -18 60 0"/><path d="M1240 780 q36 -22 72 0"/>
-    </g>
-    <!-- near bank -->
-    <path d="M-20 868 q120 -26 240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 V920 H-20 Z" fill="#14874a" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/>
-    <image href="/assets/h-lotus.webp" x="-10" y="770" width="210" height="168"/>
-    <image href="/assets/h-lotus.webp" x="1250" y="776" width="200" height="160"/>
-  </svg>
-
+  <svg class="cloud" style="left:38%;top:42px;width:140px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
+  <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
   <nav>
     <a class="brand" href="#top"><span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
     <span class="grow"></span>
     <a class="sign alt hide" href="https://github.com/ashik112/majhi">GitHub</a>
     <a class="sign" href="#install">Install</a>
   </nav>
-
   <div class="copy">
     <h1 class="letter">You steer.<span>The agents row.</span></h1>
     <p>A crew of AI coding agents for every client. They plan, build, review and ship. You decide where the boat goes.</p>
@@ -199,6 +188,32 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
     </div>
   </div>
 
+  <div class="land">
+    <svg class="landscape" viewBox="-1000 0 3440 440" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <image href="/assets/h-treeline.webp" x="-1000" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="-655" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="-310" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="35" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="380" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="725" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1070" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1415" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1760" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="2105" y="46" width="380" height="84"/>
+      <image href="/assets/h-bank-far.svg" x="-1000" y="97" width="3440" height="113"/>
+      <!-- the village, grouped on the far bank -->
+      <image href="/assets/h-palm.webp" x="-330" y="14" width="142" height="190"/>
+      <image href="/assets/h-hut.webp" x="-220" y="96" width="114" height="106"/>
+      <image href="/assets/h-palm.webp" x="110" y="20" width="134" height="180"/>
+      <image href="/assets/h-haystack.webp" x="770" y="122" width="101" height="80"/>
+      <image href="/assets/h-hut.webp" x="890" y="98" width="112" height="104"/>
+      <image href="/assets/h-palm.webp" x="1020" y="8" width="149" height="200"/>
+      <image href="/assets/h-hut.webp" x="1150" y="64" width="151" height="140"/>
+      <image href="/assets/h-banana.webp" x="1300" y="72" width="135" height="130"/>
+      <image href="/assets/h-haystack.webp" x="1700" y="124" width="96" height="76"/>
+      <image href="/assets/h-palm.webp" x="1820" y="16" width="140" height="188"/>
+      <!-- the river -->
+      <rect x="-1000" y="208" width="3440" height="180" fill="#132f8f"/>
+      <path d="M-1000 208 H2440" stroke="#120e0b" stroke-width="5"/>
+      <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round"><path d="M-970 247 q28 -18 56 0"/><path d="M-701 240 q28 -18 56 0"/><path d="M-454 247 q28 -18 56 0"/><path d="M-194 248 q28 -18 56 0"/><path d="M80 239 q28 -18 56 0"/><path d="M357 238 q28 -18 56 0"/><path d="M617 242 q28 -18 56 0"/><path d="M887 241 q28 -18 56 0"/><path d="M1111 249 q28 -18 56 0"/><path d="M1371 246 q28 -18 56 0"/><path d="M1641 245 q28 -18 56 0"/><path d="M1891 248 q28 -18 56 0"/><path d="M2110 241 q28 -18 56 0"/><path d="M2391 240 q28 -18 56 0"/><path d="M-951 295 q33 -22 66 0"/><path d="M-750 294 q33 -22 66 0"/><path d="M-451 285 q33 -22 66 0"/><path d="M-231 296 q33 -22 66 0"/><path d="M44 284 q33 -22 66 0"/><path d="M282 296 q33 -22 66 0"/><path d="M485 288 q33 -22 66 0"/><path d="M745 293 q33 -22 66 0"/><path d="M1037 290 q33 -22 66 0"/><path d="M1328 296 q33 -22 66 0"/><path d="M1582 290 q33 -22 66 0"/><path d="M1875 296 q33 -22 66 0"/><path d="M2148 291 q33 -22 66 0"/><path d="M2365 289 q33 -22 66 0"/><path d="M-996 332 q36 -24 72 0"/><path d="M-733 333 q36 -24 72 0"/><path d="M-500 340 q36 -24 72 0"/><path d="M-245 342 q36 -24 72 0"/><path d="M35 334 q36 -24 72 0"/><path d="M288 338 q36 -24 72 0"/><path d="M537 339 q36 -24 72 0"/><path d="M781 338 q36 -24 72 0"/><path d="M1055 336 q36 -24 72 0"/><path d="M1329 333 q36 -24 72 0"/><path d="M1572 340 q36 -24 72 0"/><path d="M1775 334 q36 -24 72 0"/><path d="M2052 340 q36 -24 72 0"/><path d="M2341 332 q36 -24 72 0"/></g>
+      <image href="/assets/h-lotus.webp" x="-520" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="20" y="258" width="160" height="128"/>
+      <image href="/assets/h-lotus.webp" x="1270" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="1880" y="260" width="150" height="120"/>
+      <image href="/assets/h-bank-near.svg" x="-1000" y="322" width="3440" height="124"/>
+    </svg>
+    <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
   <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
     <g class="bob">
       <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
@@ -210,17 +225,16 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       </g>
     </g>
   </svg>
-
-  <a class="down" href="#crew" aria-label="Scroll to how majhi works"><svg viewBox="0 0 24 24" fill="none" stroke="#fffdf6" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><title>Scroll to how majhi works</title><path d="M12 4v15M5 12l7 7 7-7"/></svg></a>
+  </div>
 </header>
 
-<div class="trim"></div>
+<div class="trim" style="--below:var(--green)"></div>
 
 <section class="crew" id="crew">
   <p>You say it in one sentence. A <span class="chip y">lead</span> plans it, <span class="chip c">builders</span> write it in their own containers, a <span class="chip p">reviewer</span> sends back what is not good enough, and you <span class="chip r">ship</span> it from one card.</p>
 </section>
 
-<div class="trim"></div>
+<div class="trim" style="--below:var(--yellow)"></div>
 
 <section class="ledger">
   <div class="inner">
@@ -234,12 +248,11 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   </div>
 </section>
 
-<div class="trim"></div>
+<div class="trim" style="--below:var(--cobalt)"></div>
 
 <section class="gallery" aria-label="Screens from majhi">
   <div class="inner">
     <h2 class="letter">Inside majhi</h2>
-    <p class="lead">From the board to the first run. Hover to pause.</p>
   </div>
   <div class="strip">
     <div class="track">
@@ -259,21 +272,25 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   </div>
 </section>
 
-<div class="trim"></div>
+<div class="trim" style="--below:var(--green)"></div>
 
 <section class="boats">
   <div class="inner">
     <h2 class="letter">One boat per client</h2>
-    <p class="lead">Each workspace keeps its own AI accounts, agents, repos, git logins, keys, costs and memory. Nothing crosses from one boat to another, and no agent ever sees your SSH keys.</p>
     <div class="fleet" aria-hidden="true">
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
     </div>
+    <ul class="points">
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own repos and secrets</b><span>Agents work in containers that see one task. They never see your SSH keys or another client's code.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own costs and memory</b><span>Spend, limits and what the crew has learned are counted and kept per client.</span></div></li>
+    </ul>
   </div>
 </section>
 
-<div class="trim"></div>
+<div class="trim" style="--below:var(--red)"></div>
 
 <section class="board" id="install">
   <h2 class="letter">Come aboard</h2>
