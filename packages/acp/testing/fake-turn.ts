@@ -623,6 +623,10 @@ export function serveAcp(o: ServeOptions): void {
         stored.messages.push({ role: "user", text });
         let stopReason: StopReason;
         let agentText: string | undefined;
+        // `limit:<message>` fails the prompt with that error, like a CLI that is out of usage.
+        if (text.startsWith("limit:")) {
+          throw new RequestError(-32603, text.slice("limit:".length).trim());
+        }
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
@@ -821,6 +825,14 @@ export function serveAcp(o: ServeOptions): void {
             });
           }
           stopReason = cancelled ? "cancelled" : "end_turn";
+        } else if (text.startsWith("limit-text:")) {
+          // The same limit as the turn's own answer, ending normally: the other way the CLIs say it.
+          agentText = text.slice("limit-text:".length).trim();
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
         } else if (text.startsWith("echo:") || (await isBossChat(s))) {
           // A session with the admin server is the captain: it echoes, so tests never run the coding script.
           const admin = s.mcp.some((m) => m.name === "majhi-admin");
