@@ -1,4 +1,11 @@
-import { type AccountView, type CaptainLevel, type CaptainOrg, CHORE_LABEL, PRIVATE } from "@majhi/shared";
+import {
+  type AccountView,
+  type CaptainCapAsk,
+  type CaptainLevel,
+  type CaptainOrg,
+  CHORE_LABEL,
+  PRIVATE,
+} from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
@@ -8,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { useToast } from "@/components/ui/toast";
-import { useCaptainCommand, useCaptainRules } from "@/lib/captain-queries";
+import { useAnswerCap, useCaptainCommand, useCaptainRules } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
@@ -93,6 +100,49 @@ function LevelChoice({
       })}
     </fieldset>
   );
+}
+
+/**
+ * A chore that reached its daily cap here, and the captain's question: raise it for today, or leave
+ * it. The card names the workspace already, so the line drops its name.
+ */
+function CapAskRow({ ask, name }: { ask: CaptainCapAsk; name: string }) {
+  const toast = useToast();
+  const answer = useAnswerCap();
+  const line = ask.text.startsWith(`${name}: `) ? ask.text.slice(name.length + 2) : ask.text;
+  const send = (choice: "raise" | "leave") =>
+    answer.mutate(
+      { org: ask.org, chore: ask.chore, answer: choice },
+      {
+        onSuccess: () =>
+          toast(
+            choice === "raise"
+              ? `${CHORE_LABEL[ask.chore]}: up to ${ask.raiseTo} today in ${name}`
+              : `${CHORE_LABEL[ask.chore]} stays at ${ask.cap} today in ${name}`,
+          ),
+        onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }),
+      },
+    );
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-line bg-amber-wash px-3 py-2">
+      <span className="flex min-w-0 flex-1 basis-64 items-center gap-2 text-sm text-fg-soft">
+        <Lamp state="needs" size={7} />
+        <span className="min-w-0 text-pretty">{upperFirst(line)}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        <Button size="sm" variant="primary" disabled={answer.isPending} onClick={() => send("raise")}>
+          Raise to {ask.raiseTo} for today
+        </Button>
+        <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => send("leave")}>
+          Leave it
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** The daily budget next to "Runs it": a dollar amount, saved with Enter or Save. */
@@ -184,7 +234,10 @@ export function WorkspaceCard({
   autonomyOn,
   dayCap,
   zone,
+  asks,
 }: {
+  /** What the captain asks about this workspace's daily caps today. */
+  asks: readonly CaptainCapAsk[];
   org: CaptainOrg;
   badge: string;
   color: string | undefined;
@@ -236,6 +289,9 @@ export function WorkspaceCard({
           page.
         </p>
       )}
+      {asks.map((ask) => (
+        <CapAskRow key={ask.chore} ask={ask} name={org.name} />
+      ))}
       {off.map((c) => (
         <div key={c.chore} className="flex min-w-0 items-center gap-2 text-sm">
           <Lamp state="paused" size={7} />

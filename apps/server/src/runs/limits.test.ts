@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { type Holder, type Limits, planGrants, type SlotRequest, Slots } from "./limits.ts";
+import {
+  capacityOf,
+  type Holder,
+  type Limits,
+  noRoomLine,
+  planGrants,
+  type SlotRequest,
+  Slots,
+} from "./limits.ts";
 
 const limits: Limits = { agents_max: 6, per_account: 2, per_task: 3 };
 const req = (key: string, account = "x", task = key): SlotRequest => ({ key, task, account });
@@ -110,5 +118,49 @@ describe("Slots", () => {
     expect(await s.acquire(req("c"))).toBe(true);
     expect(evicted).toEqual(["a"]);
     expect(s.holds("a")).toBe(false);
+  });
+});
+
+describe("capacityOf", () => {
+  it("counts held and queued runs per account and against agents_max", async () => {
+    const s = new Slots({
+      limits: async () => limits,
+      canEvict: () => false,
+      evict: () => {},
+      onQueue: () => {},
+    });
+    await s.acquire(req("a", "claude-personal"));
+    await s.acquire(req("b", "claude-personal"));
+    await s.acquire(req("c", "claude-acme"));
+    // Three more on the full account wait in line.
+    for (const key of ["d", "e", "f"]) void s.acquire(req(key, "claude-personal"));
+    await s.pump();
+    const capacity = capacityOf(s.state(), limits, ["claude-globex"]);
+    expect(capacity).toEqual({
+      agents: { inUse: 3, waiting: 3, limit: 6, free: 0 },
+      accounts: [
+        { account: "claude-acme", inUse: 1, waiting: 0, limit: 2, free: 1 },
+        { account: "claude-globex", inUse: 0, waiting: 0, limit: 2, free: 2 },
+        { account: "claude-personal", inUse: 2, waiting: 3, limit: 2, free: 0 },
+      ],
+    });
+    expect(noRoomLine(capacity, ["claude-personal"])).toBe(
+      "No free slot on claude-personal: 2 of 2 in use, 3 waiting.",
+    );
+    // A free account still waits when majhi as a whole is full.
+    expect(noRoomLine(capacity, ["claude-globex"])).toBe("No free agent slot: 3 of 6 in use, 3 waiting.");
+  });
+
+  it("finds room only when every account and majhi have a slot nobody waits for", () => {
+    const one = { holders: [{ account: "claude-acme" }], waiting: [] };
+    expect(noRoomLine(capacityOf(one, limits), ["claude-acme", "claude-globex"])).toBeUndefined();
+    const queued = { holders: [{ account: "claude-acme" }], waiting: [{ account: "claude-acme" }] };
+    expect(noRoomLine(capacityOf(queued, limits), ["claude-acme"])).toBe(
+      "No free slot on claude-acme: 1 of 2 in use, 1 waiting.",
+    );
+    const full = { holders: [{ account: "a" }, { account: "b" }], waiting: [] };
+    expect(noRoomLine(capacityOf(full, { agents_max: 2, per_account: 2 }), ["c"])).toBe(
+      "No free agent slot: 2 of 2 in use.",
+    );
   });
 });

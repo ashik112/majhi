@@ -1,6 +1,7 @@
 import {
   type AutonomyMode,
   type AutonomySettings,
+  type CaptainCapAsk,
   type CaptainChore,
   type CaptainLevel,
   type CaptainOrg,
@@ -26,7 +27,7 @@ import { choresOf, effectiveLevel, levelOf, migratePickOrgs, workspaceIds } from
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { DAILY_CAPS, DAILY_CHORES, MEMORY_WAITING, restWhy } from "./rules.ts";
+import { DAILY_CHORES, dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -101,6 +102,10 @@ export class CaptainService {
       },
       chores: createChores(deps.ports, () => this.now()),
       changed: () => this.deps.events.emit(["captain"]),
+      capAsked: (ask) => {
+        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
+        this.deps.events.emit(["captain"]);
+      },
     });
   }
 
@@ -413,7 +418,7 @@ export class CaptainService {
         ...(lane === undefined ? {} : { lane }),
         chores: choresOf(ws.level === "ask" ? level : ws.level).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = DAILY_CAPS[chore];
+          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
@@ -468,6 +473,43 @@ export class CaptainService {
     this.repo.turnOn(org, chore);
     this.deps.events.emit(["captain"]);
     return this.status();
+  }
+
+  /** The questions about daily caps that wait for the owner, of each workspace's today only. */
+  async asks(): Promise<{ asks: CaptainCapAsk[] }> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const today = (org: string) => localDay(this.now(), zoneOr(settings.orgs[org]?.tz ?? settings.tz));
+    return { asks: this.repo.pendingCapAsks().filter((a) => a.day === today(a.org)) };
+  }
+
+  /**
+   * The owner's answer about a chore that reached its daily cap today. Raise doubles the chore's caps
+   * for that day only, and the chore looks again at once; Leave it keeps them.
+   */
+  async answerCap(
+    org: string,
+    chore: CaptainChore,
+    answer: "raise" | "leave",
+  ): Promise<{ asks: CaptainCapAsk[] }> {
+    const ask = (await this.asks()).asks.find((a) => a.org === org && a.chore === chore);
+    if (ask === undefined) {
+      throw new UserError(
+        `The captain is not asking about ${CHORE_LABEL[chore].toLowerCase()} in ${org} today.`,
+        409,
+      );
+    }
+    this.repo.answerCapAsk(
+      org,
+      chore,
+      ask.day,
+      answer === "raise" ? "raised" : "left",
+      this.now().toISOString(),
+    );
+    this.deps.events.emit(["captain"]);
+    if (answer === "raise") {
+      void this.runner.start(org, chore, "The owner raised today's limit").catch(() => undefined);
+    }
+    return this.asks();
   }
 
   /** Undo one action of the log through majhi's own paths. */

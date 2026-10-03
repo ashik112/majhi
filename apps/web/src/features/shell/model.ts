@@ -1,4 +1,4 @@
-import type { AccountView, OrgView, PendingNotice, TaskSummary } from "@majhi/shared";
+import type { AccountView, CaptainCapAsk, OrgView, PendingNotice, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { PAGE_PATH, type PagePath } from "../../lib/pages";
@@ -124,6 +124,8 @@ export interface AttentionItem {
   action: BannerAction;
   /** The task or chat it is about, for the row's second line. Absent for an account. */
   task?: AttentionTask;
+  /** The row's second line when it is about no task: "Accounts", "Captain". */
+  where?: string;
 }
 
 export type AttentionTask = Pick<TaskSummary, "id" | "title" | "org" | "chat">;
@@ -251,14 +253,27 @@ function signIns(accounts: readonly AccountView[]): AttentionItem[] {
     }));
 }
 
+/** The captain's questions about chores that reached their daily cap: each opens the Captain page. */
+function capAsks(asks: readonly CaptainCapAsk[]): AttentionItem[] {
+  return asks.map<AttentionItem>((ask) => ({
+    key: `cap:${ask.org}:${ask.chore}:${ask.day}`,
+    tone: "amber",
+    lamp: "needs",
+    text: ask.text,
+    actionLabel: "Captain",
+    action: { kind: "page", to: PAGE_PATH.captain },
+    where: "Captain",
+  }));
+}
+
 /**
  * Everything that needs the owner, most urgent first, for the notifications panel: limit pauses,
  * errors, loops and blocks, then each waiting approval, secret request or question (from
  * `notify.pending`, one row per item; a task the list has not caught up with gets one general row),
- * then sign-ins. The banner shows the first of the same list.
+ * then the captain's questions about its daily caps, then sign-ins.
  */
 export function attentionItems(
-  input: AttentionInput & { pending: readonly PendingNotice[] },
+  input: AttentionInput & { pending: readonly PendingNotice[]; asks?: readonly CaptainCapAsk[] },
 ): AttentionItem[] {
   const byTask = new Map<string, PendingNotice[]>();
   for (const notice of input.pending) byTask.set(notice.task, [...(byTask.get(notice.task) ?? []), notice]);
@@ -277,7 +292,7 @@ export function attentionItems(
         task: about(task),
       }));
     });
-  return [...pauses(input), ...waiting, ...signIns(input.accounts)];
+  return [...pauses(input), ...waiting, ...capAsks(input.asks ?? []), ...signIns(input.accounts)];
 }
 
 /** The one thing that needs the owner most: limit pauses, errors, a prompt in the open task, then sign-ins. */

@@ -8,6 +8,7 @@ export const AUTONOMY_PREAMBLE = [
   "Weigh time, budget and cost. Use cheap agents and models for bulk work, and keep the expensive ones for planning and review.",
   "The digest says what changed, spend against the caps, the holds, the accounts, the owner's pick rules and standing instructions, this workspace's autonomous tasks, the cards waiting and the backlog. Pick the next work from it, and follow the standing instructions.",
   "The pick rules set the largest task size you may start (Small only, Up to medium or Any size, by Laya's rating shown on each backlog task) and the tasks marked Not for autonomous mode, which you leave alone. majhi refuses a start or create that breaks them, with the reason.",
+  "Start work only where an agent slot is free: majhi_tasks_slots shows the free slots overall and per account, with the starts already waiting. majhi refuses a start that would only wait in line, and the task stays in the backlog.",
   "Size is not a reason to pass on work the rules allow: when the size rule is Any size, take large tasks too, and split them into subtasks when that helps. Read a standing instruction to be careful as a way of working, not as a size limit.",
   "After each wake, record what you plan next with majhi_autonomy_plan, in order, each with a one-line why.",
   "Every call's reason is the one line the owner reads in the log, so make it say why. Log a decision that is not a call (waiting for an account's reset, leaving a question for the owner) with majhi_autonomy_note, and set unsure when you are not sure.",

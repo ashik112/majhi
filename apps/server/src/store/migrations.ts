@@ -750,6 +750,28 @@ CREATE INDEX tracker_links_key ON tracker_links (type, key);
 `,
   },
   {
+    // A chore that reached its daily cap in a workspace asks the owner once that day whether to
+    // raise it (SPEC 5.18). The key keeps it to one question per chore, workspace and day. `state`:
+    // `pending`, `raised` (that day's caps of the chore are doubled) or `left`.
+    id: 119,
+    name: "captain cap asks",
+    sql: `
+CREATE TABLE captain_cap_asks (
+  org TEXT NOT NULL,
+  chore TEXT NOT NULL,
+  day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  cap INTEGER NOT NULL,
+  raise_to INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  answered_at TEXT,
+  PRIMARY KEY (org, chore, day)
+);
+`,
+  },
+  {
     // Who paused a task when it was not the owner by hand: the captain, or Autonomous turned off.
     id: 120,
     name: "paused by",
