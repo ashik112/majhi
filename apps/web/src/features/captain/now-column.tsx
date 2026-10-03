@@ -154,9 +154,19 @@ function Running({
   autonomy: AutonomyStatus;
   names: (org: string | undefined) => string | undefined;
 }) {
-  const list = autonomy.now;
+  // Running first; paused tasks follow with their badge, so one click opens them to resume.
+  const running = autonomy.now.filter((t) => t.status === "running");
+  const paused = autonomy.now.filter((t) => t.status === "paused");
+  const list = [...running, ...paused];
+  const title = paused.length > 0 ? `Running ${running.length} · Paused ${paused.length}` : "Running";
   return (
-    <Box title="Running" count={list.length} className="max-h-[232px] flex-none" empty={list.length === 0}>
+    <Box
+      title={title}
+      label="Running"
+      count={paused.length > 0 ? undefined : running.length}
+      className="max-h-[232px] flex-none"
+      empty={list.length === 0}
+    >
       {list.length === 0 ? (
         <p className="text-sm text-fg-muted">Nothing running.</p>
       ) : (
