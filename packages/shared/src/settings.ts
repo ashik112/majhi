@@ -404,7 +404,7 @@ export const AutonomyOrgSchema = z.strictObject({
   authority: AuthoritySchema.optional(),
   /** Before the authority table: how much the captain does here. Read only while `authority` is absent. */
   level: CaptainLevelSchema.optional(),
-  /** This org's cap per day (the daily budget next to "Runs it"). Absent: only the overall `day` cap holds it. */
+  /** This org's cap per day (the daily budget next to the authority table). Absent: only the overall `day` cap holds it. */
   cap: BudgetSchema.optional(),
   /** Before the authority table: may push. Read only while `authority` is absent. */
   push: z.boolean().optional(),
@@ -446,13 +446,13 @@ export type TaskSizeLimit = z.infer<typeof TaskSizeLimitSchema>;
 
 /**
  * What autonomous mode may pick: the task sizes. Tasks marked `noAutonomy` are left alone, and it
- * works only in workspaces set to "Runs it" (`orgs.<org>.level`).
+ * works only in workspaces where `orgs.<org>.authority.start` is `decide`.
  */
 export const AutonomyPickSchema = z.strictObject({
   size: TaskSizeLimitSchema.default("any"),
   /**
    * Before Phase 13: the orgs it could work in. Read once at start, when majhi moves the listed orgs
-   * to "Runs it" and removes this list. Nothing else reads it.
+   * to the old "Runs it" level and removes this list. Nothing else reads it.
    */
   orgs: z.array(BudgetIdSchema).max(100).optional(),
 });

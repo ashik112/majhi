@@ -66,7 +66,7 @@ export function ChatPane({
         </div>
         <p className="text-xs text-fg-faint text-pretty">
           {current === undefined
-            ? "Set a workspace to Runs it on the Captain page. Each one gets its own lane."
+            ? "Let the captain start work in a workspace on the Captain page. Each one gets its own lane."
             : "One lane per workspace: majhi wakes the captain here with this workspace's matters only."}
         </p>
       </div>

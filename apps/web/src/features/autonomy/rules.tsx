@@ -91,7 +91,7 @@ function PickCard({ status }: { status: AutonomyStatus }) {
         ) : (
           status.lanes.map((l) => l.name).join(", ")
         )}
-        : the workspaces set to Runs it on the{" "}
+        : the workspaces where the captain starts work, set on the{" "}
         <PageLink page="captain" className="text-blue hover:underline">
           Captain
         </PageLink>{" "}

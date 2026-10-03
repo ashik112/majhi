@@ -1,11 +1,4 @@
-import {
-  type AccountView,
-  type CaptainCapAsk,
-  type CaptainLevel,
-  type CaptainOrg,
-  CHORE_LABEL,
-  PRIVATE,
-} from "@majhi/shared";
+import { type AccountView, type CaptainCapAsk, type CaptainOrg, CHORE_LABEL, PRIVATE } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
@@ -20,14 +13,14 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { PAGE_PATH } from "@/lib/pages";
-import { LEVELS, parseDollars } from "./model";
+import { AuthorityTable } from "./authority-table";
+import { parseDollars } from "./model";
 import { MoreRules } from "./more-rules";
-
-const QUESTION = "How much does the captain do here?";
 
 /** Today's line at the right of the card's head, with a lamp only for state. */
 function TodayLine({ org }: { org: CaptainOrg }) {
-  if (org.level === "ask") return <span className="shrink-0 text-sm text-fg-faint">Only when you ask</span>;
+  if (Object.values(org.authority).every((c) => c === "ask"))
+    return <span className="shrink-0 text-sm text-fg-faint">Asks you about everything</span>;
   if (org.resting !== undefined) {
     return (
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted" title={org.resting}>
@@ -42,63 +35,6 @@ function TodayLine({ org }: { org: CaptainOrg }) {
       <Lamp state={org.forYou > 0 ? "needs" : "done"} size={7} />
       <span className="min-w-0 truncate">Today: {org.summary}</span>
     </span>
-  );
-}
-
-/** The three choices as one native radio group: arrows move between them, each pick is saved. */
-function LevelChoice({
-  org,
-  name,
-  value,
-  busy,
-  onPick,
-}: {
-  org: string;
-  name: string;
-  value: CaptainLevel;
-  busy: boolean;
-  onPick: (level: CaptainLevel) => void;
-}) {
-  return (
-    <fieldset aria-label={`${QUESTION} ${name}`} className="m-0 grid min-w-0 grid-cols-3 gap-2 border-0 p-0">
-      {LEVELS.map((level) => {
-        const on = level.value === value;
-        return (
-          <label
-            key={level.value}
-            className={cn(
-              "flex min-w-0 cursor-pointer flex-col gap-1 rounded-lg border px-3 py-2.5 transition-[background-color,border-color] duration-150",
-              "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent",
-              busy && "cursor-wait",
-              on
-                ? "border-accent-line bg-accent-wash"
-                : "border-line-strong bg-card hover:border-line-hover hover:bg-raised",
-            )}
-          >
-            <input
-              type="radio"
-              name={`level-${org}`}
-              value={level.value}
-              checked={on}
-              disabled={busy}
-              onChange={() => onPick(level.value)}
-              className="sr-only"
-            />
-            <span className="flex items-center gap-2 text-body font-medium text-fg">
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "size-3.5 shrink-0 rounded-full border-[1.5px]",
-                  on ? "border-accent bg-accent shadow-[inset_0_0_0_2.5px_var(--c-canvas)]" : "border-fg-dim",
-                )}
-              />
-              {level.label}
-            </span>
-            <span className="text-sm text-fg-muted text-pretty">{level.help}</span>
-          </label>
-        );
-      })}
-    </fieldset>
   );
 }
 
@@ -145,7 +81,7 @@ function upperFirst(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The daily budget next to "Runs it": a dollar amount, saved with Enter or Save. */
+/** The daily budget under the table: a dollar amount, saved with Enter or Save. */
 function Budget({ org, dayCap }: { org: CaptainOrg; dayCap: number | undefined }) {
   const toast = useToast();
   const save = useCaptainRules();
@@ -223,8 +159,8 @@ function Budget({ org, dayCap }: { org: CaptainOrg; dayCap: number | undefined }
 }
 
 /**
- * One workspace on the Captain page: today's line, the choice of how much the captain does, the
- * budget next to "Runs it", chores that turned off, and "More rules" folded away.
+ * One workspace on the Captain page: today's line, who decides what, the
+ * budget, chores that turned off, and "More rules" folded away.
  */
 export function WorkspaceCard({
   org,
@@ -247,21 +183,9 @@ export function WorkspaceCard({
   zone: string;
 }) {
   const toast = useToast();
-  const save = useCaptainRules();
   const choreOn = useCaptainCommand("captain.choreOn");
   const [open, setOpen] = useState(false);
   const off = org.chores.filter((c) => c.off !== undefined);
-  const pick = (level: CaptainLevel) =>
-    save.mutate(
-      {
-        input: { orgs: { [org.org]: { level } } },
-        reason: `Owner set ${org.name} to ${LEVELS.find((l) => l.value === level)?.label}`,
-      },
-      {
-        onSuccess: () => toast(`${org.name}: ${LEVELS.find((l) => l.value === level)?.label}`),
-        onError: (error) => toast("Could not change it", { detail: describeError(error), tone: "error" }),
-      },
-    );
   return (
     <Card aria-label={org.name} className="gap-3 rounded-2xl px-5 py-4">
       <div className="flex min-w-0 items-center gap-3">
@@ -276,19 +200,7 @@ export function WorkspaceCard({
           <TodayLine org={org} />
         </span>
       </div>
-      <div className="flex flex-col gap-2">
-        <span className="text-sm text-fg-soft">{QUESTION}</span>
-        <LevelChoice org={org.org} name={org.name} value={org.level} busy={save.isPending} onPick={pick} />
-      </div>
-      {org.level === "runs" && !autonomyOn && (
-        <p className="text-sm text-fg-muted text-pretty">
-          Autonomous mode is off, so it keeps things tidy here until you turn it on on the{" "}
-          <Link to={PAGE_PATH.autonomous} search={{}} className="text-blue hover:underline">
-            Autonomous
-          </Link>{" "}
-          page.
-        </p>
-      )}
+      <AuthorityTable org={org} autonomyOn={autonomyOn} />
       {asks.map((ask) => (
         <CapAskRow key={ask.chore} ask={ask} name={org.name} />
       ))}
@@ -317,7 +229,7 @@ export function WorkspaceCard({
         </div>
       ))}
       <div className="flex min-h-8 min-w-0 items-center gap-3">
-        {org.level === "runs" && <Budget org={org} dayCap={dayCap} />}
+        {Object.values(org.authority).includes("decide") && <Budget org={org} dayCap={dayCap} />}
         <button
           type="button"
           aria-expanded={open}

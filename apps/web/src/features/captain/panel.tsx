@@ -315,7 +315,8 @@ function AllTab({
         title="No workspace threads yet"
         body={
           <>
-            A thread opens when Autonomous is on and a workspace is set to "Runs it". Choose one on the{" "}
+            A thread opens when Autonomous is on and the captain decides when work starts in a workspace. Set
+            that on the{" "}
             <PageLink page="captain" className="text-blue hover:underline">
               Captain page
             </PageLink>

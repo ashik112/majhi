@@ -97,7 +97,7 @@ export function AutonomyView() {
     setSeen(summaryDay);
   }, [view, summaryDay]);
   const fresh = summaryDay !== undefined && seen !== summaryDay;
-  // The lane the chat shows: the one picked on the desk, else the first workspace set to Runs it.
+  // The lane the chat shows: the one picked on the desk, else the first workspace where the captain starts work.
   const [pickedLane, setLane] = useState<string>();
   const lane = status?.lanes.find((l) => l.org === pickedLane)?.org ?? status?.lanes[0]?.org;
 

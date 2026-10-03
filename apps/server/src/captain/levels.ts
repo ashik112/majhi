@@ -13,8 +13,9 @@ import {
 } from "@majhi/shared";
 
 /**
- * How much the captain does in a workspace (SPEC 5.18). Pure: the defaults, what "Runs it" means while
- * autonomous mode is off, which chores a level runs, and the move from the old pick rule.
+ * Who decides what in a workspace (SPEC 5.18). Pure: the authority table with its defaults, the move from
+ * the old three levels, what holds while Autonomous is not On, which chores a table runs, and the move from
+ * the old pick rule.
  */
 
 /** Every row `decide` or `ask` as the table of the old three levels read (SPEC 5.18, "Moving today's settings"). */

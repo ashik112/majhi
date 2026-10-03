@@ -73,8 +73,10 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
   const captain = useCaptainStatus().data;
   const paused = status.stopped;
   const [resume, setResume] = useState(true);
-  // Every workspace where the captain does more than answer.
-  const acts = (captain?.orgs ?? []).filter((o) => o.level !== "ask").map((o) => o.name);
+  // Every workspace where the captain decides something.
+  const acts = (captain?.orgs ?? [])
+    .filter((o) => Object.values(o.authority).includes("decide"))
+    .map((o) => o.name);
   const noCaptain = status.boss === undefined;
   const day = status.settings.day;
   const noWorkspace = captain !== undefined && acts.length === 0;
@@ -106,7 +108,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             <PageLink page="captain" onClick={onClose} className="underline">
               Captain page
             </PageLink>
-            , choose "Runs it" for one workspace, then come back.
+            , choose "Captain decides" for something in one workspace, then come back.
           </p>
         )}
         {paused.length > 0 && (

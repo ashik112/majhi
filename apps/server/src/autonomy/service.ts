@@ -110,7 +110,7 @@ export interface AutonomyDeps {
   automationAction?: (kind: "schedule" | "trigger", id: string) => string | undefined;
   /** Rates how much work a task is (the decision provider), for the size rule. */
   rateSize?: SizeRater;
-  /** The captain's lanes (5.18): autonomous mode wakes the captain in each "Runs it" workspace's own. */
+  /** The captain's lanes (5.18): autonomous mode wakes the captain in each workspace's own. */
   lanes: Lanes;
   /** When the owner last acted in a task: the captain keeps out for 10 minutes. */
   ownerAt?: (task: string) => string | undefined;
@@ -119,7 +119,7 @@ export interface AutonomyDeps {
 
 /** What the service tells the driver (part B, `driver.ts`). */
 export interface DriverHooks {
-  /** For one workspace, or every "Runs it" workspace when `org` is absent. */
+  /** For one workspace, or every workspace where the captain starts work when `org` is absent. */
   wake(line: string, org?: string): void;
   onMode(mode: AutonomyMode): void;
   loopEnded(task: string): void;
@@ -213,7 +213,7 @@ export class AutonomyService {
   }
 
   /**
-   * The lane a tick goes to, while the mode is on and the workspace is set to "Runs it". When the
+   * The lane a tick goes to, while the mode is on and the workspace is where the captain starts work. When the
    * lane's chat was removed or closed, majhi makes or reopens it first and says so in the feed.
    * Undefined: the mode is not on, the workspace does not run, or there is no captain.
    */
@@ -812,7 +812,7 @@ export class AutonomyService {
   /**
    * The owner's pick rules (PRV-74 follow-up, 5.18), for the captain and the agents in its lanes: no
    * call that touches a task marked Not for autonomous mode, no task work in a workspace that is not
-   * set to "Runs it" with the mode on, and no start of a task larger than the size rule allows.
+   * where the captain starts work with the mode on, and no start of a task larger than the size rule allows.
    */
   private async pickRefusal(
     caller: AdminCaller,
@@ -1263,7 +1263,7 @@ export class AutonomyService {
 
   /**
    * The owner's message to the captain, in any mode: it goes to a workspace's lane as the owner's
-   * message, which wakes the captain there (default: the first workspace set to "Runs it"). With
+   * message, which wakes the captain there (default: the first workspace where the captain starts work). With
    * `keep` it is also a standing instruction for every lane, as a config commit.
    */
   async guide(
@@ -1279,7 +1279,7 @@ export class AutonomyService {
     const org = input.org ?? (await this.runsOrgs())[0];
     if (org === undefined) {
       throw new UserError(
-        "No workspace is set to Runs it. Set one on the Captain page, or name the workspace.",
+        "In no workspace does the captain decide when work starts. Change that on the Captain page, or name the workspace.",
         409,
       );
     }
@@ -1498,8 +1498,7 @@ export class AutonomyService {
 
   /**
    * `autonomy.plan`, `autonomy.note` and `autonomy.answer`: no policy and no card. Only for the captain
-   * in a lane: while the mode is not off, or in any mode in a lane whose workspace is set to "Keeps
-   * things tidy" or "Runs it", where the upkeep asks it about agents' questions (5.18).
+   * in a lane, while the mode is on. The authority table gates an answer by its row (5.18).
    */
   async bossTool(
     caller: AdminCaller,
@@ -1720,7 +1719,7 @@ export class AutonomyService {
     return [...this.laneChats(), ...(legacy === undefined ? [] : [legacy])];
   }
 
-  /** Each workspace set to "Runs it": its lane, today's spend there, its tasks and why it rests. */
+  /** Each workspace where the captain starts work: its lane, today's spend there, its tasks and why it rests. */
   private async lanesView(
     m: Measure,
     holds: readonly AutonomyHold[],
@@ -1902,7 +1901,7 @@ export class AutonomyService {
     return seq;
   }
 
-  /** A quiet line in every lane of a workspace set to "Runs it" that has a chat. */
+  /** A quiet line in every lane of a workspace where the captain starts work that has a chat. */
   say(text: string, level: "info" | "warn" = "info"): void {
     void this.runsOrgs()
       .then((orgs) => {

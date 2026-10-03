@@ -1,17 +1,49 @@
-import type { AutonomyOrg, AutonomyOrgPatch, CaptainLevel, Freeze } from "@majhi/shared";
+import type { Authority, AuthorityRow, AutonomyOrg, AutonomyOrgPatch, Freeze } from "@majhi/shared";
 
-/** The three choices, in the words of the Captain page. */
-export const LEVELS: readonly { value: CaptainLevel; label: string; help: string }[] = [
-  { value: "ask", label: "Only when I ask", help: "Answers when you talk to it. Nothing else." },
+/** The rows of the authority table, in the order the page shows them. */
+export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
+  "start",
+  "questions",
+  "approvals",
+  "upkeep",
+  "merge",
+  "push",
+];
+
+export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string }> = {
+  start: { label: "Start work", hint: "Pick tasks from the backlog and start them" },
+  questions: { label: "Answer agents' questions", hint: "When the brief or the code settles them" },
+  approvals: { label: "Answer routine approval cards", hint: "Only what your rules allow" },
+  upkeep: { label: "Upkeep", hint: "Memory, projects, triage, cleanup, stuck tasks" },
+  merge: { label: "Merge", hint: "Into the base branch, after the checks pass" },
+  push: { label: "Push", hint: "Push branches and open merge requests" },
+};
+
+/** The two quick presets above the table. */
+export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Authority }[] = [
   {
-    value: "tidy",
-    label: "Keeps things tidy",
-    help: "Routine cards, memory, new repos and cleanup. Asks before shipping.",
+    label: "Hands off",
+    help: "The captain decides everything except pushing",
+    rows: {
+      start: "decide",
+      questions: "decide",
+      approvals: "decide",
+      upkeep: "decide",
+      merge: "decide",
+      push: "ask",
+    },
   },
   {
-    value: "runs",
-    label: "Runs it",
-    help: "Also picks tasks, runs them and ships them, within today's budget.",
+    label: "Ask me first",
+    help: "You decide everything except upkeep",
+    rows: {
+      start: "ask",
+      questions: "ask",
+      approvals: "ask",
+      upkeep: "decide",
+      merge: "ask",
+      push: "ask",
+    },
   },
 ];
 
@@ -35,8 +67,6 @@ export interface RulesDraft {
   providers: string[];
   /** Empty: the captain's own account. */
   account: string;
-  merge: boolean;
-  push: boolean;
 }
 
 export function rulesDraft(rules: AutonomyOrg): RulesDraft {
@@ -49,8 +79,6 @@ export function rulesDraft(rules: AutonomyOrg): RulesDraft {
     branches: [...(rules.branches ?? [])],
     providers: [...(rules.providers ?? [])],
     account: rules.account ?? "",
-    merge: rules.merge,
-    push: rules.push,
   };
 }
 
@@ -73,8 +101,6 @@ export function rulesPatch(draft: RulesDraft, rules: AutonomyOrg): AutonomyOrgPa
     patch.providers = draft.providers.length === 0 ? null : draft.providers;
   }
   if (draft.account !== (rules.account ?? "")) patch.account = draft.account === "" ? null : draft.account;
-  if (draft.merge !== rules.merge) patch.merge = draft.merge;
-  if (draft.push !== rules.push) patch.push = draft.push;
   return Object.keys(patch).length === 0 ? undefined : patch;
 }
 
