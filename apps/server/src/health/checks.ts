@@ -9,7 +9,10 @@ import {
   type ConnectionTestResult,
   collapseHome,
   dockerRuntimeName,
+  type HostOs,
   type HostStatus,
+  hostOsOf,
+  keyringName,
   type SshHostCheck,
   type SshStatus,
   sshUnlockCommand,
@@ -326,20 +329,22 @@ export async function checkSshAgent(
     }
     keys = 0;
   }
-  const verdict = sshVerdict(name, keys, ssh);
+  const verdict = sshVerdict(name, keys, ssh, hostOsOf(host?.status?.info));
   const needsPassphrase = (ssh?.needsPassphrase.length ?? 0) > 0;
   return { ...base, ...verdict, ...(verdict.status !== "pass" && !needsPassphrase ? reload : {}) };
 }
 
+/** `os` picks the unlock command: the helper's OS, undefined when no helper said. */
 export function sshVerdict(
   name: string,
   keys: number,
   ssh: SshStatus | undefined,
+  os?: HostOs,
 ): { name: string; status: CheckStatus; detail: string } {
   const held = `${keys} ${keys === 1 ? "key" : "keys"} loaded`;
   const needs = ssh?.needsPassphrase ?? [];
   if (needs.length > 0) {
-    const commands = needs.map((key) => sshUnlockCommand(key)).join(" ; ");
+    const commands = needs.map((key) => sshUnlockCommand(key, os)).join(" ; ");
     return {
       name,
       status: "warn",
@@ -438,9 +443,9 @@ async function checkSecrets(services: Services): Promise<Check[]> {
 }
 
 /**
- * The two backups of the secrets key: the copy the host helper keeps in the Keychain, and the
- * passphrase-protected export to keep off the Mac. Each warns until it holds the key majhi uses.
- * Nothing to back up while there is no key: the Secrets key check says so.
+ * The two backups of the secrets key: the copy the host helper keeps in the Keychain or keyring, and
+ * the passphrase-protected export to keep off this computer. Each warns until it holds the key majhi
+ * uses. Nothing to back up while there is no key: the Secrets key check says so.
  */
 async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
   const fingerprint = await ctx.services.secrets.fingerprint().catch(() => undefined);
@@ -449,24 +454,34 @@ async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
   return [keychainCheck(fingerprint, ctx.host), exportCheck(fingerprint, last)];
 }
 
+/**
+ * The helper's copy in the macOS Keychain or a Linux and WSL2 keyring. The id keeps the Keychain's
+ * name: `health.fix` takes it back.
+ */
 export function keychainCheck(fingerprint: string, host: HostSource): Check {
-  const base = { id: "secrets-key-keychain", group: "majhi", name: "Secrets key in Keychain" } as const;
+  const info = host.status?.info;
+  const os = hostOsOf(info);
+  const where = keyringName(os);
+  const base = { id: "secrets-key-keychain", group: "majhi", name: `Secrets key in ${where}` } as const;
   if (!helperConnected(host)) {
     return { ...base, status: "warn", detail: "Not checked: the host helper is not connected." };
   }
-  const info = host.status?.info;
-  if (info !== undefined && info.platform !== "darwin") {
-    return { ...base, status: "pass", detail: "This host has no Keychain, so the export is the backup." };
+  if (info?.keyring?.kind === "none") {
+    // A locked keyring may still hold a copy from before, so "may".
+    return {
+      ...base,
+      status: "warn",
+      detail: `${info.keyring.reason} The export may be the only other copy of the key.`,
+    };
   }
   const saved = info?.secretsKey;
-  const save = { fix: { label: "Save to Keychain" } };
+  const save = { fix: { label: `Save to ${where}` } };
   if (saved?.error !== undefined) return { ...base, status: "warn", detail: saved.error, ...save };
   if (saved?.saved === undefined) {
     return {
       ...base,
       status: "warn",
-      detail:
-        "No copy in the Keychain yet. Without one, a lost key file makes every saved API key unreadable.",
+      detail: `No copy in ${where} yet. Without one, a lost key file makes every saved API key unreadable.`,
       ...save,
     };
   }
@@ -474,12 +489,12 @@ export function keychainCheck(fingerprint: string, host: HostSource): Check {
     return {
       ...base,
       status: "warn",
-      detail:
-        "The Keychain holds a different key, maybe from an earlier install. Replace it with the key majhi uses.",
+      detail: `A different key is in ${where}, maybe from an earlier install. Replace it with the key majhi uses.`,
       fix: { label: "Replace copy" },
     };
   }
-  return { ...base, status: "pass", detail: 'A copy is in the login Keychain as "majhi secrets key"' };
+  const place = os === "macos" ? "the login Keychain" : where;
+  return { ...base, status: "pass", detail: `A copy is in ${place} as "majhi secrets key"` };
 }
 
 export function exportCheck(fingerprint: string, last: KeyExportRecord | undefined): Check {
@@ -490,7 +505,7 @@ export function exportCheck(fingerprint: string, last: KeyExportRecord | undefin
       ...base,
       status: "warn",
       detail:
-        "No export yet. Export the key with a passphrase and keep the file off this Mac, in case the Mac is lost.",
+        "No export yet. Export the key with a passphrase and keep the file off this computer, in case the computer is lost.",
       ...exportFix,
     };
   }
@@ -505,7 +520,7 @@ export function exportCheck(fingerprint: string, last: KeyExportRecord | undefin
   return {
     ...base,
     status: "pass",
-    detail: `Exported on ${last.exportedAt.slice(0, 10)}. Keep the file off this Mac.`,
+    detail: `Exported on ${last.exportedAt.slice(0, 10)}. Keep the file off this computer.`,
   };
 }
 

@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import type { CommandOutput, Remount } from "@majhi/shared";
+import { type CommandOutput, hostOsOf, keyringName, type Remount } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { ServerEnv } from "../env.ts";
 import { errorMessage } from "../errors.ts";
@@ -9,9 +9,9 @@ import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import { type Check, collectChecks, type ToolCache } from "./checks.ts";
 
-/** Loading keys and asking the Keychain can take a few seconds. */
+/** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
-/** The Keychain can be slow to answer the first time after a login. */
+/** The Keychain or keyring can be slow to answer the first time after a login. */
 const KEYCHAIN_CALL_TIMEOUT_MS = 30_000;
 
 export interface HealthDeps {
@@ -139,10 +139,8 @@ export class HealthService {
         if (expected === undefined) return { ok: false, detail: "There is no secrets key to save yet." };
         const saved = await hostLink.call("secretsKey.save", { expected }, KEYCHAIN_CALL_TIMEOUT_MS);
         hostLink.noteSecretsKey(saved);
-        return {
-          ok: true,
-          detail: 'Saved a copy of the secrets key in the Keychain as "majhi secrets key".',
-        };
+        const where = keyringName(hostOsOf(hostLink.status().info));
+        return { ok: true, detail: `Saved a copy of the secrets key in ${where} as "majhi secrets key".` };
       }
       if (id === "secrets-key-export") {
         // The passphrase is the owner's to type, so the browser shows the form.
