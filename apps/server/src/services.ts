@@ -26,6 +26,7 @@ import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService } from "./autonomy/service.ts";
+import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
@@ -253,10 +254,13 @@ export interface Services {
 export function createServices(env: ServerEnv, options: ServiceOptions = {}): Services {
   const runtime = options.runtime ?? realRuntime;
   const config = new ConfigService({ majhiHome: env.majhiHome, hostHome: env.hostHome });
+  // Hooks and chores started without waiting: `close` waits for them before the stores close.
+  const background = new Background();
   // The built-in org used to be `personal`. Old files read as `private` meanwhile, so this can run late.
-  void config
-    .migrateLegacyOrg()
-    .catch((err: unknown) => console.error(`Could not rename the Personal org: ${errorMessage(err)}`));
+  background.run(
+    () => config.migrateLegacyOrg(),
+    (err) => console.error(`Could not rename the Personal org: ${errorMessage(err)}`),
+  );
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
   const agentStore = new AgentStore(env.majhiHome);
@@ -417,7 +421,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
   };
   // No run is alive yet: every connection folder left from before goes.
-  void sweepRunFiles(env.majhiHome).catch(() => undefined);
+  background.run(() => sweepRunFiles(env.majhiHome));
   const processes = new ProcessManager({
     spawner: sessionOptions.spawner ?? localSpawner,
     launch: async (task, agent) => {
@@ -443,7 +447,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (list.some((p) => p.container !== undefined)) events.emit(["containers"]);
     },
     // Bound below, like the run manager's callbacks.
-    onEnded: (p, wakes) => void tasks.processEnded(p, wakes).catch(() => undefined),
+    onEnded: (p, wakes) => background.run(() => tasks.processEnded(p, wakes)),
   });
   // Previews and services run as processes, so they need the process manager (PRV-53).
   const containerDocker =
@@ -467,9 +471,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
     changed: () => events.emit(["containers"]),
   });
-  void containers
-    .startup()
-    .catch((err: unknown) => console.error(`Could not clean up containers: ${errorMessage(err)}`));
+  background.run(
+    () => containers.startup(),
+    (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
+  );
   const runs = new RunManager({
     store,
     limited: limitedRun,
@@ -495,11 +500,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task, refused) => {
-      void tasks.agentsIdle(task, refused).catch(() => undefined);
+      background.run(() => tasks.agentsIdle(task, refused));
       idleWatch.idle(task);
     },
     beforePrompt: (turn) => tasks.beforePrompt(turn),
-    onPaused: (task, reason, why) => void tasks.pausedByRuns(task, reason, why).catch(() => undefined),
+    onPaused: (task, reason, why) => background.run(() => tasks.pausedByRuns(task, reason, why)),
     checkAccount: async (id) => {
       const { account } = await accounts.health(id, true);
       const full = [account.usage?.window, account.usage?.weekly].find(
@@ -521,13 +526,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onTurnFailed: (turn) => idleWatch.turnFailed(turn),
     // Bound below: autonomous mode is built after the task service.
     overCap: (task, spent) => autonomy.overCap(task, spent),
-    onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
+    onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
       return coordinator.turnEnded(turn);
     },
-    onCheckpoint: (task) => void tasks.restackOnto(task).catch(() => undefined),
-    onNetworkError: () => void resilience.networkError().catch(() => undefined),
+    onCheckpoint: (task) => background.run(() => tasks.restackOnto(task)),
+    onNetworkError: () => background.run(() => resilience.networkError()),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   runs.recover();
@@ -681,15 +686,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   room.onWrite((task, item) => captain.roomWrote(task, item));
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
-  const chatSweep = setInterval(() => void chatMemory?.sweep().catch(() => undefined), CHAT_SWEEP_MS);
+  const chatSweep = setInterval(() => background.run(async () => chatMemory?.sweep()), CHAT_SWEEP_MS);
   chatSweep.unref();
   // A new week lifts the budget pauses; a raised budget lifts them at once, through `recheck`.
-  const limitSweep = setInterval(() => void budgets.lift(), LIMIT_SWEEP_MS);
+  const limitSweep = setInterval(() => background.run(() => budgets.lift()), LIMIT_SWEEP_MS);
   limitSweep.unref();
   const promotion = new Promotion({ memory, tasks, projects, config });
   // Once: old pending facts that only repeat the repo docs are rejected (logged, undoable).
-  void cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }).catch((err: unknown) =>
-    console.error(`Memory cleanup failed: ${errorMessage(err)}`),
+  background.run(
+    () => cleanupRepoDocFacts({ memory, repoDocs, projects: projectList }),
+    (err) => console.error(`Memory cleanup failed: ${errorMessage(err)}`),
   );
   const gitLogins = new GitLoginService(options.hostLink, async () => (await config.load()).projectPaths);
   const hostGit =
@@ -868,12 +874,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
-  void captain
-    .boot()
-    .catch((err: unknown) => console.error(`Could not pick up the captain: ${errorMessage(err)}`));
-  void autonomy
-    .boot()
-    .catch((err: unknown) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`));
+  background.run(
+    () => captain.boot(),
+    (err) => console.error(`Could not pick up the captain: ${errorMessage(err)}`),
+  );
+  background.run(
+    () => autonomy.boot(),
+    (err) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`),
+  );
   const resilience = new Resilience({
     runs,
     tasks,
@@ -886,10 +894,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
-  options.hostLink?.onWake(() => void resilience.wake().catch(() => undefined));
-  void resilience
-    .startup()
-    .catch((err: unknown) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`));
+  options.hostLink?.onWake(() => background.run(() => resilience.wake()));
+  background.run(
+    () => resilience.startup(),
+    (err) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`),
+  );
   const secretService = new SecretService(secrets, config);
   const orgs = new OrgService(config, agentStore, (id, newId) => {
     store.tasks.renameOrg(id, newId);
@@ -983,6 +992,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     budgets,
     runner: runner.runner,
     close: async () => {
+      // No new hook work from here on (closing runs and processes fires hooks too).
+      const settled = background.stop();
       resilience.stop();
       autonomy.close();
       captain.close();
@@ -997,6 +1008,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
+      // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
+      // After the runs: a hook can wait on a lock a turn holds.
+      await settled;
       // Titles and records of closed tasks run after their turn and write into the home: let them
       // end (the Housekeeper's sessions are cut short) before usage is flushed and the stores close.
       await housekeeper.close();
