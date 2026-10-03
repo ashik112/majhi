@@ -1,7 +1,7 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { authorityOf, choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
-import { branchAllowed, presenceWhy, providerAllowed, restWhy } from "./rules.ts";
+import { branchAllowed, providerAllowed, restWhy, typingWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
@@ -132,12 +132,9 @@ describe("the rules that always hold", () => {
     expect(restWhy(rules, at("2026-10-03T23:30:00Z"), "UTC")).toBeUndefined();
   });
 
-  it("keeps out of a task the owner acted in during the last 10 minutes", () => {
-    const now = at("2026-10-03T12:00:00Z");
-    expect(presenceWhy("2026-10-03T11:51:00Z", now)).toBe("the owner acted in it 9 minutes ago");
-    expect(presenceWhy("2026-10-03T11:59:40Z", now)).toBe("the owner acted in it 1 minute ago");
-    expect(presenceWhy("2026-10-03T11:50:00Z", now)).toBeUndefined();
-    expect(presenceWhy(undefined, now)).toBeUndefined();
+  it("waits only while the owner types in that task", () => {
+    expect(typingWhy("ACM-3", true)).toBe("waiting: you are typing in ACM-3");
+    expect(typingWhy("ACM-3", false)).toBeUndefined();
   });
 
   it("ships only to the workspace's branches, or each project's base without a list, and only with allowed providers", () => {

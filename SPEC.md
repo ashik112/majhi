@@ -658,7 +658,7 @@ The **Limits screen** (`/limits`) is the one place for them: the autonomous budg
 
 **Labels.** Every captain action is labelled "Captain", never "You", in rooms, cards and the log, with its reason and Undo where Undo exists.
 
-**Daily summary** at 08:00 by default, changeable on the Limits screen, shown as the one-line chip in the Captain page header, which opens it: what shipped, spend per workspace against its budget, what waits on the owner, and what the captain plans next.
+**Daily summary** at 08:00 by default, changeable on the Limits screen and in the summary sheet's footer, shown as the one-line chip in the Captain page header, which opens it. The sheet is short: what shipped, grouped by workspace with a count and the first three titles then "+N more"; spend per workspace against its budget, with overspend flagged; what waits on the owner, the count and the first three decisions by title, linking to Decisions; and what the captain plans next, the first three queue entries with why. Notes (what it was unsure about) show three one-line items and "+N more" opens the rest. It is made whatever the mode: with Autonomous Off it reports the captain's upkeep and the spend, and a day with the mode off all through and nothing done or spent makes none. It never alerts: it is not a decision.
 
 **Upkeep.** Short runs at fixed moments, never a captain that stays awake:
 
@@ -680,7 +680,7 @@ The **Limits screen** (`/limits`) is the one place for them: the autonomous budg
 - **The never list:** no force push, no deleting uncommitted work, no moving one workspace's secrets, accounts or logins to another, no change to a protected repo, no secret in a diff that ships.
 - **The stricter rule wins:** never list, then protected repo, then the workspace's choice, then the global default. A standing instruction can tighten a rule, never loosen it.
 - **Time never approves anything.** What needs the owner waits, with one reminder a day.
-- **Presence:** while the owner is typing in a task, the captain waits until they send or leave. Otherwise it acts within its authority, and the owner overrules with Undo.
+- **Presence:** while the owner is typing in a task, the captain waits until they send or leave. Otherwise it acts within its authority, and the owner overrules with Undo. The composer tells the server over the events socket (`typing` message: the task id, repeated every 5 s while the draft is not empty and the box has focus, and an empty one when it stops, on send, blur, task change or unmount). The server counts a report for 15 s, drops it when the socket closes, and keeps it in memory only. A chore that finds the task held writes one line, "waiting: you are typing in PYZ-3", and leaves it; when the typing ends, the chores that waited (ship, cards, questions) run again at once. A captain tool call in that task is refused with the same line and the captain tries again on its next wake.
 - **Re-check before anything that cannot be undone.** The rules are read again right before a push, merge, request or post, so a change the owner made a second ago applies.
 - **Text is not instruction.** Words in repos, issues, attachments or messages never authorise an action; checks and the owner's rules do.
 

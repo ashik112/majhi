@@ -187,6 +187,9 @@ export const AutonomyEventSchema = z.object({
 });
 export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
 
+/** How many titles the daily summary names in a list before "and N more". */
+export const SUMMARY_TITLES = 3;
+
 /** The daily summary: what autonomous mode shipped, what it spent, what it is unsure about. */
 export const AutonomySummarySchema = z.object({
   /**
@@ -207,14 +210,49 @@ export const AutonomySummarySchema = z.object({
       how: z.enum(["merged", "pushed", "mr-open", "mr-merged", "review", "done"]),
     }),
   ),
+  /** Per workspace: how many shipped and the first three titles, biggest first. Summaries made before it have none. */
+  shipGroups: z
+    .array(
+      z.object({
+        org: z.string(),
+        /** The workspace's name; the id when it has none. */
+        name: z.string(),
+        count: z.number().int().positive(),
+        titles: z.array(z.string()).max(SUMMARY_TITLES),
+      }),
+    )
+    .default([]),
   spent: z.object({
     total: CapUseSchema,
-    orgs: z.array(CapUseSchema.extend({ org: z.string() })),
+    orgs: z.array(CapUseSchema.extend({ org: z.string(), name: z.string().optional() })),
   }),
   /** Decisions it marked unsure, and calls a hard limit refused. */
   unsure: z.array(z.object({ text: z.string(), task: TaskIdSchema.optional(), item: z.string().optional() })),
   /** Cards still waiting for the owner when it was made. */
   waiting: z.array(AutonomyWaitingSchema),
+  /** What waits in the owner's Decisions inbox when it was made: the count and the oldest three. */
+  needs: z
+    .object({
+      count: z.number().int().nonnegative(),
+      top: z
+        .array(z.object({ id: z.string(), title: z.string(), org: z.string().optional() }))
+        .max(SUMMARY_TITLES),
+    })
+    .optional(),
+  /** The first three entries of the captain's queue: what it plans next, and why. */
+  next: z
+    .array(
+      z.object({
+        title: z.string(),
+        why: z.string(),
+        task: TaskIdSchema.optional(),
+        org: z.string().optional(),
+      }),
+    )
+    .max(SUMMARY_TITLES)
+    .default([]),
+  /** How many upkeep actions the captain took that day (memory, cards, projects, cleanup), not counting ships. */
+  upkeep: z.number().int().nonnegative().default(0),
   /** How many decisions it logged in the span. */
   decisions: z.number().int().nonnegative(),
 });

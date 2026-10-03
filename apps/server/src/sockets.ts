@@ -80,10 +80,11 @@ function serveEvents(ws: WebSocket, events: EventHub): void {
   const leave = () => {
     stop();
     events.tabs.drop(ws);
+    events.typing.drop(ws);
   };
   ws.on("close", leave);
   ws.on("error", leave);
-  // A tab sends only whether it can pop browser notifications. Anything else is ignored.
+  // A tab sends whether it can pop browser notifications and which task the owner types in. Anything else is ignored.
   ws.on("message", (data, isBinary) => {
     if (isBinary) return;
     const text = data.toString();
@@ -95,7 +96,9 @@ function serveEvents(ws: WebSocket, events: EventHub): void {
       return;
     }
     const message = EventsClientMessageSchema.safeParse(json);
-    if (message.success) events.tabs.report(ws, message.data.active, Date.now());
+    if (!message.success) return;
+    if (message.data.type === "browser-notify") events.tabs.report(ws, message.data.active, Date.now());
+    else events.typing.report(ws, message.data.task);
   });
 }
 

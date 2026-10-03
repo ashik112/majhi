@@ -19,7 +19,7 @@ import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
 import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
-import { dayLabel, SummaryView } from "./summary";
+import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
 type Open = "delegation" | "log" | "summary";
 
@@ -122,7 +122,12 @@ export function CaptainView() {
         </Sheet>
       )}
       {open === "summary" && summary && (
-        <Sheet title="Daily summary" subtitle={dayLabel(summary.day)} onClose={close}>
+        <Sheet
+          title="Daily summary"
+          subtitle={dayLabel(summary.day)}
+          onClose={close}
+          footer={autonomy && <SummaryTime settings={autonomy.settings} />}
+        >
           <SummaryView summary={summary} />
         </Sheet>
       )}

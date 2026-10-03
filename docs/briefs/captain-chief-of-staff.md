@@ -137,7 +137,7 @@ Each step ships on its own and is usable without the next.
 6. **Collision rules** (7): fair slots per workspace and account, the repo rule. Built: `fairOrder` in `runs/limits.ts` (owner first, then the workspace furthest below its share, accounts in turn), the repo rule in `autonomy/repo-rule.ts` for the captain's starts and resumes, and `ShipQueue` for ships per project and base branch.
 6b. **Staffing and lead handover** (7b). Built: `staffTask` (`tasks/staffing.ts`, pure) with its source `tasks/staffing-source.ts`; the captain's `tasks.create` and `tasks.start` use it when no team is named, and the reason goes into the task room; `tasks.staff` (tool `majhi_tasks_staff`) returns the proposal; `tasks.setLead` (tool `majhi_tasks_setLead` for the captain, `set_lead` in majhi-tasks for a lead) with the handover note.
 7. **Captain panel threads** (8), moving lane chats out of the task lists.
-8. **Presence rule replaced** (5) and **briefing** (9).
+8. **Presence rule replaced** (5) and **briefing** (9). Built: the composer sends `typing` over the events socket, `OwnerTyping` (`events/typing.ts`) holds it for 15 s in memory, chores and captain tool calls wait on it and run again when it ends; the 10-minute table is dropped. The daily summary is grouped by workspace, lists three decisions and three queue entries, caps notes at three with "+N more", is made while Off, and its time can be changed from the sheet's footer.
 
 Each step comes with tests for its state logic (switch, resume, budgets, fair slots, the repo rule) and a browser check of the screens it changes, at 1440 and 1100 wide.
 

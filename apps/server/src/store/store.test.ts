@@ -95,7 +95,6 @@ describe("store", () => {
       "captain_cap_asks",
       "captain_chores",
       "captain_lanes",
-      "captain_presence",
       "captain_runs",
       "captain_state",
       "chat_state",

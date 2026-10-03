@@ -23,6 +23,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
 import { useTask } from "@/lib/task-queries";
+import { useTypingSignal } from "@/lib/typing-signal";
 import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
 import {
   addressedAgent,
@@ -98,6 +99,8 @@ export function Composer({
   const [caret, setCaret] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [active, setActive] = useState(0);
+  const [focused, setFocused] = useState(false);
+  useTypingSignal(taskId, focused && text.trim() !== "");
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);
   const busy = isBusy(agents);
@@ -362,6 +365,8 @@ export function Composer({
               setDismissed(null);
             }}
             onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             style={{ maxHeight: MAX_HEIGHT }}

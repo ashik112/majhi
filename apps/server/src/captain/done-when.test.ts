@@ -64,10 +64,13 @@ describe("a night with the captain deciding in Private and asking about everythi
     expect(task(client.id)?.status).toBe("review");
     const acmeMain = await git(world.repo("api"), "rev-parse", "main");
 
-    // The owner just made both tasks: the captain keeps out for 10 minutes.
+    // The owner types in the task: the captain waits.
     const captain = h.majhi.services.captain;
+    const tab = {};
+    h.majhi.services.events.typing.report(tab, own.id);
     await captain.runner.start("private", "ship", "Hourly check");
     expect(task(own.id)?.status).toBe("review");
+    h.majhi.services.events.typing.report(tab, undefined);
 
     // Later that night.
     now = new Date("2026-10-03T01:30:00.000Z");

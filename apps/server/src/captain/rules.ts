@@ -6,9 +6,6 @@ import { localDay } from "../usage/ranges.ts";
  * keep it from running away. Pure.
  */
 
-/** The captain keeps out of a task the owner acted in during the last 10 minutes. */
-export const PRESENCE_MS = 10 * 60_000;
-
 /** The hard caps of one run of a chore. A run stops at the first it reaches, with a line in the log. */
 export const RUN_CAPS = { actions: 20, tokens: 60_000, minutes: 10 } as const;
 
@@ -128,13 +125,9 @@ export function withinHours(hours: { from: string; to: string }, clock: string):
     : clock >= hours.from || clock < hours.to;
 }
 
-/** Why presence keeps the captain out of a task, or undefined. */
-export function presenceWhy(ownerAt: string | undefined, now: Date): string | undefined {
-  if (ownerAt === undefined) return undefined;
-  const ago = now.getTime() - Date.parse(ownerAt);
-  if (!(ago >= 0 && ago < PRESENCE_MS)) return undefined;
-  const minutes = Math.max(1, Math.round(ago / 60_000));
-  return `the owner acted in it ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+/** Why the owner typing keeps the captain out of a task, or undefined. One line, the same everywhere. */
+export function typingWhy(task: string, typing: boolean): string | undefined {
+  return typing ? `waiting: you are typing in ${task}` : undefined;
 }
 
 /** Whether a branch is one the workspace lets the captain ship to. No list: each project's own base. */

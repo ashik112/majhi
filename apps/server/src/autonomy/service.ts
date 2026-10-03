@@ -48,7 +48,7 @@ import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
-import { presenceWhy, restWhy } from "../captain/rules.ts";
+import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -125,8 +125,15 @@ export interface AutonomyDeps {
   rateSize?: SizeRater;
   /** The captain's lanes (5.18): autonomous mode wakes the captain in each workspace's own. */
   lanes: Lanes;
-  /** When the owner last acted in a task: the captain keeps out for 10 minutes. */
-  ownerAt?: (task: string) => string | undefined;
+  /** The captain's upkeep lines in a span (UTC ISO, `to` excluded), for the daily summary. */
+  upkeepBetween?: (
+    from: string,
+    to: string,
+  ) => { chore: string; task?: string | undefined; outcome: string }[];
+  /** What waits in the owner's Decisions inbox, in its order, for the daily summary. */
+  decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
+  /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
+  typing?: (task: string) => boolean;
   now?: () => Date;
 }
 
@@ -1949,8 +1956,10 @@ export class AutonomyService {
       const names = orgNames(await this.deps.config.sections());
       return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
     }
-    const present = presenceWhy(this.deps.ownerAt?.(input.task), this.now());
-    if (present !== undefined) return fail(`The owner is in ${input.task}: ${present}. Leave it to them.`);
+    const waiting = typingWhy(input.task, this.deps.typing?.(input.task) === true);
+    if (waiting !== undefined) {
+      return fail(`${waiting}. The captain tries again when you send or leave.`);
+    }
     const option = input.option;
     let answered: RoomItem;
     try {
@@ -2005,8 +2014,9 @@ export class AutonomyService {
   // The daily summary (rule 10)
 
   /**
-   * At `summary_at` in the owner's zone, once per local day, when the mode was not off at some
-   * point in the 24 h before: stored once, said in the chat, told to the owner, written to the feed.
+   * At `summary_at` in the owner's zone, once per local day: stored once, said in the chat, written
+   * to the feed. Made whatever the mode: Off it reports the captain's upkeep and the spend. A day with
+   * the mode off all through and nothing done or spent makes none. It alerts nobody: it is not a decision.
    */
   async dailySummary(): Promise<AutonomySummary | undefined> {
     const settings = (await this.deps.config.settings()).autonomy;
@@ -2024,8 +2034,8 @@ export class AutonomyService {
     const wasOn =
       (state.mode !== "off" && (state.since === undefined || state.since <= to)) ||
       this.repo.modeChangedBetween(from, to);
-    if (!wasOn) return undefined;
     const events = this.repo.eventsBetween(from, to);
+    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter((a) => a.outcome === "done");
     const tasks = new Map<string, { title: string; org?: string }>();
     for (const e of events) {
       if (e.task === undefined || tasks.has(e.task)) continue;
@@ -2042,6 +2052,21 @@ export class AutonomyService {
       spendOf(this.repo.spendRows(from, to, this.spendChats()), caps, { day, end: to }, tz),
       noted?.changed ?? [],
     );
+    const spentSomething = spend.total.used.cost > 0 || spend.total.used.tokens > 0;
+    if (!wasOn && events.length === 0 && upkeep.length === 0 && !spentSomething) return undefined;
+    for (const a of upkeep) {
+      if (a.task === undefined || tasks.has(a.task)) continue;
+      const t = this.deps.store.tasks.get(a.task);
+      if (t !== undefined) tasks.set(a.task, { title: t.title, ...orgOf(t) });
+    }
+    const names = new Map<string, string>();
+    for (const org of new Set([
+      PRIVATE,
+      ...spend.orgs.map((o) => o.org),
+      ...[...tasks.values()].map((t) => t.org ?? PRIVATE),
+    ])) {
+      names.set(org, await this.orgName(org));
+    }
     const summary = buildSummary({
       day,
       from,
@@ -2051,6 +2076,10 @@ export class AutonomyService {
       tasks,
       spent: { total: spend.total, orgs: spend.orgs },
       waiting: this.waiting(),
+      upkeep,
+      decisions: await (this.deps.decisions?.() ?? Promise.resolve([])).catch(() => []),
+      queue: state.queue,
+      names,
     });
     if (!this.repo.addSummary(summary)) return undefined;
     const line = summaryLine(summary);
