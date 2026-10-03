@@ -244,7 +244,7 @@ function signIns(accounts: readonly AccountView[]): AttentionItem[] {
       lamp: "needs",
       text:
         account.status === "needs-login"
-          ? `${account.id} needs you to sign in.`
+          ? `Sign in ${account.id}: its agents cannot run until you do.`
           : `${account.id} is not answering.`,
       actionLabel: "Accounts",
       action: { kind: "page", to: PAGE_PATH.accounts, search: { account: account.id } },

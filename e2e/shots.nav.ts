@@ -186,7 +186,7 @@ for (const t of ["dark", "light"] as const) {
     const panel = page.getByRole("dialog", { name: "Needs you" });
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("ACM-219 needs approval: npm publish --tag latest");
-    await expect(panel).toContainText("claude-legacy needs you to sign in.");
+    await expect(panel).toContainText("Sign in claude-legacy: its agents cannot run until you do.");
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/bell-${t}.png` });
   });
@@ -309,6 +309,6 @@ test("the bell opens and a row opens its task", async ({ page }) => {
 
   // An account row opens Accounts on that account.
   await bell.click();
-  await panel.getByRole("button", { name: /claude-legacy needs you to sign in/ }).click();
+  await panel.getByRole("button", { name: /Sign in claude-legacy/ }).click();
   await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
 });
