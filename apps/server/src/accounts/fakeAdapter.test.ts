@@ -1,4 +1,4 @@
-import { fakeAdapter } from "@majhi/acp/testing";
+import { fakeAdapter, fakeUsage } from "@majhi/acp/testing";
 import { COMMAND_META_HEADER } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateKey } from "../secrets/store.ts";
@@ -21,7 +21,11 @@ describe("health and models through the real runtime and the fake adapter", () =
     const base = testEnv(temp.dir);
     await writeKeyFile(base.secretsKeyFile, await generateKey());
     const env = testEnv(temp.dir, {
-      runtime: { ...base.runtime, adapters: { claude: fakeAdapter("claude", adapter) } },
+      runtime: {
+        ...base.runtime,
+        adapters: { claude: fakeAdapter("claude", adapter) },
+        usage: { claude: fakeUsage(adapter) },
+      },
     });
     majhi = createMajhi(env);
     // biome-ignore lint/suspicious/noExplicitAny: test helper; each test asserts the fields it reads
@@ -63,5 +67,17 @@ describe("health and models through the real runtime and the fake adapter", () =
     const agent = await cmd("agents.health", { id: "builder" });
     expect(agent.body.ok).toBe(true);
     expect(agent.body.steps.at(-1).name).toBe("model");
+  });
+
+  it("an account whose token expired and cannot be refreshed needs a new sign-in", async () => {
+    // The CLI's status command still says signed in, and a session still opens.
+    const { cmd } = await setup({ signedIn: true, expired: true });
+    const health = await cmd("accounts.health", { id: "claude-acme" });
+    expect(health.body.account.status).toBe("needs-login");
+    expect(health.body.health.steps.map((s: { name: string; ok: boolean }) => [s.name, s.ok])).toEqual([
+      ["cli", true],
+      ["auth", false],
+      ["acp", true],
+    ]);
   });
 });

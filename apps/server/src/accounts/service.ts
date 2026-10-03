@@ -20,7 +20,7 @@ import { SECRETS_NOT_SET_UP, type SecretStore } from "../secrets/store.ts";
 import type { AccountCache } from "./cache.ts";
 import type { AccountProbes } from "./health.ts";
 import { accountHome, accountRuntime, secretName } from "./homes.ts";
-import { statusFromHealthAndUsage } from "./status.ts";
+import { statusFromHealth, statusFromHealthAndUsage } from "./status.ts";
 import type { AccountUsageReader } from "./usage.ts";
 
 export interface AccountCreate {
@@ -43,6 +43,8 @@ export interface AccountDeps {
   options: RuntimeOptions;
   /** Called with the account id before its home is deleted, to end a running login. */
   onRemoving?: (id: string) => void;
+  /** An account's status may have changed outside a check, so open screens refetch. */
+  onChanged?: () => void;
 }
 
 /** First free id of `<tool>-<org>`, `<tool>-<org>-2`, `-3`... Private accounts use `<tool>-private`. */
@@ -181,6 +183,30 @@ export class AccountService {
       }),
     );
     return found.filter((c) => c !== undefined);
+  }
+
+  /**
+   * A run failed on the account's sign-in: it is `needs-login` now, until a check confirms the
+   * sign-in works again. True when it was not `needs-login` before.
+   */
+  async markSignedOut(id: string, detail: string): Promise<boolean> {
+    const fresh = await this.deps.cache.markSignedOut(id, detail, new Date());
+    this.deps.onChanged?.();
+    return fresh;
+  }
+
+  /** Whether the account is known to need a new sign-in. From the last check, never a probe. */
+  async needsLogin(id: string): Promise<boolean> {
+    return statusFromHealth((await this.deps.probes.cached(id)).health) === "needs-login";
+  }
+
+  /** The agent's account when that account needs a new sign-in, else undefined. */
+  async signedOutAccountOf(agent: string): Promise<string | undefined> {
+    const stored = await this.deps.agents.get(agent).catch(() => undefined);
+    const account =
+      stored === undefined ? undefined : stored.ok ? stored.agent.frontmatter.account : stored.account;
+    if (account === undefined) return undefined;
+    return (await this.needsLogin(account)) ? account : undefined;
   }
 
   async require(id: string): Promise<AccountConfig> {
