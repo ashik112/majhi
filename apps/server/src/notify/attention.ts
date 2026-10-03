@@ -11,6 +11,10 @@ export interface Subject {
   id: string;
   title: string;
   chat: boolean;
+  /** The workspace the task belongs to. Absent for a task of none. */
+  org?: string | undefined;
+  /** How many repos it has: a task with none has nothing to merge. */
+  repos?: number | undefined;
 }
 
 export function subjectName(task: Subject): string {
@@ -23,7 +27,7 @@ export function pathOf(task: Subject): string {
 }
 
 /** Pauses that need the owner. `owner` is the owner's own stop; `offline` resumes by itself. */
-const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
+export const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   limit: "paused: the account hit its usage limit",
   error: "paused after an error",
   "signed-out": "paused: an account is signed out",
@@ -31,7 +35,7 @@ const PAUSE_TEXT: Partial<Record<PausedReason, string>> = {
   blocked: "is blocked and waits for you",
 };
 
-function oneLine(text: string, max = 140): string {
+export function oneLine(text: string, max = 140): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
@@ -99,11 +103,6 @@ export function pendingNotices(
       ? []
       : [{ task: item.task, item: item.id, kind: attention.kind, text: attention.text, at: item.at }];
   });
-}
-
-/** "4 things need you". */
-export function groupText(count: number): string {
-  return `${count} things need you`;
 }
 
 const CLOCK = /^([01][0-9]|2[0-3]):([0-5][0-9])$/;

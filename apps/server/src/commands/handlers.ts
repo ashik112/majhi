@@ -20,6 +20,7 @@ import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
+import { inboxHandlers } from "../inbox/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -159,6 +160,7 @@ export function createHandlers({
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
+    ...inboxHandlers(services.inbox),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),

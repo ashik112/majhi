@@ -204,6 +204,20 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /**
+   * Every pending item that is a decision of the owner's inbox: the cards that wait for an answer,
+   * every pending review (ready to ship or not) and every pending pause, oldest first.
+   */
+  waitingDecisions(): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(and(inArray(roomItems.type, [...OWNER_WAIT_TYPES, "review", "paused"]), PENDING))
+      .orderBy(asc(roomItems.at))
+      .all()
+      .flatMap(readable);
+  }
+
   /** Approval cards that ran a config change and can be undone through this commit. */
   approvalsByCommit(commit: string): RoomItem[] {
     return this.db

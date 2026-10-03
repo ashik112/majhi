@@ -799,6 +799,20 @@ CREATE TABLE autonomy_budget_asks (
 );
 `,
   },
+  {
+    // The captain's recommendation on a decision of the owner's inbox (SPEC 5.18), by decision id.
+    // Decisions themselves are derived from cards and questions; only the opinion is stored.
+    id: 122,
+    name: "decision recommendations",
+    sql: `
+CREATE TABLE decision_recommendations (
+  id TEXT PRIMARY KEY,
+  option TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

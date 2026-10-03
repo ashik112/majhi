@@ -351,7 +351,12 @@ export const AutonomyStartInputSchema = z.object({ resumeStopped: z.boolean().de
 export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });
 
 /** The captain's own tools: no approval card, only for the captain in its autonomy chat while the mode is not off. */
-export const AUTONOMY_BOSS_COMMANDS = ["autonomy.plan", "autonomy.note", "autonomy.answer"] as const;
+export const AUTONOMY_BOSS_COMMANDS = [
+  "autonomy.plan",
+  "autonomy.note",
+  "autonomy.answer",
+  "decisions.recommend",
+] as const;
 
 /** What `autonomy.answer` returns. */
 export const AutonomyAnswerResultSchema = z.object({ item: RoomItemSchema });

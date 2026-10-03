@@ -89,6 +89,11 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
+import {
+  DecisionAnswerInputSchema,
+  DecisionListSchema,
+  DecisionRecommendInputSchema,
+} from "./inbox.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
@@ -646,6 +651,27 @@ export const commands = {
       /** Whether open tabs were told to show one. */
       browser: z.boolean(),
     }),
+  },
+  "decisions.list": {
+    risk: "read",
+    summary:
+      "Everything that waits for the owner, as decisions: questions, approvals, ready-to-ship work, budget and daily-limit questions, paused tasks, sign-ins and secret requests, with the options a click gives and the captain's recommendation. Ship and budget first, then oldest first",
+    input: z.object({ org: z.string().optional() }),
+    output: DecisionListSchema,
+  },
+  "decisions.answer": {
+    risk: "change",
+    summary:
+      "Answer a decision with one of its options, through the same path as its card (answer, approve, resume, raise or leave). Owner only",
+    input: DecisionAnswerInputSchema,
+    output: DecisionListSchema,
+  },
+  "decisions.recommend": {
+    risk: "change",
+    summary:
+      "The captain's tool: record which option of a decision you recommend, with a one-line reason. The owner sees it on the decision. Captain only, in its lane's workspace",
+    input: DecisionRecommendInputSchema,
+    output: z.object({ id: z.string(), option: z.string() }),
   },
   "notify.pending": {
     risk: "read",

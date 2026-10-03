@@ -5,6 +5,8 @@ import {
   type AuthorityRow,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
+  type DecisionRecommendInput,
+  DecisionRecommendInputSchema,
   type AutonomyBacklogItem,
   type AutonomyEvent,
   type AutonomyHold,
@@ -108,8 +110,10 @@ export interface AutonomyDeps {
   gitLogins?: { list(refresh?: boolean): Promise<GitLoginsResult> };
   /** Tells the owner a budget ran out and asks about it (a decision for the bell). */
   tell?: (key: string, text: string) => void;
-  /** Tells the owner the daily summary is ready (notify kind `autonomy`). */
+  /** Tells the owner the daily summary is ready. majhi sends no alert for it (SPEC 5.18: alerts are for decisions). */
   notify?: (summary: AutonomySummary, line: string) => void;
+  /** Records the captain's recommendation on a decision of the owner's inbox, from the lane's workspace. */
+  recommend?: (input: DecisionRecommendInput, lane: string | undefined) => Promise<void>;
   /** The kind of action a schedule or trigger has now, for an update that leaves it as it is. */
   automationAction?: (kind: "schedule" | "trigger", id: string) => string | undefined;
   /** Rates how much work a task is (the decision provider), for the size rule. */
@@ -1618,6 +1622,18 @@ export class AutonomyService {
     }
     const { mode } = this.repo.state();
     const lane = this.laneOrg(caller.task);
+    // Its opinion on a decision is not an action, so it works whatever the switch says.
+    if (command === "decisions.recommend") {
+      const parsed = DecisionRecommendInputSchema.safeParse(input);
+      if (!parsed.success) return invalid(command, parsed.error);
+      if (this.deps.recommend === undefined) return fail("Decisions are not available.");
+      try {
+        await this.deps.recommend(parsed.data, lane);
+      } catch (err) {
+        return fail(errorMessage(err));
+      }
+      return ok({ id: parsed.data.id, option: parsed.data.option });
+    }
     const authority =
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
     // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.

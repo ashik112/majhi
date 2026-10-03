@@ -26,6 +26,7 @@ export * from "./mcp-servers.ts";
 export * from "./media.ts";
 export * from "./memory.ts";
 export * from "./mrs.ts";
+export * from "./inbox.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";
 export * from "./paths.ts";
