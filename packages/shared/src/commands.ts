@@ -2678,6 +2678,13 @@ export const commands = {
     input: Empty,
     output: CaptainStatusSchema,
   },
+  "captain.startFresh": {
+    risk: "change",
+    summary:
+      "Start fresh in a workspace's captain thread: ends the thread's session and starts a new one that carries a short summary of the old one. The thread's messages stay. Owner only",
+    input: z.object({ org: z.string() }),
+    output: z.object({ item: RoomItemSchema }),
+  },
   "captain.undo": {
     risk: "change",
     summary:

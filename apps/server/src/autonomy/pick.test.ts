@@ -244,37 +244,26 @@ describe("what the captain reads", () => {
 });
 
 describe("the captain's lane", () => {
-  it("cannot be closed or removed while the mode is not off; off, it can, and the next tick makes a new one", async () => {
+  it("cannot be closed or removed, on or off, and is not listed as a task", async () => {
     const t = await on();
     const remove = await t.h.cmd("tasks.remove", { id: t.chat });
     expect(remove.status).toBe(409);
-    expect(JSON.stringify(remove.body)).toContain(
-      `${t.chat} is the captain's lane autonomous mode works in, so it cannot be removed while autonomous mode is on.`,
-    );
+    expect(JSON.stringify(remove.body)).toContain(`${t.chat} is a captain thread, not a task`);
     const close = await t.h.cmd("tasks.close", { id: t.chat });
     expect(close.status).toBe(409);
-    expect(JSON.stringify(close.body)).toContain("cannot be closed while autonomous mode is on");
-    // Paused counts as not off.
-    expect((await t.h.cmd("autonomy.pause")).status).toBe(200);
-    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
-    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeDefined();
-
+    expect(JSON.stringify(close.body)).toContain("cannot be closed");
+    // Off changes nothing: the thread is never the owner's to delete.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(200);
-    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeUndefined();
-    expect((await t.status()).lanes[0]?.chat).toBeUndefined();
-
-    expect((await t.h.cmd("autonomy.start")).status).toBe(200);
-    const next = await t.autonomy.laneChat("acme");
-    expect(next).toBeDefined();
-    expect(next).not.toBe(t.chat);
-    expect(t.h.majhi.services.store.tasks.get(next ?? "")).toMatchObject({
-      brief: "Captain lane",
-      org: "acme",
-    });
-    expect((await t.status()).lanes).toEqual([
-      expect.objectContaining({ org: "acme", name: "Acme", chat: next }),
-    ]);
+    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
+    expect((await t.h.cmd("tasks.close", { id: t.chat })).status).toBe(409);
+    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeDefined();
+    // It can still be read by id (the panel and old links open it), but no list shows it.
+    expect((await t.h.cmd("tasks.get", { id: t.chat })).status).toBe(200);
+    const listed = (await t.h.cmd("tasks.list", { includeDone: true })).body as TaskSummary[];
+    expect(listed.find((x) => x.id === t.chat)).toBeUndefined();
+    expect((await t.status()).lanes[0]?.chat).toBe(t.chat);
+    // The summary of the store marks it, for the panel.
+    expect(t.h.majhi.services.store.tasks.list(true).find((x) => x.id === t.chat)?.lane).toBe(true);
   });
 
   it("is made again before a tick when it is gone while the mode is on, so the captain is never woken into nothing", async () => {

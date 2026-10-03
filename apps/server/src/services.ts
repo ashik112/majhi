@@ -880,6 +880,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
+    threadState: (chat) =>
+      store.room.tasksWaitingOnOwner().has(chat)
+        ? "waiting"
+        : runs.working(chat).length > 0
+          ? "working"
+          : "idle",
+    fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
       store,
       accounts,

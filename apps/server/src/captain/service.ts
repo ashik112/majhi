@@ -59,6 +59,10 @@ export interface CaptainDeps {
   ports: CaptainPorts;
   /** Tells the owner through the bell, once per key. */
   tell: (key: string, text: string) => void;
+  /** What a thread is doing now: the captain in a turn, an item waiting on the owner, or neither. */
+  threadState?: (chat: string) => "working" | "waiting" | "idle";
+  /** Replaces the thread's session with a fresh one that carries a summary (the room's "fresh session"). */
+  fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
   cancelTurn: (chat: string) => Promise<void>;
   /** The org's identity for revert commits. */
@@ -416,6 +420,7 @@ export class CaptainService {
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
+        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane) ?? "idle"),
         chores: choresOf(ws.level === "ask" ? level : ws.level).map((chore) => {
           const c = this.repo.chore(org, chore);
           const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
@@ -467,6 +472,22 @@ export class CaptainService {
     await this.deps.autonomy.startForCaptain();
     this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
+  }
+
+  /**
+   * "Start fresh" in a workspace's thread: the session ends and a new one starts, seeded with the
+   * summary majhi's fresh-session handoff writes (the agent's own note, else one built from the
+   * saved state). The thread's messages stay, and the room shows the summary as an item.
+   */
+  async startFresh(org: string): Promise<{ item: RoomItem }> {
+    const chat = this.deps.lanes.chat(org);
+    const agent = chat === undefined ? undefined : this.deps.store.tasks.get(chat)?.team[0];
+    if (chat === undefined || agent === undefined || this.deps.fresh === undefined) {
+      throw new UserError("That workspace has no captain thread yet.", 404);
+    }
+    const item = await this.deps.fresh(chat, agent);
+    this.deps.events.emit(["captain"]);
+    return { item };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {

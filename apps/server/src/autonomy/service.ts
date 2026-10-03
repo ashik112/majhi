@@ -254,18 +254,16 @@ export class AutonomyService {
    * because autonomous mode wakes the captain there. Off, it may go; the next tick makes a new one.
    */
   guardChat(task: Pick<Task, "id" | "kind" | "brief">, action: "close" | "remove"): void {
-    let mode: AutonomyMode;
     let lane: string | undefined;
     try {
-      mode = this.repo.state().mode;
       lane = this.deps.lanes.orgOf(task.id);
     } catch {
       // The database closed under a shutdown.
       return;
     }
-    if (mode === "off" || lane === undefined || !isCaptainLane(task)) return;
+    if (lane === undefined || !isCaptainLane(task)) return;
     throw new UserError(
-      `${task.id} is the captain's lane autonomous mode works in, so it cannot be ${action === "close" ? "closed" : "removed"} while autonomous mode is ${mode}. Stop autonomous mode first; the next start makes a new lane.`,
+      `${task.id} is a captain thread, not a task, so it cannot be ${action === "close" ? "closed" : "removed"}. Use Start fresh in the Captain panel to clear it.`,
       409,
     );
   }

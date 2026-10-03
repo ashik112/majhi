@@ -7,6 +7,7 @@ type CaptainCommand =
   | "captain.log"
   | "captain.stop"
   | "captain.resume"
+  | "captain.startFresh"
   | "captain.undo"
   | "captain.choreOn"
   | "captain.asks"
@@ -31,6 +32,10 @@ export function captainHandlers(captain: CaptainService): Pick<CommandHandlers, 
     "captain.resume": async (_input, ctx) => {
       ownerOnly(ctx);
       return captain.resume();
+    },
+    "captain.startFresh": async (input, ctx) => {
+      ownerOnly(ctx);
+      return captain.startFresh(input.org);
     },
     "captain.undo": async (input, ctx) => {
       ownerOnly(ctx);
