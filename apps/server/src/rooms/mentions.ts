@@ -95,11 +95,37 @@ export function asksByWords(text: string, agent: string): boolean {
   return false;
 }
 
+/** One or more names at the start of a sentence, as "@a @b: please ..." or "@a, @b and @c ...". */
+const LEADING_NAMES = /^(?:@[A-Za-z0-9_][A-Za-z0-9_-]*(?:\s*,\s*|\s+and\s+|\s+&\s+|\s+)?)+/i;
+
+/**
+ * Whether a mention of `agent` addresses it: the name starts a line or a sentence, after list
+ * markers and emphasis, alone or in a run of names ("@a @b: please ..."). "Reported to @x", "as @x
+ * said" and "thanks @x" name an agent in passing and address nobody. Code and quotes are not read.
+ */
+export function addresses(text: string, agent: string): boolean {
+  const name = agent.replace(/[^A-Za-z0-9_-]/g, "").toLowerCase();
+  if (name === "") return false;
+  return sentencesOf(plainText(text))
+    .map(bare)
+    .some((sentence) => {
+      const run = LEADING_NAMES.exec(sentence)?.[0] ?? "";
+      return [...run.matchAll(/@([A-Za-z0-9_][A-Za-z0-9_-]*)/g)].some((m) => m[1]?.toLowerCase() === name);
+    });
+}
+
 /** What the writer of a quieted mention is told, so a handoff it meant does not just vanish. */
 export function quietNote(quiet: readonly string[]): string {
   const who = quiet.map((a) => `@${a}`).join(", ");
   const them = quiet.length === 1 ? "them" : "any of them";
-  return `${who} ${quiet.length === 1 ? "was" : "were"} not woken: your message did not ask ${them} for anything. Use the majhi-room mention tool, or ask directly ("@name: please ..."), if you meant a handoff. Otherwise there is nothing to do.`;
+  return `${who} ${quiet.length === 1 ? "was" : "were"} not woken: your message did not ask ${them} for anything. To hand work on, start a line with "@name: please ..." or use the majhi-room mention tool; a name in the middle of a sentence wakes nobody. Otherwise there is nothing to do.`;
+}
+
+/** What the writer is told when an agent it named in passing was not added to the team. */
+export function notAddedNote(agents: readonly string[]): string {
+  const who = agents.map((a) => `@${a}`).join(", ");
+  const first = agents[0] ?? "name";
+  return `${who} ${agents.length === 1 ? "was" : "were"} not added to the team: your message named ${agents.length === 1 ? "them" : "each of them"} in the middle of a sentence. To bring ${agents.length === 1 ? "them" : "one"} in, start a line with "@${first}: please ..." or use the majhi-room mention tool.`;
 }
 
 /** The question key for the i-th agent asked. */

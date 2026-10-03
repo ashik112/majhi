@@ -58,6 +58,8 @@ export class AgentRun {
   queue: QueueEntry[] = [];
   /** Ended background processes of this agent not yet told, for the queued `processes` entry. */
   processEnds: ProcessInfo[] = [];
+  /** Notes from majhi that ride with the next prompt and start no turn of their own. */
+  notes: string[] = [];
   /** The queue waits: the owner pressed Esc, or stopped the task. A new message releases it. */
   held = false;
   /** Stop was called: the drive loop leaves quietly. */

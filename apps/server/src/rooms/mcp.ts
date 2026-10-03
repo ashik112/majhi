@@ -77,7 +77,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "post",
     description:
-      "Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or mention the agent in your final reply.",
+      'Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or start a line of your final reply with "@name:". A name in the middle of a sentence wakes nobody.',
     input: z.object({ text: z.string().trim().min(1).max(20_000) }),
   },
   {

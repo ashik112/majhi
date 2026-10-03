@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksByWords, mentionText } from "./mentions.ts";
+import { addresses, asksByWords, mentionText, quietNote } from "./mentions.ts";
 
 /** A lead's handoff after a status paragraph, written the way leads write them. */
 const HANDOFF = [
@@ -43,6 +43,41 @@ describe("asksByWords", () => {
     ["the later status after a noted", "Noted, @acme-builder. The Northwind sync is done on your side."],
   ])("does not ask: %s", (_, text) => {
     expect(asksByWords(text, "acme-builder")).toBe(false);
+  });
+});
+
+describe("addresses", () => {
+  it.each([
+    ["a colon", "@lead: please review"],
+    ["a name alone", "@lead"],
+    ["a bold list item", "- **@lead**: review the diff"],
+    ["a numbered list item", "1. @lead take the server part"],
+    ["a new line after a status sentence", "Tests pass.\n@lead please merge"],
+    ["a new sentence on the same line", "Tests pass. @lead the build is up."],
+    ["a run of names", "@builder @lead: please look at the diff"],
+    ["a run of names with commas and and", "@builder, @reviewer and @lead: sync up"],
+    ["another case", "@Lead: hello"],
+  ])("addresses: %s", (_, text) => {
+    expect(addresses(text, "lead")).toBe(true);
+  });
+
+  it.each([
+    ["reported to", "Reported to @lead, I'm mentioning no one, so this wakes nobody."],
+    ["results posted for", "Done: tests pass. Results are posted for @lead. Nothing else for me."],
+    ["as said", "proc-3 ended green, as @lead said. No action needed."],
+    ["thanks", "Thanks @lead."],
+    ["a question at the end", "Done, can you review it @lead?"],
+    ["a name inside a longer one", "@lead-two: please review"],
+    ["a name in code", "Run `@lead: please review` in the shell."],
+    ["a name in a quote", "> @lead: please review"],
+    ["an email", "Mail me at dev@lead.example"],
+    ["a name after a run of other names", "@builder: ask @lead later"],
+  ])("does not address: %s", (_, text) => {
+    expect(addresses(text, "lead")).toBe(false);
+  });
+
+  it("tells the writer how to hand work on", () => {
+    expect(quietNote(["lead"])).toContain('start a line with "@name: please ..."');
   });
 });
 
