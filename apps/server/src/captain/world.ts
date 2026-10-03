@@ -400,6 +400,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       });
     },
 
+    laneRest: (org) => deps.lanes.rest(org),
+
     async askLane(org, text) {
       const told = await deps.lanes.tell(org, text, "The captain's upkeep asked about a question");
       return told.sent ? { sent: true } : { sent: false, why: told.why };

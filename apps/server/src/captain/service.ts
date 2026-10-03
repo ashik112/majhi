@@ -80,6 +80,7 @@ export class CaptainService {
   private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
+  private closed = false;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
@@ -104,7 +105,9 @@ export class CaptainService {
     return this.deps.now?.() ?? new Date();
   }
 
+  /** "Stop the captain" is on, or this service closed: nothing of the captain acts. */
   stopped(): boolean {
+    if (this.closed) return true;
     try {
       return this.repo.state().stopped;
     } catch {
@@ -154,6 +157,8 @@ export class CaptainService {
   }
 
   close(): void {
+    // A run still going ends at its next step, as after a restart.
+    this.closed = true;
     if (this.sweep !== undefined) clearInterval(this.sweep);
     this.sweep = undefined;
     for (const p of this.pending.values()) clearTimeout(p.timer);
@@ -215,6 +220,7 @@ export class CaptainService {
       this.runner.selfDropped += 1;
       return;
     }
+    if (this.closed) return;
     const key = `${org}:${chore}`;
     if (this.pending.has(key)) return;
     const timer = setTimeout(() => {

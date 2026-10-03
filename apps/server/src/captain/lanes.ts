@@ -131,6 +131,13 @@ export class Lanes {
     return picked.own ? undefined : { account: picked.account };
   }
 
+  /** Why the lane rests now, or undefined when it may take a turn. */
+  async rest(org: string): Promise<string | undefined> {
+    const picked = await this.account(org);
+    if ("problem" in picked) return picked.problem;
+    return this.deps.rest?.(org, picked.account);
+  }
+
   /**
    * A short turn of the captain in the workspace's lane. Not sent when the lane rests (its budget,
    * the day budget or its account's window) or no account may run it.

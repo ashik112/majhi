@@ -763,7 +763,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const autonomy = new AutonomyService({
     lanes,
     // Bound below: the captain holds the stop switch and the owner's presence.
-    captainStopped: () => captain.stopped(),
+    captainStopped: () => {
+      try {
+        return captainRepo.state().stopped;
+      } catch {
+        return false;
+      }
+    },
     ownerAt: (task) => captainRepo.ownerAt(task),
     store,
     config,

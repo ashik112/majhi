@@ -108,6 +108,8 @@ export interface CaptainPorts {
   /** Laya through the decision provider: an option id when it is sure, else undefined with why. */
   laya(org: string, card: QuestionCard): Promise<{ option?: string | undefined; why: string }>;
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
+  /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
+  laneRest(org: string): Promise<string | undefined>;
   /** A short turn of the captain in the workspace's lane. False with why when the lane rests. */
   askLane(org: string, text: string): Promise<{ sent: true } | { sent: false; why: string }>;
 

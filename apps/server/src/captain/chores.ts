@@ -184,15 +184,10 @@ export function createChores(
           });
           continue;
         }
-        // Then a short turn of the captain in this workspace's lane.
-        const lane = await ports.askLane(org, laneQuestion(ws.name, card));
-        if (!lane.sent) {
-          run.note(
-            `${key}:rests`,
-            `A question in ${card.task} waits`,
-            `The lane rests: ${lane.why}`,
-            card.task,
-          );
+        // Then a short turn of the captain in this workspace's lane, unless the lane rests.
+        const rest = await ports.laneRest(org);
+        if (rest !== undefined) {
+          run.note(`${key}:rests`, `A question in ${card.task} waits`, `The lane rests: ${rest}`, card.task);
           continue;
         }
         await run.act({
@@ -201,7 +196,11 @@ export function createChores(
           reason: `Laya was not sure: ${laya.why}`,
           evidence: card.text,
           task: card.task,
-          do: async () => ({ undoNote: "A question to the captain: nothing to undo" }),
+          do: async () => {
+            const lane = await ports.askLane(org, laneQuestion(ws.name, card));
+            if (!lane.sent) throw new Error(`the lane could not take it: ${lane.why}`);
+            return { undoNote: "A question to the captain: nothing to undo" };
+          },
         });
       }
     },
