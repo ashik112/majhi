@@ -26,8 +26,11 @@ function Box({
   aside,
   label,
   className,
+  empty = false,
   children,
 }: {
+  /** Nothing to list: the box takes only the room of its note, so the others keep theirs. */
+  empty?: boolean;
   title: string;
   count?: number | undefined;
   aside?: ReactNode;
@@ -38,7 +41,12 @@ function Box({
   return (
     <section
       aria-label={label ?? title}
-      className={cn("flex min-h-[88px] shrink flex-col overflow-hidden rounded-xl", GLASS, className)}
+      className={cn(
+        "flex min-h-[72px] flex-[1_1_0] flex-col overflow-hidden rounded-xl",
+        GLASS,
+        className,
+        empty && "min-h-0 flex-none",
+      )}
     >
       <div className="flex min-h-9 shrink-0 items-center gap-2 px-3.5 pt-2">
         <h2 className="text-base font-semibold text-fg">{title}</h2>
@@ -62,7 +70,7 @@ function NeedsYou() {
     <Box
       title="Needs you"
       count={decisions === undefined ? undefined : total}
-      className="shrink-[0.6]"
+      className="flex-[1.7_1_0]"
       aside={
         total > SHOWN_DECISIONS ? (
           <PageLink page="decisions" className="text-blue hover:underline">
@@ -83,7 +91,7 @@ function NeedsYou() {
       ) : (
         <div className="-mx-3.5">
           {shown.map((d) => (
-            <DecisionRow key={d.id} decision={d} compact />
+            <DecisionRow key={d.id} decision={d} compact dense />
           ))}
         </div>
       )}
@@ -108,30 +116,30 @@ function WorkLine({
   aside?: ReactNode;
 }) {
   return (
-    <li className="group flex min-w-0 gap-2 border-t border-line py-2 first:border-t-0">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+    <li className="group flex min-w-0 gap-2 border-t border-line py-1.5 first:border-t-0">
+      <span className="flex min-w-0 flex-1 flex-col gap-px">
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-base text-fg" title={title}>
             {title}
           </span>
-          {status && <StatusBadge status={status} />}
-        </span>
-        <span className="flex min-w-0 items-center gap-2 text-xs text-fg-faint">
           {workspace && (
             <span
-              className="max-w-[45%] shrink-0 truncate rounded-full border border-line-control px-2 py-px text-fg-muted"
+              className="max-w-[40%] shrink-0 truncate rounded-full border border-line-control px-2 py-px text-xs text-fg-muted"
               title={workspace}
             >
               {workspace}
             </span>
           )}
-          {task && <TaskRef task={task} />}
+          {status && <StatusBadge status={status} />}
         </span>
-        {why && (
-          <span className="line-clamp-2 text-sm text-fg-muted text-pretty" title={why}>
-            {why}
-          </span>
-        )}
+        <span className="flex min-w-0 items-baseline gap-2 text-sm text-fg-muted">
+          {task && <TaskRef task={task} />}
+          {why && (
+            <span className="min-w-0 truncate" title={why}>
+              {why}
+            </span>
+          )}
+        </span>
       </span>
       {aside}
     </li>
@@ -147,7 +155,7 @@ function Running({
 }) {
   const list = autonomy.now;
   return (
-    <Box title="Running" count={list.length}>
+    <Box title="Running" count={list.length} className="flex-[0.9_1_0]" empty={list.length === 0}>
       {list.length === 0 ? (
         <p className="text-sm text-fg-muted">Nothing running.</p>
       ) : (
@@ -181,7 +189,7 @@ function Next({
   const list = autonomy.queue;
   const marked = new Map(autonomy.backlog.map((b) => [b.task, b.noAutonomy]));
   return (
-    <Box title="Next" count={list.length}>
+    <Box title="Next" count={list.length} empty={list.length === 0}>
       {list.length === 0 ? (
         <p className="text-sm text-fg-muted">
           {autonomy.mode === "off" ? "Nothing is planned while Autonomous is off." : "Nothing planned yet."}
@@ -257,7 +265,6 @@ export function NowColumn({
       <Box
         title="Did recently"
         label="Did recently"
-        className="shrink-[1.4]"
         aside={
           <>
             {onSummary && (

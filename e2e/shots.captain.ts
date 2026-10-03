@@ -3,20 +3,22 @@ import type {
   Authority,
   AutonomyEvent,
   AutonomyStatus,
-  BudgetAsk,
   CaptainAction,
   CaptainOrg,
   CaptainStatus,
+  OwnerDecision,
   RoomItem,
   RoomServerMessage,
   Task,
 } from "../packages/shared/src/index.ts";
 
 /**
- * The Captain page (SPEC 5.16, 5.18): one place with Today, Chat, Log and Rules, the Autonomous
- * switch under Captain in the sidebar, the old /autonomous address landing on Today, and the Chats
- * list without ids. The server is the seeded one (`ui`); the captain's status, autonomous mode, its
- * log and its threads are stubbed in the browser.
+ * The Captain page (SPEC 5.18): one screen with the Autonomous switch, one status sentence, the
+ * conversation on the left and the Now column on the right. Delegation, the log and the summary open
+ * in sheets. The server is the seeded one (`ui`); the captain's status, Autonomous, the log, the
+ * decisions and the threads are stubbed in the browser, at the volume of a real day: 4 workspaces,
+ * 30 tasks shipped, 9 notes, 5 decisions, 120 log events, a turn with 40 tool calls, one workspace
+ * over its budget. A second set has 6 workspaces, one with a very long name.
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.captain.config.ts`.
  */
@@ -48,6 +50,13 @@ const RUNS_ROWS = ROWS(true, true, true, false, false);
 const TIDY_ROWS = ROWS(false, true, true, false, false);
 const ASK_ROWS = ROWS(false, false, false, false, false);
 
+type Mode = "on" | "off";
+interface Scenario {
+  /** `real`: 4 workspaces at the volume of a real day. `many`: 6 workspaces, one with a long name. */
+  set: "real" | "many";
+  mode: Mode;
+}
+
 function org(o: Partial<CaptainOrg> & Pick<CaptainOrg, "org" | "name" | "authority">): CaptainOrg {
   const asks = Object.values(o.authority).every((c) => c === "ask");
   return {
@@ -64,57 +73,61 @@ function org(o: Partial<CaptainOrg> & Pick<CaptainOrg, "org" | "name" | "authori
   };
 }
 
-function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
+function orgs(set: Scenario["set"]): CaptainOrg[] {
+  const real = [
+    org({
+      org: "private",
+      name: "Private",
+      authority: RUNS_ROWS,
+      budget: { cost: 100 },
+      rules: { authority: RUNS_ROWS, cap: { cost: 100 } },
+      used: { tokens: 8_120_000, cost: 31.04 },
+      thread: "waiting",
+      forYou: 2,
+      lane: "LOCAL-31",
+    }),
+    org({
+      org: "pyzasoft",
+      name: "Pyzasoft",
+      authority: ROWS(true, true, true, true, false),
+      budget: { cost: 50 },
+      rules: { authority: ROWS(true, true, true, true, false), cap: { cost: 50 } },
+      used: { tokens: 19_000_000, cost: 80.56 },
+      thread: "working",
+      lane: "PYZ-2",
+      resting: "its budget of $50 for today is used up",
+    }),
+    org({
+      org: "goama",
+      name: "Goama",
+      authority: TIDY_ROWS,
+      used: { tokens: 6_000_000, cost: 29.1 },
+      lane: "GOA-9",
+    }),
+    org({
+      org: "ideeza",
+      name: "Ideeza",
+      authority: ASK_ROWS,
+      used: { tokens: 900_000, cost: 4.2 },
+      lane: "IDZ-4",
+    }),
+  ];
+  if (set === "real") return real;
+  return [
+    ...real.slice(0, 3),
+    org({ org: "acme", name: "Acme", authority: ROWS(true, true, true, true, true), budget: { cost: 8 } }),
+    org({ org: "globex", name: "Globex", authority: TIDY_ROWS, used: { tokens: 3_000_000, cost: 8.9 } }),
+    org({ org: "northwind", name: LONG, authority: ASK_ROWS, lane: "NW-3" }),
+  ];
+}
+
+function captain(s: Scenario): CaptainStatus {
   return {
     stopped: false,
-    autonomy: "on",
+    autonomy: s.mode,
     captain: "setup",
     day: DAY,
-    orgs: [
-      org({
-        org: "private",
-        name: "Private",
-        authority: RUNS_ROWS,
-        budget: { cost: 20 },
-        rules: { authority: RUNS_ROWS, cap: { cost: 20 } },
-        used: { tokens: 812_000, cost: 6.4 },
-        summary: "shipped 2, tidied 8 memories, 1 thing for you",
-        forYou: 1,
-        thread: "working",
-        lane: "LOCAL-31",
-      }),
-      org({
-        org: "globex",
-        name: "Globex",
-        authority: TIDY_ROWS,
-        budget: { cost: 10 },
-        used: { tokens: 3_000_000, cost: 8.9 },
-        summary: "answered 5 cards, cleaned up 3 old tasks",
-        thread: "waiting",
-        lane: "GLX-512",
-        chores: CHORES.map((chore) =>
-          chore === "cleanup"
-            ? {
-                chore,
-                today: 0,
-                cap: 1,
-                off: "2 failures in a row, the last: the worktree of GLX-498 could not be removed",
-              }
-            : { chore, today: chore === "cards" ? 40 : 0, cap: chore === "cards" ? 40 : 1 },
-        ),
-      }),
-      org({
-        org: "acme",
-        name: "Acme",
-        authority: ROWS(true, true, true, true, true),
-        budget: { cost: 8 },
-        used: { tokens: 120_000, cost: 1.15 },
-        resting: "outside working hours (09:00 to 18:00)",
-        lane: "ACM-120",
-      }),
-      org({ org: "northwind", name: LONG, authority: ASK_ROWS }),
-    ],
-    ...extra,
+    orgs: orgs(s.set),
   };
 }
 
@@ -134,11 +147,11 @@ const ACTIONS: CaptainAction[] = [
   {
     id: 40,
     at: iso(30),
-    org: "globex",
+    org: "pyzasoft",
     chore: "ship",
-    text: "Asked you to ship GLX-505: Rate limits for the public search endpoint",
-    reason: "In Globex you decide when work is merged, so the captain asks before shipping",
-    task: "GLX-505",
+    text: "Asked you to ship PYZ-505: Shop orders created twice",
+    reason: "In Pyzasoft you decide when work is pushed, so the captain asks before shipping",
+    task: "PYZ-505",
     outcome: "asked",
     undo: "no",
     undoNote: "A card for you: nothing to undo",
@@ -146,12 +159,12 @@ const ACTIONS: CaptainAction[] = [
   {
     id: 39,
     at: iso(44),
-    org: "globex",
+    org: "goama",
     chore: "cards",
-    text: "Approved: Add the reviewer to GLX-501",
+    text: "Approved: Add the reviewer to GOA-501",
     reason: "A change within the limits",
-    evidence: "@globex-builder asked to run team.add",
-    task: "GLX-501",
+    evidence: "@goama-builder asked to run team.add",
+    task: "GOA-501",
     outcome: "done",
     undo: "yes",
   },
@@ -191,58 +204,93 @@ const ACTIONS: CaptainAction[] = [
   },
 ];
 
-const EVENTS: AutonomyEvent[] = [
-  {
-    seq: 90,
-    at: iso(5),
-    kind: "decision",
-    org: "globex",
-    text: `Start a task GLX-430: ${LONG_TASK}`,
-    reason: "High priority and due tomorrow; the export times out for three customers",
-    task: "GLX-430",
-    outcome: "applied",
-  },
-  { seq: 89, at: iso(8), kind: "tick", text: "Woke the captain: GLX-429 is done" },
-  {
-    seq: 88,
-    at: iso(20),
-    kind: "task",
-    org: "acme",
-    text: "ACM-88 is ready for review: Add rate limits",
-    task: "ACM-88",
-    status: "review",
-  },
-  {
-    seq: 87,
-    at: iso(33),
-    kind: "approval",
-    org: "acme",
-    text: "Left for the owner: Push task/ACM-88-rate-limits. Acme does not let the captain push",
-    task: "ACM-88",
-    outcome: "left",
-  },
-  {
-    seq: 86,
-    at: iso(50),
-    kind: "cap",
-    org: "globex",
-    text: "Globex used its $10 for today. 3 tasks wait",
-    reason: "The workspace budget is used up",
-  },
-  {
-    seq: 85,
-    at: iso(60),
-    kind: "task",
-    org: "private",
-    text: "PRV-15 started: Signed download links for finished exports",
-    task: "PRV-15",
-    status: "running",
-    reason: "Small and nothing else touches the repo",
-  },
-  { seq: 84, at: iso(95), kind: "mode", text: "Autonomous turned on" },
-];
+const TITLES: Record<string, string> = {
+  "PRV-14": "Move the notes export to the queued worker",
+  "PYZ-505": "Shop orders created twice",
+  "PYZ-430": "Phase 7: Resilience",
+  "PYZ-432": "Resilience and health",
+  "GOA-501": "Add the reviewer to the Goama agents",
+  "PRV-11": "Tidy the sync script",
+  "PRV-9": "Renew the domain",
+  "GOA-88": "Add rate limits to the public search endpoint",
+  "IDZ-12": LONG_TASK,
+};
 
-function autonomy(): AutonomyStatus {
+function events(): AutonomyEvent[] {
+  const out: AutonomyEvent[] = [
+    {
+      seq: 400,
+      at: iso(3),
+      kind: "task",
+      org: "pyzasoft",
+      text: "PYZ-430 paused (owner): Phase 7: Resilience",
+      task: "PYZ-430",
+      status: "paused",
+    },
+    {
+      seq: 399,
+      at: iso(4),
+      kind: "task",
+      org: "private",
+      text: "LOCAL-16 is running: Private",
+      task: "LOCAL-16",
+      status: "running",
+    },
+    {
+      seq: 398,
+      at: iso(6),
+      kind: "task",
+      org: "pyzasoft",
+      text: "PYZ-2 is done: Pyzasoft",
+      task: "PYZ-2",
+      status: "done",
+    },
+    {
+      seq: 397,
+      at: iso(8),
+      kind: "decision",
+      org: "pyzasoft",
+      text: "Start a task PYZ-432: Resilience and health",
+      reason: "Top of the backlog",
+      task: "PYZ-432",
+      outcome: "applied",
+    },
+    { seq: 396, at: iso(9), kind: "tick", text: "Woke the captain: PYZ-429 is done" },
+    {
+      seq: 395,
+      at: iso(14),
+      kind: "approval",
+      org: "goama",
+      text: "Left for the owner: Push task/GOA-88-rate-limits. Goama does not let the captain push",
+      task: "GOA-88",
+      outcome: "left",
+    },
+    {
+      seq: 394,
+      at: iso(20),
+      kind: "cap",
+      org: "pyzasoft",
+      text: "Pyzasoft used its $50 for today. 3 tasks wait",
+      reason: "The workspace budget is used up",
+    },
+    { seq: 393, at: iso(25), kind: "mode", text: "Autonomous turned off" },
+  ];
+  for (let i = 0; i < 112; i++) {
+    out.push({
+      seq: 392 - i,
+      at: iso(30 + i * 9),
+      kind: i % 3 === 0 ? "decision" : i % 3 === 1 ? "approval" : "answer",
+      org: ["private", "pyzasoft", "goama", "ideeza"][i % 4] as string,
+      text: `Answered a question in IDZ-12: use the queued worker (${i})`,
+      reason: "The brief settles it",
+      task: "IDZ-12",
+      outcome: "applied",
+    });
+  }
+  return out;
+}
+
+function autonomy(s: Scenario): AutonomyStatus {
   const lane = (o: string, name: string, extra: Partial<AutonomyStatus["lanes"][number]>) => ({
     org: o,
     name,
@@ -252,65 +300,81 @@ function autonomy(): AutonomyStatus {
     backlog: 0,
     ...extra,
   });
+  const shipped = Array.from({ length: 30 }, (_, i) => ({
+    task: `PYZ-${300 + i}`,
+    title:
+      i % 7 === 0
+        ? LONG_TASK
+        : `Ship the ${["export", "billing", "search", "notes", "sync"][i % 5]} change number ${i + 1}`,
+    org: ["private", "pyzasoft", "goama", "ideeza"][i % 4] as string,
+    how: (["merged", "pushed", "mr-open", "review"] as const)[i % 4] as "merged",
+  }));
   return {
-    mode: "on",
+    mode: s.mode,
     stopped: [],
     raised: {},
     since: iso(95),
     by: "owner",
-    boss: { id: "setup", chat: "LOCAL-31", working: true, nowDoing: "Reading the Private backlog" },
+    boss: {
+      id: "setup",
+      chat: "LOCAL-31",
+      working: s.mode === "on",
+      nowDoing: "Reading the Private backlog",
+    },
     lanes: [
       lane("private", "Private", { chat: "LOCAL-31", working: true, tasks: 2, backlog: 5 }),
-      lane("globex", "Globex", { chat: "GLX-512", tasks: 1, backlog: 3 }),
-      lane("acme", "Acme", { chat: "ACM-120", tasks: 1, backlog: 1 }),
+      lane("pyzasoft", "Pyzasoft", { chat: "PYZ-2", tasks: 1, backlog: 3 }),
     ],
-    now: [
-      {
-        task: "GLX-430",
-        title: LONG_TASK,
-        org: "globex",
-        status: "running",
-        agents: [
-          { id: "globex-builder", nowDoing: "Editing src/export/worker.ts and its tests" },
-          { id: "globex-reviewer" },
-        ],
-        why: "High priority and due tomorrow; the export times out for three customers",
-      },
-      {
-        task: "ACM-88",
-        title: "Add rate limits to the public search endpoint",
-        org: "acme",
-        status: "review",
-        agents: [{ id: "acme-builder" }],
-        why: "Small and blocks the Acme release",
-      },
-    ],
-    queue: [
-      {
-        title: "Signed download links for finished exports",
-        task: "GLX-432",
-        org: "globex",
-        why: "Next child of the export work; it waits on nothing and the Globex account has 60% of its window left",
-      },
-      {
-        title: "Document the export API for partners",
-        task: "GLX-437",
-        org: "globex",
-        why: "Low priority filler for when the builders are idle",
-      },
-      {
-        title: "Tidy the Acme README and the setup script",
-        task: "ACM-91",
-        org: "acme",
-        why: "Small, cheap model, can run while Acme has room",
-      },
-    ],
+    now:
+      s.mode === "off"
+        ? []
+        : [
+            {
+              task: "PYZ-432",
+              title: "Resilience and health",
+              org: "pyzasoft",
+              status: "running",
+              agents: [{ id: "pyz-builder", nowDoing: "Editing src/export/worker.ts and its tests" }],
+              why: "Top of the backlog; the export times out for three customers",
+            },
+            {
+              task: "IDZ-12",
+              title: LONG_TASK,
+              org: "ideeza",
+              status: "review",
+              agents: [{ id: "idz-builder" }],
+              why: "Small and blocks the Ideeza release",
+            },
+          ],
+    queue:
+      s.mode === "off"
+        ? []
+        : [
+            {
+              title: "Signed download links for finished exports",
+              task: "GOA-432",
+              org: "goama",
+              why: "Next child of the export work; it waits on nothing and the Goama account has 60% of its window left",
+            },
+            {
+              title: "Document the export API for partners",
+              task: "GOA-437",
+              org: "goama",
+              why: "Low priority filler for when the builders are idle",
+            },
+            {
+              title: "Tidy the README and the setup script",
+              task: "PRV-91",
+              org: "private",
+              why: "Small, cheap model, can run while Private has room",
+            },
+          ],
     queuedAt: iso(4),
     backlog: [
       {
-        task: "GLX-432",
+        task: "GOA-432",
         title: "Signed download links for finished exports",
-        org: "globex",
+        org: "goama",
         status: "ready",
         priority: "high",
         size: "small",
@@ -318,31 +382,14 @@ function autonomy(): AutonomyStatus {
         noAutonomy: false,
       },
       {
-        task: "GLX-431",
-        title: LONG_TASK,
-        org: "globex",
-        status: "inbox",
-        size: "large",
-        sizeNote: "Laya rated it large (0.37)",
-        noAutonomy: false,
-      },
-      {
-        task: "ACM-95",
+        task: "PYZ-95",
         title: "Migrate the billing tables to the new schema",
-        org: "acme",
+        org: "pyzasoft",
         status: "inbox",
         size: "large",
         sizeNote: "Laya rated it large (0.64)",
         noAutonomy: true,
         leftOut: "Marked as one to leave alone",
-      },
-      {
-        task: "PRV-20",
-        title: "Rotate the staging certificates",
-        status: "ready",
-        size: "small",
-        sizeNote: "Laya rated it small (0.9)",
-        noAutonomy: false,
       },
     ],
     holds: [],
@@ -350,21 +397,21 @@ function autonomy(): AutonomyStatus {
       day: DAY,
       tz: "Europe/Berlin",
       resetsAt: new Date(NOW + 6 * 3600_000).toISOString(),
-      total: { used: { tokens: 4_200_000, cost: 16.45 }, cap: { cost: 40 }, percent: 41, reached: false },
+      total: { used: { tokens: 34_000_000, cost: 144.9 }, cap: { cost: 200 }, percent: 72, reached: false },
       orgs: [],
     },
     accounts: [],
     waiting: [],
     settings: {
-      day: { cost: 40 },
-      orgs: { private: { cap: { cost: 20 } }, globex: { cap: { cost: 10 } }, acme: { cap: { cost: 8 } } },
+      day: { cost: 200 },
+      orgs: { private: { cap: { cost: 100 } }, pyzasoft: { cap: { cost: 50 } } },
       floors: { window: 10, weekly: 5 },
       summary_at: "08:00",
       tz: "Europe/Berlin",
       instructions: [
         {
           id: "abcd1234",
-          text: "Be careful in the Globex billing code; no product-specific fixes.",
+          text: "Be careful in the Pyzasoft billing code; no product-specific fixes.",
           at: iso(3000),
         },
       ],
@@ -375,15 +422,15 @@ function autonomy(): AutonomyStatus {
       from: iso(1500),
       to: iso(60),
       at: iso(55),
-      shipped: [
-        { task: "GLX-420", title: "Cache the board thumbnails", org: "globex", how: "mr-open" },
-        { task: "ACM-80", title: "Fix the login redirect loop", org: "acme", how: "merged" },
-      ],
+      shipped,
       spent: {
-        total: { used: { tokens: 9_000_000, cost: 14.1 }, cap: { cost: 40 }, percent: 35, reached: false },
+        total: { used: { tokens: 19_000_000, cost: 80.56 }, cap: { cost: 50 }, percent: 161, reached: true },
         orgs: [],
       },
-      unsure: [{ text: "Skipped NW-14: the certificates need the owner's VPN", task: "NW-14" }],
+      unsure: Array.from({ length: 9 }, (_, i) => ({
+        text: `Skipped PYZ-${50 + i}: the certificates need the owner's VPN`,
+        task: `PYZ-${50 + i}`,
+      })),
       waiting: [],
       decisions: 23,
     },
@@ -391,16 +438,41 @@ function autonomy(): AutonomyStatus {
   };
 }
 
-const ASK: BudgetAsk = {
-  scope: "globex",
-  name: "Globex",
-  day: DAY,
-  cap: { cost: 10 },
-  raiseTo: { cost: 20 },
-  waiting: 3,
-  text: "Globex used its $10 for today. 3 tasks are waiting. Raise it to $20 for today?",
-  at: iso(10),
-};
+function decisions(): OwnerDecision[] {
+  const ship = (id: string, task: string, org: string, title: string, why: string): OwnerDecision => ({
+    id: `room:${task}:1`,
+    kind: "ship",
+    org,
+    task,
+    taskTitle: title,
+    title: `Ship ${title}`,
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "mergePush", label: "Merge and push" },
+    ],
+    suggestion: { option: "merge", reason: why, by: "captain" },
+    at: iso(40),
+    link: { kind: "task", id: task },
+  });
+  const review = (task: string, org: string, title: string): OwnerDecision => ({
+    id: `room:${task}:2`,
+    kind: "approval",
+    org,
+    task,
+    taskTitle: title,
+    title: `${title} is ready for review`,
+    options: [],
+    at: iso(90),
+    link: { kind: "task", id: task },
+  });
+  return [
+    ship("a", "PYZ-505", "pyzasoft", "Shop orders created twice", "Checks pass and the diff is small"),
+    ship("b", "PRV-14", "private", "Move the notes export to the queued worker", "Merges cleanly into main"),
+    review("GOA-88", "goama", "Add rate limits to the public search endpoint"),
+    review("IDZ-12", "ideeza", LONG_TASK),
+    review("PYZ-430", "pyzasoft", "Phase 7: Resilience"),
+  ];
+}
 
 const thread: Task = {
   id: "LOCAL-31",
@@ -419,54 +491,66 @@ const thread: Task = {
   updatedAt: iso(1),
 };
 
+/** A long chat: messages, with a turn of 40 tool calls and approvals in the middle. */
 function conversation(chat: string): RoomItem[] {
   const out: RoomItem[] = [];
-  for (let n = 1; n <= 6; n++) {
+  let seq = 1;
+  const base = (id: string, minutesAgo: number) => ({ id, task: chat, seq: seq++, at: iso(minutesAgo) });
+  out.push({
+    ...base("o1", 120),
+    type: "owner",
+    text: "Why only small tasks yesterday? Take the export rework too.",
+    attachments: [],
+    queued: false,
+  } as RoomItem);
+  for (let n = 0; n < 40; n++) {
     out.push({
-      id: `i${n}a`,
-      task: chat,
-      seq: n * 2,
-      at: iso(200 - n * 20),
-      type: "agent",
+      ...base(`t${n}`, 110 - n),
+      type: "tool",
       agent: "setup",
-      text: `Plan ${n}: GLX-430 runs with the builder. Next is **GLX-432**, then the docs. ACM-88 waits for your push approval, so I left it.`,
+      toolCallId: `call${n}`,
+      title:
+        n % 3 === 0
+          ? "Read apps/server/src/export/worker.ts"
+          : n % 3 === 1
+            ? "grep -rn queueExport"
+            : "cd /Users/owner/Work/shop && git log",
+      kind: n % 3 === 0 ? "read" : n % 3 === 1 ? "search" : "execute",
+      status: "completed",
+      locations: [],
+      content: [],
     } as RoomItem);
-    if (n % 3 === 0)
+    if (n % 5 === 0)
       out.push({
-        id: `i${n}b`,
-        task: chat,
-        seq: n * 2 + 1,
-        at: iso(190 - n * 20),
-        type: "owner",
-        text: "Why only small tasks yesterday? Take the export rework too.",
-        attachments: [],
-        queued: false,
+        ...base(`p${n}`, 110 - n),
+        type: "permission",
+        agent: "setup",
+        title: "cd /Users/owner/Work/shop && git log",
+        options: [],
+        state: "auto",
+        chosen: "Allowed by rule",
       } as RoomItem);
   }
+  out.push({
+    ...base("a1", 60),
+    type: "agent",
+    agent: "setup",
+    text: "Yesterday the export rework was rated large, so I left it. **PYZ-432** is running now, and the export rework comes after it. Two ship questions wait for you in Decisions.",
+  } as RoomItem);
+  out.push({
+    ...base("o2", 40),
+    type: "owner",
+    text: "Fine. Keep Pyzasoft under its budget today.",
+    attachments: [],
+    queued: false,
+  } as RoomItem);
+  out.push({
+    ...base("a2", 38),
+    type: "agent",
+    agent: "setup",
+    text: "Pyzasoft is over its $50 for today, so I stopped starting work there. I will pick it up tomorrow.",
+  } as RoomItem);
   return out;
-}
-
-async function stub(page: Page, state: { asks: BudgetAsk[] }) {
-  const answer = (name: string, json: () => unknown) =>
-    page.route(`**/api/cmd/${name}`, (r) => r.fulfill({ json: json() }));
-  await answer("captain.status", () => captain());
-  await answer("captain.log", () => ({ actions: ACTIONS, runs: [] }));
-  await answer("captain.asks", () => ({ asks: [], budgets: state.asks }));
-  await answer("autonomy.status", () => autonomy());
-  await answer("autonomy.events", () => ({ events: EVENTS }));
-  await answer("boss.chat", () => ({ ...thread, id: "LOCAL-40", title: "Captain chat", team: ["setup"] }));
-  await answer("tasks.get", () => thread);
-  await answer("room.items", () => ({ items: conversation("LOCAL-31").reverse(), more: false }));
-  await page.routeWebSocket(/\/api\/tasks\/([^/]+)\/room$/, (ws) => {
-    const snapshot = {
-      type: "snapshot",
-      more: false,
-      processes: [],
-      agents: [{ agent: "setup", status: "idle", queued: 0, commands: [] }],
-      items: conversation("LOCAL-31"),
-    } as unknown as RoomServerMessage;
-    ws.send(JSON.stringify(snapshot));
-  });
 }
 
 const chat = (id: string, title: string, agent: string, minutesAgo: number, org?: string) => ({
@@ -484,23 +568,67 @@ const chat = (id: string, title: string, agent: string, minutesAgo: number, org?
   chat: true,
   ...(org === undefined ? {} : { org }),
 });
+const taskRow = (id: string, title: string, org?: string) => ({
+  id,
+  title,
+  kind: "code",
+  status: "running",
+  team: ["setup"],
+  mode: "lead",
+  updatedAt: iso(30),
+  repos: [],
+  working: [],
+  links: [],
+  waitingOn: [],
+  ...(org === undefined ? {} : { org }),
+});
 const CHATS = [
   chat("LOCAL-12", "Chat", "setup", 3),
-  chat("LOCAL-14", "Set up the MCP skills for the Globex repo", "setup", 90),
-  chat("GLX-501", "Why does the export time out for large accounts?", "globex-lead", 25, "globex"),
-  chat("GLX-509", "Chat", "globex-lead", 600, "globex"),
-  chat("ACM-77", "Plan the rate limit rollout", "acme-lead", 2000, "acme"),
+  chat("LOCAL-16", "Private", "setup", 4),
+  chat("PYZ-2", "Pyzasoft", "setup", 6, "pyzasoft"),
 ];
 
-async function open(page: Page, path: string, w: number, h: number, theme: string) {
+async function stub(page: Page, s: Scenario, state: { decisions: OwnerDecision[] }) {
+  const answer = (name: string, json: () => unknown) =>
+    page.route(`**/api/cmd/${name}`, (r) => r.fulfill({ json: json() }));
+  await answer("captain.status", () => captain(s));
+  await answer("captain.log", () => ({ actions: ACTIONS, runs: [] }));
+  await answer("captain.asks", () => ({ asks: [], budgets: [] }));
+  await answer("autonomy.status", () => autonomy(s));
+  await answer("autonomy.events", () => ({ events: events().slice(0, 50) }));
+  await answer("decisions.list", () => ({ decisions: state.decisions }));
+  await answer("tasks.list", () => [
+    ...CHATS,
+    ...Object.entries(TITLES).map(([id, title]) => taskRow(id, title)),
+  ]);
+  await answer("boss.chat", () => ({ ...thread, id: "LOCAL-40", title: "Captain chat", team: ["setup"] }));
+  await answer("tasks.get", () => thread);
+  await answer("room.items", () => ({ items: conversation("LOCAL-31").reverse(), more: false }));
+  await page.route("**/api/cmd/decisions.answer", async (r) => {
+    const id = (r.request().postDataJSON() as { id?: string } | null)?.id;
+    state.decisions = state.decisions.filter((d) => d.id !== id);
+    await r.fulfill({ json: { decisions: state.decisions } });
+  });
+  await page.routeWebSocket(/\/api\/tasks\/([^/]+)\/room$/, (ws) => {
+    const snapshot = {
+      type: "snapshot",
+      more: false,
+      processes: [],
+      agents: [{ agent: "setup", status: "idle", queued: 0, commands: [] }],
+      items: conversation("LOCAL-31"),
+    } as unknown as RoomServerMessage;
+    ws.send(JSON.stringify(snapshot));
+  });
+}
+
+async function open(page: Page, path: string, w: number, h: number, theme: string, s: Scenario) {
   await page.setViewportSize({ width: w, height: h });
-  await stub(page, { asks: [ASK] });
-  if (path === "/chats") await page.route("**/api/cmd/tasks.list", (r) => r.fulfill({ json: CHATS }));
+  await stub(page, s, { decisions: decisions() });
   await page.goto(path);
   await page.evaluate((t) => {
     document.documentElement.dataset.theme = t;
   }, theme);
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(900);
 }
 
 async function noPageScroll(page: Page) {
@@ -511,101 +639,167 @@ async function noPageScroll(page: Page) {
   expect(overflow).toEqual({ x: 0, y: 0 });
 }
 
+const REAL_ON: Scenario = { set: "real", mode: "on" };
+const REAL_OFF: Scenario = { set: "real", mode: "off" };
+const MANY_ON: Scenario = { set: "many", mode: "on" };
+
 for (const [w, h] of [
   [1440, 900],
   [1100, 760],
 ] as const) {
   for (const theme of ["dark", "light"]) {
-    test(`today ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=today", w, h, theme);
-      await expect(page.getByRole("region", { name: "Running now" })).toBeVisible();
-      await expect(page.getByText("1 thing needs you")).toBeVisible();
-      await page.screenshot({ path: `${SHOTS}/today-${w}-${theme}.png` });
+    test(`on ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible();
+      await expect(page.getByText("On: 2 running, 3 next. 5 decisions wait for you.")).toBeVisible();
+      await expect(page.getByRole("tab")).toHaveCount(0);
+      await page.screenshot({ path: `${SHOTS}/on-${w}-${theme}.png` });
       await noPageScroll(page);
     });
-    test(`chat ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=chat", w, h, theme);
-      await expect(page.getByRole("region", { name: "Captain chat" })).toBeVisible();
-      await page.getByRole("tab", { name: "Private" }).click();
+    test(`off ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_OFF);
+      await expect(
+        page.getByText(/^Off: it only answers when you ask, and keeps memory and cleanup going\./),
+      ).toBeVisible();
+      await page.screenshot({ path: `${SHOTS}/off-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`many workspaces ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, MANY_ON);
+      await page.getByRole("button", { name: LONG }).first().click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `${SHOTS}/many-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`workspace thread ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      await page
+        .getByRole("button", { name: /^Private/ })
+        .first()
+        .click();
       await page.waitForTimeout(600);
-      await page.screenshot({ path: `${SHOTS}/chat-${w}-${theme}.png` });
+      await page.screenshot({ path: `${SHOTS}/thread-${w}-${theme}.png` });
       await noPageScroll(page);
     });
-    test(`log ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=log", w, h, theme);
-      await expect(page.getByRole("region", { name: "Log" })).toBeVisible();
+    test(`delegation ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      await page.getByRole("button", { name: "Delegation" }).click();
+      await expect(page.getByRole("dialog", { name: "Delegation" })).toBeVisible();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${SHOTS}/delegation-${w}-${theme}.png` });
+    });
+    test(`delegation with six workspaces ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=rules", w, h, theme, MANY_ON);
+      await expect(page.getByRole("dialog", { name: "Delegation" })).toBeVisible();
+      await page.getByRole("button", { name: /^Standing instructions/ }).click();
+      await page.getByRole("button", { name: /^Leave alone/ }).click();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${SHOTS}/delegation-many-${w}-${theme}.png` });
+    });
+    test(`log sheet ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      await page.getByRole("button", { name: "See all" }).click();
+      await expect(page.getByRole("dialog", { name: "Log" })).toBeVisible();
+      await page.waitForTimeout(400);
       await page.screenshot({ path: `${SHOTS}/log-${w}-${theme}.png` });
-      await noPageScroll(page);
     });
-    test(`rules ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=rules", w, h, theme);
-      await expect(page.getByRole("region", { name: "Acme", exact: true })).toBeVisible();
-      await page.screenshot({ path: `${SHOTS}/rules-${w}-${theme}.png` });
-      await noPageScroll(page);
-    });
-    test(`rules with the leave-alone list open ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=rules", w, h, theme);
-      const globex = page.getByRole("region", { name: "Globex", exact: true });
-      await globex.getByRole("button", { name: /^Leave tasks alone/ }).click();
-      await globex.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(300);
-      await page.screenshot({ path: `${SHOTS}/rules-leave-alone-${w}-${theme}.png` });
-      await noPageScroll(page);
-    });
-    test(`the long-named workspace in Rules ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain?tab=rules", w, h, theme);
-      const long = page.getByRole("region", { name: /^Northwind Traders International/ });
-      await long.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(300);
-      await page.screenshot({ path: `${SHOTS}/rules-long-${w}-${theme}.png` });
-      await noPageScroll(page);
-    });
-    test(`chats list ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/chats", w, h, theme);
-      await page.screenshot({ path: `${SHOTS}/chats-${w}-${theme}.png` });
-      await noPageScroll(page);
-    });
-    test(`autonomous address lands on Today ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/autonomous", w, h, theme);
-      await expect(page).toHaveURL(/\/captain\?tab=today$/);
-      await page.screenshot({ path: `${SHOTS}/autonomous-redirect-${w}-${theme}.png` });
+    test(`summary sheet ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      await page.getByRole("button", { name: /^Yesterday: shipped 30/ }).click();
+      await expect(page.getByRole("dialog", { name: "Daily summary" })).toBeVisible();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${SHOTS}/summary-${w}-${theme}.png` });
     });
   }
 }
 
-test("the old Autonomous views land on the matching tab", async ({ page }) => {
-  await open(page, "/autonomous?tab=rules", 1440, 900, "dark");
-  await expect(page).toHaveURL(/\/captain\?tab=rules$/);
-  await page.goto("/autonomous?tab=log");
-  await expect(page).toHaveURL(/\/captain\?tab=log$/);
-  await page.goto("/autonomous?tab=summary");
-  await expect(page).toHaveURL(/\/captain\?tab=today$/);
+test("the header says what is true, and the summary is one line", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  await expect(
+    page.getByRole("button", { name: /^Yesterday: shipped 30, spent \$80\.56 of \$50 \(over\), 9 notes/ }),
+  ).toBeVisible();
+  await expect(page.locator("#main").getByRole("switch", { name: "Autonomous" })).toBeChecked();
+  const header = page.locator("header").first();
+  await expect(header.getByText("Pyzasoft")).toBeVisible();
 });
 
-test("the tab is in the address and the sidebar has one Captain entry with the switch under it", async ({
-  page,
-}) => {
-  await open(page, "/", 1440, 900, "dark");
+test("Needs you shows four and links to the rest, answered inline", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  const box = page.getByRole("region", { name: "Needs you" });
+  await expect(box.locator("[data-decision]")).toHaveCount(4);
+  await expect(box.getByRole("link", { name: "All 5 in Decisions" })).toBeVisible();
+  await box.locator("[data-decision]").first().getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(box.locator("[data-decision]")).toHaveCount(4);
+  await expect(page.getByText("4 decisions wait for you.")).toBeVisible();
+});
+
+test("the turn with 40 tool calls folds into one line", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  const steps = page.getByRole("button", { name: /steps it took/ });
+  await expect(steps).toHaveCount(1);
+  await expect(steps).toHaveText(/40 steps it took/);
+  await expect(page.getByText("Allowed by rule")).toHaveCount(0);
+  await steps.click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/steps-open-1440-dark.png` });
+});
+
+test("the log has no ids and no old wording", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  const recent = page.getByRole("region", { name: "Did recently" });
+  await expect(
+    recent.getByText("Shipped 'Move the notes export to the queued worker' to main"),
+  ).toBeVisible();
+  await expect(recent.getByText("Paused 'Phase 7: Resilience'")).toBeVisible();
+  await expect(recent.getByText("Started 'Resilience and health'")).toBeVisible();
+  await expect(recent.getByText("Asked you to ship 'Shop orders created twice'")).toBeVisible();
+  await expect(recent.getByText(/LOCAL-16|Decision: applied|\(owner\)/)).toHaveCount(0);
+});
+
+test("old ways in still land on the same screen", async ({ page }) => {
+  await open(page, "/autonomous", 1440, 900, "dark", REAL_ON);
+  await expect(page).toHaveURL(/\/captain$/);
+  await page.goto("/autonomous?tab=rules");
+  await expect(page).toHaveURL(/\/captain\?tab=rules$/);
+  await expect(page.getByRole("dialog", { name: "Delegation" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/captain$/);
+  await page.goto("/captain?tab=log");
+  await expect(page.getByRole("dialog", { name: "Log" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/captain?tab=chat");
+  await expect(page.getByRole("region", { name: "Conversation" })).toBeVisible();
+});
+
+test("the sidebar row and Cmd J open the conversation", async ({ page }) => {
+  await open(page, "/", 1440, 900, "dark", REAL_ON);
   const nav = page.getByRole("navigation", { name: "Main" });
-  await expect(nav.getByRole("link", { name: "Autonomous" })).toHaveCount(0);
   await expect(nav.getByRole("switch", { name: "Autonomous" })).toBeVisible();
   await nav.getByRole("link", { name: "Captain", exact: true }).click();
   await expect(page).toHaveURL(/\/captain$/);
-  await page.getByRole("button", { name: "Log", exact: true }).click();
-  await expect(page).toHaveURL(/\/captain\?tab=log$/);
-  await page.screenshot({
-    path: `${SHOTS}/sidebar-1440-dark.png`,
-    clip: { x: 0, y: 0, width: 320, height: 520 },
-  });
+  await page.goto("/chats");
+  await page.waitForTimeout(900);
+  await page.keyboard.press("ControlOrMeta+j");
+  const drawer = page.getByRole("complementary", { name: "Captain" });
+  await expect(drawer.getByRole("button", { name: "All", exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: /^Private/ })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/drawer-1440-dark.png` });
 });
 
-test("the log filters by kind and workspace", async ({ page }) => {
-  await open(page, "/captain?tab=log", 1440, 900, "dark");
-  await page.getByRole("button", { name: "Holds", exact: true }).click();
-  await expect(page.getByText("Globex used its $10 for today. 3 tasks wait")).toBeVisible();
-  await expect(page.getByText("Woke the captain")).toBeHidden();
-  await page.getByRole("button", { name: "All", exact: true }).click();
-  await page.getByRole("combobox", { name: "Workspace" }).selectOption("acme");
-  await expect(page.getByText("ACM-88 is ready for review")).toBeVisible();
-  await expect(page.getByText("Approved: Add the reviewer")).toBeHidden();
+test("the delegation grid toggles a cell and takes a budget", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", REAL_ON);
+  await page.route("**/api/cmd/autonomy.configure", (r) => r.fulfill({ json: autonomy(REAL_ON) }));
+  await page.getByRole("button", { name: "Delegation" }).click();
+  const sheet = page.getByRole("dialog", { name: "Delegation" });
+  const posted = page.waitForRequest("**/api/cmd/autonomy.configure");
+  await sheet.getByRole("button", { name: /^Push in Private/ }).click();
+  expect((await posted).postDataJSON()).toMatchObject({
+    orgs: { private: { authority: { push: "decide" } } },
+  });
+  const budget = sheet.getByRole("textbox", { name: "Daily budget of Goama in dollars" });
+  await expect(budget).toHaveAttribute("placeholder", "shared");
+  const saved = page.waitForRequest("**/api/cmd/autonomy.configure");
+  await budget.fill("25");
+  await budget.blur();
+  expect((await saved).postDataJSON()).toMatchObject({ orgs: { goama: { cap: { cost: 25 } } } });
 });

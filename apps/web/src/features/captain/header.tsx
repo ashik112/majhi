@@ -12,10 +12,11 @@ import { GLASS } from "@/lib/glass";
 import { statusSentence } from "./model";
 import { summaryLine } from "./summary";
 
-const SHOWN_SPEND = 4;
+const SHOWN_SPEND = 3;
 
+/** Whole dollars from $10 up, cents below. */
 function dollars(n: number): string {
-  return Number.isInteger(n) ? `$${n.toLocaleString("en-US")}` : formatMoney(n);
+  return n >= 10 || Number.isInteger(n) ? `$${Math.round(n).toLocaleString("en-US")}` : formatMoney(n);
 }
 
 function over(org: CaptainOrg): boolean {
@@ -52,8 +53,9 @@ function SpendLine({
             >
               <span className="max-w-[140px] truncate">{org.name}</span>
               <span className="font-mono">
-                {dollars(org.used.cost)}
-                {bad && budget !== undefined && ` of ${dollars(budget)} (over)`}
+                {bad && budget !== undefined
+                  ? `${formatMoney(org.used.cost)} of ${dollars(budget)} (over)`
+                  : dollars(org.used.cost)}
               </span>
             </span>
           </span>
@@ -112,8 +114,8 @@ export function CaptainHeader({
     decisions: decisions ?? 0,
   });
   return (
-    <header className={cn("mb-3 flex shrink-0 flex-col gap-2 rounded-2xl px-6 py-3.5", GLASS)}>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+    <header className={cn("mb-3 flex shrink-0 flex-col gap-2 rounded-2xl px-6 py-3", GLASS)}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5">
         <h1 className="text-xl leading-[26px] font-semibold tracking-[-0.01em] text-fg">Captain</h1>
         <div title={unavailable} className="flex items-center gap-2.5">
           {toggle}
@@ -123,6 +125,7 @@ export function CaptainHeader({
             <span className={cn("font-medium", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
           </span>
         </div>
+        <p className="min-w-[260px] flex-1 basis-[320px] text-base text-fg-soft text-pretty">{sentence}</p>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button variant="secondary" onClick={onDelegation}>
             <SlidersHorizontal aria-hidden="true" />
@@ -136,25 +139,23 @@ export function CaptainHeader({
           </PageLink>
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5">
-        <p className="min-w-0 text-base text-fg-soft text-pretty">{sentence}</p>
-        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5 min-[1000px]:flex-nowrap">
+        {chip && (
+          <button
+            type="button"
+            onClick={onSummary}
+            className={cn(
+              "flex min-w-0 max-w-full shrink cursor-pointer items-center gap-2 rounded-full border bg-raised px-3 py-0.5 text-left text-sm hover:border-line-hover",
+              chip.over ? "border-red/40 text-red" : "border-line-control text-fg-soft",
+            )}
+          >
+            <span className="min-w-0 truncate">{chip.text}</span>
+          </button>
+        )}
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5">
           <SpendLine orgs={captain.orgs} autonomy={autonomy} />
         </div>
       </div>
-      {chip && (
-        <button
-          type="button"
-          onClick={onSummary}
-          className={cn(
-            "flex min-w-0 cursor-pointer items-center gap-2 self-start rounded-full border bg-raised px-3 py-1 text-left text-sm hover:border-line-hover",
-            chip.over ? "border-red/40 text-red" : "border-line-control text-fg-soft",
-          )}
-        >
-          <span className="min-w-0 truncate">{chip.text}</span>
-          <span className="shrink-0 text-blue">Open</span>
-        </button>
-      )}
       {dialogs}
     </header>
   );

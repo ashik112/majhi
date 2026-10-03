@@ -294,7 +294,7 @@ test("editing a workspace budget saves with Save, and shows Save only when somet
 
 test("the old places still lead to the Limits screen", async ({ page }) => {
   await open(page, "/autonomous?tab=rules", 1440, 900, "dark", scene({ asks: [] }));
-  await page.getByRole("link", { name: "Edit budgets" }).first().click();
+  await page.getByRole("dialog", { name: "Delegation" }).getByRole("link", { name: "Limits" }).click();
   await expect(page).toHaveURL(/\/limits$/);
   await page.goto("/setup?section=context");
   await page.getByRole("link", { name: "Limits page" }).click();

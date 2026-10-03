@@ -137,7 +137,7 @@ export function plainText(text: string, names: TaskNames): string {
       return `Paused ${quote(title)}${reason === "owner" ? "" : ` (${reason})`}`;
     return `${quote(title)} ${what}`;
   }
-  const m = WITH_ID.exec(text);
+  const m = WITH_ID.exec(text.replace(/^Start a task /, "Started "));
   if (m === null) return sentence(toYou(text));
   const [, pre = "", id = "", mid = "", tail] = m;
   const known = names.title(id);
