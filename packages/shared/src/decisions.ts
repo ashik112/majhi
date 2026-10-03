@@ -137,6 +137,10 @@ export const GateSchema = z.object({
   lift: z.number(),
   /** The answer's probability minus the next most probable option's. */
   margin: z.number(),
+  /** True when the use has no passing eval yet: the answer is logged and compared, but never counts. */
+  shadow: z.boolean().optional(),
+  /** The calibrated probability the bar was applied to, when the use has a calibration. */
+  confidence: z.number().min(0).max(1).optional(),
 });
 export type Gate = z.infer<typeof GateSchema>;
 

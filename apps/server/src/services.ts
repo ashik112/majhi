@@ -51,6 +51,9 @@ import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
+import { builtinRegistry } from "./decisions/builtinSlots.ts";
+import { CalibrationStore } from "./decisions/calibrationStore.ts";
+import { EvalStore } from "./decisions/evalStore.ts";
 import { LabelStore } from "./decisions/labels.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
@@ -436,6 +439,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     config,
     log: new DecisionLog(store.raw),
     labels: new LabelStore(store.raw),
+    slots: builtinRegistry(),
+    evals: new EvalStore(store.raw),
+    calibrations: new CalibrationStore(store.raw),
     tokens: decideTokens,
     laya: new LayaProvider(options.hostLink, layaDocker),
     acp: new AcpProvider({

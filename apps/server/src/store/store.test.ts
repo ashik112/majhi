@@ -99,6 +99,8 @@ describe("store", () => {
       "captain_state",
       "chat_state",
       "clone_jobs",
+      "decision_calibration",
+      "decision_evals",
       "decision_labels",
       "decision_links",
       "decision_recommendations",

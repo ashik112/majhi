@@ -52,3 +52,114 @@ export const LabelInputSchema = z.object({
   note: z.string().trim().max(300).optional(),
 });
 export type LabelInput = z.infer<typeof LabelInputSchema>;
+
+// Evals and calibration ------------------------------------------------------
+
+/**
+ * `live`: the use passed an eval on its labels, so an answer that clears its calibrated threshold
+ * counts. `shadow`: Laya answers and the answer is logged and compared with what happened, but
+ * nothing acts on it and the caller falls back to its safe default.
+ */
+export const SlotModeSchema = z.enum(["shadow", "live"]);
+export type SlotMode = z.infer<typeof SlotModeSchema>;
+
+export const ClassMetricSchema = z.object({
+  label: z.string(),
+  /** Labeled items of this class. */
+  support: z.number().int().nonnegative(),
+  /** Share of this class's items answered with it. Null with no support. */
+  recall: z.number().min(0).max(1).nullable(),
+  /** Share of answers of this class that were right. Null when it was never answered. */
+  precision: z.number().min(0).max(1).nullable(),
+});
+export type ClassMetric = z.infer<typeof ClassMetricSchema>;
+
+export const EvalMetricsSchema = z.object({
+  /** Items that got an answer. */
+  n: z.number().int().nonnegative(),
+  /** Items the provider failed on. */
+  failed: z.number().int().nonnegative(),
+  accuracy: z.number().min(0).max(1).nullable(),
+  /** Accuracy of always answering the commonest label: what an answer must beat. */
+  majorityBaseline: z.number().min(0).max(1).nullable(),
+  perClass: z.array(ClassMetricSchema),
+  /** Of the items that clear the gate, how many were right. Null when none clear it. */
+  precision: z.number().min(0).max(1).nullable(),
+  /** Share of items that clear the gate. */
+  coverage: z.number().min(0).max(1),
+  /** Expected calibration error of the answer's confidence, 10 bins. Null with no items. */
+  ece: z.number().min(0).max(1).nullable(),
+  /** Share of choices that name the same option when asked in two option orders. Null when none was asked twice. */
+  orderConsistency: z.number().min(0).max(1).nullable(),
+  latencyP50Ms: z.number().nonnegative().nullable(),
+  latencyP90Ms: z.number().nonnegative().nullable(),
+  /** Money per 1,000 decisions. Zero for Laya. */
+  costPer1000Usd: z.number().nonnegative(),
+});
+export type EvalMetrics = z.infer<typeof EvalMetricsSchema>;
+
+/** The fitted correction for one slot: a temperature on the probabilities and a bar on the result. */
+export const CalibrationSchema = z.object({
+  slot: z.string(),
+  mode: SlotModeSchema,
+  /** Probabilities are raised to 1/temperature and renormalized. 1 leaves them as they are. */
+  temperature: z.number().positive(),
+  /** An answer counts when its calibrated confidence is at least this. */
+  threshold: z.number().min(0).max(1),
+  /** The precision the threshold was chosen for. */
+  target: z.number().min(0).max(1),
+  /** What the threshold got on the held-out half. */
+  heldOutPrecision: z.number().min(0).max(1).nullable(),
+  heldOutCoverage: z.number().min(0).max(1),
+  /** Labels the fit used. */
+  labels: z.number().int().nonnegative(),
+  /** The model that answered during the fit; a new one needs a new eval. */
+  version: z.string(),
+  fittedAt: z.string(),
+  /** Why it is live or in shadow, in plain words. */
+  reason: z.string(),
+});
+export type Calibration = z.infer<typeof CalibrationSchema>;
+
+export const EvalSetSchema = z.enum(["labels", "fixtures"]);
+export type EvalSet = z.infer<typeof EvalSetSchema>;
+
+/** One run of one slot over one set. */
+export const EvalReportSchema = z.object({
+  id: z.number().int().positive(),
+  slot: z.string(),
+  title: z.string(),
+  set: EvalSetSchema,
+  at: z.string(),
+  provider: z.string(),
+  version: z.string(),
+  /** At the gate as it stands (the slot's calibration if it has one, else the base bar). */
+  metrics: EvalMetricsSchema,
+  /** On the held-out half after the fit; absent for the fixtures and when too few labels exist. */
+  heldOut: EvalMetricsSchema.optional(),
+  calibration: CalibrationSchema.optional(),
+});
+export type EvalReport = z.infer<typeof EvalReportSchema>;
+
+export const EvalInputSchema = z.object({
+  /** A slot id like `task-size`, or `all`. */
+  use: z.string().min(1).max(80),
+});
+
+/** What the Hub shows per slot: its mode, how many labels it has and its last runs. */
+export const SlotStatusSchema = z.object({
+  slot: z.string(),
+  title: z.string(),
+  use: DecisionUseSchema,
+  mode: SlotModeSchema,
+  labels: z.number().int().nonnegative(),
+  /** Labels needed before a fit is tried. */
+  labelsNeeded: z.number().int().positive(),
+  target: z.number().min(0).max(1),
+  calibration: CalibrationSchema.optional(),
+  labeled: EvalReportSchema.optional(),
+  fixtures: EvalReportSchema.optional(),
+  /** True when this slot has a built-in fixture set. */
+  hasFixtures: z.boolean(),
+});
+export type SlotStatus = z.infer<typeof SlotStatusSchema>;

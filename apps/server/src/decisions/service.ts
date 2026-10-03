@@ -3,6 +3,7 @@ import type { McpServerSpec } from "@majhi/acp";
 import {
   type Answer,
   answerChoices,
+  type Calibration,
   type CommandMeta,
   type DecideRequest,
   type DecideRequestInput,
@@ -13,12 +14,15 @@ import {
   type DecisionRecord,
   type DecisionResult,
   type DecisionSettings,
+  DecisionSettingsSchema,
+  type EvalReport,
   type Gate,
   gateAnswer,
   type LayaStatus,
   type LinkKind,
   type ProviderId,
   type Question,
+  type SlotStatus,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { secretName } from "../accounts/homes.ts";
@@ -29,13 +33,17 @@ import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { cacheKey, DecisionCache } from "./cache.ts";
+import type { CalibrationStore } from "./calibrationStore.ts";
 import { CircuitBreaker, runChain } from "./chain.ts";
+import { bestLabels, type EvalProvider, EvalRunner } from "./evalRunner.ts";
+import type { EvalStore } from "./evalStore.ts";
 import { JevProvider } from "./jev.ts";
 import { type LabelStore, sizeBucket, type TaskOutcome } from "./labels.ts";
 import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { readDecisionSettings } from "./settings.ts";
+import { MIN_LABELS, type SlotRegistry } from "./slots.ts";
 import type { DecideTokens } from "./tokens.ts";
 
 export const DECIDE_SERVER_NAME = "majhi-decide";
@@ -52,6 +60,10 @@ export interface DecisionServiceDeps {
   config: ConfigService;
   log: DecisionLog;
   labels: LabelStore;
+  /** The decision slots: what is labeled, evaluated and gated. */
+  slots: SlotRegistry;
+  evals: EvalStore;
+  calibrations: CalibrationStore;
   tokens: DecideTokens;
   laya: LayaProvider;
   acp: DecisionProvider;
@@ -77,9 +89,29 @@ export class DecisionService implements Decisions {
   readonly breaker = new CircuitBreaker();
   /** Laya answers the same request the same way, so a repeat is answered from here. */
   readonly cache = new DecisionCache();
+  private readonly runner: EvalRunner;
+  /** The bar the eval scores with: refreshed when an eval starts. */
+  private barSettings: DecisionSettings | undefined;
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    const laya = deps.laya;
+    const provider: EvalProvider = {
+      id: "laya",
+      version: () => laya.currentVersion(),
+      costPer1000Usd: 0,
+      ask: async (request) => (await laya.decide(request)).answers,
+    };
+    this.runner = new EvalRunner({
+      registry: deps.slots,
+      labels: deps.labels,
+      log: deps.log,
+      results: deps.evals,
+      provider,
+      calibrations: deps.calibrations,
+      gate: (_slot, q, a) => gateAnswer(q, a, this.barSettings ?? DecisionSettingsSchema.parse({})),
+      now: this.now,
+    });
     this.jev = new JevProvider(async () => {
       const ref = (await this.settings()).jev_key;
       return ref === undefined ? undefined : deps.secrets.get(secretName(ref));
@@ -213,6 +245,63 @@ export class DecisionService implements Decisions {
       .find((l) => l.question === question && l.source === "owner");
     if (stored === undefined) throw new Error(`The label for ${input.id} cannot be read.`);
     return stored;
+  }
+
+  /**
+   * Owner only (the command checks). Runs one slot, or all, on its labeled set and its built-in
+   * fixtures, and stores the reports. A second call for the same slot while one runs shares it.
+   */
+  async runEvals(use: string): Promise<EvalReport[]> {
+    const wanted =
+      use === "all" ? this.deps.slots.all() : [this.deps.slots.byId(use)].filter((s) => s !== undefined);
+    if (wanted.length === 0)
+      throw new UserError(
+        `There is no decision slot ${use}. Slots: ${this.deps.slots
+          .all()
+          .map((s) => s.id)
+          .join(", ")}.`,
+        404,
+      );
+    this.barSettings = await this.settings();
+    const reports: EvalReport[] = [];
+    for (const slot of wanted) {
+      const labeled = bestLabels(
+        this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l)),
+      ).length;
+      if (labeled > 0) reports.push(await this.runner.run(slot.id, "labels"));
+      if (slot.fixtures !== undefined) reports.push(await this.runner.run(slot.id, "fixtures"));
+    }
+    return reports;
+  }
+
+  /** Every slot with its mode, its labels and its last reports, for Hub setup. */
+  slots(): SlotStatus[] {
+    return this.deps.slots.all().map((slot) => {
+      const calibration = this.deps.calibrations.get(slot.id);
+      const labels = bestLabels(
+        this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l)),
+      ).length;
+      const labeled = this.deps.evals.latest(slot.id, "labels");
+      const fixtures = this.deps.evals.latest(slot.id, "fixtures");
+      return {
+        slot: slot.id,
+        title: slot.title,
+        use: slot.use,
+        mode: this.modeOf(slot.id, calibration),
+        labels,
+        labelsNeeded: MIN_LABELS,
+        target: slot.target,
+        ...(calibration === undefined ? {} : { calibration }),
+        ...(labeled === undefined ? {} : { labeled }),
+        ...(fixtures === undefined ? {} : { fixtures }),
+        hasFixtures: slot.fixtures !== undefined,
+      };
+    });
+  }
+
+  private modeOf(slotId: string, calibration: Calibration | undefined): "shadow" | "live" {
+    if (calibration !== undefined) return calibration.mode;
+    return this.deps.slots.byId(slotId)?.startMode === "live" ? "live" : "shadow";
   }
 
   labels(): LabelStore {

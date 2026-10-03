@@ -82,7 +82,13 @@ import {
   PreviewRunInputSchema,
   ServiceStartInputSchema,
 } from "./containers.ts";
-import { DecisionLabelSchema, LabelInputSchema } from "./decision-learning.ts";
+import {
+  DecisionLabelSchema,
+  EvalInputSchema,
+  EvalReportSchema,
+  LabelInputSchema,
+  SlotStatusSchema,
+} from "./decision-learning.ts";
 import {
   DecideRequestSchema,
   DecisionCacheStatsSchema,
@@ -2302,6 +2308,20 @@ export const commands = {
       "Say what the right answer to a decision's question was (Wrong?). Stored as an owner label for the evals and calibration; changes nothing else. question may be left out when the decision asked one",
     input: LabelInputSchema,
     output: DecisionLabelSchema,
+  },
+  "decisions.eval": {
+    risk: "change",
+    summary:
+      "Owner only. Run the decision provider on the labeled set and the built-in fixtures of one decision slot (task-size, mention-wake, memory-verdict, ...) or all, and store the report: accuracy, per-class recall, precision and coverage at the gate, calibration error, order consistency, latency and cost. With enough labels it also fits the slot's calibration and moves it between shadow and live",
+    input: EvalInputSchema,
+    output: z.array(EvalReportSchema),
+  },
+  "decisions.slots": {
+    risk: "read",
+    summary:
+      "Every decision slot with its mode (shadow or live), how many labels it has, its calibration and its last eval reports",
+    input: Empty,
+    output: z.array(SlotStatusSchema),
   },
   "decisions.status": {
     risk: "read",

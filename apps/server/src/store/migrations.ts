@@ -872,6 +872,34 @@ CREATE TABLE decision_links (
     name: "decision on captain log lines",
     sql: `ALTER TABLE captain_actions ADD COLUMN decision TEXT;`,
   },
+  {
+    // Eval runs of the decision provider (SPEC 5.12): one row per run of a slot over the labeled set
+    // or the built-in fixtures, the report as JSON. Kept, so a drift between runs is visible.
+    id: 127,
+    name: "decision eval runs",
+    sql: `
+CREATE TABLE decision_evals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot TEXT NOT NULL,
+  set_name TEXT NOT NULL,
+  at TEXT NOT NULL,
+  report TEXT NOT NULL
+);
+CREATE INDEX decision_evals_slot ON decision_evals (slot, set_name, id);
+`,
+  },
+  {
+    // The fitted calibration of each decision slot (SPEC 5.12): the temperature, the bar for the
+    // target precision, and whether the slot acts (live) or only logs (shadow). JSON, one per slot.
+    id: 128,
+    name: "decision calibration per slot",
+    sql: `
+CREATE TABLE decision_calibration (
+  slot TEXT PRIMARY KEY,
+  calibration TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -2,11 +2,14 @@ import { join } from "node:path";
 import { type Answer, askedOptions, type DecideRequest, optionKey, type Question } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { migrate } from "../store/migrations.ts";
+import { CalibrationStore } from "./calibrationStore.ts";
+import { EvalStore } from "./evalStore.ts";
 import { LabelStore } from "./labels.ts";
 import { DecisionLog } from "./log.ts";
 import type { DecisionProvider, ProviderOutcome } from "./providers.ts";
 import { rulesProvider } from "./rules.ts";
 import { DecisionService, type DecisionServiceDeps } from "./service.ts";
+import { type SlotDef, SlotRegistry } from "./slots.ts";
 
 /** One question answered `key` at probability `p`, in `runs` order runs that all agree. */
 export function sure(q: Question, key: string | boolean | number, p = 0.9, runs = 2): Answer {
@@ -64,7 +67,7 @@ export function fakeLaya(over: { version?: string; script?: LayaScript } = {}) {
 }
 
 /** A decision service on an in-memory database with a fake Laya, for tests. */
-export function service(laya = fakeLaya(), acp?: DecisionProvider) {
+export function service(laya = fakeLaya(), acp?: DecisionProvider, slots: readonly SlotDef[] = []) {
   const db = new Database(":memory:");
   migrate(db);
   const deps = {
@@ -72,6 +75,9 @@ export function service(laya = fakeLaya(), acp?: DecisionProvider) {
     config: { file: join("/nonexistent", "majhi.yaml") },
     log: new DecisionLog(db),
     labels: new LabelStore(db),
+    slots: new SlotRegistry(slots),
+    evals: new EvalStore(db),
+    calibrations: new CalibrationStore(db),
     tokens: {},
     laya,
     acp: acp ?? ({ id: "acp", unavailable: async () => "no stand-in", decide: async () => ({}) } as never),

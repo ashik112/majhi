@@ -881,6 +881,12 @@ export function createHandlers({
     "decisions.correct": async (input) => services.decisions.correct(input),
     "decisions.get": async (input) => services.decisions.get(input.id),
     "decisions.label": async (input) => services.decisions.label(input),
+    "decisions.eval": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner")
+        throw new UserError("Only the owner runs the decision evals.", 409);
+      return services.decisions.runEvals(input.use);
+    },
+    "decisions.slots": async () => services.decisions.slots(),
     "decisions.status": () => services.decisions.status(),
     "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
     "decisions.install": () => services.decisions.install(),
