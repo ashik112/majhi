@@ -1,4 +1,5 @@
 import type { CaptainChore } from "@majhi/shared";
+import { runFollowUps } from "../findings/followups.ts";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -364,6 +365,14 @@ export function createChores(
           },
         });
       }
+    },
+
+    async followups(run) {
+      await runFollowUps(run, {
+        ports: ports.followUps,
+        findings: ports.findings,
+        askLane: (org, text) => ports.askLane(org, text),
+      });
     },
 
     async stuck(run) {

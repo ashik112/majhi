@@ -129,6 +129,15 @@ class Sim {
   ports(lanes: Lanes): CaptainPorts {
     const of = (org: string) => [...this.tasks.values()].filter((t) => t.org === org);
     return {
+      // The soak world has no memory threads: the follow-ups chore finds nothing.
+      followUps: {
+        openThreads: () => [],
+        task: () => undefined,
+        doneSince: async () => [],
+        embed: async () => undefined,
+        closeThread: () => undefined,
+      },
+      findings: undefined as unknown as CaptainPorts["findings"],
       reviewTasks: async (org) =>
         of(org)
           .filter((t) => t.status === "review")

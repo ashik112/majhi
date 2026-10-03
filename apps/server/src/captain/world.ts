@@ -16,8 +16,10 @@ import type { AutonomyService } from "../autonomy/service.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { DecisionService } from "../decisions/service.ts";
+import type { FindingsService } from "../findings/service.ts";
 import { defaultBranch, git } from "../git/git.ts";
 import type { MemoryService } from "../memory/service.ts";
+import { repoFacts } from "../memory/task-git.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
@@ -50,6 +52,7 @@ export interface WorldDeps {
   autonomy: AutonomyService;
   decisions: DecisionService;
   memory: MemoryService;
+  findings: FindingsService;
   curate: (fact: Fact) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
@@ -65,6 +68,8 @@ export interface WorldDeps {
 
 /** The most waiting memories one look reads. */
 const PENDING_LIMIT = 1_000;
+/** The finished tasks a follow-ups run compares with. */
+const DONE_TASKS_READ = 15;
 
 export function captainWorld(deps: WorldDeps): CaptainPorts {
   const { store } = deps;
@@ -413,6 +418,57 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     async askLane(org, text) {
       const told = await deps.lanes.tell(org, text, "The captain's upkeep asked about a question");
       return told.sent ? { sent: true } : { sent: false, why: told.why };
+    },
+
+    // -------------------------------------------------------------------------
+    // Follow-ups and findings
+
+    findings: deps.findings,
+    followUps: {
+      openThreads: (org) =>
+        deps.memory.project
+          .threads({ status: "open", limit: 500 })
+          .filter((t) => (t.org ?? PRIVATE) === org)
+          .reverse(),
+      task: (id) => {
+        const t = store.tasks.get(id);
+        return t === undefined ? undefined : { id: t.id, title: t.title, status: t.status };
+      },
+      async doneSince(org, project, since) {
+        const done = store.tasks
+          .list(true)
+          .filter(
+            (t) =>
+              t.status === "done" &&
+              t.chat !== true &&
+              (t.org ?? PRIVATE) === org &&
+              t.updatedAt > since &&
+              (project === undefined || t.repos.some((r) => r.project === project)),
+          )
+          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+          .slice(0, DONE_TASKS_READ);
+        const out = [];
+        for (const summary of done) {
+          const task = store.tasks.get(summary.id);
+          if (task === undefined) continue;
+          const record = deps.memory.project.record(task.id);
+          const commits = (await Promise.all(task.repos.map((r) => repoFacts(r, task.createdAt)))).flatMap(
+            (f) => f.commits.map((c) => c.replace(/^[0-9a-f]+ /, "")),
+          );
+          out.push({
+            id: task.id,
+            title: task.title,
+            text: [task.title, record?.done ?? "", record?.outcome ?? "", ...commits.slice(0, 20)]
+              .filter((x) => x !== "")
+              .join(". "),
+          });
+        }
+        return out;
+      },
+      embed: (texts) => deps.memory.embed(texts),
+      closeThread: (id, by, reason) => {
+        deps.memory.project.closeThread(id, by, reason);
+      },
     },
 
     // -------------------------------------------------------------------------

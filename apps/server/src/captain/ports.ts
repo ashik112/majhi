@@ -1,4 +1,6 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
+import type { FollowUpPorts } from "../findings/followups.ts";
+import type { FindingsService } from "../findings/service.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -151,6 +153,10 @@ export interface CaptainPorts {
   handBack(org: string, task: string, agent: string, account: string): void;
   wakeLead(org: string, task: string): void;
   pauseForOwner(org: string, task: string, text: string): Promise<void>;
+
+  // Follow-ups and findings
+  followUps: FollowUpPorts;
+  findings: FindingsService;
 
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */

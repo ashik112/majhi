@@ -19,6 +19,7 @@ export * from "./containers.ts";
 export * from "./decisions.ts";
 export * from "./e2e.ts";
 export * from "./emoji.ts";
+export * from "./findings.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
 export * from "./host.ts";

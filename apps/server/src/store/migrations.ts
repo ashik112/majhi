@@ -837,6 +837,38 @@ WHERE chore = 'memory'
   AND at < '2026-10-03T19:27:50.000Z';
 `,
   },
+  {
+    // Findings (SPEC 5.18): what the captain's playbooks and agents noticed, deduplicated by key.
+    id: 125,
+    name: "findings",
+    sql: `
+CREATE TABLE findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  project TEXT,
+  source TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  evidence TEXT NOT NULL DEFAULT '[]',
+  severity TEXT NOT NULL DEFAULT 'info',
+  goal TEXT,
+  playbook TEXT,
+  channel TEXT,
+  dedupe_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  task TEXT,
+  decision TEXT,
+  dismissed_reason TEXT,
+  by TEXT NOT NULL,
+  seen INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  UNIQUE (org, dedupe_key)
+);
+CREATE INDEX findings_org_status ON findings (org, status);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
