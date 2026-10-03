@@ -117,7 +117,11 @@ One summary per day, at 08:00 by default and changeable on the Captain page: wha
 The owner found two pages for one idea confusing (Captain and Autonomous both had rules and limits, and two chats for the same thing). They are now one:
 
 - **Sidebar:** one Captain row with its Cmd J chat button, and the Autonomous switch with today's spend as a sub-row under it. Autonomous is no longer a page.
-- **Captain page, one screen, no tabs** (revised 2026-10-04 after the owner called the four tabs "utter garbage" and asked for one place to do everything): a header with the Autonomous switch, a one-line status sentence, spend per workspace and a one-line chip for the daily summary; the Conversation on the left (chips All and one per workspace, steps folded into "N steps it took"); on the right Needs you (the Decisions rows, answered in place), Running, Next and Did recently; and a Delegation sheet holding the grid of who decides what per workspace, with the daily budget, the largest task size, the standing instructions and the tasks left alone. The full log and the summary open in sheets.
+- **Captain page, one screen, no tabs** (revised 2026-10-04). The owner called the four tabs "utter garbage" and asked not to switch views to get things done.
+  - Header: the Autonomous switch, one sentence that is true now, spend per workspace and a one-line chip for the daily summary.
+  - Left: the Conversation. Chips pick All or a workspace. The captain's steps fold into "N steps it took".
+  - Right: Needs you (the Decisions rows, answered in place), Running, Next and Did recently.
+  - Sheets: Delegation (who decides what per workspace, the daily budget, the largest task size, standing instructions, tasks left alone), the full log, and the daily summary.
 - `/autonomous` and its old views land on the page; `?tab=rules` opens Delegation and `?tab=log` opens the log. The separate Autonomous chat went away: its messages were already the workspace threads (`autonomy.guide` posts into the lane chat), so nothing moved.
 - Chats show title, agent, workspace and last activity, never the task id.
 
