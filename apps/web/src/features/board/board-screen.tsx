@@ -1,20 +1,30 @@
-import type { OrgView } from "@majhi/shared";
+import type { AccountView, OrgView } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ChevronsRight, ListChecks, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  type BusiestAccount,
+  busiestAccount,
+  busiestText,
+  USAGE_FULL_PCT,
+  USAGE_HIGH_PCT,
+  usageTitle,
+} from "@/features/accounts/model";
 import { BoardMatches } from "@/features/search/board-matches";
 import { cn } from "@/lib/cn";
 import { formatTokens } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useOrgs } from "@/lib/studio-queries";
+import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
+import { useNow } from "@/lib/use-now";
 import { useNewTask } from "../new-task/new-task-context";
 import { BoardCard, cardDomId } from "./board-card";
 import {
@@ -224,10 +234,16 @@ export function BoardScreen() {
   );
 }
 
-/** The readouts next to the title: open, working, waiting for the owner, and tokens used today. */
+/**
+ * The readouts next to the title: open, working, waiting for the owner, tokens used today, and the
+ * account of this workspace whose window is fullest (all accounts without a workspace filter).
+ */
 function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefined }) {
   const usage = useUsageSummary(org ? { org } : {});
   const today = usage.data?.today;
+  const accounts = useAccounts().data;
+  const now = useNow(60_000);
+  const busiest = accounts && busiestAccount(accounts, org);
   return (
     <p className="flex min-w-0 items-center gap-3 overflow-hidden text-sm min-[1280px]:gap-4 whitespace-nowrap text-fg-muted">
       <span className="tnum">
@@ -260,7 +276,46 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
           </span>
         </>
       )}
+      {accounts && busiest && <AccountReadout busiest={busiest} accounts={accounts} org={org} now={now} />}
     </p>
+  );
+}
+
+/** The fullest account's meter. Lit in the paused lamp's color at its limit, amber from 80 %. Opens Usage. */
+function AccountReadout({
+  busiest,
+  accounts,
+  org,
+  now,
+}: {
+  busiest: BusiestAccount;
+  accounts: readonly AccountView[];
+  org: string | undefined;
+  now: number;
+}) {
+  const text = busiestText(busiest, now);
+  const lit = busiest.limit !== undefined || busiest.pct >= USAGE_FULL_PCT;
+  const high = busiest.pct >= USAGE_HIGH_PCT;
+  return (
+    <>
+      <Divider />
+      <PageLink
+        page="usage"
+        title={usageTitle(accounts, org, now)}
+        className="tnum min-w-0 truncate rounded-xs hover:text-fg"
+      >
+        <span className="font-mono text-sm text-fg">{text.head}</span>{" "}
+        <span
+          className={cn(
+            "font-mono text-md font-medium",
+            lit ? LAMP_TEXT.paused : high ? "text-amber" : "text-fg",
+          )}
+        >
+          {text.value}
+        </span>
+        {text.rest}
+      </PageLink>
+    </>
   );
 }
 

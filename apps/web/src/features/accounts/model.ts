@@ -282,14 +282,25 @@ export function busiestAccount(
   return best;
 }
 
-/** The top bar readout: "acme-claude 82% · resets 3:40 PM", or "acme-claude at limit until 3:40 PM". */
-export function busiestText(b: BusiestAccount, now: number, locale?: string): { head: string; tail: string } {
+/**
+ * The top bar readout: "acme-claude 82% · resets 3:40 PM", or "acme-claude at limit until 3:40 PM".
+ * `value` is the part that is lit.
+ */
+export function busiestText(
+  b: BusiestAccount,
+  now: number,
+  locale?: string,
+): { head: string; value: string; rest: string } {
   if (b.limit) {
     const about = b.limit.resetKnown ? "" : "about ";
-    return { head: b.id, tail: `at limit until ${about}${resetLabel(b.limit.until, now, locale)}` };
+    return {
+      head: b.id,
+      value: "at limit",
+      rest: ` until ${about}${resetLabel(b.limit.until, now, locale)}`,
+    };
   }
   const reset = b.resetsAt ? ` · resets ${resetLabel(b.resetsAt, now, locale)}` : "";
-  return { head: b.id, tail: `${formatPct(b.pct)}${reset}${b.estimated ? " est." : ""}` };
+  return { head: b.id, value: formatPct(b.pct), rest: `${reset}${b.estimated ? " est." : ""}` };
 }
 
 /** One line per account for the readout's tooltip: "acme-claude: 5h 82% · 3:40 PM, Week 31% · Thu". */
