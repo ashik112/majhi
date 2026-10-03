@@ -1,3 +1,4 @@
+import type { ReadinessItem } from "@majhi/shared";
 import { BRIEF_SECTIONS, type ProjectCard } from "@majhi/shared";
 import { z } from "zod";
 import { git } from "../git/git.ts";
@@ -17,6 +18,8 @@ export interface CardsWiring {
   /** Absent in tests that never spend tokens: the README start stands in for the paragraph. */
   housekeeper?: Housekeeper | undefined;
   log?: (message: string) => void;
+  /** Readiness gaps become findings (source setup), one per project and missing item. */
+  reportGap?: (project: CardProject, gap: ReadinessItem) => Promise<void>;
 }
 
 async function tryGit(cwd: string, args: string[]): Promise<string | undefined> {
@@ -130,11 +133,13 @@ export function createCards(w: CardsWiring): ProjectCards {
         w.log?.(`cards: ${card.project}: the brief was not filled: ${String(err)}`);
       }
     },
-    // The findings store takes these when it lands (captain v2 step 3); until then they are a log line.
-    onGaps: (project, gaps) =>
-      w.log?.(
-        `cards: ${project.id} is not ready for agents: ${gaps.map((g) => `${g.label} (${g.fix ?? "no fix"})`).join("; ")}`,
-      ),
+    onGaps: (project, gaps) => {
+      for (const gap of gaps) {
+        void (w.reportGap?.(project, gap) ?? Promise.resolve()).catch((err: unknown) =>
+          w.log?.(`cards: ${project.id}: the gap "${gap.label}" was not recorded: ${String(err)}`),
+        );
+      }
+    },
     ...(w.log === undefined ? {} : { log: w.log }),
   });
 }

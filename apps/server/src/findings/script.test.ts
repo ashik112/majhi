@@ -72,7 +72,8 @@ describe("findings through a captain turn", () => {
       ["majhi_findings_toTask", false],
     ]);
 
-    const [finding, ...rest] = await list(world);
+    // The project card's own readiness gaps are findings too (source setup); this test is about the turn's.
+    const [finding, ...rest] = (await list(world)).filter((f) => f.source !== "setup");
     expect(rest).toEqual([]);
     expect(finding).toMatchObject({
       org: "acme",

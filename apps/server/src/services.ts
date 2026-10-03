@@ -653,12 +653,29 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  // Bound below: the findings store is built after the cards.
+  let reportFinding: FindingsService["report"] | undefined;
   const cards = createCards({
     store,
     projects,
     memory,
     housekeeper,
     log: (message) => console.error(message),
+    reportGap: async (project, gap) => {
+      await reportFinding?.(
+        {
+          org: project.org,
+          project: project.id,
+          source: "setup",
+          title: `${project.id}: ${gap.label.toLowerCase()} missing`,
+          detail: gap.fix ?? "",
+          evidence: [],
+          severity: "low",
+          dedupeKey: `readiness:${project.id}:${gap.id}`,
+        },
+        { kind: "owner" },
+      );
+    },
   });
   memory.useCards((project) => cards.compact(project));
   const extraction = new Extraction({
@@ -999,6 +1016,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["findings"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  reportFinding = (input, actor) => findings.report(input, actor);
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
