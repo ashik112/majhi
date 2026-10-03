@@ -349,15 +349,25 @@ export class ContainerService {
    * `taskRunning` starts them again the same way. Containers run with `--rm`, so stopping removes
    * them; named volumes keep their data. The network goes and the builder stops, as on `taskStopped`.
    */
-  async taskPaused(task: string): Promise<void> {
-    if (this.docker === undefined) return;
+  async taskPaused(task: string, options: { keepUnsaved?: boolean } = {}): Promise<{ kept: string[] }> {
+    if (this.docker === undefined) return { kept: [] };
     // Under the task's lock, so a `taskRunning` that comes meanwhile waits and sees all of it.
-    await this.locked(task, async () => {
+    return this.locked(task, async () => {
       const parked = this.parked.get(task) ?? [];
       const specs = this.specs.get(task);
       const running = this.all(task).filter(
         (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
       );
+      // Stopping removes a container (`--rm`): a service with no named volume would lose its data,
+      // like a database an agent filled. While the task only waits (review, majhi's pause), its
+      // services keep running then; the owner's Stop still ends them.
+      if (options.keepUnsaved === true) {
+        const unsaved = running
+          .map((p) => specs?.get(p.container?.name ?? ""))
+          .filter((s) => s?.kind === "service" && (s.input.volumes ?? []).length === 0)
+          .map((s) => (s === undefined ? "" : nameOf(s)));
+        if (unsaved.length > 0) return { kept: unsaved };
+      }
       for (const p of running) {
         const name = p.container?.name ?? "";
         const spec = specs?.get(name);
@@ -366,6 +376,7 @@ export class ContainerService {
       if (parked.length > 0) this.parked.set(task, parked);
       for (const p of running) await this.deps.processes.stop(task, p.id, "task");
       await this.taskStopped(task);
+      return { kept: [] };
     });
   }
 

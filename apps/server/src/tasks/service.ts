@@ -158,7 +158,7 @@ export interface TaskDeps {
    * start again when it runs. Their volumes go when it is done or removed.
    */
   containers?: {
-    taskPaused(id: string): Promise<void>;
+    taskPaused(id: string, options?: { keepUnsaved?: boolean }): Promise<{ kept: string[] }>;
     taskRunning(id: string): Promise<{ started: string[]; failed: string[] }>;
     taskEnded(id: string): Promise<void>;
   };
@@ -2492,6 +2492,17 @@ export class TaskService {
     );
   }
 
+  /** The task only waits: its services stop, except ones whose data has no named volume to survive in. */
+  private async parkServices(id: TaskId): Promise<void> {
+    const { kept } = (await this.deps.containers?.taskPaused(id, { keepUnsaved: true })) ?? { kept: [] };
+    if (kept.length > 0) {
+      this.note(
+        id,
+        `${kept.join(", ")} kept running while ${id} waits: its data has no named volume, so stopping would lose it. Start it with a volume to let majhi stop it.`,
+      );
+    }
+  }
+
   private note(task: TaskId, text: string): void {
     this.deps.room.post(task, `info:${randomUUID()}`, {
       type: "system",
@@ -2541,7 +2552,7 @@ export class TaskService {
       return;
     }
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
-    await this.deps.containers?.taskPaused(id);
+    await this.parkServices(id as TaskId);
     const reviewed = this.get(id);
     this.cards.review(reviewed);
     this.deps.room.publishTask(reviewed);
@@ -2624,7 +2635,7 @@ export class TaskService {
     if (reason === "error" || reason === "signed-out")
       this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
-    await this.deps.containers?.taskPaused(id);
+    await this.parkServices(id as TaskId);
     const paused = this.get(id);
     this.cards.paused(paused, reason, why);
     this.deps.room.publishTask(paused);

@@ -275,6 +275,17 @@ describe("ContainerService", () => {
       expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
     });
 
+    it("keeps everything running while the task only waits, when a service's data has no named volume", async () => {
+      await upWithPreview();
+      // "cache" has no volume: stopping would lose its data.
+      expect(await service.taskPaused("ACM-1", { keepUnsaved: true })).toEqual({ kept: ["cache"] });
+      expect(docker.containers.size).toBe(3);
+      expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+      // The owner's Stop still ends them all.
+      expect(await service.taskPaused("ACM-1")).toEqual({ kept: [] });
+      expect(docker.containers.size).toBe(0);
+    });
+
     it("leaves out what an agent stopped itself, and reports what cannot start", async () => {
       await upWithPreview();
       await service.stop("ACM-1", "cache", "agent");
