@@ -34,6 +34,8 @@ services:
       MAJHI_LAYA_CONTAINER: majhi-laya
       # Days, weeks and months of tokens and cost follow the owner's zone. `make up` reads it from this computer.
       TZ: ${MAJHI_TZ:-UTC}
+      # The SSH agent socket gen-override mounts (DECISIONS). An older host helper's update passes only SSH_AGENT_SOCK.
+      MAJHI_SSH_AGENT: ${MAJHI_SSH_AGENT:-${SSH_AGENT_SOCK:-}}
     volumes:
       # Same absolute paths as on the host, so paths match everywhere (SPEC 4.5).
       - ${HOME}/.majhi:${HOME}/.majhi
