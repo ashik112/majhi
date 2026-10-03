@@ -404,14 +404,20 @@ export class ChoreRunner {
     deps.repo.setRunTokens(run.id, deps.laneTokens(run.org, run.startedAt));
     deps.repo.closeRun(run.id, status, at, note);
     if (status === "capped" || status === "stopped" || status === "failed") {
+      // A daily cap says so once a day, with the question to the owner when one waits; the runs a
+      // busy workspace keeps starting after it add no more lines.
+      const daily = status === "capped" && note?.startsWith("reached today's cap") === true;
+      const asking = deps.repo
+        .pendingCapAsks()
+        .some((a) => a.org === run.org && a.chore === run.chore && a.day === run.ws.day);
       deps.repo.addAction({
-        key: `run:${run.id}:end`,
+        key: daily ? `cap:${run.org}:${run.chore}:${run.ws.day}:${note?.match(/cap of (\d+)/)?.[1]}` : `run:${run.id}:end`,
         run: run.id,
         org: run.org,
         chore: run.chore,
         day: run.ws.day,
         at,
-        text: `${CHORE_LABEL[run.chore]} stopped: ${note ?? status}`,
+        text: `${CHORE_LABEL[run.chore]} stopped: ${note ?? status}${daily && asking ? ". You are asked whether to raise it for today" : ""}`,
         reason: status === "capped" ? "Every run stops at its cap" : (note ?? status),
         outcome: "skipped",
       });
