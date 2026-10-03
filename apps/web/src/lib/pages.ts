@@ -15,6 +15,7 @@ export const PAGE_PATH = {
   orgs: "/orgs",
   automations: "/automations",
   autonomous: "/autonomous",
+  captain: "/captain",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;

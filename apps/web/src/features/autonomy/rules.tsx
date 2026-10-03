@@ -1,8 +1,8 @@
-import { type AutonomyStatus, PRIVATE, type TaskSizeLimit } from "@majhi/shared";
+import type { AutonomyStatus, TaskSizeLimit } from "@majhi/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ChoiceChip } from "@/components/ui/choice-chip";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
@@ -24,20 +24,13 @@ const SIZE_HELP: Record<TaskSizeLimit, string> = {
   any: "Large tasks too. The captain splits them when that helps.",
 };
 
-/** The orgs a rule can name: every org, then Private for tasks with no org. */
-function useOrgChoices(): { id: string; name: string }[] {
-  const orgs = useOrgs().data ?? [];
-  const listed = orgs.map((o) => ({ id: o.id, name: o.name }));
-  return listed.some((o) => o.id === PRIVATE) ? listed : [...listed, { id: PRIVATE, name: "Private" }];
-}
-
 /**
- * What autonomous mode may pick: the largest task size it starts and the orgs it works in. Laya
- * rates each task's size; under a limit, larger tasks and tasks it could not rate are not started.
+ * What autonomous mode may pick: the largest task size it starts. It works only in the workspaces set
+ * to Runs it on the Captain page. Laya rates each task's size; under a limit, larger tasks and tasks
+ * it could not rate are not started.
  */
 function PickCard({ status }: { status: AutonomyStatus }) {
   const toast = useToast();
-  const choices = useOrgChoices();
   const pick = status.settings.pick;
   const base = useMemo(() => pickDraft(pick), [pick]);
   const [draft, setDraft] = useState<PickDraft>();
@@ -47,10 +40,6 @@ function PickCard({ status }: { status: AutonomyStatus }) {
   const dirty = draft !== undefined && patch !== undefined;
   const marked = status.backlog.filter((b) => b.noAutonomy).length;
 
-  const toggleOrg = (id: string) => {
-    const now = form.orgs ?? [];
-    setDraft({ ...form, orgs: now.includes(id) ? now.filter((o) => o !== id) : [...now, id] });
-  };
   const submit = () => {
     if (patch === undefined) return setDraft(undefined);
     save.mutate(
@@ -95,33 +84,19 @@ function PickCard({ status }: { status: AutonomyStatus }) {
           {form.size !== "any" && " Laya rates each task; one it could not rate is not started."}
         </span>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Switch
-          label="Works in every workspace"
-          checked={form.orgs === undefined}
-          onChange={(all) => setDraft({ ...form, orgs: all ? undefined : choices.map((c) => c.id) })}
-        />
-        {form.orgs !== undefined && (
-          <fieldset
-            className="m-0 flex flex-wrap gap-1.5 border-0 p-0"
-            aria-label="Workspaces it may work in"
-          >
-            {choices.map((c) => (
-              <ChoiceChip
-                key={c.id}
-                pressed={form.orgs?.includes(c.id) ?? false}
-                onClick={() => toggleOrg(c.id)}
-                className="min-h-8"
-              >
-                {c.name}
-              </ChoiceChip>
-            ))}
-          </fieldset>
+      <p className="text-sm text-fg-soft text-pretty">
+        Works in{" "}
+        {status.lanes.length === 0 ? (
+          <span className="text-amber">no workspace yet</span>
+        ) : (
+          status.lanes.map((l) => l.name).join(", ")
         )}
-        {form.orgs !== undefined && form.orgs.length === 0 && (
-          <span className="text-xs text-amber">No workspace picked: the captain starts nothing.</span>
-        )}
-      </div>
+        : the workspaces set to Runs it on the{" "}
+        <PageLink page="captain" className="text-blue hover:underline">
+          Captain
+        </PageLink>{" "}
+        page.
+      </p>
       <p className="text-xs text-fg-faint text-pretty">
         {marked === 0
           ? "No task is marked Not for autonomous mode."

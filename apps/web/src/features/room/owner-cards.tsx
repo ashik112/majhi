@@ -133,6 +133,12 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         </span>
       </p>
       {item.why !== undefined && <p className="pl-6 text-sm text-amber text-pretty">{item.why}</p>}
+      {item.ready !== undefined && (
+        <p className="pl-6 text-sm text-fg-soft text-pretty">
+          <span className="font-medium">The captain checked it: </span>
+          {item.ready}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2 pl-6">
         {shipping && <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />}
         <Button

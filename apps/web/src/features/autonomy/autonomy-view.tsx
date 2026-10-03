@@ -90,6 +90,9 @@ export function AutonomyView() {
     setSeen(summaryDay);
   }, [view, summaryDay]);
   const fresh = summaryDay !== undefined && seen !== summaryDay;
+  // The lane the chat shows: the one picked on the desk, else the first workspace set to Runs it.
+  const [pickedLane, setLane] = useState<string>();
+  const lane = status?.lanes.find((l) => l.org === pickedLane)?.org ?? status?.lanes[0]?.org;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -138,7 +141,13 @@ export function AutonomyView() {
           <div className="flex min-h-0 min-w-0 flex-1 gap-3">
             {view === "desk" && (
               <>
-                <WorkPane status={status} now={now} onRules={() => setView("rules")} />
+                <WorkPane
+                  status={status}
+                  now={now}
+                  onRules={() => setView("rules")}
+                  lane={lane}
+                  onLane={setLane}
+                />
                 {wide && <LogPane now={now} />}
               </>
             )}
@@ -157,7 +166,7 @@ export function AutonomyView() {
               </div>
             )}
           </div>
-          <ChatPane status={status} className="w-[320px] min-[1320px]:w-[360px]" />
+          <ChatPane status={status} lane={lane} className="w-[320px] min-[1320px]:w-[360px]" />
         </div>
       )}
     </div>

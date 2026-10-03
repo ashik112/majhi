@@ -8,8 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { useOrgs } from "@/lib/studio-queries";
-import { budgetText, capText, pickOrgsText, SIZE_LIMIT_WORD } from "./model";
+import { budgetText, capText, SIZE_LIMIT_WORD } from "./model";
 
 /** Turn on, Pause, Resume and the two stops, each with the line the history keeps. */
 export function useAutonomyActions() {
@@ -49,20 +48,20 @@ export function useAutonomyActions() {
 
 /** The limits it turns on with: the day cap, each org's cap, and where it may push and merge. */
 export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
-  const orgs = useOrgs().data ?? [];
   const { start } = useAutonomyActions();
   const settings = status.settings;
-  const ids = [...new Set([...orgs.map((o) => o.id), ...Object.keys(settings.orgs)])];
-  const name = (id: string) => orgs.find((o) => o.id === id)?.name ?? id;
+  // It starts and ships work only in the workspaces set to Runs it.
+  const ids = status.lanes.map((l) => l.org);
+  const name = (id: string) => status.lanes.find((l) => l.org === id)?.name ?? id;
 
   return (
     <Modal label="Turn on autonomous mode" onClose={onClose} className="w-[500px]">
       <div className="flex flex-col gap-4 p-5">
         <h2 className="text-md font-semibold">Turn on autonomous mode</h2>
         <p className="text-base text-fg-muted text-pretty">
-          The captain picks work from the board and the workspace backlogs, starts it, and decides its own
-          cards within these limits. Every decision lands in the log with one line why. You can pause or stop
-          it at any time.
+          In each workspace set to Runs it, the captain picks work from the backlog, starts it, ships it and
+          decides its own cards, within these limits. Every decision lands in the log with one line why. You
+          can pause or stop it at any time.
         </p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-base">
           <dt className="text-fg-muted">Day cap</dt>
@@ -71,8 +70,20 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             <span className="ml-2 text-sm text-fg-faint">{capText(status.spend.total)} so far today</span>
           </dd>
           <dt className="text-fg-muted">Picks</dt>
-          <dd className="text-fg">
-            {SIZE_LIMIT_WORD[settings.pick.size]}. {pickOrgsText(settings.pick, name)}.
+          <dd className="text-fg">{SIZE_LIMIT_WORD[settings.pick.size]}.</dd>
+          <dt className="text-fg-muted">Works in</dt>
+          <dd className={ids.length === 0 ? "text-amber" : "text-fg"}>
+            {ids.length === 0 ? (
+              <>
+                No workspace is set to Runs it yet. Set one on the{" "}
+                <PageLink page="captain" className="text-blue hover:underline">
+                  Captain
+                </PageLink>{" "}
+                page.
+              </>
+            ) : (
+              ids.map(name).join(", ")
+            )}
           </dd>
           <dt className="text-fg-muted">Accounts</dt>
           <dd className="text-fg">

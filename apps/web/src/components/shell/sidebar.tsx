@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
@@ -18,6 +19,7 @@ import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -137,7 +139,7 @@ function MainNav() {
       <div className="flex flex-col gap-px">
         <NavRow page="board" active={isActive(PAGE_PATH.board)} />
         <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
-        <BossButton />
+        <CaptainRow />
         <AutonomyRow />
       </div>
       {NAV_GROUPS.map((group) => (
@@ -211,23 +213,52 @@ function NavRow({
   );
 }
 
-/** Opens the captain chat drawer, like Cmd+J. */
-function BossButton() {
+/**
+ * The captain: the row opens the Captain page (how much it does per workspace, its log and the stop
+ * switch), with a lamp when it is stopped. The chat button beside it opens the captain chat drawer,
+ * like Cmd+J.
+ */
+function CaptainRow() {
   const { open, toggle } = useBoss();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const stopped = useCaptainStatus().data?.stopped === true;
+  const active = pathname.startsWith(PAGE_PATH.captain);
   return (
-    <button
-      type="button"
-      aria-pressed={open}
-      onClick={toggle}
-      className={cn(
-        ITEM,
-        "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
-        open ? ROW_SELECTED : "text-fg-muted",
-      )}
-    >
-      <span>Captain</span>
-      <Kbd className="ml-auto">{MOD_KEY} J</Kbd>
-    </button>
+    <div className="flex h-8 shrink-0 items-center gap-1">
+      <Link
+        to={PAGE_PATH.captain}
+        search={{}}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          ITEM,
+          "h-8 min-w-0 flex-1 gap-2 px-2.5 text-body font-medium",
+          active ? ROW_SELECTED : "text-fg-muted",
+        )}
+      >
+        <span className="truncate">Captain</span>
+        {stopped && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-lamp-paused">
+            <Lamp state="paused" size={6} />
+            Stopped
+          </span>
+        )}
+      </Link>
+      <button
+        type="button"
+        aria-pressed={open}
+        aria-label="Open the captain chat"
+        title={`Open the captain chat (${MOD_KEY} J)`}
+        onClick={toggle}
+        className={cn(
+          ITEM,
+          "h-8 shrink-0 justify-center gap-1 px-1.5",
+          open ? ROW_SELECTED : "text-fg-faint",
+        )}
+      >
+        <MessageSquare aria-hidden="true" className="size-3.5" />
+        <Kbd>{MOD_KEY} J</Kbd>
+      </button>
+    </div>
   );
 }
 

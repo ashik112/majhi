@@ -4,6 +4,7 @@ import type { PageName } from "../../lib/pages";
 export const PAGE_LABEL: Record<PageName, string> = {
   board: "Board",
   chats: "Chats",
+  captain: "Captain",
   autonomous: "Autonomous",
   agents: "Agents",
   accounts: "Accounts",
@@ -22,6 +23,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 export const PAGE_KEYWORDS: Record<PageName, string> = {
   board: "tasks home columns",
   chats: "conversations talk",
+  captain: "boss upkeep workspaces levels budget lanes stop",
   autonomous: "autonomy autopilot away",
   agents: "team roles models",
   accounts: "sign in claude codex login",
