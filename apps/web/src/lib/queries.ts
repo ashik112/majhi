@@ -60,6 +60,8 @@ export const queryKeys = {
   autonomy: ["autonomy"],
   /** Every `captain.*` read: the status per workspace and the log. */
   captain: ["captain"],
+  /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
+  decisions: ["decisions"],
   /** `git.signIn.poll` for each flow. */
   signins: ["signins"],
   /** `projects.cloneStatus`. */

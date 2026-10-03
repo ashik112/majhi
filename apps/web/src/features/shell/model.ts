@@ -1,11 +1,4 @@
-import type {
-  AccountView,
-  BudgetAsk,
-  CaptainCapAsk,
-  OrgView,
-  PendingNotice,
-  TaskSummary,
-} from "@majhi/shared";
+import type { AccountView, OrgView, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { PAGE_PATH, type PagePath } from "../../lib/pages";
@@ -120,7 +113,7 @@ export type BannerAction =
   | { kind: "page"; to: PagePath; search?: { account: string } }
   | { kind: "element"; id: string };
 
-/** One thing that needs the owner: a row of the notifications panel, or the banner. */
+/** One thing that needs the owner, as the banner above the page shows it. */
 export interface AttentionItem {
   key: string;
   tone: BannerTone;
@@ -133,8 +126,6 @@ export interface AttentionItem {
   task?: AttentionTask;
   /** The row's second line when it is about no task: "Accounts", "Captain". */
   where?: string;
-  /** A budget question: the row carries the Raise and Leave buttons. */
-  budget?: BudgetAsk;
 }
 
 export type AttentionTask = Pick<TaskSummary, "id" | "title" | "org" | "chat">;
@@ -260,72 +251,6 @@ function signIns(accounts: readonly AccountView[]): AttentionItem[] {
       actionLabel: "Accounts",
       action: { kind: "page", to: PAGE_PATH.accounts, search: { account: account.id } },
     }));
-}
-
-/** The captain's questions about chores that reached their daily cap: each opens the Captain page. */
-function capAsks(asks: readonly CaptainCapAsk[]): AttentionItem[] {
-  return asks.map<AttentionItem>((ask) => ({
-    key: `cap:${ask.org}:${ask.chore}:${ask.day}`,
-    tone: "amber",
-    lamp: "needs",
-    text: ask.text,
-    actionLabel: "Captain",
-    action: { kind: "page", to: PAGE_PATH.captain },
-    where: "Captain",
-  }));
-}
-
-/** A budget that ran out while work waits: the row opens the Limits screen and carries the answer. */
-function budgetAsks(asks: readonly BudgetAsk[]): AttentionItem[] {
-  return asks.map<AttentionItem>((ask) => ({
-    key: `budget:${ask.scope}:${ask.day}`,
-    tone: "amber",
-    lamp: "needs",
-    text: ask.text,
-    actionLabel: "Limits",
-    action: { kind: "page", to: PAGE_PATH.limits },
-    where: "Limits",
-    budget: ask,
-  }));
-}
-
-/**
- * Everything that needs the owner, most urgent first, for the notifications panel: limit pauses,
- * errors, loops and blocks, then each waiting approval, secret request or question (from
- * `notify.pending`, one row per item; a task the list has not caught up with gets one general row),
- * then the captain's questions about its daily caps, then sign-ins.
- */
-export function attentionItems(
-  input: AttentionInput & {
-    pending: readonly PendingNotice[];
-    asks?: readonly CaptainCapAsk[];
-    budgets?: readonly BudgetAsk[];
-  },
-): AttentionItem[] {
-  const byTask = new Map<string, PendingNotice[]>();
-  for (const notice of input.pending) byTask.set(notice.task, [...(byTask.get(notice.task) ?? []), notice]);
-  const waiting = input.tasks
-    .filter((task) => task.asking === true && task.status !== "done")
-    .flatMap((task) => {
-      const notices = byTask.get(task.id);
-      if (notices === undefined) return [asking(task)];
-      return notices.map<AttentionItem>((notice) => ({
-        key: `notice:${task.id}:${notice.item}`,
-        tone: "amber",
-        lamp: "needs",
-        text: notice.text,
-        actionLabel: "Open",
-        action: task.chat === true ? open(task) : { kind: "task", id: task.id, item: notice.item },
-        task: about(task),
-      }));
-    });
-  return [
-    ...pauses(input),
-    ...waiting,
-    ...budgetAsks(input.budgets ?? []),
-    ...capAsks(input.asks ?? []),
-    ...signIns(input.accounts),
-  ];
 }
 
 /** The one thing that needs the owner most: limit pauses, errors, a prompt in the open task, then sign-ins. */

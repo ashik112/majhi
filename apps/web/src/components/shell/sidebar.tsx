@@ -21,6 +21,7 @@ import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
@@ -122,6 +123,7 @@ function MainNav() {
   const checks = useHealthChecks().data?.checks;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const needYou = checksNeedingYou(checks);
+  const waiting = useDecisions().data?.decisions.length ?? 0;
   const pendingFacts = useFacts({ status: "pending" }).data ?? [];
   const projects = useProjects().data;
   const toReview = pendingFacts.length;
@@ -139,6 +141,11 @@ function MainNav() {
       <div className="flex flex-col gap-px">
         <NavRow page="board" active={isActive(PAGE_PATH.board)} />
         <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
+        <NavRow
+          page="decisions"
+          active={isActive(PAGE_PATH.decisions)}
+          badge={waiting > 0 ? { text: String(waiting), alert: true } : undefined}
+        />
         <CaptainRow />
         <AutonomyRow />
       </div>

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
+  type CaptainChore,
   isOwnerChat,
   NotificationsSettingsSchema,
   PRIVATE,
@@ -34,6 +35,7 @@ import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { Lanes } from "./captain/lanes.ts";
+import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { captainWorld } from "./captain/world.ts";
@@ -65,6 +67,8 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { RecommendationRepo } from "./inbox/recommendations.ts";
+import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
@@ -84,6 +88,7 @@ import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
+import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -250,6 +255,8 @@ export interface Services {
   containers: ContainerService;
   /** Autonomous mode (PRV-74): the mode, its tasks, the run gate, spend, holds and the feed. */
   autonomy: AutonomyService;
+  /** The owner's inbox of everything that waits for them (5.18). */
+  inbox: InboxService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
   /** The captain's chat per workspace (5.18). */
@@ -706,10 +713,36 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     setTitle: (id, title) => tasks.autoTitleChat(id, title),
   });
+  /** The task an item belongs to, as notifications and the Decisions inbox name it. */
+  const subjectOf = (id: string): Subject | undefined => {
+    const task = store.tasks.get(id);
+    return task === undefined
+      ? undefined
+      : {
+          id: task.id,
+          title: task.title,
+          chat: isOwnerChat(task),
+          ...(task.org === undefined ? {} : { org: task.org }),
+          repos: task.repos.length,
+        };
+  };
   const notifier = new Notifier({
-    subject: (id) => {
-      const task = store.tasks.get(id);
-      return task === undefined ? undefined : { id: task.id, title: task.title, chat: isOwnerChat(task) };
+    subject: subjectOf,
+    // The captain answers it by itself when Autonomous is on and the workspace lets it decide: an
+    // alert waits a while, so a card it handles never alerts (SPEC 5.18).
+    captainHandles: async (item, subject) => {
+      if (autonomy.mode() !== "on") return false;
+      const row =
+        item.type === "permission"
+          ? item.connection === undefined
+            ? "approvals"
+            : undefined
+          : item.type === "ask" || item.type === "choice" || item.type === "owner-question"
+            ? "questions"
+            : undefined;
+      if (row === undefined) return false;
+      const settings = (await config.settings()).autonomy;
+      return authorityOf(settings, subject.org ?? PRIVATE)[row] === "decide";
     },
     item: (task, id) => store.room.get(task, id),
     settings: async () => {
@@ -820,6 +853,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const scheduleRows = new ScheduleRepo(store.raw);
   const triggerRows = new TriggerRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
+  const cardActions = new CardActions({ tasks, mrs, room });
+  const inbox = new InboxService({
+    items: () => store.room.waitingDecisions(),
+    subject: (id) => {
+      const task = store.tasks.get(id);
+      return task === undefined || task.status === "done" ? undefined : subjectOf(id);
+    },
+    caps: async () => (await captain.asks()).asks,
+    budgets: () => autonomy.budgetAsks(),
+    signedOut: async () =>
+      (await accounts.list())
+        .filter((a) => a.status === "needs-login" || a.status === "unreachable")
+        .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
+    recommendations: new RecommendationRepo(store.raw),
+    actions: {
+      answerAsk: (task, item, answers) => tasks.answerAsk(task, item, answers),
+      answerQuestion: (task, item, choice) => tasks.answerQuestion(task, item, choice),
+      answerChoice: (task, item, option) => tasks.answerChoice(task, item, option),
+      answerPermission: (task, item, option) => tasks.answerPermission(task, item, option),
+      decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
+      cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
+      answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
+      answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
+    },
+  });
   const lanes = new Lanes({
     repo: captainRepo,
     store,
@@ -843,8 +901,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     events,
     gitLogins,
-    notify: (summary, line) => notifier.autonomySummary(summary.day, line),
     tell: (key, text) => notifier.captain(key, text),
+    recommend: async (input, lane) => {
+      await inbox.recommend(input, lane);
+      events.emit(["tasks"]);
+    },
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
@@ -1107,7 +1168,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrs,
     gitLogins,
     gitConnect,
-    cardActions: new CardActions({ tasks, mrs, room }),
+    cardActions,
     pendingShips,
     cleanup,
     notifier,
@@ -1116,6 +1177,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     processes,
     containers,
     autonomy,
+    inbox,
     captain,
     lanes,
     bindCaptain: (dispatch) => {

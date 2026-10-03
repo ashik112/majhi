@@ -32,6 +32,7 @@ import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
+import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import {
@@ -159,6 +160,7 @@ export function createHandlers({
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
+    ...inboxHandlers(services.inbox),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
