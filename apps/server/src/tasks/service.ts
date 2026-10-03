@@ -902,7 +902,7 @@ export class TaskService {
   }
 
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
-  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner"): Promise<Task> {
+  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner", why?: string): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
@@ -913,7 +913,7 @@ export class TaskService {
       this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason);
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason, why);
     this.deps.room.publishTask(stopped);
     return stopped;
   }

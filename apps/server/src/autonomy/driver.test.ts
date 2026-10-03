@@ -37,6 +37,7 @@ const STATUS: AutonomyStatus = {
   accounts: [],
   waiting: [],
   settings: AutonomySettingsSchema.parse({}),
+  stopped: [],
 };
 
 /**

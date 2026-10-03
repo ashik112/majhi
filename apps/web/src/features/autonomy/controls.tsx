@@ -1,13 +1,16 @@
 import type { AutonomyMode, AutonomyStatus } from "@majhi/shared";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
+import { PAGE_PATH } from "@/lib/pages";
 import { budgetText, capText, SIZE_LIMIT_WORD } from "./model";
 
 /** Turn on, Pause, Resume and the two stops, each with the line the history keeps. */
@@ -49,6 +52,9 @@ export function useAutonomyActions() {
 /** The limits it turns on with: the day cap, each org's cap, and where it may push and merge. */
 export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
   const { start } = useAutonomyActions();
+  // Tasks Stop now paused stay paused unless the owner resumes them here.
+  const stopped = status.stopped;
+  const [resumeStopped, setResumeStopped] = useState(true);
   const settings = status.settings;
   // It starts and ships work only in the workspaces set to Runs it.
   const ids = status.lanes.map((l) => l.org);
@@ -126,6 +132,13 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
           </PageLink>
           .
         </p>
+        {stopped.length > 0 && (
+          <Switch
+            label={`Also resume the ${stopped.length === 1 ? "task" : `${stopped.length} tasks`} Stop now paused (${stopped.join(", ")})`}
+            checked={resumeStopped}
+            onChange={setResumeStopped}
+          />
+        )}
         {status.boss === undefined && (
           <p
             role="alert"
@@ -148,7 +161,13 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             variant="primary"
             disabled={start.isPending || status.boss === undefined}
             onClick={() =>
-              start.mutate({ input: {}, reason: "Owner turned autonomous mode on" }, { onSuccess: onClose })
+              start.mutate(
+                {
+                  input: { resumeStopped: stopped.length > 0 && resumeStopped },
+                  reason: "Owner turned autonomous mode on",
+                },
+                { onSuccess: onClose },
+              )
             }
           >
             Turn on
@@ -165,6 +184,7 @@ const STOP_NOW_BODY =
 /** What switching it off offers: Pause (or Resume), Stop gracefully and Stop now, which asks first. */
 export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () => void }) {
   const actions = useAutonomyActions();
+  const navigate = useNavigate();
   const [confirmNow, setConfirmNow] = useState(false);
 
   if (confirmNow)
@@ -180,6 +200,15 @@ export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () =
     );
 
   const options: { label: string; text: string; run: () => void; primary?: boolean }[] = [];
+  // Caps change while it runs: nothing needs stopping for that.
+  options.push({
+    label: "Edit caps",
+    text: "Change the day cap and each workspace's cap. It keeps running.",
+    run: () => {
+      onClose();
+      void navigate({ to: PAGE_PATH.autonomous, search: { tab: "rules" } });
+    },
+  });
   if (mode === "on")
     options.push({
       label: "Pause",

@@ -1,4 +1,4 @@
-import type { AutonomyEvent, AutonomyStatus, Task, TaskSummary } from "@majhi/shared";
+import type { AutonomyEvent, AutonomyStatus, RoomItem, Task, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
@@ -295,5 +295,36 @@ describe("the captain's lane", () => {
     expect(await t.autonomy.laneChat("private")).toBeUndefined();
     await t.h.cmd("autonomy.stop", { how: "now" });
     expect(await t.autonomy.laneChat("acme")).toBeUndefined();
+  });
+});
+
+describe("Stop now and turning on again", () => {
+  it("names Stop now on the paused card, and resumes those tasks on turn-on only when asked", async () => {
+    const t = await on();
+    const id = await t.ownerTask("Fix the typo on the login page\n\nsmall");
+    expect((await t.call("majhi_tasks_start", { id })).isError).toBe(false);
+    const task = () => t.h.majhi.services.store.tasks.get(id);
+    expect(task()?.status).toBe("running");
+
+    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
+    expect(task()).toMatchObject({ status: "paused", pausedReason: "owner" });
+    expect((await t.status()).stopped).toEqual([id]);
+    const items = (await t.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
+    const card = items.find((i) => i.type === "paused" && i.state === "pending");
+    expect(card?.type === "paused" && card.why).toContain("Stop now");
+
+    // Turned on without resuming: the task stays paused, and is no longer offered.
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).status).toBe(200);
+    expect(task()?.status).toBe("paused");
+    expect((await t.status()).stopped).toEqual([]);
+
+    // Stopped again while running, then turned on with resume: it runs again.
+    expect((await t.h.cmd("tasks.start", { id })).status).toBe(200);
+    expect(task()?.status).toBe("running");
+    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
+    expect((await t.status()).stopped).toEqual([id]);
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).status).toBe(200);
+    expect(task()?.status).toBe("running");
+    expect((await t.status()).stopped).toEqual([]);
   });
 });

@@ -35,6 +35,9 @@ export interface AutonomyState {
 
 export type HeldReason = "owner" | "limit";
 
+/** The hold scope that marks a task Stop now paused, so turning on again can resume it. */
+export const STOPPED_NOW = "stop-now";
+
 export interface AutonomyTaskRow {
   task: string;
   since: string;
@@ -232,8 +235,13 @@ export class AutonomyRepo {
     this.db.prepare("UPDATE autonomy_tasks SET held = NULL, held_scope = NULL WHERE task = ?").run(task);
   }
 
+  /** Every hold goes, but Stop now's marks stay until the owner turns autonomous mode on again. */
   releaseAll(): void {
-    this.db.prepare("UPDATE autonomy_tasks SET held = NULL, held_scope = NULL").run();
+    this.db
+      .prepare(
+        "UPDATE autonomy_tasks SET held = NULL, held_scope = NULL WHERE held_scope IS NULL OR held_scope != ?",
+      )
+      .run(STOPPED_NOW);
   }
 
   // ---------------------------------------------------------------------------
