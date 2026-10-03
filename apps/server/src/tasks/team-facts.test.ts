@@ -381,7 +381,7 @@ describe("the TASK.md sections", () => {
       "- @acme-lead (Lead): claude-opus-4-8, most capable, $5 in and $25 out per M tokens, effort max. Account claude-acme: 5-hour 62% left (resets 13:00 UTC), weekly 80% left (resets Mon 09:00 UTC), weekly Opus 70% left.",
       "- @acme-builder (Builder): claude-sonnet-4-6 (auto, its fallback tier), balanced, $3 in and $15 out per M tokens, effort high. Account claude-globex: API key, pays per token, no plan limits.",
       "",
-      "Could join (mention one to add it to the team):",
+      'Could join (start a line with "@name:" or use the mention tool to add one to the team):',
       "- @acme-reviewer (Reviewer): claude-opus-4-8, most capable, $5 in and $25 out per M tokens, default effort. Account claude-acme: 5-hour 62% left (resets 13:00 UTC), weekly 80% left (resets Mon 09:00 UTC), weekly Opus 70% left.",
       "",
       "Running now:",

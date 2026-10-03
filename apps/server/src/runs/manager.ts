@@ -470,6 +470,14 @@ export class RunManager {
   }
 
   /**
+   * Tells an agent something with its next prompt, like a "not woken" note. Unlike `notify` it
+   * starts no turn: an idle agent reads it when something else wakes it.
+   */
+  note(task: string, agent: string, text: string): void {
+    this.runFor(task, agent).notes.push(text);
+  }
+
+  /**
    * A background process of `p.agent` ended by itself (5.15). Queued once per run of the process,
    * and every end that waits is sent in one prompt: while the agent works, or is paused, they pile
    * up and go out together, without the ones a newer run replaced by then.
@@ -985,7 +993,11 @@ export class RunManager {
         entry.kind === "brief" ||
         run.carry !== undefined ||
         (unbriefed && (entry.kind === "owner" || entry.kind === "handoff"));
-      const raw = await this.withFacts(run, brief, this.withProcesses(run, await this.blocksFor(run, entry)));
+      const raw = await this.withFacts(
+        run,
+        brief,
+        this.withNotes(run, this.withProcesses(run, await this.blocksFor(run, entry))),
+      );
       if (raw === undefined) continue;
 
       // One read of the settings per turn: before the prompt and after it.
@@ -1428,6 +1440,16 @@ export class RunManager {
     if (blocks === undefined || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
     const line = runningLine(this.deps.processes?.running(run.task) ?? []);
     return line === undefined ? blocks : [...blocks, { type: "text", text: line }];
+  }
+
+  /** Adds the notes `note` left after the prompt, once. Not to slash commands, which keep them waiting. */
+  private withNotes(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
+    const first = blocks?.[0];
+    if (blocks === undefined || run.notes.length === 0) return blocks;
+    if (first?.type === "text" && first.text.startsWith("/")) return blocks;
+    const text = run.notes.join("\n");
+    run.notes = [];
+    return [...blocks, { type: "text", text }];
   }
 
   /** Adds what `beforePrompt` returns after the prompt. Not to slash commands. A failing hook adds nothing. */
