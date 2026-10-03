@@ -63,6 +63,8 @@ import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import { FindingsRepo } from "./findings/repo.ts";
+import { FindingsService } from "./findings/service.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
@@ -259,6 +261,8 @@ export interface Services {
   inbox: InboxService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
+  /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
+  findings: FindingsService;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -958,6 +962,26 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   );
   admin.useAutonomy(autonomy);
   const cleanup = new CleanupService({ store, room, events, projects });
+  const findings = new FindingsService({
+    repo: new FindingsRepo(store.raw),
+    projectOrg: async (id) => (await config.sections()).projects[id]?.org ?? PRIVATE,
+    taskStatus: (id) => store.tasks.get(id)?.status,
+    createTask: async (n) => {
+      const task = await tasks.create({
+        title: n.title,
+        text: n.text,
+        ...(n.project === undefined
+          ? { org: n.org, kind: "ops" as const }
+          : { repos: [{ project: n.project }] }),
+        byOwner: n.byOwner,
+        attachments: [],
+        start: false,
+      });
+      return { id: task.id };
+    },
+    changed: () => events.emit(["findings"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -985,6 +1009,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy,
       decisions,
       memory,
+      findings,
       curate: (fact) => curator.review(fact),
       scanner: new RepoScanner(),
       cleanup,
@@ -1204,6 +1229,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     autonomy,
     inbox,
     captain,
+    findings,
     lanes,
     bindCaptain: (dispatch) => {
       captainDispatch = dispatch;

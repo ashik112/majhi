@@ -6,6 +6,8 @@ import type {
   CaptainAction,
   CaptainOrg,
   CaptainStatus,
+  Finding,
+  FindingSource,
   OwnerDecision,
   RoomItem,
   RoomServerMessage,
@@ -29,6 +31,48 @@ const DAY = "2026-10-04";
 const LONG = "Northwind Traders International Holdings and Logistics Group";
 const LONG_TASK =
   "Move every caller of the old synchronous export to the queued worker, with retries, progress events and a signed download link that expires after a day";
+
+const FINDING_TITLES = [
+  "Flaky test in the retry suite fails one run in five",
+  "Update the http client: two advisories since last month",
+  "Add a timeout test to the api client",
+  "The staging credentials were never rotated",
+  "Build time grew 40 percent since the lockfile change",
+  "Empty state on the invoices page shows a raw error",
+  "Move every caller of the old synchronous export to the queued worker, with retries and a signed download link",
+  "Competitor launched a free tier for small teams",
+] as const;
+const FINDING_SOURCES: FindingSource[] = ["follow-up", "ci", "dependency", "security", "ui", "log", "radar"];
+
+/** 140 findings over four workspaces: open, proposed, a task, dismissed and fixed. */
+function findings(): Finding[] {
+  const orgIds = ["private", "pyzasoft", "goama", "ideeza"];
+  const status = ["open", "open", "open", "proposed", "task", "dismissed", "fixed", "open"] as const;
+  const severity = ["info", "low", "medium", "high"] as const;
+  return Array.from({ length: 140 }, (_, i) => {
+    const s = status[i % status.length] ?? "open";
+    const title = FINDING_TITLES[i % FINDING_TITLES.length] ?? "Finding";
+    return {
+      id: i + 1,
+      org: orgIds[i % orgIds.length] ?? "private",
+      project: i % 3 === 0 ? "acme-api" : undefined,
+      source: FINDING_SOURCES[i % FINDING_SOURCES.length] ?? "other",
+      title: i < 8 ? title : `${title} (${i})`,
+      detail: "The retry test in api/retry.test.ts fails one run in five.\nSeen in the last three CI runs.",
+      evidence: ["ci run 4412", "api/retry.test.ts:31"],
+      severity: severity[i % severity.length] ?? "info",
+      dedupeKey: `k${i}`,
+      status: s,
+      task: s === "proposed" || s === "task" ? `PRV-${100 + i}` : undefined,
+      dismissedReason: s === "dismissed" ? "Not worth doing: the suite is replaced next month" : undefined,
+      by: "captain",
+      seen: 1 + (i % 4),
+      createdAt: iso(i < 6 ? 120 : 3000 + i * 40),
+      updatedAt: iso(30 + i),
+      lastSeen: iso(30 + i * 7),
+    } as Finding;
+  });
+}
 
 const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as const;
 
@@ -667,6 +711,15 @@ async function stub(page: Page, s: Scenario, state: { decisions: OwnerDecision[]
   await answer("captain.asks", () => ({ asks: [], budgets: [] }));
   await answer("autonomy.status", () => autonomy(s));
   await answer("autonomy.events", () => ({ events: events().slice(0, 50) }));
+  await answer("findings.list", () => {
+    const all = findings();
+    const open = all.filter((f) => f.status === "open");
+    return {
+      findings: all,
+      open: open.length,
+      fresh: open.filter((f) => Date.parse(f.createdAt) > NOW - 86_400_000).length,
+    };
+  });
   await answer("decisions.list", () => ({ decisions: state.decisions }));
   await answer("tasks.list", () => [
     ...CHATS,
@@ -773,6 +826,25 @@ for (const [w, h] of [
       await expect(page.getByRole("dialog", { name: "Log" })).toBeVisible();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${SHOTS}/log-${w}-${theme}.png` });
+    });
+    test(`findings box and sheet ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain", w, h, theme, REAL_ON);
+      const box = page.getByRole("region", { name: "Findings" });
+      await expect(box).toBeVisible();
+      await box.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${SHOTS}/findings-box-${w}-${theme}.png` });
+      await box.getByRole("button", { name: "All findings" }).click();
+      await expect(page.getByRole("dialog", { name: "Findings" })).toBeVisible();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${SHOTS}/findings-${w}-${theme}.png` });
+      // Keys: move down, open the detail, start a dismissal.
+      await page.getByRole("listbox", { name: "Findings" }).focus();
+      await page.keyboard.press("j");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("d");
+      await expect(page.getByLabel("Why dismiss this finding")).toBeFocused();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${SHOTS}/findings-dismiss-${w}-${theme}.png` });
     });
     test(`summary sheet ${w} ${theme}`, async ({ page }) => {
       await open(page, "/captain", w, h, theme, REAL_ON);

@@ -19,6 +19,7 @@ import type { AutonomyVerdict } from "../autonomy/policy.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
+import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
@@ -189,6 +190,16 @@ export class AdminService {
         return (
           (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
         );
+      }
+      // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
+      if (FINDINGS_TOOL_COMMANDS.has(spec.command)) {
+        const checked = commands[spec.command].input.safeParse(input);
+        if (!checked.success) {
+          const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+          return error(`Invalid input for ${spec.command}.\n${details.join("\n")}`);
+        }
+        const done = await this.execute(spec.command, input, metaFor(caller.agent, why, caller.task));
+        return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
       }
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);

@@ -1,4 +1,5 @@
 import type { CaptainChore } from "@majhi/shared";
+import { runFollowUps } from "../findings/followups.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
@@ -400,6 +401,14 @@ export function createChores(
           },
         });
       }
+    },
+
+    async followups(run) {
+      await runFollowUps(run, {
+        ports: ports.followUps,
+        findings: ports.findings,
+        askLane: (org, text) => ports.askLane(org, text),
+      });
     },
 
     async stuck(run) {

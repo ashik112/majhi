@@ -21,6 +21,7 @@ export const CaptainChoreSchema = z.enum([
   "triage",
   "cleanup",
   "stuck",
+  "followups",
 ]);
 export type CaptainChore = z.infer<typeof CaptainChoreSchema>;
 
@@ -33,6 +34,7 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   triage: "Task triage",
   cleanup: "Cleanup",
   stuck: "Stuck tasks",
+  followups: "Follow-ups",
 };
 
 /** Who caused an event. The captain's own events never start an upkeep run. */

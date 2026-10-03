@@ -498,6 +498,8 @@ export const EventTopicSchema = z.enum([
   "autonomy",
   /** The captain per workspace (5.18): its status, log and runs. */
   "captain",
+  /** Findings (5.18): `findings.list`. */
+  "findings",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */
