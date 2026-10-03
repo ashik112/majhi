@@ -58,6 +58,7 @@ export function capText(use: CapUse): string {
   if (use.cap?.tokens !== undefined)
     parts.push(`${formatTokens(use.used.tokens)} of ${formatTokens(use.cap.tokens)} tokens`);
   if (parts.length === 0) parts.push(formatMoney(use.used.cost), `${formatTokens(use.used.tokens)} tokens`);
+  if (use.changed === true) parts.push("cap changed during the day");
   return parts.join(" · ");
 }
 

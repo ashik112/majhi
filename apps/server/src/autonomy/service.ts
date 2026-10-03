@@ -18,6 +18,7 @@ import {
   type AutonomyStatus,
   type AutonomySummary,
   type AutonomyWaiting,
+  type Budget,
   type CapUse,
   type CommandMeta,
   type CommandName,
@@ -50,7 +51,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
+import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
 import { type AnswerableCard, answerableText, type BacklogTask, backlogOrder } from "./digest.ts";
 import {
@@ -297,6 +298,7 @@ export class AutonomyService {
    * the driver's heartbeat and the daily summary are due here.
    */
   async sweepNow(): Promise<void> {
+    await this.noteCaps();
     const { mode } = this.repo.state();
     if (mode !== "off") await this.refreshHolds();
     if (mode === "stopping") await this.maybeFinishStop();
@@ -1138,6 +1140,7 @@ export class AutonomyService {
       { autonomy: toFile(next, patch) },
       { command: change.command, meta: change.meta, summary: describePatch(patch, sections) },
     );
+    await this.noteCaps();
     await this.refreshHolds();
     await this.liftCaps();
     this.deps.events.emit(["autonomy"]);
@@ -1523,12 +1526,14 @@ export class AutonomyService {
     const settings = (await this.deps.config.settings()).autonomy;
     const tz = zoneOr(settings.tz);
     const now = this.now();
-    const day = localDay(now, tz);
-    if (this.repo.hasSummary(day)) return undefined;
-    const due = summaryDue(day, settings.summary_at, tz);
+    const today = localDay(now, tz);
+    const due = summaryDue(today, settings.summary_at, tz);
     if (now.getTime() < due.getTime()) return undefined;
-    const to = due.toISOString();
-    const from = new Date(due.getTime() - DAY_MS).toISOString();
+    // Made today, about yesterday: the day the caps and the spend belong to.
+    const day = addDays(today, -1);
+    if (this.repo.hasSummary(day)) return undefined;
+    const from = dayStart(day, tz).toISOString();
+    const to = dayStart(today, tz).toISOString();
     const state = this.repo.state();
     const wasOn =
       (state.mode !== "off" && (state.since === undefined || state.since <= to)) ||
@@ -1541,7 +1546,16 @@ export class AutonomyService {
       const t = this.deps.store.tasks.get(e.task);
       if (t !== undefined) tasks.set(e.task, { title: t.title, ...orgOf(t) });
     }
-    const spend = spendOf(this.repo.spendRows(from, to, this.spendChats()), settings, { day, end: to }, tz);
+    // The caps that applied that day, not today's. A day nothing noted (before majhi kept them) has none.
+    const noted = this.repo.dayCaps(day);
+    const caps = {
+      ...(noted?.caps.day === undefined ? {} : { day: noted.caps.day }),
+      orgs: Object.fromEntries(Object.entries(noted?.caps.orgs ?? {}).map(([org, cap]) => [org, { cap }])),
+    };
+    const spend = withChanged(
+      spendOf(this.repo.spendRows(from, to, this.spendChats()), caps, { day, end: to }, tz),
+      noted?.changed ?? [],
+    );
     const summary = buildSummary({
       day,
       from,
@@ -1558,6 +1572,21 @@ export class AutonomyService {
     this.event({ kind: "summary", text: line });
     this.deps.notify?.(summary, line);
     return summary;
+  }
+
+  /** Notes today's caps, so the summary of today compares against what applied. Never throws. */
+  private async noteCaps(): Promise<void> {
+    try {
+      const settings = (await this.deps.config.settings()).autonomy;
+      const orgs: Record<string, Budget> = {};
+      for (const [org, o] of Object.entries(settings.orgs)) if (o.cap !== undefined) orgs[org] = o.cap;
+      this.repo.noteCaps(localDay(this.now(), zoneOr(settings.tz)), {
+        ...(settings.day === undefined ? {} : { day: settings.day }),
+        orgs,
+      });
+    } catch {
+      // The database closed under a shutdown, or the settings do not read: the next sweep notes them.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1849,8 +1878,6 @@ export function zoneOr(tz: string | undefined): string {
   return tz !== undefined && validZone(tz) ? tz : defaultTimeZone();
 }
 
-const DAY_MS = 24 * 60 * 60_000;
-
 /** When the day's summary is due: `HH:MM` on that local day. */
 export function summaryDue(day: string, clock: string, tz: string): Date {
   const [h = 0, m = 0] = clock.split(":").map(Number);
@@ -1868,4 +1895,14 @@ function fail(text: string): ToolResult {
 function invalid(command: string, error: z.ZodError): ToolResult {
   const details = error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
   return fail(`Invalid input for ${command}.\n${details.join("\n")}`);
+}
+
+/** Marks the caps that moved during the day: `day` for the day cap, else the org. */
+function withChanged(spend: AutonomySpend, changed: readonly string[]): AutonomySpend {
+  if (changed.length === 0) return spend;
+  return {
+    ...spend,
+    total: changed.includes("day") ? { ...spend.total, changed: true } : spend.total,
+    orgs: spend.orgs.map((o) => (changed.includes(o.org) ? { ...o, changed: true } : o)),
+  };
 }

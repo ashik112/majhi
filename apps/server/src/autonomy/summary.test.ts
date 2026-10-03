@@ -2,6 +2,7 @@ import type { AutonomyEvent, AutonomySummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { Harness } from "../testing/harness.ts";
+import { UsageRepo } from "../usage/repo.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 
 describe("buildSummary", () => {
@@ -125,10 +126,11 @@ describe("the daily summary", () => {
     expect(await autonomy.dailySummary()).toBe(undefined);
     now = new Date("2026-10-02T08:00:30.000Z");
     const made = (await autonomy.dailySummary()) as AutonomySummary;
+    // Made on the 2nd about the 1st: the day it covers, midnight to midnight.
     expect(made).toMatchObject({
-      day: "2026-10-02",
-      from: "2026-10-01T08:00:00.000Z",
-      to: "2026-10-02T08:00:00.000Z",
+      day: "2026-10-01",
+      from: "2026-10-01T00:00:00.000Z",
+      to: "2026-10-02T00:00:00.000Z",
     });
     expect(await autonomy.dailySummary()).toBe(undefined);
     expect((await h.cmd("autonomy.status")).body.summary).toEqual(made);
@@ -142,6 +144,68 @@ describe("the daily summary", () => {
     expect(summaries).toHaveLength(1);
     // Said in the lane of each workspace set to Runs it.
     const lines = (await w.items(lane)).flatMap((i) => (i.type === "system" ? [i.text] : []));
-    expect(lines.filter((l) => l.startsWith("Daily summary for 2026-10-02"))).toHaveLength(1);
+    expect(lines.filter((l) => l.startsWith("Daily summary for 2026-10-01"))).toHaveLength(1);
+  });
+
+  it("compares the day's spend against the cap that applied that day, and says when it moved", async () => {
+    let now = new Date("2026-10-01T10:00:00.000Z");
+    w = await bossWorld({ real: false, runClock: () => now });
+    const { h } = w;
+    const configure = async (patch: object) =>
+      expect((await h.cmd("autonomy.configure", patch)).status).toBe(200);
+    await configure({
+      tz: "UTC",
+      summary_at: "08:00",
+      day: { cost: 200 },
+      orgs: { acme: { level: "runs" } },
+    });
+    expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
+    const autonomy = h.majhi.services.autonomy;
+    const lane = (await autonomy.laneChat("acme")) ?? "";
+    const turns = new UsageRepo(h.majhi.services.store.raw);
+    const spend = (at: string, cost: number) =>
+      turns.insert({
+        at,
+        task: lane,
+        agent: "boss",
+        account: "claude-acme",
+        tool: "claude",
+        auth: "login",
+        org: "acme",
+        project: null,
+        runId: null,
+        model: "sonnet",
+        inputTokens: 1000,
+        outputTokens: 100,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        costUsd: cost,
+        costSource: "reported",
+        estimated: true,
+      });
+    spend("2026-10-01T12:00:00.000Z", 80.56);
+
+    // The owner lowers the cap early the next morning, before the summary of the 1st is made.
+    now = new Date("2026-10-02T05:04:00.000Z");
+    await configure({ day: { cost: 50 } });
+    now = new Date("2026-10-02T08:00:30.000Z");
+    const first = (await autonomy.dailySummary()) as AutonomySummary;
+    expect(first.day).toBe("2026-10-01");
+    expect(first.spent.total).toMatchObject({ used: { cost: 80.56 }, cap: { cost: 200 }, reached: false });
+    expect(first.spent.total.changed).toBeUndefined();
+    expect(summaryLine(first)).toBe("Daily summary for 2026-10-01: shipped 0, spent $80.56 of $200.00.");
+
+    // On the 2nd the cap moves again during the day: the summary says so.
+    spend("2026-10-02T09:00:00.000Z", 10);
+    now = new Date("2026-10-02T20:00:00.000Z");
+    await configure({ day: { cost: 30 } });
+    now = new Date("2026-10-03T08:00:30.000Z");
+    const second = (await autonomy.dailySummary()) as AutonomySummary;
+    expect(second.day).toBe("2026-10-02");
+    expect(second.spent.total).toMatchObject({ used: { cost: 10 }, cap: { cost: 30 }, changed: true });
+    expect(summaryLine(second)).toBe(
+      "Daily summary for 2026-10-02: shipped 0, spent $10.00 (the cap changed during the day, to $30.00).",
+    );
   });
 });

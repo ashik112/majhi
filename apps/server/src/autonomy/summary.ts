@@ -90,7 +90,14 @@ export function buildSummary(input: SummaryInput): AutonomySummary {
 
 /** One line for the chat, the notification and the feed. */
 export function summaryLine(s: AutonomySummary): string {
-  const spent = `$${s.spent.total.used.cost.toFixed(2)}${s.spent.total.cap === undefined ? "" : ` of ${capText(s.spent.total.cap)}`}`;
+  const { total } = s.spent;
+  const cap =
+    total.cap === undefined
+      ? ""
+      : total.changed === true
+        ? ` (the cap changed during the day, to ${capText(total.cap)})`
+        : ` of ${capText(total.cap)}`;
+  const spent = `$${total.used.cost.toFixed(2)}${cap}`;
   const parts = [`shipped ${s.shipped.length}`, `spent ${spent}`];
   if (s.unsure.length > 0) parts.push(`unsure about ${s.unsure.length}`);
   if (s.waiting.length > 0) parts.push(`${s.waiting.length} waiting for you`);

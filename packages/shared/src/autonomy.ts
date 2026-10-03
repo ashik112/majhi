@@ -31,6 +31,8 @@ export const CapUseSchema = z.object({
   percent: z.number().nonnegative(),
   /** At or over the cap: no new work starts in this scope today. */
   reached: z.boolean(),
+  /** In a daily summary: the cap moved during the day it covers, and `cap` is the last one. */
+  changed: z.literal(true).optional(),
 });
 export type CapUse = z.infer<typeof CapUseSchema>;
 
@@ -185,7 +187,10 @@ export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
 
 /** The daily summary: what autonomous mode shipped, what it spent, what it is unsure about. */
 export const AutonomySummarySchema = z.object({
-  /** The day it covers, `YYYY-MM-DD` in the settings' zone, and the span, UTC ISO. */
+  /**
+   * The day it covers, `YYYY-MM-DD` in the settings' zone: the day before the one it was made on.
+   * The span is that day, midnight to midnight, UTC ISO.
+   */
   day: z.string(),
   from: z.string(),
   to: z.string(),

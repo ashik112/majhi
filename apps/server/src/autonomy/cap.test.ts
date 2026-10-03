@@ -1,0 +1,108 @@
+import type { AutonomyStatus, Task } from "@majhi/shared";
+import { afterEach, describe, expect, it } from "vitest";
+import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import type { FakeSession, Turn } from "../testing/fakeSession.ts";
+import { CAP_MARGIN } from "./spend.ts";
+
+/**
+ * The day cap is a hard stop (PRV-74, rule 6): no turn starts once it is reached, and a turn that
+ * runs long stops at a tool call once the day's spend, with what it spent so far, passed the cap by
+ * more than the margin. The agent here is the in-memory fake: it spends no tokens, it only reports a
+ * running cost that grows with each tool call, like claude-agent-acp does.
+ */
+
+let w: BossWorld | undefined;
+afterEach(async () => {
+  await w?.cleanup();
+  w = undefined;
+});
+
+const CAP = 1;
+/** Dollars each tool call adds to the running cost. */
+const STEP = 0.02;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** A long turn: a tool call and a higher running cost every few ms, until it is cancelled. Reports its cost at the end. */
+async function spender(turn: Turn, spent: { usd: number }): Promise<"end_turn"> {
+  let cancelled = false;
+  void turn.untilCancelled().then(() => {
+    cancelled = true;
+  });
+  let cost = 0;
+  for (let i = 0; i < 2000 && !cancelled; i++) {
+    cost = Math.round((cost + STEP) * 100) / 100;
+    turn.emit({ type: "usage", used: 10_000, size: 200_000, cost: { amount: cost, currency: "USD" } });
+    turn.emit({ type: "tool", toolCallId: `t${i}`, title: "Edit a file", kind: "edit", status: "completed" });
+    await pause(3);
+  }
+  spent.usd = cost;
+  turn.emit({
+    type: "turn",
+    usage: {
+      inputTokens: 1000,
+      outputTokens: 100,
+      reasoningTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reported: true,
+      costUsd: cost,
+    },
+  });
+  return "end_turn";
+}
+
+describe("the day cap of autonomous mode", () => {
+  it("stops a running turn once the cap is passed by more than the margin, and starts nothing after", async () => {
+    w = await bossWorld({ real: false });
+    const { h } = w;
+    const sessions: FakeSession[] = [];
+    const spent = { usd: 0 };
+    h.runtime.onSession = (session) => {
+      sessions.push(session);
+      session.script = async (turn) => {
+        if (sessions.indexOf(session) === 0 && session.prompts.length === 1) return spender(turn, spent);
+        turn.emit({ type: "text", messageId: `m${session.prompts.length}`, text: "ok" });
+        return "end_turn";
+      };
+    };
+    const configured = await h.cmd("autonomy.configure", {
+      day: { cost: CAP },
+      orgs: { acme: { level: "runs" } },
+    });
+    expect(configured.status).toBe(200);
+    expect((await h.cmd("autonomy.start")).status).toBe(200);
+    const chat = await h.majhi.services.autonomy.laneChat("acme");
+    if (chat === undefined) throw new Error("no lane for Acme");
+    const made = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
+      text: "fix the api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+      reason: "the top task of the backlog",
+    });
+    expect(made.isError).toBe(false);
+    const id = (JSON.parse(made.text) as { id: string }).id;
+    const task = (): Task | undefined => h.majhi.services.store.tasks.get(id);
+
+    await w.until(() => task()?.status === "paused", "the cap to stop the turn");
+    await h.majhi.services.runs.idle();
+    await h.majhi.services.usageRecorder.flush();
+    await h.majhi.services.autonomy.refreshHolds();
+    expect(task()?.pausedReason).toBe("limit");
+    expect(h.majhi.services.autonomy.repo.task(id)?.held).toBe("limit");
+
+    const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    const used = status.spend.total.used.cost;
+    // Past the cap, and over it by no more than the margin and the tool call that crossed it.
+    expect(used).toBeGreaterThan(CAP);
+    expect(used).toBeLessThanOrEqual(CAP * (1 + CAP_MARGIN) + 2 * STEP + 1e-9);
+    expect(spent.usd).toBe(used);
+    expect(status.holds.map((x) => x.kind)).toContain("day-cap");
+
+    // Nothing more is sent: the gate holds every new turn.
+    const prompts = sessions.reduce((n, s) => n + s.prompts.length, 0);
+    h.majhi.services.runs.notify(id, task()?.team[0] ?? "", "one more thing");
+    await pause(100);
+    await h.majhi.services.runs.idle();
+    expect(sessions.reduce((n, s) => n + s.prompts.length, 0)).toBe(prompts);
+  });
+});

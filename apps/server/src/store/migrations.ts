@@ -706,6 +706,27 @@ CREATE TABLE captain_presence (
 );
 `,
   },
+  {
+    // The daily summary names the day it covers and compares against the caps of that day.
+    // `autonomy_day_caps` keeps, per local day, the caps last seen (JSON: the day cap and each
+    // workspace's) and the ones that moved during it (`day` or an org id). Summaries were keyed by
+    // the day they were made on, which is the day after the one they cover: they move back a day.
+    id: 117,
+    name: "autonomy day caps",
+    sql: `
+CREATE TABLE autonomy_day_caps (
+  day TEXT PRIMARY KEY,
+  caps TEXT NOT NULL,
+  changed TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE autonomy_summaries_moved AS
+  SELECT date(day, '-1 day') AS day, at, json_set(summary, '$.day', date(day, '-1 day')) AS summary
+  FROM autonomy_summaries;
+DELETE FROM autonomy_summaries;
+INSERT INTO autonomy_summaries (day, at, summary) SELECT day, at, summary FROM autonomy_summaries_moved;
+DROP TABLE autonomy_summaries_moved;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

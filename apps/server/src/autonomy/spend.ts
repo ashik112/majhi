@@ -49,7 +49,7 @@ function money(n: number): number {
 /** Today's spend: the total against the day cap, and every org with a cap or with spend today. */
 export function spendOf(
   rows: readonly OrgSpendRow[],
-  settings: Pick<AutonomySettings, "day" | "orgs">,
+  settings: { day?: Budget | undefined; orgs: Readonly<Record<string, { cap?: Budget | undefined }>> },
   window: { day: string; end: string },
   tz: string,
 ): AutonomySpend {
