@@ -9,6 +9,8 @@
  * - `ls-remote` names git's own upload-pack: git keeps the first `remote.<name>.uploadpack` it reads,
  *   so only the command's option beats the repo's. `clone` reads no repo's config.
  * - A push: `pushGuard`.
+ * - Commands that read the work tree (`status`, `checkout`, `worktree add`): the filter drivers the
+ *   repo's own config names are off (`filtersOff`).
  */
 import type { RunFn } from "./ssh.ts";
 
@@ -39,10 +41,75 @@ const PUSH_KEYS =
 const HELPER = /^credential\.(.+\.)?helper$/;
 const REWRITE = /^url\..+\.(insteadof|pushinsteadof)$/;
 
+/** `git config` arguments that list every filter command, read without running anything. */
+export const LIST_FILTERS: readonly string[] = [
+  "config",
+  "-z",
+  "--show-scope",
+  "--get-regexp",
+  "^filter\\..+\\.(clean|smudge|process)$",
+];
+
 interface ConfigEntry {
   scope: string;
   key: string;
   value: string | undefined;
+}
+
+/** What `git config -z --show-scope --get-regexp` printed, entry by entry. */
+function parseConfig(listed: string): ConfigEntry[] {
+  const items = listed.split("\0");
+  const entries: ConfigEntry[] = [];
+  for (let i = 0; i + 1 < items.length; i += 2) {
+    const [scope = "", item = ""] = [items[i], items[i + 1]];
+    const at = item.indexOf("\n");
+    entries.push(
+      at === -1
+        ? { scope, key: item, value: undefined }
+        : { scope, key: item.slice(0, at), value: item.slice(at + 1) },
+    );
+  }
+  return entries;
+}
+
+/** The repo's own config: its `.git/config`, its worktree config and what they include. */
+const fromRepo = (e: ConfigEntry) => e.scope === "local" || e.scope === "worktree";
+
+/**
+ * Settings that turn off every filter driver the repo's own config names, from what `LIST_FILTERS`
+ * printed, as the server does (apps/server/src/git/git.ts `repoCommands`): a filter then converts
+ * nothing and is not required. The owner's global and system drivers (git-lfs, say) stay on.
+ */
+export function filtersOff(listed: string): [string, string][] {
+  const off = new Map<string, string>();
+  for (const { key } of parseConfig(listed).filter(fromRepo)) {
+    const driver = key.slice(0, key.lastIndexOf("."));
+    for (const name of ["clean", "smudge", "process"]) off.set(`${driver}.${name}`, "");
+    off.set(`${driver}.required`, "false");
+  }
+  return [...off];
+}
+
+/**
+ * Adds settings in the command-line scope, after any already there, so they win over the repo's.
+ * Through the environment, not `-c`, which cuts a key at its first `=`: a driver's name may hold one.
+ */
+export function withConfig<E extends Record<string, string | undefined>>(
+  env: E,
+  settings: readonly (readonly [string, string])[],
+): E {
+  if (settings.length === 0) return env;
+  const had = Number(env.GIT_CONFIG_COUNT ?? 0);
+  const start = Number.isInteger(had) && had > 0 ? had : 0;
+  const out: Record<string, string | undefined> = {
+    ...env,
+    GIT_CONFIG_COUNT: String(start + settings.length),
+  };
+  settings.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${start + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${start + i}`] = value;
+  });
+  return out as E;
 }
 
 export interface PushGuard {
@@ -76,18 +143,7 @@ export async function pushGuard(
     env,
     timeoutMs: 20_000,
   });
-  const listed = read.code === 0 ? read.stdout.split("\0") : [];
-  const entries: ConfigEntry[] = [];
-  for (let i = 0; i + 1 < listed.length; i += 2) {
-    const [scope = "", item = ""] = [listed[i], listed[i + 1]];
-    const at = item.indexOf("\n");
-    entries.push(
-      at === -1
-        ? { scope, key: item, value: undefined }
-        : { scope, key: item.slice(0, at), value: item.slice(at + 1) },
-    );
-  }
-  const fromRepo = (e: ConfigEntry) => e.scope === "local" || e.scope === "worktree";
+  const entries = read.code === 0 ? parseConfig(read.stdout) : [];
   const planted = entries.filter(fromRepo);
   const owners = entries.filter((e) => !fromRepo(e));
   if (planted.some((e) => REWRITE.test(e.key) && e.value !== undefined && url.startsWith(e.value))) {

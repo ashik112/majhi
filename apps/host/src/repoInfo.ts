@@ -1,4 +1,5 @@
 import { type DockerRuntime, DockerRuntimeSchema } from "@majhi/shared";
+import { filtersOff, GUARD_CONFIG, GUARD_ENV, LIST_FILTERS, withConfig } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -18,13 +19,35 @@ export interface GitContext {
   exec: ExecFn;
 }
 
+/**
+ * Runs git in the majhi checkout with the helper's guards (gitGuard.ts). Its `.git/config` is shared
+ * with every task worktree of majhi, so an agent outside a container can plant a command there.
+ * `readsFiles`: the command reads the work tree's files, so the filter drivers that config names
+ * are turned off too.
+ */
+async function guardedGit(
+  { git, repo, env, exec }: GitContext,
+  args: string[],
+  readsFiles = false,
+): Promise<string> {
+  const opts = { cwd: repo, env: { ...env, ...GUARD_ENV }, timeout: GIT_TIMEOUT_MS };
+  if (readsFiles) {
+    const listed = await exec(git, [...GUARD_CONFIG, ...LIST_FILTERS], opts).then(
+      ({ stdout }) => stdout,
+      () => "",
+    );
+    opts.env = withConfig(opts.env, filtersOff(listed));
+  }
+  return (await exec(git, [...GUARD_CONFIG, ...args], opts)).stdout;
+}
+
 /** HEAD and dirtiness of the majhi checkout. Undefined when git fails or the folder is not a checkout. */
-export async function readRepo({ git, repo, env, exec }: GitContext): Promise<RepoState | undefined> {
+export async function readRepo(ctx: GitContext): Promise<RepoState | undefined> {
   try {
-    const opts = { cwd: repo, env, timeout: GIT_TIMEOUT_MS };
-    const head = (await exec(git, ["rev-parse", "HEAD"], opts)).stdout.trim();
+    const head = (await guardedGit(ctx, ["rev-parse", "HEAD"])).trim();
     if (!HEAD.test(head)) return undefined;
-    const status = (await exec(git, ["status", "--porcelain"], opts)).stdout;
+    // A submodule's own config could name filters too; majhi has none.
+    const status = await guardedGit(ctx, ["status", "--porcelain", "--ignore-submodules=all"], true);
     return { commit: head, dirty: status.trim() !== "" };
   } catch {
     return undefined;
@@ -35,11 +58,11 @@ export async function readRepo({ git, repo, env, exec }: GitContext): Promise<Re
 export async function commitSubjects(ctx: GitContext, from: string): Promise<string[]> {
   if (!HEAD.test(from)) return [];
   try {
-    const { stdout } = await ctx.exec(ctx.git, ["log", "--format=%s", `${from}..HEAD`, "-n", "20"], {
-      cwd: ctx.repo,
-      env: ctx.env,
-      timeout: GIT_TIMEOUT_MS,
-    });
+    // No signature check either: a planted `log.showSignature` would run the repo's `gpg.program`.
+    const stdout = await guardedGit(ctx, [
+      ...["log", "--no-ext-diff", "--no-textconv", "--no-show-signature"],
+      ...["--format=%s", `${from}..HEAD`, "-n", "20"],
+    ]);
     return stdout
       .split("\n")
       .map((l) => l.trim())
