@@ -20,7 +20,7 @@ export interface LimitWorld {
   orgs: Readonly<Record<string, OrgCredentials>>;
   accounts: Readonly<Record<string, { org: string; key?: string | undefined }>>;
   agents: Readonly<Record<string, LimitAgent>>;
-  /** The Mac's git logins per host (`git.logins`): whose a gh or glab login is. */
+  /** This computer's git logins per host (`git.logins`): whose a gh or glab login is. */
   logins: readonly { host: string; via: string; account: string; alias?: string | undefined }[];
 }
 

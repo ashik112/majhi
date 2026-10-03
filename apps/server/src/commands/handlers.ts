@@ -56,7 +56,7 @@ import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
 
-/** Loading keys and asking the Keychain can take a few seconds. */
+/** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
 
 /** `gh auth token` is quick, but the helper may be busy. */
@@ -233,7 +233,7 @@ export function createHandlers({
 
     "orgs.useSavedLogin": async (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
-        throw new UserError("Only the owner can use the Mac's saved login. Ask them to click it.", 409);
+        throw new UserError("Only the owner can use this computer's saved login. Ask them to click it.", 409);
       }
       return useSavedLogin(
         {

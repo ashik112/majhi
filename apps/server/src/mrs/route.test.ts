@@ -130,7 +130,7 @@ describe("chooseRoute with an org git account", () => {
   });
 });
 
-describe("https route through the Mac", () => {
+describe("https route through the host helper", () => {
   const acme = { via: "ssh", account: "acme-dev" } as const;
 
   it("is used for the org's account when no key logs in as it", () => {

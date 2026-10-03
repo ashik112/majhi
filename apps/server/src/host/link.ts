@@ -126,7 +126,7 @@ export class HostLink {
     if (this.info !== undefined) this.info = { ...this.info, ssh };
   }
 
-  /** Keeps a fresh Keychain status until the next poll brings the same. */
+  /** Keeps a fresh Keychain or keyring status until the next poll brings the same. */
   noteSecretsKey(secretsKey: SecretsKeyBackup): void {
     if (this.info !== undefined) this.info = { ...this.info, secretsKey };
   }

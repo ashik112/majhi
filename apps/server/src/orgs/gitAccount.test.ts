@@ -140,8 +140,8 @@ describe("useSavedLogin", () => {
     expect(saved).toEqual([]);
   });
 
-  it("saves nothing when the Mac has no saved login, or the org has no such account", async () => {
-    const none = setup(200, new Error("This Mac has no saved login for acme-dev on github.com."));
+  it("saves nothing when this computer has no saved login, or the org has no such account", async () => {
+    const none = setup(200, new Error("This computer has no saved login for acme-dev on github.com."));
     expect(
       (await useSavedLogin(none.deps, classify, { id: "acme", host: "github.com", account: "acme-dev" }))
         .saved,
@@ -278,12 +278,12 @@ describe("a pasted token", () => {
 });
 
 describe("the silent saved-login check", () => {
-  it("answers none, never an error, when the Mac has no saved login", async () => {
+  it("answers none, never an error, when this computer has no saved login", async () => {
     const probe = vi.fn();
     const out = await checkSavedLogin(
       {
         readSecret: async () => {
-          throw new Error("This Mac has no saved login for sample-user on gitlab.com.");
+          throw new Error("This computer has no saved login for sample-user on gitlab.com.");
         },
         probe,
       },

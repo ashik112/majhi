@@ -1,9 +1,4 @@
-import {
-  type E2eRun,
-  type E2eRunResult,
-  type E2eStatus,
-  type HostMethod,
-} from "@majhi/shared";
+import type { E2eRun, E2eRunResult, E2eStatus, HostMethod } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { HostJobError, HostOfflineError } from "../host/link.ts";
 import type { E2eBreak, E2eRepo } from "./repo.ts";
@@ -20,7 +15,7 @@ const MAX_MERGES_LISTED = 10;
 export interface E2eProject {
   id: string;
   org: string;
-  /** Absolute path of the checkout, the same on the Mac and in the container. */
+  /** Absolute path of the checkout, the same on this computer and in the container. */
   path: string;
   base: string | undefined;
   exists: boolean;

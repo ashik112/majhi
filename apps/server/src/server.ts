@@ -31,7 +31,7 @@ export interface Majhi {
   close(): Promise<void>;
 }
 
-/** Loading keys runs ssh-add a few times on the host; allow for a slow Keychain. */
+/** Loading keys runs ssh-add a few times on the host; allow for a slow Keychain or keyring. */
 const SSH_RELOAD_TIMEOUT_MS = 40_000;
 
 /** Wires the config, accounts, agents, live channels, the host helper link and the commands together. */

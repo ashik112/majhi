@@ -25,11 +25,11 @@ export interface GitStatusDeps {
   >;
   /** Host names of the remotes of the org's projects, aliases resolved. */
   usedHosts: (id: string) => Promise<readonly string[]>;
-  /** This Mac's logins, or undefined when the host helper is not connected. */
+  /** This computer's logins, or undefined when the host helper is not connected. */
   logins: () => Promise<{ hosts: readonly GitHostLogins[]; checkedAt: string } | undefined>;
   /** Whether a saved token works, and as whom. */
   checkToken: (host: string, kind: GitHost, account: string, ref: string) => Promise<TokenCheck>;
-  /** Silent: whether the Mac saved a login for the account, and if the host takes it as a token. */
+  /** Silent: whether this computer saved a login for the account, and if the host takes it as a token. */
   savedLogin: (host: string, kind: GitHost, account: string) => Promise<"none" | "login" | "token">;
   classify: (host: string) => GitHost;
 }

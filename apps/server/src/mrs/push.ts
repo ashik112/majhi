@@ -19,7 +19,7 @@ export interface PushRequest {
    */
   url?: string | undefined;
   /**
-   * Pushes `url` from the owner's Mac instead, where its saved https login lives. Set only for an
+   * Pushes `url` from the owner's computer instead, where its saved https login lives. Set only for an
    * https route; the SSH retry below does not apply to it.
    */
   viaHost?: ((url: string, branch: string) => Promise<void>) | undefined;
@@ -82,7 +82,7 @@ export async function pushBranch(req: PushRequest): Promise<void> {
 /**
  * True when the remote's branch already is the local tip, so a push would change nothing. Read with
  * `ls-remote`, which writes nothing on the remote; the tracking branch is moved to the tip, as a push
- * would. False when it cannot tell (an https route through the Mac, a remote that does not answer):
+ * would. False when it cannot tell (an https route through the host helper, a remote that does not answer):
  * the caller then pushes as before.
  */
 export async function remoteHasTip(req: PushRequest): Promise<boolean> {

@@ -9,8 +9,9 @@ const DECIDE_TIMEOUT_MS = 20_000;
 const STATUS_TIMEOUT_MS = 3_000;
 
 /**
- * Laya: natively on the owner's Mac through the host helper, else in the `laya` Docker service
- * (PyTorch CPU) on Linux, Windows and Intel Macs, or when the native one is not set up (5.12).
+ * Laya: natively on a Mac with Apple silicon through the host helper, else in the `laya` Docker
+ * service (PyTorch, on the CPU or an NVIDIA GPU) on Linux, WSL2 and Intel Macs, or when the native
+ * one is not set up (5.12).
  */
 export class LayaProvider implements DecisionProvider {
   readonly id = "laya" as const;

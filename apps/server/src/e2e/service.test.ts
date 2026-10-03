@@ -263,7 +263,7 @@ describe("background e2e", () => {
   });
 
   it("puts a run back in the queue when the helper is still busy with an earlier one", async () => {
-    w.answers.push(new HostJobError("An e2e run is already in progress on this Mac."), green);
+    w.answers.push(new HostJobError("An e2e run is already in progress on this computer."), green);
     await w.service.onMerged({ project: "majhi", task: "PRV-1", into: "main" });
     await settle();
     expect(w.repo.getRun("run-1")?.status).toBe("queued");

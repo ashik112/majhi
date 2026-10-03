@@ -76,7 +76,7 @@ describe("org git status", () => {
 
   it("never turns a failed saved-login check into an error", async () => {
     const savedLogin = vi.fn(async () => {
-      throw new Error("This Mac has no saved login for sample-user on gitlab.com.");
+      throw new Error("This computer has no saved login for sample-user on gitlab.com.");
     });
     const out = await gitStatus(setup({ savedLogin }), "acme");
     expect(savedLogin).toHaveBeenCalledOnce();

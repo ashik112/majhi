@@ -88,7 +88,7 @@ export interface MrDeps {
   hosts: Record<MrHost, MrHostClient>;
   /** Asks the host helper to load the owner's SSH keys again, after a push or fetch they lacked. */
   reloadKeys?: () => Promise<boolean>;
-  /** Pushes https remotes from the Mac with its saved login. Without it only SSH routes push. */
+  /** Pushes https remotes from the computer with its saved login. Without it only SSH routes push. */
   hostGit?: HostGit;
   /**
    * Reads a token reference, refreshing a signed-in GitLab or Bitbucket token that is about to
@@ -107,7 +107,7 @@ interface RepoContext {
   remote: string;
   remoteConfig: RemoteConfig | undefined;
   pushUrl: string | undefined;
-  /** True when `pushUrl` is https and the Mac pushes it. */
+  /** True when `pushUrl` is https and the computer pushes it. */
   viaHost: boolean;
   target: Omit<MrTarget, "token">;
   client: MrHostClient;
@@ -904,7 +904,7 @@ export class MrService {
       const fix = { page: "projects", project: project.id } as const;
       if (routed.route.state === "org-missing") {
         throw new FixableError(
-          `${project.org} uses the git account ${routed.route.account}, but no SSH key on this Mac logs in as it. Fix it in the org's Git accounts.`,
+          `${project.org} uses the git account ${routed.route.account}, but no SSH key on this computer logs in as it. Fix it in the org's Git accounts.`,
           { page: "orgs", org: project.org },
         );
       }
@@ -944,7 +944,7 @@ export class MrService {
     };
   }
 
-  /** The SSH route for an https remote, from the keys the Mac's logins show. `url` is the push address when one fits. */
+  /** The SSH route for an https remote, from the keys this computer's logins show. `url` is the push address when one fits. */
   private async routeFor(
     url: string,
     explicit: string | undefined,
@@ -1013,7 +1013,7 @@ export class MrService {
       return {
         host,
         state: "https",
-        label: `Pushes over https from this Mac${route.account === undefined ? "" : ` as ${route.account}`}, with its saved login`,
+        label: `Pushes over https from this computer${route.account === undefined ? "" : ` as ${route.account}`}, with its saved login`,
         choices,
       };
     }
@@ -1065,7 +1065,7 @@ export class MrService {
    * What pushing the local `branch` would do to the remote's: `behind` when the remote has commits
    * the local one lacks (a push would need a force), `extra` the local commits the remote lacks
    * (they would go out with the push), `missing` when the push would create the branch. Reads the
-   * remote first. The Mac's https route cannot be read from here: the last fetched copy stands in,
+   * remote first. The computer's https route cannot be read from here: the last fetched copy stands in,
    * and with none the result is `missing` and `unknown`. The task's own commits are not extra:
    * those on its branch, and the merge or squash commits majhi made for it (`own.subject`).
    */
@@ -1157,7 +1157,7 @@ export class MrService {
         if (target.viaHost) {
           outcome = {
             ok: false,
-            reason: `${repo.project} pushes with the Mac's saved login, which majhi cannot read from here. Update ${into} from ${target.remote} yourself in the project.`,
+            reason: `${repo.project} pushes with this computer's saved login, which majhi cannot read from here. Update ${into} from ${target.remote} yourself in the project.`,
           };
         } else if (!(await this.fetchTracking(repo.source, target, into))) {
           outcome = {
@@ -1562,7 +1562,7 @@ interface PushTarget {
   org: string;
   remote: string;
   pushUrl: string | undefined;
-  /** True when `pushUrl` is https and the Mac pushes it with its saved login. */
+  /** True when `pushUrl` is https and the computer pushes it with its saved login. */
   viaHost: boolean;
 }
 

@@ -15,7 +15,7 @@ const ExportRecordSchema = z.object({
 export type KeyExportRecord = z.infer<typeof ExportRecordSchema>;
 
 /**
- * The passphrase-protected export of the secrets key (the Keychain copy is the host helper's).
+ * The passphrase-protected export of the secrets key (the Keychain or keyring copy is the host helper's).
  * majhi cannot see where the owner keeps the file, so it remembers which key it last exported:
  * a new key needs a new export.
  */
