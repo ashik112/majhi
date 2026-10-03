@@ -1,4 +1,11 @@
-import { type AccountView, type CaptainCapAsk, type CaptainOrg, CHORE_LABEL, PRIVATE } from "@majhi/shared";
+import {
+  type AccountView,
+  type BudgetAsk,
+  type CaptainCapAsk,
+  type CaptainOrg,
+  CHORE_LABEL,
+  PRIVATE,
+} from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
@@ -8,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { useToast } from "@/components/ui/toast";
+import { BudgetAskCard } from "@/features/limits/budget-ask";
 import { useAnswerCap, useCaptainCommand, useCaptainRules } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -171,9 +179,12 @@ export function WorkspaceCard({
   dayCap,
   zone,
   asks,
+  budgetAsks,
 }: {
   /** What the captain asks about this workspace's daily caps today. */
   asks: readonly CaptainCapAsk[];
+  /** The question about this workspace's daily budget, when it ran out while work waits. */
+  budgetAsks: readonly BudgetAsk[];
   org: CaptainOrg;
   badge: string;
   color: string | undefined;
@@ -203,6 +214,9 @@ export function WorkspaceCard({
       <AuthorityTable org={org} autonomyOn={autonomyOn} />
       {asks.map((ask) => (
         <CapAskRow key={ask.chore} ask={ask} name={org.name} />
+      ))}
+      {budgetAsks.map((ask) => (
+        <BudgetAskCard key={ask.scope} ask={ask} />
       ))}
       {off.map((c) => (
         <div key={c.chore} className="flex min-w-0 items-center gap-2 text-sm">

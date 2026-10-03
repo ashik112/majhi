@@ -3,11 +3,14 @@ import { useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { AutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
+import { BudgetAskCard } from "@/features/limits/budget-ask";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainAsks, useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
@@ -35,7 +38,9 @@ export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
   const autonomy = useAutonomyStatus().data;
-  const asks = useCaptainAsks().data?.asks ?? [];
+  const asksData = useCaptainAsks().data;
+  const asks = asksData?.asks ?? [];
+  const budgetAsks = asksData?.budgets ?? [];
   const orgs = useOrgs().data ?? [];
   const accounts = useAccounts().data ?? [];
   const now = useNow(30_000);
@@ -83,6 +88,9 @@ export function CaptainView() {
             onChange={setSide}
           />
         )}
+        <Button asChild size="lg" variant="secondary">
+          <PageLink page="limits">Limits</PageLink>
+        </Button>
         <AutonomousSwitch />
       </PageHeader>
       {query.isError ? (
@@ -98,6 +106,11 @@ export function CaptainView() {
                   There is no captain yet. Choose one on the Agents page; until then nothing here runs.
                 </p>
               )}
+              {budgetAsks
+                .filter((a) => a.scope === "day")
+                .map((ask) => (
+                  <BudgetAskCard key={ask.scope} ask={ask} />
+                ))}
               {status.orgs.map((org) => {
                 const view = orgs.find((o) => o.id === org.org);
                 return (
@@ -117,6 +130,7 @@ export function CaptainView() {
                     dayCap={autonomy?.settings.day.cost}
                     zone={zone}
                     asks={asks.filter((a) => a.org === org.org)}
+                    budgetAsks={budgetAsks.filter((a) => a.scope === org.org)}
                   />
                 );
               })}

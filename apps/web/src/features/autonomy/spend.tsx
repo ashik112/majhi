@@ -107,7 +107,7 @@ export function SpendCard({ status, now }: { status: AutonomyStatus; now: number
       <CardHead title="Spend">
         <span className="text-sm text-fg-faint">today, resets {clockTime(spend.resetsAt, now)}</span>
       </CardHead>
-      <CapRow label="Day cap" use={spend.total} />
+      <CapRow label="Autonomous budget" use={spend.total} />
       {spend.orgs.length > 0 && (
         <div className="flex flex-col gap-2.5">
           {spend.orgs.map((o) => (

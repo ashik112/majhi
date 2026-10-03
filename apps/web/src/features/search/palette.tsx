@@ -197,10 +197,10 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "budgets",
-      name: "Budgets and alerts",
-      keywords: "limits spend cost tokens weekly",
-      hint: "On Health and usage",
-      run: () => go(PAGE_PATH.usage),
+      name: "Edit budgets",
+      keywords: "limits spend cost tokens daily weekly alerts floors",
+      hint: "On Limits",
+      run: () => go(PAGE_PATH.limits),
     },
     {
       id: "roots",

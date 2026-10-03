@@ -71,6 +71,30 @@ export function useAnswerCap() {
   });
 }
 
+/** Raise a budget that ran out for today only, or leave it: the answer is what still waits. */
+export function useAnswerBudget() {
+  const client = useQueryClient();
+  return useMutation<
+    CommandOutput<"captain.answerBudget">,
+    ApiRequestError,
+    CommandInput<"captain.answerBudget">
+  >({
+    mutationFn: (input) =>
+      cmd("captain.answerBudget", input, {
+        reason:
+          input.answer === "raise" ? "Owner raised a budget for today only" : "Owner left a budget as it is",
+      }),
+    onSuccess: (asks) => {
+      client.setQueryData(asksKey, asks);
+      return Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.captain }),
+        client.invalidateQueries({ queryKey: queryKeys.autonomy }),
+        client.invalidateQueries({ queryKey: queryKeys.tasks }),
+      ]);
+    },
+  });
+}
+
 /** Undo one action of the captain's log. */
 export function useCaptainUndo() {
   const client = useQueryClient();

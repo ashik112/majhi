@@ -12,8 +12,7 @@ import { describeError } from "@/lib/errors";
 import { useOrgs } from "@/lib/studio-queries";
 import { SizeBadge, useExclude } from "./desk";
 import { InstructionsCard } from "./guide";
-import { LimitsCard } from "./limits";
-import { type PickDraft, pickDraft, pickPatch, SIZE_LIMIT_WORD } from "./model";
+import { type PickDraft, pickDraft, pickPatch, SIZE_LIMIT_WORD, todayLine } from "./model";
 import { CardHead } from "./sections";
 import { SpendCard } from "./spend";
 import { TaskRef } from "./task-ref";
@@ -169,6 +168,23 @@ function BacklogCard({ status }: { status: AutonomyStatus }) {
   );
 }
 
+/** Where the budgets are now: today's use in a line, and the way to the Limits screen. */
+function LimitsLinkCard({ status }: { status: AutonomyStatus }) {
+  return (
+    <Card aria-label="Limits" id="limits">
+      <CardHead title="Limits">
+        <Button asChild size="sm" variant="secondary">
+          <PageLink page="limits">Edit budgets</PageLink>
+        </Button>
+      </CardHead>
+      <p className="text-sm text-fg-muted text-pretty">
+        {todayLine(status.spend.total)}. The autonomous budget, each workspace's budget, account floors and
+        weekly budgets are all on the Limits screen.
+      </p>
+    </Card>
+  );
+}
+
 /** The Rules view: what it may pick and the backlog on the left; caps, spend and instructions on the right. */
 export function RulesView({ status, now }: { status: AutonomyStatus; now: number }) {
   return (
@@ -179,7 +195,7 @@ export function RulesView({ status, now }: { status: AutonomyStatus; now: number
           <BacklogCard status={status} />
         </div>
         <div className="flex min-w-0 flex-col gap-3">
-          <LimitsCard status={status} />
+          <LimitsLinkCard status={status} />
           <SpendCard status={status} now={now} />
           <InstructionsCard status={status} now={now} />
         </div>

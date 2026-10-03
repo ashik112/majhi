@@ -82,6 +82,7 @@ describe("store", () => {
       "attachments",
       "audit",
       "automation_runs",
+      "autonomy_budget_asks",
       "autonomy_day_caps",
       "autonomy_events",
       "autonomy_sizes",

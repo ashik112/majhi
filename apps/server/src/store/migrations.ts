@@ -777,6 +777,28 @@ CREATE TABLE captain_cap_asks (
     name: "paused by",
     sql: `ALTER TABLE tasks ADD COLUMN paused_by TEXT;`,
   },
+  {
+    // A budget (the autonomous budget, `day`, or a workspace's) ran out while work waits: the owner is
+    // asked once per budget and day whether to raise it for that day (SPEC 5.18). `state`: `pending`,
+    // `raised` (the day's budget is `raise_to`, the saved setting stays) or `left`. Budgets are JSON.
+    id: 121,
+    name: "autonomy budget asks",
+    sql: `
+CREATE TABLE autonomy_budget_asks (
+  scope TEXT NOT NULL,
+  day TEXT NOT NULL,
+  name TEXT NOT NULL,
+  cap TEXT NOT NULL,
+  raise_to TEXT NOT NULL,
+  waiting INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  answered_at TEXT,
+  PRIMARY KEY (scope, day)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

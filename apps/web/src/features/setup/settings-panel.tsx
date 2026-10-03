@@ -2,6 +2,7 @@ import type { Settings } from "@majhi/shared";
 import { useState } from "react";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PageLink } from "@/components/ui/page-link";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -170,6 +171,13 @@ export function ContextSection({ settings }: { settings: Settings }) {
             )}
           </Field>
         </div>
+        <p className="mt-3 text-sm text-fg-muted text-pretty">
+          Money limits are on the{" "}
+          <PageLink page="limits" className="underline">
+            Limits page
+          </PageLink>
+          : the autonomous budget, each workspace's budget, account floors and weekly budgets.
+        </p>
       </Section>
       <Section title="Resume" note="Runs that stopped before they finished" draft={resume}>
         <Switch

@@ -258,9 +258,10 @@ export function limitsPatch(
   settings: AutonomySettings,
   tz: string,
 ): { patch: AutonomyPatch } | { problem: string } {
-  const day = parseCap(draft.day, "Day cap");
+  const day = parseCap(draft.day, "Autonomous budget");
   if (day.problem) return { problem: day.problem };
-  if (!day.budget) return { problem: "Day cap: set dollars, tokens or both. It is always on." };
+  if (!day.budget)
+    return { problem: "Autonomous budget: set dollars, tokens or both. Autonomous needs one." };
   const window = parsePercent(draft.window, "5-hour floor");
   if (window.problem !== undefined || window.value === undefined) return { problem: window.problem ?? "" };
   const weekly = parsePercent(draft.weekly, "Weekly floor");
@@ -272,7 +273,7 @@ export function limitsPatch(
   if (!sameBudget(day.budget, settings.day)) patch.day = day.budget;
   const orgs: NonNullable<AutonomyPatch["orgs"]> = {};
   for (const [id, row] of Object.entries(draft.orgs)) {
-    const cap = parseCap(row, `Cap of ${id}`);
+    const cap = parseCap(row, `Budget of ${id}`);
     if (cap.problem) return { problem: cap.problem };
     const was = settings.orgs[id];
     if (sameBudget(cap.budget, was?.cap)) continue;
