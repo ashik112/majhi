@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
+import { FindingsBox } from "./findings";
 import { RecentLog } from "./log";
 
 // Each section shows a few whole rows; the rest open in place. The column scrolls as one.
@@ -254,12 +255,14 @@ export function NowColumn({
   now,
   onLog,
   onSummary,
+  onFindings,
 }: {
   captain: CaptainStatus;
   autonomy: AutonomyStatus | undefined;
   now: number;
   onLog: () => void;
   onSummary: (() => void) | undefined;
+  onFindings: () => void;
 }) {
   const names = (org: string | undefined) => {
     if (captain.orgs.length < 2) return undefined;
@@ -275,6 +278,7 @@ export function NowColumn({
       )}
     >
       <NeedsYou />
+      <FindingsBox orgs={captain.orgs} onOpen={onFindings} />
       {autonomy ? (
         <>
           <Running autonomy={autonomy} names={names} />
