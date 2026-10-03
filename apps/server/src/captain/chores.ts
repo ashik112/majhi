@@ -1,5 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
+import { ANSWER_MARGIN_FLOOR, loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 
@@ -191,9 +192,37 @@ export function createChores(
           });
           continue;
         }
+        // An agent that asks the same thing again and again is stuck: no answer feeds it.
+        const loop = questionLoop(run.answeredRecently(card.task, card.agent), card.text, now());
+        if (loop !== undefined) {
+          // The same loop has one key, so the cards that follow it add no second line and no second message.
+          const line = loopLine(card.agent, card.task, loop);
+          await run.act({
+            key: `question-loop:${card.task}:${card.agent}:${loop.since}`,
+            text: line,
+            reason: "Answering the same question again does not help it",
+            evidence: card.text,
+            task: card.task,
+            do: async () => {
+              await ports.flagLoop(org, card, line, nudgeText(card.task, loop));
+              return { outcome: "asked", undoNote: "A line for you and one message to the agent: nothing to undo" };
+            },
+          });
+          continue;
+        }
         // Then Laya, when it is sure.
         const laya = await ports.laya(org, card);
         const option = laya.option;
+        if (option !== undefined && laya.margin !== undefined && laya.margin < ANSWER_MARGIN_FLOOR) {
+          await run.act({
+            key,
+            text: `Left a question in ${card.task} for you: ${card.text}`,
+            reason: `Laya was only ${laya.margin.toFixed(2)} ahead, and the captain needs ${ANSWER_MARGIN_FLOOR.toFixed(2)} to answer for you`,
+            task: card.task,
+            do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
+          });
+          continue;
+        }
         if (option !== undefined) {
           const label = card.options.find((o) => o.id === option)?.label ?? option;
           await run.act({

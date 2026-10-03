@@ -106,7 +106,15 @@ export interface CaptainPorts {
   // Agents' questions
   questions(org: string): QuestionCard[];
   /** Laya through the decision provider: an option id when it is sure, else undefined with why. */
-  laya(org: string, card: QuestionCard): Promise<{ option?: string | undefined; why: string }>;
+  laya(
+    org: string,
+    card: QuestionCard,
+  ): Promise<{ option?: string | undefined; why: string; margin?: number | undefined }>;
+  /**
+   * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
+   * agent gets one message telling it to stop asking.
+   */
+  flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
   laneRest(org: string): Promise<string | undefined>;

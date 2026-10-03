@@ -372,7 +372,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         }
         const picked = keys.find((k) => k.key === answer.value && answer.value !== ABSTAIN.key);
         if (picked === undefined) return { why: "none of the options fits" };
-        return { option: picked.id, why: answer.gate.reason };
+        return { option: picked.id, why: answer.gate.reason, margin: answer.gate.margin };
       } catch (err) {
         return { why: err instanceof Error ? err.message : "the decision provider failed" };
       }
@@ -406,6 +406,15 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         level: "info",
         text: captainAnsweredLine(answered, reason),
       });
+    },
+
+    async flagLoop(_org, card, line, nudge) {
+      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `${line}. The captain left its question for the owner.`,
+      });
+      deps.runs.notify(card.task, card.agent, nudge);
     },
 
     laneRest: (org) => deps.lanes.rest(org),

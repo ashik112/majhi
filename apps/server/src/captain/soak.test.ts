@@ -194,6 +194,9 @@ class Sim {
         const found = this.questions.find((q) => q.item === card.item);
         if (found !== undefined) found.done = true;
       },
+      flagLoop: async (org, card) => {
+        this.act("flagLoop", org, `${card.task}:${card.item}`, card.task);
+      },
       laneRest: (org) => lanes.rest(org),
       askLane: async (org, text) => {
         this.act("askLane", org, text.match(/item (\S+)\)/)?.[1] ?? text.slice(0, 40));
