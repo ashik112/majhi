@@ -63,7 +63,7 @@ Everything that waits for the owner is a decision with the captain's recommendat
 > **PYZ-3: clean the branch history?** Captain recommends **Rebuild** (keeps a backup branch, nothing pushed).
 > [Approve] [Other options] [Open task]
 
-The bell opens this inbox. Desktop and browser alerts are sent only for decisions, never for things the captain handled.
+The bell opens this inbox as compact rows; `/decisions` is the triage screen (queue on the left, the selected decision in full on the right, so the owner decides without opening the task). Desktop and browser alerts are sent only for decisions, never for things the captain handled.
 
 ### 5. Overrule, do not babysit
 

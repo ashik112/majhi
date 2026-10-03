@@ -42,15 +42,16 @@ export function createChores(
       do: async () => {
         const r = await ports.curate(run.org, fact);
         const undo = r.event === undefined ? undefined : { kind: "memory" as const, event: r.event };
+        const why = r.reason === undefined ? "" : ` (${r.reason.replace(/\.$/, "")})`;
         switch (r.outcome) {
           case "kept":
-            return { text: `Kept a memory: ${words}`, undo };
+            return { text: `Kept a memory: ${words}${why}`, undo };
           case "merged":
-            return { text: `Merged a memory into one it repeats: ${words}`, undo };
+            return { text: `Merged a memory into one it repeats: ${words}${why}`, undo };
           case "dropped":
-            return { text: `Dropped a memory: ${words}`, undo };
+            return { text: `Dropped a memory: ${words}${why}`, undo };
           default:
-            return { text: `Not sure about a memory, so it waits for you: ${words}`, outcome: "asked" };
+            return { text: `A memory waits for you: ${words}${why}`, outcome: "asked" };
         }
       },
     });

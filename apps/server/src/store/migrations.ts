@@ -821,13 +821,30 @@ CREATE TABLE decision_recommendations (
     sql: "DROP TABLE captain_presence;",
   },
   {
+    // One-time recheck of memories the old curator handed to the owner. A memory the chore looked at
+    // has a log key `memory:<id>` and is never looked at again, so what the old rule handed over
+    // ('asked', before the memory fix of 2026-10-04 01:27 +0600) would never be judged by the better
+    // rule. The key is renamed, so the log line stays and the next memory run looks at it once more.
+    id: 124,
+    name: "recheck memories handed to the owner",
+    sql: `
+UPDATE captain_actions
+SET key = key || ':handed-before-recheck'
+WHERE chore = 'memory'
+  AND outcome = 'asked'
+  AND key GLOB 'memory:[0-9]*'
+  AND key NOT LIKE 'memory:%:%'
+  AND at < '2026-10-03T19:27:50.000Z';
+`,
+  },
+  {
     // Tasks paused when Autonomous was turned off, before `paused_by` existed, read as paused by the
     // owner and the captain never resumed them. A task of the captain or Autonomous (`autonomy_tasks`)
     // paused for the owner, with nobody recorded, within two minutes of a mode event that turned
     // Autonomous off (Stop now writes "Turned off" just after pausing; a graceful stop writes
     // "Stopping after the current turns" just before), was paused by that switch. A task the owner
     // paused by hand at another time keeps no `paused_by`.
-    id: 124,
+    id: 125,
     name: "paused by autonomy off",
     sql: `
 UPDATE tasks SET paused_by = 'autonomy-off'

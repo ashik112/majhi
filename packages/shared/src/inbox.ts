@@ -24,13 +24,15 @@ export const DecisionOptionSchema = z.object({
   id: z.string().min(1).max(200),
   label: z.string().min(1).max(200),
   primary: z.literal(true).optional(),
+  /** The answer needs typed text (Ask for changes, a free-text answer): the screen opens a reply box and sends it as `text`. */
+  text: z.literal(true).optional(),
 });
 export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 
 /** Who suggests an option: the captain (`decisions.recommend`) or the agent that asked (an ask card's default). */
 export const DecisionSuggestionSchema = z.object({
   option: z.string().min(1).max(200),
-  reason: z.string().max(300),
+  reason: z.string().max(600),
   by: z.enum(["captain", "agent"]),
 });
 export type DecisionSuggestion = z.infer<typeof DecisionSuggestionSchema>;
@@ -57,6 +59,8 @@ export const OwnerDecisionSchema = z.object({
   chat: z.literal(true).optional(),
   /** One plain line. */
   title: z.string().min(1).max(300),
+  /** What it is in a sentence the owner can act on ("@acme-builder finished 'Fix the invoice total' and it is ready to ship"). */
+  sentence: z.string().max(500).optional(),
   /** The answers a click gives, primary first. Empty when the answer needs the task open. */
   options: z.array(DecisionOptionSchema),
   suggestion: DecisionSuggestionSchema.optional(),
@@ -65,6 +69,47 @@ export const OwnerDecisionSchema = z.object({
   link: DecisionLinkSchema,
 });
 export type OwnerDecision = z.infer<typeof OwnerDecisionSchema>;
+
+/** One changed file of a ready-to-ship task. */
+export const DecisionFileSchema = z.object({
+  path: z.string(),
+  additions: z.number().int().nonnegative(),
+  deletions: z.number().int().nonnegative(),
+});
+export type DecisionFile = z.infer<typeof DecisionFileSchema>;
+
+/**
+ * What the owner needs to decide without opening the task (`decisions.detail`): read when a decision
+ * is selected, not with the list, because the diff and the room are not free to read.
+ */
+export const DecisionDetailSchema = z.object({
+  id: z.string(),
+  /** The agent's last message in the task: its hand-back, or the context of its question. */
+  handback: z.object({ agent: z.string(), text: z.string(), at: z.string() }).optional(),
+  /** The change a ready-to-ship task makes, over all its repos. */
+  diff: z
+    .object({
+      files: z.number().int().nonnegative(),
+      additions: z.number().int().nonnegative(),
+      deletions: z.number().int().nonnegative(),
+      /** The biggest changes first, at most six. */
+      top: z.array(DecisionFileSchema),
+      uncommitted: z.boolean(),
+      error: z.string().optional(),
+    })
+    .optional(),
+  /** Where it goes: each repo's task branch and the branch it merges into. */
+  repos: z.array(z.object({ project: z.string(), branch: z.string(), into: z.string() })).optional(),
+  /** What the captain checked before it asked, in a sentence. */
+  checks: z.string().optional(),
+  /** The full questions of a card, with their choices. */
+  questions: z
+    .array(z.object({ question: z.string(), options: z.array(z.string()), freeText: z.boolean() }))
+    .optional(),
+  /** Options that cannot be taken now, with the reason (Merge when nothing is committed). */
+  blocked: z.record(z.string(), z.string()).optional(),
+});
+export type DecisionDetail = z.infer<typeof DecisionDetailSchema>;
 
 export const DecisionListSchema = z.object({ decisions: z.array(OwnerDecisionSchema) });
 export type DecisionList = z.infer<typeof DecisionListSchema>;

@@ -50,7 +50,7 @@ export interface WorldDeps {
   autonomy: AutonomyService;
   decisions: DecisionService;
   memory: MemoryService;
-  curate: (fact: Fact) => Promise<void>;
+  curate: (fact: Fact) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
   idle: IdleWatch;
@@ -405,13 +405,14 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     async curate(_org, fact) {
       const before = deps.memory.get(fact.id);
       if (before === undefined || before.status !== "pending") return { outcome: "pending" };
-      await deps.curate(before);
+      const { reason } = await deps.curate(before);
+      const why = reason === undefined ? {} : { reason };
       const after = deps.memory.get(fact.id);
       const event = deps.memory.events({ fact: fact.id, limit: 1 })[0]?.id;
-      if (after === undefined || after.status === "pending") return { outcome: "pending" };
+      if (after === undefined || after.status === "pending") return { outcome: "pending", ...why };
       const ev = event === undefined ? {} : { event };
-      if (after.status === "active") return { outcome: "kept", ...ev };
-      return { outcome: after.duplicate_of === undefined ? "dropped" : "merged", ...ev };
+      if (after.status === "active") return { outcome: "kept", ...ev, ...why };
+      return { outcome: after.duplicate_of === undefined ? "dropped" : "merged", ...ev, ...why };
     },
 
     // -------------------------------------------------------------------------

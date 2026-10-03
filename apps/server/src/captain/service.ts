@@ -4,6 +4,8 @@ import {
   type CaptainCapAsk,
   type CaptainChore,
   type CaptainOrg,
+  type CaptainRunChoreResult,
+  type CaptainRunnableChore,
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
@@ -411,6 +413,7 @@ export class CaptainService {
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
+            ...(this.runner.running(org, chore) ? { running: true as const } : {}),
             ...(c.offWhy === undefined ? {} : { off: c.offWhy }),
             today:
               caps.actions !== undefined
@@ -472,6 +475,25 @@ export class CaptainService {
     const item = await this.deps.fresh(chat, agent);
     this.deps.events.emit(["captain"]);
     return { item };
+  }
+
+  /**
+   * "Review now": one run of the memory or cleanup chore of a workspace, started by the owner. The
+   * answer comes at once; the run goes on in the background and the status shows it running.
+   */
+  async runChore(org: string, chore: CaptainRunnableChore): Promise<CaptainRunChoreResult> {
+    const started = await this.runner.startNow(org, chore);
+    if (!started.ran) return { started: false, text: started.why, overCap: false };
+    this.deps.events.emit(["captain"]);
+    void started.done.catch(() => undefined).finally(() => this.deps.events.emit(["captain"]));
+    const label = CHORE_LABEL[chore].toLowerCase();
+    return {
+      started: true,
+      overCap: started.overCap,
+      text: started.overCap
+        ? `Started ${label}. Today's limit was reached, and this run goes past it because you asked.`
+        : `Started ${label}.`,
+    };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {

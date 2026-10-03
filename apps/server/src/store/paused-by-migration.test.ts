@@ -2,13 +2,13 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { MIGRATIONS, migrate } from "./migrations.ts";
 
-/** Migration 124: old rows paused by Autonomous turning off get their `paused_by`. */
+/** Migration 125: old rows paused by Autonomous turning off get their `paused_by`. */
 describe("the paused by autonomy off migration", () => {
   it("marks only the captain's or Autonomous's owner-paused tasks paused next to a turn-off event", () => {
     const db = new Database(":memory:");
     migrate(
       db,
-      MIGRATIONS.filter((m) => m.id < 124),
+      MIGRATIONS.filter((m) => m.id < 125),
     );
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string; notnull: number }[];
     const required = cols.filter((c) => c.notnull === 1).map((c) => c.name);
@@ -48,7 +48,7 @@ describe("the paused by autonomy off migration", () => {
     // An unrelated mode event next to ACM-3's pause does not count.
     event.run("2026-10-04T18:19:00.000Z", "mode", "Turned on");
 
-    expect(migrate(db)).toContain(124);
+    expect(migrate(db)).toContain(125);
     const by = db.prepare("SELECT id, paused_by FROM tasks ORDER BY id").all();
     expect(by).toEqual([
       { id: "ACM-1", paused_by: "autonomy-off" },

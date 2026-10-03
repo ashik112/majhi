@@ -81,7 +81,9 @@ const secret: Of<"secret-request"> = {
 const review: Of<"review"> = {
   ...base("rv1", "2026-10-04T10:00:00.000Z", "ACM-2"),
   type: "review",
-  ready: "Checks pass and the diff is small.",
+  lead: "acme-builder",
+  ready:
+    "Ready to ship to main: committed, merges cleanly into main. Acme is set to Keeps things tidy, so the captain asks before shipping.",
   state: "pending",
 };
 const paused: Of<"paused"> = {
@@ -172,7 +174,11 @@ describe("building decisions", () => {
     expect(by("room:ACM-1:sr1")).toMatchObject({ kind: "secret", options: [] });
     expect(by("room:ACM-2:rv1")).toMatchObject({
       kind: "ship",
-      options: [{ id: "merge", label: "Merge", primary: true }],
+      options: [
+        { id: "merge", label: "Merge", primary: true },
+        { id: "done", label: "Mark done" },
+        { id: "changes", label: "Ask for changes", text: true },
+      ],
       suggestion: { option: "merge", by: "captain" },
     });
     expect(by("room:ACM-2:pa1")).toMatchObject({
@@ -226,7 +232,15 @@ describe("building decisions", () => {
       }),
     );
     expect(out.map((d) => d.id)).toEqual(["room:ACM-2:rv1"]);
-    expect(out[0]).toMatchObject({ title: "Ready for review", options: [] });
+    expect(out[0]).toMatchObject({
+      title: "Ready for review: Docs",
+      sentence: '@acme-builder finished "Docs" and waits for your review.',
+      options: [
+        { id: "merge", label: "Merge", primary: true },
+        { id: "done", label: "Mark done" },
+        { id: "changes", label: "Ask for changes", text: true },
+      ],
+    });
     expect(isDecisionItem({ ...paused, reason: "offline" }, subjects["ACM-2"] as never)).toBe(false);
   });
 
@@ -262,13 +276,18 @@ function fakeActions(log: string[]): DecisionActions {
     answerChoice: async (t, i, o) => void log.push(`choice ${t} ${i} ${o}`),
     answerPermission: (t, i, o) => void log.push(`permission ${t} ${i} ${o}`),
     decideApproval: async (t, i, d) => void log.push(`approval ${t} ${i} ${d}`),
-    cardAction: async (t, i, a) => void log.push(`card ${t} ${i} ${a}`),
+    cardAction: async (t, i, a) => {
+      log.push(`card ${t} ${i} ${a}`);
+      return mergeResults === undefined ? {} : { results: mergeResults };
+    },
+    askChanges: async (t, text, lead) => void log.push(`changes ${t} ${lead ?? "-"} ${text}`),
     answerCap: async (o, c, a) => void log.push(`cap ${o} ${c} ${a}`),
     answerBudget: async (s, a) => void log.push(`budget ${s} ${a}`),
   };
 }
 
 let log: string[];
+let mergeResults: { project: string; ok: boolean; detail: string }[] | undefined;
 let repo: RecommendationRepo;
 let items: RoomItem[];
 
@@ -287,6 +306,7 @@ function service(): InboxService {
 
 beforeEach(() => {
   log = [];
+  mergeResults = undefined;
   const db = new Database(":memory:");
   migrate(db);
   repo = new RecommendationRepo(db);
@@ -303,12 +323,38 @@ describe("answering a decision", () => {
     ["room:ACM-1:ap1", "reject", undefined, "approval ACM-1 ap1 reject"],
     ["room:ACM-1:ap1", "approve", undefined, "approval ACM-1 ap1 approve"],
     ["room:ACM-2:rv1", "merge", undefined, "card ACM-2 rv1 merge"],
+    ["room:ACM-2:rv1", "done", undefined, "card ACM-2 rv1 done"],
+    [
+      "room:ACM-2:rv1",
+      "changes",
+      "  Use the shared helper.  ",
+      "changes ACM-2 acme-builder Use the shared helper.",
+    ],
     ["room:ACM-2:pa1", "resume", undefined, "card ACM-2 pa1 resume"],
     ["cap:acme:memory:2026-10-04", "raise", undefined, "cap acme memory raise"],
     ["budget:acme:2026-10-04", "leave", undefined, "budget acme leave"],
   ])("routes %s / %s to its own path", async (id, option, text, expected) => {
     await service().answer({ id, option, ...(text === undefined ? {} : { text }) });
     expect(log).toEqual([expected]);
+  });
+
+  it("refuses Ask for changes without words and says why a merge that failed did not finish", async () => {
+    const inbox = service();
+    await expect(inbox.answer({ id: "room:ACM-2:rv1", option: "changes", text: "  " })).rejects.toThrow(
+      /Write your answer/,
+    );
+    mergeResults = [{ project: "api", ok: false, detail: "conflicts in 2 files" }];
+    await expect(inbox.answer({ id: "room:ACM-2:rv1", option: "merge" })).rejects.toThrow(
+      /Could not merge api: conflicts in 2 files/,
+    );
+    expect(log).toEqual(["card ACM-2 rv1 merge"]);
+  });
+
+  it("offers a task with no repo Mark done first and no Merge", () => {
+    const noRepo = { ...subjects["ACM-2"], repos: 0 } as never;
+    const out = buildDecisions(sources({ items: [{ ...review, ready: undefined }], subject: () => noRepo }));
+    expect(out[0]?.options.map((o) => o.id)).toEqual(["done", "changes"]);
+    expect(out[0]?.options[0]?.primary).toBe(true);
   });
 
   it("refuses an option the decision does not offer, a secret and a sign-in, and does nothing", async () => {
@@ -333,6 +379,101 @@ describe("answering a decision", () => {
     expect(log).toEqual([]);
     await handlers["decisions.answer"](input, ctx("owner"));
     expect(log).toEqual(["choice ACM-1 ch1 now"]);
+  });
+});
+
+describe("the detail of a decision", () => {
+  const diff = (project: string, files: [string, number, number][]) => ({
+    project,
+    base: "main",
+    branch: "majhi/ACM-2",
+    commits: [],
+    files: files.map(([path, additions, deletions]) => ({
+      path,
+      status: "modified" as const,
+      additions,
+      deletions,
+      binary: false,
+      patch: "",
+      truncated: false,
+    })),
+    omitted: 0,
+    uncommitted: false,
+  });
+  const ok = { ok: true } as const;
+  const withDetail = (over: Partial<ConstructorParameters<typeof InboxService>[0]> = {}) =>
+    new InboxService({
+      items: () => items,
+      subject: (task) => subjects[task],
+      caps: async () => [],
+      budgets: async () => [],
+      signedOut: async () => [],
+      recommendations: repo,
+      actions: fakeActions(log),
+      orgNames: async () => ({ acme: "Acme" }),
+      lastAgentMessage: () => ({
+        agent: "acme-builder",
+        text: "Done. Two files changed.",
+        at: "2026-10-04T09:59:00.000Z",
+      }),
+      diff: async () => [
+        diff("api", [
+          ["src/a.ts", 3, 1],
+          ["src/b.ts", 40, 2],
+          ["README.md", 1, 0],
+        ]),
+      ],
+      shipOptions: async () => ({ merge: ok, mergePush: ok, push: ok, mr: ok, done: ok }),
+      ...over,
+    });
+
+  it("gives a ready-to-ship task its hand-back, diff stat, checks and target, with the old wording rewritten", async () => {
+    const detail = await withDetail().detail("room:ACM-2:rv1");
+    expect(detail.handback?.text).toBe("Done. Two files changed.");
+    expect(detail.diff).toEqual({
+      files: 3,
+      additions: 44,
+      deletions: 3,
+      top: [
+        { path: "src/b.ts", additions: 40, deletions: 2 },
+        { path: "src/a.ts", additions: 3, deletions: 1 },
+        { path: "README.md", additions: 1, deletions: 0 },
+      ],
+      uncommitted: false,
+    });
+    expect(detail.repos).toEqual([{ project: "api", branch: "majhi/ACM-2", into: "main" }]);
+    expect(detail.checks).toBe("committed, merges cleanly into main");
+    expect(detail.blocked).toBeUndefined();
+    const listed = (await withDetail().list()).find((d) => d.id === "room:ACM-2:rv1");
+    expect(listed?.suggestion?.reason).toBe(
+      "Ready to ship to main: committed, merges cleanly into main. In Acme you decide when work is merged.",
+    );
+  });
+
+  it("says why Merge cannot be taken and keeps reading when the diff fails", async () => {
+    const inbox = withDetail({
+      diff: async () => {
+        throw new Error("git is busy");
+      },
+      shipOptions: async () => ({
+        merge: { ok: false, why: "Nothing is committed on the task branch." },
+        mergePush: ok,
+        push: ok,
+        mr: ok,
+        done: ok,
+      }),
+    });
+    const detail = await inbox.detail("room:ACM-2:rv1");
+    expect(detail.diff?.error).toBe("git is busy");
+    expect(detail.blocked).toEqual({ merge: "Nothing is committed on the task branch." });
+  });
+
+  it("gives a question card its full questions and refuses a decision that is gone", async () => {
+    const detail = await withDetail().detail("room:ACM-1:ask1");
+    expect(detail.questions).toEqual([
+      { question: "Rebuild or keep the history?", options: ["Keep", "Rebuild"], freeText: false },
+    ]);
+    await expect(withDetail().detail("room:ACM-1:nope")).rejects.toThrow(/gone/);
   });
 });
 

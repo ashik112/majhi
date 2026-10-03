@@ -137,6 +137,8 @@ export class ChoreRun {
     public ws: Workspace,
     private readonly deps: RunnerDeps,
     readonly startedAt: string,
+    /** The owner asked for this run: today's cap on actions does not end it (the per-run caps still do). */
+    private readonly manual = false,
   ) {
     this.started = Date.parse(startedAt);
   }
@@ -168,7 +170,11 @@ export class ChoreRun {
       );
     }
     const daily = dailyCaps(this.chore, this.deps.repo.capRaised(this.org, this.chore, this.ws.day)).actions;
-    if (daily !== undefined && this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily) {
+    if (
+      !this.manual &&
+      daily !== undefined &&
+      this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily
+    ) {
       askToRaise(this.deps, this.ws, this.chore, "actions", daily);
       throw new RunEnd(
         "capped",
@@ -335,38 +341,75 @@ export class ChoreRunner {
     why: string,
     subject?: string,
   ): Promise<CaptainRunStatus | undefined> {
+    const begun = await this.begin(org, chore, why, subject, false);
+    if (begun.run === undefined) return undefined;
+    return this.drive(begun.key, begun.run);
+  }
+
+  /**
+   * The owner's "Review now": one run now, whatever the schedule. It still stops for a run that is
+   * going, a chore turned off, a rest and the per-run caps. Today's cap on runs and on actions does
+   * not stop it: the owner's click runs once more, and `overCap` says it went past the cap.
+   * `done` settles when the run ends.
+   */
+  async startNow(
+    org: string,
+    chore: CaptainChore,
+  ): Promise<{ ran: false; why: string } | { ran: true; overCap: boolean; done: Promise<CaptainRunStatus> }> {
+    const begun = await this.begin(org, chore, "The owner asked for it", undefined, true);
+    if (begun.run === undefined) return { ran: false, why: begun.why ?? "It did not start." };
+    return { ran: true, overCap: begun.overCap, done: this.drive(begun.key, begun.run) };
+  }
+
+  private async begin(
+    org: string,
+    chore: CaptainChore,
+    why: string,
+    subject: string | undefined,
+    manual: boolean,
+  ): Promise<{ key: string; run?: ChoreRun; why?: string; overCap: boolean }> {
     const { deps } = this;
-    if (deps.stopped()) return undefined;
     const key = `${org}:${chore}`;
+    const no = (reason: string) => ({ key, why: reason, overCap: false });
+    if (deps.stopped()) return no("majhi is shutting down");
     const active = this.active.get(key);
     if (active !== undefined) {
       if (subject !== undefined) active.joined.add(subject);
       active.again = true;
-      return undefined;
+      return no(`${CHORE_LABEL[chore]} is already running here.`);
     }
-    if (this.starting.has(key)) return undefined;
+    if (this.starting.has(key)) return no(`${CHORE_LABEL[chore]} is already starting here.`);
     this.starting.add(key);
     let run: ChoreRun | undefined;
+    let overCap = false;
     try {
       const ws = await deps.workspace(org);
-      if (ws === undefined || !choresNow(ws.authority, ws.mode).includes(chore) || ws.rest !== undefined)
-        return undefined;
-      if (deps.repo.chore(org, chore).offAt !== undefined) return undefined;
+      if (ws === undefined) return no("There is no such workspace, or no captain yet.");
+      if (!choresNow(ws.authority, ws.mode).includes(chore)) {
+        return no(`${CHORE_LABEL[chore]} is not on in ${ws.name}. Turn upkeep on in Delegation.`);
+      }
+      if (ws.rest !== undefined) return no(`${ws.name} is resting: ${ws.rest}`);
+      const off = deps.repo.chore(org, chore).offAt;
+      if (off !== undefined)
+        return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
       const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;
       if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {
-        askToRaise(deps, ws, chore, "runs", runs);
-        return undefined;
+        if (!manual) {
+          askToRaise(deps, ws, chore, "runs", runs);
+          return no("It reached today's cap of runs.");
+        }
+        overCap = true;
       }
       const at = deps.now().toISOString();
       const id = deps.repo.openRun({ org, chore, day: ws.day, at, trigger: why });
-      if (id === undefined) return undefined;
-      run = new ChoreRun(id, chore, ws, deps, at);
+      if (id === undefined) return no(`${CHORE_LABEL[chore]} is already running here.`);
+      run = new ChoreRun(id, chore, ws, deps, at, manual);
       if (subject !== undefined) run.joined.add(subject);
       this.active.set(key, run);
     } finally {
       this.starting.delete(key);
     }
-    return this.drive(key, run);
+    return { key, run, overCap };
   }
 
   private async drive(key: string, run: ChoreRun): Promise<CaptainRunStatus> {

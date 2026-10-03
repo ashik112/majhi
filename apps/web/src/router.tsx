@@ -43,6 +43,8 @@ export interface AppSearch {
   thread?: string;
   /** On Hub setup: the section shown. */
   section?: string;
+  /** On Decisions: the decision shown. */
+  id?: string;
   /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
   scope?: string;
   about?: string;
@@ -77,6 +79,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const who = text(search.who);
   const kinds = text(search.kinds);
   const decision = text(search.decision);
+  const id = text(search.id);
   const from = text(search.from);
   const to = text(search.to);
   return {
@@ -99,6 +102,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(who ? { who } : {}),
     ...(kinds ? { kinds } : {}),
     ...(decision ? { decision } : {}),
+    ...(id ? { id } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
   };
