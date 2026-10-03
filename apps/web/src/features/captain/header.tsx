@@ -40,13 +40,20 @@ function SpendLine({
   if (spending.length === 0 && cap === undefined) return null;
   return (
     <p className="tnum flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm text-fg-muted">
-      <span className="sr-only">Spent today: </span>
+      {cap !== undefined && total && (
+        <span
+          title="Autonomous spend today against its daily budget"
+          className={cn("font-medium text-fg-soft", capTone(total) === "red" && "text-red")}
+        >
+          {formatMoney(total.used.cost)} of {dollars(cap)} today
+        </span>
+      )}
       {spending.slice(0, SHOWN_SPEND).map((org, i) => {
         const budget = org.budget?.cost;
         const bad = over(org);
         return (
           <span key={org.org} className="flex min-w-0 items-baseline gap-2">
-            {i > 0 && <span aria-hidden="true">·</span>}
+            {(i > 0 || cap !== undefined) && <span aria-hidden="true">·</span>}
             <span
               className={cn("flex min-w-0 items-baseline gap-1.5", bad && "text-red")}
               title={`${org.name}: ${formatMoney(org.used.cost)} today${budget === undefined ? "" : ` of ${dollars(budget)}`}${bad ? ", over budget" : ""}`}
@@ -54,7 +61,7 @@ function SpendLine({
               <span className="max-w-[140px] truncate">{org.name}</span>
               <span className="font-mono">
                 {bad && budget !== undefined
-                  ? `${formatMoney(org.used.cost)} of ${dollars(budget)} (over)`
+                  ? `${formatMoney(org.used.cost)} of ${dollars(budget)}, over`
                   : dollars(org.used.cost)}
               </span>
             </span>
@@ -64,16 +71,6 @@ function SpendLine({
       {hidden > 0 && (
         <span>
           <span aria-hidden="true">· </span>+{hidden} more
-        </span>
-      )}
-      {cap !== undefined && total && (
-        <span className={cn("flex items-baseline gap-2", capTone(total) === "red" && "text-red")}>
-          {spending.length > 0 && <span aria-hidden="true">·</span>}
-          <span title="Autonomous spend today against its daily budget">
-            {spending.length === 0
-              ? `${formatMoney(total.used.cost)} of ${dollars(cap)}`
-              : `of ${dollars(cap)}`}
-          </span>
         </span>
       )}
     </p>

@@ -17,7 +17,8 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { RecentLog } from "./log";
 
-const SHOWN_DECISIONS = 4;
+// Whole rows only: the column never shows half a decision or half a task.
+const SHOWN_DECISIONS = 2;
 
 /** A box of the Now column: a heading with a count and an action, and a body that scrolls inside it. */
 function Box({
@@ -70,7 +71,7 @@ function NeedsYou() {
     <Box
       title="Needs you"
       count={decisions === undefined ? undefined : total}
-      className="flex-[1.7_1_0]"
+      className="flex-none"
       aside={
         total > SHOWN_DECISIONS ? (
           <PageLink page="decisions" className="text-blue hover:underline">
@@ -155,7 +156,7 @@ function Running({
 }) {
   const list = autonomy.now;
   return (
-    <Box title="Running" count={list.length} className="flex-[0.9_1_0]" empty={list.length === 0}>
+    <Box title="Running" count={list.length} className="max-h-[232px] flex-none" empty={list.length === 0}>
       {list.length === 0 ? (
         <p className="text-sm text-fg-muted">Nothing running.</p>
       ) : (
@@ -189,7 +190,7 @@ function Next({
   const list = autonomy.queue;
   const marked = new Map(autonomy.backlog.map((b) => [b.task, b.noAutonomy]));
   return (
-    <Box title="Next" count={list.length} empty={list.length === 0}>
+    <Box title="Next" count={list.length} className="max-h-[232px] flex-none" empty={list.length === 0}>
       {list.length === 0 ? (
         <p className="text-sm text-fg-muted">
           {autonomy.mode === "off" ? "Nothing is planned while Autonomous is off." : "Nothing planned yet."}
@@ -252,7 +253,8 @@ export function NowColumn({
     return captain.orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
   };
   return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto lg:overflow-visible">
+    // The column scrolls as one panel when it does not fit; each box keeps whole rows.
+    <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain">
       <NeedsYou />
       {autonomy ? (
         <>
@@ -265,6 +267,7 @@ export function NowColumn({
       <Box
         title="Did recently"
         label="Did recently"
+        className="min-h-[260px]"
         aside={
           <>
             {onSummary && (

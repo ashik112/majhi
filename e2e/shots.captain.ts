@@ -445,7 +445,7 @@ function decisions(): OwnerDecision[] {
     org,
     task,
     taskTitle: title,
-    title: `Ship ${title}`,
+    title: `Ready to ship. ${title}`,
     options: [
       { id: "merge", label: "Merge", primary: true },
       { id: "mergePush", label: "Merge and push" },
@@ -723,13 +723,13 @@ test("the header says what is true, and the summary is one line", async ({ page 
   await expect(header.getByText("Pyzasoft")).toBeVisible();
 });
 
-test("Needs you shows four and links to the rest, answered inline", async ({ page }) => {
+test("Needs you shows two whole rows and links to the rest, answered inline", async ({ page }) => {
   await open(page, "/captain", 1440, 900, "dark", REAL_ON);
   const box = page.getByRole("region", { name: "Needs you" });
-  await expect(box.locator("[data-decision]")).toHaveCount(4);
+  await expect(box.locator("[data-decision]")).toHaveCount(2);
   await expect(box.getByRole("link", { name: "All 5 in Decisions" })).toBeVisible();
   await box.locator("[data-decision]").first().getByRole("button", { name: "Merge", exact: true }).click();
-  await expect(box.locator("[data-decision]")).toHaveCount(4);
+  await expect(box.locator("[data-decision]")).toHaveCount(2);
   await expect(page.getByText("4 decisions wait for you.")).toBeVisible();
 });
 
