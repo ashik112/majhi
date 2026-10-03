@@ -37,5 +37,6 @@ export * from "./settings.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";
 export * from "./tiers.ts";
+export * from "./trackers.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
