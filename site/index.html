@@ -12,6 +12,12 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#1d47c4">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" as="image" href="/assets/h-sky.webp" fetchpriority="high">
+<link rel="preload" as="image" href="/assets/h-far.webp" fetchpriority="high">
+<link rel="preload" as="image" href="/assets/h-river.webp">
+<link rel="preload" as="image" href="/assets/boat.webp">
+<link rel="preload" as="image" href="/assets/h-sun-rays.webp">
+<script>document.documentElement.classList.add("js")</script>
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,7 +49,11 @@ a{color:inherit}
 
 /* hero */
 .hero{position:relative;overflow:hidden;display:flex;flex-direction:column;
-  min-height:calc(100svh - 28px);background:#1f45c8 url(/assets/h-sky.webp) center bottom/cover no-repeat}
+  min-height:calc(100svh - 28px);background:#1f45c8}
+/* the painted sky and scene wait until every hero image has loaded, then fade in together */
+.hero::before{content:"";position:absolute;inset:0;z-index:0;background:url(/assets/h-sky.webp) center bottom/cover no-repeat}
+.hero::before,.hero .land,.hero .sun,.hero .birds,.hero .peacock{transition:opacity .6s ease}
+.js .hero:not(.ready)::before,.js .hero:not(.ready) .land,.js .hero:not(.ready) .sun,.js .hero:not(.ready) .birds,.js .hero:not(.ready) .peacock{opacity:0}
 nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2",sans-serif;color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
 .tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
@@ -327,6 +337,18 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 for(const b of document.querySelectorAll("[data-copy]"))b.addEventListener("click",async()=>{
   try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{b.textContent="Select and copy"}
 });
+</script>
+<script>
+(() => {
+  const hero = document.querySelector(".hero");
+  const urls = new Set(["/assets/h-sky.webp"]);
+  hero.querySelectorAll("img[src], image[href]").forEach(el => urls.add(el.getAttribute("src") || el.getAttribute("href")));
+  const load = url => new Promise(done => { const img = new Image(); img.onload = img.onerror = done; img.src = url; })
+    .then(() => {});
+  const show = () => hero.classList.add("ready");
+  Promise.all([...urls].map(load)).then(show);
+  setTimeout(show, 4000);
+})();
 </script>
 </body>
 </html>
