@@ -175,7 +175,7 @@ export function SetupView() {
     approvals: s && policyStatus(s.policy),
     notifications: s && notificationsStatus(s.notifications),
     editor: s && EDITOR_LABEL[s.editor.app],
-    e2e: s && (Object.values(s.e2e.projects).some((on) => !on) ? "Off for some projects" : "On for majhi"),
+    e2e: s && e2eStatus(s.e2e.projects),
     containers: containersStatus(containers.data),
     appearance: `${appearance.theme[0]?.toUpperCase()}${appearance.theme.slice(1)}, ${ACCENT_LABEL[appearance.accent]}`,
     backups: backupsStatus(backups.data),
@@ -271,9 +271,7 @@ export function SetupView() {
             <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
           )}
           {section === "e2e" && (
-            <WithSettings settings={settings}>
-              {(data) => <E2eSection saved={data.e2e.projects} />}
-            </WithSettings>
+            <WithSettings settings={settings}>{(data) => <E2eSection saved={data.e2e} />}</WithSettings>
           )}
           {section === "containers" && <ContainersSection />}
           {section === "appearance" && (
@@ -360,6 +358,12 @@ function SectionRow({
       )}
     </button>
   );
+}
+
+/** "Off", or "On for 2 projects". */
+function e2eStatus(projects: Settings["e2e"]["projects"]): string {
+  const on = Object.values(projects).filter((mode) => mode !== "off").length;
+  return on === 0 ? "Off" : `On for ${on} project${on === 1 ? "" : "s"}`;
 }
 
 /** "2h turns, idle 25m", or "No limits". */

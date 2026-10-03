@@ -92,7 +92,7 @@ export interface HandlerDeps {
   sshHosts?: SshHostProbe;
   /** `health.run` and `health.fix`. Without it they answer 501. */
   health?: HealthService;
-  /** `e2e.status`. Without it the command answers 501. */
+  /** `e2e.status` and `e2e.runNow`. Without it they answer 501. */
   e2e?: E2eService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
@@ -836,6 +836,12 @@ export function createHandlers({
         actorName(ctx.meta.actor),
       ),
     "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
+    "e2e.runNow": (input, ctx) => {
+      // The suite takes the owner's CPU for up to 90 minutes: only they start it by hand.
+      if (ctx.meta.actor.kind !== "owner")
+        throw new UserError("Only the owner starts a background e2e run.", 409);
+      return e2e ? e2e.runNow(input.project) : notBuilt();
+    },
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),

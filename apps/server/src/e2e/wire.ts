@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { E2E_DEFAULT_PROJECT_NAME } from "@majhi/shared";
+import { zoneOr } from "../autonomy/service.ts";
 import type { ConfigService } from "../config/service.ts";
 import { git } from "../git/git.ts";
 import type { HostLink } from "../host/link.ts";
@@ -23,18 +23,6 @@ export interface E2eWiring {
   uploads: UploadStore;
   majhiHome: string;
   log?: (message: string) => void;
-}
-
-/** True when the checkout is majhi itself: its package is named `majhi` and it has a Playwright config. */
-async function isMajhiCheckout(path: string): Promise<boolean> {
-  try {
-    const pkg: unknown = JSON.parse(await readFile(join(path, "package.json"), "utf8"));
-    const name = typeof pkg === "object" && pkg !== null && "name" in pkg ? pkg.name : undefined;
-    if (name !== E2E_DEFAULT_PROJECT_NAME) return false;
-    return (await lstat(join(path, "playwright.config.ts"))).isFile();
-  } catch {
-    return false;
-  }
 }
 
 async function tryGit(cwd: string, args: string[]): Promise<string | undefined> {
@@ -60,8 +48,15 @@ export function createE2e(w: E2eWiring): E2eService {
         base: p.base,
         exists: p.exists,
       })),
-    switches: async () => (await w.config.settings()).e2e.projects,
-    isMajhi: isMajhiCheckout,
+    settings: async () => {
+      const settings = await w.config.settings();
+      // The owner's zone is autonomous mode's, as for its daily summary.
+      return {
+        projects: settings.e2e.projects,
+        dailyAt: settings.e2e.daily_at,
+        tz: zoneOr(settings.autonomy.tz),
+      };
+    },
     git: {
       tip: (path, branch) =>
         tryGit(path, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`]),

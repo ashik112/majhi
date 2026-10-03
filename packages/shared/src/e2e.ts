@@ -1,18 +1,36 @@
 import { z } from "zod";
 
 /**
- * Background e2e (PRV-72). After a merge into a project's base branch, the host helper runs the
- * project's Playwright suite in its own worktree, one run at a time. Agents never run it: they read
- * the latest result.
+ * Background e2e (PRV-72). The host helper runs a project's Playwright suite in its own worktree, one
+ * run at a time. Agents never run it: they read the latest result.
  */
 
-/** The project whose suite runs by default. Others opt in with `e2e.projects.<id>: true`. */
-export const E2E_DEFAULT_PROJECT_NAME = "majhi";
+/**
+ * When the suite runs for a project: `off` (only when the owner presses Run now), `merge` (after each
+ * merge into the base branch) or `daily` (once a day at `daily_at`, when the base branch moved).
+ */
+export const E2eModeSchema = z.enum(["off", "merge", "daily"]);
+export type E2eMode = z.infer<typeof E2eModeSchema>;
 
-/** `e2e.projects.<id>` in majhi.yaml: true or false per project. A project left out uses the default. */
-export const E2eSettingsSchema = z.strictObject({ projects: z.record(z.string(), z.boolean()).default({}) });
+/** Before modes, majhi.yaml held true or false per project: true reads as `merge`, false as `off`. */
+const E2eModeValue = z.preprocess(
+  (value) => (value === true ? "merge" : value === false ? "off" : value),
+  E2eModeSchema,
+);
+
+const E2eClockSchema = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, "Use a time like 03:00");
+
+const e2eFields = {
+  /** `e2e.projects.<id>` in majhi.yaml. A project left out is `off`. */
+  projects: z.record(z.string(), E2eModeValue),
+  /** When `daily` projects run, 24 h clock in autonomous mode's zone (`autonomy.tz`). */
+  daily_at: E2eClockSchema,
+};
+export const E2eSettingsSchema = z.strictObject({
+  projects: e2eFields.projects.default({}),
+  daily_at: e2eFields.daily_at.default("03:00"),
+});
 export type E2eSettings = z.infer<typeof E2eSettingsSchema>;
-const e2eFields = { projects: z.record(z.string(), z.boolean()) };
 export const E2ePatchSchema = z.strictObject(e2eFields).partial();
 export type E2ePatch = z.infer<typeof E2ePatchSchema>;
 
@@ -23,7 +41,7 @@ export const E2eRunStatusSchema = z.enum([
   "failed",
   /** The suite could not run (install, browsers, a timeout, the helper went away). */
   "errored",
-  /** A newer merge took its place in the queue before it started. */
+  /** A newer run of the same project took its place in the queue before it started. */
   "replaced",
 ]);
 export type E2eRunStatus = z.infer<typeof E2eRunStatusSchema>;
@@ -52,8 +70,12 @@ export const E2eRunSchema = z.object({
 export type E2eRun = z.infer<typeof E2eRunSchema>;
 
 export const E2eStatusSchema = z.object({
-  /** Projects the suite runs for now, with why. */
-  projects: z.array(z.object({ id: z.string(), on: z.boolean(), byDefault: z.boolean() })),
+  /** Every registered project and when the suite runs for it. */
+  projects: z.array(z.object({ id: z.string(), mode: E2eModeSchema })),
+  /** When `daily` projects run, 24 h clock in `tz`. */
+  dailyAt: z.string(),
+  /** The zone `dailyAt` is in: autonomous mode's. */
+  tz: z.string(),
   /** The run in progress, if any. */
   running: E2eRunSchema.optional(),
   /** Runs waiting to start, oldest first. */

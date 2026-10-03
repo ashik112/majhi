@@ -1,6 +1,7 @@
-import type { E2eRun, E2eRunResult, E2eStatus, HostMethod } from "@majhi/shared";
-import { errorMessage } from "../errors.ts";
+import type { E2eMode, E2eRun, E2eRunResult, E2eStatus, HostMethod } from "@majhi/shared";
+import { errorMessage, UserError } from "../errors.ts";
 import { HostJobError, HostOfflineError } from "../host/link.ts";
+import { dayStart, localDay } from "../usage/ranges.ts";
 import type { E2eBreak, E2eRepo } from "./repo.ts";
 
 /** How long the suite may take before the helper stops it. */
@@ -21,6 +22,15 @@ export interface E2eProject {
   exists: boolean;
 }
 
+export interface E2eSchedule {
+  /** `e2e.projects`: a project left out is `off`. */
+  projects: Record<string, E2eMode>;
+  /** `e2e.daily_at`, `HH:MM`. */
+  dailyAt: string;
+  /** An IANA zone the runtime knows. */
+  tz: string;
+}
+
 export interface E2eDeps {
   repo: E2eRepo;
   host: {
@@ -32,10 +42,8 @@ export interface E2eDeps {
     ): Promise<E2eRunResult>;
   };
   projects: () => Promise<E2eProject[]>;
-  /** The owner's `e2e.projects` switches. */
-  switches: () => Promise<Record<string, boolean>>;
-  /** True when the checkout at `path` is majhi itself: the one project that runs by default. */
-  isMajhi: (path: string) => Promise<boolean>;
+  /** The owner's `e2e` settings, with the zone `dailyAt` is in (autonomous mode's, else the server's). */
+  settings: () => Promise<E2eSchedule>;
   git: {
     /** The commit the branch is at, or undefined when there is no such branch. */
     tip(path: string, branch: string): Promise<string | undefined>;
@@ -76,10 +84,11 @@ export function taskOfSubject(subject: string): string | undefined {
 }
 
 /**
- * Background e2e (PRV-72): after a merge into a project's base branch, runs the project's Playwright
- * suite in the host helper, one run at a time and at low priority.
- * - `onMerged` (majhi's Ship) and `tick` (a merge seen on the branch) queue a run for a commit; a
- *   newer commit replaces a queued run of the same project that has not started.
+ * Background e2e (PRV-72): runs a project's Playwright suite in the host helper, one run at a time
+ * and at low priority. Each project has a mode: `off` (the default), `merge` or `daily`.
+ * - In `merge` mode, `onMerged` (majhi's Ship) and `tick` (a merge seen on the branch) queue a run for
+ *   a commit. In `daily` mode, `tick` queues one at `daily_at`. `runNow` queues one in any mode. A
+ *   newer run replaces a queued run of the same project that has not started.
  * - A finished run is told in the room of the task whose merge triggered it, one quiet line.
  * - A failure opens one task per break: while a break is open, later red runs add a line to its task
  *   and the first green run closes it.
@@ -107,47 +116,97 @@ export class E2eService {
     if (this.timer !== undefined) clearInterval(this.timer);
   }
 
-  /** Whether the suite runs for this project: the owner's switch, else on for majhi only. */
-  async enabled(project: E2eProject): Promise<{ on: boolean; byDefault: boolean }> {
-    const set = (await this.deps.switches())[project.id];
-    if (set !== undefined) return { on: set, byDefault: false };
-    return { on: project.exists && (await this.deps.isMajhi(project.path)), byDefault: true };
+  /** When the suite runs for this project. Every project is `off` until the owner picks a mode. */
+  private static modeOf(schedule: E2eSchedule, project: string): E2eMode {
+    return schedule.projects[project] ?? "off";
   }
 
-  /** majhi merged `task` into `into` of a project. Queues a run at the base branch's new tip. */
+  /** majhi merged `task` into `into` of a project. Queues a run at the base branch's new tip in `merge` mode. */
   async onMerged(input: { project: string; task: string; into: string }): Promise<void> {
     const project = (await this.deps.projects()).find((p) => p.id === input.project);
     if (project === undefined || project.base === undefined || !project.exists) return;
     if (input.into !== project.base) return;
-    if (!(await this.enabled(project)).on) return;
+    if (E2eService.modeOf(await this.deps.settings(), project.id) !== "merge") return;
     const tip = await this.deps.git.tip(project.path, project.base);
     if (tip === undefined) return;
     this.deps.repo.setSeen(project.id, tip, this.deps.now().toISOString());
     await this.enqueue(project, tip, input.task);
   }
 
-  /** Looks at each project's base branch: a tip that moved since the last look is a merge majhi did not do itself. */
+  /**
+   * Every minute: in `merge` mode, a base tip that moved since the last look is a merge majhi did not
+   * do itself; in `daily` mode, the day's run is due once the owner's clock passes `daily_at`.
+   */
   async tick(): Promise<void> {
+    const schedule = await this.deps.settings();
     for (const project of await this.deps.projects()) {
       if (project.base === undefined || !project.exists) continue;
-      if (!(await this.enabled(project)).on) continue;
-      const tip = await this.deps.git.tip(project.path, project.base);
-      if (tip === undefined) continue;
-      const seen = this.deps.repo.seen(project.id);
-      this.deps.repo.setSeen(project.id, tip, this.deps.now().toISOString());
-      // The first sight of a project is a baseline, not a merge.
-      if (seen === undefined || seen === tip) continue;
-      const subject = await this.deps.git.subject(project.path, tip);
-      const task = subject === undefined ? undefined : taskOfSubject(subject);
-      await this.enqueue(project, tip, task !== undefined && this.deps.taskExists(task) ? task : undefined);
+      const mode = E2eService.modeOf(schedule, project.id);
+      if (mode === "merge") await this.watchMerges(project, project.base);
+      else if (mode === "daily") await this.daily(project, project.base, schedule);
     }
     void this.pump();
   }
 
+  private async watchMerges(project: E2eProject, base: string): Promise<void> {
+    const tip = await this.deps.git.tip(project.path, base);
+    if (tip === undefined) return;
+    const seen = this.deps.repo.seen(project.id);
+    this.deps.repo.setSeen(project.id, tip, this.deps.now().toISOString());
+    // The first sight of a project is a baseline, not a merge.
+    if (seen === undefined || seen === tip) return;
+    const subject = await this.deps.git.subject(project.path, tip);
+    const task = subject === undefined ? undefined : taskOfSubject(subject);
+    await this.enqueue(project, tip, task !== undefined && this.deps.taskExists(task) ? task : undefined);
+  }
+
+  /**
+   * Once a day, after `daily_at` in the owner's zone: a run at the base tip, unless a run of the
+   * project was queued since then today, or the last finished run was already at this tip.
+   */
+  private async daily(project: E2eProject, base: string, schedule: E2eSchedule): Promise<void> {
+    const now = this.deps.now();
+    const [h = 0, m = 0] = schedule.dailyAt.split(":").map(Number);
+    const due = new Date(dayStart(localDay(now, schedule.tz), schedule.tz).getTime() + (h * 60 + m) * 60_000);
+    if (now.getTime() < due.getTime()) return;
+    if (this.deps.repo.queuedSince(project.id, due.toISOString())) return;
+    const tip = await this.deps.git.tip(project.path, base);
+    if (tip === undefined) return;
+    if (this.deps.repo.lastFinished(project.id)?.commit === tip) return;
+    await this.enqueue(project, tip, undefined);
+  }
+
+  /**
+   * The owner's Run now: a run at the base tip whatever the mode. A run at that commit that is queued
+   * or running already is the answer; a finished one is run again.
+   */
+  async runNow(id: string): Promise<{ run: E2eRun; queued: boolean }> {
+    const project = (await this.deps.projects()).find((p) => p.id === id);
+    if (project === undefined) throw new UserError(`There is no project ${id}.`, 404);
+    if (!project.exists) throw new UserError(`The checkout of ${id} is missing.`, 409);
+    if (project.base === undefined) throw new UserError(`${id} has no base branch.`, 409);
+    const tip = await this.deps.git.tip(project.path, project.base);
+    if (tip === undefined) throw new UserError(`${id} has no branch ${project.base}.`, 409);
+    const running = this.deps.repo.running();
+    const active = [...(running === undefined ? [] : [running]), ...this.deps.repo.queued()].find(
+      (r) => r.project === id && r.commit === tip,
+    );
+    if (active !== undefined) return { run: active, queued: false };
+    const runId = await this.queue(project, tip, undefined);
+    const run = this.deps.repo.getRun(runId);
+    if (run === undefined) throw new Error(`e2e run ${runId} was not stored`);
+    return { run, queued: true };
+  }
+
   private async enqueue(project: E2eProject, commit: string, task: string | undefined): Promise<void> {
     if (this.deps.repo.runAt(project.id, commit) !== undefined) return;
+    await this.queue(project, commit, task);
+  }
+
+  /** Inserts a queued run and returns its id. */
+  private async queue(project: E2eProject, commit: string, task: string | undefined): Promise<string> {
     const now = this.deps.now().toISOString();
-    // A newer merge takes the place of a run that has not started.
+    // A newer run takes the place of one of the same project that has not started.
     const id = this.deps.newId();
     for (const queued of this.deps.repo.queued()) {
       if (queued.project !== project.id) continue;
@@ -171,6 +230,7 @@ export class E2eService {
       at: now,
     });
     void this.pump();
+    return id;
   }
 
   /** Runs queued runs one after another. Does nothing while one runs or the helper is away. */
@@ -326,7 +386,7 @@ export class E2eService {
         ? "No Playwright trace could be attached."
         : `Playwright traces of the failures are attached (${attachments.length}). Open one with \`pnpm exec playwright show-trace <file>\`.`,
       "",
-      "Fix the break. Do not run the whole suite: it runs in the background on every merge into the base branch. Read the latest result with the e2e_latest tool.",
+      "Fix the break. Do not run the whole suite: majhi runs it in the background. Read the latest result with the e2e_latest tool.",
     ]
       .filter((l, i, all) => l !== "" || all[i - 1] !== "")
       .join("\n");
@@ -345,10 +405,12 @@ export class E2eService {
 
   async status(): Promise<E2eStatus> {
     const projects = await this.deps.projects();
-    const enabled = await Promise.all(projects.map(async (p) => ({ id: p.id, ...(await this.enabled(p)) })));
+    const schedule = await this.deps.settings();
     const running = this.deps.repo.running();
     return {
-      projects: enabled,
+      projects: projects.map((p) => ({ id: p.id, mode: E2eService.modeOf(schedule, p.id) })),
+      dailyAt: schedule.dailyAt,
+      tz: schedule.tz,
       ...(running === undefined ? {} : { running }),
       queued: this.deps.repo.queued(),
       latest: this.deps.repo.latestPerProject(),
