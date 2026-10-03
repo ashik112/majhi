@@ -18,6 +18,7 @@ import {
   type StopReason,
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import { matchRule, recordResult } from "./captain-script.ts";
 
 /** A small valid PNG: a bar chart on a dark ground, so screenshots show something. */
 export function chartPng(): Buffer {
@@ -214,6 +215,11 @@ async function isBossChat(s: Session): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** The captain script rule for this prompt: only a session with the admin server and a script in its folder. */
+async function scriptedTurn(s: Session, text: string): ReturnType<typeof matchRule> {
+  return s.mcp.some((m) => m.name === "majhi-admin") ? matchRule(s.cwd, text) : undefined;
 }
 
 /**
@@ -623,6 +629,7 @@ export function serveAcp(o: ServeOptions): void {
         stored.messages.push({ role: "user", text });
         let stopReason: StopReason;
         let agentText: string | undefined;
+        const scripted = text.startsWith("echo:") ? undefined : await scriptedTurn(s, text);
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
@@ -821,6 +828,51 @@ export function serveAcp(o: ServeOptions): void {
             });
           }
           stopReason = cancelled ? "cancelled" : "end_turn";
+        } else if (scripted !== undefined) {
+          // Captain script mode: the matching rule's calls go to the session's MCP servers for real.
+          const { index, rule } = scripted;
+          const said: string[] = [];
+          let n = 0;
+          for (const step of rule.steps) {
+            if ("say" in step) {
+              said.push(step.say);
+              continue;
+            }
+            const toolCallId = `script-${++n}`;
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              title: step.tool,
+              kind: "other",
+              status: "in_progress",
+              rawInput: step.args as never,
+            });
+            let outcome: { text: string; isError: boolean };
+            const name = step.server ?? "majhi-admin";
+            const server = s.mcp.find((m) => m.name === name);
+            try {
+              if (server === undefined)
+                throw new Error(`No MCP server named ${name} was given to this session`);
+              outcome = await callMcpTool(server, step.tool, step.args);
+            } catch (err) {
+              outcome = { text: err instanceof Error ? err.message : String(err), isError: true };
+            }
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: outcome.isError ? "failed" : "completed",
+              content: [{ type: "content", content: { type: "text", text: outcome.text } }],
+            });
+            await recordResult(s.cwd, { rule: index, tool: step.tool, args: step.args, ...outcome });
+          }
+          agentText = said.join("\n");
+          if (agentText !== "") {
+            await update(params.sessionId, {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: agentText },
+            });
+          }
+          stopReason = "end_turn";
         } else if (text.startsWith("echo:") || (await isBossChat(s))) {
           // A session with the admin server is the captain: it echoes, so tests never run the coding script.
           const admin = s.mcp.some((m) => m.name === "majhi-admin");
