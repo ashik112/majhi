@@ -118,7 +118,12 @@ export interface CaptainPorts {
   curate(
     org: string,
     fact: PendingFact,
-  ): Promise<{ outcome: "kept" | "dropped" | "merged" | "pending"; event?: number | undefined }>;
+  ): Promise<{
+    outcome: "kept" | "dropped" | "merged" | "pending";
+    event?: number | undefined;
+    /** Why, in a short phrase: "a one-off symptom of one task". */
+    reason?: string | undefined;
+  }>;
 
   // Projects
   newRepos(org: string): Promise<NewRepo[]>;

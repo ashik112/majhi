@@ -10,7 +10,7 @@ import { cn } from "@/lib/cn";
 import { formatAgo, MOD_KEY, plural } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { KindIcon, kindWord, WorkspaceName } from "./decision-list";
-import { openLabel, workspaceOf } from "./model";
+import { openLabel, primaryOption, workspaceOf } from "./model";
 
 /** A labelled block of the detail body, divided from the next by a hairline. */
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
@@ -56,9 +56,11 @@ function Handback({ detail }: { detail: NonNullable<DecisionDetail["handback"]> 
 function Changes({
   diff,
   repos,
+  checks,
 }: {
   diff: NonNullable<DecisionDetail["diff"]>;
   repos: DecisionDetail["repos"];
+  checks: string | undefined;
 }) {
   if (diff.error !== undefined) {
     return <p className="text-sm text-red text-pretty">The change could not be read: {diff.error}</p>;
@@ -90,6 +92,12 @@ function Changes({
         <p className="flex items-center gap-1.5 text-sm text-caution">
           <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />
           Some changes are not committed yet, so they would not be merged.
+        </p>
+      )}
+      {checks !== undefined && (
+        <p className="flex items-start gap-1.5 text-sm text-fg-soft text-pretty">
+          <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-lamp-done" />
+          Checked: {checks}.
         </p>
       )}
       {repos !== undefined && repos.length > 0 && (
@@ -146,6 +154,7 @@ export function DecisionDetailPane({
   const workspace = workspaceOf(decision);
   const textOption = decision.options.find((o) => o.text === true);
   const blocked = detail?.blocked ?? {};
+  const main = primaryOption(decision, blocked);
   const suggestion = decision.suggestion;
   const suggestedLabel =
     decision.options.find((o) => o.id === suggestion?.option)?.label ?? suggestion?.option;
@@ -202,20 +211,24 @@ export function DecisionDetailPane({
               {suggestion.by === "captain" ? "Captain recommends" : "The agent suggests"}{" "}
               <span className="font-semibold text-fg">{suggestedLabel}</span>
             </p>
-            {suggestion.reason !== "" && (
+            {suggestion.by === "captain" && suggestion.reason !== "" && (
               <p className="m-0 text-base text-fg-soft text-pretty break-words">{suggestion.reason}</p>
             )}
           </div>
         )}
 
-        {detail?.diff !== undefined && (
-          <Block title="What changed">
-            <Changes diff={detail.diff} repos={detail.repos} />
+        {hand !== undefined && (
+          <Block
+            title={
+              decision.kind === "ship" ? `What @${hand.agent} said last` : `Last message from @${hand.agent}`
+            }
+          >
+            <Handback detail={hand} />
           </Block>
         )}
-        {detail?.checks !== undefined && (
-          <Block title="Checked">
-            <p className="m-0 text-base text-fg-soft text-pretty">Checked: {detail.checks}.</p>
+        {detail?.diff !== undefined && (
+          <Block title="What changed">
+            <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />
           </Block>
         )}
         {detail?.questions !== undefined && detail.questions.length > 1 && (
@@ -229,15 +242,6 @@ export function DecisionDetailPane({
               ))}
             </ol>
             <p className="m-0 text-sm text-fg-faint">Several questions are answered in the task.</p>
-          </Block>
-        )}
-        {hand !== undefined && (
-          <Block
-            title={
-              decision.kind === "ship" ? `What @${hand.agent} said last` : `Last message from @${hand.agent}`
-            }
-          >
-            <Handback detail={hand} />
           </Block>
         )}
         {detailError !== undefined && (
@@ -274,7 +278,7 @@ export function DecisionDetailPane({
                   onReplyOpen(false);
                 }
               }}
-              className="max-h-40 min-h-[72px] resize-y"
+              className="max-h-40 min-h-[72px] resize-y font-sans"
             />
             <div className="flex items-center gap-2">
               <Button type="submit" size="sm" variant="primary" disabled={busy || replyText.trim() === ""}>
@@ -301,7 +305,7 @@ export function DecisionDetailPane({
             return (
               <Button
                 key={option.id}
-                variant={option.primary === true && !typed ? "primary" : "secondary"}
+                variant={option.id === main?.id && !typed ? "primary" : "secondary"}
                 aria-pressed={typed ? replyOpen : undefined}
                 disabled={busy || why !== undefined}
                 title={why}
@@ -310,7 +314,11 @@ export function DecisionDetailPane({
                 onClick={() => (typed ? onReplyOpen(!replyOpen) : onAnswer(option.id))}
               >
                 {working === option.id ? "Working..." : option.label}
-                {i < 9 && <Kbd aria-hidden="true">{i + 1}</Kbd>}
+                {i < 9 && (
+                  <Kbd aria-hidden="true" className="hidden min-[1280px]:inline-flex">
+                    {i + 1}
+                  </Kbd>
+                )}
               </Button>
             );
           })}
@@ -320,12 +328,14 @@ export function DecisionDetailPane({
             onClick={onOpen}
           >
             {openLabel(decision.link)}
-            <Kbd aria-hidden="true">O</Kbd>
+            <Kbd aria-hidden="true" className="hidden min-[1280px]:inline-flex">
+              o
+            </Kbd>
           </Button>
         </div>
         {blockedNow.map((o) => (
           <p key={o.id} className="mt-2 mb-0 text-sm text-fg-faint text-pretty">
-            {o.label} is not possible now: {blocked[o.id]}
+            {o.label} is not possible now. {blocked[o.id]}
           </p>
         ))}
       </div>

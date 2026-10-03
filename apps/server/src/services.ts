@@ -985,7 +985,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy,
       decisions,
       memory,
-      curate: (fact) => curator.curate(fact, { upkeep: true }),
+      curate: (fact) => curator.review(fact),
       scanner: new RepoScanner(),
       cleanup,
       idle: idleWatch,

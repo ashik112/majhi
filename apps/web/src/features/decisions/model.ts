@@ -40,7 +40,7 @@ export function rowTitle(decision: OwnerDecision): string {
   if ((decision.kind === "ship" || decision.kind === "paused") && decision.taskTitle !== undefined) {
     return decision.taskTitle;
   }
-  return decision.title;
+  return decision.title.replace(/^@\S+ (?:asks|needs approval|needs a secret): /, "");
 }
 
 export interface Filters {
@@ -147,4 +147,16 @@ export function suggestedLabel(decision: OwnerDecision): string | undefined {
 /** The first line of the last answer, "Last decision answered 12 min ago." */
 export function lastAnswerText(at: string | undefined, ago: (iso: string) => string): string | undefined {
   return at === undefined ? undefined : `Last decision answered ${ago(at)}.`;
+}
+
+/**
+ * The answer the main button and Enter give: the one marked primary, or the first that can be taken
+ * when that one is blocked (Merge with nothing committed leaves Mark done).
+ */
+export function primaryOption(
+  decision: OwnerDecision,
+  blocked: Readonly<Record<string, string>> | undefined,
+): OwnerDecision["options"][number] | undefined {
+  const free = decision.options.filter((o) => blocked?.[o.id] === undefined);
+  return free.find((o) => o.primary === true) ?? free.find((o) => o.text !== true) ?? free[0];
 }

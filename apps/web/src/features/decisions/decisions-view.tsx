@@ -28,6 +28,7 @@ import {
   type KindFilter,
   kindCounts,
   lastAnswerText,
+  primaryOption,
   rowTitle,
   workspaceCounts,
 } from "./model";
@@ -120,8 +121,9 @@ export function DecisionsView() {
   };
 
   // Keys. They read the latest state through a ref, so the listener is bound once.
-  const live = useRef({ shown, selected, selectedId, replyOpen, narrow });
-  live.current = { shown, selected, selectedId, replyOpen, narrow };
+  const blocked = detail.data?.blocked;
+  const live = useRef({ shown, selected, selectedId, replyOpen, narrow, blocked });
+  live.current = { shown, selected, selectedId, replyOpen, narrow, blocked };
   const act = useRef({ send, openSelected, select });
   act.current = { send, openSelected, select };
   useEffect(() => {
@@ -153,13 +155,13 @@ export function DecisionsView() {
         if (key === "Enter") {
           if (target instanceof HTMLElement && target.closest("button, a")) return;
           event.preventDefault();
-          const primary = current.options.find((o) => o.primary === true);
+          const primary = primaryOption(current, state.blocked);
           if (primary === undefined) act.current.openSelected();
           else if (primary.text === true) setReplyOpen(true);
           else act.current.send(primary.id);
         } else if (/^[1-9]$/.test(key)) {
           const option = current.options[Number(key) - 1];
-          if (option === undefined) return;
+          if (option === undefined || state.blocked?.[option.id] !== undefined) return;
           event.preventDefault();
           if (option.text === true) setReplyOpen(true);
           else act.current.send(option.id);
@@ -263,7 +265,7 @@ export function DecisionsView() {
                   .map((o) => (
                     <ChoiceChip
                       key={o.id}
-                      className={`${CHIP} max-w-[220px]`}
+                      className={`${CHIP} max-w-[170px]`}
                       pressed={org === o.id}
                       onClick={() => setOrg(o.id)}
                     >
@@ -294,7 +296,7 @@ export function DecisionsView() {
         {!narrow && (
           <p className="m-0 mt-2 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-faint">
             <span>
-              <Kbd>J</Kbd> <Kbd>K</Kbd> move
+              <Kbd>j</Kbd> <Kbd>k</Kbd> move
             </span>
             <span>
               <Kbd>Enter</Kbd> main action
@@ -303,10 +305,10 @@ export function DecisionsView() {
               <Kbd>1</Kbd> to <Kbd>3</Kbd> pick an answer
             </span>
             <span>
-              <Kbd>R</Kbd> reply
+              <Kbd>r</Kbd> reply
             </span>
             <span>
-              <Kbd>O</Kbd> open the task
+              <Kbd>o</Kbd> open the task
             </span>
             <span>
               <Kbd>Esc</Kbd> close the reply
