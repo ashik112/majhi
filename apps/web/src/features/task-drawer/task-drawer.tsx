@@ -14,6 +14,7 @@ import { briefBody, relations } from "@/features/task/model";
 import { statusInfo } from "@/features/tasks/model";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
+import { useLaneRedirect } from "@/lib/lane-link";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTask, useTasks } from "@/lib/task-queries";

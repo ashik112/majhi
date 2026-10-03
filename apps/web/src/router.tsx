@@ -39,6 +39,8 @@ export interface AppSearch {
   /** On Memory: the project shown (or `global`), and its tab. */
   project?: string;
   tab?: string;
+  /** On Captain: the workspace whose thread is shown. */
+  thread?: string;
   /** On Hub setup: the section shown. */
   section?: string;
   /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
@@ -68,6 +70,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const view = search.view === "tree" ? "tree" : undefined;
   const project = text(search.project);
   const tab = text(search.tab);
+  const thread = text(search.thread);
   const section = text(search.section);
   const scope = text(search.scope);
   const about = text(search.about);
@@ -89,6 +92,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(item ? { item } : {}),
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
+    ...(thread ? { thread } : {}),
     ...(section ? { section } : {}),
     ...(scope ? { scope } : {}),
     ...(about ? { about } : {}),

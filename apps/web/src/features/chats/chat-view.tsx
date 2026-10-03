@@ -19,6 +19,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
+import { useLaneRedirect } from "@/lib/lane-link";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTask } from "@/lib/task-queries";
 import { chatTitle } from "./model";
