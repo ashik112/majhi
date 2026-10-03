@@ -30,6 +30,10 @@ describe("update", () => {
     noImage?: boolean;
     /** The key the Keychain holds. */
     savedKey?: string;
+    /** The helper's environment, as `make up` wrote it. */
+    env?: NodeJS.ProcessEnv;
+    /** Whether the majhi-laya container exists. */
+    layaContainer?: boolean;
   }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
@@ -42,7 +46,7 @@ describe("update", () => {
       if (options.failOn !== undefined && line.startsWith(options.failOn)) {
         throw Object.assign(new Error("Command failed"), { stderr: "boom: no space left" });
       }
-      if (line.startsWith("compose --profile runner build") && netFailed < (options.netFails ?? 0)) {
+      if (line.startsWith("compose --profile runner") && netFailed < (options.netFails ?? 0)) {
         netFailed += 1;
         throw Object.assign(new Error("Command failed"), {
           stderr:
@@ -55,7 +59,12 @@ describe("update", () => {
       }
       if (line.startsWith("image inspect")) {
         if (options.noImage) throw Object.assign(new Error("Command failed"), { stderr: "No such image" });
-        return { stdout: "sha256:old\n", stderr: "" };
+        return { stdout: line.endsWith("majhi-laya:dev") ? "sha256:oldlaya\n" : "sha256:old\n", stderr: "" };
+      }
+      if (line.startsWith("container inspect")) {
+        if (!options.layaContainer)
+          throw Object.assign(new Error("Command failed"), { stderr: "No such container" });
+        return { stdout: "cid-laya\n", stderr: "" };
       }
       if (line.startsWith("compose logs")) {
         return { stdout: "server-1  | starting\nserver-1  | SqliteError: malformed JSON\n", stderr: "" };
@@ -88,7 +97,7 @@ describe("update", () => {
         remount: {
           repo: join(dir, "repo"),
           docker: "/usr/bin/docker",
-          env: { HOME: "/h" },
+          env: { HOME: "/h", ...options.env },
           exec,
           log: () => undefined,
         },
@@ -238,5 +247,100 @@ describe("update", () => {
     const s = setup({ failOn: "compose --profile runner build" });
     await s.run();
     expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(1);
+  });
+
+  describe("Laya", () => {
+    const docker = (s: { calls: Array<{ file: string; args: string }> }) =>
+      s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
+    const env = (s: { calls: Array<{ args: string; env: NodeJS.ProcessEnv }> }, prefix: string) =>
+      s.calls.find((c) => c.args.startsWith(prefix))?.env;
+
+    it("in Docker on the CPU: builds and restarts Laya, and keeps its previous image", async () => {
+      const s = setup({ env: { MAJHI_LAYA: "docker" } });
+      expect((await s.run()).state).toBe("done");
+      const calls = docker(s);
+      const build = calls.indexOf("compose --profile runner --profile laya build");
+      expect(build).toBeGreaterThanOrEqual(0);
+      expect(calls.indexOf("tag sha256:oldlaya majhi-laya:previous")).toBeLessThan(build);
+      expect(calls.indexOf("tag sha256:oldlaya majhi-laya:previous")).toBeGreaterThanOrEqual(0);
+      for (const step of ["compose --profile runner", "compose run", "compose up -d --wait"]) {
+        expect(env(s, step)?.COMPOSE_PROFILES).toBe("laya");
+      }
+      expect(env(s, "compose --profile runner")?.MAJHI_LAYA_DEVICE).toBeUndefined();
+      expect(env(s, "compose --profile runner")?.MAJHI_LAYA_TORCH_INDEX).toBeUndefined();
+      expect(calls.some((c) => c.startsWith("container inspect"))).toBe(false);
+    });
+
+    it("in Docker with NVIDIA: builds Laya with the CUDA args make up recorded", async () => {
+      const s = setup({
+        env: {
+          MAJHI_LAYA: "docker",
+          MAJHI_LAYA_GPU: "nvidia",
+          MAJHI_LAYA_TORCH_INDEX: "https://download.pytorch.org/whl/cu126",
+          MAJHI_LAYA_DEVICE: "cuda",
+          COMPOSE_PROFILES: "extra",
+        },
+      });
+      expect((await s.run()).state).toBe("done");
+      const build = env(s, "compose --profile runner --profile laya build");
+      expect(build?.MAJHI_LAYA_TORCH_INDEX).toBe("https://download.pytorch.org/whl/cu126");
+      expect(build?.MAJHI_LAYA_DEVICE).toBe("cuda");
+      expect(build?.COMPOSE_PROFILES).toBe("extra,laya");
+      expect(env(s, "compose up -d --wait")?.MAJHI_LAYA_GPU).toBe("nvidia");
+    });
+
+    it.each(["native", "off"])(
+      "%s: builds and keeps no Laya image, even when its old container is there",
+      async (mode) => {
+        const s = setup({ env: { MAJHI_LAYA: mode }, layaContainer: true });
+        expect((await s.run()).state).toBe("done");
+        const calls = docker(s);
+        expect(calls).toContain("compose --profile runner build");
+        expect(calls.some((c) => c.includes("laya"))).toBe(false);
+        expect(calls.some((c) => c.startsWith("container inspect"))).toBe(false);
+        expect(s.calls.some((c) => c.env.COMPOSE_PROFILES !== undefined)).toBe(false);
+      },
+    );
+
+    it("without make up's record, builds Laya when its container is there", async () => {
+      const s = setup({ layaContainer: true });
+      expect((await s.run()).state).toBe("done");
+      expect(docker(s)).toContain("compose --profile runner --profile laya build");
+      expect(env(s, "compose up -d --wait")?.COMPOSE_PROFILES).toBe("laya");
+    });
+
+    it("without make up's record, takes CUDA from the GPU and the Makefile's default index", async () => {
+      const s = setup({ env: { MAJHI_LAYA_GPU: "nvidia" } });
+      expect((await s.run()).state).toBe("done");
+      const build = env(s, "compose --profile runner --profile laya build");
+      expect(build?.MAJHI_LAYA_DEVICE).toBe("cuda");
+      expect(build?.MAJHI_LAYA_TORCH_INDEX).toBe("https://download.pytorch.org/whl/cu130");
+    });
+
+    it("without make up's record, leaves the torch index to .env when it names one", async () => {
+      await writeFile(
+        join(dir, "repo", ".env"),
+        "MAJHI_LAYA_TORCH_INDEX=https://download.pytorch.org/whl/cu126\n",
+      );
+      const s = setup({ env: { MAJHI_LAYA_GPU: "nvidia" } });
+      expect((await s.run()).state).toBe("done");
+      const build = env(s, "compose --profile runner --profile laya build");
+      expect(build?.MAJHI_LAYA_DEVICE).toBe("cuda");
+      expect(build?.MAJHI_LAYA_TORCH_INDEX).toBeUndefined();
+    });
+
+    it("goes back to the previous Laya image too when the new majhi does not start", async () => {
+      const s = setup({ env: { MAJHI_LAYA: "docker" }, failOnce: "compose up" });
+      expect((await s.run()).state).toBe("failed");
+      const calls = docker(s);
+      const firstUp = calls.indexOf("compose up -d --wait");
+      const back = calls.indexOf("tag sha256:oldlaya majhi-laya:dev");
+      expect(back).toBeGreaterThan(firstUp);
+      expect(calls.indexOf("tag sha256:old majhi-server:dev")).toBeGreaterThan(firstUp);
+      expect(calls.lastIndexOf("compose up -d --wait")).toBeGreaterThan(back);
+      expect(s.calls.filter((c) => c.args === "compose up -d --wait").at(-1)?.env.COMPOSE_PROFILES).toBe(
+        "laya",
+      );
+    });
   });
 });

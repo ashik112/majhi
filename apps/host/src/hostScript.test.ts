@@ -54,6 +54,9 @@ describe("scripts/host.sh on Linux and WSL2", () => {
       DOCKER_CONTEXT: "work\nlaptop",
       MAJHI_SSH_AGENT: join(sb.home, ".majhi", "run", "ssh-agent.sock"),
       MAJHI_LAYA_GPU: "nvidia",
+      MAJHI_LAYA: "docker",
+      MAJHI_LAYA_TORCH_INDEX: "https://download.pytorch.org/whl/cu130",
+      MAJHI_LAYA_DEVICE: "cuda",
     });
     expect(result).toEqual({
       code: 0,
@@ -114,6 +117,9 @@ MAJHI_PORT="7171"
 DOCKER_CONFIG="/srv/docker \\"x\\" \\\`y\\\` z\\\\w \\$HOME"
 MAJHI_SSH_AGENT="${envHome}/.majhi/run/ssh-agent.sock"
 MAJHI_LAYA_GPU="nvidia"
+MAJHI_LAYA="docker"
+MAJHI_LAYA_TORCH_INDEX="https://download.pytorch.org/whl/cu130"
+MAJHI_LAYA_DEVICE="cuda"
 `);
     expect((await stat(join(units, "majhi-host.env"))).mode & 0o777).toBe(0o600);
     expect((await stat(join(sb.home, ".majhi", "run"))).mode & 0o777).toBe(0o700);
@@ -223,7 +229,7 @@ MAJHI_LAYA_GPU="nvidia"
 });
 
 describe("scripts/host.sh on macOS", () => {
-  it("passes the agent socket and Laya's GPU to the LaunchAgent too", async () => {
+  it("passes the agent socket and Laya's mode and GPU to the LaunchAgent too", async () => {
     await sb.os("macos");
     await sb.recorder("launchctl");
     const agents = join(sb.root, "LaunchAgents");
@@ -231,6 +237,7 @@ describe("scripts/host.sh on macOS", () => {
       MAJHI_LAUNCH_AGENTS_DIR: agents,
       MAJHI_SSH_AGENT: "/run/host-services/ssh-auth.sock",
       MAJHI_LAYA_GPU: "nvidia",
+      MAJHI_LAYA: "docker",
     });
     expect(result.stdout).toBe(
       "host helper: running as dev.majhi.host with node v22.11.0. Logs: make host-logs\n",
@@ -240,6 +247,7 @@ describe("scripts/host.sh on macOS", () => {
       "    <key>MAJHI_SSH_AGENT</key>\n    <string>/run/host-services/ssh-auth.sock</string>\n",
     );
     expect(plist).toContain("    <key>MAJHI_LAYA_GPU</key>\n    <string>nvidia</string>\n");
+    expect(plist).toContain("    <key>MAJHI_LAYA</key>\n    <string>docker</string>\n");
     expect(await sb.calls("systemctl")).toEqual([]);
   });
 });
