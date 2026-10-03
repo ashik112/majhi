@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>majhi</title>
-<meta name="description" content="You steer. The agents row. A crew of AI coding agents for every client, run from one desk on your own machine.">
+<meta name="description" content="You steer. The agents row. Run AI coding agents for every client from one place, each client in its own boat.">
 <meta property="og:title" content="majhi">
-<meta property="og:description" content="You steer. The agents row. A crew of AI coding agents for every client, on your own machine.">
+<meta property="og:description" content="You steer. The agents row. Run AI coding agents for every client from one place, each client in its own boat.">
 <meta property="og:image" content="https://majhi.dev/assets/onboarding.webp">
 <meta property="og:url" content="https://majhi.dev">
 <meta name="twitter:card" content="summary_large_image">
@@ -50,18 +50,25 @@ nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding
 .tile svg{width:27px}
 nav .grow{flex:1}
 nav .sign{padding:11px 18px 9px;font-size:16px}
-.copy{position:relative;z-index:5;max-width:760px;margin:auto 0;padding:clamp(64px,16vh,160px) clamp(18px,4vw,48px) clamp(20px,4vh,44px)}
+.copy{position:relative;z-index:5;max-width:760px;margin:auto 0;padding:clamp(16px,16vh - var(--ph) * .6 + 14px,100px) clamp(18px,4vw,48px) clamp(20px,4vh,44px)}
 .copy h1{margin:0;font-size:clamp(46px,min(6vw,9vh),86px);color:var(--yellow)}
 .copy h1 span{color:var(--white);display:block;white-space:nowrap}
-.copy p{margin:clamp(12px,2vh,20px) 0 clamp(18px,3vh,28px);font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
+.copy p{margin:clamp(12px,2vh,20px) 0 clamp(18px,3vh,28px);font-size:21px;max-width:560px;text-wrap:pretty;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
 .actions{display:flex;gap:14px;flex-wrap:wrap}
 .sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,min(19vw,32vh),290px);animation:sway 9s ease-in-out infinite alternate}
 @keyframes sway{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
+/* the peacock perches on the Source button: its feet sit at 60.5% of the image height and
+   33% of its width; the tail hangs behind the button */
+.perch{position:relative;display:inline-flex;isolation:isolate}
+.copy{--ph:clamp(150px,22vh,210px)}
+.actions{margin-top:calc(var(--ph) * .6 - 14px)}
+.peacock{position:absolute;z-index:-1;pointer-events:none;height:var(--ph);width:auto;
+  left:calc(100% - 26px - var(--ph) * .531 * .33);top:calc(var(--ph) * -.605 + 4px)}
 .cloud{position:absolute;z-index:0;animation:drift 60s ease-in-out infinite alternate}
 @keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(60px)}}
 /* The scene is 3440x440 units and always scales by its height, so nothing is
    cut top or bottom; wider screens just see more of the bank. 1cqh = 4.4 units. */
-.land{position:relative;z-index:4;flex:1 1 0;min-height:max(200px,13vw);max-height:520px;container-type:size}
+.land{position:relative;z-index:4;flex:1 1 0;min-height:max(170px,12vw);max-height:520px;container-type:size}
 .landscape{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 /* birds cross the upper sky from fully off-screen left to fully off-screen right,
    in front of the sun and behind the headline; the inner image rises, dips and tilts */
@@ -69,16 +76,9 @@ nav .sign{padding:11px 18px 9px;font-size:16px}
 .birds img{display:block;width:100%;height:auto;animation:glide 3.8s cubic-bezier(.45,0,.55,1) infinite alternate}
 @keyframes fly{from{transform:translateX(-100%)}to{transform:translateX(100vw)}}
 @keyframes glide{from{transform:translateY(-12px) rotate(-2.5deg)}to{transform:translateY(10px) rotate(2deg)}}
-/* The scene is 3440x440 units and always scales by its height, so nothing is
-   cut top or bottom; wider screens just see more of the bank. 1cqh = 4.4 units. */
-.land{position:relative;z-index:4;flex:1 1 0;min-height:max(200px,13vw);max-height:520px;container-type:size}
-.landscape{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-/* birds cross the upper sky from fully off-screen left to fully off-screen right,
-   in front of the sun and behind the headline */
-.birds{position:absolute;z-index:4;left:0;top:11%;width:clamp(180px,19vw,290px);animation:fly 28s linear infinite}
-@keyframes fly{0%{transform:translate(-100%,0)}25%{transform:translate(25vw,-14px)}50%{transform:translate(50vw,8px)}75%{transform:translate(75vw,-12px)}100%{transform:translate(100vw,0)}}
-/* hull centre sits at 79.5% of the boat box; river centre is 66% down the scene */
-.boat{--bh:min(58cqh,38cqw);position:absolute;z-index:1;left:0;height:var(--bh);aspect-ratio:720/440;top:calc(66cqh - var(--bh) * .795);animation:sail 36s linear infinite;animation-delay:-14s}
+/* the hull is the band from 64% to 94% of the boat box, centred at 79%; the water runs
+   from 47% (far bank) to the bottom of the scene, centred at 74% */
+.boat{--bh:min(96cqh,58cqw);position:absolute;z-index:1;left:0;height:var(--bh);aspect-ratio:720/440;top:calc(74cqh - var(--bh) * .79);animation:sail 36s linear infinite;animation-delay:-14s}
 @keyframes sail{from{transform:translateX(-100%)}to{transform:translateX(100cqw)}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
@@ -94,8 +94,8 @@ nav .sign{padding:11px 18px 9px;font-size:16px}
 
 /* one sentence */
 .crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
-.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.22 "Baloo Da 2",sans-serif}
-.chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.15;color:var(--ink)}
+.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.5 "Baloo Da 2",sans-serif}
+.chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.1;color:var(--ink)}
 .chip.y{background:var(--yellow)}.chip.p{background:var(--pink)}.chip.c{background:#7fb3ff}.chip.r{background:#ff8a5c}
 
 /* strengths: a painted ledger */
@@ -190,7 +190,7 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 </defs></svg>
 
 <header class="hero" id="top">
-  <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
+  <img class="sun" src="/assets/h-sun-rays.webp" alt="" aria-hidden="true">
   <span class="birds" aria-hidden="true"><img src="/assets/h-birds.webp" alt=""></span>
   <nav>
     <a class="brand" href="#top"><span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
@@ -200,10 +200,10 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   </nav>
   <div class="copy">
     <h1 class="letter">You steer.<span>The agents row.</span></h1>
-    <p>A crew of AI coding agents for every client. They plan, build, review and ship. You decide where the boat goes.</p>
+    <p>Run AI coding agents for every client from one place, each client in its own boat. They do the work. You decide what ships.</p>
     <div class="actions">
       <a class="sign" href="#install">Get majhi</a>
-      <a class="sign alt" href="https://github.com/ashik112/majhi"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a>
+      <span class="perch"><a class="sign alt" href="https://github.com/ashik112/majhi"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a><img class="peacock" src="/assets/h-peacock.webp" alt="" aria-hidden="true"></span>
     </div>
   </div>
 
@@ -223,12 +223,12 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       <image href="/assets/h-hut.webp" x="1480" y="95" width="124" height="115"/>
       <image href="/assets/h-haystack.webp" x="2050" y="137" width="92" height="73"/>
       <!-- the river -->
-      <rect x="-1000" y="208" width="3440" height="180" fill="#1f5fd0"/>
-      <clipPath id="river"><rect x="-1000" y="208" width="3440" height="180"/></clipPath><g clip-path="url(#river)"><g class="flow" style="--rw:1162px"><!-- painted water, seamless, drifting left to right --><image href="/assets/h-river.webp" x="-2162" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="-1000" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="162" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="1324" y="208" width="1163" height="310" preserveAspectRatio="none"/></g></g>
+      <rect x="-1000" y="208" width="3440" height="240" fill="#1f5fd0"/>
+      <clipPath id="river"><rect x="-1000" y="208" width="3440" height="240"/></clipPath><g clip-path="url(#river)"><g class="flow" style="--rw:1162px"><!-- painted water, seamless, drifting left to right --><image href="/assets/h-river.webp" x="-2162" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="-1000" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="162" y="208" width="1163" height="310" preserveAspectRatio="none"/><image href="/assets/h-river.webp" x="1324" y="208" width="1163" height="310" preserveAspectRatio="none"/></g></g>
       <path d="M-1000 208 H2440" stroke="#120e0b" stroke-width="5"/>
       <image href="/assets/h-lotus.webp" x="-520" y="262" width="150" height="120"/>
       <image href="/assets/h-lotus.webp" x="20" y="258" width="160" height="128"/>
-      <rect x="-1000" y="384" width="3440" height="90" fill="#22620d"/><image href="/assets/h-near.webp" x="-1000" y="320" width="730" height="200"/><image href="/assets/h-near.webp" x="-271" y="320" width="730" height="200"/><image href="/assets/h-near.webp" x="458" y="320" width="730" height="200"/><image href="/assets/h-near.webp" x="1187" y="320" width="730" height="200"/><image href="/assets/h-near.webp" x="1916" y="320" width="730" height="200"/>
+      
     </svg>
   <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
     <g class="bob">
@@ -248,20 +248,20 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 <div class="trim" style="--below:var(--green)"></div>
 
 <section class="crew" id="crew">
-  <p>You say it in one sentence. A <span class="chip y">lead</span> plans it, <span class="chip c">builders</span> write it in their own containers, a <span class="chip p">reviewer</span> sends back what is not good enough, and you <span class="chip r">ship</span> it from one card.</p>
+  <p>Every client gets its own <span class="chip y">crew</span>, its own <span class="chip c">accounts</span> and its own <span class="chip p">rules</span>. Nothing crosses between them. Bring the subscriptions you already pay for, and the captain runs it all from <span class="chip r">one desk</span> on your machine.</p>
 </section>
 
 <div class="trim" style="--below:var(--yellow)"></div>
 
 <section class="ledger">
   <div class="inner">
-    <h2 class="letter">It runs the desk</h2>
-    <div class="row"><h3>It sails through the night</h3><p>Turn on autonomous mode and the captain works your backlog like you would: it picks tasks by priority and due date, forms crews, ships finished work and leaves you a summary in the morning. <b>It stays inside the budget you set for each client.</b></p></div>
-    <div class="row"><h3>It does not sink</h3><p>Laptop asleep, Wi-Fi gone, a usage limit hit, a model refusing a request. Agents pause and pick up where they stopped, a blocked step goes to a teammate, and unshipped work is counted before anything can close.</p></div>
-    <div class="row"><h3>It ships, not just writes</h3><p>Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Several repos ship together or not at all. A conflict is one click.</p></div>
-    <div class="row"><h3>It only calls you when it matters</h3><p>One bell for approvals, questions and blocked work. You choose what needs your click, client by client, from careful to hands-off.</p></div>
-    <div class="row"><h3>It costs less every day</h3><p>Laya, a small open model running free on your machine, makes the hundreds of small calls. The big models only get the work that needs them, and every account's usage and cost is on screen.</p></div>
-    <div class="row"><h3>It learns your code</h3><p>Lasting facts from every task are kept per repo and brought back next time, so the crew stops relearning the same quirks.</p></div>
+    <h2 class="letter">Why the boat keeps moving</h2>
+    <div class="row"><h3>It rows through the night</h3><p>Switch on autonomous mode before bed. The captain takes tasks by priority and due date, picks a crew for each one, ships what passes review and leaves you a summary for the morning. <b>Each client has a spend cap it won't cross.</b></p></div>
+    <div class="row"><h3>It doesn't capsize</h3><p>Laptop asleep, Wi-Fi down, a usage limit hit, a model refusing a request. The run stops at its last checkpoint and picks up from there, or hands the step to another agent. No agent can close a task while its work sits unshipped. Only you can.</p></div>
+    <div class="row"><h3>It reaches the other bank</h3><p>Merge, squash or rebase into any branch. Push, or open pull and merge requests on GitHub, GitLab and Bitbucket. A change across three repos lands in all three or in none. A conflict opens in one click.</p></div>
+    <div class="row"><h3>It calls out only when it needs you</h3><p>Approvals, questions and stuck work land in one bell. Client by client, you choose which steps wait for your click and which go ahead on their own.</p></div>
+    <div class="row"><h3>It rows cheap</h3><p>Laya, a small open model running free on your machine, makes the hundreds of small calls, like routing tasks and picking models. Claude and Codex only get the real work, and every account's usage and cost is on screen.</p></div>
+    <div class="row"><h3>It remembers the river</h3><p>Every finished task leaves notes on the repo it touched. The next crew reads them first, so nobody relearns the same quirks.</p></div>
   </div>
 </section>
 
@@ -273,18 +273,18 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   </div>
   <div class="strip">
     <div class="track">
-      <figure class="frame"><img src="/assets/board.webp" alt="The board with every client's tasks and each agent's state" loading="lazy"><figcaption>Every client on one board</figcaption></figure>
-      <figure class="frame"><img src="/assets/task-room.webp" alt="A task room with the plan, the crew and the branch" loading="lazy"><figcaption>Every task is a room</figcaption></figure>
-      <figure class="frame"><img src="/assets/onboarding.webp" alt="The first-run river journey" loading="lazy"><figcaption>A first run worth remembering</figcaption></figure>
-      <figure class="frame"><img src="/assets/health.webp" alt="Usage windows and cost for every AI account" loading="lazy"><figcaption>Every account's limits, live</figcaption></figure>
+      <figure class="frame"><img src="/assets/board.webp" alt="The board with every client's tasks and each agent's state" loading="lazy"><figcaption>All your clients on one board</figcaption></figure>
+      <figure class="frame"><img src="/assets/task-room.webp" alt="A task room with the plan, the crew and the branch" loading="lazy"><figcaption>Each task gets its own room</figcaption></figure>
+      <figure class="frame"><img src="/assets/onboarding.webp" alt="The first-run river journey" loading="lazy"><figcaption>Setup finds your folders, accounts and logins</figcaption></figure>
+      <figure class="frame"><img src="/assets/health.webp" alt="Usage windows and cost for every AI account" loading="lazy"><figcaption>Usage and limits for each account</figcaption></figure>
       <figure class="frame"><img src="/assets/orgs.webp" alt="Workspaces, one per client" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
-      <figure class="frame"><img src="/assets/new-task.webp" alt="Starting a task in one sentence" loading="lazy"><figcaption>One sentence starts the work</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/board.webp" alt="" loading="lazy"><figcaption>Every client on one board</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/task-room.webp" alt="" loading="lazy"><figcaption>Every task is a room</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/onboarding.webp" alt="" loading="lazy"><figcaption>A first run worth remembering</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/health.webp" alt="" loading="lazy"><figcaption>Every account's limits, live</figcaption></figure>
+      <figure class="frame"><img src="/assets/new-task.webp" alt="Starting a task in one sentence" loading="lazy"><figcaption>One sentence starts a task</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/board.webp" alt="" loading="lazy"><figcaption>All your clients on one board</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/task-room.webp" alt="" loading="lazy"><figcaption>Each task gets its own room</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/onboarding.webp" alt="" loading="lazy"><figcaption>Setup finds your folders, accounts and logins</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/health.webp" alt="" loading="lazy"><figcaption>Usage and limits for each account</figcaption></figure>
       <figure class="frame" aria-hidden="true"><img src="/assets/orgs.webp" alt="" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/new-task.webp" alt="" loading="lazy"><figcaption>One sentence starts the work</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/new-task.webp" alt="" loading="lazy"><figcaption>One sentence starts a task</figcaption></figure>
     </div>
   </div>
 </section>
@@ -294,15 +294,16 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 <section class="boats">
   <div class="inner">
     <h2 class="letter">One boat per client</h2>
+    <p class="lead">Acme's agents can't read Globex's repos, keys or notes. The walls are built into the containers, not a setting you have to remember.</p>
     <div class="fleet" aria-hidden="true">
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
       <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
     </div>
     <ul class="points">
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own repos and secrets</b><span>Agents work in containers that see one task. They never see your SSH keys or another client's code.</span></div></li>
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own costs and memory</b><span>Spend, limits and what the crew has learned are counted and kept per client.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own oars</b><span>Acme's Claude and Codex logins, host tokens and git identity belong to Acme. Commits for Acme go out under the name and email you set for Acme.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own hull</b><span>Each agent runs in a container that holds one task's worktrees and nothing else. It never sees your SSH keys, majhi's own config or another client's code.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own ledger</b><span>Spend, usage limits, budgets and what the crew has learned are kept per client. Globex's notes never show up in an Acme task.</span></div></li>
     </ul>
   </div>
 </section>
@@ -311,7 +312,7 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 
 <section class="board" id="install">
   <h2 class="letter">Come aboard</h2>
-  <p class="lead">One command with Docker installed. A short river journey sets up your folders, AI accounts, clients and git logins.</p>
+  <p class="lead">You need Docker and one command. A short trip down the river then sets up your folders, AI accounts, clients and git logins.</p>
   <div class="plate"><code>git clone https://github.com/ashik112/majhi.git &amp;&amp; cd majhi &amp;&amp; make up</code><button class="sign" type="button" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
   <div class="os"><span>macOS</span><span>Linux</span><span>Windows (WSL2)</span><span>Claude Code</span><span>Codex</span></div>
 </section>
