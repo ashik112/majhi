@@ -30,7 +30,7 @@ export function KeyExportForm({ onDone }: { onDone: (detail: string) => void }) 
       {
         onSuccess: (out) => {
           download(out.fileName, out.content);
-          onDone(`Downloaded ${out.fileName}. Keep it and the passphrase off this Mac.`);
+          onDone(`Downloaded ${out.fileName}. Keep it and the passphrase off this computer.`);
         },
         onError: (err) => setError(describeError(err)),
       },

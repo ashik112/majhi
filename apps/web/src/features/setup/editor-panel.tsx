@@ -7,7 +7,7 @@ import { useSaveSettings } from "@/lib/boss-queries";
 
 const IDLE: SaveState = { kind: "idle" };
 
-/** Which editor "Open in editor" uses. The host helper runs it on this Mac. */
+/** Which editor "Open in editor" uses. The host helper runs it on this computer. */
 export function EditorSection({ saved }: { saved: EditorSettings }) {
   const save = useSaveSettings();
   const [edit, setEdit] = useState<EditorApp>();
@@ -54,7 +54,7 @@ export function EditorSection({ saved }: { saved: EditorSettings }) {
       >
         <Field
           label="Open files and folders in"
-          hint="The host helper runs this editor on your Mac through its code or cursor command. The app must be installed there."
+          hint="The host helper runs this editor on your computer through its code or cursor command. The app must be installed there."
         >
           {(p) => (
             <Select

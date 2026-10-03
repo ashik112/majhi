@@ -25,7 +25,7 @@ import {
 } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 
-/** Where a host lists the account's SSH keys, for when no key on this Mac logs in as it. */
+/** Where a host lists the account's SSH keys, for when no key on this computer logs in as it. */
 const SSH_KEYS_PAGE: Partial<Record<GitHost, (host: string) => string>> = {
   github: () => "https://github.com/settings/keys",
   gitlab: (host) => `https://${host}/-/user_settings/ssh_keys`,
@@ -55,7 +55,7 @@ function useAction() {
 /**
  * The org's git accounts, one row per host: how it pushes, whether its merge request token works,
  * and the commit identity, each with the one step that fixes it. Hosts the org's projects use with
- * no account yet show the logins found on this Mac.
+ * no account yet show the logins found on this computer.
  */
 export function GitAccounts({ org }: { org: OrgView }) {
   const status = useGitStatus(org.id);
@@ -86,7 +86,7 @@ export function GitAccounts({ org }: { org: OrgView }) {
       }
     >
       {status.isPending ? (
-        <p className="m-0 text-sm text-fg-faint">Looking at this Mac's keys and logins.</p>
+        <p className="m-0 text-sm text-fg-faint">Looking at this computer's keys and logins.</p>
       ) : data === undefined ? (
         <p className="m-0 text-sm text-fg-muted">
           The git accounts could not be read{status.error ? `: ${describeError(status.error)}` : "."}
@@ -95,7 +95,7 @@ export function GitAccounts({ org }: { org: OrgView }) {
         <>
           {checked === undefined && (
             <p className="m-0 text-sm text-fg-muted">
-              The host helper is not connected, so majhi cannot see this Mac's keys and logins.
+              The host helper is not connected, so majhi cannot see this computer's keys and logins.
             </p>
           )}
           {detect.error && (
@@ -231,13 +231,13 @@ function PushLine({ org, status }: { org: string; status: GitAccountStatus }) {
       </State>
     );
   }
-  if (push.state === "https") return <State tone="green">Pushes with this Mac's saved login</State>;
+  if (push.state === "https") return <State tone="green">Pushes with this computer's saved login</State>;
   if (push.state === "unknown") return <State tone="neutral">Not known while the host helper is off</State>;
   const keys = SSH_KEYS_PAGE[status.kind]?.(status.host);
   return (
     <>
       <State tone="amber">
-        No SSH key on this Mac logs in as <span className="font-mono text-fg">{status.account}</span>
+        No SSH key on this computer logs in as <span className="font-mono text-fg">{status.account}</span>
       </State>
       {push.choices.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -291,7 +291,7 @@ function TokenLine({ org, status }: { org: string; status: GitAccountStatus }) {
   );
 }
 
-/** The ways to give an account a token, in order: a CLI login, the Mac's saved login, a new token. */
+/** The ways to give an account a token, in order: a CLI login, this computer's saved login, a new token. */
 function TokenFix({ org, status }: { org: string; status: GitAccountStatus }) {
   const { set } = useSetGitAccount();
   const saved = useUseSavedLogin();
@@ -337,7 +337,7 @@ function TokenFix({ org, status }: { org: string; status: GitAccountStatus }) {
                 })
               }
             >
-              Use this Mac's saved login
+              Use this computer's saved login
             </Button>
           )}
         </div>
@@ -444,7 +444,7 @@ function MissingRow({
       <div className="flex min-w-0 flex-col gap-2 pl-[22px]">
         {offers.length > 0 ? (
           <>
-            <p className="m-0 text-sm text-fg-faint">Found on this Mac. Use it for {org.name}?</p>
+            <p className="m-0 text-sm text-fg-faint">Found on this computer. Use it for {org.name}?</p>
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
               {offers.map((o) => (
                 <li key={o.account} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">

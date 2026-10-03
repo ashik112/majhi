@@ -1,4 +1,4 @@
-import { type SshHostCheck, type SshStatus, sshUnlockCommand } from "@majhi/shared";
+import { hostOsOf, type SshHostCheck, type SshStatus, sshUnlockCommand } from "@majhi/shared";
 import { KeyRound } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { CommandLine } from "@/components/command-line";
@@ -69,7 +69,7 @@ export function SshNotice({ className }: { className?: string }) {
             </summary>
             <div className="mt-2 flex flex-col gap-2">
               {keys.needsPassphrase.map((key) => (
-                <CommandLine key={key} command={sshUnlockCommand(key)} />
+                <CommandLine key={key} command={sshUnlockCommand(key, hostOsOf(status?.info))} />
               ))}
             </div>
           </details>

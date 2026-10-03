@@ -90,7 +90,7 @@ function RunningList() {
                       href={c.hostUrl}
                       target="_blank"
                       rel="noreferrer"
-                      title="Open the preview on this Mac"
+                      title="Open the preview on this computer"
                     >
                       Open {c.hostUrl}
                       <ExternalLink aria-hidden="true" className="size-3" />

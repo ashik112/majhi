@@ -6,7 +6,7 @@ export type CheckGroupId = CheckRow["group"];
 
 const GROUPS: readonly { id: CheckGroupId; title: string }[] = [
   { id: "majhi", title: "majhi" },
-  { id: "host", title: "This Mac" },
+  { id: "host", title: "This computer" },
   { id: "ssh", title: "Git over SSH" },
   { id: "accounts", title: "Accounts" },
   { id: "connections", title: "Connections" },

@@ -1,6 +1,7 @@
 import {
   EFFORT_TIER_LABEL,
   EffortTierSchema,
+  hostOsOf,
   MODEL_TIER_LABEL,
   ModelTierSchema,
   type ProviderId,
@@ -27,6 +28,7 @@ import {
   useSetDecisions,
 } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
+import { useHostStatus } from "@/lib/queries";
 import { RecentDecisions } from "./recent-decisions";
 
 const NAME: Record<ProviderId, string> = {
@@ -74,6 +76,7 @@ function Providers({ status }: { status: DecisionsStatus }) {
   const toast = useToast();
   const save = useSetDecisions();
   const install = useInstallLaya();
+  const host = useHostStatus().data?.info;
   const order = status.settings.order;
   const off = ALL.filter((id) => !order.includes(id));
   const info = (id: ProviderId) => status.providers.find((p) => p.id === id);
@@ -90,6 +93,8 @@ function Providers({ status }: { status: DecisionsStatus }) {
   };
   const { laya } = status;
   const busy = laya.state === "installing" || laya.state === "downloading";
+  // The native install needs a Mac with Apple silicon. Elsewhere Laya runs in Docker, built with the rest.
+  const canInstall = hostOsOf(host) === "macos" && host?.laya?.state !== "unsupported";
 
   return (
     <div className="flex max-w-[720px] flex-col gap-2">
@@ -154,7 +159,7 @@ function Providers({ status }: { status: DecisionsStatus }) {
       {busy && laya.progress !== undefined && (
         <progress aria-label="Laya download" className="h-1.5 w-full" value={laya.progress} max={1} />
       )}
-      {(laya.state === "not-installed" || laya.state === "error") && (
+      {canInstall && (laya.state === "not-installed" || laya.state === "error") && (
         <div>
           <Button
             size="sm"
@@ -334,18 +339,19 @@ function parseBar(text: string): number | undefined {
   return text.trim() !== "" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
 }
 
+/** Laya in Docker says so in `detail`; the native one leaves it out of these states. */
 function layaLine({ laya }: DecisionsStatus): string {
   switch (laya.state) {
     case "not-installed":
-      return "Not installed. About 850 MB, once.";
+      return laya.detail ?? "Not installed. About 850 MB, once.";
     case "installing":
       return laya.detail ?? "Installing";
     case "downloading":
       return `Downloading the model${laya.progress === undefined ? "" : `, ${Math.round(laya.progress * 100)}%`}`;
     case "ready":
-      return "Ready. The model loads on the first question.";
+      return laya.detail ?? "Ready. The model loads on the first question.";
     case "loaded":
-      return "Ready, model loaded";
+      return laya.detail ?? "Ready, model loaded";
     case "error":
     case "unsupported":
       return laya.detail ?? laya.state;

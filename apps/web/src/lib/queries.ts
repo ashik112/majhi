@@ -152,7 +152,7 @@ function noteSsh(client: QueryClient, ssh: SshStatus): void {
   );
 }
 
-/** Asks the host helper to load the Mac's SSH keys again. */
+/** Asks the host helper to load this computer's SSH keys again. */
 export function useSshReload() {
   const client = useQueryClient();
   return useMutation<SshStatus, ApiRequestError>({

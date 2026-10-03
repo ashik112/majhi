@@ -1,4 +1,4 @@
-import { collapseHome, type WorkspacesUpdateResult } from "@majhi/shared";
+import { collapseHome, hostOsOf, rootExample, type WorkspacesUpdateResult } from "@majhi/shared";
 import { ChevronRight, CircleAlert } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -26,18 +26,23 @@ export interface RootsFormProps {
   bare?: boolean;
 }
 
-const COPY = {
+/** `body` gets the example root for the helper's OS, like `~/Work`. */
+const COPY: Record<
+  RootsFormProps["mode"],
+  { title: string; body: (example: string) => string; submit: string }
+> = {
   "first-run": {
     title: "Pick your project folders",
-    body: "A project folder holds your git repos, like ~/Work. majhi finds every repo inside it.",
+    body: (example) =>
+      `A project folder holds your git repos, like ${example}. majhi finds every repo inside it.`,
     submit: "Save folders",
   },
   edit: {
     title: "Project folders",
-    body: "majhi scans these folders for git repos.",
+    body: () => "majhi scans these folders for git repos.",
     submit: "Save changes",
   },
-} as const;
+};
 
 /**
  * The roots form for onboarding and `/settings/roots`. With the host helper connected the owner
@@ -59,8 +64,10 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
 
   const check = useMemo(() => checkRoots({ rows, tasksDir }, home), [rows, tasksDir, home]);
   const protectedFound = useMemo(() => protectedRoots(rows, tasksDir, home), [rows, tasksDir, home]);
+  const os = hostOsOf(host.data?.info);
+  const example = rootExample(os);
   const firstRoot = rows.find((r) => r.value.trim() !== "")?.value ?? "";
-  const tasksHint = defaultTasksDir(firstRoot || "~/Work");
+  const tasksHint = defaultTasksDir(firstRoot || example);
   const copy = COPY[mode];
   // A failed status request means the server is down; typed paths still work once it is back.
   const helper = host.data
@@ -124,7 +131,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
       {!bare && (
         <div className="flex flex-col gap-2">
           <h1 className="text-lg font-semibold text-balance">{copy.title}</h1>
-          <p className="text-base text-fg-muted text-pretty">{copy.body}</p>
+          <p className="text-base text-fg-muted text-pretty">{copy.body(example)}</p>
         </div>
       )}
 
@@ -139,6 +146,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
           <RootPicker
             formId={formId}
             home={home}
+            example={example}
             rows={rows}
             rowErrors={check.rowErrors}
             formError={submitted ? check.formError : undefined}
@@ -149,6 +157,7 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
         ) : helper === "offline" ? (
           <TypedRoots
             formId={formId}
+            example={example}
             rows={rows}
             setRows={setRows}
             newId={newId}
@@ -203,7 +212,9 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
           )}
         </div>
 
-        <ProtectedWarning found={protectedFound} runtime={host.data?.info?.dockerRuntime} />
+        {os === "macos" && (
+          <ProtectedWarning found={protectedFound} runtime={host.data?.info?.dockerRuntime} />
+        )}
 
         {save.error && (
           <div role="alert" className="mx-4 mb-4 rounded-md border border-red-line bg-red-wash px-3 py-2.5">

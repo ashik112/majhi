@@ -21,6 +21,7 @@ import type { RootRow, RootsCheck } from "./model";
  */
 export function TypedRoots({
   formId,
+  example,
   rows,
   setRows,
   newId,
@@ -29,6 +30,8 @@ export function TypedRoots({
   inputs,
 }: {
   formId: string;
+  /** The first row's placeholder, like `~/Work`. */
+  example: string;
   rows: readonly RootRow[];
   setRows: Dispatch<SetStateAction<RootRow[]>>;
   newId: () => number;
@@ -125,7 +128,7 @@ export function TypedRoots({
                     onBlur={() => setTouched((prev) => new Set(prev).add(row.id))}
                     onKeyDown={(e) => onRowKeyDown(e, index, row)}
                     autoFocus={index === 0}
-                    placeholder={index === 0 ? "~/Work" : "~/personal or /absolute/path"}
+                    placeholder={index === 0 ? example : "~/personal or /absolute/path"}
                     aria-label={`Project folder ${index + 1}`}
                     aria-invalid={error ? true : undefined}
                     aria-describedby={error ? errorId : undefined}

@@ -15,7 +15,7 @@ function mrHostOfName(name: string): MrHost | undefined {
 }
 
 /**
- * Offers a `gh` or `glab` login found on this Mac as the org's token, with one click. For Bitbucket,
+ * Offers a `gh` or `glab` login found on this computer as the org's token, with one click. For Bitbucket,
  * which has no login to find, it asks for an Atlassian API token in a field. Nothing shows when the org
  * already has a token for the host.
  */

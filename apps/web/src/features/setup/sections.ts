@@ -44,7 +44,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
 export const SECTION_ABOUT: Record<SetupSection, string> = {
   overview: "What majhi needs before agents can work, and the one step each part may still need.",
   roots: "The folders majhi scans for git repos. It can only see folders that are mounted.",
-  ssh: "The keys majhi's git uses to reach your hosts. Passphrases stay in the macOS Keychain.",
+  ssh: "The keys majhi's git uses to reach your hosts. Passphrases stay on this computer.",
   decisions: "Who answers the small typed questions agents ask, like which model fits a task.",
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
@@ -52,7 +52,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   teams: "How long agents in a room may pass work around without you.",
   approvals: "What agents may do without asking you, and what they asked for lately.",
   notifications:
-    "A Mac banner and a browser notification when an agent needs you: approvals, questions, stops.",
+    "A desktop banner and a browser notification when an agent needs you: approvals, questions, stops.",
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
   e2e: "Run the full e2e suite in the background after each merge into main, and where it runs.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",

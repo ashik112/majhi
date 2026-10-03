@@ -15,6 +15,7 @@ import { openTaskIds } from "@/features/shell/use-shortcuts";
 import { useCandidates } from "@/features/task/team-controls";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
+import { MOD_KEY } from "@/lib/format";
 import { useMemorySearch } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
@@ -223,7 +224,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
       id: "boss",
       name: "Open the captain",
       keywords: "chat assistant",
-      hint: "⌘ J",
+      hint: `${MOD_KEY} J`,
       run: () => (onClose(), boss.show()),
     },
     {
