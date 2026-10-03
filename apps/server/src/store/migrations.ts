@@ -866,6 +866,12 @@ CREATE TABLE decision_links (
 );
 `,
   },
+  {
+    // A captain log line can name the decision it came from, so the owner can say it was wrong.
+    id: 126,
+    name: "decision on captain log lines",
+    sql: `ALTER TABLE captain_actions ADD COLUMN decision TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

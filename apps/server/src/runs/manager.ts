@@ -1701,6 +1701,7 @@ export class RunManager {
       run.preambleDue = opened.adminToken !== undefined && !resumed;
 
       let pickLine: string | undefined;
+      let pickDecision: string | undefined;
       if (fm.model === "auto" || fm.effort === "auto") {
         const sections = await deps.config.sections();
         // A price table that does not parse must not stop the start: picks fall back to tiers or the CLI default.
@@ -1729,6 +1730,7 @@ export class RunManager {
         for (const line of result.warnings) this.live.system(run, "warn", line);
         if (result.applied !== undefined) deps.store.runs.setPick(run.runId, result.applied);
         pickLine = result.line;
+        pickDecision = result.decisionId;
       }
       // What the agent runs after the session applied the options: a refused model keeps the default.
       const shownModel = session.models.defaultModel ?? opened.model;
@@ -1738,7 +1740,7 @@ export class RunManager {
         "info",
         `@${run.agent} ${resumed ? "resumed" : "started"} on ${fm.account}, model ${shownModel ?? "default"}, effort ${shownEffort ?? "default"}`,
       );
-      if (pickLine !== undefined) this.live.system(run, "info", pickLine);
+      if (pickLine !== undefined) this.live.system(run, "info", pickLine, pickDecision);
       this.setLive(run, {
         status: "idle",
         slot: undefined,

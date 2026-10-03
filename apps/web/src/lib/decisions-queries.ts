@@ -43,6 +43,24 @@ export function useCorrectDecision() {
   });
 }
 
+/** One decision from the log, for the "Wrong?" control. Loaded only once the owner opens it. */
+export function useDecisionRecord(id: string, enabled: boolean) {
+  return useQuery<CommandOutput<"decisions.get">, ApiRequestError>({
+    queryKey: [...keys.recent, "one", id],
+    queryFn: () => cmd("decisions.get", { id }),
+    enabled,
+  });
+}
+
+/** The owner's "Wrong?": the right answer, kept as a label. */
+export function useLabelDecision() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"decisions.label">, ApiRequestError, CommandInput<"decisions.label">>({
+    mutationFn: (input) => cmd("decisions.label", input, { reason: "Owner labeled a decision" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.recent }),
+  });
+}
+
 export function useSetDecisions() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"decisions.set">, ApiRequestError, CommandInput<"decisions.set">>({

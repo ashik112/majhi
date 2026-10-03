@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DecisionUseSchema } from "./decisions.ts";
+import { askedOptions, DecisionUseSchema, optionKey, type Question } from "./decisions.ts";
 
 /**
  * How majhi learns whether a decision provider is right (SPEC 5.12): labels from outcomes and from
@@ -35,6 +35,13 @@ export const DecisionLabelSchema = z.object({
   at: z.string(),
 });
 export type DecisionLabel = z.infer<typeof DecisionLabelSchema>;
+
+/** What a question can be answered with, as label strings: a choice's options, `true` and `false`, or the scale. */
+export function answerChoices(q: Question): string[] {
+  if (q.type === "choice") return askedOptions(q).map(optionKey);
+  if (q.type === "noul") return ["true", "false"];
+  return Array.from({ length: Math.max(0, q.max - q.min + 1) }, (_, i) => String(q.min + i));
+}
 
 /** The owner's "Wrong?": the right answer to one question of a decision. */
 export const LabelInputSchema = z.object({

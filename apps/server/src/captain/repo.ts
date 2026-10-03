@@ -26,6 +26,7 @@ interface ActionRow {
   reason: string;
   evidence: string | null;
   task: string | null;
+  decision: string | null;
   outcome: string;
   undo: string | null;
   undo_note: string | null;
@@ -57,6 +58,7 @@ export interface NewAction {
   reason: string;
   evidence?: string | undefined;
   task?: string | undefined;
+  decision?: string | undefined;
   outcome: CaptainAction["outcome"];
   undo?: CaptainUndo | undefined;
   /** Why Undo is not possible, when it is not. */
@@ -90,6 +92,7 @@ function actionOf(r: ActionRow): StoredAction | undefined {
     reason: r.reason,
     ...(r.evidence === null ? {} : { evidence: r.evidence }),
     ...(r.task === null ? {} : { task: r.task }),
+    ...(r.decision === null ? {} : { decision: r.decision }),
     outcome: r.outcome,
     ...(undo === undefined ? {} : { undo }),
     ...(r.undo_note === null ? {} : { undoNote: r.undo_note }),
@@ -283,8 +286,8 @@ export class CaptainRepo {
   addAction(a: NewAction): number | undefined {
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO captain_actions (key, run, org, chore, day, at, text, reason, evidence, task, outcome, undo, undo_note)
-         VALUES (@key, @run, @org, @chore, @day, @at, @text, @reason, @evidence, @task, @outcome, @undo, @undo_note)`,
+        `INSERT OR IGNORE INTO captain_actions (key, run, org, chore, day, at, text, reason, evidence, task, decision, outcome, undo, undo_note)
+         VALUES (@key, @run, @org, @chore, @day, @at, @text, @reason, @evidence, @task, @decision, @outcome, @undo, @undo_note)`,
       )
       .run({
         key: a.key,
@@ -297,6 +300,7 @@ export class CaptainRepo {
         reason: a.reason,
         evidence: a.evidence ?? null,
         task: a.task ?? null,
+        decision: a.decision ?? null,
         outcome: a.outcome,
         undo: a.undo === undefined ? null : JSON.stringify(a.undo),
         undo_note: a.undoNote ?? null,

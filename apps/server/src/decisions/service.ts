@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
 import {
   type Answer,
+  answerChoices,
   type CommandMeta,
   type DecideRequest,
   type DecideRequestInput,
   DecideRequestSchema,
+  type DecisionLabel,
   type DecisionOutcome,
   type DecisionPatchSchema,
   type DecisionRecord,
@@ -174,6 +176,43 @@ export class DecisionService implements Decisions {
     const record = this.deps.log.get(input.id);
     if (record === undefined) throw new Error(`Decision ${input.id} cannot be read.`);
     return record;
+  }
+
+  /** One decision from the log. */
+  get(id: string): DecisionRecord {
+    const record = this.deps.log.get(id);
+    if (record === undefined) throw new UserError(`There is no decision ${id}.`, 404);
+    return record;
+  }
+
+  /** The owner says what the right answer was. Kept as a label for the evals and calibration. */
+  label(input: {
+    id: string;
+    question?: string | undefined;
+    right: string;
+    note?: string | undefined;
+  }): DecisionLabel {
+    const record = this.get(input.id);
+    const names = Object.keys(record.answers);
+    const question = input.question ?? (names.length === 1 ? names[0] : undefined);
+    if (question === undefined) throw new UserError(`Say which question: ${names.join(", ")}.`);
+    if (!names.includes(question)) throw new UserError(`Decision ${input.id} has no question ${question}.`);
+    const asked = record.request?.questions[question];
+    const options = asked === undefined ? undefined : answerChoices(asked);
+    if (options !== undefined && !options.includes(input.right))
+      throw new UserError(`${input.right} is not one of ${options.join(", ")}.`);
+    this.deps.labels.add({
+      decisionId: input.id,
+      question,
+      label: input.right,
+      source: "owner",
+      note: input.note,
+    });
+    const stored = this.deps.labels
+      .forDecision(input.id)
+      .find((l) => l.question === question && l.source === "owner");
+    if (stored === undefined) throw new Error(`The label for ${input.id} cannot be read.`);
+    return stored;
   }
 
   labels(): LabelStore {

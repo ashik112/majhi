@@ -82,6 +82,7 @@ import {
   PreviewRunInputSchema,
   ServiceStartInputSchema,
 } from "./containers.ts";
+import { DecisionLabelSchema, LabelInputSchema } from "./decision-learning.ts";
 import {
   DecideRequestSchema,
   DecisionCacheStatsSchema,
@@ -2288,6 +2289,19 @@ export const commands = {
       note: z.string().trim().max(500).optional(),
     }),
     output: DecisionRecordSchema,
+  },
+  "decisions.get": {
+    risk: "read",
+    summary: "One decision from the log by id, with its request, every probability and its outcome",
+    input: z.object({ id: z.string().min(1).max(40) }),
+    output: DecisionRecordSchema,
+  },
+  "decisions.label": {
+    risk: "change",
+    summary:
+      "Say what the right answer to a decision's question was (Wrong?). Stored as an owner label for the evals and calibration; changes nothing else. question may be left out when the decision asked one",
+    input: LabelInputSchema,
+    output: DecisionLabelSchema,
   },
   "decisions.status": {
     risk: "read",
