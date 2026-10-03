@@ -22,7 +22,7 @@ import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import type { Lanes } from "./lanes.ts";
-import { authorityOf, choresOf, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
@@ -117,17 +117,12 @@ export class CaptainService {
   }
 
   /**
-   * Autonomous is Off, or this service closed: nothing of the captain acts by itself. The captain
-   * is never stopped for the owner: its lanes and chats always answer.
+   * This service closed: nothing of the captain acts. Autonomous being Off is not this: it keeps
+   * memory review and cleanup going (`choresNow`) and stops everything else through the workspace's
+   * authority. The captain's lanes and chats always answer.
    */
   stopped(): boolean {
-    if (this.closed) return true;
-    try {
-      return this.deps.autonomy.mode() === "off";
-    } catch {
-      // The database closed under a shutdown: nothing acts.
-      return true;
-    }
+    return this.closed;
   }
 
   // ---------------------------------------------------------------------------
@@ -183,10 +178,10 @@ export class CaptainService {
   async sweepNow(): Promise<void> {
     if (this.closed) return;
     const sections = await this.deps.config.sections();
-    for (const org of this.stopped() ? [] : workspaceIds(sections.orgs)) {
+    for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
       if (ws === undefined || ws.rest !== undefined) continue;
-      for (const chore of choresOf(ws.authority)) {
+      for (const chore of choresNow(ws.authority, ws.mode)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
         if (DAILY_CHORES.includes(chore)) {
           if (this.repo.runsToday(org, chore, ws.day) > 0) continue;
@@ -377,6 +372,7 @@ export class CaptainService {
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
+      mode: this.deps.autonomy.mode(),
       authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
       rules,
       tz,
@@ -420,7 +416,7 @@ export class CaptainService {
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane, org) ?? "idle"),
-        chores: choresOf(authority).map((chore) => {
+        chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
           const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
           const last = this.repo.lastRun(org, chore);

@@ -1,6 +1,6 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { authorityOf, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
+import { authorityOf, choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
 import { branchAllowed, presenceWhy, providerAllowed, restWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
@@ -64,9 +64,13 @@ describe("the authority table per workspace", () => {
   it("acts only while Autonomous is on", () => {
     const all = rows("decide", "decide", "decide", "decide", "decide", "decide") as Authority;
     expect(effectiveAuthority(all, "on")).toEqual(all);
+    // Not On: everything is "You decide" except upkeep, which keeps its choice (memory and cleanup only).
     for (const mode of ["off", "paused", "stopping"] as const) {
-      expect(effectiveAuthority(all, mode)).toEqual(ALL_ASK);
+      expect(effectiveAuthority(all, mode)).toEqual({ ...ALL_ASK, upkeep: "decide" });
+      expect(effectiveAuthority({ ...all, upkeep: "ask" }, mode)).toEqual(ALL_ASK);
+      expect(choresNow(all, mode)).toEqual(["memory", "cleanup"]);
     }
+    expect(choresNow(all, "on")).toEqual(choresOf(all));
   });
 
   it("runs each chore on its own row", () => {

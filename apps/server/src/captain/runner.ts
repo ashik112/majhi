@@ -1,5 +1,6 @@
 import type {
   Authority,
+  AutonomyMode,
   AutonomyOrg,
   CaptainCapAsk,
   CaptainCause,
@@ -9,7 +10,7 @@ import type {
 } from "@majhi/shared";
 import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
-import { choresOf } from "./levels.ts";
+import { choresNow } from "./levels.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions } from "./rules.ts";
 
@@ -26,7 +27,9 @@ import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions
 export interface Workspace {
   org: string;
   name: string;
-  /** Who decides each row now (Autonomous applied: all "ask" while it is not On). */
+  /** Autonomous now: only memory and cleanup run while it is not On. */
+  mode: AutonomyMode;
+  /** Who decides each row now (Autonomous applied: all "ask" but upkeep while it is not On). */
   authority: Authority;
   rules: AutonomyOrg | undefined;
   tz: string;
@@ -147,7 +150,7 @@ export class ChoreRun {
 
   /** Ends the run when it reached a cap or the captain was stopped. */
   check(): void {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Autonomous is off");
+    if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
     const actions = runActions(this.chore);
     if (this.actions >= actions) {
       throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
@@ -265,9 +268,9 @@ export class ChoreRun {
 
   /** The workspace's rules read again, then the step's own check. */
   private async recheck(a: ActInput): Promise<string | undefined> {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Autonomous is off");
+    if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
     const now = await this.deps.workspace(this.org);
-    if (now === undefined || !choresOf(now.authority).includes(this.chore)) {
+    if (now === undefined || !choresNow(now.authority, now.mode).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
     if (now.rest !== undefined) throw new RunEnd("rested", now.rest);
@@ -334,7 +337,7 @@ export class ChoreRunner {
     let run: ChoreRun | undefined;
     try {
       const ws = await deps.workspace(org);
-      if (ws === undefined || !choresOf(ws.authority).includes(chore) || ws.rest !== undefined)
+      if (ws === undefined || !choresNow(ws.authority, ws.mode).includes(chore) || ws.rest !== undefined)
         return undefined;
       if (deps.repo.chore(org, chore).offAt !== undefined) return undefined;
       const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;

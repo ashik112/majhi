@@ -18,16 +18,16 @@ async function world() {
 }
 
 describe("the Autonomous switch is On or Off", () => {
-  it("while Off, the captain's upkeep starts no run; On, it does", async () => {
+  it("while Off, only memory and cleanup run; On, shipping runs too", async () => {
     const { services } = await world();
     expect(services.autonomy.mode()).toBe("off");
-    expect(services.captain.stopped()).toBe(true);
-    expect(await services.captain.runner.start("acme", "memory", "test")).toBeUndefined();
-    expect(services.captain.runner.busy()).toBe(false);
+    expect(services.captain.stopped()).toBe(false);
+    expect(await services.captain.runner.start("acme", "ship", "test")).toBeUndefined();
+    expect(await services.captain.runner.start("acme", "cards", "test")).toBeUndefined();
+    expect(await services.captain.runner.start("acme", "memory", "test")).toBeDefined();
 
     expect(await w?.h.cmd("autonomy.start")).toMatchObject({ status: 200 });
-    expect(services.captain.stopped()).toBe(false);
-    expect(await services.captain.runner.start("acme", "memory", "test")).toBeDefined();
+    expect(await services.captain.runner.start("acme", "ship", "test")).toBeDefined();
   });
 
   it("while Off, the captain's tools in a lane refuse with one line: no plan, no note, no answer", async () => {
@@ -67,7 +67,7 @@ describe("the Autonomous switch is On or Off", () => {
     expect(stopped).toMatchObject({ autonomy: "off", stopped: false });
     expect(services.store.tasks.get(id)).toMatchObject({ status: "paused", pausedBy: "autonomy-off" });
     // The captain is never stopped: it still has its lane.
-    expect(services.captain.stopped()).toBe(true);
+    expect(services.captain.stopped()).toBe(false);
     expect((await h.cmd("autonomy.status")).body.stopped).toEqual([id]);
 
     const resumed = (await h.cmd("captain.resume")).body as CaptainStatus;

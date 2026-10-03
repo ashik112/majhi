@@ -53,10 +53,20 @@ export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: strin
 
 /**
  * What the captain may do now. Autonomous is the single place that decides it: while it is not On,
- * every row behaves as "Ask me", whatever a workspace is set to.
+ * starting, answering, approving, merging and pushing behave as "You decide", whatever a workspace is
+ * set to. Upkeep keeps its choice, because it is cheap and runs only the chores in `OFF_CHORES`.
  */
 export function effectiveAuthority(authority: Authority, mode: AutonomyMode): Authority {
-  return mode === "on" ? authority : { ...ALL_ASK };
+  return mode === "on" ? authority : { ...ALL_ASK, upkeep: authority.upkeep };
+}
+
+/** The only chores that run while Autonomous is not On: memory review and cleaning up done tasks. */
+export const OFF_CHORES: readonly CaptainChore[] = ["memory", "cleanup"];
+
+/** The chores that run in a workspace now: all of its table's chores while On, else only `OFF_CHORES`. */
+export function choresNow(authority: Authority, mode: AutonomyMode): readonly CaptainChore[] {
+  const chores = choresOf(authority);
+  return mode === "on" ? chores : chores.filter((chore) => OFF_CHORES.includes(chore));
 }
 
 /** The saved form after a change to some rows: the rows from `authorityOf`, with the change on top. */
