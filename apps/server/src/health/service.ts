@@ -134,9 +134,21 @@ export class HealthService {
         const result = await services.connectionTests.test(id.slice("connection:".length));
         return { ok: result.ok, detail: result.ok ? `It works again. ${result.detail}` : result.detail };
       }
+      if (id === "secrets-key") {
+        // The export and its passphrase are the owner's to give, so the browser shows the form.
+        return {
+          ok: true,
+          detail: "Choose the export file and type its passphrase.",
+          open: { kind: "key-restore" },
+        };
+      }
       if (id === "secrets-key-keychain") {
         const expected = await services.secrets.fingerprint();
         if (expected === undefined) return { ok: false, detail: "There is no secrets key to save yet." };
+        // The Keychain may hold the right key: never replace it with one that cannot read secrets.age.
+        if ((await services.secrets.keyState()) !== "ok") {
+          return { ok: false, detail: "The key file does not open secrets.age, so it was not saved." };
+        }
         const saved = await hostLink.call("secretsKey.save", { expected }, KEYCHAIN_CALL_TIMEOUT_MS);
         hostLink.noteSecretsKey(saved);
         return {

@@ -23,6 +23,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "room.fresh",
   "ssh.unlock",
   "secrets.exportKey",
+  "secrets.restoreKey",
   "boss.chat",
   "chats.create",
   "chats.rename",

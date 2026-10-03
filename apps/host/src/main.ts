@@ -22,13 +22,21 @@ import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.t
 import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
 import { createKeyBackup } from "./keychain.ts";
+import { createKeyRestorer } from "./keyRestore.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger } from "./log.ts";
 import { showNotification } from "./notify.ts";
 import { isWsl, openUrl } from "./openUrl.ts";
 import { findExecutable, toolPath } from "./paths.ts";
-import { composeEnv, createRemounter, dockerStep, type ExecFn, type RemountOptions } from "./remount.ts";
+import {
+  composeEnv,
+  createRemounter,
+  dockerStep,
+  type ExecFn,
+  type RemountOptions,
+  recreateServer,
+} from "./remount.ts";
 import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
 import { runCommand } from "./runCommand.ts";
 import { createSsh, discoverPublicKeys } from "./ssh.ts";
@@ -98,6 +106,13 @@ async function main(): Promise<void> {
     readText: files.readText,
     keyFile: secretsKeyFile,
     platform: process.platform,
+    log,
+  });
+  const keyRestore = createKeyRestorer({
+    keyFile: secretsKeyFile,
+    secretsFile: join(config.majhiHome, "secrets.age"),
+    restart: remountOptions === undefined ? undefined : () => recreateServer(remountOptions, "secrets key"),
+    saveToKeychain: process.platform === "darwin" ? (fingerprint) => keyBackup.save(fingerprint) : undefined,
     log,
   });
   const update =
@@ -252,6 +267,7 @@ async function main(): Promise<void> {
     },
     sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
     secretsKeySave: (params: { expected: string }) => keyBackup.save(params.expected),
+    secretsKeyRestore: keyRestore,
     gitLogins: async (params: { extraHosts: string[] }) => ({
       hosts: await detectGitLogins(gitDeps, params.extraHosts),
     }),

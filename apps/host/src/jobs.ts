@@ -13,6 +13,7 @@ import type {
   LayaStatus,
   RootSuggestion,
   SecretsKeyBackup,
+  SecretsKeyRestore,
   SshStatus,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
@@ -33,6 +34,14 @@ export interface JobHandlers {
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
   /** Throws an error whose message is safe to show. It never holds the key. */
   secretsKeySave(params: { expected: string }): Promise<SecretsKeyBackup>;
+  /**
+   * Writes a restored secrets key when the key file is missing or does not open secrets.age.
+   * `after` restarts majhi, so it runs once the reply is sent, and never throws. Throws an error
+   * whose message is safe to show. It never holds the key.
+   */
+  secretsKeyRestore?: (params: {
+    key: string;
+  }) => Promise<{ result: SecretsKeyRestore; after: () => Promise<void> }>;
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
@@ -97,8 +106,8 @@ export const CANNOT_REMOUNT =
 
 /**
  * Runs one job and sends its reply. A failing job is answered with its
- * message; nothing here throws. `remount` is answered first, because it
- * restarts the server the reply goes to.
+ * message; nothing here throws. `remount` and `secretsKey.restore` are
+ * answered before they restart the server the reply goes to.
  */
 export async function runJob(
   job: HostJob,
@@ -221,6 +230,16 @@ export async function runJob(
       case "secretsKey.save":
         await reply({ id: job.id, ok: true, result: await handlers.secretsKeySave(job.params) });
         return;
+      case "secretsKey.restore": {
+        if (handlers.secretsKeyRestore === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        const { result, after } = await handlers.secretsKeyRestore(job.params);
+        await reply({ id: job.id, ok: true, result });
+        await after();
+        return;
+      }
       case "remount": {
         const remount = handlers.remount;
         if (remount === undefined) {
