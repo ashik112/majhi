@@ -195,7 +195,7 @@ describe("scripts/check.sh: what only warns", () => {
   it("warns when the secrets key cannot have a keyring copy, and points to the export", async () => {
     await healthy("linux");
     const exportStep =
-      "The secrets key has no copy in a keyring: export it on majhi's Health page (Export key) and keep the file safe.";
+      "The secrets key may have no copy in a keyring: export it on majhi's Health page (Export key) and keep the file safe.";
     await sb.fake("busctl", "echo 'b true'");
     expect(warnings(await check())).toEqual([`Warning: The keyring is locked. ${exportStep}`]);
     await sb.fake("busctl", "echo 'Failed to get property Locked: The name is not activatable' >&2; exit 1");

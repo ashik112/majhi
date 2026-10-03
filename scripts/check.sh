@@ -119,7 +119,7 @@ check_warnings() {
 
   reason=$(keyring_problem)
   if [ -n "$reason" ]; then
-    warn "$reason The secrets key has no copy in a keyring: export it on majhi's Health page (Export key) and keep the file safe."
+    warn "$reason The secrets key may have no copy in a keyring: export it on majhi's Health page (Export key) and keep the file safe."
   fi
 
   problem=$(systemd_problem)
