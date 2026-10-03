@@ -1,4 +1,5 @@
 import type { AutonomyStatus } from "@majhi/shared";
+import { useSearch } from "@tanstack/react-router";
 import { Bot } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
@@ -12,6 +13,7 @@ import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
+import type { AppSearch } from "@/router";
 import { ModeControls } from "./controls";
 import { WorkPane } from "./desk";
 import { LogPane } from "./feed";
@@ -78,7 +80,12 @@ export function AutonomyView() {
   const status = query.data;
   const now = useNow(30_000);
   const wide = useMedia("(min-width: 1280px)");
-  const [picked, setView] = useState<View>("desk");
+  const search: AppSearch = useSearch({ strict: false });
+  const [picked, setView] = useState<View>(search.tab === "rules" ? "rules" : "desk");
+  // "Edit caps" elsewhere opens the Rules view, even when this page is already open.
+  useEffect(() => {
+    if (search.tab === "rules") setView("rules");
+  }, [search.tab]);
   // The log sits beside Now and next when there is room; otherwise it is a view of its own.
   const view: View = wide && picked === "log" ? "desk" : picked;
   const summaryDay = status?.summary?.day;

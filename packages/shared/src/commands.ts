@@ -44,6 +44,7 @@ import {
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
   AutonomyPlanInputSchema,
+  AutonomyStartInputSchema,
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
 } from "./autonomy.ts";
@@ -2421,7 +2422,7 @@ export const commands = {
     risk: "change",
     summary:
       "Turn autonomous mode on, or resume it when paused. Owner only. Refused when there is no captain",
-    input: Empty,
+    input: AutonomyStartInputSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.pause": {

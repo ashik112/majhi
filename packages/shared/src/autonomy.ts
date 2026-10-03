@@ -278,6 +278,8 @@ export const AutonomyStatusSchema = z.object({
   summary: AutonomySummarySchema.optional(),
   /** When majhi last woke the captain, UTC ISO. */
   lastTick: z.string().optional(),
+  /** Tasks Stop now paused that are still paused: turning on can resume them. */
+  stopped: z.array(TaskIdSchema).default([]),
 });
 export type AutonomyStatus = z.infer<typeof AutonomyStatusSchema>;
 
@@ -334,6 +336,9 @@ export const AutonomyGuideResultSchema = z.object({
 });
 
 export const AutonomyStopInputSchema = z.object({ how: z.enum(["now", "graceful"]) });
+
+/** `autonomy.start`: `resumeStopped` also resumes the tasks Stop now paused (`status.stopped`). */
+export const AutonomyStartInputSchema = z.object({ resumeStopped: z.boolean().default(false) });
 
 /** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
 export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });

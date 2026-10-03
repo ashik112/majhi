@@ -65,7 +65,7 @@ import {
 } from "./limits.ts";
 import { leftOutWhy, levelProblem, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
-import { AutonomyRepo, type HeldReason } from "./repo.ts";
+import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -79,6 +79,9 @@ import {
   spendOf,
 } from "./spend.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
+
+const STOP_NOW_WHY =
+  "Autonomous mode was stopped with Stop now. Resume this task, or turn autonomous mode on and resume its tasks.";
 
 /** How often holds, a graceful stop and the driver's clock are checked. */
 export const SWEEP_MS = 60_000;
@@ -151,6 +154,8 @@ export class AutonomyService {
   private holds: AutonomyHold[];
   private holdsQueue: Promise<unknown> = Promise.resolve();
   private finishing = false;
+  /** Stop now is stopping tasks one by one: the graceful finish stays out of it. */
+  private stoppingNow = false;
   private sweep: NodeJS.Timeout | undefined;
   /** Wakes the captain with ticks, and hears every mode change. */
   private driver: DriverHooks | undefined;
@@ -330,7 +335,7 @@ export class AutonomyService {
   // The mode (rule 1)
 
   /** Turn on, or resume when paused or stopping. Refused without a captain. */
-  async start(): Promise<AutonomyStatus> {
+  async start(resumeStopped = false): Promise<AutonomyStatus> {
     const { mode } = this.repo.state();
     if (mode === "on") return this.status();
     if (this.deps.captainStopped?.() === true) {
@@ -352,6 +357,12 @@ export class AutonomyService {
         "Turned on",
         "Autonomous mode is on. The captain picks the work from here.",
       );
+      // The tasks Stop now paused restart only when the owner asks; else they stay the owner's.
+      for (const row of this.repo.tasks()) {
+        if (row.held !== "owner" || row.heldScope !== STOPPED_NOW) continue;
+        if (resumeStopped) await this.resumeTask(row.task, "autonomous mode turned on");
+        else this.repo.release(row.task);
+      }
       await this.refreshHolds();
       this.wake("Autonomous mode turned on");
       return this.status();
@@ -402,23 +413,37 @@ export class AutonomyService {
   }
 
   /** Stop now: every autonomous task with a live run stops, and the captain's turn ends. */
-  private async stopNow(): Promise<void> {
+  private async stopNow(why = STOP_NOW_WHY): Promise<void> {
+    this.stoppingNow = true;
+    try {
+      await this.stopEachNow(why);
+    } finally {
+      this.stoppingNow = false;
+    }
+  }
+
+  private async stopEachNow(why: string): Promise<void> {
     // Held at every boundary while the runs stop; the event comes once, for `off`.
     this.repo.setMode("stopping", this.now().toISOString(), "owner", undefined);
     // The captain first, in every lane, so it calls no more tools while its tasks stop.
     for (const chat of this.laneChats()) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
+    const stopped: string[] = [];
     for (const task of this.openTasks()) {
       // A task in review can still have a turn in flight.
       if (!this.stoppable(task) && !this.deps.runs.inTurn(task.id)) continue;
-      await this.deps.tasks.stop(task.id).catch(() => undefined);
+      const done = await this.deps.tasks.stop(task.id, "owner", why).catch(() => undefined);
+      if (done?.status === "paused") stopped.push(task.id);
     }
     this.repo.releaseAll();
+    // Remembered, so turning on again can resume exactly these.
+    for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
     this.setMode("off", "owner", "Stopped now", "Autonomous mode stopped. Its tasks are paused for you.");
   }
 
   /** Stop gracefully: once no autonomous run is in a turn, majhi turns the mode off. */
   private async maybeFinishStop(): Promise<void> {
-    if (this.finishing || this.repo.state().mode !== "stopping") return;
+    // Stop now holds the mode at stopping while it stops each task itself: a second stop would race it.
+    if (this.finishing || this.stoppingNow || this.repo.state().mode !== "stopping") return;
     const ids = [...this.openTasks().map((t) => t.id), ...this.laneChats()];
     if (ids.some((id) => this.deps.runs.inTurn(id))) return;
     this.finishing = true;
@@ -1676,7 +1701,17 @@ export class AutonomyService {
       settings: m.settings,
       ...(summary === undefined ? {} : { summary }),
       ...(after.lastTick === undefined ? {} : { lastTick: after.lastTick }),
+      stopped: this.stoppedNow(),
     };
+  }
+
+  /** Tasks Stop now paused that are still paused, for the turn-on dialog. */
+  private stoppedNow(): string[] {
+    return this.repo
+      .tasks()
+      .filter((r) => r.held === "owner" && r.heldScope === STOPPED_NOW)
+      .filter((r) => this.deps.store.tasks.get(r.task)?.status === "paused")
+      .map((r) => r.task);
   }
 
   events(q: { before?: number | undefined; limit: number; decisions: boolean; task?: string | undefined }): {
@@ -1818,7 +1853,9 @@ export class AutonomyService {
   /** "Stop the captain": autonomous mode stops now, as Stop now does. */
   async stopNowForCaptain(): Promise<void> {
     if (this.repo.state().mode === "off") return;
-    await this.stopNow();
+    await this.stopNow(
+      "You stopped the captain, which stopped autonomous mode now. Resume this task, or turn autonomous mode on and resume its tasks.",
+    );
   }
 }
 
