@@ -50,21 +50,21 @@ nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding
 .tile svg{width:27px}
 nav .grow{flex:1}
 nav .sign{padding:11px 18px 9px;font-size:16px}
-.copy{position:relative;z-index:5;max-width:760px;padding:clamp(8px,3vh,36px) clamp(18px,4vw,48px) clamp(28px,5vh,56px)}
+.copy{position:relative;z-index:5;max-width:760px;padding:clamp(8px,3vh,36px) clamp(18px,4vw,48px) clamp(36px,6vh,64px)}
 .copy h1{margin:0;font-size:clamp(46px,6vw,86px);color:var(--yellow)}
 .copy h1 span{color:var(--white);display:block;white-space:nowrap}
 .copy p{margin:20px 0 28px;font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
 .actions{display:flex;gap:14px;flex-wrap:wrap}
-.sun{position:absolute;z-index:1;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,19vw,290px);animation:sway 9s ease-in-out infinite alternate}
+.sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,19vw,290px);animation:sway 9s ease-in-out infinite alternate}
 @keyframes sway{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
-.cloud{position:absolute;z-index:1;animation:drift 60s ease-in-out infinite alternate}
+.cloud{position:absolute;z-index:0;animation:drift 60s ease-in-out infinite alternate}
 .cloud.c2{animation-duration:80s;animation-delay:-30s}
 @keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(60px)}}
-.birds{position:absolute;z-index:2;top:26%;left:0;width:clamp(150px,15vw,230px);animation:fly 26s linear infinite}
-@keyframes fly{0%{transform:translate(110vw,0)}25%{transform:translate(75vw,-26px)}50%{transform:translate(40vw,8px)}75%{transform:translate(5vw,-20px)}100%{transform:translate(-30vw,0)}}
+.birds{position:absolute;z-index:1;top:22%;left:0;width:clamp(150px,15vw,230px);animation:fly 22s linear infinite}
+@keyframes fly{0%{transform:translate(48vw,10px)}30%{transform:translate(62vw,-14px)}60%{transform:translate(78vw,8px)}100%{transform:translate(104vw,-10px)}}
 .land{position:relative;margin-top:auto}
-.landscape{display:block;width:100%;height:clamp(280px,28.5vw,410px)}
-.boat{position:absolute;z-index:4;bottom:5%;width:min(38vw,500px);animation:sail 34s linear infinite}
+.landscape{display:block;width:100%;height:auto;aspect-ratio:1440/410;min-height:260px}
+.boat{position:absolute;z-index:4;bottom:5%;width:max(22vw,200px);animation:sail 34s linear infinite}
 @keyframes sail{from{left:-42vw}to{left:104vw}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
@@ -118,8 +118,8 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .fleet svg{width:100%;height:auto;overflow:visible}
 .fleet figcaption{font:800 26px/1 "Baloo Da 2";margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
 .points{list-style:none;margin:56px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
-.points li{display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:start}
-.points svg{width:44px;fill:var(--yellow);stroke:var(--ink);stroke-width:14;paint-order:stroke}
+.points li{display:grid;grid-template-columns:48px 1fr;gap:14px;align-items:start}
+.points svg{width:48px}
 .points b{display:block;font:700 23px/1.2 "Baloo Da 2";margin-bottom:4px}
 .points span{font-size:17px;line-height:1.55;color:#d9f3e2}
 .float{animation:bob 4s ease-in-out infinite alternate}
@@ -144,8 +144,9 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 
 @media (max-width:860px){
   .copy p{font-size:19px}
-  .boat{width:80vw;bottom:7%}
-  .sun{top:auto;bottom:calc(clamp(280px,28.5vw,410px) + 10px);right:-30px;width:120px;opacity:.95}
+  .boat{width:58vw;bottom:5%}
+  .down{bottom:12px;width:48px;height:48px}
+  .sun{top:auto;bottom:calc(max(260px,28.5vw) + 10px);right:-30px;width:120px;opacity:.95}
   .cloud{display:none}
   .sun{display:none}
   .row{grid-template-columns:1fr;gap:6px}
@@ -153,16 +154,30 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   .points{grid-template-columns:1fr;gap:24px}
   .fleet figcaption{font-size:19px}
   nav .hide{display:none}
-  .birds{top:9%}
+  .birds{display:none}
+  .boat{display:block}
   .frame{width:84vw}
 }
-@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{left:40vw}.birds{transform:translateX(52vw)}.strip{overflow-x:auto}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{left:40vw}.birds{transform:translateX(60vw)}.strip{overflow-x:auto}}
 </style>
 </head>
 <body>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="lotus" viewBox="0 0 120 90">
+      <g stroke="#120e0b" stroke-width="4" stroke-linejoin="round">
+        <path d="M60 84 C30 84 14 70 6 56 C26 54 42 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C90 84 106 70 114 56 C94 54 78 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C40 70 30 52 34 30 C48 40 58 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C80 70 90 52 86 30 C72 40 62 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C50 62 50 36 60 8 C70 36 70 62 60 84 Z" fill="#ff9cc8"/>
+      </g>
+      <g fill="#fffdf6"><circle cx="60" cy="44" r="3"/><circle cx="44" cy="52" r="2.4"/><circle cx="76" cy="52" r="2.4"/></g>
+    </symbol>
+</defs></svg>
+
 <header class="hero" id="top">
-  <svg class="cloud c1" style="left:58%;top:190px;width:170px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
+  <svg class="cloud c1" style="left:62%;top:300px;width:160px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
   <svg class="cloud c2" style="left:36%;top:46px;width:140px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
   <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
   <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
@@ -197,11 +212,11 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       <path d="M-20 80 H1460" stroke="#120e0b" stroke-width="4"/>
       <rect x="-20" y="84" width="1480" height="28" fill="url(#tufts)"/><rect x="-20" y="114" width="1480" height="32" fill="url(#tufts)"/><rect x="-20" y="148" width="1480" height="38" fill="url(#tufts2)"/>
       <!-- the village, grouped on the far bank -->
-      <image href="/assets/h-palm.webp" x="1040" y="-58" width="170" height="223"/>
-      <image href="/assets/h-hut.webp" x="1110" y="40" width="168" height="150"/>
-      <image href="/assets/h-hut.webp" x="980" y="72" width="118" height="105"/>
-      <image href="/assets/h-banana.webp" x="1262" y="44" width="150" height="145"/>
-      <image href="/assets/h-haystack.webp" x="860" y="104" width="104" height="82"/>
+      <image href="/assets/h-palm.webp" x="1056" y="-58" width="170" height="223"/>
+      <image href="/assets/h-hut.webp" x="1120" y="40" width="168" height="150"/>
+      <image href="/assets/h-hut.webp" x="930" y="72" width="118" height="105"/>
+      <image href="/assets/h-banana.webp" x="1300" y="44" width="150" height="145"/>
+      <image href="/assets/h-haystack.webp" x="790" y="104" width="104" height="82"/>
       <image href="/assets/h-palm.webp" x="120" y="-10" width="120" height="157"/>
       <!-- the river -->
       <path d="M-20 186 H1460 V400 H-20 Z" fill="#132f8f"/>
@@ -212,7 +227,10 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       </g>
       <!-- near bank with reeds -->
       <path d="M-20 388 q120 -26 240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 V540 H-20 Z" fill="#14874a" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/>
-      <g transform="translate(40 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g><g class="reed" transform="translate(150 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g><g class="reed" transform="translate(250 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g><g class="reed" transform="translate(1190 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g><g class="reed" transform="translate(1300 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g><g class="reed" transform="translate(1400 408)"><path d="M0 0 C-4 -26 -14 -44 -26 -54 C-12 -42 -4 -24 4 0 Z M6 0 C6 -30 4 -52 0 -66 C10 -50 14 -28 12 0 Z M14 0 C20 -24 30 -40 44 -48 C30 -34 22 -18 20 0 Z" fill="#28a65c" stroke="#120e0b" stroke-width="3.5" stroke-linejoin="round"/><circle cx="1" cy="-66" r="5" fill="#f6c419" stroke="#120e0b" stroke-width="3"/></g>
+      <use href="#lotus" x="10" y="318" width="120" height="90"/>
+      <use href="#lotus" x="112" y="344" width="80" height="60"/>
+      <use href="#lotus" x="1290" y="318" width="120" height="90"/>
+      <use href="#lotus" x="1220" y="346" width="78" height="58"/>
     </svg>
   <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
     <g class="bob">
@@ -285,9 +303,9 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       <figure><svg viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
     </div>
     <ul class="points">
-      <li><svg viewBox="28 54 200 172" aria-hidden="true"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
-      <li><svg viewBox="28 54 200 172" aria-hidden="true"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg><div><b>Its own repos and secrets</b><span>Agents work in containers that see one task. They never see your SSH keys or another client's code.</span></div></li>
-      <li><svg viewBox="28 54 200 172" aria-hidden="true"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg><div><b>Its own costs and memory</b><span>Spend, limits and what the crew has learned are counted and kept per client.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own repos and secrets</b><span>Agents work in containers that see one task. They never see your SSH keys or another client's code.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own costs and memory</b><span>Spend, limits and what the crew has learned are counted and kept per client.</span></div></li>
     </ul>
   </div>
 </section>
