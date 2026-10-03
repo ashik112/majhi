@@ -1,11 +1,15 @@
 import { type AutonomyHold, AutonomySettingsSchema, type CommandName } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { adminTools } from "../admin/tools.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { callOrg, hardLimit, type LimitWorld } from "./limits.ts";
 import { type AutonomyCall, decideAutonomously, type PolicyContext, startsWork } from "./policy.ts";
 
 const settings = AutonomySettingsSchema.parse({
-  orgs: { acme: { push: true }, globex: { merge: true } },
+  orgs: {
+    acme: { authority: { ...RUNS, push: "decide" } },
+    globex: { authority: { ...RUNS, merge: "decide" } },
+  },
 });
 
 function call(command: CommandName, input: Record<string, unknown> = {}, extra: Partial<AutonomyCall> = {}) {
@@ -424,6 +428,35 @@ describe("hardLimit", () => {
     expect(props("tasks.merge")).not.toContain("push");
     expect(props("tasks.push")).not.toContain("force");
     expect(props("tasks.remove")).not.toContain("force");
+  });
+});
+
+describe("decideAutonomously: the authority rows", () => {
+  const withRows = (rows: Record<string, "decide" | "ask">): PolicyContext =>
+    ctx({ settings: AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...RUNS, ...rows } } } }) });
+
+  it("starts work only where the captain decides when work starts", () => {
+    expect(decide(call("tasks.start", { id: "ACM-1" }), withRows({ start: "decide" }))).toBe("approved");
+    expect(decideAutonomously(call("tasks.start", { id: "ACM-1" }), withRows({ start: "ask" }))).toEqual({
+      decision: "left",
+      why: "In acme you decide when work starts, so the captain does not start it",
+    });
+  });
+
+  it("merges only where the captain decides when work is merged", () => {
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "decide" }))).toBe("approved");
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "ask" }))).toBe("left");
+    // A push row on "decide" does not allow a merge, and the other way round.
+    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ push: "decide", merge: "ask" }))).toBe(
+      "left",
+    );
+  });
+
+  it("pushes and opens merge requests only where the captain decides when work is pushed", () => {
+    for (const command of ["tasks.push", "tasks.openMrs"] as const) {
+      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "decide" }))).toBe("approved");
+      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "ask", merge: "decide" }))).toBe("left");
+    }
   });
 });
 

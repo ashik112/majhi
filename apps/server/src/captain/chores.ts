@@ -71,15 +71,12 @@ export function createChores(
         }
         const into = [...new Set(check.targets.map((x) => x.into))].join(", ");
         const outside = check.targets.filter((x) => !branchAllowed(ws.rules, x.into, x.base));
-        const merges = ws.rules?.merge === true;
         const blocker =
-          ws.level !== "runs"
-            ? `${ws.name} is set to Keeps things tidy, so the captain asks before shipping`
-            : !merges
-              ? `${ws.name} does not let the captain merge`
-              : outside.length > 0
-                ? `${outside.map((o) => o.into).join(", ")} is not a branch ${ws.name} ships to`
-                : undefined;
+          ws.authority.merge !== "decide"
+            ? `In ${ws.name} you decide when work is merged, so the captain asks before shipping`
+            : outside.length > 0
+              ? `${outside.map((o) => o.into).join(", ")} is not a branch ${ws.name} ships to`
+              : undefined;
         const recheck = async () => {
           const again = away(t.id);
           if (again !== undefined) return again;
@@ -102,8 +99,8 @@ export function createChores(
           });
           continue;
         }
-        const push = ws.rules?.push === true;
-        const reason = `${ws.name} is set to Runs it and lets the captain merge${push ? " and push" : ""}`;
+        const push = ws.authority.push === "decide";
+        const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
         await run.act({
           key: `ship:${t.id}:${t.heads}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
@@ -119,7 +116,7 @@ export function createChores(
 
     async cards(run) {
       const { org, ws } = run;
-      if (ws.level === "ask") return;
+      if (ws.authority.approvals !== "decide") return;
       for (const card of ports.approvals(org)) {
         run.check();
         const present = away(card.task);
@@ -132,7 +129,7 @@ export function createChores(
           );
           continue;
         }
-        const verdict = await ports.cardVerdict(org, card, ws.level);
+        const verdict = await ports.cardVerdict(org, card, ws.authority);
         const key = `card:${card.task}:${card.item}`;
         if (verdict.decision === "left") {
           await run.act({

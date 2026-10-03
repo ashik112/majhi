@@ -197,10 +197,7 @@ export interface CapDraft {
   tokens: string;
 }
 
-export interface OrgDraft extends CapDraft {
-  push: boolean;
-  merge: boolean;
-}
+export type OrgDraft = CapDraft;
 
 export interface LimitsDraft {
   day: CapDraft;
@@ -220,7 +217,7 @@ export function limitsDraft(settings: AutonomySettings, orgIds: readonly string[
   const orgs: Record<string, OrgDraft> = {};
   for (const id of [...orgIds, ...Object.keys(settings.orgs)]) {
     const org = settings.orgs[id];
-    orgs[id] = { ...capDraft(org?.cap), push: org?.push ?? false, merge: org?.merge ?? false };
+    orgs[id] = capDraft(org?.cap);
   }
   return {
     day: capDraft(settings.day),
@@ -253,7 +250,7 @@ const sameBudget = (a: Budget | undefined, b: Budget | undefined) =>
 
 /**
  * The `autonomy.configure` input for what the form changed, or the first problem in it. Only rows
- * that changed are sent; an org left with no cap and push and merge off is removed (null). The
+ * that changed are sent, and only their cap (who decides what is on the Captain page). The
  * browser's zone always goes along, so the day and the summary time follow the owner's clock.
  */
 export function limitsPatch(
@@ -278,15 +275,8 @@ export function limitsPatch(
     const cap = parseCap(row, `Cap of ${id}`);
     if (cap.problem) return { problem: cap.problem };
     const was = settings.orgs[id];
-    const same =
-      sameBudget(cap.budget, was?.cap) &&
-      row.push === (was?.push ?? false) &&
-      row.merge === (was?.merge ?? false);
-    if (same) continue;
-    orgs[id] =
-      cap.budget === undefined && !row.push && !row.merge
-        ? null
-        : { cap: cap.budget ?? null, push: row.push, merge: row.merge };
+    if (sameBudget(cap.budget, was?.cap)) continue;
+    orgs[id] = { cap: cap.budget ?? null };
   }
   if (Object.keys(orgs).length > 0) patch.orgs = orgs;
   if (window.value !== settings.floors.window || weekly.value !== settings.floors.weekly)

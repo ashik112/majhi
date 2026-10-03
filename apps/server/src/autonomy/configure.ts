@@ -1,12 +1,14 @@
 import {
+  AUTHORITY_LABEL,
+  AUTHORITY_ROWS,
   type AutonomyFilePatchSchema,
   type AutonomyOrg,
   AutonomyOrgSchema,
   type AutonomyPatch,
   type AutonomySettings,
-  LEVEL_LABEL,
 } from "@majhi/shared";
 import type { z } from "zod";
+import { authorityOf } from "../captain/levels.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import { limitWord } from "./sizes.ts";
 import { capText } from "./spend.ts";
@@ -22,18 +24,23 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
       delete orgs[id];
       continue;
     }
-    const had: Record<string, unknown> = { ...(orgs[id] ?? { push: false, merge: false }) };
+    const had: Record<string, unknown> = { ...(orgs[id] ?? {}) };
+    // Some rows changed: write the new form from what holds now, and drop the old level, push and merge.
+    if (change.authority !== undefined) {
+      had.authority = { ...authorityOf(current, id), ...change.authority };
+      delete had.level;
+      delete had.push;
+      delete had.merge;
+    }
     // Each field: absent keeps it, null clears it, a value sets it.
     for (const [key, value] of Object.entries(change)) {
-      if (value === undefined) continue;
+      if (value === undefined || key === "authority") continue;
       if (value === null) delete had[key];
       else had[key] = value;
     }
     const next = AutonomyOrgSchema.parse(had);
     // An entry that says only the defaults is no entry.
-    const meaningful = Object.entries(next).some(([k, v]) =>
-      k === "push" || k === "merge" ? v === true : v !== undefined,
-    );
+    const meaningful = Object.values(next).some((v) => v !== undefined);
     if (meaningful) orgs[id] = next;
     else delete orgs[id];
   }
@@ -80,12 +87,16 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
       own.push(`${name} back to the defaults`);
       continue;
     }
-    if (change.level === null) own.push(`${name} back to its default choice`);
-    else if (change.level !== undefined) own.push(`${name} to ${LEVEL_LABEL[change.level]}`);
+    for (const row of AUTHORITY_ROWS) {
+      const choice = change.authority?.[row];
+      if (choice !== undefined) {
+        own.push(
+          `${name}: "${AUTHORITY_LABEL[row]}" to ${choice === "decide" ? "Captain decides" : "Ask me"}`,
+        );
+      }
+    }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    if (change.push !== undefined) own.push(`pushing for ${name} ${change.push ? "on" : "off"}`);
-    if (change.merge !== undefined) own.push(`merging for ${name} ${change.merge ? "on" : "off"}`);
     const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
       (k) => change[k] !== undefined,
     );

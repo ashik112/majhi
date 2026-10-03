@@ -1,6 +1,7 @@
 import type { AutonomyEvent, RoomItem, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { WAITING_TEXT } from "../admin/service.ts";
+import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { UsageRepo } from "../usage/repo.ts";
 
@@ -17,7 +18,7 @@ async function on() {
   w = await bossWorld({ real: false });
   const world = w;
   const { h } = w;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await h.majhi.services.autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
@@ -92,10 +93,14 @@ describe("autonomous mode deciding the cards that would wait", () => {
     const t = await on();
     const id = await t.acmeTask();
     const before = await t.call("majhi_tasks_push", { id });
-    expect(before.text).toBe("Left for the owner: Acme does not let autonomous mode push.");
-    const turnedOn = await t.h.cmd("autonomy.configure", { orgs: { acme: { push: true } } });
+    expect(before.text).toBe(
+      "Left for the owner: In Acme you decide when work is pushed, so the captain does not push it.",
+    );
+    const turnedOn = await t.h.cmd("autonomy.configure", {
+      orgs: { acme: { authority: { push: "decide" } } },
+    });
     expect(turnedOn.status).toBe(200);
-    expect(turnedOn.body.settings.orgs.acme).toEqual({ level: "runs", push: true, merge: false });
+    expect(turnedOn.body.settings.orgs.acme).toEqual({ authority: { ...RUNS, push: "decide" } });
     await t.call("majhi_tasks_push", { id });
     const pushes = (await t.cards()).filter((c) => c.command === "tasks.push");
     expect(pushes.map((c) => c.autonomy?.decision)).toEqual(["left", "approved"]);
@@ -320,7 +325,7 @@ describe("the captain's own tools", () => {
     ).toBe(
       "Refused: this lane works in Acme only, and the call is about Private. Each workspace has its own lane.",
     );
-    // In a workspace set to Only when I ask, only autonomous tasks' cards are the captain's.
+    // Where you answer the questions, the captain leaves them to you, in any task of the workspace.
     const mine = (
       await t.h.cmd("tasks.create", {
         text: "the owner's api task",
@@ -334,9 +339,56 @@ describe("the captain's own tools", () => {
       questions: [{ id: "q1", question: "Go?", options: [{ id: "y", label: "Yes" }], freeText: false }],
       state: "pending",
     });
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "ask" } } })).status).toBe(200);
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
     expect(
       (await t.call("majhi_autonomy_answer", { task: mine, item: "ask:mine", answers: { q1: "y" } })).text,
-    ).toContain("is not an autonomous task or a task of this lane's workspace");
+    ).toContain("Refused: in Acme you decide how agents' questions are answered");
+  });
+
+  it("answers questions and routine approval cards on their own rows", async () => {
+    const t = await on();
+    const id = await t.acmeTask();
+    const { room } = t.h.majhi.services;
+    room.post(id as TaskId, "ask:q", {
+      type: "ask",
+      agent: "acme-builder",
+      questions: [{ id: "q1", question: "Go?", options: [{ id: "y", label: "Yes" }], freeText: false }],
+      state: "pending",
+    });
+    room.post(id as TaskId, "perm:p", {
+      type: "permission",
+      agent: "acme-builder",
+      title: "Run the tests",
+      options: [{ id: "allow", name: "Allow", kind: "allow_once" }],
+      state: "pending",
+    });
+    const answerQuestion = () =>
+      t.call("majhi_autonomy_answer", { task: id, item: "ask:q", answers: { q1: "y" } });
+    const answerPermission = () =>
+      t.call("majhi_autonomy_answer", { task: id, item: "perm:p", option: "allow" });
+    const configure = async (authority: Record<string, string>) =>
+      expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority } } })).status).toBe(200);
+
+    // Questions on "Ask me": left for the owner. Approvals on "Captain decides" does not change that.
+    await configure({ questions: "ask", approvals: "decide" });
+    expect((await answerQuestion()).text).toBe(
+      "Refused: in Acme you decide how agents' questions are answered, so the captain does not answer them. Leave it to the owner.",
+    );
+    // The routine approval card is the captain's, the question still waits.
+    // It gets past the row; the prompt itself is no live one here, so the answer reports that.
+    expect((await answerPermission()).text).toBe("That prompt is not waiting for an answer any more.");
+    // Approvals on "Ask me": the next card waits.
+    room.post(id as TaskId, "perm:p2", {
+      type: "permission",
+      agent: "acme-builder",
+      title: "Run the linter",
+      options: [{ id: "allow", name: "Allow", kind: "allow_once" }],
+      state: "pending",
+    });
+    await configure({ questions: "decide", approvals: "ask" });
+    expect(
+      (await t.call("majhi_autonomy_answer", { task: id, item: "perm:p2", option: "allow" })).text,
+    ).toContain("Refused: in Acme you decide routine approval cards");
+    expect((await answerQuestion()).isError).toBe(false);
   });
 });

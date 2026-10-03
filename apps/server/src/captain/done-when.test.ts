@@ -4,6 +4,7 @@ import type { CaptainAction, CaptainStatus, RoomItem, Task } from "@majhi/shared
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
+import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 
 /**
  * Phase 13's "Done when" (SPEC 7): with Private on "Runs it" and a client on "Only when I ask", a
@@ -17,7 +18,7 @@ afterEach(async () => {
   w = undefined;
 });
 
-describe("a night with Private on Runs it and Acme on Only when I ask", () => {
+describe("a night with the captain deciding in Private and asking about everything in Acme", () => {
   it("ships Private's ready task, leaves Acme's alone, logs why with Undo, and asks before shipping in a tidy workspace", async () => {
     let now = new Date("2026-10-03T01:00:00.000Z");
     w = await bossWorld({ real: false, runClock: () => now });
@@ -32,7 +33,10 @@ describe("a night with Private on Runs it and Acme on Only when I ask", () => {
     must(
       await h.cmd("autonomy.configure", {
         tz: "UTC",
-        orgs: { private: { level: "runs", merge: true, cap: { cost: 5 } } },
+        orgs: {
+          private: { authority: { ...RUNS, merge: "decide" }, cap: { cost: 5 } },
+          acme: { authority: ASK },
+        },
       }),
     );
     must(await h.cmd("autonomy.start"));
@@ -86,7 +90,7 @@ describe("a night with Private on Runs it and Acme on Only when I ask", () => {
       org: "private",
       task: own.id,
       text: `Shipped ${own.id} to main: Tidy the notes`,
-      reason: "Private is set to Runs it and lets the captain merge",
+      reason: "In Private the captain decides when work is merged",
       evidence: "committed, merges cleanly into main, no card waits, no secret in the diff",
       undo: "yes",
     });
@@ -94,15 +98,15 @@ describe("a night with Private on Runs it and Acme on Only when I ask", () => {
     const status = must(await h.cmd("captain.status")) as CaptainStatus;
     const priv = status.orgs.find((o) => o.org === "private");
     expect(priv).toMatchObject({
-      level: "runs",
-      effective: "runs",
+      authority: { start: "decide", upkeep: "decide", merge: "decide" },
+      effective: { start: "decide", upkeep: "decide", merge: "decide" },
       summary: "shipped 1",
       budget: { cost: 5 },
     });
     expect(priv?.used.cost ?? 0).toBeLessThanOrEqual(5);
     expect(status.orgs.find((o) => o.org === "acme")).toMatchObject({
-      level: "ask",
-      effective: "ask",
+      authority: { start: "ask", upkeep: "ask", merge: "ask" },
+      effective: { start: "ask", upkeep: "ask", merge: "ask" },
       summary: "",
     });
 
@@ -114,7 +118,7 @@ describe("a night with Private on Runs it and Acme on Only when I ask", () => {
     expect((await h.cmd("captain.undo", { id: shipped?.id })).status).toBe(409);
 
     // Acme set to Keeps things tidy: the captain asks on the review card and ships nothing.
-    must(await h.cmd("autonomy.configure", { orgs: { acme: { level: "tidy", merge: true } } }));
+    must(await h.cmd("autonomy.configure", { orgs: { acme: { authority: TIDY } } }));
     now = new Date("2026-10-03T03:00:00.000Z");
     await captain.runner.start("acme", "ship", "Hourly check");
     await captain.settled();
@@ -124,7 +128,7 @@ describe("a night with Private on Runs it and Acme on Only when I ask", () => {
     const review = items.items.find((i) => i.type === "review" && i.state === "pending");
     expect(review).toMatchObject({
       ready:
-        "Ready to ship to main: committed, merges cleanly into main, no card waits, no secret in the diff. Acme is set to Keeps things tidy, so the captain asks before shipping.",
+        "Ready to ship to main: committed, merges cleanly into main, no card waits, no secret in the diff. In Acme you decide when work is merged, so the captain asks before shipping.",
     });
     const pending = must(await h.cmd("notify.pending")) as { task: string; text: string }[];
     expect(pending).toContainEqual(

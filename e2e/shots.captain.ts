@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {
+  Authority,
   AutonomyStatus,
   CaptainAction,
   CaptainOrg,
@@ -8,9 +9,9 @@ import type {
 } from "../packages/shared/src/index.ts";
 
 /**
- * The Captain page (SPEC 5.18): a card per workspace with how much the captain does there, the
- * budget next to "Runs it", "More rules", today's line and the log with Undo; and the Autonomous page
- * with a lane per "Runs it" workspace. The server is the seeded one (`ui`); the captain's status, its
+ * The Captain page (SPEC 5.18): a card per workspace with who decides what there, the
+ * budget, "More rules", today's line and the log with Undo; and the Autonomous page
+ * with a lane per workspace where the captain starts work. The server is the seeded one (`ui`); the captain's status, its
  * log and autonomous mode are stubbed in the browser.
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.captain.config.ts`.
@@ -21,18 +22,36 @@ const iso = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOStr
 
 const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as const;
 
-function org(o: Partial<CaptainOrg> & Pick<CaptainOrg, "org" | "name" | "level">): CaptainOrg {
+const ROWS = (
+  start: boolean,
+  answers: boolean,
+  upkeep: boolean,
+  merge: boolean,
+  push: boolean,
+): Authority => ({
+  start: start ? "decide" : "ask",
+  questions: answers ? "decide" : "ask",
+  approvals: answers ? "decide" : "ask",
+  upkeep: upkeep ? "decide" : "ask",
+  merge: merge ? "decide" : "ask",
+  push: push ? "decide" : "ask",
+});
+const RUNS_ROWS = ROWS(true, true, true, false, false);
+const TIDY_ROWS = ROWS(false, true, true, false, false);
+const ASK_ROWS = ROWS(false, false, false, false, false);
+
+function org(o: Partial<CaptainOrg> & Pick<CaptainOrg, "org" | "name" | "authority">): CaptainOrg {
+  const asks = Object.values(o.authority).every((c) => c === "ask");
   return {
     thread: "idle",
-    effective: o.level,
-    rules: { push: false, merge: false, ...(o.level === "ask" ? {} : { level: o.level }) },
+    effective: o.authority,
+    rules: { authority: o.authority },
     used: { tokens: 0, cost: 0 },
     summary: "",
     forYou: 0,
-    chores:
-      o.level === "ask"
-        ? []
-        : CHORES.map((chore) => ({ chore, today: 0, cap: chore === "ship" ? 5 : 1, lastRun: iso(20) })),
+    chores: asks
+      ? []
+      : CHORES.map((chore) => ({ chore, today: 0, cap: chore === "ship" ? 5 : 1, lastRun: iso(20) })),
     ...o,
   };
 }
@@ -47,8 +66,9 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
       org({
         org: "private",
         name: "Private",
-        level: "runs",
-        rules: { level: "runs", push: false, merge: true, cap: { cost: 20 } },
+        authority: ROWS(true, true, true, true, false),
+        effective: ROWS(true, true, true, true, false),
+        rules: { authority: ROWS(true, true, true, true, false), cap: { cost: 20 } },
         budget: { cost: 20 },
         used: { tokens: 812_000, cost: 6.4 },
         summary: "shipped 2, tidied 8 memories, 1 thing for you",
@@ -58,7 +78,7 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
       org({
         org: "globex",
         name: "Globex",
-        level: "tidy",
+        authority: TIDY_ROWS,
         summary: "answered 5 cards, cleaned up 3 old tasks",
         lane: "GLX-512",
         chores: CHORES.map((chore) =>
@@ -75,12 +95,10 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
       org({
         org: "acme",
         name: "Acme",
-        level: "runs",
-        effective: "runs",
+        authority: ROWS(true, true, true, true, true),
+        effective: ROWS(true, true, true, true, true),
         rules: {
-          level: "runs",
-          push: true,
-          merge: true,
+          authority: ROWS(true, true, true, true, true),
           cap: { cost: 8 },
           hours: { from: "09:00", to: "18:00" },
           freeze: [{ from: "2026-12-24", to: "2026-12-26" }],
@@ -92,7 +110,11 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
         used: { tokens: 120_000, cost: 1.15 },
         resting: "outside working hours (09:00 to 18:00)",
       }),
-      org({ org: "northwind", name: "Northwind Traders International", level: "ask" }),
+      org({
+        org: "northwind",
+        name: "Northwind Traders International Holdings and Logistics Group",
+        authority: ASK_ROWS,
+      }),
     ],
     ...extra,
   };
@@ -105,7 +127,7 @@ const ACTIONS: CaptainAction[] = [
     org: "private",
     chore: "ship",
     text: "Shipped PRV-14 to main: Move the notes export to the queued worker",
-    reason: "Private is set to Runs it and lets the captain merge",
+    reason: "In Private the captain decides when work is merged",
     evidence: "committed, merges cleanly into main, no card waits, no secret in the diff",
     task: "PRV-14",
     outcome: "done",
@@ -117,7 +139,7 @@ const ACTIONS: CaptainAction[] = [
     org: "globex",
     chore: "ship",
     text: "Asked you to ship GLX-505: Rate limits for the public search endpoint",
-    reason: "Globex is set to Keeps things tidy, so the captain asks before shipping",
+    reason: "In Globex you decide when work is merged, so the captain asks before shipping",
     evidence: "committed, merges cleanly into develop, no card waits, no secret in the diff",
     task: "GLX-505",
     outcome: "asked",
@@ -152,7 +174,7 @@ const ACTIONS: CaptainAction[] = [
     org: "private",
     chore: "ship",
     text: "Shipped PRV-11 to main and pushed: Tidy the sync script",
-    reason: "Private is set to Runs it and lets the captain merge and push",
+    reason: "In Private the captain decides when work is merged and pushed",
     evidence: "committed, merges cleanly into main, no card waits, no secret in the diff",
     task: "PRV-11",
     outcome: "done",
@@ -289,15 +311,15 @@ async function stub(page: Page, scene: Scene): Promise<{ calls: { name: string; 
         ...scene.status,
         orgs: scene.status.orgs.map((o) => {
           if (o.org !== id) return o;
-          const level = (change.level as CaptainOrg["level"] | undefined) ?? o.level;
+          const authority = { ...o.authority, ...(change.authority as Partial<Authority> | undefined) };
           const cap =
             change.cap === undefined ? o.budget : ((change.cap as CaptainOrg["budget"] | null) ?? undefined);
           return {
             ...o,
-            level,
-            effective: level,
+            authority,
+            effective: scene.status.autonomy === "on" ? authority : ASK_ROWS,
             ...(cap === undefined ? { budget: undefined } : { budget: cap }),
-            rules: { ...o.rules, level },
+            rules: { ...o.rules, authority },
           };
         }),
       };
@@ -366,6 +388,23 @@ for (const [w, h] of [
   }
 }
 
+for (const [w, h, theme] of [
+  [1440, 900, "dark"],
+  [1100, 760, "light"],
+  [1100, 760, "dark"],
+  [1440, 900, "light"],
+] as const) {
+  test(`the long-named workspace card ${w} ${theme}`, async ({ page }) => {
+    await open(page, "/captain", w, h, theme, { status: captain() });
+    const long = page.getByRole("region", { name: /^Northwind Traders International/ });
+    await long.scrollIntoViewIfNeeded();
+    await expect(long.getByRole("group", { name: /^Push in/ })).toBeVisible();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${SHOTS}/captain-long-${w}-${theme}.png` });
+    await noPageScroll(page);
+  });
+}
+
 test("captain log at 1100", async ({ page }) => {
   await open(page, "/captain", 1100, 700, "dark", { status: captain() });
   await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Log" }).click();
@@ -375,17 +414,21 @@ test("captain log at 1100", async ({ page }) => {
   await noPageScroll(page);
 });
 
-test("changing a level and the budget saves them", async ({ page }) => {
+test("changing a row, a preset and the budget saves them", async ({ page }) => {
   const { calls } = await open(page, "/captain", 1440, 900, "dark", { status: captain() });
   const globex = page.getByRole("region", { name: "Globex", exact: true });
-  await globex.getByText("Runs it", { exact: true }).click();
+  const start = globex.getByRole("group", { name: "Start work in Globex" });
+  await start.getByRole("button", { name: "Captain decides" }).click();
   await expect
     .poll(() => calls.find((c) => c.name === "autonomy.configure")?.body)
-    .toEqual({ orgs: { globex: { level: "runs" } } });
-  // The budget field shows next to Runs it.
+    .toEqual({ orgs: { globex: { authority: { start: "decide" } } } });
+  await expect(start.getByRole("button", { name: "Captain decides" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // The budget field shows once the captain decides something here.
   const budget = globex.getByRole("textbox", { name: "Daily budget" });
   await expect(budget).toBeVisible();
-  await expect(globex.getByRole("radio", { name: /Runs it/ })).toBeChecked();
   await budget.fill("12.50");
   await globex.getByRole("button", { name: "Save" }).click();
   await expect
@@ -393,11 +436,40 @@ test("changing a level and the budget saves them", async ({ page }) => {
     .toEqual({ orgs: { globex: { cap: { cost: 12.5 } } } });
   await expect(globex.getByRole("button", { name: "Save" })).toBeHidden();
   await expect(budget).toHaveValue("12.5");
-  await page.screenshot({ path: `${SHOTS}/captain-globex-runs.png` });
-  // Back to Only when I ask: the budget goes away.
-  await globex.getByText("Only when I ask", { exact: true }).click();
-  await expect(budget).toBeHidden();
-  await expect(globex.getByRole("radio", { name: /Only when I ask/ })).toBeChecked();
+  // The presets set every row.
+  await globex.getByRole("button", { name: "Hands off" }).click();
+  await expect
+    .poll(() => calls.filter((c) => c.name === "autonomy.configure").at(-1)?.body)
+    .toEqual({
+      orgs: {
+        globex: {
+          authority: {
+            start: "decide",
+            questions: "decide",
+            approvals: "decide",
+            upkeep: "decide",
+            merge: "decide",
+            push: "ask",
+          },
+        },
+      },
+    });
+  await expect(
+    globex.getByRole("group", { name: "Push in Globex" }).getByRole("button", { name: "Ask me" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({ path: `${SHOTS}/captain-globex-hands-off.png` });
+  await globex.getByRole("button", { name: "Ask me first" }).click();
+  await expect(start.getByRole("button", { name: "Ask me" })).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    globex.getByRole("group", { name: "Upkeep in Globex" }).getByRole("button", { name: "Captain decides" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("with Autonomous off the card says the captain asks about everything", async ({ page }) => {
+  await open(page, "/captain", 1440, 900, "dark", { status: captain({ autonomy: "off" }) });
+  const acme = page.getByRole("region", { name: "Acme", exact: true });
+  await expect(acme.getByText("Autonomous is off, so the captain asks you about everything.")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/captain-autonomous-off.png` });
 });
 
 test("the Autonomous switch asks before turning off", async ({ page }) => {

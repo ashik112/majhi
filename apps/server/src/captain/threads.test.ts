@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 
 let w: BossWorld | undefined;
 afterEach(async () => {
@@ -24,7 +25,7 @@ describe("the captain's threads", () => {
         return "end_turn";
       };
     };
-    expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await services.autonomy.laneChat("acme");
     if (chat === undefined) throw new Error("no thread for Acme");

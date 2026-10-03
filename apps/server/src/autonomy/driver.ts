@@ -9,7 +9,7 @@ import type { AutonomyService } from "./service.ts";
 
 /**
  * The driver (PRV-74, rule 8; 5.18 lanes): wakes the captain with a tick in the lane of each
- * workspace set to "Runs it" when something it should decide happened there. Each lane has its own
+ * workspace where the captain starts work when something it should decide happened there. Each lane has its own
  * batch: events are batched for `DEBOUNCE_MS`, at most one tick waits per lane, and while the captain
  * is in a turn in that lane the next tick goes when the turn ends. A tick holds only its workspace's
  * tasks, cards, backlog and spend. Nothing ticks unless the mode is on.
@@ -107,7 +107,7 @@ export class AutonomyDriver {
 
   /**
    * Something the captain should look at happened in a workspace: batched into that lane's next
-   * tick. Without a workspace it goes to every lane of a workspace set to "Runs it".
+   * tick. Without a workspace it goes to every lane of a workspace where the captain starts work.
    */
   wake(line: string, org?: string): void {
     if (this.deps.autonomy.mode() !== "on") return;

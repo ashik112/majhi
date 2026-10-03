@@ -3,7 +3,6 @@ import {
   type AutonomySettings,
   type CaptainCapAsk,
   type CaptainChore,
-  type CaptainLevel,
   type CaptainOrg,
   type CaptainStatus,
   CHORE_LABEL,
@@ -23,7 +22,7 @@ import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
 import type { Lanes } from "./lanes.ts";
-import { choresOf, effectiveLevel, levelOf, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { authorityOf, choresOf, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
@@ -60,7 +59,7 @@ export interface CaptainDeps {
   /** Tells the owner through the bell, once per key. */
   tell: (key: string, text: string) => void;
   /** What a thread is doing now: the captain in a turn, an item waiting on the owner, or neither. */
-  threadState?: (chat: string) => "working" | "waiting" | "idle";
+  threadState?: (chat: string, org: string) => "working" | "waiting" | "idle";
   /** Replaces the thread's session with a fresh one that carries a summary (the room's "fresh session"). */
   fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
@@ -159,7 +158,7 @@ export class CaptainService {
         summary:
           names.length === 0
             ? "moved autonomous mode's workspace list to the captain's choice per workspace"
-            : `set ${names.join(", ")} to Runs it, from autonomous mode's workspace list`,
+            : `let the captain start work in ${names.join(", ")}, from autonomous mode's workspace list`,
       },
     );
     return true;
@@ -186,8 +185,8 @@ export class CaptainService {
     const sections = await this.deps.config.sections();
     for (const org of this.stopped() ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
-      if (ws === undefined || ws.level === "ask" || ws.rest !== undefined) continue;
-      for (const chore of choresOf(ws.level)) {
+      if (ws === undefined || ws.rest !== undefined) continue;
+      for (const chore of choresOf(ws.authority)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
         if (DAILY_CHORES.includes(chore)) {
           if (this.repo.runsToday(org, chore, ws.day) > 0) continue;
@@ -378,7 +377,7 @@ export class CaptainService {
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
-      level: effectiveLevel(levelOf(autonomy, org), this.deps.autonomy.mode()),
+      authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
       rules,
       tz,
       day: localDay(now, tz),
@@ -401,7 +400,7 @@ export class CaptainService {
     for (const org of workspaceIds(sections.orgs)) {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
-      const level: CaptainLevel = levelOf(settings.autonomy, org);
+      const authority = authorityOf(settings.autonomy, org);
       const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
       const spend = await this.deps.autonomy
         .orgSpend(org)
@@ -411,17 +410,17 @@ export class CaptainService {
       orgs.push({
         org,
         name: ws.name,
-        level,
-        effective: ws.level,
-        rules: settings.autonomy.orgs[org] ?? { push: false, merge: false },
+        authority,
+        effective: ws.authority,
+        rules: settings.autonomy.orgs[org] ?? {},
         ...(cap === undefined ? {} : { budget: cap }),
         used: spend.used,
         summary: line,
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
-        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane) ?? "idle"),
-        chores: choresOf(ws.level === "ask" ? level : ws.level).map((chore) => {
+        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane, org) ?? "idle"),
+        chores: choresOf(authority).map((chore) => {
           const c = this.repo.chore(org, chore);
           const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
           const last = this.repo.lastRun(org, chore);

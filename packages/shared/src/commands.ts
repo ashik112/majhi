@@ -2625,14 +2625,14 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: how much the captain does there (level ask, tidy or runs), its daily budget (cap), push and merge, and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.guide": {
     risk: "change",
     summary:
-      "Send the captain a message in a workspace's lane (org; default: the first workspace set to Runs it): guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on in every lane. Owner only",
+      "Send the captain a message in a workspace's lane (org; default: the first workspace where the captain decides when work starts): guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on in every lane. Owner only",
     input: AutonomyGuideInputSchema,
     output: AutonomyGuideResultSchema,
   },

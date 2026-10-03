@@ -43,7 +43,7 @@ function CapFields({
 }
 
 /**
- * The day cap, each org's cap and its push and merge permission, the account floors and the summary
+ * The day cap, each org's cap, the account floors and the summary
  * time. Cancel and Save show only while something changed; it saves with `autonomy.configure`, and
  * the browser's zone goes along so the day and the summary time follow the owner's clock.
  */
@@ -69,7 +69,7 @@ export function LimitsCard({ status }: { status: AutonomyStatus }) {
     setDraft({ ...form, ...change });
   };
   const editOrg = (id: string, change: Partial<OrgDraft>) => {
-    const row = form.orgs[id] ?? { cost: "", tokens: "", push: false, merge: false };
+    const row = form.orgs[id] ?? { cost: "", tokens: "" };
     edit({ orgs: { ...form.orgs, [id]: { ...row, ...change } } });
   };
   const submit = () => {
@@ -132,41 +132,22 @@ export function LimitsCard({ status }: { status: AutonomyStatus }) {
         />
       </div>
       {Object.keys(form.orgs).length > 0 && (
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-3 text-sm">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 text-sm">
           <span className="pb-1 text-xs text-fg-faint">Workspace</span>
           <span className="pb-1 text-xs text-fg-faint">Cap a day</span>
-          <span className="pb-1 text-xs text-fg-faint">Push</span>
-          <span className="pb-1 text-xs text-fg-faint">Merge</span>
           {Object.entries(form.orgs).map(([id, row]) => (
             <Fragment key={id}>
               <span className="truncate border-t border-line py-1.5 text-fg-soft">{name(id)}</span>
               <span className="flex gap-1.5 border-t border-line py-1.5">
                 <CapFields label={`Cap of ${name(id)}`} value={row} onChange={(cap) => editOrg(id, cap)} />
               </span>
-              <span className="border-t border-line py-1.5">
-                <Switch
-                  label={`May push ${name(id)}`}
-                  hideLabel
-                  checked={row.push}
-                  onChange={(push) => editOrg(id, { push })}
-                />
-              </span>
-              <span className="border-t border-line py-1.5">
-                <Switch
-                  label={`May merge ${name(id)}`}
-                  hideLabel
-                  checked={row.merge}
-                  onChange={(merge) => editOrg(id, { merge })}
-                />
-              </span>
             </Fragment>
           ))}
         </div>
       )}
       <p className="text-xs text-fg-faint text-pretty">
-        Push lets it push task branches and open MRs. Merge lets it merge into the base branch, and merge MRs
-        where the workspace's own merge policy allows. Days and the summary time follow {BROWSER_ZONE}, this
-        browser's zone.
+        Who decides merging and pushing is set per workspace on the Captain page. Days and the summary time
+        follow {BROWSER_ZONE}, this browser's zone.
       </p>
       {(problem ?? save.error) && (
         <p role="alert" className="text-sm text-red">

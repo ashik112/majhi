@@ -168,7 +168,7 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
         status: "ready",
         sizeNote: "Not rated yet",
         noAutonomy: false,
-        leftOut: "Northwind is set to Only when I ask",
+        leftOut: "In Northwind you decide when work starts",
       },
     ],
     holds: [],
@@ -210,7 +210,7 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
             item: "approval:1",
             kind: "approval",
             text: "Push task/ACM-88-rate-limits to origin and open a merge request",
-            why: "Acme does not let autonomous mode merge",
+            why: "In Acme you decide when work is merged, so the captain does not merge it",
           },
         ]
       : [],

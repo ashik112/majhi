@@ -1,5 +1,6 @@
 import type { AutonomyStatus, RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession, Turn } from "../testing/fakeSession.ts";
 import { CAP_MARGIN } from "./spend.ts";
@@ -67,7 +68,7 @@ describe("the day cap of autonomous mode", () => {
     };
     const configured = await h.cmd("autonomy.configure", {
       day: { cost: CAP },
-      orgs: { acme: { level: "runs" } },
+      orgs: { acme: { authority: RUNS } },
     });
     expect(configured.status).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);

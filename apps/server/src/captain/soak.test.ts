@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { toolName } from "../admin/tools.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -302,9 +303,9 @@ describe("the captain's soak test", () => {
         tz: "UTC",
         orgs: {
           // Private runs on its own account, with a small budget so its lane rests.
-          private: { level: "runs", merge: true, cap: { cost: 0.04 }, account: "claude-own" },
-          acme: { level: "tidy" },
-          globex: { level: "ask" },
+          private: { authority: { ...RUNS, merge: "decide" }, cap: { cost: 0.04 }, account: "claude-own" },
+          acme: { authority: TIDY },
+          globex: { authority: ASK },
         },
       }),
     );

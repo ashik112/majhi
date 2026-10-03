@@ -289,7 +289,7 @@ function NextSection({ status, now, onRules }: { status: AutonomyStatus; now: nu
 }
 
 /**
- * One row per workspace set to "Runs it" (5.18): the captain's lane there, what it does now or why it
+ * One row per workspace where the captain starts work (5.18): the captain's lane there, what it does now or why it
  * rests, its open tasks and today's spend against the workspace's budget. A row shows its lane's chat.
  */
 function LanesSection({
@@ -310,7 +310,8 @@ function LanesSection({
       </SectionHead>
       {status.lanes.length === 0 ? (
         <p className="text-sm text-amber text-pretty">
-          No workspace is set to Runs it, so the captain starts nothing. Set one on the Captain page.
+          In no workspace does the captain decide when work starts, so it starts nothing. Change that on the
+          Captain page.
         </p>
       ) : (
         <ul className="flex flex-col gap-1">

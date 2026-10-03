@@ -1,5 +1,6 @@
 import type { AutonomyEvent, AutonomyStatus, RoomItem, Task, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
@@ -33,7 +34,7 @@ async function on() {
     const level = (["large", "medium", "small"] as const).find((l) => t.brief.includes(l));
     return level === undefined ? undefined : rated(level);
   });
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");
@@ -148,20 +149,31 @@ describe("the workspace's choice and the lane", () => {
       text: lane,
     });
     // Acme set to Keeps things tidy: the captain no longer starts or changes work there.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "tidy" } } })).status).toBe(200);
-    const tidy =
-      "Refused: Acme is set to Keeps things tidy, so the captain does not start or change work there.";
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: TIDY } } })).status).toBe(200);
+    const tidy = "Refused: in Acme you decide when work starts, so the captain does not start it.";
     expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({ isError: true, text: tidy });
+    // Putting a task in the backlog is not starting it.
     expect(
-      await t.call("majhi_tasks_create", {
-        text: "Add a health check",
-        repos: [{ project: "acme-api" }],
-        start: false,
-      }),
-    ).toEqual({ isError: true, text: tidy });
+      (
+        await t.call("majhi_tasks_create", {
+          text: "Add a health check",
+          repos: [{ project: "acme-api" }],
+          start: false,
+        })
+      ).isError,
+    ).toBe(false);
+    expect(
+      (
+        await t.call("majhi_tasks_create", {
+          text: "Add a probe",
+          repos: [{ project: "acme-api" }],
+          start: true,
+        })
+      ).text,
+    ).toBe(tidy);
     // Runs it again, but only on Codex: work on Acme's Claude account does not start.
     expect(
-      (await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "runs", providers: ["codex"] } } }))
+      (await t.h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS, providers: ["codex"] } } }))
         .status,
     ).toBe(200);
     expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({
@@ -177,7 +189,9 @@ describe("the workspace's choice and the lane", () => {
       "Refused: Autonomous is off, so the captain does not start or change work in Acme. It acts only when you ask.",
     );
     // A workspace that does not exist is refused.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { level: "runs" } } })).status).toBe(404);
+    expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { authority: RUNS } } })).status).toBe(
+      404,
+    );
   });
 });
 
@@ -239,7 +253,7 @@ describe("what the captain reads", () => {
     expect(row(small)?.leftOut).toBeUndefined();
     expect(row(big)?.leftOut).toBe("It is large, and the size rule is Up to medium");
     expect(row(marked)).toMatchObject({ noAutonomy: true, leftOut: "Marked Not for autonomous mode" });
-    expect(row(own)?.leftOut).toBe("Private is set to Keeps things tidy");
+    expect(row(own)?.leftOut).toBe("In Private you decide when work starts");
   });
 });
 

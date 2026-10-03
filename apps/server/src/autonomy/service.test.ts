@@ -1,5 +1,6 @@
 import type { AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import type { Harness } from "../testing/harness.ts";
@@ -67,7 +68,7 @@ async function world() {
     },
     /** Turns on, and has the captain create and start a task in Acme; waits for its first turn. */
     async startWorking(): Promise<string> {
-      expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+      expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
       const on = await h.cmd("autonomy.start");
       expect(on.status).toBe(200);
       const chat = await h.majhi.services.autonomy.laneChat("acme");

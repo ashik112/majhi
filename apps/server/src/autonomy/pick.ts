@@ -1,10 +1,16 @@
-import { type AutonomyMode, type AutonomyPick, type CaptainLevel, LEVEL_LABEL, PRIVATE } from "@majhi/shared";
-import { effectiveLevel } from "../captain/levels.ts";
+import {
+  type Authority,
+  type AuthorityRow,
+  type AutonomyMode,
+  type AutonomyPick,
+  PRIVATE,
+} from "@majhi/shared";
+import { askedWhy } from "../captain/levels.ts";
 import { limitWord, type SizeOf, sizeProblem } from "./sizes.ts";
 
 /**
  * The owner's pick rules for autonomous mode (PRV-74 follow-up, 5.18): the largest task size it may
- * start, the workspaces set to "Runs it", and the tasks marked Not for autonomous mode. Pure: the digest leaves out what
+ * start, the workspaces where the captain starts work, and the tasks marked Not for autonomous mode. Pure: the digest leaves out what
  * they exclude, and the service refuses the captain's calls that break them.
  */
 
@@ -16,22 +22,24 @@ export function orgName(org: string, names: OrgNames): string {
 }
 
 /**
- * Why the workspace's choice (5.18) keeps the captain from starting or changing work there, or
- * undefined when it is set to "Runs it" and autonomous mode is on.
+ * Why the workspace's authority table (5.18) keeps the captain from this call, or undefined when a
+ * row that governs it is "Captain decides". `rows` are the rows that govern the call; any one on
+ * "Captain decides" is enough (a plain change to a task needs the captain to start work or do upkeep).
  */
-export function levelProblem(
-  level: CaptainLevel,
+export function authorityProblem(
+  authority: Authority,
   mode: AutonomyMode,
+  rows: readonly AuthorityRow[],
   org: string,
   names: OrgNames,
 ): string | undefined {
-  if (effectiveLevel(level, mode) === "runs") return undefined;
   const name = orgName(org, names);
-  // Turning off: the mode's own refusal says why nothing new starts.
-  if (level === "runs" && mode !== "off") return undefined;
-  if (level === "runs")
+  if (rows.some((r) => authority[r] === "decide")) {
+    // Turning off: the mode's own refusal says why nothing new starts.
+    if (mode !== "off") return undefined;
     return `Autonomous is off, so the captain does not start or change work in ${name}. It acts only when you ask`;
-  return `${name} is set to ${LEVEL_LABEL[level]}, so the captain does not start or change work there`;
+  }
+  return rows[0] === undefined ? undefined : askedWhy(rows[0], name);
 }
 
 /** Why the rules leave a backlog task out, or undefined when the captain may take it. */
@@ -40,10 +48,11 @@ export function leftOutWhy(
   task: { org?: string | undefined; noAutonomy?: boolean | undefined },
   size: SizeOf,
   names: OrgNames,
-  level: CaptainLevel,
+  authority: Authority,
 ): string | undefined {
   if (task.noAutonomy === true) return "Marked Not for autonomous mode";
-  if (level !== "runs") return `${orgName(task.org ?? PRIVATE, names)} is set to ${LEVEL_LABEL[level]}`;
+  if (authority.start !== "decide")
+    return `In ${orgName(task.org ?? PRIVATE, names)} you decide when work starts`;
   const big = sizeProblem(pick.size, size);
   return big === undefined ? undefined : upperFirst(big);
 }
@@ -53,7 +62,7 @@ export function pickLines(pick: AutonomyPick, names: OrgNames, org?: string): st
   return [
     `Task size: ${limitWord(pick.size)}${pick.size === "any" ? ". Take large tasks too, splitting them when that helps." : ". Larger tasks, and tasks whose size is not known, are not started."}`,
     org === undefined
-      ? "Workspaces: only those set to Runs it, each in its own lane."
+      ? "Workspaces: only those where the captain decides when work starts, each in its own lane."
       : `Workspace: ${orgName(org, names)} only. This lane never sees or acts in another workspace.`,
     "Tasks the owner marked Not for autonomous mode are left alone.",
   ];

@@ -221,7 +221,7 @@ export const AutonomySummarySchema = z.object({
 export type AutonomySummary = z.infer<typeof AutonomySummarySchema>;
 
 /**
- * One workspace set to "Runs it" (5.18): the captain's lane there, and what autonomous mode does in
+ * One workspace where the captain starts work (5.18): the captain's lane there, and what autonomous mode does in
  * it today. The lane's chat holds only that workspace's matters.
  */
 export const AutonomyLaneSchema = z.object({
@@ -262,7 +262,7 @@ export const AutonomyStatusSchema = z.object({
       nowDoing: z.string().optional(),
     })
     .optional(),
-  /** Each workspace set to "Runs it", in the order of the workspaces. */
+  /** Each workspace where the captain starts work, in the order of the workspaces. */
   lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
@@ -328,7 +328,7 @@ export const AutonomyAnswerInputSchema = z
 export const AutonomyGuideInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),
   keep: z.boolean().default(false),
-  /** The workspace whose lane hears it. Default: the first workspace set to "Runs it". */
+  /** The workspace whose lane hears it. Default: the first workspace where the captain starts work. */
   org: z.string().min(1).max(63).optional(),
 });
 export const AutonomyGuideResultSchema = z.object({
