@@ -1,0 +1,6 @@
+// Deploys the majhi.dev landing page (site/) as static assets on Cloudflare.
+{
+  "name": "majhi",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./site" }
+}
