@@ -1,8 +1,13 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { PromptBlock } from "@majhi/acp";
-import type { RoomItem } from "@majhi/shared";
+import type { ProcessInfo, RoomItem } from "@majhi/shared";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Harness } from "../testing/harness.ts";
 import { taskWorld, type World } from "../testing/world.ts";
+import { processesServer } from "./mcp.ts";
 
 /** How background processes hold a task in running and wake its agent (5.15), with in-memory sessions. */
 
@@ -34,6 +39,21 @@ const systems = async (h: Harness) => {
 };
 const text = (blocks: PromptBlock[] | undefined) =>
   (blocks ?? []).flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n");
+
+/** Calls a majhi-processes tool as acme-builder's session would. */
+async function callTool(h: Harness, name: string, args: Record<string, unknown> = {}): Promise<string> {
+  const server = processesServer({ task: "ACM-1", agent: "acme-builder" }, h.majhi.services.processes);
+  const [near, far] = InMemoryTransport.createLinkedPair();
+  await server.connect(near);
+  const client = new Client({ name: "test", version: "1" });
+  await client.connect(far);
+  try {
+    const res = await client.callTool({ name, arguments: args });
+    return (res.content as { type: string; text?: string }[]).map((c) => c.text ?? "").join("\n");
+  } finally {
+    await client.close();
+  }
+}
 
 /** ACM-1 whose first turn starts `command` in the background, as the agent's tool call would. */
 async function startWith(command: string, wait: boolean): Promise<World> {
@@ -165,6 +185,94 @@ describe("background processes and the task", () => {
     await h.majhi.services.runs.idle();
     expect(h.runtime.sessions[0]?.prompts).toHaveLength(1);
     await processes.stopTask("ACM-1");
+  });
+
+  it("an end the agent read with output before majhi handled it wakes nobody, and the task goes to review", async () => {
+    const { h } = await startWith("until [ -e go ]; do sleep 0.05; done; echo 3 passed", true);
+    const { processes, runs, tasks } = h.majhi.services;
+    await until(async () => (await systems(h)).some((t) => t.startsWith("Waiting for p1")), "the waiting note");
+    const held: ProcessInfo[] = [];
+    const handle = vi.spyOn(tasks, "processEnded").mockImplementation(async (p) => {
+      held.push(p);
+    });
+    const folder = ((await h.cmd("tasks.get", { id: "ACM-1" })).body as { folder: string }).folder;
+    await writeFile(join(folder, "go"), "");
+    await until(() => held.length === 1, "the end");
+    handle.mockRestore();
+    const [end] = held;
+    if (end === undefined) throw new Error("no end");
+
+    expect(await callTool(h, "output", { id: "p1" })).toContain("3 passed");
+    await tasks.processEnded(end, true);
+    await runs.idle();
+    const line = `p1 \`${end.name}\` ended; @acme-builder already read it, so nobody is woken.`;
+    expect(await systems(h)).toContain(line);
+    expect(h.runtime.sessions[0]?.prompts).toHaveLength(1);
+    await until(async () => (await status(h)) === "review", "review");
+
+    // Reported again, it still wakes nobody.
+    await tasks.processEnded(end, true);
+    await runs.idle();
+    expect(h.runtime.sessions[0]?.prompts).toHaveLength(1);
+    expect((await systems(h)).filter((t) => t === line)).toHaveLength(1);
+  });
+
+  it("an end that arrives while the agent works, read with list in that turn, gets no follow-up turn", async () => {
+    const { h } = await startWith("true", false);
+    await until(async () => (await status(h)) === "review", "review");
+    const { processes, runs } = h.majhi.services;
+    const session = h.runtime.sessions[0];
+    if (session === undefined) throw new Error("no session");
+    session.script = async (turn) => {
+      if (session.prompts.length === 2) {
+        await processes.start({
+          task: "ACM-1",
+          agent: "acme-builder",
+          name: "test",
+          command: "echo 3 passed",
+          wait: true,
+        });
+        // majhi handles the end while this turn still runs: it is queued for the agent.
+        await until(
+          async () => (await systems(h)).includes("p2 `test` ended. Waking @acme-builder."),
+          "the queued end",
+        );
+        expect(await callTool(h, "list")).toContain("p2 test (`echo 3 passed`)");
+      }
+      turn.emit({ type: "text", messageId: "r", text: "tests pass" });
+      return "end_turn";
+    };
+    expect((await h.cmd("room.send", { task: "ACM-1", text: "run the tests" })).status).toBe(200);
+    await until(() => session.prompts.length === 2, "the owner's prompt");
+    await until(async () => (await status(h)) === "review", "review after the turn");
+    await runs.idle();
+    expect(session.prompts).toHaveLength(2);
+    expect(await systems(h)).toContain(
+      "p2 ended, but @acme-builder already read it, so @acme-builder is not told again.",
+    );
+  });
+
+  it("an end only another agent saw still wakes its agent", async () => {
+    const { h } = await startWith("true", false);
+    await until(async () => (await status(h)) === "review", "review");
+    const { processes } = h.majhi.services;
+    const session = h.runtime.sessions[0];
+    if (session === undefined) throw new Error("no session");
+    const p = await processes.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      name: "test",
+      command: "echo 3 passed",
+      wait: true,
+    });
+    await until(() => processes.get("ACM-1", p.id)?.status === "exited", "the end");
+    // The lead looked at it, not the builder.
+    const ended = processes.get("ACM-1", p.id);
+    if (ended === undefined) throw new Error("no process");
+    processes.markRead("ACM-1", ended, "acme-lead");
+    expect(processes.readAfterEnd(ended)).toBe(false);
+    await until(() => session.prompts.length === 2, "the wake");
+    expect(text(session.prompts[1])).toContain("Your background process p2, test (`echo 3 passed`), exited");
   });
 
   it("an end is told once, and ends that pile up while the agent is paused go out in one prompt", async () => {

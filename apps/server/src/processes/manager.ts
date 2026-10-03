@@ -110,6 +110,8 @@ interface Proc {
   spawning?: Promise<void> | undefined;
   /** The current launch's cleanup, run when its child closes. */
   cleanup?: (() => Promise<void>) | undefined;
+  /** When its agent last saw this run ended, through `output` or `list`. Cleared on a restart. */
+  readAt?: string | undefined;
 }
 
 /**
@@ -158,6 +160,26 @@ export class ProcessManager {
   /** The last `lines` lines of output. */
   output(task: string, id: string, lines: number): string[] {
     return this.find(task, id).tail.last(lines);
+  }
+
+  /**
+   * `agent` was shown `shown`, with its status. Counts as reading the end when the run had ended
+   * and `agent` started it: its end then wakes nobody.
+   */
+  markRead(task: string, shown: ProcessInfo, agent: string): void {
+    const proc = this.tasks.get(task)?.get(shown.id);
+    if (proc === undefined || proc.info.startedAt !== shown.startedAt) return;
+    if (shown.status === "running" || shown.agent !== agent) return;
+    proc.readAt = this.now().toISOString();
+  }
+
+  /** Whether the agent of `p` read this run after it ended. */
+  readAfterEnd(p: ProcessInfo): boolean {
+    const proc = this.tasks.get(p.task)?.get(p.id);
+    if (proc === undefined || proc.info.startedAt !== p.startedAt) return false;
+    const { readAt } = proc;
+    const { endedAt } = proc.info;
+    return readAt !== undefined && endedAt !== undefined && Date.parse(readAt) >= Date.parse(endedAt);
   }
 
   async start(input: StartInput): Promise<ProcessInfo> {
@@ -250,6 +272,7 @@ export class ProcessManager {
       throw err;
     }
     proc.cleanup = launch?.cleanup;
+    proc.readAt = undefined;
     proc.tail.clear();
     const secrets = launch?.secrets ?? [];
     proc.tail.redactWith((line) => redactSecrets(line, secrets));

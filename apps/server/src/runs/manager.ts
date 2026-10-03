@@ -110,7 +110,12 @@ export interface RunDeps {
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
-  processes?: { running(task: string): ProcessInfo[]; list(task: string): ProcessInfo[] };
+  processes?: {
+    running(task: string): ProcessInfo[];
+    list(task: string): ProcessInfo[];
+    /** The agent already read this end with `output` or `list`: it is not told again. */
+    readAfterEnd(p: ProcessInfo): boolean;
+  };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /**
@@ -1357,8 +1362,19 @@ export class RunManager {
       case "notice":
         return [{ type: "text", text: entry.text }];
       case "processes": {
-        const ends = run.processEnds;
+        const queued = run.processEnds;
         run.processEnds = [];
+        // Read while it waited, mostly in the turn that ran when it ended: the agent has it already.
+        const read = queued.filter((p) => this.deps.processes?.readAfterEnd(p) === true);
+        const ends = queued.filter((p) => !read.includes(p));
+        if (read.length > 0) {
+          const ids = read.map((p) => p.id).join(", ");
+          this.live.system(
+            run,
+            "info",
+            `${ids} ended, but @${run.agent} already read ${read.length === 1 ? "it" : "them"}, so @${run.agent} is not told again.`,
+          );
+        }
         const { current, replaced } = splitCurrent(ends, this.deps.processes?.list(run.task) ?? []);
         if (replaced.length > 0) {
           const ids = replaced.map((p) => p.id).join(", ");
