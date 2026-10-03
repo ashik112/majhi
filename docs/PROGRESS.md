@@ -1,5 +1,43 @@
 # Progress
 
+## Phase 11: Trackers (built)
+
+**Status.** Built on `task/prv-26-phase-11-trackers`, from `main`. The three adapters came from PRV-112. DECISIONS has its rows (2026-10-03). SPEC 5.11.
+
+### What works
+
+- **One tracker per org.** Jira Cloud, ClickUp or GitHub Issues, set on the org page under Tracker: the site, email and project for Jira, the list for ClickUp, `owner/repo` for GitHub. The token is saved in secrets and never shown again. Test signs in and checks the project, list or repo. GitHub falls back to the org's `mr_tokens.github`.
+- **The adapters** (`apps/server/src/trackers/`) share one interface: `pull(assignedToMe)`, `get`, `comment`, `setStatus`, `link`, `create`, `test`. Each reply is checked with zod. Calls time out after 20 s, and tokens, including Jira's Basic form, are removed from every error. Jira moves an issue through its transitions and says which statuses it can reach when the wanted one is not one of them.
+- **Pull.** On demand (Pull now on the org page, `trackers.pull`) and on a schedule (`pull_every`: off, 15m, 1h, 6h; default 1h). By default only items assigned to the token's user. A new item becomes a task in Up next, unstarted, routed to a project through the Dispatcher's order: the org's only project, a project the item names, else the decision provider. An item with no sure project waits on the org page with a project picker. A pulled item is linked once; later pulls only update its status.
+- **Item text is reference material.** It goes into `attachments/tracker-<key>.md` (mode 600) with a warning line, never into the brief. The routing call also asks whether the text reads like instructions to an agent, and a sure yes adds a warning to the room.
+- **Push.** "Push to Jira/ClickUp/GitHub" in a task's menu creates the item and links it. "Unlink" drops the link and leaves the item alone.
+- **Write-back.** Each linked task's MR links and stage are written once, and again only when they change: Jira gets a remote link, ClickUp and GitHub a comment. Running is working, review and mr are review, done is done, each with a status name per tracker that the org page can change. A failed write stays on the link (the chip turns red), is said once in the room, and is tried again.
+- **On the board.** A linked task shows a chip with the item key on its card and page.
+
+### How to try it
+
+1. Org page, Tracker: pick the type, fill in the fields, paste a token, Save, then Test.
+2. Pull now. New items appear in Up next; items without a project wait under the Tracker section with a project picker.
+3. Start a pulled task and open its MR: the item moves to In Progress and then In Review, and gets the MR link.
+4. On a local task, open the menu and pick Push to the tracker.
+
+### Verified
+
+- Typecheck (shared, server, web) and biome on the touched files.
+- `apps/server/src/trackers` tests: routing, pull, write-back, push, the store, and the adapters against a fake fetch. The phase's done-when is `flow.test.ts`, with the real Jira and ClickUp adapters behind a fake REST API: a Jira item flows into a room and its MR link is written back as a remote link, then the issue moves to In Review. A local task pushed to ClickUp is created on the list and follows the task through in progress, review and complete.
+- A screenshot of the org page's Tracker section (`e2e/shots.trackers.ts`).
+
+### Owner-only checks
+
+- Real Jira Cloud, ClickUp and GitHub accounts and tokens: Test, a pull, a push, and status names on a real workflow.
+
+### Left and known issues
+
+- The last pull and the unrouted items are kept in memory, so a restart empties the list until the next pull.
+- Status names are typed on the org page; majhi does not read a workflow's statuses to offer them. A wrong name shows as a red chip, with the names the tracker accepts.
+- GitHub Issues has only open and closed, so it gets no working or review status.
+- Closing an item in the tracker does not change its task.
+
 ## PRV-97: Run majhi on Linux, and on Windows through WSL2 (built)
 
 **Status.** Built on `task/prv-97-run-majhi-and-through-wsl2`, from `main`. The brief is `docs/briefs/linux-and-wsl2.md`. DECISIONS has its rows (2026-10-03).
