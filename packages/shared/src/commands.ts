@@ -1205,6 +1205,38 @@ export const commands = {
     }),
     output: TaskSchema,
   },
+  "tasks.setLead": {
+    risk: "change",
+    summary:
+      "Make another agent the lead of a task: when the lead's account is at its limit, the task needs another skill or model, or the lead is stuck. The owner, the captain and the task's current lead may call it. The new lead is on the team or is added (it must be allowed in the task's workspace, on an account that can run). The old lead stays as a builder unless keepOldLead is false. Posts a handover note with the plan, what is done and what is next, and wakes the new lead with it",
+    input: z.object({
+      task: TaskIdSchema,
+      agent: IdSchema,
+      /** Why, in a plain sentence. Shown in the handover note. */
+      reason: z.string().trim().min(1).max(500).optional(),
+      /** Default true: the old lead stays on the team as a builder. */
+      keepOldLead: z.boolean().optional(),
+    }),
+    output: TaskSchema,
+  },
+  "tasks.staff": {
+    risk: "read",
+    summary:
+      "Propose who works on a task and who leads: weighs the task's size and kind, every agent allowed in its workspace, each account's free slots and usage left, budgets, expected cost and past results in the repo. Give task for an existing one, or text (and repos) for one not made yet. Changes nothing; pass the team to tasks.create or tasks.start to use it",
+    input: z.object({
+      task: TaskIdSchema.optional(),
+      text: z.string().trim().min(1).max(20_000).optional(),
+      title: z.string().trim().min(1).max(120).optional(),
+      kind: TaskKindSchema.optional(),
+      repos: TaskReposSchema.optional(),
+    }),
+    output: z.object({
+      team: z.array(IdSchema),
+      lead: IdSchema.nullable(),
+      reason: z.string(),
+      ranked: z.array(z.object({ agent: IdSchema, score: z.number() })),
+    }),
+  },
   "tasks.removeAgent": {
     risk: "change",
     summary:

@@ -1,5 +1,12 @@
 # Progress
 
+## Captain step 6b: staffing and lead handover (built)
+
+- **Staffing:** `staffTask` (`tasks/staffing.ts`) picks a lead and a team from slots, usage left, floors, budgets, cost, model tier against size, skills and past results, and gives one reason line. The captain's create or start without a team uses it and the room says why; `tasks.staff` (`majhi_tasks_staff`) shows the proposal.
+- **Handover:** `tasks.setLead` for the owner, the captain and the current lead (`set_lead` in majhi-tasks); other agents are refused. It reorders the team, keeps or drops the old lead, posts the handover note (plan, commits, next) and wakes the new lead. The lead brief says when to hand over.
+- **Tests:** `tasks/staffing.test.ts`, `tasks/set-lead.test.ts`, `autonomy/staffing.test.ts`.
+- **Left:** past results are per task, not per agent; a lead that leaves while mid-turn keeps its session until the turn ends; no UI beyond the room lines.
+
 ## Captain step 6: workspaces never collide (built)
 
 - **Fair slots:** while Autonomous is On, `fairOrder` (`runs/limits.ts`) orders the line for a slot: the owner's own runs first, then the workspace with the fewest running agents, with workspaces that share an account taking its slots in turn. A workspace with nothing waiting leaves its share. Nothing running is stopped. Per-account and per-task limits stay hard caps.
