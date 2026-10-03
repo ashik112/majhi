@@ -143,7 +143,7 @@ export function CaptainView() {
           {view === "workspaces" && (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade">
               {status.captain === undefined && (
-                <p className="rounded-xl border border-caution-line bg-caution-wash px-4 py-2.5 text-sm text-amber text-pretty">
+                <p className="rounded-xl border border-amber-line bg-amber-wash px-4 py-2.5 text-sm text-amber text-pretty">
                   There is no captain yet. Choose one on the Agents page; until then nothing here runs.
                 </p>
               )}
