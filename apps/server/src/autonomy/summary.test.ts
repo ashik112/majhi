@@ -1,5 +1,6 @@
 import type { AutonomyEvent, AutonomySummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { Harness } from "../testing/harness.ts";
 import { UsageRepo } from "../usage/repo.ts";
@@ -112,7 +113,7 @@ describe("the daily summary", () => {
         await h.cmd("autonomy.configure", {
           tz: "UTC",
           summary_at: "08:00",
-          orgs: { acme: { level: "runs" } },
+          orgs: { acme: { authority: RUNS } },
         })
       ).status,
     ).toBe(200);
@@ -157,7 +158,7 @@ describe("the daily summary", () => {
       tz: "UTC",
       summary_at: "08:00",
       day: { cost: 200 },
-      orgs: { acme: { level: "runs" } },
+      orgs: { acme: { authority: RUNS } },
     });
     expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
     const autonomy = h.majhi.services.autonomy;

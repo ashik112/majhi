@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   type AccountView,
+  type Authority,
+  type AuthorityRow,
   type AutonomyAccount,
   AutonomyAnswerInputSchema,
   type AutonomyBacklogItem,
@@ -41,7 +43,7 @@ import type { AdminCaller } from "../admin/tokens.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
-import { levelOf, workspaceIds } from "../captain/levels.ts";
+import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { presenceWhy, restWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -65,7 +67,7 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
-import { leftOutWhy, levelProblem, type OrgNames, orgName, pickLines } from "./pick.ts";
+import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
@@ -189,13 +191,15 @@ export class AutonomyService {
     return this.repo.isAutonomous(task);
   }
 
-  /** The workspaces set to "Runs it", Private first. */
+  /** The workspaces where the captain decides when work starts, Private first. */
   async runsOrgs(): Promise<string[]> {
     const [sections, settings] = await Promise.all([
       this.deps.config.sections(),
       this.deps.config.settings(),
     ]);
-    return workspaceIds(sections.orgs).filter((org) => levelOf(settings.autonomy, org) === "runs");
+    return workspaceIds(sections.orgs).filter(
+      (org) => authorityOf(settings.autonomy, org).start === "decide",
+    );
   }
 
   /** The lanes' chats that exist now. */
@@ -840,7 +844,9 @@ export class AutonomyService {
       return `Refused: the owner marked ${marked.id} Not for autonomous mode, so autonomous mode leaves it alone.`;
     }
     if (group === "tasks" || group === "team" || starts) {
-      const outside = levelProblem(levelOf(settings, org), state.mode, org, names);
+      // Starting work needs the start row. Any other change to a task needs the captain to start work or do upkeep there.
+      const rows: readonly AuthorityRow[] = starts ? ["start"] : ["upkeep", "start"];
+      const outside = authorityProblem(authorityOf(settings, org), state.mode, rows, org, names);
       if (outside !== undefined) return `Refused: ${outside}.`;
     }
     // "More rules": the AI tools the work it starts here may run on.
@@ -1401,8 +1407,8 @@ export class AutonomyService {
     const names = orgNames(sections);
     return this.backlog(org).map((item) => {
       const size = this.sizes.known(item.task) ?? { note: "Not rated yet" };
-      const level = levelOf(settings.autonomy, item.org ?? PRIVATE);
-      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, level) };
+      const authority = authorityOf(settings.autonomy, item.org ?? PRIVATE);
+      return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, authority) };
     });
   }
 
@@ -1506,12 +1512,11 @@ export class AutonomyService {
     }
     const { mode } = this.repo.state();
     const lane = this.laneOrg(caller.task);
-    const level =
-      lane === undefined ? undefined : levelOf((await this.deps.config.settings()).autonomy, lane);
-    const upkeep = level === "tidy" || level === "runs";
+    const authority =
+      lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
     // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.
     if (mode === "off") return fail("Autonomous is off, so the captain acts only when you ask.");
-    if (command === "autonomy.answer" && mode !== "on" && !upkeep) {
+    if (command === "autonomy.answer" && mode !== "on") {
       return fail(`Autonomous is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
     }
     const refused = await this.refusal(caller, command, input, reason);
@@ -1548,31 +1553,40 @@ export class AutonomyService {
     if (command === "autonomy.answer") {
       const parsed = AutonomyAnswerInputSchema.safeParse(input);
       if (!parsed.success) return invalid(command, parsed.error);
-      return this.answer(caller, parsed.data, reason, upkeep ? lane : undefined);
+      return this.answer(caller, parsed.data, reason, lane, authority);
     }
     return fail(`${command} is not a tool of autonomous mode.`);
   }
 
   /**
-   * The captain answers a card through the owner's own paths: in an autonomous task, or, for the
-   * upkeep, in any task of the lane's workspace (`upkeep`). Never in a task the owner is in.
+   * The captain answers a card through the owner's own paths, in an autonomous task or in any task of
+   * the lane's workspace. Which row governs it: "Answer agents' questions" for questions and choices,
+   * "Answer routine approval cards" for permission prompts. On "Ask me" it waits for the owner. Never in
+   * a task the owner is in.
    */
   private async answer(
     caller: AdminCaller,
     input: z.infer<typeof AutonomyAnswerInputSchema>,
     reason: string,
-    upkeep: string | undefined,
+    lane: string | undefined,
+    authority: Authority | undefined,
   ): Promise<ToolResult> {
-    const inLane = upkeep !== undefined && (this.deps.store.tasks.get(input.task)?.org ?? PRIVATE) === upkeep;
+    const inLane = lane !== undefined && (this.deps.store.tasks.get(input.task)?.org ?? PRIVATE) === lane;
     if (!this.repo.isAutonomous(input.task) && !inLane) {
       return fail(
         `${input.task} is not an autonomous task or a task of this lane's workspace, so only the owner answers its cards.`,
       );
     }
-    const present = presenceWhy(this.deps.ownerAt?.(input.task), this.now());
-    if (present !== undefined) return fail(`The owner is in ${input.task}: ${present}. Leave it to them.`);
     const item = this.deps.room.get(input.task, input.item);
     if (item === undefined) return fail(`There is no card ${input.item} in ${input.task}.`);
+    const row: AuthorityRow = item.type === "permission" ? "approvals" : "questions";
+    const answerable = ["permission", "choice", "ask", "owner-question"].includes(item.type);
+    if (authority !== undefined && answerable && authority[row] !== "decide") {
+      const names = orgNames(await this.deps.config.sections());
+      return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
+    }
+    const present = presenceWhy(this.deps.ownerAt?.(input.task), this.now());
+    if (present !== undefined) return fail(`The owner is in ${input.task}: ${present}. Leave it to them.`);
     const option = input.option;
     let answered: RoomItem;
     try {

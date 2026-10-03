@@ -27,6 +27,7 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
+import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
@@ -62,16 +63,6 @@ export interface WorldDeps {
 
 /** The most waiting memories one look reads. */
 const PENDING_LIMIT = 1_000;
-
-/** Commands that ship or start work: "Keeps things tidy" leaves them to the owner. */
-const SHIPS: ReadonlySet<string> = new Set([
-  "tasks.merge",
-  "tasks.push",
-  "tasks.openMrs",
-  "tasks.mergeMrs",
-  "tasks.markMerged",
-  "tasks.resolveShip",
-]);
 
 export function captainWorld(deps: WorldDeps): CaptainPorts {
   const { store } = deps;
@@ -301,7 +292,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
-    async cardVerdict(_org, card, level) {
+    async cardVerdict(org, card, authority) {
       const call = deps.admin.cardCall(card.task, card.item);
       if (call === undefined) return { decision: "left", why: "The card is no longer waiting" };
       const verdict = await deps.autonomy.decide(
@@ -317,8 +308,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           why: `The captain never does this: ${verdict.why.replace(/^Refused: /, "")}`,
         };
       if (verdict.decision === "left") return verdict;
-      if (level === "tidy" && (SHIPS.has(call.command) || startsWork(call.command, call.parsed))) {
-        return { decision: "left", why: "Keeps things tidy leaves starting and shipping work to you" };
+      const row = startsWork(call.command, call.parsed) ? "start" : SHIP_ROW[call.command];
+      if (row !== undefined && authority[row] !== "decide") {
+        const name = (await deps.config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org);
+        return { decision: "left", why: askedSentence(row, name) };
       }
       return verdict;
     },

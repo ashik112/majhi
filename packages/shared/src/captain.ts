@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
 import { IdSchema } from "./ids.ts";
-import { AutonomyOrgSchema, BudgetSchema, CaptainLevelSchema } from "./settings.ts";
+import { AutonomyOrgSchema, BudgetSchema, type CaptainLevelSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
 
 /**
@@ -139,10 +140,10 @@ export type CaptainChoreState = z.infer<typeof CaptainChoreStateSchema>;
 export const CaptainOrgSchema = z.object({
   org: z.string(),
   name: z.string(),
-  /** The choice, defaults applied. */
-  level: CaptainLevelSchema,
-  /** What it does now: "Runs it" acts as "Keeps things tidy" while autonomous mode is not on. */
-  effective: CaptainLevelSchema,
+  /** Who decides each row, defaults applied and old settings carried over. */
+  authority: AuthoritySchema,
+  /** What holds now: every row is "ask" while Autonomous is not On. */
+  effective: AuthoritySchema,
   /** The settings as saved, for "More rules". */
   rules: AutonomyOrgSchema,
   /** The daily budget (its cap) and what the captain and autonomous work spent here today. */

@@ -5,6 +5,7 @@ import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   isOwnerChat,
   NotificationsSettingsSchema,
+  PRIVATE,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
 } from "@majhi/shared";
@@ -880,8 +881,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
-    threadState: (chat) =>
-      store.room.tasksWaitingOnOwner().has(chat)
+    threadState: (chat, org) =>
+      store.room.tasksWaitingOnOwner().has(chat) ||
+      [...store.room.tasksPausedOnOwner()].some((id) => (store.tasks.get(id)?.org ?? PRIVATE) === org)
         ? "waiting"
         : runs.working(chat).length > 0
           ? "working"

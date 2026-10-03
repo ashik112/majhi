@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { toolName } from "../admin/tools.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { UsageRepo } from "../usage/repo.ts";
+import { RUNS, TIDY } from "./authority-fixtures.ts";
 
 /**
  * A captain lane reads one workspace only (5.18). Globex is filled with a task, a project, an
@@ -62,9 +63,9 @@ async function world() {
   await must(
     h.cmd("autonomy.configure", {
       orgs: {
-        acme: { level: "runs" },
-        globex: { level: "tidy", cap: { cost: 3 } },
-        private: { level: "tidy" },
+        acme: { authority: RUNS },
+        globex: { authority: TIDY, cap: { cost: 3 } },
+        private: { authority: TIDY },
       },
     }),
   );

@@ -1,5 +1,6 @@
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import { capacityOf } from "../runs/limits.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
@@ -15,7 +16,7 @@ async function on() {
   w = await bossWorld({ real: false });
   const { h } = w;
   const autonomy = h.majhi.services.autonomy;
-  expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+  expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
   const chat = await autonomy.laneChat("acme");
   if (chat === undefined) throw new Error("no lane for Acme");

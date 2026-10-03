@@ -176,6 +176,16 @@ export class RoomRepo {
     return new Set(rows.map((r) => r.task));
   }
 
+  /** Tasks with a pending paused card: stopped and waiting for the owner to resume or decide. One query. */
+  tasksPausedOnOwner(): Set<string> {
+    const rows = this.db
+      .selectDistinct({ task: roomItems.task })
+      .from(roomItems)
+      .where(and(eq(roomItems.type, "paused"), PENDING))
+      .all();
+    return new Set(rows.map((r) => r.task));
+  }
+
   /**
    * The items behind `tasksWaitingOnOwner`, in every task, oldest first, and the review cards the
    * captain marked ready to ship (5.18), which the bell lists too. One query.

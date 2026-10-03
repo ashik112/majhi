@@ -6,6 +6,7 @@ import {
   isDestructiveCommand,
   type MergePolicy,
 } from "@majhi/shared";
+import { askedSentence, authorityOf } from "../captain/levels.ts";
 import { holdCovering } from "./spend.ts";
 
 /**
@@ -114,7 +115,7 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   const { command, input } = call;
   const risk = commands[command].risk;
   const name = ctx.orgName ?? call.org;
-  const own = ctx.settings.orgs[call.org];
+  const authority = authorityOf(ctx.settings, call.org);
   if (call.confirm) return left("A fix task starts only when the owner approves it");
   if (risk === "destructive" || isDestructiveCommand(command)) return left("Only the owner removes things");
   if (OWNER_REACH.has(command))
@@ -145,22 +146,26 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
     }
   }
   if (command === "tasks.merge") {
-    return own?.merge === true
-      ? approved(`${name} lets autonomous mode merge`)
-      : left(`${name} does not let autonomous mode merge`);
+    return authority.merge === "decide"
+      ? approved(`In ${name} the captain decides when work is merged`)
+      : left(askedSentence("merge", name));
   }
   if (command === "tasks.push" || command === "tasks.openMrs") {
-    return own?.push === true
-      ? approved(`${name} lets autonomous mode push`)
-      : left(`${name} does not let autonomous mode push`);
+    return authority.push === "decide"
+      ? approved(`In ${name} the captain decides when work is pushed`)
+      : left(askedSentence("push", name));
   }
   if (command === "tasks.mergeMrs" || command === "tasks.markMerged") {
-    if (own?.merge !== true) return left(`${name} does not let autonomous mode merge`);
+    if (authority.merge !== "decide") return left(askedSentence("merge", name));
     if ((ctx.orgMerge ?? "never") === "never") return left(`${name}'s merge policy is never`);
-    return approved(`${name} lets autonomous mode merge, and its merge policy allows it`);
+    return approved(`In ${name} the captain decides when work is merged, and its merge policy allows it`);
   }
   if (risk === "outbound") return left("It reaches outside majhi, which only the owner allows");
-  if (starts) return approved("No cap or floor holds this work");
+  if (starts) {
+    return authority.start === "decide"
+      ? approved("No cap or floor holds this work")
+      : left(askedSentence("start", name));
+  }
   return approved("A change within the limits");
 }
 

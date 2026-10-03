@@ -1,4 +1,4 @@
-import type { CaptainCapAsk, CaptainChore, CaptainLevel } from "@majhi/shared";
+import { ALL_ASK, type Authority, type CaptainCapAsk, type CaptainChore } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -11,7 +11,14 @@ const DAY = "2026-10-03";
 function setup(chore: (run: ChoreRun) => Promise<void>) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const state = {
-    level: "runs" as CaptainLevel,
+    authority: {
+      start: "decide",
+      questions: "decide",
+      approvals: "decide",
+      upkeep: "decide",
+      merge: "decide",
+      push: "decide",
+    } as Authority,
     rest: undefined as string | undefined,
     stopped: false,
     tokens: 0,
@@ -23,7 +30,7 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",
-    level: state.level,
+    authority: state.authority,
     rules: undefined,
     tz: "UTC",
     day: state.day,
@@ -70,9 +77,9 @@ describe("the chore runner", () => {
     expect(t.repo.allActions()).toEqual([
       expect.objectContaining({ outcome: "skipped", text: "Left ACM-1: a check fails now" }),
     ]);
-    // The owner moved the workspace to Only when I ask a moment ago: the run stops before the step.
+    // The owner moved the workspace to Ask me for everything a moment ago: the run stops before the step.
     const u = setup(async (run) => {
-      u.state.level = "ask";
+      u.state.authority = ALL_ASK;
       await run.act({ key: "k", text: "x", reason: "y", irreversible: true, do: async () => ({}) });
     });
     expect(await u.runner.start("acme", "ship", "test")).toBe("stopped");
@@ -169,7 +176,7 @@ describe("the chore runner", () => {
     t.state.rest = "outside working hours (09:00 to 17:00)";
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
     t.state.rest = undefined;
-    t.state.level = "ask";
+    t.state.authority = ALL_ASK;
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
     expect(t.repo.allRuns()).toHaveLength(1);
   });

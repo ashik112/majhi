@@ -1,9 +1,9 @@
 import type {
+  Authority,
   AutonomyOrg,
   CaptainCapAsk,
   CaptainCause,
   CaptainChore,
-  CaptainLevel,
   CaptainRunStatus,
   CaptainUndo,
 } from "@majhi/shared";
@@ -26,8 +26,8 @@ import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions
 export interface Workspace {
   org: string;
   name: string;
-  /** What it does now (autonomous mode applied). */
-  level: CaptainLevel;
+  /** Who decides each row now (Autonomous applied: all "ask" while it is not On). */
+  authority: Authority;
   rules: AutonomyOrg | undefined;
   tz: string;
   /** Today in the workspace's zone. */
@@ -267,7 +267,7 @@ export class ChoreRun {
   private async recheck(a: ActInput): Promise<string | undefined> {
     if (this.deps.stopped()) throw new RunEnd("stopped", "Autonomous is off");
     const now = await this.deps.workspace(this.org);
-    if (now === undefined || !choresOf(now.level).includes(this.chore)) {
+    if (now === undefined || !choresOf(now.authority).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
     if (now.rest !== undefined) throw new RunEnd("rested", now.rest);
@@ -334,7 +334,8 @@ export class ChoreRunner {
     let run: ChoreRun | undefined;
     try {
       const ws = await deps.workspace(org);
-      if (ws === undefined || !choresOf(ws.level).includes(chore) || ws.rest !== undefined) return undefined;
+      if (ws === undefined || !choresOf(ws.authority).includes(chore) || ws.rest !== undefined)
+        return undefined;
       if (deps.repo.chore(org, chore).offAt !== undefined) return undefined;
       const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;
       if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {

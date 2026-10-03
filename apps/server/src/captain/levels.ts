@@ -1,4 +1,8 @@
 import {
+  ALL_ASK,
+  AUTHORITY_REFUSAL,
+  type Authority,
+  type AuthorityRow,
   type AutonomyMode,
   type AutonomyOrg,
   type AutonomySettings,
@@ -13,26 +17,91 @@ import {
  * autonomous mode is off, which chores a level runs, and the move from the old pick rule.
  */
 
-/** The choice as saved, or its default: "Keeps things tidy" for Private, "Only when I ask" elsewhere. */
-export function levelOf(settings: Pick<AutonomySettings, "orgs">, org: string): CaptainLevel {
-  return settings.orgs[org]?.level ?? defaultLevel(org);
-}
-
-export function defaultLevel(org: string): CaptainLevel {
-  return org === PRIVATE ? "tidy" : "ask";
+/** Every row `decide` or `ask` as the table of the old three levels read (SPEC 5.18, "Moving today's settings"). */
+function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authority {
+  if (level === "ask") return { ...ALL_ASK };
+  if (level === "tidy") return { ...ALL_ASK, questions: "decide", approvals: "decide", upkeep: "decide" };
+  return {
+    start: "decide",
+    questions: "decide",
+    approvals: "decide",
+    upkeep: "decide",
+    merge: merge ? "decide" : "ask",
+    push: push ? "decide" : "ask",
+  };
 }
 
 /**
- * What the captain does now. Autonomous is the master switch: while it is not On, the captain acts
- * only when the owner talks to it, whatever a workspace is set to. "Only when I ask" never acts.
+ * Who decides each row in a workspace, as saved. The saved `authority` wins. Without it the old
+ * `level`, `push` and `merge` give it. With nothing saved: Private keeps things tidy, any other
+ * workspace asks about everything except upkeep.
  */
-export function effectiveLevel(level: CaptainLevel, mode: AutonomyMode): CaptainLevel {
-  return mode === "on" ? level : "ask";
+export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: string): Authority {
+  const own = settings.orgs[org];
+  if (own?.authority !== undefined) return own.authority;
+  if (own?.level !== undefined) return fromLevel(own.level, own.push === true, own.merge === true);
+  const base: Authority =
+    org === PRIVATE ? fromLevel("tidy", false, false) : { ...ALL_ASK, upkeep: "decide" };
+  // No level was ever chosen, but the owner may have switched merging or pushing on: keep that.
+  return {
+    ...base,
+    ...(own?.merge === true ? { merge: "decide" as const } : {}),
+    ...(own?.push === true ? { push: "decide" as const } : {}),
+  };
 }
 
-/** The upkeep chores a level runs. "Only when I ask" runs none. */
-export function choresOf(level: CaptainLevel): readonly CaptainChore[] {
-  return level === "ask" ? [] : CaptainChoreSchema.options;
+/**
+ * What the captain may do now. Autonomous is the single place that decides it: while it is not On,
+ * every row behaves as "Ask me", whatever a workspace is set to.
+ */
+export function effectiveAuthority(authority: Authority, mode: AutonomyMode): Authority {
+  return mode === "on" ? authority : { ...ALL_ASK };
+}
+
+/** The saved form after a change to some rows: the rows from `authorityOf`, with the change on top. */
+export function withAuthority(current: Authority, change: Partial<Authority>): Authority {
+  return { ...current, ...change };
+}
+
+/**
+ * The chores the captain runs. Each follows the row that governs it: cards `approvals`, questions
+ * `questions`, the rest `upkeep`. Shipping runs when the captain merges or does upkeep: with merge on
+ * "Ask me" it only hands the owner a ready-to-ship card.
+ */
+export function choresOf(authority: Authority): readonly CaptainChore[] {
+  return CaptainChoreSchema.options.filter((chore) => {
+    switch (chore) {
+      case "cards":
+        return authority.approvals === "decide";
+      case "questions":
+        return authority.questions === "decide";
+      case "ship":
+        return authority.merge === "decide" || authority.upkeep === "decide";
+      default:
+        return authority.upkeep === "decide";
+    }
+  });
+}
+
+/** The authority row that governs a command that ships work. The others need no row here. */
+export const SHIP_ROW: Readonly<Record<string, "merge" | "push">> = {
+  "tasks.merge": "merge",
+  "tasks.mergeMrs": "merge",
+  "tasks.markMerged": "merge",
+  "tasks.resolveShip": "merge",
+  "tasks.push": "push",
+  "tasks.openMrs": "push",
+};
+
+/** The refusal line when a row is "Ask me": "Refused: in Acme you decide when work starts, ...". */
+export function askedWhy(row: AuthorityRow, name: string): string {
+  return `in ${name} you decide ${AUTHORITY_REFUSAL[row]}`;
+}
+
+/** The same line to start a sentence: "In Acme you decide when work starts, so ...". */
+export function askedSentence(row: AuthorityRow, name: string): string {
+  const line = askedWhy(row, name);
+  return `${line.charAt(0).toUpperCase()}${line.slice(1)}`;
 }
 
 /** The workspaces the captain knows: Private, then each org of majhi.yaml. */
@@ -52,8 +121,8 @@ export function migratePickOrgs(
   if (listed === undefined) return undefined;
   const orgs: Record<string, AutonomyOrg> = { ...autonomy.orgs };
   for (const id of new Set(listed)) {
-    const had = orgs[id] ?? { push: false, merge: false };
-    if (had.level === undefined) orgs[id] = { ...had, level: "runs" };
+    const had = orgs[id] ?? {};
+    if (had.level === undefined && had.authority === undefined) orgs[id] = { ...had, level: "runs" };
   }
   return { orgs, pick: { size: autonomy.pick.size } };
 }

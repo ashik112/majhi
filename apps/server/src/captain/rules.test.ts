@@ -1,26 +1,81 @@
-import { AutonomySettingsSchema } from "@majhi/shared";
+import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { effectiveLevel, levelOf, migratePickOrgs } from "./levels.ts";
+import { authorityOf, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
 import { branchAllowed, presenceWhy, providerAllowed, restWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
-describe("the choice per workspace", () => {
-  it("defaults to Keeps things tidy for Private and Only when I ask for every other workspace", () => {
-    const s = settings({ orgs: { globex: { level: "runs" } } });
-    expect(levelOf(s, "private")).toBe("tidy");
-    expect(levelOf(s, "acme")).toBe("ask");
-    expect(levelOf(s, "globex")).toBe("runs");
+describe("the authority table per workspace", () => {
+  const rows = (
+    start: string,
+    questions: string,
+    approvals: string,
+    upkeep: string,
+    merge: string,
+    push: string,
+  ) => ({
+    start,
+    questions,
+    approvals,
+    upkeep,
+    merge,
+    push,
   });
 
-  it("acts only while Autonomous is on, and never wakes Only when I ask", () => {
-    expect(effectiveLevel("runs", "on")).toBe("runs");
-    expect(effectiveLevel("tidy", "on")).toBe("tidy");
+  it("defaults to Keeps things tidy for Private and Ask me with upkeep for every other workspace", () => {
+    const s = settings({});
+    expect(authorityOf(s, "private")).toEqual(rows("ask", "decide", "decide", "decide", "ask", "ask"));
+    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "decide", "ask", "ask"));
+  });
+
+  it("reads the three old levels into rows", () => {
+    const s = settings({
+      orgs: {
+        acme: { level: "ask" },
+        globex: { level: "tidy", push: true, merge: true },
+        northwind: { level: "runs" },
+        initech: { level: "runs", merge: true },
+        umbrella: { level: "runs", push: true, merge: true },
+      },
+    });
+    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "ask", "ask", "ask"));
+    // Tidy never merged or pushed, whatever the old switches said.
+    expect(authorityOf(s, "globex")).toEqual(rows("ask", "decide", "decide", "decide", "ask", "ask"));
+    expect(authorityOf(s, "northwind")).toEqual(rows("decide", "decide", "decide", "decide", "ask", "ask"));
+    expect(authorityOf(s, "initech")).toEqual(rows("decide", "decide", "decide", "decide", "decide", "ask"));
+    expect(authorityOf(s, "umbrella")).toEqual(
+      rows("decide", "decide", "decide", "decide", "decide", "decide"),
+    );
+  });
+
+  it("lets an explicit authority win over the old fields", () => {
+    const s = settings({
+      orgs: {
+        acme: {
+          level: "runs",
+          merge: true,
+          authority: rows("ask", "ask", "ask", "ask", "ask", "decide"),
+        },
+      },
+    });
+    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "ask", "ask", "decide"));
+  });
+
+  it("acts only while Autonomous is on", () => {
+    const all = rows("decide", "decide", "decide", "decide", "decide", "decide") as Authority;
+    expect(effectiveAuthority(all, "on")).toEqual(all);
     for (const mode of ["off", "paused", "stopping"] as const) {
-      expect(effectiveLevel("runs", mode)).toBe("ask");
-      expect(effectiveLevel("tidy", mode)).toBe("ask");
+      expect(effectiveAuthority(all, mode)).toEqual(ALL_ASK);
     }
-    for (const mode of ["off", "on"] as const) expect(effectiveLevel("ask", mode)).toBe("ask");
+  });
+
+  it("runs each chore on its own row", () => {
+    const only = (row: keyof Authority): Authority => ({ ...ALL_ASK, [row]: "decide" });
+    expect(choresOf(ALL_ASK)).toEqual([]);
+    expect(choresOf(only("approvals"))).toEqual(["cards"]);
+    expect(choresOf(only("questions"))).toEqual(["questions"]);
+    expect(choresOf(only("merge"))).toEqual(["ship"]);
+    expect(choresOf(only("upkeep"))).toEqual(["ship", "memory", "projects", "triage", "cleanup", "stuck"]);
   });
 
   it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {
@@ -30,10 +85,10 @@ describe("the choice per workspace", () => {
     });
     expect(migratePickOrgs(old)).toEqual({
       orgs: {
-        acme: { level: "runs", push: true, merge: false },
+        acme: { level: "runs", push: true },
         // A workspace that already has a choice keeps it: the stricter rule wins.
-        globex: { level: "tidy", push: false, merge: false },
-        private: { level: "runs", push: false, merge: false },
+        globex: { level: "tidy" },
+        private: { level: "runs" },
       },
       pick: { size: "medium" },
     });
