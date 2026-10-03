@@ -413,7 +413,8 @@ export function serveAcp(o: ServeOptions): void {
           ],
         });
 
-      const wanted = /\bcreate\s+(\S+)/.exec(text)?.[1] ?? "HEALTH.md";
+      // A file name has an extension; the captain's own instructions say "create or split".
+      const wanted = /\bcreate\s+(\S+\.\w+)/.exec(text)?.[1] ?? "HEALTH.md";
       const target = resolve(s.cwd, wanted);
       const inside = !relative(s.cwd, target).startsWith("..") && !isAbsolute(relative(s.cwd, target));
       let reply = "";

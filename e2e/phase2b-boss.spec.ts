@@ -204,7 +204,7 @@ test("Hub setup: sections save on their own; changing the policy asks first", as
   await page.goto("/setup");
   await expect(page.getByRole("heading", { name: "Hub setup" })).toBeVisible();
   // The captain is not on the page: Ask the captain opens its drawer.
-  await page.getByRole("button", { name: /Ask the boss/ }).click();
+  await page.getByRole("button", { name: /Ask the captain/ }).click();
   await expect(composer(page)).toBeVisible();
   await page.keyboard.press("Meta+j");
   await expect(drawer(page)).toHaveCount(0);
@@ -218,19 +218,18 @@ test("Hub setup: sections save on their own; changing the policy asks first", as
   expect((await cmd<{ limits: { agents_max: number } }>(request, "settings.get")).limits.agents_max).toBe(4);
 
   await page.goto("/setup?section=approvals");
-  const policy = page.getByRole("region", { name: "Approval policy", exact: true });
-  await policy.getByLabel("Changes").selectOption("confirm");
-  await policy.getByRole("button", { name: "Save Approval policy" }).click();
-  const dialog = page.getByRole("dialog", { name: "Change the approval policy?" });
+  const policy = page.getByRole("region", { name: "What agents may do", exact: true });
+  await policy.getByLabel("Orgs, git accounts and secrets: every command").selectOption("confirm");
+  await policy.getByRole("button", { name: "Save What agents may do" }).click();
+  const dialog = page.getByRole("dialog", { name: "Change what agents may do?" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
-  expect((await cmd<{ policy: { change: string } }>(request, "settings.get")).policy.change).toBe(
-    "when-asked",
-  );
-  await policy.getByRole("button", { name: "Save Approval policy" }).click();
+  type Policy = { policy: { commands: Record<string, string> } };
+  expect((await cmd<Policy>(request, "settings.get")).policy.commands["orgs.create"]).toBeUndefined();
+  await policy.getByRole("button", { name: "Save What agents may do" }).click();
   await dialog.getByRole("button", { name: "Change policy" }).click();
   await expect(policy.getByRole("status")).toContainText("Saved");
-  expect((await cmd<{ policy: { change: string } }>(request, "settings.get")).policy.change).toBe("confirm");
+  expect((await cmd<Policy>(request, "settings.get")).policy.commands["orgs.create"]).toBe("confirm");
 
   // With "confirm", even a call the owner asked for waits.
   await openBoss(page);
