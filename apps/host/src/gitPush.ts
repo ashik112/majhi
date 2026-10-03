@@ -7,6 +7,7 @@
 import { isAbsolute } from "node:path";
 import type { GitAuth } from "@majhi/shared";
 import type { GitAuthEnv } from "./gitAuth.ts";
+import { GUARD_CONFIG, GUARD_ENV, pushGuard } from "./gitGuard.ts";
 import type { RunFn } from "./ssh.ts";
 
 const PUSH_TIMEOUT_MS = 120_000;
@@ -96,6 +97,7 @@ function env(deps: GitPushDeps): Record<string, string> {
     GIT_TERMINAL_PROMPT: "0",
     GCM_INTERACTIVE: "never",
     LC_ALL: "C",
+    ...GUARD_ENV,
   };
 }
 
@@ -116,7 +118,10 @@ function userOf(url: string): string | undefined {
   }
 }
 
-/** `git push <url> <branch>` in `path` with the owner's own git config. Throws a message safe to show. */
+/**
+ * `git push <url> <branch>` in `path` with the owner's own git config, and no command the repo's
+ * config names (gitGuard.ts). Throws a message safe to show.
+ */
 export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<void> {
   const token = params.auth?.kind === "token";
   const url = token ? withoutUser(params.url) : params.url;
@@ -129,16 +134,18 @@ export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<vo
   }
   if (token && deps.authEnv === undefined)
     throw new Error("This host helper cannot push with a workspace's token.");
+  const guard = await pushGuard(deps.run, params.path, env(deps), url, !token);
   const auth =
     token && params.auth !== undefined && deps.authEnv !== undefined
       ? await deps.authEnv(params.auth)
       : undefined;
   let run: Awaited<ReturnType<RunFn>>;
   try {
-    run = await deps.run("git", ["-C", params.path, ...(auth?.config ?? []), ...args], {
-      env: auth?.env ?? env(deps),
-      timeoutMs: PUSH_TIMEOUT_MS,
-    });
+    run = await deps.run(
+      "git",
+      ["-C", params.path, ...(auth?.config ?? GUARD_CONFIG), "push", ...guard.options, ...args.slice(1)],
+      { env: { ...(auth?.env ?? env(deps)), ...guard.env }, timeoutMs: PUSH_TIMEOUT_MS },
+    );
   } finally {
     await auth?.cleanup();
   }
@@ -167,16 +174,13 @@ export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<vo
  */
 async function setUpstream(deps: GitPushDeps, path: string, url: string, branch: string): Promise<void> {
   const opts = { env: env(deps), timeoutMs: 20_000 };
-  const remotes = await deps.run("git", ["-C", path, "remote"], opts);
+  const git = (args: string[]) => deps.run("git", ["-C", path, ...GUARD_CONFIG, ...args], opts);
+  const remotes = await git(["remote"]);
   for (const name of remotes.stdout.split("\n").filter((r) => /^[A-Za-z0-9._-]+$/.test(r))) {
-    const got = await deps.run("git", ["-C", path, "remote", "get-url", name], opts);
+    const got = await git(["remote", "get-url", name]);
     if (withoutUser(got.stdout.trim()) !== withoutUser(url)) continue;
-    await deps.run(
-      "git",
-      ["-C", path, "update-ref", `refs/remotes/${name}/${branch}`, `refs/heads/${branch}`],
-      opts,
-    );
-    await deps.run("git", ["-C", path, "branch", `--set-upstream-to=${name}/${branch}`, branch], opts);
+    await git(["update-ref", `refs/remotes/${name}/${branch}`, `refs/heads/${branch}`]);
+    await git(["branch", `--set-upstream-to=${name}/${branch}`, branch]);
     return;
   }
 }

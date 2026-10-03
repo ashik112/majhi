@@ -209,4 +209,77 @@ describe("majhi's own git", () => {
       server.close();
     }
   });
+
+  it("runs no signing program a repo's config names", async () => {
+    const repo = join(dir, "repo");
+    const marker = join(dir, "ran");
+    const ran = () => readFile(marker, "utf8").catch(() => "");
+    process.env.GIT_CONFIG_GLOBAL = join(dir, "no-global");
+    process.env.GIT_CONFIG_NOSYSTEM = "1";
+    const id = ["-c", "user.name=t", "-c", "user.email=t@t"];
+    await git(dir, ["init", "-q", "-b", "main", repo]);
+    await writeFile(join(repo, "a.txt"), "one\n");
+    await git(repo, ["add", "a.txt"]);
+    await git(repo, [...id, "commit", "-qm", "one"]);
+
+    // What an agent could plant: a signing program that writes the marker, the settings that make
+    // git check signatures, and signed commits on two branches, made with plain git.
+    const gpg = join(dir, "gpg.sh");
+    await writeFile(
+      gpg,
+      [
+        "#!/bin/sh",
+        `echo gpg >> '${marker}'`,
+        "cat > /dev/null",
+        'case " $* " in *" -bsau "*)',
+        "  printf '\\n[GNUPG:] SIG_CREATED D 1 8 00 1 X\\n' >&2",
+        "  printf -- '-----BEGIN PGP SIGNATURE-----\\n\\nAAAA\\n-----END PGP SIGNATURE-----\\n' ;;",
+        "esac",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    for (const [key, value] of [
+      ["gpg.program", gpg],
+      ["log.showSignature", "true"],
+      ["merge.verifySignatures", "true"],
+      ["commit.gpgSign", "true"],
+    ] as const) {
+      await git(repo, ["config", key, value]);
+    }
+    const { GIT_CONFIG_COUNT: _count, ...env } = gitEnv(process.env);
+    const plain = (args: string[]) => promisify(execFile)("git", args, { cwd: repo, env });
+    for (const branch of ["signed", "signed-too"]) {
+      await plain(["checkout", "-q", "-b", branch, "main"]);
+      await writeFile(join(repo, `${branch}.txt`), `${branch}\n`);
+      await plain(["add", "."]);
+      await plain([...id, "commit", "-S", "-qm", branch]);
+    }
+    await plain(["checkout", "-q", "main"]);
+    expect(await git(repo, ["cat-file", "commit", "signed"])).toContain("BEGIN PGP SIGNATURE");
+    await rm(marker, { force: true });
+
+    expect(await git(repo, ["log", "-1", "signed"])).toContain("signed");
+    expect(await git(repo, ["show", "signed"])).toContain("+signed");
+    await writeFile(join(repo, "b.txt"), "two\n");
+    await git(repo, ["add", "b.txt"]);
+    await git(repo, [...id, "commit", "-qm", "two"]);
+    const merged = await mergeBranch({
+      source: repo,
+      branch: "signed",
+      into: "main",
+      identity: { name: "Owner", email: "owner@acme.test" },
+      message: "Merge ACME-1",
+      scratch: join(dir, "scratch"),
+    });
+    expect(merged).toMatchObject({ ok: true, how: "merge commit" });
+    expect(await git(repo, ["cat-file", "commit", "main"])).not.toContain("BEGIN PGP SIGNATURE");
+    expect(await ran()).toBe("");
+
+    // The same repo with plain git does run it, so the setup above is live.
+    await plain(["log", "-1", "signed-too"]);
+    expect(await ran()).toBe("gpg\n");
+    await plain([...id, "merge", "--no-edit", "signed-too"]).catch(() => undefined);
+    expect(await ran()).toBe("gpg\ngpg\n");
+  });
 });
