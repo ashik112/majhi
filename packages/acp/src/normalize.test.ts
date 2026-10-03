@@ -234,3 +234,82 @@ describe("media", () => {
     ]);
   });
 });
+
+describe("compaction reports", () => {
+  it("turns claude-agent-acp's Compact conversation tool call into compaction events, with its facts", () => {
+    const meta = { claudeCode: { toolName: "compact" } };
+    const events = run([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "c1",
+        title: "Compact conversation",
+        kind: "think",
+        status: "in_progress",
+        _meta: meta,
+      },
+      { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed", _meta: meta },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        rawOutput: { trigger: "automatic", preTokens: 160_000, postTokens: 40_000, durationMs: 9000 },
+        _meta: meta,
+      },
+    ]);
+    expect(events).toEqual([
+      { type: "compaction", id: "c1", status: "started" },
+      { type: "compaction", id: "c1", status: "completed" },
+      { type: "compaction", id: "c1", trigger: "auto", before: 160_000, after: 40_000 },
+    ]);
+  });
+
+  it("marks a compaction the owner or majhi asked for as manual", () => {
+    const events = run([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "c2",
+        title: "Compact conversation",
+        status: "completed",
+        rawOutput: { trigger: "manual", preTokens: 90_000 },
+        _meta: { claudeCode: { toolName: "compact" } },
+      },
+    ]);
+    expect(events).toEqual([
+      { type: "compaction", id: "c2", status: "completed", trigger: "manual", before: 90_000 },
+    ]);
+  });
+
+  it("turns codex-acp's Compact conversation tool call into compaction events", () => {
+    const events = run([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "i1",
+        title: "Compact conversation",
+        kind: "think",
+        status: "in_progress",
+      },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "i1",
+        title: "Compact conversation",
+        status: "completed",
+      },
+    ]);
+    expect(events).toEqual([
+      { type: "compaction", id: "i1", status: "started" },
+      { type: "compaction", id: "i1", status: "completed" },
+    ]);
+  });
+
+  it("leaves other tools alone, even Claude's", () => {
+    const [event] = run([
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "t9",
+        title: "Bash",
+        status: "in_progress",
+        _meta: { claudeCode: { toolName: "Bash" } },
+      },
+    ]);
+    expect(event).toMatchObject({ type: "tool", toolCallId: "t9", title: "Bash" });
+  });
+});

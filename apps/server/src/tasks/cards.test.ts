@@ -74,7 +74,12 @@ describe("the review card", () => {
       type: "ask",
       agent: "acme-builder",
       questions: [
-        { id: "q1", question: "How should I build it?", options: [{ id: "a", label: "Cheaper" }], freeText: true },
+        {
+          id: "q1",
+          question: "How should I build it?",
+          options: [{ id: "a", label: "Cheaper" }],
+          freeText: true,
+        },
       ],
       state: "pending",
     });

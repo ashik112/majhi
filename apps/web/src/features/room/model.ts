@@ -682,6 +682,10 @@ export function contextLine(item: ContextItem): string {
   if (before !== undefined && after !== undefined) {
     return `@${item.agent} compacted: ${shortTokens(before)} to ${shortTokens(after)} tokens (${item.method})`;
   }
+  if (item.method === "auto") {
+    const size = after === undefined ? "" : `: ${shortTokens(after)} tokens`;
+    return `@${item.agent} compacted on its own${size} (auto)`;
+  }
   const size = after === undefined ? "" : `: ${shortTokens(after)} tokens`;
   return `@${item.agent} moved to a fresh session${size} (${item.method})`;
 }

@@ -3,6 +3,7 @@
  * fake-agent.ts so the CLI parts stay small. Erasable TypeScript only.
  */
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -642,6 +643,50 @@ export function serveAcp(o: ServeOptions): void {
           stopReason = "end_turn";
         } else if (text.includes("Reply with a handoff note")) {
           agentText = FAKE_NOTE;
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (text.includes("self-compact:") || text.includes("usage-drop:")) {
+          // The CLI compacts on its own inside the turn: usage climbs to 160k, then falls to 40k.
+          // `self-compact:` reports it like the adapters do (a "Compact conversation" tool call,
+          // with Claude's facts); `usage-drop:` only shows it in the usage readings.
+          const usage = (used: number) =>
+            update(params.sessionId, { sessionUpdate: "usage_update", used, size: USAGE_SIZE });
+          await usage(160_000);
+          if (text.includes("self-compact:")) {
+            const id = `compact-${randomUUID()}`;
+            const claude = o.tool === "claude";
+            const meta = claude ? { _meta: { claudeCode: { toolName: "compact" } } } : {};
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call",
+              toolCallId: id,
+              title: "Compact conversation",
+              kind: "think",
+              status: "in_progress",
+              ...meta,
+            });
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call_update",
+              toolCallId: id,
+              status: "completed",
+              ...(claude ? {} : { title: "Compact conversation" }),
+              ...meta,
+            });
+            if (claude) {
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call_update",
+                toolCallId: id,
+                // Counted at the API, so not quite the readings: tests tell the two paths apart by them.
+                rawOutput: { trigger: "automatic", preTokens: 162_000, postTokens: 38_000 },
+                ...meta,
+              });
+            }
+          }
+          s.used = 40_000;
+          await usage(s.used);
+          agentText = "Done, after compacting on my own.";
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: agentText },

@@ -33,7 +33,7 @@ a{color:inherit}
   -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--ink)}
 .trim{height:40px;margin-top:-1px;background:var(--trim) 0 0/160px 40px repeat-x,var(--below,var(--green))}
 
-.sign{display:inline-flex;align-items:center;gap:10px;background:var(--yellow);color:var(--ink);font:700 18px/1 "Baloo Da 2";
+.sign{display:inline-flex;align-items:center;gap:10px;background:var(--yellow);color:var(--ink);font:700 18px/1 "Baloo Da 2",sans-serif;
   padding:15px 24px 13px;border:3px solid var(--ink);border-radius:999px;text-decoration:none;box-shadow:4px 5px 0 var(--ink);cursor:pointer;
   transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s}
 .sign:hover{transform:translate(-1px,-2px);box-shadow:5px 7px 0 var(--ink)}
@@ -45,7 +45,7 @@ a{color:inherit}
 .hero{position:relative;overflow:hidden;display:flex;flex-direction:column;
   min-height:calc(100svh - 28px);background:#2a5fe0}
 nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
-.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2";color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2",sans-serif;color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
 .tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
 .tile svg{width:27px}
 nav .grow{flex:1}
@@ -79,7 +79,7 @@ nav .sign{padding:11px 18px 9px;font-size:16px}
 
 /* one sentence */
 .crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
-.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.22 "Baloo Da 2"}
+.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.22 "Baloo Da 2",sans-serif}
 .chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.15;color:var(--ink)}
 .chip.y{background:var(--yellow)}.chip.p{background:var(--pink)}.chip.c{background:#7fb3ff}.chip.r{background:#ff8a5c}
 
@@ -90,7 +90,7 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .ledger h2{color:var(--red)}
 .row{display:grid;grid-template-columns:minmax(260px,5fr) 7fr;gap:clamp(16px,4vw,60px);align-items:start;padding:30px 0;border-top:3px solid var(--ink)}
 .row:last-child{border-bottom:3px solid var(--ink)}
-.row h3{margin:0;font:800 clamp(28px,3vw,42px)/1.02 "Baloo Da 2";letter-spacing:-.01em}
+.row h3{margin:0;font:800 clamp(28px,3vw,42px)/1.02 "Baloo Da 2",sans-serif;letter-spacing:-.01em}
 .row p{margin:4px 0 0;font-size:19px;color:#3a2a00}
 .row b{color:var(--ink)}
 .ledger .open{margin-top:40px}
@@ -107,7 +107,7 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .frame{flex:0 0 auto;width:min(68vw,760px);margin:0;padding:12px;background:var(--red);border:4px solid var(--ink);border-radius:22px;box-shadow:7px 9px 0 var(--ink)}
 .frame:nth-child(3n+2){background:var(--green)}.frame:nth-child(3n){background:var(--yellow)}
 .frame img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:top left;border:3px solid var(--ink);border-radius:12px;background:#0b1020}
-.frame figcaption{font:700 21px/1.2 "Baloo Da 2";color:var(--ink);padding:12px 6px 2px}
+.frame figcaption{font:700 21px/1.2 "Baloo Da 2",sans-serif;color:var(--ink);padding:12px 6px 2px}
 
 /* one boat per client */
 .boats{background:var(--green);padding:clamp(80px,12vh,130px) clamp(18px,5vw,70px)}
@@ -116,11 +116,11 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .fleet{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,5vw,80px);max-width:980px;margin:0 auto}
 .fleet figure{margin:0;text-align:center}
 .fleet svg{width:100%;height:auto;overflow:visible}
-.fleet figcaption{font:800 26px/1 "Baloo Da 2";margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
+.fleet figcaption{font:800 26px/1 "Baloo Da 2",sans-serif;margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
 .points{list-style:none;margin:56px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
 .points li{display:grid;grid-template-columns:48px 1fr;gap:14px;align-items:start}
 .points svg{width:48px}
-.points b{display:block;font:700 23px/1.2 "Baloo Da 2";margin-bottom:4px}
+.points b{display:block;font:700 23px/1.2 "Baloo Da 2",sans-serif;margin-bottom:4px}
 .points span{font-size:17px;line-height:1.55;color:#d9f3e2}
 .float{animation:bob 4s ease-in-out infinite alternate}
 .fleet figure:nth-child(2) .float{animation-delay:-1.3s}.fleet figure:nth-child(3) .float{animation-delay:-2.6s}
@@ -134,7 +134,7 @@ h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
 .plate code{font:500 clamp(13px,1.45vw,18px)/1.4 "JetBrains Mono",monospace;white-space:nowrap;overflow-x:auto;text-align:left;position:relative}
 .plate .sign{position:relative;padding:11px 16px 9px;font-size:15px}
 .os{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
-.os span{font:700 17px/1 "Baloo Da 2";background:var(--white);color:var(--ink);border:3px solid var(--ink);border-radius:999px;padding:10px 16px 8px}
+.os span{font:700 17px/1 "Baloo Da 2",sans-serif;background:var(--white);color:var(--ink);border:3px solid var(--ink);border-radius:999px;padding:10px 16px 8px}
 
 footer{background:var(--ink);color:#e9e1d3;padding:30px clamp(18px,5vw,70px);display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:16px}
 footer .tile{width:36px;height:36px;border-width:2px;box-shadow:none}
@@ -178,7 +178,7 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
   <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
   <nav>
-    <a class="brand" href="#top"><span class="tile"><svg viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
+    <a class="brand" href="#top"><span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
     <span class="grow"></span>
     <a class="sign alt hide" href="https://github.com/ashik112/majhi">GitHub</a>
     <a class="sign" href="#install">Install</a>
@@ -188,7 +188,7 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
     <p>A crew of AI coding agents for every client. They plan, build, review and ship. You decide where the boat goes.</p>
     <div class="actions">
       <a class="sign" href="#install">Get majhi</a>
-      <a class="sign alt" href="https://github.com/ashik112/majhi"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a>
+      <a class="sign alt" href="https://github.com/ashik112/majhi"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a>
     </div>
   </div>
 
@@ -281,9 +281,9 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   <div class="inner">
     <h2 class="letter">One boat per client</h2>
     <div class="fleet" aria-hidden="true">
-      <figure><svg viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
-      <figure><svg viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
-      <figure><svg viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
     </div>
     <ul class="points">
       <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
@@ -303,15 +303,15 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 </section>
 
 <footer>
-  <span class="tile"><svg viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
+  <span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
   <span>majhi, মাঝি</span>
   <div class="r"><a href="https://github.com/ashik112/majhi">Source</a><a href="https://github.com/ashik112">Commercial license</a></div>
 </footer>
 
 <script>
-document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
+for(const b of document.querySelectorAll("[data-copy]"))b.addEventListener("click",async()=>{
   try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{b.textContent="Select and copy"}
-}));
+});
 </script>
 </body>
 </html>
