@@ -63,6 +63,8 @@ export interface NewRepo {
   id: string;
   base: string;
   remotes: { name: string; url: string }[];
+  /** Names for the task box, suggested from the repo's folder and package names. */
+  aliases: string[];
   /** Why the captain is not sure where it belongs, so it asks instead. */
   unsure?: string | undefined;
 }

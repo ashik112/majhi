@@ -95,6 +95,9 @@ import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { suggestRepoAliases } from "./projectcard/scanner.ts";
+import type { ProjectCards } from "./projectcard/service.ts";
+import { createCards } from "./projectcard/wire.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
@@ -271,6 +274,8 @@ export interface Services {
   automation: Automation;
   /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
   e2e: E2eService | undefined;
+  /** Project knowledge cards, refreshed when a base branch moves. */
+  cards: ProjectCards;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -648,6 +653,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  const cards = createCards({
+    store,
+    projects,
+    memory,
+    housekeeper,
+    log: (message) => console.error(message),
+  });
+  memory.useCards((project) => cards.compact(project));
   const extraction = new Extraction({
     housekeeper,
     curator,
@@ -703,7 +716,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
-    onMerged: (merge) => e2e?.onMerged(merge),
+    onMerged: (merge) => {
+      cards.onMerged(merge.project);
+      return e2e?.onMerged(merge);
+    },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -955,6 +971,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       runs,
       room,
       quiet: (task) => idleWatch.quiet(task),
+      projectLines: (org) => cards.digestLines(org),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1018,6 +1035,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       lanes,
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
+      aliasesOf: (path, id) => suggestRepoAliases(path, id),
       dispatch: () => captainDispatch,
     }),
     tell: (key, text) => notifier.captain(key, text),
@@ -1236,6 +1254,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     automation,
     e2e,
+    cards,
     memory,
     extraction,
     promotion,
@@ -1261,6 +1280,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       automation.scheduler.stop();
       automation.triggerEngine.stop();
       e2e?.close();
+      cards.close();
       layaDocker?.close();
       await runs.closeAll();
       await trackers.stop();

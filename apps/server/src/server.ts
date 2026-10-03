@@ -153,6 +153,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.mrPoller.start();
       services.trackers.start();
       services.e2e?.start();
+      services.cards.start();
       services.resilience.start();
       services.automation.scheduler.start();
       services.automation.triggerEngine.start();

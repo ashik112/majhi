@@ -319,6 +319,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "cleanup.preview": "Preview a cleanup",
   "health.fix": "Run a health fix",
   "e2e.runNow": "Run background e2e now",
+  "projects.cardRefresh": "Refresh a project card",
   "system.update": "Rebuild and restart majhi",
   "decisions.correct": "Correct a decision",
   "decisions.set": "Change decision settings",

@@ -65,6 +65,8 @@ export interface DigestInput {
   /** The owner's pick rules, one line each. */
   rules: readonly string[];
   queue: readonly QueueItem[];
+  /** One line per project of the workspace: stack, readiness, when its card was read. */
+  projects?: readonly string[] | undefined;
   /** Every account's health right now, by id, for the waits in the queue. */
   accountStatus?: Readonly<Record<string, AutonomyAccount["status"]>> | undefined;
 }
@@ -93,6 +95,7 @@ const BASE = {
   waiting: 6,
   backlog: 15,
   queue: 10,
+  projects: 8,
 };
 
 export function digest(input: DigestInput): string {
@@ -193,6 +196,14 @@ function build(input: DigestInput, scale: number): string {
       max(BASE.queue),
       "empty",
     ),
+    ...((input.projects ?? []).length === 0
+      ? []
+      : list(
+          "Projects of this workspace (majhi_projects_cards has the full card)",
+          input.projects ?? [],
+          max(BASE.projects),
+          "none",
+        )),
     "",
     "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
   ];

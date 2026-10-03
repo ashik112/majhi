@@ -454,7 +454,13 @@ export function createHandlers({
     },
 
     "projects.list": () => services.projects.list(),
-    "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
+    "projects.register": async (input, ctx) => {
+      const view = await services.projects.register(input, ctx.command, ctx.meta);
+      services.cards.onRegistered(input.id);
+      return view;
+    },
+    "projects.cards": async (input) => services.cards.list(input.project),
+    "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
       if (input.protected === false && ctx.meta.actor.kind === "agent") {
@@ -467,6 +473,7 @@ export function createHandlers({
     },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
+      services.cards.forget(input.id);
       return { removed: input.id };
     },
 
