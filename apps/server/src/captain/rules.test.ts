@@ -79,7 +79,15 @@ describe("the authority table per workspace", () => {
     expect(choresOf(only("approvals"))).toEqual(["cards"]);
     expect(choresOf(only("questions"))).toEqual(["questions"]);
     expect(choresOf(only("merge"))).toEqual(["ship"]);
-    expect(choresOf(only("upkeep"))).toEqual(["ship", "memory", "projects", "triage", "cleanup", "stuck"]);
+    expect(choresOf(only("upkeep"))).toEqual([
+      "ship",
+      "memory",
+      "projects",
+      "triage",
+      "cleanup",
+      "stuck",
+      "followups",
+    ]);
   });
 
   it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {
