@@ -69,6 +69,7 @@ import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts"
 import {
   accountsOf,
   capHoldFor,
+  capPassed,
   capScope,
   dayWindow,
   diffHolds,
@@ -474,6 +475,35 @@ export class AutonomyService {
       if (hold === undefined) return undefined;
       this.repo.hold(task, hold.reason, hold.scope);
       return { reason: hold.reason, why: hold.why };
+    } catch {
+      // The database closed under a shutdown: the run stops anyway.
+      return undefined;
+    }
+  }
+
+  /**
+   * The run gate inside a turn (rule 7): a line when the day's spend, with what this turn of an
+   * autonomous task spent so far, passed the day cap or its workspace's cap by more than
+   * `CAP_MARGIN`. Records the hold, so the cap lifting restarts the task. Never throws.
+   */
+  async overCap(task: string, turnCostUsd: number): Promise<string | undefined> {
+    try {
+      if (this.repo.state().mode !== "on" || !this.repo.isAutonomous(task)) return undefined;
+      const [all, sections] = await Promise.all([this.deps.config.settings(), this.deps.config.sections()]);
+      const settings = all.autonomy;
+      const tz = zoneOr(settings.tz);
+      const window = dayWindow(this.now(), tz);
+      const spend = spendOf(
+        this.repo.spendRows(window.start, window.end, this.spendChats()),
+        settings,
+        window,
+        tz,
+      );
+      const names = Object.fromEntries(Object.entries(sections.orgs).map(([id, o]) => [id, o.name]));
+      const passed = capPassed(spend, this.deps.store.tasks.get(task)?.org ?? PRIVATE, turnCostUsd, names);
+      if (passed === undefined) return undefined;
+      this.repo.hold(task, "limit", passed.scope);
+      return `${passed.text}, so this agent stopped in the middle of its turn. It continues when the cap lifts.`;
     } catch {
       // The database closed under a shutdown: the run stops anyway.
       return undefined;

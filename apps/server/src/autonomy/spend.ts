@@ -189,6 +189,42 @@ export function diffHolds(
   };
 }
 
+/**
+ * How far a turn already running may take the day's spend past a cap before it is stopped: 5 % of
+ * the cap. No new turn starts once a cap is reached; this only bounds the turn that was running.
+ */
+export const CAP_MARGIN = 0.05;
+
+/** Whether `used` plus a running turn's cost passed `cap` by more than `CAP_MARGIN`. */
+function pastMargin(use: CapUse, turnCost: number): boolean {
+  const cap = use.cap;
+  if (cap === undefined) return false;
+  const over = (used: number, limit: number | undefined) =>
+    limit !== undefined && used > limit * (1 + CAP_MARGIN);
+  return over(use.used.cost + turnCost, cap.cost) || over(use.used.tokens, cap.tokens);
+}
+
+/**
+ * The cap a running turn of `org`'s task passed by more than the margin, with what this turn spent
+ * so far added to the day's recorded spend: the day cap first, else the org's. Undefined when none.
+ * `names` are org names.
+ */
+export function capPassed(
+  spend: AutonomySpend,
+  org: string,
+  turnCost: number,
+  names: Readonly<Record<string, string>> = {},
+): { text: string; scope: string } | undefined {
+  if (spend.total.cap !== undefined && pastMargin(spend.total, turnCost)) {
+    return { text: `Autonomous mode passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
+  }
+  const own = spend.orgs.find((o) => o.org === org);
+  if (own?.cap !== undefined && pastMargin(own, turnCost)) {
+    return { text: `${names[org] ?? org} passed its ${capText(own.cap)} cap for today`, scope: org };
+  }
+  return undefined;
+}
+
 /** The cap that holds the work of `org` today: the day cap first, else the org's own. */
 export function capHoldFor(holds: readonly AutonomyHold[], org: string): AutonomyHold | undefined {
   return holds.find((h) => h.kind === "day-cap") ?? holds.find((h) => h.kind === "org-cap" && h.id === org);
