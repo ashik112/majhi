@@ -841,6 +841,7 @@ export class TaskService {
           base: stack?.branch ?? repo.base,
           branch: repo.branch,
           path,
+          task: id,
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });

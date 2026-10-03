@@ -185,7 +185,8 @@ export function createE2eRunner(deps: E2eDeps): E2eRunner {
       const has = await gitRun(repo, ["cat-file", "-e", `${commit}^{commit}`]);
       if (has.code !== 0) return errored("The commit is not in the project's repository on this computer.");
       await mkdir(root, { recursive: true });
-      await gitRun(repo, ["worktree", "prune"]);
+      // Never `git worktree prune`: it drops the entry of every task worktree this helper cannot see
+      // right now. `add --force` below replaces a stale entry of this worktree's own path.
       const existing = await stat(join(worktree, ".git")).then(
         () => true,
         () => false,

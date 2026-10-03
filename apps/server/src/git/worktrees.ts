@@ -30,6 +30,8 @@ export interface WorktreeRequest {
    * owner's keys again; resolves true when that was possible, and the fetch is then retried.
    */
   reloadKeys?: () => Promise<boolean>;
+  /** The task the worktree is for. It is locked with that as the reason, so no prune drops its entry. */
+  task?: string;
 }
 
 export interface WorktreeResult {
@@ -93,16 +95,23 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
 
   if (await localBranchExists(source, branch)) {
     await add(source, ["worktree", "add", path, branch], branch);
+    await lockFor(req);
     return { createdBranch: false, warnings };
   }
   if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
     await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
+    await lockFor(req);
     return { createdBranch: false, warnings };
   }
   const baseRef = await resolveBase(source, remote, base);
   await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
+  await lockFor(req);
   const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
   return { createdBranch: true, startCommit, warnings };
+}
+
+async function lockFor(req: WorktreeRequest): Promise<void> {
+  if (req.task !== undefined) await lock(req.source, req.path, lockReason(req.task));
 }
 
 /** ssh's way of saying no key it had was accepted, or the host could not be verified. */
@@ -265,11 +274,16 @@ export async function dirtyWorktrees(
 
 /**
  * Removes a worktree from its source repo and deletes its folder. Without `force`
- * git refuses when there are uncommitted changes. The branch stays.
+ * git refuses when there are uncommitted changes. The branch stays. A locked worktree is unlocked
+ * first, and locked again with its old reason when git refuses to remove it.
  */
 export function removeWorktree(source: string, path: string, force: boolean): Promise<void> {
   return queue.run(source, async () => {
     if (await isGitRepo(source)) {
+      const own = await entryFor(source, path).catch(() => undefined);
+      const reason =
+        own === undefined ? undefined : await readFile(join(own, "locked"), "utf8").catch(() => undefined);
+      if (reason !== undefined) await git(source, ["worktree", "unlock", path]).catch(() => undefined);
       const args = ["worktree", "remove", ...(force ? ["--force"] : []), path];
       try {
         await git(source, args);
@@ -278,15 +292,40 @@ export function removeWorktree(source: string, path: string, force: boolean): Pr
           () => false,
           () => true,
         );
-        if (!missing && !force) throw new WorktreeProblem(err instanceof Error ? err.message : String(err));
+        if (!missing && !force) {
+          if (reason !== undefined) await lock(source, path, reason.trim()).catch(() => undefined);
+          throw new WorktreeProblem(err instanceof Error ? err.message : String(err));
+        }
       }
       // Only this worktree's own entry. A `git worktree prune` would also drop the entry of a live
       // task whose folder is out of reach for a moment, and its checkout stops being a git repo.
-      const own = await entryFor(source, path).catch(() => undefined);
-      if (own !== undefined) await rm(own, { recursive: true, force: true });
+      const left = await entryFor(source, path).catch(() => undefined);
+      if (left !== undefined) await rm(left, { recursive: true, force: true });
     }
     await rm(path, { recursive: true, force: true });
   });
+}
+
+/** What a task worktree's lock says. */
+export function lockReason(task: string): string {
+  return `majhi task ${task}`;
+}
+
+/**
+ * Locks a task worktree, so no `git worktree prune` drops its entry while its folder is out of
+ * sight of whoever runs it (the owner's checkout, a container, a host helper). Already locked is fine.
+ */
+export function lockWorktree(source: string, path: string, task: string): Promise<void> {
+  return queue.run(source, () => lock(source, path, lockReason(task)));
+}
+
+async function lock(source: string, path: string, reason: string): Promise<void> {
+  try {
+    await git(source, ["worktree", "lock", ...(reason === "" ? [] : ["--reason", reason]), path]);
+  } catch (err) {
+    if (err instanceof GitError && /already locked/.test(err.stderr)) return;
+    throw err;
+  }
 }
 
 export type RepairResult =
@@ -378,7 +417,8 @@ async function freeEntry(entries: string, name: string): Promise<string> {
   }
 }
 
-async function samePath(a: string, b: string): Promise<boolean> {
+/** Same folder: the same path, or the same inode once symlinks are followed. */
+export async function samePath(a: string, b: string): Promise<boolean> {
   if (resolve(a) === resolve(b)) return true;
   return sameDir(a, b).catch(() => false);
 }
