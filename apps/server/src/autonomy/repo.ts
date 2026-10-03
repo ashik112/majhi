@@ -8,6 +8,8 @@ import {
   AutonomyModeSchema,
   type AutonomySummary,
   AutonomySummarySchema,
+  type Budget,
+  BudgetSchema,
   PRIVATE,
   type QueueItem,
   QueueItemSchema,
@@ -99,6 +101,24 @@ interface EventDbRow {
 }
 
 /** A JSON column read with a schema; anything that does not parse reads as `fallback`. */
+/** The caps of one day, as `autonomy_day_caps` keeps them: the day cap and each workspace's own. */
+export const DayCapsSchema = z.object({
+  day: BudgetSchema.optional(),
+  orgs: z.record(z.string(), BudgetSchema),
+});
+export type DayCaps = z.infer<typeof DayCapsSchema>;
+
+/** Which caps differ: `day` for the day cap, else the org id. */
+function capsMoved(before: DayCaps, after: DayCaps): string[] {
+  const same = (a: Budget | undefined, b: Budget | undefined) =>
+    a?.cost === b?.cost && a?.tokens === b?.tokens;
+  const moved = same(before.day, after.day) ? [] : ["day"];
+  for (const org of new Set([...Object.keys(before.orgs), ...Object.keys(after.orgs)])) {
+    if (!same(before.orgs[org], after.orgs[org])) moved.push(org);
+  }
+  return moved;
+}
+
 function parsed<T>(json: string | null, schema: z.ZodType<T>, fallback: T): T {
   if (json === null) return fallback;
   try {
@@ -317,24 +337,62 @@ export class AutonomyRepo {
       : parsed<AutonomySummary | undefined>(row.summary, AutonomySummarySchema, undefined);
   }
 
+  /**
+   * Notes the caps in force on `day` (the owner's local day). The first note of a day stores them;
+   * a later one that differs keeps the new caps and remembers which ones moved, so the day's summary
+   * compares against the cap that applied, or says it changed.
+   */
+  noteCaps(day: string, caps: DayCaps): void {
+    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
+      | { caps: string; changed: string }
+      | undefined;
+    if (row === undefined) {
+      this.db
+        .prepare("INSERT OR IGNORE INTO autonomy_day_caps (day, caps, changed) VALUES (?, ?, '[]')")
+        .run(day, JSON.stringify(caps));
+      return;
+    }
+    const before = parsed(row.caps, DayCapsSchema, { orgs: {} });
+    const moved = capsMoved(before, caps);
+    if (moved.length === 0) return;
+    const changed = new Set([...parsed(row.changed, z.array(z.string()), []), ...moved]);
+    this.db
+      .prepare("UPDATE autonomy_day_caps SET caps = ?, changed = ? WHERE day = ?")
+      .run(JSON.stringify(caps), JSON.stringify([...changed].sort()), day);
+  }
+
+  /** The caps last seen on `day` and which moved during it. Undefined for a day nothing noted. */
+  dayCaps(day: string): { caps: DayCaps; changed: string[] } | undefined {
+    const row = this.db.prepare("SELECT caps, changed FROM autonomy_day_caps WHERE day = ?").get(day) as
+      | { caps: string; changed: string }
+      | undefined;
+    if (row === undefined) return undefined;
+    return {
+      caps: parsed(row.caps, DayCapsSchema, { orgs: {} }),
+      changed: parsed(row.changed, z.array(z.string()), []),
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Spend
 
   /**
-   * Turns of autonomous tasks since they joined, and of the autonomy chat, from `start` to `end`,
-   * summed per org. Tokens count like budgets: input, output and cache writes.
+   * Turns of autonomous tasks since they joined, and of the captain's chats (its lanes and the
+   * autonomy chat from before lanes), from `start` to `end`, summed per org. Tokens count like
+   * budgets: input, output and cache writes.
    */
-  spendRows(start: string, end: string, chat: string | undefined): OrgSpendRow[] {
+  spendRows(start: string, end: string, chats: readonly string[]): OrgSpendRow[] {
+    const marks = chats.map(() => "?").join(", ");
     return this.db
       .prepare(
         `SELECT COALESCE(t.org, ?) AS org,
            COALESCE(SUM(t.input_tokens + t.output_tokens + t.cache_write_tokens), 0) AS tokens,
            COALESCE(SUM(t.cost_usd), 0) AS cost
          FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
-         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since) OR t.task = ?)
+         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})
          GROUP BY COALESCE(t.org, ?)`,
       )
-      .all(PRIVATE, start, end, chat ?? "", PRIVATE) as OrgSpendRow[];
+      .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
   }
 }
 

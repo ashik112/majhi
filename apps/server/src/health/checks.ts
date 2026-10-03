@@ -23,6 +23,7 @@ import { isDirectory } from "../fs.ts";
 import { checkRunnerIsolation, checkSerena } from "../runner/check.ts";
 import { SERENA_COMMAND } from "../runs/serena.ts";
 import type { KeyExportRecord } from "../secrets/backup.ts";
+import type { SecretsKeyState } from "../secrets/store.ts";
 import type { Services } from "../services.ts";
 
 const run = promisify(execFile);
@@ -429,25 +430,58 @@ export function diskStatus(freeBytes: number): CheckStatus {
   return "pass";
 }
 
+const SECRETS_KEY_CHECK = { id: "secrets-key", group: "majhi", name: "Secrets key" } as const;
+
 async function checkSecrets(services: Services): Promise<Check[]> {
-  const base = { id: "secrets-key", group: "majhi", name: "Secrets key" } as const;
-  return (await services.secrets.available())
-    ? [{ ...base, status: "pass", detail: "Found, so API-key accounts work" }]
-    : [
-        {
-          ...base,
-          status: "warn",
-          detail: `No key file, so API keys cannot be saved. ${MAKE_UP} It creates the key.`,
-        },
-      ];
+  try {
+    return [secretsKeyCheck(await services.secrets.keyState())];
+  } catch (err) {
+    const detail = `Cannot read the key file or secrets.age: ${errorMessage(err)}`;
+    return [{ ...SECRETS_KEY_CHECK, status: "fail", detail }];
+  }
+}
+
+/** Fails when saved API keys cannot be read. Without a working key, it offers the export's restore. */
+function secretsKeyCheck(state: SecretsKeyState): Check {
+  const base = SECRETS_KEY_CHECK;
+  const restore = { fix: { label: "Restore from export" } };
+  switch (state) {
+    case "ok":
+      return { ...base, status: "pass", detail: "Found, so API-key accounts work" };
+    case "missing":
+      return {
+        ...base,
+        status: "warn",
+        detail: `No key file, so API keys cannot be saved. ${MAKE_UP} It creates the key. Or restore the key from its export.`,
+        ...restore,
+      };
+    case "lost":
+      return {
+        ...base,
+        status: "fail",
+        detail:
+          "No key file, so the saved API keys in secrets.age cannot be read. Restore the key from its export.",
+        ...restore,
+      };
+    case "wrong":
+      return {
+        ...base,
+        status: "fail",
+        detail:
+          "The key file does not open secrets.age, so the saved API keys cannot be read. Restore the key from its export.",
+        ...restore,
+      };
+  }
 }
 
 /**
  * The two backups of the secrets key: the copy the host helper keeps in the Keychain or keyring, and
  * the passphrase-protected export to keep off this computer. Each warns until it holds the key majhi
- * uses. Nothing to back up while there is no key: the Secrets key check says so.
+ * uses. Nothing to back up while there is no key, or while it does not open secrets.age: the Secrets
+ * key check says so, and saving that key would replace a keyring copy that may be the right one.
  */
 async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
+  if ((await ctx.services.secrets.keyState().catch(() => undefined)) !== "ok") return [];
   const fingerprint = await ctx.services.secrets.fingerprint().catch(() => undefined);
   if (fingerprint === undefined) return [];
   const last = await ctx.services.keyExports.last().catch(() => undefined);

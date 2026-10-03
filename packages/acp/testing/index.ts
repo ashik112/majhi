@@ -6,6 +6,12 @@ import type { Command } from "../src/index.ts";
 export interface FakeAgentOptions {
   /** Signed in from the start. Default false: `auth` fails until the fake login ran. */
   signedIn?: boolean;
+  /**
+   * Signed in, but the token expired and cannot be refreshed, like Claude Code with a dead OAuth
+   * session: `auth status` passes and a session opens, but every prompt fails with "Failed to
+   * authenticate" and ACP's auth error, and usage reads report no plan.
+   */
+  expired?: boolean;
   /** Models to offer over ACP. Default: two models, the first one default. */
   models?: string[];
   efforts?: string[];
@@ -55,6 +61,7 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
   const args = [FAKE_AGENT, "--tool", tool];
   if (options.signedIn) args.push("--signed-in");
   if (options.broken) args.push("--broken");
+  if (options.expired) args.push("--expired");
   if (options.models) args.push("--models", options.models.join(","));
   if (options.efforts) args.push("--efforts", options.efforts.join(","));
   if (options.slowMs) args.push("--slow", String(options.slowMs));

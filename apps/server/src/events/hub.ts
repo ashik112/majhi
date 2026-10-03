@@ -68,7 +68,11 @@ export function topicsFor(command: string): EventTopic[] {
       return ["triggers"];
     case "autonomy":
       // Settings and instructions are config commits; the mode and the queue are autonomy's own.
-      return ["autonomy", "config", "tasks"];
+      // The captain's choice per workspace is in the same settings.
+      return ["autonomy", "captain", "config", "tasks"];
+    case "captain":
+      // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
+      return ["captain", "autonomy", "config", "tasks", "memory"];
     default:
       return [];
   }

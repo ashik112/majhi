@@ -23,6 +23,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "room.fresh",
   "ssh.unlock",
   "secrets.exportKey",
+  "secrets.restoreKey",
   "boss.chat",
   "chats.create",
   "chats.rename",
@@ -34,15 +35,21 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "autonomy.guide",
   "autonomy.forget",
   "autonomy.exclude",
+  // The captain never stops or resumes itself, undoes its own log or turns its chores back on.
+  "captain.stop",
+  "captain.resume",
+  "captain.undo",
+  "captain.choreOn",
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",
-  // Git sign-in happens in the owner's browser, and the OAuth apps hold a secret: the owner's alone.
+  // Git sign-in happens in the owner's browser or with a token the owner pastes: the owner's alone.
   "git.oauthApps.set",
   "git.signIn.start",
   "git.signIn.poll",
   "git.signIn.cancel",
   "git.signIn.confirm",
+  "git.signIn.token",
   "git.signOut",
 ]);
 

@@ -31,6 +31,8 @@ export function createDispatcher(
   handlers: CommandHandlers,
   /** Called after every command that is not a read and succeeded, so live channels can tell clients. */
   onChanged?: (name: CommandName) => void,
+  /** Called after each command that succeeded, with its meta: the captain learns where the owner just acted (5.18). */
+  observe?: (name: CommandName, input: unknown, meta: CommandMeta, output: unknown) => void,
 ): Dispatch {
   return async (name, input, metaHeader) => {
     if (!isCommandName(name)) {
@@ -39,6 +41,7 @@ export function createDispatcher(
     const meta = parseMeta(metaHeader);
     if (!meta.ok) return meta;
     const result = await run(name, input, meta.meta, handlers);
+    if (result.ok) observe?.(name, input, meta.meta, result.output);
     if (result.ok && commands[name].risk !== "read") onChanged?.(name);
     return result;
   };

@@ -95,6 +95,47 @@ function toolEvent(u: {
   return e;
 }
 
+/**
+ * How both adapters report a compaction to a client without ACP's compaction capability (majhi
+ * advertises none): a tool call titled "Compact conversation". claude-agent-acp 0.84.0 names it
+ * `compact` in `_meta.claudeCode.toolName` on every report, title only on the first; codex-acp
+ * 2.0.0 repeats the title on each.
+ */
+const COMPACT_TITLE = "Compact conversation";
+
+const CompactMeta = z.object({ claudeCode: z.object({ toolName: z.literal("compact") }) });
+
+/** Claude's facts in `rawOutput` once the compaction ended. */
+const CompactFacts = z.object({
+  trigger: z.string().optional(),
+  preTokens: z.number().nonnegative().optional(),
+  postTokens: z.number().nonnegative().optional(),
+});
+
+function isCompaction(u: { title?: string | null | undefined; _meta?: unknown }): boolean {
+  return u.title === COMPACT_TITLE || CompactMeta.safeParse(u._meta).success;
+}
+
+function compactionEvent(u: {
+  toolCallId: string;
+  status?: string | null | undefined;
+  rawOutput?: unknown;
+}): Extract<SessionEvent, { type: "compaction" }> {
+  const e: Extract<SessionEvent, { type: "compaction" }> = { type: "compaction", id: u.toolCallId };
+  if (u.status === "pending" || u.status === "in_progress") e.status = "started";
+  else if (u.status === "completed") e.status = "completed";
+  else if (u.status === "failed") e.status = "failed";
+  const facts = CompactFacts.safeParse(u.rawOutput);
+  if (facts.success) {
+    const { trigger, preTokens, postTokens } = facts.data;
+    if (trigger === "automatic" || trigger === "auto") e.trigger = "auto";
+    else if (trigger === "manual") e.trigger = "manual";
+    if (preTokens !== undefined) e.before = preTokens;
+    if (postTokens !== undefined) e.after = postTokens;
+  }
+  return e;
+}
+
 /** An image or a link from an ACP content block. Other kinds (audio, embedded resources) are not kept. */
 function mediaOf(block: unknown): MediaBlock | undefined {
   if (typeof block !== "object" || block === null) return undefined;
@@ -167,6 +208,7 @@ function normalizeInner(update: SessionUpdate, runs: MessageRuns, log: DebugLog)
         log("tool call without an id ignored");
         return [];
       }
+      if (isCompaction(update)) return [compactionEvent(update)];
       return [toolEvent(update), ...toolMedia(update.toolCallId, update.content)];
     case "plan":
       runs.reset();

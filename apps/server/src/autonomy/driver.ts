@@ -1,4 +1,4 @@
-import type { AutonomyMode, RoomItem, Task } from "@majhi/shared";
+import { type AutonomyMode, PRIVATE, type RoomItem, type Task } from "@majhi/shared";
 import type { EventHub } from "../events/hub.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -8,14 +8,15 @@ import { answerableText, digest } from "./digest.ts";
 import type { AutonomyService } from "./service.ts";
 
 /**
- * The driver (PRV-74, rule 8): wakes the captain in its autonomy chat with a tick when something it
- * should decide happened. Events are batched for `DEBOUNCE_MS`; at most one tick waits at a time;
- * while the captain is in a turn, the next tick goes when the turn ends. Nothing ticks unless the mode
- * is on.
+ * The driver (PRV-74, rule 8; 5.18 lanes): wakes the captain with a tick in the lane of each
+ * workspace set to "Runs it" when something it should decide happened there. Each lane has its own
+ * batch: events are batched for `DEBOUNCE_MS`, at most one tick waits per lane, and while the captain
+ * is in a turn in that lane the next tick goes when the turn ends. A tick holds only its workspace's
+ * tasks, cards, backlog and spend. Nothing ticks unless the mode is on.
  */
 
 export const DEBOUNCE_MS = 20_000;
-/** A check while nothing autonomous runs, so the captain picks the next work. */
+/** A check while nothing autonomous runs in a workspace, so the captain picks the next work. */
 export const HEARTBEAT_MS = 60 * 60_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
@@ -36,27 +37,50 @@ export interface DriverDeps {
   debounceMs?: number;
 }
 
+/** One lane's batch. */
+interface Lane {
+  reasons: string[];
+  timer: NodeJS.Timeout | undefined;
+  /** A tick waits for the captain's turn in this lane to end. */
+  afterTurn: boolean;
+  sending: Promise<void> | undefined;
+  lastTickAt: number;
+}
+
 export class AutonomyDriver {
-  private reasons: string[] = [];
-  private timer: NodeJS.Timeout | undefined;
-  /** A tick waits for the captain's turn to end. */
-  private afterTurn = false;
-  private sending: Promise<void> | undefined;
-  private lastTickAt: number;
+  private readonly lanes = new Map<string, Lane>();
+  private readonly firstTick: number;
   /** Each autonomous task's status as last seen, to tell what changed. */
   private readonly statuses = new Map<string, string>();
   private readonly seenCards = new Set<string>();
   private watchTimer: NodeJS.Timeout | undefined;
   private unsubscribe: (() => void) | undefined;
+  /** Moves on every mode change that is not `on`, so a wake that was on its way is dropped. */
+  private generation = 0;
 
   constructor(private readonly deps: DriverDeps) {
     const last = deps.autonomy.repo.state().lastTick;
-    this.lastTickAt = last === undefined ? 0 : Date.parse(last);
+    this.firstTick = last === undefined ? 0 : Date.parse(last);
     deps.room.onWrite((task, item) => this.cardWritten(task, item));
   }
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  private lane(org: string): Lane {
+    let lane = this.lanes.get(org);
+    if (lane === undefined) {
+      lane = {
+        reasons: [],
+        timer: undefined,
+        afterTurn: false,
+        sending: undefined,
+        lastTickAt: this.firstTick,
+      };
+      this.lanes.set(org, lane);
+    }
+    return lane;
   }
 
   /** Watches task changes. The first look only learns the statuses. */
@@ -70,102 +94,137 @@ export class AutonomyDriver {
   close(): void {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
-    clearTimeout(this.timer);
+    for (const lane of this.lanes.values()) clearTimeout(lane.timer);
+    this.lanes.clear();
     clearTimeout(this.watchTimer);
-    this.timer = undefined;
     this.watchTimer = undefined;
   }
 
-  /** Something the captain should look at happened: batched into the next tick. */
-  wake(line: string): void {
+  /**
+   * Something the captain should look at happened in a workspace: batched into that lane's next
+   * tick. Without a workspace it goes to every lane of a workspace set to "Runs it".
+   */
+  wake(line: string, org?: string): void {
     if (this.deps.autonomy.mode() !== "on") return;
-    this.reasons.push(line);
-    if (this.reasons.length > REASONS_MAX) this.reasons.splice(0, this.reasons.length - REASONS_MAX);
-    if (this.timer !== undefined || this.afterTurn) return;
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      void this.fire().catch(() => undefined);
-    }, this.deps.debounceMs ?? DEBOUNCE_MS);
-    this.timer.unref();
+    if (org === undefined) {
+      const generation = this.generation;
+      void this.deps.autonomy
+        .runsOrgs()
+        .then((orgs) => {
+          if (generation !== this.generation || this.deps.autonomy.mode() !== "on") return;
+          for (const o of orgs) this.wakeLane(o, line);
+        })
+        .catch(() => undefined);
+      return;
+    }
+    this.wakeLane(org, line);
   }
 
-  /** Paused, stopping or off: no tick waits. */
+  private wakeLane(org: string, line: string): void {
+    const lane = this.lane(org);
+    lane.reasons.push(line);
+    if (lane.reasons.length > REASONS_MAX) lane.reasons.splice(0, lane.reasons.length - REASONS_MAX);
+    if (lane.timer !== undefined || lane.afterTurn) return;
+    lane.timer = setTimeout(() => {
+      lane.timer = undefined;
+      void this.fire(org).catch(() => undefined);
+    }, this.deps.debounceMs ?? DEBOUNCE_MS);
+    lane.timer.unref();
+  }
+
+  /** Paused, stopping or off: no tick waits in any lane. */
   onMode(mode: AutonomyMode): void {
     if (mode === "on") return;
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    this.afterTurn = false;
-    this.reasons = [];
+    this.generation += 1;
+    for (const lane of this.lanes.values()) {
+      clearTimeout(lane.timer);
+      lane.timer = undefined;
+      lane.afterTurn = false;
+      lane.reasons = [];
+    }
   }
 
   /**
-   * A run's loop ended. The captain's: a tick that waited goes now. An autonomous task's that is
-   * still running with nobody working: the captain looks.
+   * A run's loop ended. The captain's in a lane: a tick that waited there goes now. An autonomous
+   * task's that is still running with nobody working: the captain looks, in its workspace's lane.
    */
   loopEnded(task: string): void {
-    if (task === this.deps.autonomy.chat()) {
-      if (!this.afterTurn) return;
-      this.afterTurn = false;
-      void this.fire().catch(() => undefined);
+    const laneOrg = this.deps.autonomy.laneOrg(task);
+    if (laneOrg !== undefined) {
+      const lane = this.lane(laneOrg);
+      if (!lane.afterTurn) return;
+      lane.afterTurn = false;
+      void this.fire(laneOrg).catch(() => undefined);
       return;
     }
     if (!this.deps.autonomy.isAutonomous(task)) return;
     const found = this.deps.store.tasks.get(task);
     if (found?.status === "running" && this.deps.runs.working(task).length === 0) {
-      this.wake(`${task} is running, but no agent is working on it`);
+      this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE);
     }
   }
 
-  /** Sends the batch now, or after the captain's turn. One send at a time. */
-  async fire(): Promise<void> {
-    if (this.sending !== undefined) return this.sending;
+  /** Sends a lane's batch now, or after the captain's turn there. One send per lane at a time. */
+  async fire(org: string): Promise<void> {
+    const lane = this.lane(org);
+    if (lane.sending !== undefined) return lane.sending;
     const { autonomy } = this.deps;
-    if (autonomy.mode() !== "on" || this.reasons.length === 0) return;
+    if (autonomy.mode() !== "on" || lane.reasons.length === 0) return;
     // Under the day cap the captain is not woken: only the owner's own messages reach it.
     if (autonomy.dayCapped()) {
-      this.reasons = [];
+      lane.reasons = [];
       return;
     }
-    this.sending = this.deliver().finally(() => {
-      this.sending = undefined;
+    lane.sending = this.deliver(org, lane).finally(() => {
+      lane.sending = undefined;
     });
-    return this.sending;
+    return lane.sending;
   }
 
-  private async deliver(): Promise<void> {
-    // A chat that was removed or closed is made again first: a tick never goes into nothing.
-    const chat = await this.deps.autonomy.tickChat();
-    if (chat === undefined) return;
-    if (this.deps.runs.working(chat).length > 0) {
-      this.afterTurn = true;
+  private async deliver(org: string, lane: Lane): Promise<void> {
+    // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
+    const chat = await this.deps.autonomy.laneChat(org);
+    if (chat === undefined) {
+      lane.reasons = [];
       return;
     }
-    const reasons = this.reasons.splice(0);
-    if (reasons.length > 0) await this.send(chat, reasons);
+    if (this.deps.runs.working(chat).length > 0) {
+      lane.afterTurn = true;
+      return;
+    }
+    const reasons = lane.reasons.splice(0);
+    if (reasons.length > 0) await this.send(org, chat, reasons, lane);
   }
 
-  private async send(chat: string, reasons: string[]): Promise<void> {
+  private async send(org: string, chat: string, reasons: string[], lane: Lane): Promise<void> {
     const { autonomy } = this.deps;
     const status = await autonomy.status();
     const boss = status.boss?.id;
     if (boss === undefined) return;
+    const inOrg = (o: string | undefined) => (o ?? PRIVATE) === org;
+    const workspace = status.lanes.find((l) => l.org === org)?.name ?? org;
     // Sizes not known yet are rated first, so the size rule and the digest can use them.
-    const pick = await autonomy.pickable(SIZE_FILL_MS);
+    const pick = await autonomy.pickable(SIZE_FILL_MS, org);
+    const tasksOf = new Map(status.now.map((t) => [t.task, t.org]));
     const text = digest({
+      workspace,
       now: this.now(),
       tz: status.spend.tz,
       reasons,
-      spend: status.spend,
-      holds: status.holds,
-      accounts: status.accounts,
+      // The day total is a count the lanes share; per workspace, only this one's.
+      spend: { ...status.spend, orgs: status.spend.orgs.filter((o) => o.org === org) },
+      holds: status.holds.filter((h) => h.kind === "day-cap" || (h.kind === "org-cap" && h.id === org)),
+      accounts: status.accounts.filter((a) => a.org === org || a.org === PRIVATE),
       instructions: status.settings.instructions,
-      tasks: status.now,
-      cards: autonomy.answerable(),
-      waiting: status.waiting,
+      tasks: status.now.filter((t) => inOrg(t.org)),
+      cards: autonomy.answerable(org),
+      waiting: status.waiting.filter((w) =>
+        inOrg(tasksOf.get(w.task) ?? this.deps.store.tasks.get(w.task)?.org),
+      ),
       backlog: pick.backlog,
       leftOut: pick.leftOut,
       rules: pick.rules,
-      queue: status.queue,
+      queue: status.queue.filter((q) => inOrg(q.org)),
     });
     await this.deps.tasks.tellAgent({
       task: chat,
@@ -173,21 +232,32 @@ export class AutonomyDriver {
       text,
       settled: "Autonomous mode woke the captain",
     });
-    this.lastTickAt = this.now().getTime();
-    autonomy.ticked(reasons);
+    lane.lastTickAt = this.now().getTime();
+    autonomy.ticked(reasons, org, chat);
   }
 
-  /** The minute sweep: the hourly heartbeat while nothing autonomous runs, and missed task changes. */
+  /** The minute sweep: the hourly heartbeat per lane while nothing autonomous runs there, and missed task changes. */
   sweep(): void {
     this.checkTasks();
     if (this.deps.autonomy.mode() !== "on") return;
-    if (this.now().getTime() - this.lastTickAt < HEARTBEAT_MS) return;
-    const chat = this.deps.autonomy.chat();
-    const busy = [
-      ...this.deps.autonomy.openTasks().map((t) => t.id),
-      ...(chat === undefined ? [] : [chat]),
-    ].some((id) => this.deps.runs.working(id).length > 0);
-    if (!busy) this.wake("Hourly check: nothing autonomous is running");
+    const now = this.now().getTime();
+    void this.deps.autonomy
+      .runsOrgs()
+      .then((orgs) => {
+        for (const org of orgs) {
+          if (now - this.lane(org).lastTickAt < HEARTBEAT_MS) continue;
+          const chat = this.deps.autonomy.laneChats().find((c) => this.deps.autonomy.laneOrg(c) === org);
+          const busy = [
+            ...this.deps.autonomy
+              .openTasks()
+              .filter((t) => (t.org ?? PRIVATE) === org)
+              .map((t) => t.id),
+            ...(chat === undefined ? [] : [chat]),
+          ].some((id) => this.deps.runs.working(id).length > 0);
+          if (!busy) this.wakeLane(org, "Hourly check: nothing autonomous is running here");
+        }
+      })
+      .catch(() => undefined);
   }
 
   private scheduleWatch(): void {
@@ -199,7 +269,7 @@ export class AutonomyDriver {
     this.watchTimer.unref();
   }
 
-  /** Writes a `task` event for each autonomous task that changed status, and wakes the captain for the ones it should see. */
+  /** Writes a `task` event for each autonomous task that changed status, and wakes its lane for the ones it should see. */
   checkTasks(): void {
     let ids: Set<string>;
     let all: ReturnType<Store["tasks"]["list"]>;
@@ -226,11 +296,11 @@ export class AutonomyDriver {
         ...(t.org === undefined ? {} : { org: t.org }),
         status: t.status,
       });
-      if (change.wake) this.wake(change.text);
+      if (change.wake) this.wake(change.text, t.org ?? PRIVATE);
     }
   }
 
-  /** A card the captain may answer was posted in an autonomous task. */
+  /** A card the captain may answer was posted in an autonomous task: its workspace's lane hears of it. */
   private cardWritten(task: string, item: RoomItem): void {
     const text = answerableText(item);
     if (text === undefined) return;
@@ -243,7 +313,7 @@ export class AutonomyDriver {
     }
     this.seenCards.add(key);
     if (this.seenCards.size > SEEN_MAX) this.seenCards.delete(this.seenCards.values().next().value as string);
-    this.wake(`${task}: ${text}`);
+    this.wake(`${task}: ${text}`, this.deps.store.tasks.get(task)?.org ?? PRIVATE);
   }
 }
 

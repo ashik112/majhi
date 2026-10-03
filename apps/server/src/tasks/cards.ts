@@ -66,6 +66,23 @@ export class OwnerCards {
     return this.deps.room.get(task, card.id);
   }
 
+  /**
+   * The captain's line on the pending review card: its checks pass and it asks the owner to ship
+   * (5.18). False when no review card waits.
+   */
+  shipReady(task: string, line: string): boolean {
+    const card = this.pending(task, "review");
+    if (card?.type !== "review") return false;
+    this.deps.room.post(task as TaskId, card.id, {
+      type: "review",
+      ...(card.lead === undefined ? {} : { lead: card.lead }),
+      ...(card.why === undefined ? {} : { why: card.why }),
+      ready: line,
+      state: "pending",
+    });
+    return true;
+  }
+
   /** Pending owner questions of a task stop waiting: the owner wrote back instead. */
   replied(task: string): void {
     this.deps.room.flush(task);
@@ -103,6 +120,7 @@ function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPay
         type: "review",
         ...(card.lead === undefined ? {} : { lead: card.lead }),
         ...(card.why === undefined ? {} : { why: card.why }),
+        ...(card.ready === undefined ? {} : { ready: card.ready }),
         state,
         ...end,
       }

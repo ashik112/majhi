@@ -34,6 +34,26 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
       working: busy,
       ...(busy ? { nowDoing: "Reading the Globex backlog to plan the next start" } : {}),
     },
+    lanes: [
+      {
+        org: "globex",
+        name: "Globex",
+        chat: CHAT,
+        working: busy,
+        ...(busy ? { nowDoing: "Reading the Globex backlog to plan the next start" } : {}),
+        spend: { used: { tokens: 3_000_000, cost: 5.2 }, cap: { cost: 10 }, percent: 52, reached: false },
+        tasks: busy ? 1 : 0,
+        backlog: 3,
+      },
+      {
+        org: "acme",
+        name: "Acme",
+        working: false,
+        spend: { used: { tokens: 1_200_000, cost: 2.22 }, percent: 0, reached: false },
+        tasks: busy ? 1 : 0,
+        backlog: 1,
+      },
+    ],
     now: busy
       ? [
           {
@@ -147,7 +167,7 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
         status: "ready",
         sizeNote: "Not rated yet",
         noAutonomy: false,
-        leftOut: "Northwind is not one of the workspaces autonomous mode may work in",
+        leftOut: "Northwind is set to Only when I ask",
       },
     ],
     holds: [],
@@ -205,7 +225,7 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
           at: iso(3000),
         },
       ],
-      pick: { size: "any", orgs: ["globex", "acme", "private"] },
+      pick: { size: "any" },
     },
     summary: {
       day: "2026-10-01",
@@ -482,6 +502,7 @@ test("the chat sends through autonomy.guide, kept as an instruction", async ({ p
     .toEqual({
       text: "Take GLX-431 next, split it.",
       keep: true,
+      org: "globex",
     });
   await expect(chat.getByRole("textbox", { name: "Message to the captain" })).toHaveValue("");
   await noPageScroll(page);

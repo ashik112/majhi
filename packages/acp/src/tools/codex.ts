@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
+import { looksExpired, SignInExpired } from "../auth-failure.ts";
 import { killTree } from "../exec.ts";
 import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
 
@@ -115,7 +116,10 @@ function readCodexUsage(ctx: UsageContext): Promise<AccountUsage> {
         send({ method: "initialized" });
         send({ id: 2, method: "account/rateLimits/read" });
       } else if (id === 2) {
-        if (error) return done(() => reject(new Error(error.message)));
+        if (error)
+          return done(() =>
+            reject(looksExpired(error.message) ? new SignInExpired(error.message) : new Error(error.message)),
+          );
         try {
           const usage = mapCodexRateLimits(result);
           done(() => resolve(usage));

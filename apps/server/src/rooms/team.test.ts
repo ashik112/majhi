@@ -377,7 +377,6 @@ describe("team editing", () => {
 });
 
 describe("idle messages", () => {
-
   it("wake no one when two agents post without a mention", async () => {
     const { h, prompts } = await teamWorld({
       "acme-lead": [say("@acme-builder and @acme-reviewer, look over the api and say what you find.")],

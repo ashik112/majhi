@@ -47,14 +47,14 @@ export function PendingAsk({ item }: { item: Ask }) {
     },
   });
 
+  // The timer belongs to one pick; a rerender must not restart it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     if (sending === undefined) return;
     const q = item.questions[0];
     if (q === undefined) return;
     const timer = setTimeout(() => send.mutate({ [q.id]: sending.id }), UNDO_MS);
     return () => clearTimeout(timer);
-    // The timer belongs to one pick; a rerender must not restart it.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   }, [sending]);
 
   const status = useRef<HTMLParagraphElement>(null);
@@ -91,7 +91,7 @@ export function PendingAsk({ item }: { item: Ask }) {
             <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
             <span className="min-w-0 break-words">{q.question}</span>
           </p>
-          <div className="flex flex-col gap-1.5 pl-6" role="group" aria-label={q.question}>
+          <fieldset className="flex min-w-0 flex-col gap-1.5 pl-6" aria-label={q.question}>
             {q.options.map((option) => {
               const view = optionView(q, option);
               const on = !typing[q.id] && answers[q.id] === option.id;
@@ -161,7 +161,7 @@ export function PendingAsk({ item }: { item: Ask }) {
                 </button>
               )
             )}
-          </div>
+          </fieldset>
         </div>
       ))}
       {single && sending !== undefined && (

@@ -60,6 +60,81 @@ On Linux (Debian 12, arm64, with no Docker and no systemd), on `2cf75320`:
 - `make up`, the host helper and compose can pick different secrets key files (PRV-101).
 - Without systemd (WSL2 with it off, or `make up` through su or sudo), the helper is off. majhi still runs, with typed paths and no SSH agent for git.
 
+## Phase 13: The captain per workspace (built)
+
+**Status.** Built on `feat/captain-levels`, from `main` (`80002454`). SPEC 5.18 and section 7, Phase 13. Migration 116.
+
+### What works
+
+**The choice** (`packages/shared/src/settings.ts`, `captain.ts`; `apps/server/src/captain/levels.ts`)
+- One choice per workspace in `autonomy.orgs.<org>.level`: `ask` (Only when I ask), `tidy` (Keeps things tidy), `runs` (Runs it). Defaults: Private `tidy`, every other workspace `ask`. The daily budget is the same entry's `cap`.
+- "More rules" in the same entry: working hours and freeze dates in the workspace's zone (`tz`), the branches it ships to, merge and push, allowed AI providers, and the account that pays for its decisions. All set through `autonomy.configure`, owner only; `null` clears a field. An account of another workspace is refused.
+- Autonomous mode stays the master switch: "Runs it" acts as "Keeps things tidy" unless the mode is on. "Only when I ask" runs nothing, in any mode.
+- At start, an old `autonomy.pick.orgs` list becomes "Runs it" for each listed workspace in one config commit by majhi; workspaces that already had a choice keep it, the rest keep their default. The pick rule "workspaces it may work in" is gone from the schema patch, the digest and the page.
+
+**Upkeep chores** (`captain/chores.ts`, real ports in `captain/world.ts`)
+- They run only in workspaces on Keeps things tidy or Runs it, at fixed moments: when something happens (a task reaches review, a card arrives, an agent asks, a repo appears) and once an hour for those; once a day for memory, projects, triage and cleanup. Nothing stays awake.
+- Ship finished work: checks first (in review, nobody working, no card waiting, Ship says it merges, no protected repo, the diff readable and no secret in it). Runs it with "Merge into the branch" on: `tasks.merge` (and push when on), as the captain. Otherwise a ship-ready line on the review card, which the bell lists ("ACM-12 is ready to ship").
+- Approval cards: autonomous mode's table decides the routine ones as the card's agent; risky ones and the never list are left for the owner with the captain's line on the card; Keeps things tidy leaves starting and shipping work to the owner. Audited `captain`.
+- Agents' questions: rules (nothing to pick from goes to the owner), then Laya through the decision provider (only a sure answer counts), then a short turn of the captain in the workspace's lane, which answers with `majhi_autonomy_answer` or leaves it.
+- Memory: the curator keeps, merges or drops each waiting memory of the workspace; doubtful ones wait for the owner.
+- Projects: a new repo in `<root>/<workspace>/<repo>` is registered in that workspace with its base; an id clash is asked about.
+- Task triage: due within two days or overdue gets high priority (Undo puts it back); duplicate titles and tasks untouched for 30 days are suggested, never closed.
+- Cleanup: the cleanup service on the workspace's done tasks; it never removes uncommitted work.
+- Stuck tasks: a running task where nobody works and nothing is pending gets its lead woken once, then is paused for the owner. The idle watch of 5.3 still runs everywhere.
+
+**Lanes** (`captain/lanes.ts`, `autonomy/driver.ts`)
+- One chat of the captain per workspace (brief "Captain lane", the workspace's org). Autonomous mode ticks the lane of each Runs it workspace with a digest of that workspace only: its tasks, cards, backlog, holds, spend and accounts; the owner's standing instructions are shared. The old autonomy chat stays readable and is never woken.
+- A lane reads one workspace only, for every read command, found from the command table (`captain/lane-scope.ts`): a read that asks about another workspace is refused; an `org` filter the command takes (also `filters.org`) is set to the lane's; and every row of another workspace is taken out of the answer at any depth: by its `org`, memory or agent `scope`, the task, project, account or agent it names, its own `id` or `key`, a record key, or a name of another workspace in its text. The majhi-tasks list goes through the same filter. A lane also refuses a change in another workspace. A lane runs on the captain's account only when it belongs to the workspace or to Private, else on the account "More rules" names; another workspace's account is refused at run start.
+- A lane rests at the day budget, the workspace's budget or its account's floor; rules and Laya go on, judgment calls wait.
+
+**Guards** (`captain/runner.ts`, `rules.ts`)
+- One run per chore and workspace; a trigger during a run joins it for one more pass.
+- Per run: 20 actions, 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, one memory run, and so on). A run that stops at a cap writes a line.
+- Every action has a key: doing it twice changes nothing. Two failures in a row turn the chore off for the workspace and tell the owner; Turn on brings it back.
+- Events carry their cause: the captain's own ships, cards and lane writes start nothing.
+- Right before a push, merge, card answer or post, the workspace's choice, its hours and freezes, the stop switch and presence are read again.
+- Presence: no action in a task the owner acted in during the last 10 minutes (any non-read command naming it, or a task they just made).
+- "Stop the captain" (`captain.stop`) stops autonomous mode now, cancels every lane's turn and ends runs at their next step; nothing acts until `captain.resume`. Autonomous mode cannot turn on while stopped.
+
+**What the owner notices**
+- The bell: ship-ready cards, a chore turned off, and once a day at the summary time one line per workspace for the day before.
+- `captain.status`: one line per workspace for today ("shipped 2, tidied 8 memories, 1 thing for you").
+- `captain.log`: each action with reason, evidence and Undo. A merge undoes as one revert commit (made in a throwaway worktree, then a fast-forward; refused when later work changed the same lines or the checkout holds changes); a config change through the config history; a priority through `tasks.update`; a memory step through `memory.undo`. A push and a cleanup say they cannot be undone.
+
+**Web**
+- The Captain page (`/captain`): a card per workspace with today's line, the three choices, the daily budget next to Runs it, chores that turned off with Turn on, and "More rules" folded away; the log beside it (its own view below 1280 px); "Stop the captain" and "Resume the captain" in the header.
+- The sidebar Captain row opens the page and shows Stopped; the chat button beside it (Cmd J) still opens the captain chat.
+- The Autonomous page: a Lanes section (one row per Runs it workspace: working or resting, open tasks, spend against its budget), and the chat on the right shows the picked lane and writes to it. Rules no longer has the workspace list.
+- Review cards show the captain's ship-ready line.
+
+### How to try it
+
+1. Open Captain in the sidebar. Private is on Keeps things tidy; client workspaces are on Only when I ask.
+2. Set Private to Runs it, give it a budget, and under More rules turn on Merge into the branch.
+3. Turn autonomous mode on. A Private task that reaches review with its checks passing is merged; the log says why, with Undo.
+4. Set a client workspace to Keeps things tidy: its finished tasks get a ship-ready line and show in the bell; nothing ships.
+5. Stop the captain from the page header; Resume it the same way.
+
+### Verified
+
+- **Typecheck:** all packages and `e2e`.
+- **Tests** (fake ACP agent, no tokens): `captain/rules.test.ts` (defaults, master switch, the pick move, hours over midnight and freezes in a zone, presence, branches, providers), `captain/runner.test.ts` (re-check before an irreversible step, joining, repeats, run cap, circuit breaker, stop, rest, tokens), `captain/undo.test.ts` (revert commit on a checked-out and a free branch, later work kept, conflicts and dirty checkouts change nothing), `captain/migrate.test.ts` (one config commit by majhi, once), `captain/done-when.test.ts` (Phase 13's Done when with real services and git: Private ships, Acme is untouched, Undo reverts, tidy asks), `runs/lane-account.test.ts`, and the autonomy tests moved to lanes (`pick.test.ts`, `approvals.test.ts`, `service.test.ts`, `driver.test.ts`, `summary.test.ts`).
+- **Soak test** (`captain/soak.test.ts`, about 3 s): 30 simulated hours in Private (Runs it), Acme (Keeps things tidy) and Globex (Only when I ask) with bursts of 25 cards, questions, memories, repos, quiet tasks, two failures in a row, a crash that leaves a run open, restarts, a Stop and Resume, and every ship and card of the captain echoed back as an event. Real lane turns run the fake agent. It checks: no run past its caps and none left open, no daily cap passed, every self event dropped (none started or joined a run), no action repeated, nothing in Globex, nothing while stopped or in a task the owner was in, each lane told only its own workspace's tasks, the lane resting at Private's budget while Laya's answers went on. `e2e/captain-soak.spec.ts` runs it in every Playwright run, so the background e2e after each merge (PRV-72) runs it too.
+- **Lane reads:** `captain/lane-reads.test.ts` fills Globex with a task, project, account, agent, memory, audit row, spend and settings, then calls every read command an agent may call from Acme's lane: none names Globex or a Private task, Acme's own rows are there, and filters for Globex are refused. The soak test makes the same sweep from each lane at its end.
+- **Migration:** main merged (its last migration is still 115). 116 applied to a fresh copy of a real `majhi.db` (115 before, 116 after, a second run applies nothing, integrity ok).
+- **Browser:** `e2e/shots.captain.ts` (`playwright.captain.config.ts`, port 7199): the Captain page at 1440 and 1100 in both themes, More rules open, the log view, Stop and Resume, the Autonomous page with lanes; click tests of a level, the budget, the stop switch and the sidebar row. `pnpm e2e:smoke` passes.
+
+### Left and known issues
+
+- The lane's budget is checked before each ask; turns already queued can pass it by a few cents, bounded by the run and daily caps.
+- Triage marks duplicates and stale tasks in the log and the bell; it adds no task link.
+- An ask card with several questions, or free text only, is left for the owner.
+- Ship needs "Merge into the branch". With push alone the captain asks; it opens no merge requests itself.
+- In Private's lane the `org` filter is not forced (Private tasks have no org to filter by), so a total such as `usage.summary` counts every workspace; its rows are still narrowed. Counts are what 5.18 lets lanes share.
+
+Only the owner can check a real captain account running lanes overnight with real spend.
+
 ## Onboarding and git connect (plan)
 
 **Status.** The contract is on `feat/onboarding-contract`: schemas and commands in `packages/shared` (`git-signin.ts`, `remote-repos.ts`, `project-create.ts`, `onboarding.ts`, new host jobs in `host.ts`), stub handlers in `apps/server/src/gitConnect/` (501 until built), the Bitbucket callback route stub, the `signins` and `clones` event topics, and the host progress route. The brief is `docs/briefs/onboarding-and-git-connect.md`. Two agents build from it: server and host, and the onboarding UI against the stubs.
@@ -948,7 +1023,16 @@ Branch `task/prv-17-phase-2c-tokens-cost-and-runner-isolatio`, from `main` (Phas
 - **Restore.** When the key file is missing, the helper's Update and `make up` put the Keychain copy back before they make a new key, so a lost file no longer turns `secrets.age` unreadable.
 - **Export.** `secrets.exportKey` encrypts the key file's content with a passphrase (age scrypt, at least 12 characters), armored, and the browser downloads `majhi-secrets-key.age`. `age -d` with the passphrase gives back a key file majhi reads as is. majhi records only which key it exported and when (`~/.majhi/secrets-key-backup.json`). Agents cannot call it.
 - **Warnings.** Health and usage has "Secrets key in Keychain" and "Secrets key export". Each warns until it holds the key majhi uses. The fixes are "Save to Keychain" (or "Replace copy" when the Keychain holds another key; the helper refuses a key file that is not the server's key) and "Export key", which opens the passphrase form under the check.
-- **Left.** The Keychain calls were tested against a fake `security`, not a real Keychain: the owner's check is that after `make up` both checks pass once the key is exported, and the item shows in Keychain Access. Restoring from the export needs a terminal (`age -d`); doing it in majhi is PRV-95.
+- **Left.** The Keychain calls were tested against a fake `security`, not a real Keychain: the owner's check is that after `make up` both checks pass once the key is exported, and the item shows in Keychain Access. Restoring from the export is in majhi since PRV-95 (below).
+
+### Restore the secrets key from its export (PRV-95)
+
+- **Where.** Health and usage, check "Secrets key". It fails when secrets.age exists but there is no key file, or the key file does not open it, and warns when there is neither (`make up` makes a new key). Each offers "Restore from export": choose `majhi-secrets-key.age`, type its passphrase, Restore. A new Mac needs no terminal.
+- **Server.** `secrets.restoreKey` decrypts the export with the passphrase, takes its one `AGE-SECRET-KEY-1` line (comment lines are skipped) and checks that it opens secrets.age. It refuses when majhi's key file already works, and reads only armored passphrase files with a work factor of 18 or less. Owner only: agents cannot call it. The passphrase and the key are never logged, stored or returned, and no error holds them.
+- **Helper.** The `secretsKey.restore` job checks the key file on the Mac again: it writes only when the file is missing or does not open secrets.age, and only a key that opens it. Whatever was at the path is kept as `secrets.key.old-<UTC time>`. The key is written mode 600 in a folder of mode 700. The helper answers, recreates majhi's server so Docker mounts the new file, then saves the key to the Keychain. Without Docker it says to run `make up` once. An older helper answers that it needs `make up`.
+- **Health.** While the key file does not open secrets.age, the Keychain and export checks are hidden and "Save to Keychain" is refused, so a good Keychain copy is never replaced by the wrong key.
+- **Tests.** `apps/server/src/secrets/restore.test.ts`: the decrypt (comments, wrong passphrase against a damaged file, not an export, a high work factor, no key, two keys, a damaged key), the server's guard, and a round trip from `KeyExports.export` through the helper's own write in a temp home, after which secrets.age reads again. `apps/host/src/keyRestore.test.ts`: the write guard (missing, wrong, a folder at the path, the same key, a working key, keys that do not open secrets.age), restart before the Keychain, and one restore at a time. Plus cases in `store.test.ts` and `jobs.test.ts`. Checked once in a browser on an e2e home: Export key, delete the key file, Restore from export, and the check passes again with the same key.
+- **Left.** Not run against real Docker or a real Keychain. The owner's check: on a Mac whose key file is missing or wrong, Health, Secrets key, "Restore from export", then majhi restarts and the check passes.
 
 ### Goal
 

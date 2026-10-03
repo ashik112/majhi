@@ -364,18 +364,31 @@ export const DEFAULT_CHAT_TITLES: readonly string[] = [CHAT_BRIEF, BOSS_CHAT_BRI
  * guides it. A chat like the others, but never the owner's Cmd J chat.
  */
 export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
+/**
+ * The brief of a captain lane (SPEC 5.18): the captain's chat for one workspace, where its upkeep
+ * and autonomous mode wake it with that workspace's matters only.
+ */
+export const CAPTAIN_LANE_BRIEF = "Captain lane";
 
 /** True for a chat with an agent: an ongoing conversation, not a piece of work to review. */
 export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
   return (
     task.kind === "chat" &&
-    (task.brief === CHAT_BRIEF || task.brief === BOSS_CHAT_BRIEF || task.brief === AUTONOMY_CHAT_BRIEF)
+    (task.brief === CHAT_BRIEF ||
+      task.brief === BOSS_CHAT_BRIEF ||
+      task.brief === AUTONOMY_CHAT_BRIEF ||
+      task.brief === CAPTAIN_LANE_BRIEF)
   );
 }
 
-/** True for the captain's autonomy chat. */
+/** True for the captain's autonomy chat (before Phase 13) and its lanes: never the owner's Cmd J chat. */
 export function isAutonomyChat(task: Pick<Task, "kind" | "brief">): boolean {
-  return task.kind === "chat" && task.brief === AUTONOMY_CHAT_BRIEF;
+  return task.kind === "chat" && (task.brief === AUTONOMY_CHAT_BRIEF || task.brief === CAPTAIN_LANE_BRIEF);
+}
+
+/** True for a captain lane. */
+export function isCaptainLane(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && task.brief === CAPTAIN_LANE_BRIEF;
 }
 
 /** A chat title from the owner's first message: its first line, trimmed and cut to fit. */
@@ -668,7 +681,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
      * Set when autonomous mode decided the card (PRV-74): `approved` ran it within its limits,
      * `left` kept it pending for the owner. `why` is one line: the limit that allowed or held it.
      */
-    autonomy: z.object({ decision: z.enum(["approved", "left"]), why: z.string() }).optional(),
+    autonomy: z
+      .object({
+        decision: z.enum(["approved", "left"]),
+        why: z.string(),
+        /** `captain`: the captain's upkeep decided it (5.18), not autonomous mode. */
+        by: z.literal("captain").optional(),
+      })
+      .optional(),
     /** Set when it ran with no owner click: the policy or a rule let it. Older cards lack it. */
     alone: z.literal(true).optional(),
     /** Config history commit made by the command, for Undo. */
@@ -705,11 +725,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** questionId -> the option id chosen, or free text typed. */
     answers: z.record(z.string(), z.string()).optional(),
   }),
-  /** A context budget event (5.13): compaction, handoff to a fresh session, or rotation. */
+  /**
+   * A context budget event (5.13): compaction, handoff to a fresh session, or rotation. `auto` is a
+   * compaction the agent's CLI did on its own inside a turn; `native` is one majhi asked for.
+   */
   RoomItemBase.extend({
     type: z.literal("context"),
     agent: IdSchema,
-    method: z.enum(["native", "handoff", "rotation", "fresh", "recovery"]),
+    method: z.enum(["native", "auto", "handoff", "rotation", "fresh", "recovery"]),
     /** Tokens before and after, when known. */
     before: z.number().nonnegative().optional(),
     after: z.number().nonnegative().optional(),
@@ -739,6 +762,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     lead: IdSchema.optional(),
     /** Why the task is back in review when majhi expected to ship it: a ship it could not finish. */
     why: z.string().optional(),
+    /** The captain's line when its checks pass and it asks the owner to ship (5.18). */
+    ready: z.string().optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),

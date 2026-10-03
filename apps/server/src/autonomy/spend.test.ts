@@ -174,7 +174,7 @@ describe("AutonomyRepo.spendRows", () => {
     turn("ACM-2", "acme", "2026-10-01T11:00:00.000Z", 5); // not autonomous
     turn("LOCAL-1", null, "2026-10-01T12:00:00.000Z", 0.5); // the autonomy chat
     turn("LOCAL-2", null, "2026-10-01T12:00:00.000Z", 3); // another chat
-    const rows = repo.spendRows("2026-10-01T00:00:00.000Z", "2026-10-02T00:00:00.000Z", "LOCAL-1");
+    const rows = repo.spendRows("2026-10-01T00:00:00.000Z", "2026-10-02T00:00:00.000Z", ["LOCAL-1"]);
     // Cache reads are left out, as budgets count them: 100 + 20 + 30.
     expect(rows.sort((a, b) => a.org.localeCompare(b.org))).toEqual([
       { org: "acme", tokens: 150, cost: 1 },

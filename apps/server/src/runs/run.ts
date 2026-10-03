@@ -5,6 +5,7 @@ import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
 import type { ContextBudget, ContextOverride, Usage } from "./context.ts";
 import type { ItemMapper } from "./items.ts";
+import { NativeWatch } from "./native.ts";
 import type { StartFailure } from "./start-failure.ts";
 import type { FiredLimit, TurnLimits } from "./turn-limits.ts";
 
@@ -127,6 +128,10 @@ export class AgentRun {
   private usageWaiters: (() => void)[] = [];
   /** Compactions while handling the current prompt (at most 2). */
   compactions = 0;
+  /** Set while majhi compacts the session itself, so the CLI's report of it is not taken for its own. */
+  selfCompacting = false;
+  /** Spots compactions the CLI does on its own inside a turn (PRV-103). */
+  readonly native = new NativeWatch();
   /** Given to the next prompt of a fresh session. */
   carry: Carry | undefined;
   /** The next session must be new: the old one was handed off. */
@@ -139,6 +144,14 @@ export class AgentRun {
   paused: PauseReason | undefined;
   /** Why the last start failed, while it has not started since. Retryable failures (network) leave it unset. */
   startFailure: StartFailure | undefined;
+  /** The prompt of the turn that just failed goes back to the front of the queue, to send after a resume. */
+  requeue = false;
+  /** The running cost the agent reported when the current turn was sent, for the autonomy cap's mid-turn check. */
+  costAtTurnStart: number | undefined;
+  /** The running cost the agent reported last, USD. Undefined for tools that report none. */
+  costNow: number | undefined;
+  /** A mid-turn cap check is under way, so tool calls do not start a second one. */
+  capChecking = false;
   /** A resume is under way; failures count toward the limit of two. */
   resuming = false;
   resumeFailures = 0;

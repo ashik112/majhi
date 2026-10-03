@@ -12,6 +12,7 @@ import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { type HostInfo, keyringName, type LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts";
+import { CliLogins } from "./cliLogin.ts";
 import { parseHostConfig } from "./config.ts";
 import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
@@ -22,6 +23,7 @@ import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.t
 import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
 import { createKeyBackup } from "./keyBackup.ts";
+import { createKeyRestorer } from "./keyRestore.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger, type Logger } from "./log.ts";
@@ -29,7 +31,14 @@ import { plainLine, showNotification } from "./notify.ts";
 import { findExecutable } from "./paths.ts";
 import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
 import type { Platform } from "./platform/types.ts";
-import { composeEnv, createRemounter, dockerStep, type ExecFn, type RemountOptions } from "./remount.ts";
+import {
+  composeEnv,
+  createRemounter,
+  dockerStep,
+  type ExecFn,
+  type RemountOptions,
+  recreateServer,
+} from "./remount.ts";
 import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
 import { createSsh, discoverPublicKeys } from "./ssh.ts";
 import { type StartupDeps, startAtLogin } from "./startup.ts";
@@ -145,6 +154,17 @@ async function main(): Promise<void> {
     dockerTimer = setInterval(() => void findDocker(), DOCKER_LOOK_MS);
     dockerTimer.unref();
   }
+  const keyRestore = createKeyRestorer({
+    keyFile: secretsKeyFile,
+    secretsFile: join(config.majhiHome, "secrets.age"),
+    // Read at each restore: majhi can be restarted once docker is found.
+    get restart() {
+      const options = remountOptions;
+      return options === undefined ? undefined : () => recreateServer(options, "secrets key");
+    },
+    saveToKeyring: (fingerprint) => keyBackup.save(fingerprint),
+    log,
+  });
   const facts = createHostFacts({
     git: gitContext,
     docker: () => remountOptions?.docker,
@@ -267,6 +287,12 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => stop("SIGTERM"));
   process.once("SIGINT", () => stop("SIGINT"));
 
+  const cliLogins = new CliLogins({
+    majhiHome: config.majhiHome,
+    path,
+    find: (cli) => findExecutable(cli, path),
+    env: process.env,
+  });
   const handlers = {
     listDirs: (params: { path: string; showHidden: boolean }) => listDirs(params, config.home),
     suggestRoots: () => suggestRoots(config.home, platform.folders.skippedAtHome),
@@ -292,6 +318,7 @@ async function main(): Promise<void> {
     },
     sshUnlock: (params: { key: string; passphrase: string }) => ssh.unlock(params.key, params.passphrase),
     secretsKeySave: (params: { expected: string }) => keyBackup.save(params.expected),
+    secretsKeyRestore: keyRestore,
     gitLogins: async (params: { extraHosts: string[] }) => ({
       hosts: await detectGitLogins(gitDeps, params.extraHosts),
     }),
@@ -302,6 +329,9 @@ async function main(): Promise<void> {
     gitClone: (params: Parameters<typeof gitClone>[1], progress: Parameters<typeof gitClone>[2]) =>
       gitClone(gitCloneDeps, params, progress),
     gitLsRemote: (params: Parameters<typeof gitLsRemote>[1]) => gitLsRemote(gitCloneDeps, params),
+    gitCliLogin: (params: Parameters<CliLogins["login"]>[0], progress: Parameters<CliLogins["login"]>[1]) =>
+      cliLogins.login(params, progress),
+    gitCliLoginCancel: (params: { signIn: string }) => cliLogins.cancel(params.signIn),
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
     notify: (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
       showNotification(platform.notifier, config.url, params),

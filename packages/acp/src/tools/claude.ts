@@ -1,5 +1,6 @@
 import type { AccountUsage, ModelUsageWindow } from "@majhi/shared";
 import { z } from "zod";
+import { SignInExpired } from "../auth-failure.ts";
 import { exec } from "../exec.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
 import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
@@ -54,6 +55,10 @@ export function mapClaudeUsage(json: unknown, now: Date = new Date()): AccountUs
   const parsed = UsageJson.safeParse(json);
   if (!parsed.success) throw new Error("Claude reported usage in a shape majhi does not know");
   const { subscription_type, rate_limits_available, rate_limits } = parsed.data;
+  // A login account with no plan at all: the CLI could not use its token. It tried to refresh it
+  // and failed, or holds none any more (checked on Claude Code 2.1.284). `auth status` still says
+  // signed in then, so this is the check that matches what a run needs.
+  if (!rate_limits_available && !subscription_type) throw new SignInExpired();
   if (!rate_limits_available || rate_limits === null) {
     throw new Error("Claude reports no plan limits for this account");
   }

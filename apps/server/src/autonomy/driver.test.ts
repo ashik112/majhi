@@ -12,6 +12,17 @@ const CHAT = "LOCAL-1";
 const STATUS: AutonomyStatus = {
   mode: "on",
   boss: { id: "boss", chat: CHAT, working: false },
+  lanes: [
+    {
+      org: "acme",
+      name: "Acme",
+      chat: CHAT,
+      working: false,
+      spend: { used: { tokens: 0, cost: 0 }, percent: 0, reached: false },
+      tasks: 0,
+      backlog: 0,
+    },
+  ],
   now: [],
   queue: [],
   backlog: [],
@@ -28,17 +39,25 @@ const STATUS: AutonomyStatus = {
   settings: AutonomySettingsSchema.parse({}),
 };
 
-/** A driver over fakes: the mode, whether the captain works and the day cap are the test's to set. */
+/**
+ * A driver over fakes: the mode, whether the captain works and the day cap are the test's to set. Two
+ * workspaces run: Acme (lane LOCAL-1) and Globex (lane LOCAL-9).
+ */
 function fakes() {
   const state = { mode: "on" as AutonomyMode, busy: false, capped: false, chat: CHAT as string | undefined };
   const ticks: string[][] = [];
+  const tickOrgs: string[] = [];
   const told: string[] = [];
   const toldIn: string[] = [];
+  const lanes: Record<string, string> = { acme: CHAT, globex: "LOCAL-9" };
   const autonomy = {
     repo: { state: () => ({ mode: state.mode, queue: [], holds: [] }), tasks: () => [] },
     mode: () => state.mode,
-    chat: () => CHAT,
-    tickChat: async () => (state.mode === "on" ? state.chat : undefined),
+    runsOrgs: async () => ["acme"],
+    laneChats: () => Object.values(lanes),
+    laneOrg: (task: string) => Object.entries(lanes).find(([, chat]) => chat === task)?.[0],
+    laneChat: async (org: string) =>
+      state.mode !== "on" ? undefined : org === "acme" ? state.chat : lanes[org],
     pickable: async () => ({ backlog: [], leftOut: 0, rules: ["Task size: Any size."] }),
     isAutonomous: (task: string) => task === "ACM-1",
     dayCapped: () => state.capped,
@@ -46,7 +65,10 @@ function fakes() {
     answerable: () => [],
     backlog: () => [],
     status: async () => STATUS,
-    ticked: (reasons: readonly string[]) => ticks.push([...reasons]),
+    ticked: (reasons: readonly string[], org: string) => {
+      ticks.push([...reasons]);
+      tickOrgs.push(org);
+    },
     event: () => 1,
   };
   const driver = new AutonomyDriver({
@@ -63,7 +85,7 @@ function fakes() {
     store: { tasks: { get: () => undefined, list: () => [] } } as unknown as Store,
     events: new EventHub(),
   });
-  return { driver, state, ticks, told, toldIn };
+  return { driver, state, ticks, tickOrgs, told, toldIn };
 }
 
 beforeEach(() => {
@@ -129,6 +151,36 @@ describe("the driver", () => {
     f.driver.wake("A new day lifted the day cap");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toEqual([["A new day lifted the day cap"]]);
+  });
+});
+
+describe("the driver per lane", () => {
+  it("batches each workspace apart and tells each lane only its own lines", async () => {
+    const f = fakes();
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    f.driver.wake("GLX-4 is done", "globex");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.toldIn.toSorted()).toEqual(["LOCAL-1", "LOCAL-9"]);
+    const acme = f.told[f.toldIn.indexOf("LOCAL-1")] ?? "";
+    const globex = f.told[f.toldIn.indexOf("LOCAL-9")] ?? "";
+    expect(acme).toContain("ACM-1 is ready for review");
+    expect(acme).not.toContain("GLX-4");
+    expect(globex).toContain("GLX-4 is done");
+    expect(globex).not.toContain("ACM-1");
+    expect(f.tickOrgs.toSorted()).toEqual(["acme", "globex"]);
+  });
+
+  it("waits for the captain's turn in one lane without holding the other", async () => {
+    const f = fakes();
+    f.state.busy = true;
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    f.driver.wake("GLX-4 is done", "globex");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.toldIn).toEqual(["LOCAL-9"]);
+    f.state.busy = false;
+    f.driver.loopEnded(CHAT);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.toldIn).toEqual(["LOCAL-9", "LOCAL-1"]);
   });
 });
 

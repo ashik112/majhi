@@ -44,6 +44,8 @@ export interface AnswerableCard {
 }
 
 export interface DigestInput {
+  /** The lane's workspace: everything below is that workspace's only. */
+  workspace?: string | undefined;
   now: Date;
   tz: string;
   /** Why the captain was woken: the lines since the last tick, oldest first. */
@@ -103,7 +105,9 @@ function build(input: DigestInput, scale: number): string {
   const max = (n: number) => Math.max(1, Math.floor(n * scale));
   const time = (iso: string) => when(iso, input.tz);
   const lines: string[] = [
-    `Autonomous mode, ${when(input.now.toISOString(), input.tz)} (${input.tz}).`,
+    input.workspace === undefined
+      ? `Autonomous mode, ${when(input.now.toISOString(), input.tz)} (${input.tz}).`
+      : `Autonomous mode in ${input.workspace}, ${when(input.now.toISOString(), input.tz)} (${input.tz}). This lane holds ${input.workspace}'s matters only.`,
     "",
     ...newest("Why you were woken", input.reasons, max(BASE.reasons)),
     "",

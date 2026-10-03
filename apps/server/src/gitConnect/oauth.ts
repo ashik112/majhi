@@ -3,20 +3,18 @@ import { z } from "zod";
 import { call, type Fetch, HostUnreachable, TokenRefused } from "./http.ts";
 
 /**
- * The OAuth calls of each git host: the device flow (GitHub, GitLab), the authorization code
- * exchange (Bitbucket), refreshing, the user check and revoking. Every answer is parsed with zod.
- * Nothing here logs, and no error holds a token, a code or a body.
+ * The OAuth calls of each git host: the device flow (GitHub, GitLab), refreshing a GitLab token,
+ * the user check and revoking. Every answer is parsed with zod. Nothing here logs, and no error
+ * holds a token, a code or a body.
  *
  * Docs:
  * - GitHub device flow: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
  * - GitLab device grant (17.2, on by default in 17.3, GA in 17.9): https://docs.gitlab.com/api/oauth2/
- * - Bitbucket OAuth 2.0: https://developer.atlassian.com/cloud/bitbucket/rest/intro/#oauth-2-0
+ * - Bitbucket API tokens: https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/
  */
 
 export const GITHUB_SCOPE = "repo read:org workflow";
 export const GITLAB_SCOPE = "api";
-export const BITBUCKET_AUTHORIZE = "https://bitbucket.org/site/oauth2/authorize";
-export const BITBUCKET_TOKEN = "https://bitbucket.org/site/oauth2/access_token";
 
 const DeviceCodeSchema = z.object({
   device_code: z.string().min(1),
@@ -137,52 +135,23 @@ export async function pollDevice(
   }
 }
 
-/** The Bitbucket page the owner allows majhi on. Holds the consumer key and the one-time state only. */
-export function bitbucketAuthorizeUrl(key: string, state: string): string {
-  const url = new URL(BITBUCKET_AUTHORIZE);
-  url.searchParams.set("client_id", key);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("state", state);
-  return url.toString();
-}
-
 function basic(user: string, password: string): string {
   return `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
 }
 
-/** Exchanges a Bitbucket authorization code. Throws `TokenRefused` or `HostUnreachable`. */
-export async function bitbucketExchange(
-  fetchFn: Fetch,
-  consumer: { key: string; secret: string },
-  code: string,
-): Promise<TokenAnswer> {
-  return tokenCall(fetchFn, BITBUCKET_TOKEN, "bitbucket.org", {
-    headers: { authorization: basic(consumer.key, consumer.secret) },
-    form: { grant_type: "authorization_code", code },
-  });
-}
-
 /**
- * Refreshes an access token. GitLab: a public client sends its client ID only. Bitbucket: Basic
- * with the consumer. Throws `TokenRefused` when the refresh token is no longer good
+ * Refreshes a GitLab access token. A public client (majhi's, or glab's) sends its client ID only,
+ * as glab itself does. Throws `TokenRefused` when the refresh token is no longer good
  * (`invalid_grant`), `HostUnreachable` otherwise.
  */
 export async function refreshToken(
   fetchFn: Fetch,
-  kind: Exclude<MrHost, "github">,
   host: string,
-  client: { clientId: string; secret?: string | undefined },
+  clientId: string,
   refresh: string,
 ): Promise<TokenAnswer> {
-  if (kind === "bitbucket") {
-    if (client.secret === undefined) throw new TokenRefused("The Bitbucket consumer's secret is missing.");
-    return tokenCall(fetchFn, BITBUCKET_TOKEN, host, {
-      headers: { authorization: basic(client.clientId, client.secret) },
-      form: { grant_type: "refresh_token", refresh_token: refresh },
-    });
-  }
   return tokenCall(fetchFn, `https://${host}/oauth/token`, host, {
-    form: { grant_type: "refresh_token", refresh_token: refresh, client_id: client.clientId },
+    form: { grant_type: "refresh_token", refresh_token: refresh, client_id: clientId },
   });
 }
 
@@ -242,7 +211,13 @@ export function bitbucketAuth(token: string): string {
 export async function whoAmI(fetchFn: Fetch, kind: MrHost, host: string, token: string): Promise<string> {
   const req = userRequest(kind, host, token);
   const answer = await call(fetchFn, req.url, { headers: req.headers });
-  if (answer.status === 401 || answer.status === 403) throw new TokenRefused(`${host} refused the token.`);
+  if (answer.status === 401 || answer.status === 403) {
+    throw new TokenRefused(
+      kind === "bitbucket"
+        ? "Bitbucket did not accept the email and token. Use the email of your Atlassian account, and a token with the read:user:bitbucket scope."
+        : `${host} refused the token.`,
+    );
+  }
   const user = z.object({ [req.field]: z.string().min(1) }).safeParse(answer.body);
   if (answer.status < 200 || answer.status >= 300 || !user.success) {
     throw new HostUnreachable(`majhi could not check the account on ${host}. Try again.`);
@@ -250,17 +225,23 @@ export async function whoAmI(fetchFn: Fetch, kind: MrHost, host: string, token: 
   return String(user.data[req.field]);
 }
 
-/** Where the owner removes majhi's access by hand, for hosts majhi cannot revoke on. */
-export function revokePage(kind: MrHost, host: string): string {
-  if (kind === "github") return "https://github.com/settings/applications";
-  if (kind === "bitbucket") return "https://bitbucket.org/account/settings/app-authorizations/";
-  return `https://${host}/-/user_settings/applications`;
+/**
+ * Where the owner removes majhi's access by hand, for hosts majhi cannot revoke on. GitHub lists a
+ * `gh` sign-in under Authorized OAuth Apps ("GitHub CLI") and a pasted token under Tokens.
+ */
+export function revokePage(kind: MrHost, host: string, signedIn: boolean): string {
+  if (kind === "github")
+    return signedIn ? "https://github.com/settings/applications" : "https://github.com/settings/tokens";
+  if (kind === "bitbucket") return "https://id.atlassian.com/manage-profile/security/api-tokens";
+  return signedIn
+    ? `https://${host}/-/user_settings/applications`
+    : `https://${host}/-/user_settings/personal_access_tokens`;
 }
 
 /**
  * Revokes a token at the host where majhi can: GitLab's `/oauth/revoke` takes a public client's ID.
- * GitHub's revoke needs the app's client secret, which majhi never has; Bitbucket documents no
- * revoke endpoint. Answers what happened and never throws.
+ * GitHub's revoke needs the app's client secret, which majhi never has; a pasted token or a
+ * Bitbucket API token is removed on the host's own page. Answers what happened and never throws.
  */
 export async function revoke(
   fetchFn: Fetch,

@@ -106,6 +106,15 @@ export interface AutonomyGate {
     input: Record<string, unknown>,
     reason: string,
   ): Promise<ToolResult>;
+  /** What a captain lane may read (5.18): undefined when the task is no lane. */
+  laneScope(task: string): Promise<LaneReads | undefined>;
+}
+
+/** One lane's reads: refused when they ask about another workspace, narrowed to its own rows. */
+export interface LaneReads {
+  refusal(input: Record<string, unknown>): string | undefined;
+  input(command: CommandName, input: Record<string, unknown>): Record<string, unknown>;
+  output(value: unknown): { value: unknown; refused?: string };
 }
 
 type Outcome = { ok: boolean; error?: string | undefined };
@@ -480,6 +489,103 @@ export class AdminService {
     }
   }
 
+  /** Rows an agent read outside the command layer, narrowed to its lane's workspace when it is in one. */
+  async narrowForLane<T>(task: string, rows: T[]): Promise<T[]> {
+    const lane = await this.autonomy?.laneScope(task);
+    if (lane === undefined) return rows;
+    const out = lane.output(rows).value;
+    return Array.isArray(out) ? (out as T[]) : [];
+  }
+
+  /** A pending card's call, unredacted while majhi holds it, for the captain's approval rules. */
+  cardCall(
+    taskId: string,
+    itemId: string,
+  ): { command: CommandName; input: Record<string, unknown>; parsed: Record<string, unknown> } | undefined {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending") return undefined;
+    if (!Object.hasOwn(commands, item.command)) return undefined;
+    const command = item.command as CommandName;
+    let input: unknown;
+    try {
+      input = this.inputOf(item);
+    } catch {
+      return undefined;
+    }
+    const parsed = commands[command].input.safeParse(input);
+    if (!parsed.success || typeof input !== "object" || input === null) return undefined;
+    return {
+      command,
+      input: input as Record<string, unknown>,
+      parsed: parsed.data as Record<string, unknown>,
+    };
+  }
+
+  /**
+   * The captain's upkeep decides a pending card (SPEC 5.18, "Approval cards"). `approved` runs it as
+   * the owner's click would, audited `captain`; `left` keeps it pending with the captain's line why.
+   * The verdict comes from the owner's approval rules, never from the card's own words.
+   */
+  async captainDecide(
+    taskId: string,
+    itemId: string,
+    verdict: { decision: "approved" | "left"; why: string },
+    captain: string,
+  ): Promise<{ ok: boolean; error?: string; commit?: string }> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) {
+      return { ok: false, error: "The card is no longer waiting" };
+    }
+    const marker = { decision: verdict.decision, why: verdict.why, by: "captain" as const };
+    if (verdict.decision === "left") {
+      this.update(item, { autonomy: marker });
+      return { ok: true };
+    }
+    this.deciding.add(item.id);
+    try {
+      const done = await this.execute(
+        item.command as CommandName,
+        this.inputOf(item),
+        metaFor(item.agent, item.reason ?? "", item.task),
+      );
+      this.pending.delete(item.id);
+      this.log(
+        item.task,
+        captain,
+        item.command,
+        item.summary,
+        "allow",
+        "captain",
+        done.ok ? verdict.why : `${verdict.why}. Failed: ${done.error}`,
+      );
+      this.update(item, {
+        state: done.ok ? "applied" : "failed",
+        autonomy: marker,
+        ...(done.commit === undefined ? {} : { commit: done.commit }),
+        result: done.ok ? lineOf(done.output) : done.error,
+      });
+      await this.notify(
+        item.task,
+        item.agent,
+        done.ok
+          ? {
+              text: `The captain approved: ${item.summary}. Result: ${lineOf(done.output)}`,
+              shown: `The captain approved: ${lowerFirst(item.summary)}. ${verdict.why}`,
+            }
+          : {
+              text: `The captain approved: ${item.summary}, but it failed: ${done.error}`,
+              shown: `The captain approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
+              level: "warn",
+            },
+      );
+      return done.ok
+        ? { ok: true, ...(done.commit === undefined ? {} : { commit: done.commit }) }
+        : { ok: false, error: done.error };
+    } finally {
+      this.deciding.delete(item.id);
+    }
+  }
+
   /**
    * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
    * destructive command while `allow_destructive_rules` is off, and for an org rule on a task with
@@ -546,7 +652,7 @@ export class AdminService {
     kind: string,
     title: string,
     decision: "allow" | "deny",
-    by: "owner" | "rule" | "autonomy",
+    by: "owner" | "rule" | "autonomy" | "captain",
     detail?: string,
   ): void {
     this.deps.store.permissions.log({
@@ -588,14 +694,32 @@ export class AdminService {
   ): Promise<{ ok: true; output: unknown; commit?: string } | { ok: false; error: string; commit?: never }> {
     const dispatch = this.dispatch;
     if (dispatch === undefined) throw new Error("The admin service is not connected to the commands");
+    // A captain lane reads its own workspace only, whatever the command (5.18).
+    const lane =
+      commands[command].risk === "read" && meta.task !== undefined
+        ? await this.autonomy?.laneScope(meta.task)
+        : undefined;
+    let sent = input;
+    if (lane !== undefined) {
+      const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+      const refused = lane.refusal(fields);
+      if (refused !== undefined) return { ok: false, error: refused };
+      sent = lane.input(command, fields);
+    }
     const history = this.deps.config.history;
     const before = await history.head();
-    const result = await dispatch(command, input, JSON.stringify(meta));
+    const result = await dispatch(command, sent, JSON.stringify(meta));
     if (!result.ok) {
       const parts = [result.error.error, ...(result.error.details ?? [])];
       return { ok: false, error: redactText(parts.join(". ")) };
     }
-    if (commands[command].risk === "read") return { ok: true, output: result.output };
+    if (commands[command].risk === "read") {
+      if (lane === undefined) return { ok: true, output: result.output };
+      const narrowed = lane.output(result.output);
+      return narrowed.refused === undefined
+        ? { ok: true, output: narrowed.value }
+        : { ok: false, error: narrowed.refused };
+    }
     const made = (await history.since(before)).filter(
       (c) => c.subject.startsWith(`${command}:`) || c.subject.startsWith("undo:"),
     );

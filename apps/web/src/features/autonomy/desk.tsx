@@ -5,12 +5,14 @@ import { AgentEmoji } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
+import { ROW_SELECTED } from "@/components/ui/list-detail";
+import { PageLink } from "@/components/ui/page-link";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { formatAgo, plural } from "@/lib/format";
+import { formatAgo, formatMoney, plural } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgs } from "@/lib/studio-queries";
 import { clockTime, SIZE_WORD } from "./model";
@@ -286,21 +288,99 @@ function NextSection({ status, now, onRules }: { status: AutonomyStatus; now: nu
   );
 }
 
-/** What needs the owner, what runs and what comes next, with why for each. */
+/**
+ * One row per workspace set to "Runs it" (5.18): the captain's lane there, what it does now or why it
+ * rests, its open tasks and today's spend against the workspace's budget. A row shows its lane's chat.
+ */
+function LanesSection({
+  status,
+  lane,
+  onLane,
+}: {
+  status: AutonomyStatus;
+  lane: string | undefined;
+  onLane: (org: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <SectionHead title="Lanes" count={status.lanes.length}>
+        <PageLink page="captain" className="text-sm text-blue hover:underline">
+          Captain page
+        </PageLink>
+      </SectionHead>
+      {status.lanes.length === 0 ? (
+        <p className="text-sm text-amber text-pretty">
+          No workspace is set to Runs it, so the captain starts nothing. Set one on the Captain page.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {status.lanes.map((l) => {
+            const on = l.org === lane;
+            const cost = l.spend.cap?.cost;
+            return (
+              <li key={l.org}>
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onLane(l.org)}
+                  title={`Show the captain's lane in ${l.name}`}
+                  className={cn(
+                    "flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150",
+                    on ? ROW_SELECTED : "hover:bg-raised",
+                  )}
+                >
+                  <Lamp state={l.working ? "working" : l.resting ? "paused" : "idle"} size={7} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate text-base font-medium text-fg">{l.name}</span>
+                      <span className="tnum shrink-0 text-xs text-fg-faint">{plural(l.tasks, "task")}</span>
+                    </span>
+                    <span
+                      className={cn("min-w-0 truncate text-sm", l.resting ? "text-amber" : "text-fg-muted")}
+                      title={l.resting ?? l.nowDoing}
+                    >
+                      {l.resting
+                        ? `Resting: ${l.resting}`
+                        : (l.nowDoing ??
+                          (l.working ? "Working" : `Idle. ${plural(l.backlog, "backlog task")} it may take`))}
+                    </span>
+                  </span>
+                  <span className="tnum shrink-0 font-mono text-sm text-fg-soft">
+                    {formatMoney(l.spend.used.cost)}
+                    <span className="font-sans text-fg-faint">
+                      {cost === undefined ? "" : ` of ${formatMoney(cost)}`}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** What needs the owner, which lanes run, what runs and what comes next, with why for each. */
 export function WorkPane({
   status,
   now,
   onRules,
+  lane,
+  onLane,
   className,
 }: {
   status: AutonomyStatus;
   now: number;
   onRules: () => void;
+  lane: string | undefined;
+  onLane: (org: string) => void;
   className?: string;
 }) {
   return (
     <Pane label="Now and next" className={className}>
       {status.waiting.length > 0 && <WaitingSection waiting={status.waiting} />}
+      <LanesSection status={status} lane={lane} onLane={onLane} />
       <NowSection status={status} now={now} />
       <NextSection status={status} now={now} onRules={onRules} />
     </Pane>

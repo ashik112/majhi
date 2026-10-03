@@ -12,7 +12,7 @@ export type AuditDecision = z.infer<typeof AuditDecisionSchema>;
  * Who decided or triggered it: the owner, a rule, a lead, an agent, majhi itself, or autonomous mode
  * approving a card within its limits (PRV-74).
  */
-export const AuditBySchema = z.enum(["owner", "rule", "lead", "agent", "majhi", "autonomy"]);
+export const AuditBySchema = z.enum(["owner", "rule", "lead", "agent", "majhi", "autonomy", "captain"]);
 export type AuditBy = z.infer<typeof AuditBySchema>;
 
 export const AuditEntrySchema = z.object({

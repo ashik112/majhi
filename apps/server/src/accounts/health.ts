@@ -73,6 +73,7 @@ export class AccountProbes {
       steps: [step],
     });
 
+    const before = await this.deps.cache.get(id);
     let health: HealthCheck;
     let extra: { signedInAs?: string | undefined; models?: AccountModels | undefined } = {};
     try {
@@ -92,10 +93,38 @@ export class AccountProbes {
     } catch (err) {
       health = fail({ name: "cli", ok: false, detail: errorMessage(err) });
     }
+    if (health.ok && config.auth === "login" && this.deps.usage !== undefined) {
+      health = await this.confirmSignIn(id, config, health, before.signInFailed?.detail);
+    }
     await this.deps.cache.setHealth(id, health, extra);
-    // In the background: the check must not wait for the usage read.
-    if (health.ok) void this.deps.usage?.read(id, config);
     return health;
+  }
+
+  /**
+   * The CLI's status command only looks for credentials: Claude Code says "logged in" with a token
+   * that expired and cannot be refreshed. A usage read makes the CLI use its token, without a
+   * prompt, so it is the sign-in test that matches what a run needs. A read that fails for another
+   * reason (the network) proves nothing: an account a run already found signed out stays so.
+   */
+  private async confirmSignIn(
+    id: string,
+    config: AccountConfig,
+    health: HealthCheck,
+    failedBefore: string | undefined,
+  ): Promise<HealthCheck> {
+    const signIn = await this.deps.usage?.signIn(id, config);
+    const detail =
+      signIn?.state === "expired"
+        ? signIn.detail
+        : signIn?.state === "unknown" && failedBefore !== undefined
+          ? failedBefore
+          : undefined;
+    if (detail === undefined) return health;
+    const step: HealthStep = { name: "auth", ok: false, detail };
+    const steps = health.steps.some((s) => s.name === "auth")
+      ? health.steps.map((s) => (s.name === "auth" ? step : s))
+      : [...health.steps, step];
+    return { ...health, ok: false, steps };
   }
 
   /** Decrypts the API key just before a probe. `error` says why there is none. */

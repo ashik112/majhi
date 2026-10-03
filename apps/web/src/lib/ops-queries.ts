@@ -93,3 +93,16 @@ export function useExportKey() {
     onSettled: () => client.invalidateQueries({ queryKey: opsKeys.checks }),
   });
 }
+
+export function useRestoreKey() {
+  const client = useQueryClient();
+  return useMutation<
+    CommandOutput<"secrets.restoreKey">,
+    ApiRequestError,
+    CommandInput<"secrets.restoreKey">
+  >({
+    mutationFn: (input) =>
+      cmd("secrets.restoreKey", input, { reason: "Owner restored the secrets key from its export" }),
+    onSettled: () => client.invalidateQueries({ queryKey: opsKeys.checks }),
+  });
+}

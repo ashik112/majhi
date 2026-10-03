@@ -635,6 +635,98 @@ CREATE TABLE clone_jobs (
 CREATE INDEX clone_jobs_started ON clone_jobs (started_at);
 `,
   },
+  {
+    // The captain per workspace (Phase 13, SPEC 5.18). `captain_state` holds "Stop the captain".
+    // `captain_lanes` is the captain's chat per workspace (`private` for tasks with no org).
+    // `captain_runs` is one row per run of an upkeep chore; the partial unique index keeps one open
+    // run per chore and workspace. `captain_actions` is the captain's log: `key` makes each action
+    // idempotent (a second try of the same key changes nothing), `undo` is JSON for Undo.
+    // `captain_chores` counts failures in a row and turns a chore off after two. `captain_presence`
+    // is when the owner last acted in a task, so the captain keeps out of it for 10 minutes.
+    id: 116,
+    name: "captain per workspace",
+    sql: `
+CREATE TABLE captain_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  stopped INTEGER NOT NULL DEFAULT 0,
+  stopped_at TEXT,
+  summary_day TEXT
+);
+INSERT INTO captain_state (id) VALUES (1);
+CREATE TABLE captain_lanes (
+  org TEXT PRIMARY KEY,
+  chat TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE captain_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  chore TEXT NOT NULL,
+  day TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  status TEXT NOT NULL CHECK (status IN ('running', 'done', 'capped', 'failed', 'stopped', 'rested')),
+  trigger TEXT NOT NULL,
+  actions INTEGER NOT NULL DEFAULT 0,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  note TEXT
+);
+CREATE UNIQUE INDEX captain_runs_open ON captain_runs (org, chore) WHERE ended_at IS NULL;
+CREATE INDEX captain_runs_day ON captain_runs (org, chore, day);
+CREATE TABLE captain_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  run INTEGER,
+  org TEXT NOT NULL,
+  chore TEXT NOT NULL,
+  day TEXT NOT NULL,
+  at TEXT NOT NULL,
+  text TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  evidence TEXT,
+  task TEXT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('done', 'asked', 'skipped', 'failed')),
+  undo TEXT,
+  undo_note TEXT,
+  undone_at TEXT
+);
+CREATE INDEX captain_actions_org ON captain_actions (org, at);
+CREATE INDEX captain_actions_day ON captain_actions (org, chore, day);
+CREATE TABLE captain_chores (
+  org TEXT NOT NULL,
+  chore TEXT NOT NULL,
+  failures INTEGER NOT NULL DEFAULT 0,
+  off_at TEXT,
+  off_why TEXT,
+  PRIMARY KEY (org, chore)
+);
+CREATE TABLE captain_presence (
+  task TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+`,
+  },
+  {
+    // The daily summary names the day it covers and compares against the caps of that day.
+    // `autonomy_day_caps` keeps, per local day, the caps last seen (JSON: the day cap and each
+    // workspace's) and the ones that moved during it (`day` or an org id). Summaries were keyed by
+    // the day they were made on, which is the day after the one they cover: they move back a day.
+    id: 117,
+    name: "autonomy day caps",
+    sql: `
+CREATE TABLE autonomy_day_caps (
+  day TEXT PRIMARY KEY,
+  caps TEXT NOT NULL,
+  changed TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE autonomy_summaries_moved AS
+  SELECT date(day, '-1 day') AS day, at, json_set(summary, '$.day', date(day, '-1 day')) AS summary
+  FROM autonomy_summaries;
+DELETE FROM autonomy_summaries;
+INSERT INTO autonomy_summaries (day, at, summary) SELECT day, at, summary FROM autonomy_summaries_moved;
+DROP TABLE autonomy_summaries_moved;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

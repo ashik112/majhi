@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AccountRuntime, RuntimeOptions } from "../src/index.ts";
-import { mapClaudeUsage, mapCodexRateLimits, readUsage } from "../src/index.ts";
+import { mapClaudeUsage, mapCodexRateLimits, readUsage, SignInExpired } from "../src/index.ts";
 import { type FakeAgentOptions, fakeAdapter, fakeUsage } from "./index.ts";
 
 const base = { PATH: process.env.PATH ?? "/usr/bin" };
@@ -52,6 +52,11 @@ describe.each(["claude", "codex"] as const)("readUsage with the fake %s adapter"
     await expect(readUsage({ ...account, home: root }, opts(tool))).rejects.toThrow(/./);
   });
 
+  it("says the sign-in expired when the token cannot be used", async () => {
+    const read = readUsage({ ...account, home: root }, opts(tool, { expired: true }));
+    await expect(read).rejects.toBeInstanceOf(SignInExpired);
+  });
+
   it("returns nothing for API-key accounts", async () => {
     expect(await readUsage({ ...account, home: root, apiKey: "sk-test-0000" }, opts(tool))).toBeUndefined();
   });
@@ -82,9 +87,16 @@ describe("Claude usage", () => {
   });
 
   it("reports an account without plan limits", () => {
-    expect(() => mapClaudeUsage({ rate_limits_available: false, rate_limits: null })).toThrow(
-      "no plan limits",
-    );
+    expect(() =>
+      mapClaudeUsage({ subscription_type: "enterprise", rate_limits_available: false, rate_limits: null }),
+    ).toThrow("no plan limits");
+  });
+
+  it("reads no plan and no limits as a sign-in that expired", () => {
+    expect(() =>
+      mapClaudeUsage({ subscription_type: null, rate_limits_available: false, rate_limits: null }),
+    ).toThrow(SignInExpired);
+    expect(() => mapClaudeUsage({ rate_limits_available: false, rate_limits: null })).toThrow(SignInExpired);
   });
 
   it("skips null windows, clamps and keeps unknown fields harmless", () => {

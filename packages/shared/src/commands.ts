@@ -49,6 +49,14 @@ import {
 } from "./autonomy.ts";
 import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
+import {
+  CaptainChoreInputSchema,
+  CaptainLogInputSchema,
+  CaptainLogResultSchema,
+  CaptainStatusSchema,
+  CaptainUndoInputSchema,
+  CaptainUndoResultSchema,
+} from "./captain.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectionCreateInputSchema,
@@ -86,6 +94,7 @@ import {
   SignInStartInputSchema,
   SignInStartSchema,
   SignInStatusSchema,
+  SignInTokenInputSchema,
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
@@ -95,6 +104,7 @@ import {
   GitLoginsResultSchema,
   HostResultSchemas,
   HostStatusSchema,
+  KEY_EXPORT_MAX_LENGTH,
   KEY_EXPORT_PASSPHRASE_MIN,
   SSH_PASSPHRASE_MAX,
   SshStatusSchema,
@@ -482,23 +492,30 @@ export const commands = {
   "git.oauthApps.get": {
     risk: "read",
     summary:
-      "The OAuth apps majhi signs workspaces in to git hosts with: the GitHub client ID, GitLab application IDs per host, and the Bitbucket consumer key. Never returns the consumer secret",
+      "The OAuth apps for majhi's own device-flow sign-in: the GitHub client ID and GitLab application IDs per host. Optional: without them, sign-in uses the host's CLI or a pasted token",
     input: Empty,
     output: GitAppsViewSchema,
   },
   "git.oauthApps.set": {
     risk: "change",
     summary:
-      "Save or remove one host's OAuth app: a GitHub client ID, a GitLab application ID for a host, or the Bitbucket consumer key and secret (the secret goes to secrets.age). Owner only",
+      "Save or remove one host's OAuth app for the device-flow sign-in: a GitHub client ID or a GitLab application ID for a host. Owner only",
     input: GitAppsSetInputSchema,
     output: GitAppsViewSchema,
   },
   "git.signIn.start": {
     risk: "change",
     summary:
-      "Start signing a workspace in to GitHub, GitLab or Bitbucket in the browser. Answers needs-app with setup steps when the host's app is not registered, else the code and page to open. The token is saved for that workspace only. Owner only",
+      "Start signing a workspace in to GitHub or GitLab in the browser, through the host's CLI on this computer (gh, glab). Answers the code and page to open, or paste when a token is needed instead (always for Bitbucket). The token is saved for that workspace only. Owner only",
     input: SignInStartInputSchema,
     output: SignInStartSchema,
+  },
+  "git.signIn.token": {
+    risk: "change",
+    summary:
+      "Save a pasted token for one workspace and git host after the host confirmed whose it is: a GitHub token, a GitLab personal access token, or a Bitbucket API token with the Atlassian email. Answers done, confirm when another workspace uses the account, or failed. Never returns the token. Owner only",
+    input: SignInTokenInputSchema,
+    output: SignInStatusSchema,
   },
   "git.signIn.poll": {
     risk: "read",
@@ -1682,6 +1699,18 @@ export const commands = {
     }),
     output: z.object({ fileName: z.string(), content: z.string() }),
   },
+  "secrets.restoreKey": {
+    risk: "change",
+    summary:
+      "Restore the secrets key from its export: decrypt the file with its passphrase, check that the key opens secrets.age, then have the host helper write it to the key file and restart majhi. Only when the key file is missing or does not open secrets.age",
+    input: z.object({
+      /** The export's text, as `secrets.exportKey` made it. Never logged, stored or returned. */
+      content: z.string().min(1).max(KEY_EXPORT_MAX_LENGTH, "This file is too big to be a key export"),
+      /** Used once to decrypt the export. Never logged, stored or returned. */
+      passphrase: z.string().min(1, "Type the passphrase").max(SSH_PASSPHRASE_MAX),
+    }),
+    output: z.object({ detail: z.string() }),
+  },
 
   // Connections (5.14)---------------------------------------------------------
   "connections.types": {
@@ -1935,6 +1964,8 @@ export const commands = {
           z.object({ kind: z.literal("sign-in"), account: z.string() }),
           /** The form that exports the secrets key: it needs a passphrase only the owner types. */
           z.object({ kind: z.literal("key-export") }),
+          /** The form that restores the secrets key from its export: the file and its passphrase. */
+          z.object({ kind: z.literal("key-restore") }),
         ])
         .optional(),
     }),
@@ -2410,14 +2441,14 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, org caps, per-org push and merge permission, account floors, summary time, time zone, or what it may pick (the largest task size, the orgs it works in). Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: how much the captain does there (level ask, tidy or runs), its daily budget (cap), push and merge, and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.guide": {
     risk: "change",
     summary:
-      "Send the captain a message in its autonomy chat: guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on. Owner only",
+      "Send the captain a message in a workspace's lane (org; default: the first workspace set to Runs it): guidance, or a question about what it is doing. keep also saves it as a standing instruction it follows from now on in every lane. Owner only",
     input: AutonomyGuideInputSchema,
     output: AutonomyGuideResultSchema,
   },
@@ -2433,6 +2464,48 @@ export const commands = {
       "Mark a task Not for autonomous mode (exclude true), so the captain in autonomous mode leaves it alone, or clear the mark. Owner only",
     input: AutonomyExcludeInputSchema,
     output: AutonomyStatusSchema,
+  },
+  // The captain per workspace (5.18) --------------------------------------------
+  "captain.status": {
+    risk: "read",
+    summary:
+      "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also whether Stop the captain is on",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.log": {
+    risk: "read",
+    summary:
+      "The captain's log, newest first: each action with its reason, evidence and whether Undo works, and the recent chore runs with their caps. org narrows it to one workspace",
+    input: CaptainLogInputSchema,
+    output: CaptainLogResultSchema,
+  },
+  "captain.stop": {
+    risk: "change",
+    summary:
+      "Stop the captain: every lane's turn, every upkeep run and autonomous mode stop at once, and nothing of the captain acts on its own until captain.resume. Owner only",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.resume": {
+    risk: "change",
+    summary: "Let the captain act again after Stop the captain, by each workspace's choice. Owner only",
+    input: Empty,
+    output: CaptainStatusSchema,
+  },
+  "captain.undo": {
+    risk: "change",
+    summary:
+      "Undo one action of the captain's log: a merge with a revert commit, a config change through the config history, a priority or due date it set, a memory step. Refused for what cannot be undone, like a push. Owner only",
+    input: CaptainUndoInputSchema,
+    output: CaptainUndoResultSchema,
+  },
+  "captain.choreOn": {
+    risk: "change",
+    summary:
+      "Turn an upkeep chore back on in a workspace after two failures in a row turned it off. Owner only",
+    input: CaptainChoreInputSchema,
+    output: CaptainStatusSchema,
   },
   "autonomy.plan": {
     risk: "change",

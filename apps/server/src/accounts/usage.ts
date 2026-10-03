@@ -1,4 +1,4 @@
-import type { RuntimeOptions } from "@majhi/acp";
+import { type RuntimeOptions, SignInExpired } from "@majhi/acp";
 import type { AccountConfig, AccountUsage } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import type { AcpRuntime } from "../runtime.ts";
@@ -15,7 +15,20 @@ export interface UsageDeps {
   cache: AccountCache;
   /** Told when the numbers or the error of an account changed, so open screens refetch. */
   onChanged: () => void;
+  /** A read found the sign-in dead: told after the account was marked `needs-login`, when it was not before. */
+  onSignedOut?: (id: string, detail: string) => void;
   now?: () => number;
+}
+
+/**
+ * What a read says about the sign-in: `ok` when the CLI read the plan with its token, `expired`
+ * when it could not use the token at all, `unknown` when the read failed for another reason.
+ */
+export type SignInState = { state: "ok" } | { state: "expired"; detail: string } | { state: "unknown" };
+
+interface UsageRead {
+  usage: AccountUsage | null;
+  signIn: SignInState;
 }
 
 /** What screens compare: everything but the read time. */
@@ -26,10 +39,11 @@ function signature(usage: AccountUsage | undefined): string {
 /**
  * Reads and caches the 5-hour and weekly usage of login accounts. Reads spend
  * no model tokens. A failed read keeps the last good numbers and sets `error`;
- * it never throws and never changes the account's health.
+ * it never throws. It changes the account's health in one case only: the CLI
+ * could not use its sign-in at all, so the account is marked `needs-login`.
  */
 export class AccountUsageReader {
-  private readonly inFlight = new Map<string, Promise<AccountUsage | null>>();
+  private readonly inFlight = new Map<string, Promise<UsageRead>>();
   private readonly now: () => number;
 
   constructor(private readonly deps: UsageDeps) {
@@ -49,8 +63,20 @@ export class AccountUsageReader {
   }
 
   /** Reads now. Joins a read already running for the account. Never rejects. */
-  read(id: string, config: AccountConfig): Promise<AccountUsage | null> {
-    if (config.auth === "api-key") return Promise.resolve(null);
+  async read(id: string, config: AccountConfig): Promise<AccountUsage | null> {
+    return (await this.readWithSignIn(id, config)).usage;
+  }
+
+  /**
+   * Reads now and says whether the sign-in worked: the health check's real sign-in test, since the
+   * CLI's own status command only looks for credentials. Never rejects.
+   */
+  async signIn(id: string, config: AccountConfig): Promise<SignInState> {
+    return (await this.readWithSignIn(id, config)).signIn;
+  }
+
+  private readWithSignIn(id: string, config: AccountConfig): Promise<UsageRead> {
+    if (config.auth === "api-key") return Promise.resolve({ usage: null, signIn: { state: "unknown" } });
     const running = this.inFlight.get(id);
     if (running !== undefined) return running;
     const started = this.readNow(id, config).finally(() => this.inFlight.delete(id));
@@ -58,13 +84,14 @@ export class AccountUsageReader {
     return started;
   }
 
-  private async readNow(id: string, config: AccountConfig): Promise<AccountUsage | null> {
+  private async readNow(id: string, config: AccountConfig): Promise<UsageRead> {
     const before = (await this.deps.cache.get(id)).usage;
     let next: AccountUsage | undefined;
+    let signIn: SignInState = { state: "ok" };
     try {
       const account = accountRuntime(this.deps.majhiHome, id, config);
       next = await this.deps.runtime.readUsage(account, this.deps.options);
-      if (next === undefined) return before ?? null;
+      if (next === undefined) return { usage: before ?? null, signIn: { state: "unknown" } };
     } catch (err) {
       const stub: AccountUsage = {
         models: [],
@@ -72,10 +99,16 @@ export class AccountUsageReader {
         updatedAt: new Date(this.now()).toISOString(),
       };
       next = { ...(before ?? stub), error: errorMessage(err) };
+      signIn =
+        err instanceof SignInExpired ? { state: "expired", detail: err.message } : { state: "unknown" };
     }
     await this.deps.cache.setUsage(id, next);
-    if (signature(before) !== signature(next)) this.deps.onChanged();
-    return next;
+    if (signIn.state === "expired") {
+      const fresh = await this.deps.cache.markSignedOut(id, signIn.detail, new Date(this.now()));
+      if (fresh) this.deps.onSignedOut?.(id, signIn.detail);
+      this.deps.onChanged();
+    } else if (signature(before) !== signature(next)) this.deps.onChanged();
+    return { usage: next, signIn };
   }
 }
 

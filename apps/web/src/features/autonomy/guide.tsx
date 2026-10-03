@@ -27,13 +27,23 @@ import { TaskRef } from "./task-ref";
 const INSTRUCTION_MAX = 500;
 
 /**
- * The captain's one autonomy chat, on the right of the page: the conversation as the room shows it,
- * scrolling inside the panel, and a box to write to the captain. Sending goes through
- * `autonomy.guide`; "Keep as standing instruction" also saves it, so every wake-up lists it.
+ * The captain's lane in one workspace, on the right of the page: the conversation as the room shows
+ * it, scrolling inside the panel, and a box to write to the captain there. Sending goes through
+ * `autonomy.guide`; "Keep as standing instruction" also saves it, so every lane's wake-up lists it.
  */
-export function ChatPane({ status, className }: { status: AutonomyStatus; className?: string }) {
+export function ChatPane({
+  status,
+  lane,
+  className,
+}: {
+  status: AutonomyStatus;
+  lane: string | undefined;
+  className?: string;
+}) {
   const boss = status.boss;
-  const chat = boss?.chat;
+  const current = status.lanes.find((l) => l.org === lane);
+  const chat = current === undefined ? boss?.chat : current.chat;
+  const working = current?.working ?? boss?.working ?? false;
   return (
     <aside
       aria-label="Captain chat"
@@ -41,34 +51,37 @@ export function ChatPane({ status, className }: { status: AutonomyStatus; classN
     >
       <div className="shrink-0 border-b border-line px-4 py-2.5">
         <div className="flex min-h-7 items-center gap-2">
-          <h2 className="text-base font-semibold text-fg">Captain chat</h2>
+          <h2 className="min-w-0 truncate text-base font-semibold text-fg">
+            {current === undefined ? "Captain chat" : `Lane: ${current.name}`}
+          </h2>
           {chat && <TaskRef task={chat} />}
           {boss && (
-            <span className="ml-auto flex min-w-0 items-center gap-1.5 text-sm">
-              <Lamp state={boss.working ? "working" : "idle"} size={7} />
-              <span className="font-mono text-fg-muted">@{boss.id}</span>
-              <span className={boss.working ? "text-lamp-working" : "text-fg-faint"}>
-                {boss.working ? "working" : "idle"}
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-sm">
+              <Lamp state={working ? "working" : "idle"} size={7} />
+              <span className={working ? "text-lamp-working" : "text-fg-faint"}>
+                {working ? "working" : "idle"}
               </span>
             </span>
           )}
         </div>
         <p className="text-xs text-fg-faint text-pretty">
-          {chat === undefined
-            ? "The captain gets one chat on the first start and keeps it for every run after."
-            : status.mode === "off"
-              ? "One chat for every run: majhi wakes the captain here each time. While off, you may remove it; the next start makes a new one."
-              : "One chat for every run: majhi wakes the captain here each time. It cannot be removed until autonomous mode is off."}
+          {current === undefined
+            ? "Set a workspace to Runs it on the Captain page. Each one gets its own lane."
+            : "One lane per workspace: majhi wakes the captain here with this workspace's matters only."}
         </p>
       </div>
       {chat ? (
         <ChatLog chat={chat} />
       ) : (
         <p className="m-auto max-w-[240px] text-center text-sm text-fg-faint text-pretty">
-          {boss ? "No chat yet. Turn autonomous mode on, or write below." : "There is no captain yet."}
+          {boss
+            ? current === undefined
+              ? "No lane yet."
+              : "No messages yet. Turn autonomous mode on, or write below."
+            : "There is no captain yet."}
         </p>
       )}
-      <ChatBox status={status} />
+      <ChatBox status={status} lane={current?.org} />
     </aside>
   );
 }
@@ -107,7 +120,7 @@ function ChatLog({ chat }: { chat: string }) {
 }
 
 /** Writes to the captain. Sent with "Keep as standing instruction", it is also kept as one. */
-function ChatBox({ status }: { status: AutonomyStatus }) {
+function ChatBox({ status, lane }: { status: AutonomyStatus; lane: string | undefined }) {
   const toast = useToast();
   const guide = useGuideAutonomy();
   const [text, setText] = useState("");
@@ -115,12 +128,13 @@ function ChatBox({ status }: { status: AutonomyStatus }) {
   const typed = text.trim();
   const secret = looksLikeSecret(typed);
   const tooLong = keep && typed.length > INSTRUCTION_MAX;
-  const blocked = typed === "" || secret || tooLong || guide.isPending || status.boss === undefined;
+  const blocked =
+    typed === "" || secret || tooLong || guide.isPending || status.boss === undefined || lane === undefined;
 
   const send = () => {
     if (blocked) return;
     guide.mutate(
-      { text: typed, keep },
+      { text: typed, keep, ...(lane === undefined ? {} : { org: lane }) },
       {
         onSuccess: () => {
           setText("");

@@ -34,6 +34,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
   "secretsKey.save": (value) => HostResultSchemas["secretsKey.save"].safeParse(value),
+  "secretsKey.restore": (value) => HostResultSchemas["secretsKey.restore"].safeParse(value),
   "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
   "e2e.run": (value) => HostResultSchemas["e2e.run"].safeParse(value),
   notify: (value) => HostResultSchemas.notify.safeParse(value),
@@ -44,6 +45,8 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   openUrl: (value) => HostResultSchemas.openUrl.safeParse(value),
   "git.clone": (value) => HostResultSchemas["git.clone"].safeParse(value),
   "git.lsRemote": (value) => HostResultSchemas["git.lsRemote"].safeParse(value),
+  "git.cliLogin": (value) => HostResultSchemas["git.cliLogin"].safeParse(value),
+  "git.cliLoginCancel": (value) => HostResultSchemas["git.cliLoginCancel"].safeParse(value),
   "version.changes": (value) => HostResultSchemas["version.changes"].safeParse(value),
   update: (value) => HostResultSchemas.update.safeParse(value),
   restart: (value) => HostResultSchemas.restart.safeParse(value),
@@ -139,7 +142,7 @@ export class HostLink {
 
   /**
    * Sends a job to the helper and resolves with its checked result. `onProgress` gets the
-   * `HostProgress` the helper posts for this job while it runs (`git.clone`).
+   * `HostProgress` the helper posts for this job while it runs (`git.clone`, `git.cliLogin`).
    */
   call<M extends HostMethod>(
     method: M,

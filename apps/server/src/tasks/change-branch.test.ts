@@ -166,8 +166,12 @@ describe("changing another task's branch", () => {
       "a\\b",
     ]) {
       expect(
-        ChangeBranchInputSchema.safeParse({ task: "ACM-2", base: "abcdef1", files: [{ path, content: "" }], message: "m" })
-          .success,
+        ChangeBranchInputSchema.safeParse({
+          task: "ACM-2",
+          base: "abcdef1",
+          files: [{ path, content: "" }],
+          message: "m",
+        }).success,
       ).toBe(false);
     }
   });

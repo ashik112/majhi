@@ -67,10 +67,11 @@ async function world() {
     },
     /** Turns on, and has the captain create and start a task in Acme; waits for its first turn. */
     async startWorking(): Promise<string> {
+      expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
       const on = await h.cmd("autonomy.start");
       expect(on.status).toBe(200);
-      const chat = h.majhi.services.autonomy.chat();
-      if (chat === undefined) throw new Error("no autonomy chat");
+      const chat = await h.majhi.services.autonomy.laneChat("acme");
+      if (chat === undefined) throw new Error("no lane for Acme");
       const made = await h.majhi.services.admin.call({ task: chat, agent: "boss" }, "majhi_tasks_create", {
         text: "fix the api",
         repos: [{ project: "acme-api" }],
@@ -94,12 +95,12 @@ describe("autonomous mode's state machine", () => {
     expect((await plain.h.cmd("autonomy.status")).body.mode).toBe("off");
   });
 
-  it("turns on with an autonomy chat, adopts the captain's task, and pauses it after its current turn", async () => {
+  it("turns on, works in the lane, adopts the captain's task, and pauses it after its current turn", async () => {
     const t = await world();
     const id = await t.startWorking();
     const on = await t.status();
     expect(on.mode).toBe("on");
-    expect(on.boss?.chat).toBe(t.h.majhi.services.autonomy.chat());
+    expect(on.boss?.chat).toBe(await t.h.majhi.services.autonomy.laneChat("acme"));
     expect(on.now.map((n) => n.task)).toEqual([id]);
     const listed = (await t.h.cmd("tasks.list")).body as { id: string; autonomous?: boolean }[];
     expect(listed.find((x) => x.id === id)?.autonomous).toBe(true);
@@ -135,7 +136,9 @@ describe("autonomous mode's state machine", () => {
     await t.w.until(() => t.task(id).status !== "paused", "the task to run again");
     expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe(undefined);
     const modes = (await t.h.cmd("autonomy.events", { limit: 50 })).body.events
-      .filter((e: { kind: string }) => e.kind === "mode")
+      .filter(
+        (e: { kind: string; text: string }) => e.kind === "mode" && !e.text.startsWith("The captain works"),
+      )
       .map((e: { text: string }) => e.text);
     expect(modes).toEqual(["Resumed", "Paused", "Turned on"]);
   });

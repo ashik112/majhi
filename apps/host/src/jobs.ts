@@ -2,14 +2,18 @@ import type {
   DirListing,
   E2eRunResult,
   EditorApp,
+  GitCliLoginResult,
   GitLoginsResult,
+  HostCloneProgress,
   HostJob,
+  HostLoginProgress,
   HostProgress,
   HostReply,
   LayaDecideResult,
   LayaStatus,
   RootSuggestion,
   SecretsKeyBackup,
+  SecretsKeyRestore,
   SshStatus,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
@@ -30,6 +34,14 @@ export interface JobHandlers {
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
   /** Throws an error whose message is safe to show. It never holds the key. */
   secretsKeySave(params: { expected: string }): Promise<SecretsKeyBackup>;
+  /**
+   * Writes a restored secrets key when the key file is missing or does not open secrets.age.
+   * `after` restarts majhi, so it runs once the reply is sent, and never throws. Throws an error
+   * whose message is safe to show. It never holds the key.
+   */
+  secretsKeyRestore?: (params: {
+    key: string;
+  }) => Promise<{ result: SecretsKeyRestore; after: () => Promise<void> }>;
   gitLogins(params: { extraHosts: string[] }): Promise<GitLoginsResult>;
   /** Throws an error whose message is safe to show. The token is only ever in the return value. */
   gitToken(params: { via: "gh" | "glab"; host: string }): Promise<string>;
@@ -56,12 +68,23 @@ export interface JobHandlers {
    */
   gitClone?: (
     params: Extract<HostJob, { method: "git.clone" }>["params"],
-    progress: (progress: Omit<HostProgress, "id">) => void,
+    progress: (progress: Omit<HostCloneProgress, "id">) => void,
   ) => Promise<{ head: string; branch: string }>;
   /** `git ls-remote --symref` with the job's credential. Throws a safe sentence when unreachable. */
   gitLsRemote?: (
     params: Extract<HostJob, { method: "git.lsRemote" }>["params"],
   ) => Promise<{ empty: boolean; defaultBranch?: string | undefined }>;
+  /**
+   * Signs a workspace in with `gh` or `glab` in the browser, in a config folder of its own, and
+   * answers the token. Calls `progress` once the page (and code) are known. Throws an error whose
+   * message is safe to show: never the CLI's output or the token.
+   */
+  gitCliLogin?: (
+    params: Extract<HostJob, { method: "git.cliLogin" }>["params"],
+    progress: (progress: Omit<HostLoginProgress, "id">) => void,
+  ) => Promise<GitCliLoginResult>;
+  /** Stops a running `gitCliLogin`. False when none runs for that sign-in. */
+  gitCliLoginCancel?: (params: Extract<HostJob, { method: "git.cliLoginCancel" }>["params"]) => boolean;
 }
 
 /** Sends progress for a running job to `POST /api/host/progress`. Failures are dropped. */
@@ -80,8 +103,8 @@ export const CANNOT_REMOUNT =
 
 /**
  * Runs one job and sends its reply. A failing job is answered with its
- * message; nothing here throws. `remount` is answered first, because it
- * restarts the server the reply goes to.
+ * message; nothing here throws. `remount` and `secretsKey.restore` are
+ * answered before they restart the server the reply goes to.
  */
 export async function runJob(
   job: HostJob,
@@ -177,6 +200,24 @@ export async function runJob(
         await reply({ id: job.id, ok: true, result: await handlers.gitLsRemote(job.params) });
         return;
       }
+      case "git.cliLogin": {
+        if (handlers.gitCliLogin === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        const result = await handlers.gitCliLogin(job.params, (progress) => {
+          void sendProgress({ id: job.id, ...progress }).catch(() => undefined);
+        });
+        await reply({ id: job.id, ok: true, result });
+        return;
+      }
+      case "git.cliLoginCancel":
+        await reply({
+          id: job.id,
+          ok: true,
+          result: { cancelled: handlers.gitCliLoginCancel?.(job.params) ?? false },
+        });
+        return;
       case "git.credential":
         await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
         return;
@@ -186,6 +227,16 @@ export async function runJob(
       case "secretsKey.save":
         await reply({ id: job.id, ok: true, result: await handlers.secretsKeySave(job.params) });
         return;
+      case "secretsKey.restore": {
+        if (handlers.secretsKeyRestore === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        const { result, after } = await handlers.secretsKeyRestore(job.params);
+        await reply({ id: job.id, ok: true, result });
+        await after();
+        return;
+      }
       case "remount": {
         const remount = handlers.remount;
         if (remount === undefined) {

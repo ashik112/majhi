@@ -1,9 +1,7 @@
 import { git, gitOk } from "./git.ts";
 import { checkedOutAt } from "./merge.ts";
 
-export type FastForwardOutcome =
-  | { ok: true; moved: boolean; detail: string }
-  | { ok: false; reason: string };
+export type FastForwardOutcome = { ok: true; moved: boolean; detail: string } | { ok: false; reason: string };
 
 /** Paths of a NUL separated git listing. */
 const paths = (out: string): string[] => out.split("\0").filter((p) => p !== "");

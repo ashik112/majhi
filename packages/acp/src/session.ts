@@ -73,6 +73,19 @@ export type SessionEvent =
       cost?: { amount: number; currency: string };
       model?: string;
     }
+  /**
+   * The CLI compacted its context (PRV-103), as the adapter reports it: a "Compact conversation"
+   * tool call, sent once per state. `status` is absent on a patch that only adds facts. Claude
+   * gives the trigger and the tokens before and after; Codex gives neither.
+   */
+  | {
+      type: "compaction";
+      id: string;
+      status?: "started" | "completed" | "failed";
+      trigger?: "auto" | "manual";
+      before?: number;
+      after?: number;
+    }
   /** A prompt finished: its tokens and cost (Phase 2c). Sent just before `prompt()` resolves. */
   | { type: "turn"; usage: TurnUsage }
   | { type: "commands"; commands: { name: string; description?: string }[] }

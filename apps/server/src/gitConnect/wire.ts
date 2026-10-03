@@ -1,4 +1,4 @@
-import type { CommandMeta, GitAuth, HostProgress, MrHost, OrgConfig } from "@majhi/shared";
+import type { CommandMeta, GitAuth, MrHost, OrgConfig } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
@@ -26,6 +26,8 @@ const CLONE_TIMEOUT_MS = 60 * 60_000;
 const PUSH_TIMEOUT_MS = 130_000;
 const LS_REMOTE_TIMEOUT_MS = 60_000;
 const OPEN_URL_TIMEOUT_MS = 10_000;
+/** A CLI sign-in lasts 15 minutes at most on the helper; the call waits a little longer. */
+const CLI_LOGIN_TIMEOUT_MS = 16 * 60_000;
 
 /** Git sign-in, tokens and clone jobs: the stateful parts of git connect, made once. */
 export interface GitConnect {
@@ -33,8 +35,6 @@ export interface GitConnect {
   tokens: GitTokens;
   signIn: SignInService;
   clones: CloneService;
-  /** majhi's address as the browser reaches it. */
-  origin: string;
   /** Deps of create, publish and connect a remote. */
   projectDeps: ProjectDeps;
   /** SSH aliases from the owner's ~/.ssh/config, lowercased alias to host name. */
@@ -75,7 +75,6 @@ export interface GitConnectWiring {
   store: Store;
   events: EventHub;
   hostLink: HostLink | undefined;
-  origin: string;
   hostHome: string;
   tokens: GitTokens;
   fetch: Fetch;
@@ -86,7 +85,6 @@ export function createGitTokens(config: ConfigService, secrets: SecretStore, fet
   return new GitTokens({
     orgs: async () => (await config.sections()).orgs,
     secrets: { get: (name) => secrets.get(name), set: (name, value) => secrets.set(name, value) },
-    apps: async () => effectiveApps(await readGitApps(config.file)),
     fetch: fetchFn,
   });
 }
@@ -95,10 +93,23 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
   const apps = async () => effectiveApps(await readGitApps(w.config.file));
   const orgsOf = async () => (await w.config.sections()).orgs;
   const connected = () => w.hostLink?.isConnected() ?? false;
+  const link = w.hostLink;
   const signIn = new SignInService({
     fetch: w.fetch,
-    origin: () => w.origin,
     apps,
+    cli:
+      link === undefined
+        ? undefined
+        : {
+            connected: () => link.isConnected(),
+            login: (params, onPage) =>
+              link.call("git.cliLogin", params, CLI_LOGIN_TIMEOUT_MS, (p) => {
+                if ("login" in p) onPage(p.login);
+              }),
+            cancel: async (signIn) => {
+              if (link.isConnected()) await link.call("git.cliLoginCancel", { signIn }, OPEN_URL_TIMEOUT_MS);
+            },
+          },
     readSecret: (name) => w.secrets.get(name),
     openUrl: async (url) => {
       if (w.hostLink === undefined || !w.hostLink.isConnected()) return false;
@@ -159,7 +170,9 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
     hostConnected: connected,
     hostClone: async (params, onProgress) => {
       if (w.hostLink === undefined) throw new Error("no host link");
-      return w.hostLink.call("git.clone", params, CLONE_TIMEOUT_MS, (p: HostProgress) => onProgress(p));
+      return w.hostLink.call("git.clone", params, CLONE_TIMEOUT_MS, (p) => {
+        if ("phase" in p) onProgress(p);
+      });
     },
     register,
     changed: (registered) => w.events.emit(registered ? ["clones", "projects", "config"] : ["clones"]),
@@ -226,7 +239,6 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
     tokens: w.tokens,
     signIn,
     clones,
-    origin: w.origin,
     projectDeps,
     aliases,
     projectRemotes,

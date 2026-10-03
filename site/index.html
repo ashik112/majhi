@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>majhi</title>
+<meta name="description" content="You steer. The agents row. A crew of AI coding agents for every client, run from one desk on your own machine.">
+<meta property="og:title" content="majhi">
+<meta property="og:description" content="You steer. The agents row. A crew of AI coding agents for every client, on your own machine.">
+<meta property="og:image" content="https://majhi.dev/assets/onboarding.webp">
+<meta property="og:url" content="https://majhi.dev">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#1d47c4">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@600;700;800&family=Hind+Siliguri:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --red:#d42a3c; --green:#14874a; --green-deep:#0b6236; --cobalt:#1d47c4; --navy:#132f8f; --sky:#2a5fe0;
+  --yellow:#f6c419; --pink:#ef6aa6; --white:#fffdf6; --ink:#120e0b;
+  --trim:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='40'%3E%3Cpath d='M0 5 Q80 11 160 5' stroke='%23120e0b' stroke-width='3.5' fill='none'/%3E%3Cpath d='M2 6 L30 7 L16 36 Z' fill='%23d42a3c' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M34 6 L62 7 L48 36 Z' fill='%23f6c419' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='48' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M66 6 L94 7 L80 36 Z' fill='%2314874a' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='80' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M98 6 L126 7 L112 36 Z' fill='%23ef6aa6' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='112' cy='15' r='2.6' fill='%23fffdf6'/%3E%3Cpath d='M130 6 L158 7 L144 36 Z' fill='%231d47c4' stroke='%23120e0b' stroke-width='2.4' stroke-linejoin='round'/%3E%3Ccircle cx='144' cy='15' r='2.6' fill='%23fffdf6'/%3E%3C/svg%3E");
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--green);color:var(--white);font:19px/1.6 "Hind Siliguri",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+::selection{background:var(--yellow);color:var(--ink)}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:3px;border-radius:6px}
+
+.letter{font-family:"Baloo Da 2",sans-serif;font-weight:800;letter-spacing:-.01em;line-height:.98;
+  -webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-shadow:5px 5px 0 var(--ink)}
+.trim{height:40px;margin-top:-1px;background:var(--trim) 0 0/160px 40px repeat-x,var(--below,var(--green))}
+
+.sign{display:inline-flex;align-items:center;gap:10px;background:var(--yellow);color:var(--ink);font:700 18px/1 "Baloo Da 2",sans-serif;
+  padding:15px 24px 13px;border:3px solid var(--ink);border-radius:999px;text-decoration:none;box-shadow:4px 5px 0 var(--ink);cursor:pointer;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s}
+.sign:hover{transform:translate(-1px,-2px);box-shadow:5px 7px 0 var(--ink)}
+.sign:active{transform:translate(3px,4px);box-shadow:1px 1px 0 var(--ink)}
+.sign.alt{background:var(--white)}
+.sign svg{width:20px;height:20px}
+
+/* hero */
+.hero{position:relative;overflow:hidden;display:flex;flex-direction:column;
+  min-height:calc(100svh - 28px);background:#2a5fe0}
+nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2",sans-serif;color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
+.tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
+.tile svg{width:27px}
+nav .grow{flex:1}
+nav .sign{padding:11px 18px 9px;font-size:16px}
+.copy{position:relative;z-index:5;max-width:760px;margin:auto 0;padding:clamp(4px,2vh,28px) clamp(18px,4vw,48px) clamp(20px,4vh,44px)}
+.copy h1{margin:0;font-size:clamp(46px,min(6vw,9vh),86px);color:var(--yellow)}
+.copy h1 span{color:var(--white);display:block;white-space:nowrap}
+.copy p{margin:clamp(12px,2vh,20px) 0 clamp(18px,3vh,28px);font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
+.actions{display:flex;gap:14px;flex-wrap:wrap}
+.sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,min(19vw,32vh),290px);animation:sway 9s ease-in-out infinite alternate}
+@keyframes sway{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
+.cloud{position:absolute;z-index:0;animation:drift 60s ease-in-out infinite alternate}
+@keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(60px)}}
+/* The scene is 3440x440 units and always scales by its height, so nothing is
+   cut top or bottom; wider screens just see more of the bank. 1cqh = 4.4 units. */
+.land{position:relative;z-index:4;flex:1 1 0;min-height:max(200px,13vw);max-height:520px;container-type:size}
+.landscape{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+/* birds cross the upper sky from fully off-screen left to fully off-screen right,
+   in front of the sun and behind the headline */
+.birds{position:absolute;z-index:4;left:0;top:22%;width:clamp(180px,19vw,290px);animation:fly 28s linear infinite}
+@keyframes fly{0%{transform:translate(-100%,0)}25%{transform:translate(25vw,-14px)}50%{transform:translate(50vw,8px)}75%{transform:translate(75vw,-12px)}100%{transform:translate(100vw,0)}}
+/* hull centre sits at 79.5% of the boat box; river centre is 66% down the scene */
+.boat{--bh:min(58cqh,38cqw);position:absolute;z-index:1;left:0;height:var(--bh);aspect-ratio:720/440;top:calc(66cqh - var(--bh) * .795);animation:sail 36s linear infinite;animation-delay:-14s}
+@keyframes sail{from{transform:translateX(-100%)}to{transform:translateX(100cqw)}}
+.bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
+.stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
+@keyframes bob{from{transform:translateY(2px) rotate(-.8deg)}to{transform:translateY(-6px) rotate(.7deg)}}
+@keyframes row{from{transform:translate(10px,-4px)}to{transform:translate(-14px,6px)}}
+.wave{animation:lap 5s ease-in-out infinite alternate}
+@keyframes lap{from{transform:translateX(-8px)}to{transform:translateX(10px)}}
+
+/* one sentence */
+.crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
+.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.22 "Baloo Da 2",sans-serif}
+.chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.15;color:var(--ink)}
+.chip.y{background:var(--yellow)}.chip.p{background:var(--pink)}.chip.c{background:#7fb3ff}.chip.r{background:#ff8a5c}
+
+/* strengths: a painted ledger */
+.ledger{background:var(--yellow);color:var(--ink);padding:clamp(80px,12vh,130px) clamp(18px,5vw,70px)}
+.ledger .inner,.gallery .inner,.boats .inner{max-width:1240px;margin:0 auto}
+h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
+.ledger h2{color:var(--red)}
+.row{display:grid;grid-template-columns:minmax(260px,5fr) 7fr;gap:clamp(16px,4vw,60px);align-items:start;padding:30px 0;border-top:3px solid var(--ink)}
+.row:last-child{border-bottom:3px solid var(--ink)}
+.row h3{margin:0;font:800 clamp(28px,3vw,42px)/1.02 "Baloo Da 2",sans-serif;letter-spacing:-.01em}
+.row p{margin:4px 0 0;font-size:19px;color:#3a2a00}
+.row b{color:var(--ink)}
+.ledger .open{margin-top:40px}
+
+/* gallery: an endless tin strip */
+.gallery{background:var(--cobalt);padding:clamp(80px,12vh,130px) 0}
+.gallery .inner{padding:0 clamp(18px,5vw,70px)}
+.gallery h2{color:var(--yellow)}
+.gallery .lead{margin:0 0 46px;max-width:620px;font-size:20px;color:#e3eaff}
+.strip{overflow:hidden;padding:6px 0 26px;-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.track{display:flex;gap:28px;width:max-content;animation:roll 70s linear infinite}
+.strip:hover .track{animation-play-state:paused}
+@keyframes roll{to{transform:translateX(calc(-50% - 14px))}}
+.frame{flex:0 0 auto;width:min(68vw,760px);margin:0;padding:12px;background:var(--red);border:4px solid var(--ink);border-radius:22px;box-shadow:7px 9px 0 var(--ink)}
+.frame:nth-child(3n+2){background:var(--green)}.frame:nth-child(3n){background:var(--yellow)}
+.frame img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:top left;border:3px solid var(--ink);border-radius:12px;background:#0b1020}
+.frame figcaption{font:700 21px/1.2 "Baloo Da 2",sans-serif;color:var(--ink);padding:12px 6px 2px}
+
+/* one boat per client */
+.boats{background:var(--green);padding:clamp(80px,12vh,130px) clamp(18px,5vw,70px)}
+.boats h2{color:var(--yellow)}
+.boats .lead{margin:0 0 30px;max-width:640px;font-size:20px;color:#d9f3e2}
+.fleet{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,5vw,80px);max-width:980px;margin:0 auto}
+.fleet figure{margin:0;text-align:center}
+.fleet svg{width:100%;height:auto;overflow:visible}
+.fleet figcaption{font:800 26px/1 "Baloo Da 2",sans-serif;margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
+.points{list-style:none;margin:56px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.points li{display:grid;grid-template-columns:48px 1fr;gap:14px;align-items:start}
+.points svg{width:48px}
+.points b{display:block;font:700 23px/1.2 "Baloo Da 2",sans-serif;margin-bottom:4px}
+.points span{font-size:17px;line-height:1.55;color:#d9f3e2}
+.float{animation:bob 4s ease-in-out infinite alternate}
+.fleet figure:nth-child(2) .float{animation-delay:-1.3s}.fleet figure:nth-child(3) .float{animation-delay:-2.6s}
+
+/* install */
+.board{background:var(--red);padding:clamp(80px,13vh,140px) clamp(18px,5vw,70px);text-align:center}
+.board h2{color:var(--yellow)}
+.board .lead{margin:0 auto 40px;max-width:600px;font-size:20px;color:#ffe3e3}
+.plate{display:inline-flex;align-items:center;gap:16px;max-width:100%;background:var(--white);color:var(--ink);border:4px solid var(--ink);border-radius:18px;padding:12px 12px 12px 22px;box-shadow:7px 8px 0 var(--ink);position:relative}
+.plate::before{content:"";position:absolute;inset:6px;border:2px dashed var(--red);border-radius:12px;pointer-events:none}
+.plate code{font:500 clamp(13px,1.45vw,18px)/1.4 "JetBrains Mono",monospace;white-space:nowrap;overflow-x:auto;text-align:left;position:relative}
+.plate .sign{position:relative;padding:11px 16px 9px;font-size:15px}
+.os{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
+.os span{font:700 17px/1 "Baloo Da 2",sans-serif;background:var(--white);color:var(--ink);border:3px solid var(--ink);border-radius:999px;padding:10px 16px 8px}
+
+footer{background:var(--ink);color:#e9e1d3;padding:30px clamp(18px,5vw,70px);display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:16px}
+footer .tile{width:36px;height:36px;border-width:2px;box-shadow:none}
+footer .tile svg{width:22px}
+footer .r{margin-left:auto;display:flex;gap:22px}
+footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--yellow)}
+
+@media (max-width:860px){
+  .copy p{font-size:19px}
+  .cloud{display:none}
+  .birds{display:none}
+  .land{max-height:none}
+  .sun{display:none}
+  .row{grid-template-columns:1fr;gap:6px}
+  .fleet{gap:12px}
+  .points{grid-template-columns:1fr;gap:24px}
+  .fleet figcaption{font-size:19px}
+  nav .hide{display:none}
+  .frame{width:84vw}
+}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{transform:translateX(calc(50cqw - 50%))}.birds{transform:translateX(55vw)}.strip{overflow-x:auto}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="lotus" viewBox="0 0 120 90">
+      <g stroke="#120e0b" stroke-width="4" stroke-linejoin="round">
+        <path d="M60 84 C30 84 14 70 6 56 C26 54 42 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C90 84 106 70 114 56 C94 54 78 62 60 84 Z" fill="#14874a"/>
+        <path d="M60 84 C40 70 30 52 34 30 C48 40 58 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C80 70 90 52 86 30 C72 40 62 58 60 84 Z" fill="#ef6aa6"/>
+        <path d="M60 84 C50 62 50 36 60 8 C70 36 70 62 60 84 Z" fill="#ff9cc8"/>
+      </g>
+      <g fill="#fffdf6"><circle cx="60" cy="44" r="3"/><circle cx="44" cy="52" r="2.4"/><circle cx="76" cy="52" r="2.4"/></g>
+    </symbol>
+</defs></svg>
+
+<header class="hero" id="top">
+  <svg class="cloud" style="left:38%;top:42px;width:140px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
+  <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
+  <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
+  <nav>
+    <a class="brand" href="#top"><span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
+    <span class="grow"></span>
+    <a class="sign alt hide" href="https://github.com/ashik112/majhi">GitHub</a>
+    <a class="sign" href="#install">Install</a>
+  </nav>
+  <div class="copy">
+    <h1 class="letter">You steer.<span>The agents row.</span></h1>
+    <p>A crew of AI coding agents for every client. They plan, build, review and ship. You decide where the boat goes.</p>
+    <div class="actions">
+      <a class="sign" href="#install">Get majhi</a>
+      <a class="sign alt" href="https://github.com/ashik112/majhi"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>Source</a>
+    </div>
+  </div>
+
+  <div class="land">
+    <svg class="landscape" viewBox="-1000 0 3440 440" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <image href="/assets/h-treeline.webp" x="-1000" y="14" width="500" height="111"/><image href="/assets/h-treeline.webp" x="-550" y="20" width="500" height="111"/><image href="/assets/h-treeline.webp" x="-100" y="14" width="500" height="111"/><image href="/assets/h-treeline.webp" x="350" y="20" width="500" height="111"/><image href="/assets/h-treeline.webp" x="800" y="14" width="500" height="111"/><image href="/assets/h-treeline.webp" x="1250" y="20" width="500" height="111"/><image href="/assets/h-treeline.webp" x="1700" y="14" width="500" height="111"/><image href="/assets/h-treeline.webp" x="2150" y="20" width="500" height="111"/>
+      <image href="/assets/h-bank-far.svg" x="-1000" y="97" width="3440" height="113"/>
+      <!-- the village, grouped on the far bank -->
+      <image href="/assets/h-palm.webp" x="-340" y="-46" width="186" height="250"/>
+      <image href="/assets/h-hut.webp" x="-220" y="96" width="114" height="106"/>
+      <image href="/assets/h-palm.webp" x="90" y="-40" width="179" height="240"/>
+      <image href="/assets/h-haystack.webp" x="770" y="122" width="101" height="80"/>
+      <image href="/assets/h-hut.webp" x="890" y="98" width="112" height="104"/>
+      <image href="/assets/h-palm.webp" x="1000" y="-64" width="201" height="270"/>
+      <image href="/assets/h-hut.webp" x="1200" y="64" width="151" height="140"/>
+      <image href="/assets/h-banana.webp" x="1340" y="28" width="181" height="175"/>
+      <image href="/assets/h-haystack.webp" x="1700" y="124" width="96" height="76"/>
+      <image href="/assets/h-palm.webp" x="1820" y="-46" width="186" height="250"/>
+      <!-- the river -->
+      <rect x="-1000" y="208" width="3440" height="180" fill="#132f8f"/>
+      <path d="M-1000 208 H2440" stroke="#120e0b" stroke-width="5"/>
+      <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round"><path d="M-970 247 q28 -18 56 0"/><path d="M-701 240 q28 -18 56 0"/><path d="M-454 247 q28 -18 56 0"/><path d="M-194 248 q28 -18 56 0"/><path d="M80 239 q28 -18 56 0"/><path d="M357 238 q28 -18 56 0"/><path d="M617 242 q28 -18 56 0"/><path d="M887 241 q28 -18 56 0"/><path d="M1111 249 q28 -18 56 0"/><path d="M1371 246 q28 -18 56 0"/><path d="M1641 245 q28 -18 56 0"/><path d="M1891 248 q28 -18 56 0"/><path d="M2110 241 q28 -18 56 0"/><path d="M2391 240 q28 -18 56 0"/><path d="M-951 295 q33 -22 66 0"/><path d="M-750 294 q33 -22 66 0"/><path d="M-451 285 q33 -22 66 0"/><path d="M-231 296 q33 -22 66 0"/><path d="M44 284 q33 -22 66 0"/><path d="M282 296 q33 -22 66 0"/><path d="M485 288 q33 -22 66 0"/><path d="M745 293 q33 -22 66 0"/><path d="M1037 290 q33 -22 66 0"/><path d="M1328 296 q33 -22 66 0"/><path d="M1582 290 q33 -22 66 0"/><path d="M1875 296 q33 -22 66 0"/><path d="M2148 291 q33 -22 66 0"/><path d="M2365 289 q33 -22 66 0"/><path d="M-996 332 q36 -24 72 0"/><path d="M-733 333 q36 -24 72 0"/><path d="M-500 340 q36 -24 72 0"/><path d="M-245 342 q36 -24 72 0"/><path d="M35 334 q36 -24 72 0"/><path d="M288 338 q36 -24 72 0"/><path d="M537 339 q36 -24 72 0"/><path d="M781 338 q36 -24 72 0"/><path d="M1055 336 q36 -24 72 0"/><path d="M1329 333 q36 -24 72 0"/><path d="M1572 340 q36 -24 72 0"/><path d="M1775 334 q36 -24 72 0"/><path d="M2052 340 q36 -24 72 0"/><path d="M2341 332 q36 -24 72 0"/></g>
+      <image href="/assets/h-lotus.webp" x="-520" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="20" y="258" width="160" height="128"/>
+      <image href="/assets/h-lotus.webp" x="1270" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="1880" y="260" width="150" height="120"/>
+      <image href="/assets/h-bank-near.svg" x="-1000" y="322" width="3440" height="124"/>
+    </svg>
+  <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
+    <g class="bob">
+      <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
+      <g class="stroke">
+        <g transform="translate(-72 -158) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <g transform="translate(40 -156) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <g transform="translate(154 -150) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+        <image href="/assets/fists.webp" x="-360" y="-380" width="720" height="411"/>
+      </g>
+    </g>
+  </svg>
+  </div>
+</header>
+
+<div class="trim" style="--below:var(--green)"></div>
+
+<section class="crew" id="crew">
+  <p>You say it in one sentence. A <span class="chip y">lead</span> plans it, <span class="chip c">builders</span> write it in their own containers, a <span class="chip p">reviewer</span> sends back what is not good enough, and you <span class="chip r">ship</span> it from one card.</p>
+</section>
+
+<div class="trim" style="--below:var(--yellow)"></div>
+
+<section class="ledger">
+  <div class="inner">
+    <h2 class="letter">It runs the desk</h2>
+    <div class="row"><h3>It sails through the night</h3><p>Turn on autonomous mode and the captain works your backlog like you would: it picks tasks by priority and due date, forms crews, ships finished work and leaves you a summary in the morning. <b>It stays inside the budget you set for each client.</b></p></div>
+    <div class="row"><h3>It does not sink</h3><p>Laptop asleep, Wi-Fi gone, a usage limit hit, a model refusing a request. Agents pause and pick up where they stopped, a blocked step goes to a teammate, and unshipped work is counted before anything can close.</p></div>
+    <div class="row"><h3>It ships, not just writes</h3><p>Merge, squash or rebase into any branch, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Several repos ship together or not at all. A conflict is one click.</p></div>
+    <div class="row"><h3>It only calls you when it matters</h3><p>One bell for approvals, questions and blocked work. You choose what needs your click, client by client, from careful to hands-off.</p></div>
+    <div class="row"><h3>It costs less every day</h3><p>Laya, a small open model running free on your machine, makes the hundreds of small calls. The big models only get the work that needs them, and every account's usage and cost is on screen.</p></div>
+    <div class="row"><h3>It learns your code</h3><p>Lasting facts from every task are kept per repo and brought back next time, so the crew stops relearning the same quirks.</p></div>
+  </div>
+</section>
+
+<div class="trim" style="--below:var(--cobalt)"></div>
+
+<section class="gallery" aria-label="Screens from majhi">
+  <div class="inner">
+    <h2 class="letter">Inside majhi</h2>
+  </div>
+  <div class="strip">
+    <div class="track">
+      <figure class="frame"><img src="/assets/board.webp" alt="The board with every client's tasks and each agent's state" loading="lazy"><figcaption>Every client on one board</figcaption></figure>
+      <figure class="frame"><img src="/assets/task-room.webp" alt="A task room with the plan, the crew and the branch" loading="lazy"><figcaption>Every task is a room</figcaption></figure>
+      <figure class="frame"><img src="/assets/onboarding.webp" alt="The first-run river journey" loading="lazy"><figcaption>A first run worth remembering</figcaption></figure>
+      <figure class="frame"><img src="/assets/health.webp" alt="Usage windows and cost for every AI account" loading="lazy"><figcaption>Every account's limits, live</figcaption></figure>
+      <figure class="frame"><img src="/assets/orgs.webp" alt="Workspaces, one per client" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
+      <figure class="frame"><img src="/assets/new-task.webp" alt="Starting a task in one sentence" loading="lazy"><figcaption>One sentence starts the work</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/board.webp" alt="" loading="lazy"><figcaption>Every client on one board</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/task-room.webp" alt="" loading="lazy"><figcaption>Every task is a room</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/onboarding.webp" alt="" loading="lazy"><figcaption>A first run worth remembering</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/health.webp" alt="" loading="lazy"><figcaption>Every account's limits, live</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/orgs.webp" alt="" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
+      <figure class="frame" aria-hidden="true"><img src="/assets/new-task.webp" alt="" loading="lazy"><figcaption>One sentence starts the work</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:var(--green)"></div>
+
+<section class="boats">
+  <div class="inner">
+    <h2 class="letter">One boat per client</h2>
+    <div class="fleet" aria-hidden="true">
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
+      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
+    </div>
+    <ul class="points">
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own accounts and logins</b><span>Each client's Claude and Codex accounts, git identity and tokens stay with that client.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own repos and secrets</b><span>Agents work in containers that see one task. They never see your SSH keys or another client's code.</span></div></li>
+      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own costs and memory</b><span>Spend, limits and what the crew has learned are counted and kept per client.</span></div></li>
+    </ul>
+  </div>
+</section>
+
+<div class="trim" style="--below:var(--red)"></div>
+
+<section class="board" id="install">
+  <h2 class="letter">Come aboard</h2>
+  <p class="lead">One command with Docker installed. A short river journey sets up your folders, AI accounts, clients and git logins.</p>
+  <div class="plate"><code>git clone https://github.com/ashik112/majhi.git &amp;&amp; cd majhi &amp;&amp; make up</code><button class="sign" type="button" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
+  <div class="os"><span>macOS</span><span>Linux</span><span>Windows (WSL2)</span><span>Claude Code</span><span>Codex</span></div>
+</section>
+
+<footer>
+  <span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
+  <span>majhi, মাঝি</span>
+  <div class="r"><a href="https://github.com/ashik112/majhi">Source</a><a href="https://github.com/ashik112">Commercial license</a></div>
+</footer>
+
+<script>
+for(const b of document.querySelectorAll("[data-copy]"))b.addEventListener("click",async()=>{
+  try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{b.textContent="Select and copy"}
+});
+</script>
+</body>
+</html>

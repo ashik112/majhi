@@ -186,7 +186,7 @@ for (const t of ["dark", "light"] as const) {
     const panel = page.getByRole("dialog", { name: "Needs you" });
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("ACM-219 needs approval: npm publish --tag latest");
-    await expect(panel).toContainText("claude-legacy needs you to sign in.");
+    await expect(panel).toContainText("Sign in claude-legacy: its agents cannot run until you do.");
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${SHOTS}/bell-${t}.png` });
   });
@@ -280,14 +280,15 @@ test("every sidebar item opens its page", async ({ page }) => {
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
 
-  // Captain opens its drawer; Workspaces open from the switcher.
+  // Captain opens its page, and the chat button beside it opens the drawer; Workspaces open from the switcher.
   await nav(page)
-    .getByRole("button", { name: /^Captain/ })
+    .getByRole("link", { name: /^Captain/ })
     .click();
-  await expect(nav(page).getByRole("button", { name: /^Captain/ })).toHaveAttribute("aria-pressed", "true");
-  await nav(page)
-    .getByRole("button", { name: /^Captain/ })
-    .click();
+  await expect(page).toHaveURL(/\/captain$/);
+  const chat = nav(page).getByRole("button", { name: "Open the captain chat" });
+  await chat.click();
+  await expect(chat).toHaveAttribute("aria-pressed", "true");
+  await chat.click();
   await switcher(page).click();
   await workspaces(page).getByRole("menuitem", { name: "Manage workspaces" }).click();
   await expect(page).toHaveURL(/\/orgs$/);
@@ -309,6 +310,6 @@ test("the bell opens and a row opens its task", async ({ page }) => {
 
   // An account row opens Accounts on that account.
   await bell.click();
-  await panel.getByRole("button", { name: /claude-legacy needs you to sign in/ }).click();
+  await panel.getByRole("button", { name: /Sign in claude-legacy/ }).click();
   await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
 });

@@ -12,14 +12,15 @@ afterEach(async () => {
 
 type Approval = Extract<RoomItem, { type: "approval" }>;
 
-/** A captain world with autonomous mode on; the captain calls from its autonomy chat. */
+/** A captain world with Acme set to Runs it and autonomous mode on; the captain calls from Acme's lane. */
 async function on() {
   w = await bossWorld({ real: false });
   const world = w;
   const { h } = w;
+  expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
-  const chat = h.majhi.services.autonomy.chat();
-  if (chat === undefined) throw new Error("no autonomy chat");
+  const chat = await h.majhi.services.autonomy.laneChat("acme");
+  if (chat === undefined) throw new Error("no lane for Acme");
   const boss = { task: chat, agent: "boss" };
   const call = (tool: string, args: Record<string, unknown>, caller = boss) =>
     h.majhi.services.admin.call(caller, tool, { reason: "the plan says so", ...args });
@@ -94,7 +95,7 @@ describe("autonomous mode deciding the cards that would wait", () => {
     expect(before.text).toBe("Left for the owner: Acme does not let autonomous mode push.");
     const turnedOn = await t.h.cmd("autonomy.configure", { orgs: { acme: { push: true } } });
     expect(turnedOn.status).toBe(200);
-    expect(turnedOn.body.settings.orgs.acme).toEqual({ push: true, merge: false });
+    expect(turnedOn.body.settings.orgs.acme).toEqual({ level: "runs", push: true, merge: false });
     await t.call("majhi_tasks_push", { id });
     const pushes = (await t.cards()).filter((c) => c.command === "tasks.push");
     expect(pushes.map((c) => c.autonomy?.decision)).toEqual(["left", "approved"]);
@@ -166,7 +167,7 @@ describe("autonomous mode's reach", () => {
     const card = (await t.cards()).find((c) => c.agent === "helper" && c.command === "orgs.update");
     expect(card?.autonomy?.decision).toBe("approved");
     expect((await t.call("majhi_autonomy_plan", { items: [] }, helper)).text).toBe(
-      "autonomy.plan is a tool of the captain in its autonomy chat.",
+      "autonomy.plan is a tool of the captain in its lanes.",
     );
   });
 
@@ -225,12 +226,15 @@ describe("the captain's own tools", () => {
       text: JSON.stringify({ queue: 1 }, null, 2),
       isError: false,
     });
-    expect((await t.h.cmd("autonomy.status")).body.queue).toEqual(plan.items);
+    // A lane's plan is its workspace's.
+    expect((await t.h.cmd("autonomy.status")).body.queue).toEqual(
+      plan.items.map((i) => ({ ...i, org: "acme" })),
+    );
     // An agent of an autonomous task, and the captain in another chat, get an error.
     const agent = await t.call("majhi_autonomy_plan", plan, { task: id, agent: "acme-builder" });
     expect(agent).toMatchObject({
       isError: true,
-      text: "autonomy.plan is a tool of the captain in its autonomy chat.",
+      text: "autonomy.plan is a tool of the captain in its lanes.",
     });
     const cmdJ = (await t.h.cmd("boss.chat")).body.id as string;
     expect((await t.call("majhi_autonomy_note", { text: "x" }, { task: cmdJ, agent: "boss" })).isError).toBe(
@@ -252,8 +256,9 @@ describe("the captain's own tools", () => {
 
     expect((await t.h.cmd("autonomy.pause")).body.mode).toBe("paused");
     expect((await t.call("majhi_autonomy_note", { text: "Paused, waiting" })).isError).toBe(false);
+    // Paused, Runs it acts as Keeps things tidy: the upkeep still answers questions in Acme.
     const answer = await t.call("majhi_autonomy_answer", { task: id, item: "ask:1", option: "a" });
-    expect(answer.text).toBe("Autonomous mode is paused, so nothing is answered until it is on.");
+    expect(answer.text).toBe(`There is no card ask:1 in ${id}.`);
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
     expect((await t.call("majhi_autonomy_plan", plan)).text).toBe("Autonomous mode is off.");
   });
@@ -307,6 +312,26 @@ describe("the captain's own tools", () => {
     });
     expect(
       (await t.call("majhi_autonomy_answer", { task: own, item: "ask:own", answers: { q1: "y" } })).text,
-    ).toContain("is not an autonomous task");
+    ).toBe(
+      "Refused: this lane works in Acme only, and the call is about Private. Each workspace has its own lane.",
+    );
+    // In a workspace set to Only when I ask, only autonomous tasks' cards are the captain's.
+    const mine = (
+      await t.h.cmd("tasks.create", {
+        text: "the owner's api task",
+        repos: [{ project: "acme-api" }],
+        start: false,
+      })
+    ).body.id as string;
+    room.post(mine as TaskId, "ask:mine", {
+      type: "ask",
+      agent: "acme-builder",
+      questions: [{ id: "q1", question: "Go?", options: [{ id: "y", label: "Yes" }], freeText: false }],
+      state: "pending",
+    });
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "ask" } } })).status).toBe(200);
+    expect(
+      (await t.call("majhi_autonomy_answer", { task: mine, item: "ask:mine", answers: { q1: "y" } })).text,
+    ).toContain("is not an autonomous task or a task of this lane's workspace");
   });
 });

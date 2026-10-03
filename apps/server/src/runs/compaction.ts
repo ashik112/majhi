@@ -12,6 +12,7 @@ import {
 import { buildCarry, type DurableDeps } from "./durable.ts";
 import { freshPrompt, HANDOFF_REQUEST, looksLikeNote } from "./handoff.ts";
 import type { RunLive } from "./live.ts";
+import type { NativeCompaction } from "./native.ts";
 import type { AgentRun, Carry, PauseReason } from "./run.ts";
 
 /** How long native compaction waits for the agent's next usage report. */
@@ -68,6 +69,24 @@ export class Compaction {
       );
       return undefined;
     }
+    run.selfCompacting = true;
+    try {
+      return await this.compactNow(run, why, budget);
+    } finally {
+      run.selfCompacting = false;
+      run.native.reset();
+    }
+  }
+
+  /**
+   * The CLI compacted on its own inside a turn (PRV-103). Recorded and shown like majhi's own, but
+   * it does not count toward `MAX_COMPACTIONS_PER_TURN`: that cap is for majhi's compactions.
+   */
+  auto(run: AgentRun, found: NativeCompaction): RoomItem {
+    return this.contextEvent(run, { method: "auto", before: found.before, after: found.after });
+  }
+
+  private async compactNow(run: AgentRun, why: CompactReason, budget: ContextBudget): Promise<RoomItem> {
     if (why !== "fresh") run.compactions++;
     const task = this.deps.store.tasks.get(run.task);
     if (task === undefined) throw new UserError(`Task ${run.task} does not exist.`, 404);
@@ -146,6 +165,7 @@ export class Compaction {
     run.carry = built.carry;
     run.turns = 0;
     run.usage = undefined;
+    run.native.reset();
     this.live.set(run, { usage: undefined, turns: 0, nowDoing: undefined });
     return built;
   }

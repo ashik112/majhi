@@ -77,9 +77,10 @@ export function tokenPageUrl(
   org: string,
 ): string | undefined {
   const name = encodeURIComponent(`majhi-${org}`);
-  if (kind === "github") return `https://github.com/settings/tokens/new?description=${name}&scopes=repo`;
+  if (kind === "github")
+    return `https://github.com/settings/tokens/new?description=${name}&scopes=repo,read:org,workflow`;
   if (kind === "gitlab")
-    return `https://${host}/-/user_settings/personal_access_tokens?name=${name}&scopes=api`;
+    return `https://${host}/-/user_settings/personal_access_tokens?name=${name}&scopes=api,read_user,write_repository`;
   if (kind === "bitbucket") return "https://id.atlassian.com/manage-profile/security/api-tokens";
   return undefined;
 }

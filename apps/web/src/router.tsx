@@ -132,6 +132,11 @@ const chatRoute = createRoute({
 const taskRoute = createRoute({ getParentRoute: () => rootRoute, path: "/t/$taskId", component: TaskScreen });
 
 // Pages load on demand, so the main chunk holds only the shell, the board and the room.
+const captainRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.captain,
+  component: lazyRouteComponent(() => import("@/pages/captain-page"), "CaptainPage"),
+});
 const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.agents,
@@ -240,6 +245,7 @@ export const router = createRouter({
     memoryRoute,
     automationsRoute,
     autonomousRoute,
+    captainRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

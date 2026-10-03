@@ -42,7 +42,6 @@ function setup(expiresAt: string) {
   const tokens = new GitTokens({
     orgs: async () => orgs,
     secrets: { get: async (k) => secrets.get(k), set: async (k, v) => void secrets.set(k, v) },
-    apps: async () => ({ gitlab: {} }),
     fetch: hosts.fetch,
     now: () => NOW,
   });

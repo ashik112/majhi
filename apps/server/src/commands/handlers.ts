@@ -19,6 +19,7 @@ import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
+import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
@@ -49,6 +50,7 @@ import { readGitMeta } from "../scan/gitMeta.ts";
 import { classifyHost } from "../scan/remote.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
+import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
@@ -61,6 +63,9 @@ const SSH_CALL_TIMEOUT_MS = 40_000;
 
 /** `gh auth token` is quick, but the helper may be busy. */
 const GIT_TOKEN_TIMEOUT_MS = 20_000;
+
+/** Writing the key file is quick: the helper answers before it restarts majhi. */
+const KEY_RESTORE_TIMEOUT_MS = 30_000;
 
 export interface CommandContext {
   command: CommandName;
@@ -150,6 +155,7 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
+    ...captainHandlers(services.captain),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
@@ -161,10 +167,22 @@ export function createHandlers({
       if (loaded.state.status !== "loaded") {
         return { roots: [], scannedAt: new Date().toISOString(), durationMs: 0 };
       }
-      return scanner.scan(
+      const scan = await scanner.scan(
         { config: loaded.state.config, projectPaths: loaded.projectPaths, hostHome: config.paths.hostHome },
         input.refresh === true,
       );
+      // A repo in a workspace's folder that is not a project yet wakes that workspace's projects chore (5.18).
+      const folders = new Set(
+        scan.roots.flatMap((r) =>
+          r.repos.filter((repo) => !repo.registered).map((repo) => repo.relPath.split("/")[0] ?? ""),
+        ),
+      );
+      const sections = await config.sections();
+      const orgs = ["private", ...Object.keys(sections.orgs)].filter(
+        (id) => folders.has(id) || folders.has((sections.orgs[id]?.name ?? "").toLowerCase()),
+      );
+      if (orgs.length > 0) services.captain.reposSeen(orgs);
+      return scan;
     },
 
     "workspaces.set": async (input, ctx) => {
@@ -712,6 +730,13 @@ export function createHandlers({
     },
     // The passphrase is used once to encrypt the export: not logged, kept or put in an error.
     "secrets.exportKey": (input) => services.keyExports.export(input.passphrase),
+    // The passphrase opens the export once. The key inside goes to the helper in this one job and
+    // nowhere else: neither is logged, kept, returned or put in an error.
+    "secrets.restoreKey": (input) =>
+      restoreKey(input, {
+        secrets: services.secrets,
+        writeKey: (key) => hostLink.call("secretsKey.restore", { key }, KEY_RESTORE_TIMEOUT_MS),
+      }),
     "history.list": (input) => config.historyEntries(input.limit),
     "history.undo": async (input, ctx) => {
       const done = await config.undo(input.commit, {

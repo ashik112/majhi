@@ -9,11 +9,18 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { KeyExportForm } from "./key-export-form";
+import { KeyRestoreForm } from "./key-restore-form";
 import { type CheckRow, checkTone, groupChecks, groupLevel, levelOf, openChecks } from "./model";
 
 interface FixResult {
   ok: boolean;
   detail: string;
+}
+
+/** A fix that needs a form only the owner fills in, like the key export's passphrase. */
+interface OpenForm {
+  id: string;
+  kind: "key-export" | "key-restore";
 }
 
 const LEVEL_TONE = { pass: "green", warn: "amber", fail: "red" } as const;
@@ -29,15 +36,14 @@ export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => voi
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string>();
   const [results, setResults] = useState<Record<string, FixResult>>({});
-  // The check whose fix needs a form only the owner fills in, like the key export's passphrase.
-  const [form, setForm] = useState<string>();
+  const [form, setForm] = useState<OpenForm>();
 
   async function runFix(row: CheckRow) {
     setBusy(row.id);
     try {
       const out = await fix.mutateAsync(row.id);
-      if (out.open?.kind === "key-export") {
-        setForm(row.id);
+      if (out.open?.kind === "key-export" || out.open?.kind === "key-restore") {
+        setForm({ id: row.id, kind: out.open.kind });
         return;
       }
       setResults((prev) => ({ ...prev, [row.id]: { ok: out.ok, detail: out.detail } }));
@@ -48,6 +54,24 @@ export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => voi
       setBusy(undefined);
     }
   }
+
+  // The check passes once the form is done and leaves this list, so the result goes to a toast.
+  const formOf = (kind: OpenForm["kind"]) =>
+    kind === "key-export" ? (
+      <KeyExportForm
+        onDone={(detail) => {
+          setForm(undefined);
+          toast("Secrets key exported", { detail });
+        }}
+      />
+    ) : (
+      <KeyRestoreForm
+        onDone={(detail) => {
+          setForm(undefined);
+          toast("Secrets key", { detail });
+        }}
+      />
+    );
 
   const rows = checks.data?.checks ?? [];
   const groups = groupChecks(rows);
@@ -60,17 +84,7 @@ export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => voi
       locked={busy !== undefined}
       result={results[row.id]}
       onFix={() => void runFix(row)}
-      form={
-        form === row.id ? (
-          <KeyExportForm
-            onDone={(detail) => {
-              setForm(undefined);
-              // The check passes now and leaves this list, so the result goes to a toast.
-              toast("Secrets key exported", { detail });
-            }}
-          />
-        ) : undefined
-      }
+      form={form?.id === row.id ? formOf(form.kind) : undefined}
     />
   );
 

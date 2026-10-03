@@ -1,5 +1,5 @@
 import { type RoomItem, RoomItemSchema, type RoomSearchHit, type TaskId } from "@majhi/shared";
-import { and, asc, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./db.ts";
 import { roomItems } from "./schema.ts";
@@ -176,12 +176,19 @@ export class RoomRepo {
     return new Set(rows.map((r) => r.task));
   }
 
-  /** The items behind `tasksWaitingOnOwner`, in every task, oldest first. One query. */
+  /**
+   * The items behind `tasksWaitingOnOwner`, in every task, oldest first, and the review cards the
+   * captain marked ready to ship (5.18), which the bell lists too. One query.
+   */
   waitingOnOwner(): RoomItem[] {
+    const shipReady = and(
+      eq(roomItems.type, "review"),
+      sql`json_extract(${roomItems.payload}, '$.ready') IS NOT NULL`,
+    );
     return this.db
       .select()
       .from(roomItems)
-      .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
+      .where(and(or(inArray(roomItems.type, OWNER_WAIT_TYPES), shipReady), PENDING))
       .orderBy(asc(roomItems.at))
       .all()
       .flatMap(readable);

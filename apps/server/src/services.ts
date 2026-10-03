@@ -31,6 +31,11 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { Lanes } from "./captain/lanes.ts";
+import { CaptainRepo } from "./captain/repo.ts";
+import { CaptainService } from "./captain/service.ts";
+import { captainWorld } from "./captain/world.ts";
+import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
@@ -85,6 +90,7 @@ import { RoomCoordinator } from "./rooms/coordinator.ts";
 import { IdleWatch } from "./rooms/idle-watch.ts";
 import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
+import { DEFAULT_IDENTITY } from "./runs/checkpoint.ts";
 import { processLaunch, repoMounts } from "./runs/launch.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
@@ -93,6 +99,7 @@ import { SERENA_COMMAND } from "./runs/serena.ts";
 import { signedIn } from "./runs/start-failure.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { classifyHost } from "./scan/remote.ts";
+import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -208,6 +215,12 @@ export interface Services {
   containers: ContainerService;
   /** Autonomous mode (PRV-74): the mode, its tasks, the run gate, spend, holds and the feed. */
   autonomy: AutonomyService;
+  /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
+  captain: CaptainService;
+  /** The captain's chat per workspace (5.18). */
+  lanes: Lanes;
+  /** The captain's chores run commands through the dispatcher, made after the services. */
+  bindCaptain(dispatch: Dispatch): void;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
   /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
@@ -275,6 +288,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     runtime,
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
+    onChanged: () => events.emit(["accounts"]),
   });
   const store = Store.open(env.majhiHome);
   const backup = new BackupService({
@@ -462,6 +476,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
     onLoopEnd: (task) => autonomy.loopEnded(task),
+    // Bound below: the captain's lanes are built after the task service.
+    accountFor: (task, agent) => lanes.accountFor(task, agent),
     rooms: roomAccess,
     processes,
     usage: usageRecorder,
@@ -491,6 +507,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       );
       return { status: account.status, resetsAt: full?.resetsAt ?? account.usage?.window?.resetsAt };
     },
+    markSignedOut: async (account, detail) => {
+      await accounts.markSignedOut(account, detail);
+    },
+    teamCanRun: async (task, agent) => {
+      const team = store.tasks.get(task)?.team ?? [];
+      for (const other of team) {
+        if (other === agent) continue;
+        if ((await accounts.signedOutAccountOf(other)) === undefined) return true;
+      }
+      return false;
+    },
+    onTurnFailed: (turn) => idleWatch.turnFailed(turn),
+    // Bound below: autonomous mode is built after the task service.
+    overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
@@ -606,7 +636,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode keeps its chat while the mode is not off.
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
-    onReview: (id) => pendingShips.reviewReached(id),
+    onReview: (id) => {
+      captain.reviewReached(id);
+      return pendingShips.reviewReached(id);
+    },
     onMerged: (merge) => e2e?.onMerged(merge),
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
@@ -645,6 +678,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         }),
   });
   room.onWrite((task, item) => notifier.observe(task, item));
+  room.onWrite((task, item) => captain.roomWrote(task, item));
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
   const chatSweep = setInterval(() => void chatMemory?.sweep().catch(() => undefined), CHAT_SWEEP_MS);
@@ -718,6 +752,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     config,
     decisions,
+    signedOut: (agent) => accounts.signedOutAccountOf(agent),
     waitsOnProcess: (task, agent) => processes.waiting(task).some((p) => p.agent === agent),
   });
   coordinator.sweepEmptyQuestions();
@@ -732,7 +767,28 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const scheduleRows = new ScheduleRepo(store.raw);
   const triggerRows = new TriggerRepo(store.raw);
+  const captainRepo = new CaptainRepo(store.raw);
+  const lanes = new Lanes({
+    repo: captainRepo,
+    store,
+    tasks,
+    config,
+    agents: agentStore,
+    now: () => options.runClock?.() ?? new Date(),
+    // Bound below: autonomous mode measures the spend.
+    rest: (org, account) => autonomy.laneRest(org, account),
+  });
   const autonomy = new AutonomyService({
+    lanes,
+    // Bound below: the captain holds the stop switch and the owner's presence.
+    captainStopped: () => {
+      try {
+        return captainRepo.state().stopped;
+      } catch {
+        return false;
+      }
+    },
+    ownerAt: (task) => captainRepo.ownerAt(task),
     store,
     config,
     tasks,
@@ -770,6 +826,51 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   );
   admin.useAutonomy(autonomy);
+  const cleanup = new CleanupService({ store, room, events, projects });
+  /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
+  let captainDispatch: Dispatch | undefined;
+  const captain = new CaptainService({
+    store,
+    config,
+    events,
+    autonomy,
+    lanes,
+    ports: captainWorld({
+      store,
+      accounts,
+      config,
+      tasks,
+      mrs,
+      room,
+      admin,
+      autonomy,
+      decisions,
+      memory,
+      curate: (fact) => curator.curate(fact),
+      scanner: new RepoScanner(),
+      cleanup,
+      idle: idleWatch,
+      runs,
+      lanes,
+      repo: captainRepo,
+      dispatch: () => captainDispatch,
+    }),
+    tell: (key, text) => notifier.captain(key, text),
+    cancelTurn: async (chat) => {
+      await tasks.cancel(chat, undefined);
+    },
+    identity: async (org) => (await config.sections()).orgs[org]?.identity ?? DEFAULT_IDENTITY,
+    ownerCommand: async (command, input, meta) => {
+      if (captainDispatch === undefined) throw new UserError("majhi's commands are not ready yet.", 409);
+      const result = await captainDispatch(command, input, JSON.stringify(meta));
+      if (!result.ok)
+        throw new UserError([result.error.error, ...(result.error.details ?? [])].join(". "), 409);
+    },
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  void captain
+    .boot()
+    .catch((err: unknown) => console.error(`Could not pick up the captain: ${errorMessage(err)}`));
   void autonomy
     .boot()
     .catch((err: unknown) => console.error(`Could not pick up autonomous mode: ${errorMessage(err)}`));
@@ -803,7 +904,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store,
     events,
     hostLink: options.hostLink,
-    origin: env.origin,
     hostHome: env.hostHome,
     tokens: gitTokens,
     fetch: options.gitFetch ?? fetch,
@@ -860,12 +960,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     gitConnect,
     cardActions: new CardActions({ tasks, mrs, room }),
     pendingShips,
-    cleanup: new CleanupService({ store, room, events, projects }),
+    cleanup,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     processes,
     containers,
     autonomy,
+    captain,
+    lanes,
+    bindCaptain: (dispatch) => {
+      captainDispatch = dispatch;
+    },
     automation,
     e2e,
     memory,
@@ -880,6 +985,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     close: async () => {
       resilience.stop();
       autonomy.close();
+      captain.close();
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);

@@ -31,6 +31,8 @@ export const CapUseSchema = z.object({
   percent: z.number().nonnegative(),
   /** At or over the cap: no new work starts in this scope today. */
   reached: z.boolean(),
+  /** In a daily summary: the cap moved during the day it covers, and `cap` is the last one. */
+  changed: z.literal(true).optional(),
 });
 export type CapUse = z.infer<typeof CapUseSchema>;
 
@@ -185,7 +187,10 @@ export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
 
 /** The daily summary: what autonomous mode shipped, what it spent, what it is unsure about. */
 export const AutonomySummarySchema = z.object({
-  /** The day it covers, `YYYY-MM-DD` in the settings' zone, and the span, UTC ISO. */
+  /**
+   * The day it covers, `YYYY-MM-DD` in the settings' zone: the day before the one it was made on.
+   * The span is that day, midnight to midnight, UTC ISO.
+   */
   day: z.string(),
   from: z.string(),
   to: z.string(),
@@ -213,6 +218,29 @@ export const AutonomySummarySchema = z.object({
 });
 export type AutonomySummary = z.infer<typeof AutonomySummarySchema>;
 
+/**
+ * One workspace set to "Runs it" (5.18): the captain's lane there, and what autonomous mode does in
+ * it today. The lane's chat holds only that workspace's matters.
+ */
+export const AutonomyLaneSchema = z.object({
+  org: z.string(),
+  name: z.string(),
+  /** The lane's chat. Absent until the captain is first woken there. */
+  chat: TaskIdSchema.optional(),
+  /** The captain is in a turn in this lane. */
+  working: z.boolean(),
+  nowDoing: z.string().optional(),
+  /** Today's spend in this workspace against its daily budget. */
+  spend: CapUseSchema,
+  /** Autonomous tasks of this workspace that are not done. */
+  tasks: z.number().int().nonnegative(),
+  /** Backlog tasks the rules let it take here. */
+  backlog: z.number().int().nonnegative(),
+  /** Why no new work starts here now: its budget, the day budget, hours, a freeze. */
+  resting: z.string().optional(),
+});
+export type AutonomyLane = z.infer<typeof AutonomyLaneSchema>;
+
 /** `autonomy.status`. */
 export const AutonomyStatusSchema = z.object({
   mode: AutonomyModeSchema,
@@ -220,7 +248,10 @@ export const AutonomyStatusSchema = z.object({
   since: z.string().optional(),
   by: z.enum(["owner", "majhi"]).optional(),
   why: z.string().optional(),
-  /** The captain and its autonomy chat. Absent: there is no captain, and turning on is refused. */
+  /**
+   * The captain, and the chat the page shows first: the first lane with a chat, else the autonomy
+   * chat from before lanes (readable, never woken). Absent: there is no captain, and turning on is refused.
+   */
   boss: z
     .object({
       id: IdSchema,
@@ -229,6 +260,8 @@ export const AutonomyStatusSchema = z.object({
       nowDoing: z.string().optional(),
     })
     .optional(),
+  /** Each workspace set to "Runs it", in the order of the workspaces. */
+  lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
   queue: z.array(QueueItemSchema),
@@ -291,6 +324,8 @@ export const AutonomyAnswerInputSchema = z
 export const AutonomyGuideInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),
   keep: z.boolean().default(false),
+  /** The workspace whose lane hears it. Default: the first workspace set to "Runs it". */
+  org: z.string().min(1).max(63).optional(),
 });
 export const AutonomyGuideResultSchema = z.object({
   /** The autonomy chat the message went to. */

@@ -3,18 +3,21 @@ import {
   type GitHost,
   type LoginOffer,
   type OrgView,
+  type SignOut,
   tokenPageUrl,
 } from "@majhi/shared";
 import { ExternalLink, RefreshCw } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DetailSection } from "@/components/ui/list-detail";
 import { Dot, type DotTone } from "@/components/ui/status-dot";
+import { GitSignInPanel, SignedOutNotice, SignOutButton } from "@/features/git-signin/panel";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
+import { useOnboardingStatus } from "@/lib/onboarding-queries";
 import {
   useDetectAgain,
   useDismissGitLogin,
@@ -55,12 +58,18 @@ function useAction() {
 /**
  * The org's git accounts, one row per host: how it pushes, whether its merge request token works,
  * and the commit identity, each with the one step that fixes it. Hosts the org's projects use with
- * no account yet show the logins found on this computer.
+ * no account yet show the logins found on this computer. On top, the same sign-in panel as the
+ * onboarding git step: "Sign in with" GitHub, GitLab or Bitbucket, or a pasted token.
  */
 export function GitAccounts({ org }: { org: OrgView }) {
   const status = useGitStatus(org.id);
   const detect = useDetectAgain(org.id);
   const now = useNow(30_000);
+  const journey = useOnboardingStatus();
+  const workspaces = journey.data?.workspaces;
+  const names = useMemo(() => new Map((workspaces ?? []).map((w) => [w.id, w.name])), [workspaces]);
+  const git = workspaces?.find((w) => w.id === org.id)?.git ?? [];
+  const [signedOut, setSignedOut] = useState<SignOut>();
   const data = status.data;
   const checked = data?.checkedAt;
   const rows = (data?.accounts.length ?? 0) + (data?.missing.length ?? 0);
@@ -85,6 +94,8 @@ export function GitAccounts({ org }: { org: OrgView }) {
         </>
       }
     >
+      <GitSignInPanel workspace={{ id: org.id, name: org.name }} git={git} names={names} showSigned={false} />
+      {signedOut && <SignedOutNotice result={signedOut} />}
       {status.isPending ? (
         <p className="m-0 text-sm text-fg-faint">Looking at this computer's keys and logins.</p>
       ) : data === undefined ? (
@@ -105,12 +116,13 @@ export function GitAccounts({ org }: { org: OrgView }) {
           )}
           {rows === 0 ? (
             <p className="m-0 text-sm text-fg-faint">
-              No git hosts yet. Register a project of {org.name} and the hosts of its remotes show here.
+              No git accounts yet. Sign in above, or register a project of {org.name} and the hosts of its
+              remotes show here.
             </p>
           ) : (
             <ul aria-label={`Git accounts of ${org.name}`} className="m-0 flex list-none flex-col p-0">
               {data.accounts.map((a) => (
-                <AccountRow key={`${a.host}/${a.account}`} org={org} status={a} />
+                <AccountRow key={`${a.host}/${a.account}`} org={org} status={a} onSignedOut={setSignedOut} />
               ))}
               {data.missing.map((m) => (
                 <MissingRow key={m.host} org={org} host={m.host} kind={m.kind} offers={m.offers} />
@@ -141,21 +153,35 @@ function RowHead({ kind, children, actions }: { kind: GitHost; children: ReactNo
   );
 }
 
-function AccountRow({ org, status }: { org: OrgView; status: GitAccountStatus }) {
+function AccountRow({
+  org,
+  status,
+  onSignedOut,
+}: {
+  org: OrgView;
+  status: GitAccountStatus;
+  onSignedOut: (result: SignOut) => void;
+}) {
   const { remove } = useSetGitAccount();
+  const kind = status.kind === "other" ? undefined : status.kind;
   return (
     <li className={ROW}>
       <RowHead
         kind={status.kind}
         actions={
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={remove.isPending}
-            onClick={() => remove.mutate({ id: org.id, host: status.host, account: status.account })}
-          >
-            Remove
-          </Button>
+          <>
+            {kind !== undefined && status.token.state !== "missing" && (
+              <SignOutButton org={org.id} kind={kind} host={status.host} onSignedOut={onSignedOut} />
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate({ id: org.id, host: status.host, account: status.account })}
+            >
+              Remove
+            </Button>
+          </>
         }
       >
         <span className="truncate font-mono text-fg">{status.account}</span>

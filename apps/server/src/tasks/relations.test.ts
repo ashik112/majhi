@@ -104,7 +104,9 @@ describe("childrenWaitOnParent", () => {
 
   it("is true when every open child waits for the parent alone", () => {
     expect(childrenWaitOnParent("A-1", [waiting("A-1")])).toBe(true);
-    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }, waiting("A-1"), waiting("A-1")])).toBe(true);
+    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }, waiting("A-1"), waiting("A-1")])).toBe(
+      true,
+    );
   });
 
   it("is false with no open child, or one that runs, is in review or waits for something else", () => {

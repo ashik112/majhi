@@ -67,7 +67,12 @@ export function attentionOf(item: RoomItem, who: string): Attention | undefined 
         ? { kind: "question", text: `@${item.agent} in ${who} is asking you something` }
         : undefined;
     case "review":
-      return item.state === "pending" ? { kind: "review", text: `${who} is ready for review` } : undefined;
+      return item.state === "pending"
+        ? {
+            kind: "review",
+            text: item.ready === undefined ? `${who} is ready for review` : `${who} is ready to ship`,
+          }
+        : undefined;
     case "paused": {
       const text = PAUSE_TEXT[item.reason];
       return item.state === "pending" && text !== undefined

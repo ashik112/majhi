@@ -53,8 +53,8 @@ test("the sidebar links to every page, and the old addresses land on the new one
 
 test("the banner shows what needs the owner, and the sidebar counts it", async ({ page }) => {
   await page.goto("/");
-  const banner = page.getByRole("status").filter({ hasText: "needs you to sign in" });
-  await expect(banner).toContainText("claude-legacy needs you to sign in.");
+  const banner = page.getByRole("status").filter({ hasText: "Sign in claude-legacy" });
+  await expect(banner).toContainText("Sign in claude-legacy: its agents cannot run until you do.");
   await banner.getByRole("button", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
   await expect(page.getByRole("region", { name: "Account details" })).toContainText("claude-legacy");

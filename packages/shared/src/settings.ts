@@ -366,8 +366,42 @@ export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;
  * per org, when the daily summary is made, and the owner's standing instructions. Whether it is on
  * is runtime state (`autonomy.status`), not config. Only the owner changes this section.
  */
+/**
+ * How much the captain does in a workspace (SPEC 5.18): `ask` answers only when the owner talks to it,
+ * `tidy` also does the upkeep chores and asks before shipping, `runs` also picks, runs and ships tasks
+ * within the workspace's daily budget while autonomous mode is on. Absent: `tidy` for Private, `ask`
+ * for every other workspace.
+ */
+export const CaptainLevelSchema = z.enum(["ask", "tidy", "runs"]);
+export type CaptainLevel = z.infer<typeof CaptainLevelSchema>;
+
+const DaySchema = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Use a date like 2026-12-24");
+/** Days the captain does nothing on its own in the workspace, `from` to `to` inclusive, in its zone. */
+export const FreezeSchema = z
+  .strictObject({ from: DaySchema, to: DaySchema })
+  .refine((f) => f.from <= f.to, { message: "The freeze ends before it starts" });
+export type Freeze = z.infer<typeof FreezeSchema>;
+/** The captain acts on its own only between `from` and `to` (24 h clock, may run over midnight). */
+export const WorkHoursSchema = z
+  .strictObject({ from: ClockSchema, to: ClockSchema })
+  .refine((h) => h.from !== h.to, { message: "Working hours need a start and an end" });
+export type WorkHours = z.infer<typeof WorkHoursSchema>;
+/** A branch name the captain may ship to, like main or develop. */
+const ShipBranchSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._/-]{1,200}$/, "Use a branch name like main")
+  .refine((b) => !b.startsWith("-") && !b.includes(".."), "Use a branch name like main");
+/** An AI tool id from the tool registry (claude, codex). Checked against the registry when saved. */
+const ProviderIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+const ACCOUNT_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
 export const AutonomyOrgSchema = z.strictObject({
-  /** This org's cap per day. Absent: only the overall `day` cap holds it. */
+  /** How much the captain does here. */
+  level: CaptainLevelSchema.optional(),
+  /** This org's cap per day (the daily budget next to "Runs it"). Absent: only the overall `day` cap holds it. */
   cap: BudgetSchema.optional(),
   /** May push this org's task branches and open MRs. Off by default. */
   push: z.boolean().default(false),
@@ -376,6 +410,18 @@ export const AutonomyOrgSchema = z.strictObject({
    * `merge` policy is not `never`. Off by default.
    */
   merge: z.boolean().default(false),
+  /** "More rules": when the captain may act on its own, in `tz`. Absent: any time. */
+  hours: WorkHoursSchema.optional(),
+  /** "More rules": days it does nothing on its own. */
+  freeze: z.array(FreezeSchema).max(50).optional(),
+  /** "More rules": the workspace's time zone for hours, freezes and its day. Absent: autonomous mode's. */
+  tz: z.string().trim().min(1).max(64).optional(),
+  /** "More rules": the base branches it ships to. Absent: each project's own base. */
+  branches: z.array(ShipBranchSchema).min(1).max(20).optional(),
+  /** "More rules": the AI tools its lane and the work it starts may use. Absent: every tool. */
+  providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
+  /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
+  account: z.string().regex(ACCOUNT_ID).optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
 
@@ -398,10 +444,16 @@ const PercentLeftSchema = z.number().int().min(0).max(100);
 export const TaskSizeLimitSchema = z.enum(["small", "medium", "any"]);
 export type TaskSizeLimit = z.infer<typeof TaskSizeLimitSchema>;
 
-/** What autonomous mode may pick: the task sizes, and the orgs it works in. Tasks marked `noAutonomy` are left alone too. */
+/**
+ * What autonomous mode may pick: the task sizes. Tasks marked `noAutonomy` are left alone, and it
+ * works only in workspaces set to "Runs it" (`orgs.<org>.level`).
+ */
 export const AutonomyPickSchema = z.strictObject({
   size: TaskSizeLimitSchema.default("any"),
-  /** The orgs it may work in, `private` for tasks with no org. Absent: every org. */
+  /**
+   * Before Phase 13: the orgs it could work in. Read once at start, when majhi moves the listed orgs
+   * to "Runs it" and removes this list. Nothing else reads it.
+   */
   orgs: z.array(BudgetIdSchema).max(100).optional(),
 });
 export type AutonomyPick = z.infer<typeof AutonomyPickSchema>;
@@ -429,6 +481,25 @@ export const AutonomySettingsSchema = z.strictObject({
   pick: autonomyFields.pick.default({ size: "any" }),
 });
 export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
+/**
+ * One workspace's change in `autonomy.configure`: only what changes, `null` removes a field (back to
+ * its default). The choice, the budget and "More rules" all change here.
+ */
+export const AutonomyOrgPatchSchema = z
+  .strictObject({
+    level: CaptainLevelSchema.nullable(),
+    cap: BudgetSchema.nullable(),
+    push: z.boolean(),
+    merge: z.boolean(),
+    hours: WorkHoursSchema.nullable(),
+    freeze: z.array(FreezeSchema).max(50).nullable(),
+    tz: z.string().trim().min(1).max(64).nullable(),
+    branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
+    providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
+    account: z.string().regex(ACCOUNT_ID).nullable(),
+  })
+  .partial();
+export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;
 /** What majhi.yaml may hold and what majhi writes. */
 export const AutonomyFilePatchSchema = z.strictObject(autonomyFields).partial();
 /**
@@ -439,20 +510,11 @@ export const AutonomyFilePatchSchema = z.strictObject(autonomyFields).partial();
 export const AutonomyPatchSchema = z
   .strictObject({
     day: BudgetSchema,
-    orgs: z.record(
-      BudgetIdSchema,
-      z
-        .strictObject({ cap: BudgetSchema.nullable(), push: z.boolean(), merge: z.boolean() })
-        .partial()
-        .nullable(),
-    ),
+    orgs: z.record(BudgetIdSchema, AutonomyOrgPatchSchema.nullable()),
     floors: z.strictObject({ window: PercentLeftSchema, weekly: PercentLeftSchema }).partial(),
     summary_at: ClockSchema,
     tz: autonomyFields.tz,
-    /** `orgs: null` lets it work in every org again. */
-    pick: z
-      .strictObject({ size: TaskSizeLimitSchema, orgs: z.array(BudgetIdSchema).max(100).nullable() })
-      .partial(),
+    pick: z.strictObject({ size: TaskSizeLimitSchema }).partial(),
   })
   .partial();
 export type AutonomyPatch = z.infer<typeof AutonomyPatchSchema>;

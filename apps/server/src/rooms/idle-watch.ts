@@ -63,13 +63,41 @@ export function lastLine(text: string, max = 200): string {
 }
 
 /**
- * The note that wakes the lead when a teammate ended its turn and nobody took over. `refused`: the
- * model's safeguards stopped the teammate, so its step needs someone else or other words.
+ * How a turn ended: by itself, stopped by the model's safeguards, failed with an error, or failed
+ * because the agent's account needs a new sign-in.
  */
-export function leadNote(task: string, finished: string, text: string, refused = false): string {
+export type TurnEnding = "finished" | "refused" | "failed" | "signed-out";
+
+/**
+ * The note that wakes the lead when a teammate ended its turn and nobody took over. `refused`: the
+ * model's safeguards stopped the teammate, so its step needs someone else or other words. `failed`:
+ * its turn failed. `signed-out`: its account needs a new sign-in, so its step needs someone else.
+ */
+export function leadNote(
+  task: string,
+  finished: string,
+  text: string,
+  ending: TurnEnding | boolean = "finished",
+  account?: string,
+): string {
+  const how: TurnEnding = ending === true ? "refused" : ending === false ? "finished" : ending;
   const quote = lastLine(text);
   const last = quote === "" ? "." : `. Its last line: "${quote}"`;
-  if (refused) {
+  if (how === "signed-out") {
+    return [
+      `@${finished} cannot run: its account ${account ?? "its account"} needs a new sign-in, so the step you gave it did not start. Nobody is working on ${task} now.`,
+      "Nothing else is pending: no handoff, no question to the owner, no background process.",
+      `Give its step to a teammate whose account works (the majhi-room mention tool, or "@name: please ..."). Do not hand anything to @${finished} until the owner signs it in again.`,
+    ].join("\n");
+  }
+  if (how === "failed") {
+    return [
+      `@${finished}'s turn failed with an error: "${quote === "" ? "unknown error" : quote}". Nobody is working on ${task} now.`,
+      "Nothing else is pending: no handoff, no question to the owner, no background process.",
+      'Hand its step back to it if the error looks passing, give it to another teammate (the majhi-room mention tool, or "@name: please ..."), or say what it waits for.',
+    ].join("\n");
+  }
+  if (how === "refused") {
     return [
       `@${finished} was blocked by its model's safeguards and stopped. Nobody is working on ${task} now${last}`,
       "Nothing else is pending: no handoff, no question to the owner, no background process.",
@@ -84,12 +112,45 @@ export function leadNote(task: string, finished: string, text: string, refused =
 }
 
 /** The line the owner sees when the lead itself ended and nobody else is left to wake. */
-export function ownerLine(task: string, lead: string, text: string, refused = false): string {
-  if (refused) {
+export function ownerLine(
+  task: string,
+  lead: string,
+  text: string,
+  ending: TurnEnding | boolean = "finished",
+): string {
+  const how: TurnEnding = ending === true ? "refused" : ending === false ? "finished" : ending;
+  const quote = lastLine(text);
+  if (how === "refused") {
     return `@${lead} was blocked by its model's safeguards and nobody is working on ${task}. Rephrase the step, change its model, or give the step to another agent.`;
   }
-  const quote = lastLine(text);
+  if (how === "failed" || how === "signed-out") {
+    return `Nobody is working on ${task}: @${lead}'s last turn failed${quote === "" ? "" : ` with "${quote}"`}. Resume the task to try again, or give the step to another agent.`;
+  }
   return `Nobody is working on ${task} and nothing is pending. @${lead}'s last message: ${quote === "" ? "(empty)" : `"${quote}"`}`;
+}
+
+/**
+ * The owner's line when the lead ended its turn after a teammate's turn failed and nobody picked the
+ * step up: names the failure, not "nothing is pending".
+ */
+export function failedTeammateLine(task: string, lead: string, failed: Failure): string {
+  const quote = lastLine(failed.text);
+  const cause =
+    failed.ending === "signed-out"
+      ? `@${failed.agent} cannot run: its account ${failed.account ?? ""} needs a new sign-in`.replace(
+          / {2,}/g,
+          " ",
+        )
+      : `@${failed.agent}'s last turn failed${quote === "" ? "" : ` with "${quote}"`}`;
+  return `Nobody is working on ${task}: ${cause}, and @${lead} handed its step to nobody else. Give the step to another agent, or sign the account in and resume.`;
+}
+
+/** A teammate's turn that failed, until someone works again. */
+interface Failure {
+  agent: string;
+  text: string;
+  ending: "failed" | "signed-out";
+  account?: string | undefined;
 }
 
 export interface IdleWatchDeps {
@@ -112,7 +173,12 @@ export interface IdleWatchDeps {
  * the next turn that ends arms this again.
  */
 export class IdleWatch {
-  private readonly last = new Map<string, { agent: string; text: string; refused: boolean; turn: number }>();
+  private readonly last = new Map<
+    string,
+    { agent: string; text: string; ending: TurnEnding; account?: string | undefined; turn: number }
+  >();
+  /** Per task, the last teammate turn that failed and that the lead was told of, until a turn ends well. */
+  private readonly failed = new Map<string, Failure>();
   /** The turn each task's quiet period was handled for. */
   private readonly handled = new Map<string, number>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -126,9 +192,33 @@ export class IdleWatch {
     this.last.set(turn.task, {
       agent: turn.agent,
       text: turn.text,
-      refused: turn.refused === true,
+      ending: turn.refused === true ? "refused" : "finished",
       turn: this.turns,
     });
+    // The failed teammate works again: its failure is over.
+    if (this.failed.get(turn.task)?.agent === turn.agent) this.failed.delete(turn.task);
+  }
+
+  /**
+   * An agent's turn failed and nothing is queued after it: `signed-out` when its account needs a new
+   * sign-in, `error` otherwise. Looked at in a moment, like a turn that ended.
+   */
+  turnFailed(turn: {
+    task: string;
+    agent: string;
+    text: string;
+    cause: "signed-out" | "error";
+    account?: string | undefined;
+  }): void {
+    this.turns += 1;
+    this.last.set(turn.task, {
+      agent: turn.agent,
+      text: turn.text,
+      ending: turn.cause === "signed-out" ? "signed-out" : "failed",
+      account: turn.account,
+      turn: this.turns,
+    });
+    this.idle(turn.task);
   }
 
   /** An agent of the task has nothing queued: look at the room in a moment. */
@@ -152,19 +242,67 @@ export class IdleWatch {
     if (task === undefined || task.status !== "running" || isBossChat(task)) {
       this.last.delete(id);
       this.handled.delete(id);
+      this.failed.delete(id);
       return;
     }
     if (last === undefined || this.handled.get(id) === last.turn) return;
     const lead = task.team[0];
-    if (lead === undefined || !stalled(this.facts(task, runs.working(id).length))) return;
+    if (lead === undefined) return;
+    // A teammate that cannot sign in can do nothing more: the lead hears it now, busy or not, once.
+    const signedOut = last.ending === "signed-out" && last.agent !== lead;
+    if (!signedOut && !stalled(this.facts(task, runs.working(id).length))) return;
     this.handled.set(id, last.turn);
     if (last.agent !== lead) {
-      const what = last.refused ? "was blocked by its model's safeguards" : "finished";
-      this.say(task.id, `Nobody was working on ${task.id} after @${last.agent} ${what}. Woke @${lead}.`);
-      runs.notify(task.id, lead, leadNote(task.id, last.agent, last.text, last.refused));
+      if (last.ending === "failed" || last.ending === "signed-out") {
+        this.failed.set(id, {
+          agent: last.agent,
+          text: last.text,
+          ending: last.ending,
+          account: last.account,
+        });
+      }
+      const what =
+        last.ending === "refused"
+          ? "was blocked by its model's safeguards"
+          : last.ending === "signed-out"
+            ? `could not run (its account ${last.account ?? ""} needs a new sign-in)`.replace(/ {2,}/g, " ")
+            : last.ending === "failed"
+              ? "failed"
+              : "finished";
+      const woke = signedOut
+        ? `@${last.agent} ${what}. Woke @${lead} to give its step to a teammate.`
+        : `Nobody was working on ${task.id} after @${last.agent} ${what}. Woke @${lead}.`;
+      this.say(task.id, woke);
+      runs.notify(task.id, lead, leadNote(task.id, last.agent, last.text, last.ending, last.account));
       return;
     }
-    await this.deps.pauseForOwner(task.id, ownerLine(task.id, lead, last.text, last.refused));
+    // The lead ended too. A teammate's failure it was told of and left is the cause, not "nothing".
+    const failed = last.ending === "finished" ? this.failed.get(id) : undefined;
+    this.failed.delete(id);
+    await this.deps.pauseForOwner(
+      task.id,
+      failed === undefined
+        ? ownerLine(task.id, lead, last.text, last.ending)
+        : failedTeammateLine(task.id, lead, failed),
+    );
+  }
+
+  /** The teammate whose turn failed on its account's sign-in, while the task still waits on its step. */
+  failedSignIn(task: string): { agent: string; account: string } | undefined {
+    const f = this.failed.get(task);
+    return f?.ending === "signed-out" && f.account !== undefined
+      ? { agent: f.agent, account: f.account }
+      : undefined;
+  }
+
+  /**
+   * Whether a running task is quiet right now: nobody works, no owner card waits, no background
+   * process is waited on and no subtask moves. The captain's stuck-task chore (5.18) reads it.
+   */
+  quiet(id: string): boolean {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status !== "running" || isBossChat(task)) return false;
+    return stalled(this.facts(task, this.deps.runs.working(id).length));
   }
 
   stop(): void {

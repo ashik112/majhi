@@ -3,6 +3,7 @@
  * fake-agent.ts so the CLI parts stay small. Erasable TypeScript only.
  */
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -107,6 +108,8 @@ export interface ServeOptions {
   loadSession: boolean;
   images: boolean;
   signedIn: () => boolean;
+  /** Every prompt fails on auth, after the CLI's own error line. */
+  expired: boolean;
   /** Tokens each turn adds to the session's reported usage. 0: the fixed readings 1k, 20k, 42k. */
   risingUsage: number;
   /** `/compact` answers but does not lower usage. */
@@ -413,7 +416,8 @@ export function serveAcp(o: ServeOptions): void {
           ],
         });
 
-      const wanted = /\bcreate\s+(\S+)/.exec(text)?.[1] ?? "HEALTH.md";
+      // A file name has an extension; the captain's own instructions say "create or split".
+      const wanted = /\bcreate\s+(\S+\.\w+)/.exec(text)?.[1] ?? "HEALTH.md";
       const target = resolve(s.cwd, wanted);
       const inside = !relative(s.cwd, target).startsWith("..") && !isAbsolute(relative(s.cwd, target));
       let reply = "";
@@ -599,6 +603,19 @@ export function serveAcp(o: ServeOptions): void {
       prompt: async (params) => {
         const s = sessions.get(params.sessionId);
         if (!s) throw RequestError.invalidParams(undefined, "Unknown session");
+        if (o.expired) {
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: {
+              type: "text",
+              text:
+                o.tool === "claude"
+                  ? "Failed to authenticate: OAuth session expired and could not be refreshed"
+                  : "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.",
+            },
+          });
+          throw RequestError.authRequired();
+        }
         const text = params.prompt.map((b) => (b.type === "text" ? b.text : `[${b.type}]`)).join("\n");
         const images = params.prompt.filter((b) => b.type === "image").length;
         s.cancel = new AbortController();
@@ -626,6 +643,50 @@ export function serveAcp(o: ServeOptions): void {
           stopReason = "end_turn";
         } else if (text.includes("Reply with a handoff note")) {
           agentText = FAKE_NOTE;
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (text.includes("self-compact:") || text.includes("usage-drop:")) {
+          // The CLI compacts on its own inside the turn: usage climbs to 160k, then falls to 40k.
+          // `self-compact:` reports it like the adapters do (a "Compact conversation" tool call,
+          // with Claude's facts); `usage-drop:` only shows it in the usage readings.
+          const usage = (used: number) =>
+            update(params.sessionId, { sessionUpdate: "usage_update", used, size: USAGE_SIZE });
+          await usage(160_000);
+          if (text.includes("self-compact:")) {
+            const id = `compact-${randomUUID()}`;
+            const claude = o.tool === "claude";
+            const meta = claude ? { _meta: { claudeCode: { toolName: "compact" } } } : {};
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call",
+              toolCallId: id,
+              title: "Compact conversation",
+              kind: "think",
+              status: "in_progress",
+              ...meta,
+            });
+            await update(params.sessionId, {
+              sessionUpdate: "tool_call_update",
+              toolCallId: id,
+              status: "completed",
+              ...(claude ? {} : { title: "Compact conversation" }),
+              ...meta,
+            });
+            if (claude) {
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call_update",
+                toolCallId: id,
+                // Counted at the API, so not quite the readings: tests tell the two paths apart by them.
+                rawOutput: { trigger: "automatic", preTokens: 162_000, postTokens: 38_000 },
+                ...meta,
+              });
+            }
+          }
+          s.used = 40_000;
+          await usage(s.used);
+          agentText = "Done, after compacting on my own.";
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: agentText },

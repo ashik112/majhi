@@ -75,7 +75,7 @@ describe("overlap", () => {
     expect(out[0]).toMatchObject({ task: "ACM-1", level: "heavy" });
   });
 
-  it("names the files, not \".\", when the overlap sits in the repo root", () => {
+  it('names the files, not ".", when the overlap sits in the repo root', () => {
     const o = overlapWith(["package.json", "apps/web/src/page.ts"], ["package.json", "README.md"]);
     expect(o.modules).toContain(".");
     expect(describeOverlap(o)).toBe("package.json");
