@@ -117,8 +117,7 @@ export function createKeyBackup(deps: KeyBackupDeps): KeyBackup {
     },
     save: async (expected) => {
       const keyring = await check();
-      if (keyring.kind === "none")
-        throw new Error(`No keyring is running on this computer: ${keyring.reason}`);
+      if (keyring.kind === "none") throw new Error(`${keyring.reason} The copy was not saved.`);
       const key = await fileKey();
       if (key === undefined) throw new Error(`There is no secrets key at ${deps.keyFile}.`);
       if (keyFingerprint(key) !== expected) {

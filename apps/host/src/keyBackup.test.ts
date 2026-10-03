@@ -133,7 +133,7 @@ describe("secrets key backup in a Linux keyring", () => {
     expect(backup.status()).toBeUndefined();
     expect(backup.keyring()).toEqual({ kind: "none", reason: "The keyring is locked." });
     await expect(backup.save(keyFingerprint(KEY))).rejects.toThrow(
-      "No keyring is running on this computer: The keyring is locked.",
+      "The keyring is locked. The copy was not saved.",
     );
     expect(await backup.read()).toBeUndefined();
     // Only the D-Bus probe ran: secret-tool on a locked keyring would pop an unlock prompt.
