@@ -84,6 +84,7 @@ import {
 } from "./containers.ts";
 import {
   DecideRequestSchema,
+  DecisionCacheStatsSchema,
   DecisionPatchSchema,
   DecisionRecordSchema,
   DecisionResultSchema,
@@ -2290,12 +2291,14 @@ export const commands = {
   },
   "decisions.status": {
     risk: "read",
-    summary: "The provider order and whether each provider can answer now, with Laya's install state",
+    summary:
+      "The provider order and whether each provider can answer now, with Laya's install state and the answer cache's hit rate",
     input: Empty,
     output: z.object({
       settings: DecisionSettingsSchema,
       laya: LayaStatusSchema,
       providers: z.array(z.object({ id: ProviderIdSchema, available: z.boolean(), detail: z.string() })),
+      cache: DecisionCacheStatsSchema,
     }),
   },
   "decisions.set": {

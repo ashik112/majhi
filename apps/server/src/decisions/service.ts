@@ -25,6 +25,7 @@ import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
+import { cacheKey, DecisionCache } from "./cache.ts";
 import { CircuitBreaker, runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
 import type { LayaProvider } from "./layaProvider.ts";
@@ -69,6 +70,8 @@ export class DecisionService implements Decisions {
   private readonly jev: JevProvider;
   /** Skips a provider that keeps failing, for a while, so a down Laya costs one slow call and not many. */
   readonly breaker = new CircuitBreaker();
+  /** Laya answers the same request the same way, so a repeat is answered from here. */
+  readonly cache = new DecisionCache();
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -93,13 +96,32 @@ export class DecisionService implements Decisions {
     const settings = await this.settings();
     // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
     const order = settings.order.includes("rules") ? settings.order : [...settings.order, "rules" as const];
+    const key = cacheKey(request, {
+      model: `${order.join(",")}|${this.deps.laya.currentVersion()}`,
+      calibration: "0",
+    });
+    const gated = (answers: Record<string, Answer>, provider: ProviderId) =>
+      Object.fromEntries(
+        Object.entries(answers).map(([name, a]) => {
+          const q = request.questions[name];
+          return [name, q === undefined ? a : { ...a, gate: gate(q, a, provider, settings) }];
+        }),
+      );
+    const seen = order[0] === "laya" ? this.cache.get(key) : undefined;
+    if (seen !== undefined) {
+      return {
+        id: seen.id,
+        answers: gated(seen.answers, "laya"),
+        provider: "laya",
+        skipped: [],
+        trimmed: seen.trimmed,
+        estimated: false,
+        durationMs: Math.round(performance.now() - started),
+        cached: true,
+      };
+    }
     const chain = await runChain(order, this.providers(), request, { breaker: this.breaker });
-    const answers = Object.fromEntries(
-      Object.entries(chain.answers).map(([key, a]) => {
-        const q = request.questions[key];
-        return [key, q === undefined ? a : { ...a, gate: gate(q, a, chain.provider, settings) }];
-      }),
-    );
+    const answers = gated(chain.answers, chain.provider);
     const { sent, version, ...rest } = chain;
     const result: DecisionResult = {
       id: `dec_${randomUUID().slice(0, 8)}`,
@@ -107,6 +129,9 @@ export class DecisionService implements Decisions {
       answers,
       durationMs: Math.round(performance.now() - started),
     };
+    if (chain.provider === "laya" && order[0] === "laya") {
+      this.cache.set(key, { id: result.id, answers: chain.answers, trimmed: chain.trimmed });
+    }
     this.deps.log.add({
       id: result.id,
       at: this.now().toISOString(),
@@ -168,7 +193,7 @@ export class DecisionService implements Decisions {
         return { id, available: reason === undefined, detail: reason ?? "Ready" };
       }),
     );
-    return { settings, laya, providers };
+    return { settings, laya, providers, cache: this.cache.stats() };
   }
 
   async set(
