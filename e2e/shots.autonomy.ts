@@ -28,6 +28,7 @@ function status(mode: AutonomyStatus["mode"], extra: Partial<AutonomyStatus> = {
   return {
     mode,
     stopped: [],
+    raised: {},
     ...(mode === "off" ? {} : { since: iso(95), by: "owner" as const }),
     boss: {
       id: "setup",

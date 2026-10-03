@@ -31,28 +31,39 @@ const PCT_TEXT = { calm: "text-fg-muted", amber: "text-amber", red: "text-red" }
 function CapFields({
   label,
   value,
+  empty,
   onChange,
 }: {
   label: string;
   value: CapDraft;
+  /** What an empty dollar field means, in a word. */
+  empty: string;
   onChange: (next: CapDraft) => void;
 }) {
   return (
     <span className="flex shrink-0 gap-1.5">
-      <Input
-        aria-label={`${label}, dollars`}
-        placeholder="$"
-        inputMode="decimal"
-        value={value.cost}
-        onChange={(e) => onChange({ ...value, cost: e.target.value })}
-        className="h-8 w-[76px] px-2"
-      />
+      <span className="relative">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-mono text-sm text-fg-faint"
+        >
+          $
+        </span>
+        <Input
+          aria-label={`${label}, dollars`}
+          placeholder={empty}
+          inputMode="decimal"
+          value={value.cost}
+          onChange={(e) => onChange({ ...value, cost: e.target.value })}
+          className="tnum h-8 w-[88px] pr-2 pl-6 font-mono text-sm"
+        />
+      </span>
       <Input
         aria-label={`${label}, tokens`}
         placeholder="tokens"
         value={value.tokens}
         onChange={(e) => onChange({ ...value, tokens: e.target.value })}
-        className="h-8 w-[84px] px-2"
+        className="tnum h-8 w-[84px] px-2 font-mono text-sm"
       />
     </span>
   );
@@ -81,7 +92,9 @@ function UseLine({ use, raised, none }: { use: CapUse; raised: boolean; none: st
           {cap !== undefined && " today"}
         </span>
         {cap !== undefined && (
-          <span className={cn("tnum ml-auto shrink-0 font-mono", PCT_TEXT[tone])}>
+          <span
+            className={cn("tnum ml-auto shrink-0", use.reached ? "font-medium" : "font-mono", PCT_TEXT[tone])}
+          >
             {use.reached ? "Used up" : `${Math.floor(use.percent)}%`}
           </span>
         )}
@@ -186,140 +199,150 @@ function LimitsForm({
         )}
       </PageHeader>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-6 scroll-fade">
-        <div className="flex w-full max-w-[880px] min-w-0 flex-col gap-3">
+        <div className="grid w-full min-w-0 items-start gap-3 min-[1280px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
           {(problem ?? save.error) && (
             <p
               role="alert"
-              className="rounded-xl border border-red-line bg-red-wash px-4 py-2.5 text-sm text-red"
+              className="rounded-xl border border-red-line bg-red-wash px-4 py-2.5 text-sm text-red min-[1280px]:col-span-2"
             >
               {problem ?? `Could not save: ${describeError(save.error)}`}
             </p>
           )}
-          <Card aria-label="Autonomous budget per day" id="autonomous-budget">
-            <div className="flex min-w-0 items-center gap-3">
-              <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">Autonomous budget per day</h2>
-              <CapFields label="Autonomous budget" value={form.day} onChange={(day) => edit({ day })} />
-            </div>
-            <p className="text-sm text-fg-muted text-pretty">
-              One number for all autonomous work: the captain's own turns and every task it starts or resumes.
-              Autonomous needs it while it is on.
-            </p>
-            <UseLine use={status.spend.total} raised={status.raised.day !== undefined} none="" />
-            {askFor("day").map((ask) => (
-              <BudgetAskCard key={ask.scope} ask={ask} />
-            ))}
-            <div className="flex min-w-0 items-center gap-3 border-t border-line pt-2.5 text-sm">
-              <label htmlFor={`${ids}-summary`} className="min-w-0 flex-1 text-fg-soft">
-                Daily summary at
-              </label>
-              <Input
-                id={`${ids}-summary`}
-                type="time"
-                value={form.summaryAt}
-                onChange={(e) => edit({ summaryAt: e.target.value })}
-                className="h-8 w-[124px] px-2"
-              />
-            </div>
-          </Card>
+          <div className="flex min-w-0 flex-col gap-3">
+            <Card aria-label="Autonomous budget per day" id="autonomous-budget">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">Autonomous budget per day</h2>
+                <CapFields
+                  label="Autonomous budget"
+                  empty="needed"
+                  value={form.day}
+                  onChange={(day) => edit({ day })}
+                />
+              </div>
+              <p className="text-sm text-fg-muted text-pretty">
+                One number for all autonomous work: the captain's own turns and every task it starts or
+                resumes. Autonomous needs it while it is on.
+              </p>
+              <UseLine use={status.spend.total} raised={status.raised.day !== undefined} none="" />
+              {askFor("day").map((ask) => (
+                <BudgetAskCard key={ask.scope} ask={ask} />
+              ))}
+              <div className="flex min-w-0 items-center gap-3 border-t border-line pt-2.5 text-sm">
+                <label htmlFor={`${ids}-summary`} className="min-w-0 flex-1 text-fg-soft">
+                  Daily summary at
+                </label>
+                <Input
+                  id={`${ids}-summary`}
+                  type="time"
+                  value={form.summaryAt}
+                  onChange={(e) => edit({ summaryAt: e.target.value })}
+                  className="h-8 w-[124px] px-2"
+                />
+              </div>
+            </Card>
 
-          <Card aria-label="Budget per workspace">
-            <h2 className="text-base font-semibold text-fg">Per workspace</h2>
-            <p className="text-sm text-fg-muted text-pretty">
-              A daily budget inside the autonomous one, so one client cannot spend another's money. Empty
-              shares the whole autonomous budget.
-            </p>
-            <ul className="flex flex-col">
-              {Object.keys(form.orgs).map((id) => {
-                const row = form.orgs[id] ?? { cost: "", tokens: "" };
-                const use = orgUse(id);
-                return (
-                  <li key={id} className="flex min-w-0 flex-col gap-2 border-t border-line py-2.5">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="min-w-0 flex-1 truncate text-base text-fg" title={name(id)}>
-                        {name(id)}
-                      </span>
-                      <CapFields
-                        label={`Budget of ${name(id)}`}
-                        value={row}
-                        onChange={(cap) => editOrg(id, cap)}
+            <Card aria-label="Budget per workspace">
+              <h2 className="text-base font-semibold text-fg">Per workspace</h2>
+              <p className="text-sm text-fg-muted text-pretty">
+                A daily budget inside the autonomous one, so one client cannot spend another's money. Empty
+                shares the whole autonomous budget.
+              </p>
+              <ul className="flex flex-col">
+                {Object.keys(form.orgs).map((id) => {
+                  const row = form.orgs[id] ?? { cost: "", tokens: "" };
+                  const use = orgUse(id);
+                  return (
+                    <li key={id} className="flex min-w-0 flex-col gap-2 border-t border-line py-2.5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="min-w-0 flex-1 truncate text-base text-fg" title={name(id)}>
+                          {name(id)}
+                        </span>
+                        <CapFields
+                          label={`Budget of ${name(id)}`}
+                          empty="shared"
+                          value={row}
+                          onChange={(cap) => editOrg(id, cap)}
+                        />
+                      </div>
+                      <UseLine
+                        use={use}
+                        raised={status.raised[id] !== undefined}
+                        none="Shares the autonomous budget."
+                      />
+                      {askFor(id).map((ask) => (
+                        <BudgetAskCard key={ask.scope} ask={ask} />
+                      ))}
+                    </li>
+                  );
+                })}
+              </ul>
+              {Object.keys(form.orgs).length === 0 && (
+                <p className="text-sm text-fg-faint">No workspaces yet.</p>
+              )}
+            </Card>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-3">
+            <Card aria-label="Safety">
+              <button
+                type="button"
+                aria-expanded={safety}
+                onClick={() => setSafety(!safety)}
+                className="flex min-h-7 w-full cursor-pointer items-center gap-2 text-left"
+              >
+                <h2 className="text-base font-semibold text-fg">Safety</h2>
+                <span className="min-w-0 flex-1 truncate text-sm text-fg-faint">
+                  Account floors and weekly budgets
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn("size-4 shrink-0 text-fg-muted transition-transform", safety && "rotate-180")}
+                />
+              </button>
+              {safety && (
+                <div className="flex flex-col gap-4 pt-1">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm text-fg-muted text-pretty">
+                      Account floors: autonomous work starts nothing on an account with less than this left.
+                    </p>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
+                      <label htmlFor={`${ids}-window`} className="text-fg-soft">
+                        Keep of each 5-hour window, %
+                      </label>
+                      <Input
+                        id={`${ids}-window`}
+                        inputMode="numeric"
+                        value={form.window}
+                        onChange={(e) => edit({ window: e.target.value })}
+                        className="h-8 w-[76px] justify-self-end px-2"
+                      />
+                      <label htmlFor={`${ids}-weekly`} className="text-fg-soft">
+                        Keep of each week, %
+                      </label>
+                      <Input
+                        id={`${ids}-weekly`}
+                        inputMode="numeric"
+                        value={form.weekly}
+                        onChange={(e) => edit({ weekly: e.target.value })}
+                        className="h-8 w-[76px] justify-self-end px-2"
                       />
                     </div>
-                    <UseLine
-                      use={use}
-                      raised={status.raised[id] !== undefined}
-                      none="Shares the autonomous budget."
-                    />
-                    {askFor(id).map((ask) => (
-                      <BudgetAskCard key={ask.scope} ask={ask} />
-                    ))}
-                  </li>
-                );
-              })}
-            </ul>
-            {Object.keys(form.orgs).length === 0 && (
-              <p className="text-sm text-fg-faint">No workspaces yet.</p>
-            )}
-          </Card>
-
-          <Card aria-label="Safety">
-            <button
-              type="button"
-              aria-expanded={safety}
-              onClick={() => setSafety(!safety)}
-              className="flex min-h-7 w-full cursor-pointer items-center gap-2 text-left"
-            >
-              <h2 className="text-base font-semibold text-fg">Safety</h2>
-              <span className="min-w-0 flex-1 truncate text-sm text-fg-faint">
-                Account floors and weekly budgets
-              </span>
-              <ChevronDown
-                aria-hidden="true"
-                className={cn("size-4 shrink-0 text-fg-muted transition-transform", safety && "rotate-180")}
-              />
-            </button>
-            {safety && (
-              <div className="flex flex-col gap-4 pt-1">
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-fg-muted text-pretty">
-                    Account floors: autonomous work starts nothing on an account with less than this left.
-                  </p>
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
-                    <label htmlFor={`${ids}-window`} className="text-fg-soft">
-                      Keep of each 5-hour window, %
-                    </label>
-                    <Input
-                      id={`${ids}-window`}
-                      inputMode="numeric"
-                      value={form.window}
-                      onChange={(e) => edit({ window: e.target.value })}
-                      className="h-8 w-[76px] justify-self-end px-2"
-                    />
-                    <label htmlFor={`${ids}-weekly`} className="text-fg-soft">
-                      Keep of each week, %
-                    </label>
-                    <Input
-                      id={`${ids}-weekly`}
-                      inputMode="numeric"
-                      value={form.weekly}
-                      onChange={(e) => edit({ weekly: e.target.value })}
-                      className="h-8 w-[76px] justify-self-end px-2"
-                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-sm text-fg-muted text-pretty">
+                      Weekly budgets per workspace and per account. They pause runs at 100% and alert at 80%.
+                      Also limits your own tasks.
+                    </p>
+                    <BudgetsPanel bare />
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-fg-muted text-pretty">
-                    Weekly budgets per workspace and per account. They pause runs at 100% and alert at 80%.
-                    Also limits your own tasks.
-                  </p>
-                  <BudgetsPanel bare />
-                </div>
-              </div>
-            )}
-          </Card>
-          <p className="text-xs text-fg-faint text-pretty">
-            Days and the summary time follow {BROWSER_ZONE}, this browser's zone. Who decides merging and
-            pushing is set per workspace on the Captain page.
-          </p>
+              )}
+            </Card>
+            <p className="text-xs text-fg-faint text-pretty">
+              Days and the summary time follow {BROWSER_ZONE}, this browser's zone. Who decides merging and
+              pushing is set per workspace on the Captain page.
+            </p>
+          </div>
         </div>
       </div>
     </>

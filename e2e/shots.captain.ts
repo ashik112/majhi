@@ -231,6 +231,7 @@ function autonomy(): AutonomyStatus {
   return {
     mode: "on",
     stopped: [],
+    raised: {},
     since: iso(95),
     by: "owner",
     boss: { id: "setup", chat: "LOCAL-31", working: true, nowDoing: "Reading the Private backlog" },
