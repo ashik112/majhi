@@ -323,6 +323,15 @@ export class CaptainRepo {
     ).flatMap((r) => actionOf(r) ?? []);
   }
 
+  /** Lines made in `[from, to)` (UTC ISO), oldest first: the daily summary's upkeep. */
+  actionsBetween(from: string, to: string): StoredAction[] {
+    return (
+      this.db
+        .prepare("SELECT * FROM captain_actions WHERE at >= ? AND at < ? ORDER BY id")
+        .all(from, to) as ActionRow[]
+    ).flatMap((r) => actionOf(r) ?? []);
+  }
+
   action(id: number): StoredAction | undefined {
     const row = this.db.prepare("SELECT * FROM captain_actions WHERE id = ?").get(id) as
       | ActionRow

@@ -892,6 +892,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const autonomy = new AutonomyService({
     lanes,
     typing: (task) => events.typing.holds(task),
+    upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
+    decisions: () => inbox.list(),
     store,
     config,
     tasks,
