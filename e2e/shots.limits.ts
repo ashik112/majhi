@@ -229,7 +229,8 @@ for (const [w, h] of [
     });
     test(`limits with safety open ${w} ${theme}`, async ({ page }) => {
       await open(page, "/limits", w, h, theme, scene());
-      await page.getByRole("button", { name: /^Safety/ }).click();
+      // Safety starts open in the two-column layout (1280px and wider), folded below it.
+      if (w < 1280) await page.getByRole("button", { name: /^Safety/ }).click();
       await expect(page.getByLabel("Keep of each week, %")).toBeVisible();
       await page.getByRole("button", { name: /^Safety/ }).scrollIntoViewIfNeeded();
       await page

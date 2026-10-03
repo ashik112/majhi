@@ -23,6 +23,7 @@ import { useCaptainAsks, useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatMoney, formatTokens } from "@/lib/format";
+import { useMedia } from "@/lib/use-media";
 import { BudgetAskCard, budgetShort } from "./budget-ask";
 
 const PCT_TEXT = { calm: "text-fg-muted", amber: "text-amber", red: "text-red" } as const;
@@ -159,7 +160,10 @@ function LimitsForm({
   const base = useMemo(() => limitsDraft(settings, key === "" ? [] : key.split(" ")), [settings, key]);
   const [draft, setDraft] = useState<LimitsDraft>();
   const [problem, setProblem] = useState<string>();
-  const [safety, setSafety] = useState(false);
+  // Two columns from 1280px: Safety fills the second one, so it starts open there.
+  const wide = useMedia("(min-width: 1280px)");
+  const [safetyPicked, setSafety] = useState<boolean>();
+  const safety = safetyPicked ?? wide;
   const save = useAutonomyCommand("autonomy.configure");
   const form = draft ?? base;
   const dirty = draft !== undefined && JSON.stringify(draft) !== JSON.stringify(base);
