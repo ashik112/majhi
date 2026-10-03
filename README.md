@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/majhi-mark-saffron.svg">
+  <img src="docs/assets/majhi-mark-ink.svg" alt="majhi logo: a human and an agent in the same boat" width="96">
+</picture>
+
 # majhi <sub><sup>মাঝি</sup></sub>
 
 ### You steer. The agents row.

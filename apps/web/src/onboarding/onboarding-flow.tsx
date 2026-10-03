@@ -4,6 +4,7 @@ import { AnimatePresence, useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MajhiMark } from "@/components/ui/majhi-mark";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
@@ -98,12 +99,7 @@ export function OnboardingFlow({
           onPick={(i) => !locked && goTo(i)}
         />
         <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2.5">
-          <span
-            aria-hidden="true"
-            className="flex size-7 items-center justify-center rounded-[7px] bg-brand font-mono text-sm font-semibold text-brand-ink shadow-[0_4px_14px_-4px_var(--c-brand)]"
-          >
-            mj
-          </span>
+          <MajhiMark className="h-6 w-7 text-brand [filter:drop-shadow(0_0_6px_var(--rv-label-halo))]" />
           <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg [text-shadow:0_0_8px_var(--rv-label-halo)]">
             majhi
           </span>

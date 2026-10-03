@@ -7,6 +7,7 @@ import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
+import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { OffDialog, TurnOnDialog } from "@/features/autonomy/controls";
@@ -79,12 +80,7 @@ function Brand() {
         aria-label="majhi, go to the board"
         className="flex items-center gap-2.5 rounded-md"
       >
-        <span
-          aria-hidden="true"
-          className="flex size-7 items-center justify-center rounded-[7px] bg-brand font-mono text-sm font-semibold text-brand-ink shadow-[0_4px_14px_-4px_var(--c-brand)]"
-        >
-          mj
-        </span>
+        <MajhiMark className="h-6 w-7 text-brand" />
         <span className="text-[16px] font-semibold tracking-[-0.01em]">majhi</span>
       </Link>
       <span
