@@ -18,6 +18,7 @@ export MAJHI_SECRETS_KEY := $(SECRETS_KEY)
 
 ## Build the server and runner images (and Laya's off Apple silicon), install the host helper, mount every workspace root from majhi.yaml, and start majhi on http://127.0.0.1:7070
 up:
+	@sh scripts/check.sh
 	@mkdir -p "$(HOME)/.majhi" "$(HOME)/.ssh"
 	@touch "$(HOME)/.ssh/config" "$(HOME)/.ssh/known_hosts"
 	$(COMPOSE) --profile runner $(LAYA_BUILD) build

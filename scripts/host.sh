@@ -10,6 +10,8 @@
 # and folder, so tests never touch the real one.
 set -eu
 
+. "$(dirname -- "$0")/lib.sh"
+
 LABEL="${MAJHI_HOST_LABEL:-dev.majhi.host}"
 AGENTS_DIR="${MAJHI_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 PLIST="$AGENTS_DIR/$LABEL.plist"
@@ -24,7 +26,7 @@ say() {
 }
 
 is_macos() {
-  [ "$(uname -s)" = Darwin ]
+  [ "$(host_os)" = macos ]
 }
 
 # MAJHI_PORT from the environment, else from .env (where compose reads it too), else 7070.
@@ -38,27 +40,6 @@ majhi_port() {
     port=$(sed -n 's/^[[:space:]]*MAJHI_PORT[[:space:]]*=[[:space:]]*//p' "$REPO_DIR/.env" | tail -n 1 | tr -d "\"'\r ")
   fi
   printf '%s' "${port:-7070}"
-}
-
-node_ok() {
-  [ -x "$1" ] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' 2>/dev/null
-}
-
-# Node 20 or newer: on PATH, from Homebrew, or the newest nvm install.
-find_node() {
-  nvm_node=""
-  nvm_dir="${NVM_DIR:-$HOME/.nvm}/versions/node"
-  if [ -d "$nvm_dir" ]; then
-    newest=$(ls "$nvm_dir" | sed -n 's/^v//p' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
-    if [ -n "$newest" ]; then nvm_node="$nvm_dir/v$newest/bin/node"; fi
-  fi
-  for candidate in "$(command -v node 2>/dev/null || true)" /opt/homebrew/bin/node /usr/local/bin/node "$nvm_node"; do
-    if [ -n "$candidate" ] && node_ok "$candidate"; then
-      printf '%s' "$candidate"
-      return 0
-    fi
-  done
-  return 1
 }
 
 xml() {
