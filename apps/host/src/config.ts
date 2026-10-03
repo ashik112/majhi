@@ -10,6 +10,8 @@ const EnvSchema = z.object({
   /** The majhi checkout that `docker compose` runs in. Without it, remounting is manual. */
   MAJHI_REPO: z.string().trim().min(1).optional(),
   MAJHI_HOST_VERSION: z.string().trim().min(1).optional(),
+  /** `off`: notifications are logged, never shown. For a helper next to a test server (e2e). */
+  MAJHI_HOST_NOTIFY: z.enum(["on", "off"]).default("on"),
 });
 
 export interface HostConfig {
@@ -20,6 +22,8 @@ export interface HostConfig {
   majhiHome: string;
   repo: string | undefined;
   version: string;
+  /** Whether notifications reach the desktop. */
+  notify: boolean;
 }
 
 /** Reads the helper's settings from environment variables. Throws with one line per bad variable. */
@@ -52,5 +56,6 @@ export function parseHostConfig(source: NodeJS.ProcessEnv = process.env, home = 
     majhiHome: resolve(majhiHome),
     repo: repo === undefined ? undefined : resolve(repo),
     version: env.MAJHI_HOST_VERSION ?? pkg.version,
+    notify: env.MAJHI_HOST_NOTIFY === "on",
   };
 }
