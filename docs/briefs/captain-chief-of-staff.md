@@ -82,6 +82,11 @@ The captain has its own run slot, outside "agents at once" and "per account". It
 - **Repos:** the captain never runs two tasks that write to the same repo and base branch at once unless their plans touch different areas; otherwise it queues the second and says why. Ships into the same base branch go one at a time, in order.
 - **Budgets** are per workspace (3), so one client cannot spend another's money.
 
+### 7b. Staffing and lead handover
+
+- **Staffing weighs everything, with no built-in preference.** For each task the captain considers the task's size and kind, every agent that may work in the workspace (role, skills, model and effort), each account's free slots and usage left in its 5-hour window and week, the floors and budgets, the expected cost, how agents did on similar work in this repo, and the repo rule (7). It picks the team that does the work best within those limits, from one agent to a lead with builders and a reviewer, and says why in one line ("@acme-lead on claude-acme-2: free slot, 60% of its window left; @acme-builder joins for the tests"). Another workspace's agents and accounts are never considered.
+- **Lead handover.** The lead, the captain or the owner can make another team member the lead (`tasks.setLead`), for example when the lead's account is at its limit, the task needs another skill or model, or the lead is stuck. The new lead must be on the team or able to join it; the old lead stays as a builder or leaves. The handover posts a note in the room with the plan, what is done and what is next, so the new lead starts with the context.
+
 ### 8. The captain's chats
 
 - The captain gets **one place,** the Captain panel (Cmd J and the Captain page). It has one thread per workspace and an "All" view. These threads are where autonomous work is reported and where the owner talks to the captain about that workspace.
@@ -117,6 +122,7 @@ Each step ships on its own and is usable without the next.
 4. **Budgets and Limits screen** (3), with budget decisions.
 5. **Decisions inbox** (4) and alerts for decisions only.
 6. **Collision rules** (7): fair slots per workspace and account, the repo rule.
+6b. **Staffing and lead handover** (7b).
 7. **Captain panel threads** (8), moving lane chats out of the task lists.
 8. **Presence rule replaced** (5) and **briefing** (9).
 

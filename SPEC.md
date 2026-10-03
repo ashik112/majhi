@@ -631,6 +631,10 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 
 **Workspaces never collide.** One session per workspace ("lane"), reading and acting in its own workspace only. While Autonomous is On the agent slots are split evenly across the workspaces with runnable work; a workspace with nothing to run leaves its share to the others, and the owner's own tasks come first. Workspaces that share an account take its per-account slots and floors in turn. The captain never runs two tasks that write to the same repo and base branch at once unless their plans touch different areas, and ships into one base branch one at a time, in order.
 
+**Staffing.** For each task the captain weighs the task's size and kind, every agent that may work in the workspace (role, skills, model, effort), each account's free slots and usage left, floors and budgets, expected cost, past results on similar work in the repo, and the repo rule, with no built-in preference. It picks the team that does the work best, from one agent to a lead with builders and a reviewer, and says why in one line. Another workspace's agents and accounts are never considered.
+
+**Lead handover.** The lead, the captain or the owner can make another team member the lead (`tasks.setLead`): when the lead's account is at its limit, the task needs another skill or model, or the lead is stuck. The new lead must be on the team or able to join it; the old lead stays as a builder or leaves. A handover note in the room carries the plan, what is done and what is next.
+
 **Labels.** Every captain action is labelled "Captain", never "You", in rooms, cards and the log, with its reason and Undo where Undo exists.
 
 **Daily summary** at 08:00 by default, changeable on the Captain page: what shipped, spend per workspace against its budget, what waits on the owner, and what the captain plans next.
@@ -823,7 +827,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - **Done when:** a task for a project produces a short captioned video and three post drafts in the room, the owner approves one, it is scheduled, and it posts through the platform API at the set time.
 
 ### Phase 13: The captain per workspace
-- The chief-of-staff model (5.18, `docs/briefs/captain-chief-of-staff.md`), built in its eight steps: the captain's own slot and labels, one switch, the authority table, budgets, the Decisions inbox, collision rules, the Captain panel threads, the presence rule and the summary.
+- The chief-of-staff model (5.18, `docs/briefs/captain-chief-of-staff.md`), built in its eight steps: the captain's own slot and labels, one switch, the authority table, budgets, the Decisions inbox, collision rules, staffing and lead handover, the Captain panel threads, the presence rule and the summary.
 - Captain lanes (one session per workspace), the upkeep chores, the never list and the rules in 5.18.
 - The runaway and loop guards and the soak test.
 - The daily summary line per workspace and the captain's log with Undo.
