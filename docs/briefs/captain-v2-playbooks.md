@@ -2,6 +2,20 @@
 
 Status: approved direction (owner, 2026-10-04: "make captain useful... industry defining"). It builds on the chief-of-staff model (`captain-chief-of-staff.md`, SPEC 5.18) and changes it where noted. The full audit and web research behind it are kept outside the repo, because they name the owner's clients.
 
+## Vision: the captain runs the business
+
+Owner, 2026-10-04: the captain works toward the owner's goals across the whole business, not only code: it joins hackathons, runs product launches, watches competitors, finds good deals, grants, opportunities and investment, runs social media, drafts replies to messages, runs A/B tests and data analysis, does legal and compliance reviews, and watches servers, going to work when a service goes down.
+
+So no capability is a feature of its own. They all run on one engine:
+
+**Goals, agenda, playbooks, outputs through one gate, outcomes, scorecard.**
+
+- **Goals** per workspace or for the whole business ("$X monthly revenue", "launch on a product directory in November", "99.9% uptime for Acme"). Every playbook and finding ties to a goal; the scorecard reports progress per goal.
+- **Playbook packs** the owner switches on, stored as data: Engineering (follow-ups, ship, project knowledge, security, UI, CI), Ops watch (service down: an incident task, read-only investigation, a fix as a merge request, restarts only through runbooks the owner approved), Growth (hackathons, launches, competitor watch, deals, grants and funding, investor pipeline), Social and inbox (drafted posts and replies), Analysis (A/B tests, data analysis), Legal and compliance review (findings and drafts that flag risk, marked as not legal advice).
+- **Sensors and actions come through Connections** (majhi's MCP connections, per workspace): uptime and logs, mail and chat, social accounts, analytics, launch and hackathon sites, grant sources. A new capability is a connection plus a playbook, never a rewrite.
+- **One gate for every output that leaves the machine**, set per channel: Draft (the owner approves each), Batch (approved in one click), Auto within limits. A channel moves up only after a track record and the owner's approval, and drops back to Draft after a mistake. Money is never moved, nothing is signed, and nothing is sent in the owner's name without the channel's setting allowing it.
+- **Outcomes per goal** feed the scorecard: replies sent vs edited, applications made vs won, incidents caught vs missed, spend vs revenue.
+
 ## Why the captain feels useless
 
 - **It has no source of work.** It only reacts to events about tasks the owner created. With an empty backlog it records an empty plan and stops. Open follow-ups recorded in memory are never read.
@@ -52,10 +66,14 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 3. Findings store, and a follow-ups playbook that imports the memory follow-ups.
 4. Own work row with Propose, and batch approval in Decisions.
 5. Project knowledge card per repo, refreshed on merge, with a readiness score.
-6. Playbooks as data; the upkeep chores move onto them.
+6. Playbooks as data, with packs, goals and the per-channel outbound gate; the upkeep chores move onto them. This is the keystone.
+6a. Ops watch pack: service health sensors through connections, incidents, read-only investigation, fixes as merge requests, approved runbooks.
 7. Checked hand-off before ship decisions.
 8. Outcomes, scorecard, trust ladder and auto-mute.
 9. Sensors: CI status, lockfiles with OSV, end-of-life dates; security and dependency sweep and the tech radar as playbooks.
 10. Daily agenda and the morning brief.
 11. Client economics and client update drafts; the opportunities brief.
+11a. Growth packs: hackathons and launches, competitor watch, deals, grants and funding, investor pipeline.
+11b. Social and inbox packs, drafts first.
+11c. Analysis and A/B testing; legal and compliance review.
 12. The local model redesign (separate audit), routing the right questions to it.
