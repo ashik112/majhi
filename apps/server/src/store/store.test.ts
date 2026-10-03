@@ -105,6 +105,7 @@ describe("store", () => {
       "e2e_runs",
       "e2e_seen",
       "migrations",
+      "project_cards",
       "room_items",
       "room_search",
       "runs",
