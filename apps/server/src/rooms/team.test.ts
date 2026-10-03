@@ -47,6 +47,8 @@ async function teamWorld(
     agentOf["claude-acme-2"] = "acme-reviewer";
   }
   const prompts: Record<string, string[]> = {};
+  /** The same prompts with every text block, for what rides after the first one. */
+  const full: Record<string, string[]> = {};
   h.runtime.onSession = (session, start) => {
     // A decision stand-in's session is not the agent's turn.
     if (start.scratch) return;
@@ -55,13 +57,14 @@ async function teamWorld(
       const list = prompts[agent] ?? [];
       prompts[agent] = list;
       list.push(turn.text);
+      (full[agent] ??= []).push(turn.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
       const step = scripts[agent]?.[list.length - 1];
       const text = step === undefined ? "ok" : await step(turn);
       turn.emit({ type: "text", messageId: `m${list.length}`, text });
       return "end_turn";
     };
   };
-  return { h, prompts };
+  return { h, prompts, full };
 }
 
 const say = (text: string) => async () => text;
@@ -427,7 +430,7 @@ describe("idle messages", () => {
 
   it("do not bring back or wake an agent the owner removed; the owner can add it again", async () => {
     const { h, prompts } = await teamWorld({
-      "acme-builder": [say("@acme-reviewer please check the api, and @acme-lead too.")],
+      "acme-builder": [say("@acme-reviewer please check the api.\n@acme-lead: you too, please.")],
     });
     await h.cmd("tasks.create", {
       text: "add a health endpoint to api",
@@ -654,29 +657,35 @@ describe("mentions that ask for nothing", () => {
     );
   });
 
-  it("a sure no keeps the agent asleep and tells the writer, a plain ask wakes it without the provider, and an unsure answer wakes it as before", async () => {
-    const { h, prompts, asked } = await mentionWorld(
+  it("a sure no keeps an addressed agent asleep and tells the writer with its next prompt, a plain ask wakes it without the provider, and an unsure answer wakes it as before", async () => {
+    const { h, prompts, full, asked } = await mentionWorld(
       [
         // The first turn counts as a change: the worktree had no fingerprint before it.
         say("Reading the readme first."),
-        say("Thanks @acme-builder, that is all from me for now."),
-        // The answer to majhi's note: once, so this "thanks" gets no second note.
-        say("Right, thanks @acme-builder."),
+        say("@acme-builder thanks, that is all from me for now."),
+        // The turn that reads majhi's note: once, so this "thanks" gets no second note.
+        say("@acme-builder right, thanks."),
         say("@acme-builder please add a test for the readme links."),
         say("@acme-builder maybe glance at the readme."),
       ],
       (message) =>
-        message.startsWith("Thanks") || message.startsWith("Right")
-          ? { value: false, confidence: 0.95 }
-          : { value: false, confidence: 0.6 },
+        message.includes("thanks") ? { value: false, confidence: 0.95 } : { value: false, confidence: 0.6 },
     );
     await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
-    await until(() => (prompts["acme-lead"]?.length ?? 0) === 3, "the lead told about the quiet mention");
-    expect(prompts["acme-lead"]?.[2]).toContain(
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead's second turn");
+    await settled("ACM-1", ["acme-lead", "acme-builder"]);
+    // The note starts no turn: the lead is idle and has not read it yet.
+    expect(prompts["acme-lead"]).toHaveLength(2);
+    expect(full["acme-lead"]?.[1]).not.toContain("was not woken");
+    expect(asked).toHaveLength(1);
+
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead anything else?" });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 3, "the lead's next turn");
+    expect(full["acme-lead"]?.[2]).toContain(
       "@acme-builder was not woken: your message did not ask them for anything.",
     );
-    await until(async () => (await status("ACM-1")) === "review", "review after the thanks");
+    await settled("ACM-1", ["acme-lead", "acme-builder"]);
     expect(asked).toHaveLength(2);
     expect(prompts["acme-builder"]).toBeUndefined();
     expect(prompts["acme-lead"]).toHaveLength(3);
@@ -691,6 +700,8 @@ describe("mentions that ask for nothing", () => {
     await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder woken by a request");
     await until(async () => (await status("ACM-1")) === "review", "review after the request");
     expect(asked).toHaveLength(2);
+    // The second "thanks" got no note: that turn read one.
+    expect(full["acme-lead"]?.[3]).not.toContain("was not woken");
 
     await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead one more thing" });
     await until(() => (prompts["acme-builder"]?.length ?? 0) === 2, "the builder woken when unsure");
@@ -704,6 +715,87 @@ describe("mentions that ask for nothing", () => {
       outcome?: { text: string };
     }[];
     expect(recent.filter((d) => d.use === "routing")).toHaveLength(3);
+  });
+
+  it("a name in passing wakes nobody and asks no provider, even when the turn changed files", async () => {
+    const { h, prompts, asked } = await mentionWorld(
+      [
+        // The first turn counts as a change.
+        say("Done: tests pass. Results are posted for @acme-builder. Nothing else for me."),
+        say("Reported to @acme-builder, I'm mentioning no one, so this wakes nobody."),
+        say("proc-3 ended green, as @acme-builder said. No action needed."),
+        say("Thanks @acme-builder."),
+      ],
+      () => ({ value: true, confidence: 0.95 }),
+    );
+    for (const turns of [1, 2, 3, 4]) {
+      if (turns > 1) await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+      await until(() => (prompts["acme-lead"]?.length ?? 0) === turns, `lead turn ${turns}`);
+      await settled("ACM-1", ["acme-lead", "acme-builder"]);
+    }
+    expect(prompts["acme-builder"]).toBeUndefined();
+    expect(asked).toEqual([]);
+    expect(await handoffs("ACM-1")).toEqual([]);
+  });
+
+  it("a line that starts with the name still wakes it, in a list, in bold or after a status sentence, without the provider", async () => {
+    const { h, prompts, asked } = await mentionWorld(
+      [
+        say("Reading the readme first."),
+        say("@acme-builder: please review the diff."),
+        say("- **@acme-builder**: review the diff"),
+        say("Tests pass.\n@acme-builder please merge"),
+      ],
+      () => ({ value: false, confidence: 0.95 }),
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
+    for (const turns of [1, 2, 3]) {
+      await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+      await until(() => (prompts["acme-builder"]?.length ?? 0) === turns, `builder woken ${turns}`);
+      await settled("ACM-1", ["acme-lead", "acme-builder"]);
+    }
+    expect(asked).toEqual([]);
+  });
+
+  it("a name in passing does not add an agent outside the team, and an addressing one does", async () => {
+    const { h, prompts, full } = await teamWorld(
+      {
+        "acme-lead": [
+          say("Reading the readme first."),
+          say("Done. Over to you then, @acme-reviewer please review it."),
+          say("@acme-reviewer: please review the diff."),
+        ],
+      },
+      {},
+    );
+    await h.cmd("tasks.create", {
+      text: "tidy the api readme",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead"],
+      start: true,
+    });
+    await until(async () => (await status("ACM-1")) === "review", "review after the first turn");
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead's second turn");
+    await settled("ACM-1", ["acme-lead", "acme-reviewer"]);
+    expect(((await h.cmd("tasks.get", { id: "ACM-1" })).body.team as string[]).sort()).toEqual(["acme-lead"]);
+    expect(prompts["acme-reviewer"]).toBeUndefined();
+    // The writer hears about it in the room, but no turn starts for it.
+    expect(await systemTexts("ACM-1")).toContain(
+      "@acme-lead named @acme-reviewer in passing, so it was not added to the team.",
+    );
+    expect(prompts["acme-lead"]).toHaveLength(2);
+
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-lead go on" });
+    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "the reviewer woken");
+    // Its next prompt carries the note, with how to add the agent.
+    expect(full["acme-lead"]?.[2]).toContain("@acme-reviewer was not added to the team");
+    expect(full["acme-lead"]?.[2]).toContain('start a line with "@acme-reviewer: please ..."');
+    expect(((await h.cmd("tasks.get", { id: "ACM-1" })).body.team as string[]).sort()).toEqual([
+      "acme-lead",
+      "acme-reviewer",
+    ]);
+    expect(await systemTexts("ACM-1")).toContain("@acme-lead added @acme-reviewer (Reviewer) to the team.");
   });
 
   it("a handoff that asks in so many words wakes the teammate without the provider", async () => {

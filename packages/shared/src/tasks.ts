@@ -704,6 +704,11 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     name: IdSchema,
     /** What to paste, in plain words. */
     label: z.string(),
+    /**
+     * Set when the value belongs to one secret entry of a connection (an installed MCP server's
+     * key): it is stored there, not under `name`.
+     */
+    bind: z.object({ connection: IdSchema, list: z.enum(["headers", "env"]), field: z.string() }).optional(),
     state: z.enum(["pending", "saved", "cancelled"]),
   }),
   /** An agent asks the owner one or more questions with preset options. */

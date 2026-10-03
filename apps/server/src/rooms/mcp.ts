@@ -77,7 +77,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "post",
     description:
-      "Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or mention the agent in your final reply.",
+      'Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or start a line of your final reply with "@name:". A name in the middle of a sentence wakes nobody.',
     input: z.object({ text: z.string().trim().min(1).max(20_000) }),
   },
   {
@@ -186,7 +186,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "e2e_latest",
     command: "e2e.status",
     description:
-      "The latest result of the full e2e suite, which majhi runs by itself in the background after each merge into main: per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
+      "The latest result of the full e2e suite, which majhi runs by itself in the background (after each merge into main, once a day, or when the owner starts it, per project): per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
   },
   {
     name: "link",

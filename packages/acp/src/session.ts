@@ -39,7 +39,13 @@ export interface SessionStart {
   cancelTimeoutMs?: number;
 }
 
-export type McpServerSpec = { type: "http"; name: string; url: string; headers: Record<string, string> };
+/** A remote server: Streamable HTTP, or server-sent events for the older ones. */
+export type McpServerSpec = {
+  type: "http" | "sse";
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+};
 
 /** A server the agent CLI starts itself as a subprocess, in its own runner container. */
 export type StdioServerSpec = {

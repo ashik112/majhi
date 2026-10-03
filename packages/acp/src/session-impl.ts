@@ -43,7 +43,7 @@ function toMcp(s: McpServerSpec | StdioServerSpec): McpServer {
     };
   }
   return {
-    type: "http",
+    type: s.type,
     name: s.name,
     url: s.url,
     headers: Object.entries(s.headers).map(([name, value]) => ({ name, value })),

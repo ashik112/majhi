@@ -138,6 +138,18 @@ function mcpServer(when: Record<string, string> = {}): Pick<ConnectionTypeDef, "
         when: remote,
       },
       {
+        key: "protocol",
+        label: "Protocol",
+        kind: "text",
+        required: true,
+        help: "Streamable HTTP, or the older server-sent events (SSE) some servers still use.",
+        choices: [
+          { value: "http", label: "Streamable HTTP" },
+          { value: "sse", label: "SSE" },
+        ],
+        when: remote,
+      },
+      {
         key: "command",
         label: "Command",
         kind: "text",
@@ -732,6 +744,8 @@ export const ConnectionTestResultSchema = z.object({
   ok: z.boolean(),
   /** One line, like "12 tools" or why it failed. Never a secret. */
   detail: z.string(),
+  /** An MCP server's tool names, all of them. `detail` shows only the first few. */
+  tools: z.array(z.string()).optional(),
   /** What works but should not, like an identity that can delete pods. */
   warnings: z.array(z.string()),
   at: z.string(),

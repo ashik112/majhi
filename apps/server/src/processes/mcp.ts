@@ -76,6 +76,8 @@ export function processesServer(caller: ToolCaller, processes: ProcessManager): 
         }
         case "list": {
           const all = processes.list(task);
+          // Each line shows its status and exit code: an ended run is read, so its end wakes nobody.
+          for (const p of all) processes.markRead(task, p, agent);
           return ok(all.length === 0 ? "No processes." : all.map((p) => listLine(p, now())).join("\n"));
         }
         case "output": {
@@ -84,6 +86,7 @@ export function processesServer(caller: ToolCaller, processes: ProcessManager): 
           const p = processes.get(task, args.id);
           if (p === undefined) return fail(`There is no process ${args.id}.`);
           const lines = processes.output(task, args.id, args.lines);
+          processes.markRead(task, p, agent);
           return ok(`${listLine(p, now())}\n\n${lines.length === 0 ? "(no output yet)" : lines.join("\n")}`);
         }
         case "stop": {

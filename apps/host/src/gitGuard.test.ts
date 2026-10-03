@@ -310,4 +310,40 @@ describe("the helper's git in a majhi checkout whose shared .git/config names co
     await plain(repo, "worktree", "add", "-q", "--detach", join(dir, "plain"), first).catch(() => undefined);
     expect((await ran()).split("\n")).toContain("smudge");
   });
+
+  it("the e2e run keeps the entry of a task worktree it cannot see, and replaces its own stale one", async () => {
+    const { dir, plain, script } = await setup();
+    const repo = join(dir, "majhi");
+    await plain(dir, "init", "-q", "-b", "main", repo);
+    await writeFile(join(repo, "a.txt"), "one\n");
+    await plain(repo, "add", "-A");
+    await plain(repo, ...ID, "commit", "-qm", "one");
+    const head = await plain(repo, "rev-parse", "HEAD");
+    // A live task worktree whose folder the helper cannot see right now.
+    const task = join(dir, "tasks", "ACME-1", "majhi");
+    await plain(repo, "worktree", "add", "-q", "-b", "task/acme-1", task);
+    await rm(join(dir, "tasks"), { recursive: true });
+    // The e2e worktree's folder is gone, but its entry is still registered.
+    const worktree = join(dir, ".majhi", "e2e", "worktree");
+    await plain(repo, "worktree", "add", "-q", "--detach", worktree, head);
+    await rm(worktree, { recursive: true });
+
+    const git = (await exec("which", ["git"], { env: { PATH } })).stdout.trim();
+    const pnpm = await script("pnpm", "exit 1");
+    const e2e = createE2eRunner({
+      run: runCommand,
+      majhiHome: join(dir, ".majhi"),
+      home: dir,
+      path: PATH,
+      platform: "linux",
+      find: async (name) => (name === "git" ? git : name === "pnpm" ? pnpm : undefined),
+      log: () => undefined,
+      freePort: async () => 54321,
+    });
+    const result = await e2e({ runId: "run-1", repo, commit: head, timeoutMs: 600_000 });
+    expect(result.error).toBe("pnpm install failed in the e2e worktree.");
+    expect(await plain(worktree, "rev-parse", "HEAD")).toBe(head);
+    const listed = await plain(repo, "worktree", "list", "--porcelain");
+    expect(listed).toContain(`worktree ${task}`);
+  });
 });

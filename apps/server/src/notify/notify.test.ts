@@ -9,6 +9,7 @@ let w: World;
 let notifier: Notifier;
 let sent: AttentionEvent[];
 let desktop: DesktopNotice[];
+let hub: EventHub;
 
 const SETTLED = SETTLE_MS + COLLECT_MS + 10;
 
@@ -19,7 +20,7 @@ async function setup(settings = NotificationsSettingsSchema.parse({})): Promise<
       .status,
   ).toBe(200);
   const { store, room } = w.h.majhi.services;
-  const hub = new EventHub();
+  hub = new EventHub();
   sent = [];
   desktop = [];
   hub.subscribe((e: ServerEvent) => {
@@ -143,6 +144,41 @@ describe("an item that needs the owner", () => {
     await vi.advanceTimersByTimeAsync(SETTLED);
     expect(sent).toHaveLength(1);
     expect(desktop).toEqual([]);
+  });
+
+  it("leaves the desktop banner to a tab that reported it can pop browser notifications", async () => {
+    await setup();
+    const tab = {};
+    hub.tabs.report(tab, true, Date.now());
+    approval("a1");
+    await vi.advanceTimersByTimeAsync(SETTLED);
+    expect(sent).toHaveLength(1);
+    expect(desktop).toEqual([]);
+
+    // A report older than a minute no longer counts: the tab may be gone.
+    hub.tabs.report(tab, true, Date.now() - 61_000);
+    approval("a2");
+    await vi.advanceTimersByTimeAsync(SETTLED);
+    expect(desktop.map((n) => n.message)).toEqual(["ACM-1 needs approval: run migrations"]);
+  });
+
+  it("still sends the desktop banner when browser notifications are off, or the tab cannot pop", async () => {
+    await setup(NotificationsSettingsSchema.parse({ browser: false }));
+    hub.tabs.report({}, true, Date.now());
+    approval("a1");
+    await vi.advanceTimersByTimeAsync(SETTLED);
+    expect(desktop).toHaveLength(1);
+    notifier.close();
+    vi.useRealTimers();
+    await w.cleanup();
+
+    await setup();
+    const tab = {};
+    hub.tabs.report(tab, true, Date.now());
+    hub.tabs.report(tab, false, Date.now());
+    approval("a1");
+    await vi.advanceTimersByTimeAsync(SETTLED);
+    expect(desktop).toHaveLength(1);
   });
 });
 

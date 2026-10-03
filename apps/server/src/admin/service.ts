@@ -5,9 +5,11 @@ import {
   type AutonomyMode,
   type CommandMeta,
   type CommandName,
+  type ConnectionTestResult,
   commands,
   IdSchema,
   isDestructiveCommand,
+  McpInstallResultSchema,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -129,6 +131,8 @@ export class AdminService {
   /** Inputs of pending calls, unredacted. A restart drops them; the card then cannot run secrets it hid. */
   private readonly pending = new Map<string, unknown>();
   private readonly deciding = new Set<string>();
+  /** Cards the owner asked for in the room: they run as the owner, not as the agent they name. */
+  private readonly ownerCards = new Set<string>();
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
   private autonomy: AutonomyGate | undefined;
 
@@ -404,6 +408,36 @@ export class AdminService {
     return false;
   }
 
+  /**
+   * A card for something the owner asked for in the room ("@agent install this skill ..."). It waits
+   * like any other card. `input` is what runs on approval, as the owner; `details` is what the card
+   * shows under Input, with no secrets.
+   */
+  offer(offer: {
+    task: TaskId;
+    agent: string;
+    command: CommandName;
+    input: Record<string, unknown>;
+    summary: string;
+    details: unknown;
+    reason: string;
+  }): RoomItem {
+    const id = `approval:${randomUUID()}`;
+    this.pending.set(id, offer.input);
+    this.ownerCards.add(id);
+    this.deps.room.post(offer.task, id, {
+      type: "approval",
+      agent: offer.agent,
+      command: offer.command,
+      risk: commands[offer.command].risk,
+      summary: redactText(offer.summary),
+      input: JSON.stringify(redact(offer.details), null, 2),
+      reason: redactText(offer.reason),
+      state: "pending",
+    });
+    return this.mustGet(offer.task, id);
+  }
+
   private requestSecret(caller: AdminCaller, args: Record<string, unknown>): ToolResult {
     const name = IdSchema.safeParse(args.name);
     const label = typeof args.label === "string" ? args.label.trim().slice(0, 200) : "";
@@ -448,25 +482,25 @@ export class AdminService {
           shown: `You rejected: ${lowerFirst(item.summary)}`,
         });
         this.pending.delete(item.id);
+        this.ownerCards.delete(item.id);
         return rejected;
       }
       const input = this.inputOf(item);
       if (always !== undefined) await this.saveRule(item, always.scope, always.change);
-      const done = await this.execute(
-        item.command as CommandName,
-        input,
-        metaFor(item.agent, item.reason ?? "", item.task),
-      );
+      const done = await this.execute(item.command as CommandName, input, this.metaOf(item));
       this.pending.delete(item.id);
+      this.ownerCards.delete(item.id);
       this.audit(item, "allow", "owner", done.ok ? undefined : `Failed: ${done.error}`);
       // The owner approved what the captain or an autonomous task's agent asked: its tasks join.
       const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(item);
       if (done.ok && auto !== undefined)
         this.autonomy?.adopt(auto, item.command as CommandName, done.output, item.reason ?? "");
+      const installed = done.ok ? this.afterInstall(item, done.output) : undefined;
+      const line = done.ok ? (installed?.line ?? lineOf(done.output)) : "";
       const applied = this.update(item, {
         state: done.ok ? "applied" : "failed",
         ...(done.commit === undefined ? {} : { commit: done.commit }),
-        result: done.ok ? lineOf(done.output) : done.error,
+        result: done.ok ? line : done.error,
       });
       // The agent gets the command's output to work with; the room gets the decision in words.
       await this.notify(
@@ -474,7 +508,7 @@ export class AdminService {
         item.agent,
         done.ok
           ? {
-              text: `The owner approved: ${item.summary}. Result: ${lineOf(done.output)}`,
+              text: `The owner approved: ${item.summary}. Result: ${line}`,
               shown: `You approved: ${lowerFirst(item.summary)}`,
             }
           : {
@@ -621,6 +655,7 @@ export class AdminService {
     if (item?.type !== "secret-request" || item.state !== "pending") {
       throw new UserError("That request is not waiting for a secret.", 409);
     }
+    if (item.bind !== undefined) return this.answerBound(item, item.bind, value);
     await this.deps.secrets.set(item.name, value);
     this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
     await this.notify(item.task, item.agent, {
@@ -628,6 +663,107 @@ export class AdminService {
       shown: `You gave ${item.label}, kept as secret:${item.name}`,
     });
     return this.mustGet(item.task, item.id);
+  }
+
+  /**
+   * A secret an installed MCP server needs: it goes into that connection's entry, as the owner. When
+   * the last missing value is in, the server is tested and the agent hears the result.
+   */
+  private async answerBound(
+    item: SecretRequestItem,
+    bind: NonNullable<SecretRequestItem["bind"]>,
+    value: string,
+  ): Promise<RoomItem> {
+    const meta: CommandMeta = { actor: { kind: "owner" }, task: item.task };
+    const set = await this.execute(
+      "connections.setSecret",
+      { id: bind.connection, list: bind.list, field: bind.field, value },
+      meta,
+    );
+    if (!set.ok) throw new UserError(set.error, 409);
+    this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
+    const problems = (set.output as { problems?: string[] }).problems ?? [];
+    if (problems.length > 0) {
+      this.say(item.task, `You gave ${item.label}.`);
+      return this.mustGet(item.task, item.id);
+    }
+    const tested = await this.execute("connections.test", { id: bind.connection }, meta);
+    const result = tested.ok ? (tested.output as ConnectionTestResult) : undefined;
+    const outcome =
+      result === undefined
+        ? `could not be tested: ${tested.ok ? "" : tested.error}`
+        : result.ok
+          ? `passes Test (${result.detail})${result.tools === undefined ? "" : `. Tools: ${result.tools.join(", ")}`}`
+          : `failed Test: ${result.detail}`;
+    const good = result?.ok === true;
+    await this.notify(item.task, item.agent, {
+      text: `${bind.connection} ${outcome}. ${good ? "Its tools are in your next session." : "Tell the owner what to fix."}`,
+      shown: `You gave ${item.label}. ${bind.connection} ${outcome}`,
+      ...(good ? {} : { level: "warn" as const }),
+    });
+    return this.mustGet(item.task, item.id);
+  }
+
+  /**
+   * After an install card ran: one secret request per secret the server still needs, in the
+   * room, never in chat. Returns the line the card and the agent get instead of the raw output.
+   */
+  private afterInstall(item: ApprovalItem, output: unknown): { line: string } | undefined {
+    if (item.command === "skills.install") {
+      const names = (output as { skills?: { name: string }[] }).skills?.map((s) => s.name) ?? [];
+      return names.length === 0 ? undefined : { line: `Installed ${names.join(", ")}` };
+    }
+    if (item.command !== "mcp.install") return undefined;
+    const done = McpInstallResultSchema.safeParse(output);
+    if (!done.success || done.data.status !== "installed") return undefined;
+    const { connection, needs, test } = done.data;
+    for (const need of needs) {
+      const where = need.list === "headers" ? "header" : "variable";
+      this.deps.room.post(item.task, `secret:${randomUUID()}`, {
+        type: "secret-request",
+        agent: item.agent,
+        name: `${connection.id}-${need.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+          .slice(0, 63)
+          .replace(/-+$/, ""),
+        label: redactText(
+          `The ${need.name} ${where} of ${connection.name}${need.description ? `: ${need.description}` : ""}`.slice(
+            0,
+            200,
+          ),
+        ),
+        bind: { connection: connection.id, list: need.list, field: need.name },
+        state: "pending",
+      });
+    }
+    const on =
+      connection.agents.length > 0 ? `, on for ${connection.agents.map((a) => `@${a}`).join(", ")}` : "";
+    if (needs.length > 0) {
+      return {
+        line: `Installed ${connection.id}${on}. Waiting for the owner to enter ${needs.map((n) => n.name).join(", ")}`,
+      };
+    }
+    return {
+      line: `Installed ${connection.id}${on}. ${test === undefined ? "Not tested" : test.ok ? `Test passed: ${test.detail}` : `Test failed: ${test.detail}`}`,
+    };
+  }
+
+  private metaOf(item: ApprovalItem): CommandMeta {
+    return this.ownerCards.has(item.id)
+      ? {
+          actor: { kind: "owner" },
+          task: item.task,
+          ...(item.reason === undefined ? {} : { reason: item.reason }),
+        }
+      : metaFor(item.agent, item.reason ?? "", item.task);
+  }
+
+  /** A quiet line in the room. */
+  private say(task: string, text: string): void {
+    this.deps.room.post(task as TaskId, `info:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: redactText(text),
+    });
   }
 
   private async cancelSecret(item: SecretRequestItem, decision: "approve" | "reject"): Promise<RoomItem> {

@@ -58,6 +58,8 @@ export class AgentRun {
   queue: QueueEntry[] = [];
   /** Ended background processes of this agent not yet told, for the queued `processes` entry. */
   processEnds: ProcessInfo[] = [];
+  /** Notes from majhi that ride with the next prompt and start no turn of their own. */
+  notes: string[] = [];
   /** The queue waits: the owner pressed Esc, or stopped the task. A new message releases it. */
   held = false;
   /** Stop was called: the drive loop leaves quietly. */
@@ -85,6 +87,8 @@ export class AgentRun {
   roomTokens: { server: ToolServer; token: string }[] | undefined;
   /** What this session holds of its connections (5.14). Its folder of files goes when the session ends. */
   connections: RunConnections | undefined;
+  /** The session's folder of skill copies (removed when it ends), and the note still due in a prompt. */
+  skills: { dir: string; note: string; due: boolean } | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
   preambleDue = false;
   drive: Promise<void> | undefined;

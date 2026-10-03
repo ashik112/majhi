@@ -85,7 +85,7 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
-import { E2ePatchSchema, E2eStatusSchema } from "./e2e.ts";
+import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
@@ -111,6 +111,12 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import {
+  McpAgentInputSchema,
+  McpInstallInputSchema,
+  McpInstallResultSchema,
+  McpSearchResultSchema,
+} from "./mcp-servers.ts";
 import {
   FactHitSchema,
   FactSchema,
@@ -189,6 +195,15 @@ import {
   SettingsSchema,
   TurnsPatchSchema,
 } from "./settings.ts";
+import {
+  SkillAgentInputSchema,
+  SkillInstallInputSchema,
+  SkillInstallResultSchema,
+  SkillNameSchema,
+  SkillSchema,
+  SkillSearchResultSchema,
+  SkillUpdateInputSchema,
+} from "./skills.ts";
 import {
   AttachmentSchema,
   CardActionSchema,
@@ -1847,6 +1862,90 @@ export const commands = {
     output: z.object({ unlinked: TaskIdSchema }),
   },
 
+  // Skills (5.2) --------------------------------------------------------------
+  "skills.search": {
+    risk: "read",
+    summary:
+      "Search the skills.sh directory. Each result names the source repo to review and what to pass to skills.install",
+    input: z.object({
+      query: z.string().trim().min(2).max(200),
+      limit: z.number().int().min(1).max(50).default(20),
+    }),
+    output: z.array(SkillSearchResultSchema),
+  },
+  "skills.install": {
+    risk: "change",
+    summary:
+      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. An installed skill is not enabled for any agent: use skills.enable",
+    input: SkillInstallInputSchema,
+    output: SkillInstallResultSchema,
+  },
+  "skills.list": {
+    risk: "read",
+    summary:
+      "List installed skills with name, description, files, source, version and the agents that use each. With agent, only the ones that agent has enabled",
+    input: z.object({ agent: IdSchema.optional() }),
+    output: z.array(SkillSchema),
+  },
+  "skills.enable": {
+    risk: "change",
+    summary:
+      "Turn an installed skill on for one agent: adds it to the agent file's skills list. Its next run gets the skill",
+    input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.disable": {
+    risk: "change",
+    summary: "Turn a skill off for one agent: takes it off the agent file's skills list",
+    input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.remove": {
+    risk: "destructive",
+    summary: "Uninstall a skill and take it off every agent that lists it",
+    input: z.object({ name: SkillNameSchema }),
+    output: z.object({ removed: SkillNameSchema, agents: z.array(IdSchema) }),
+  },
+  "skills.update": {
+    risk: "change",
+    summary:
+      "Fetch the newest copy of an installed skill from its source. Like install, the first call returns a preview and installs nothing; confirm with the previewId. Answers unchanged when the source has not changed",
+    input: SkillUpdateInputSchema,
+    output: SkillInstallResultSchema,
+  },
+
+  // MCP servers (5.2) ---------------------------------------------------------
+  "mcp.search": {
+    risk: "read",
+    summary:
+      "Search the official MCP Registry. Each result names the publisher, the source repo, the transports and what to pass to mcp.install",
+    input: z.object({
+      query: z.string().trim().min(2).max(200),
+      limit: z.number().int().min(1).max(50).default(20),
+    }),
+    output: z.array(McpSearchResultSchema),
+  },
+  "mcp.install": {
+    risk: "change",
+    summary:
+      "Install an MCP server as an mcp connection of an org, from a registry name, a remote URL, a local command or a pasted mcpServers snippet. The first call only returns a preview (publisher, source repo, transport, the command or URL, the headers and variables) with a previewId; nothing is created. Show the owner the preview, and after they agree call again with confirm set to the previewId: it creates the connection and runs Test with the tool list. Secret entries are created empty: never pass a secret value, ask the owner with a secret request and set it with connections.setSecret. Installing does not enable the server for any agent: use mcp.enable",
+    input: McpInstallInputSchema,
+    output: McpInstallResultSchema,
+  },
+  "mcp.enable": {
+    risk: "change",
+    summary:
+      "Turn an installed MCP server (an mcp connection) on for one agent of its org: adds it to the agent file's connections list. Its next run gets the server",
+    input: McpAgentInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "mcp.disable": {
+    risk: "change",
+    summary: "Turn an MCP server off for one agent: takes it off the agent file's connections list",
+    input: McpAgentInputSchema,
+    output: ConnectionViewSchema,
+  },
+
   // Config history and undo (5.16) --------------------------------------------
   "history.list": {
     risk: "read",
@@ -1884,7 +1983,7 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to true or false), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, background e2e (e2e.projects: project id to off, merge or daily; e2e.daily_at like 03:00), cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
@@ -2011,9 +2110,20 @@ export const commands = {
   "e2e.status": {
     risk: "read",
     summary:
-      "The background e2e suite on main: the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
+      "The background e2e suite on main: when it runs per project (off, merge or daily), the latest result per project (commit, passed or failed, failing specs, duration, when), the run in progress and the queue. Read this instead of running the suite, which agents never do",
     input: Empty,
     output: E2eStatusSchema,
+  },
+  "e2e.runNow": {
+    risk: "change",
+    summary:
+      "Queue a background e2e run of a project at its base branch's tip now, whatever its mode. The owner's alone: agents are refused",
+    input: z.object({ project: z.string().min(1) }),
+    output: z.object({
+      run: E2eRunSchema,
+      /** False when a run at the same commit was already queued or running: that one is returned. */
+      queued: z.boolean(),
+    }),
   },
   "health.fix": {
     risk: "change",

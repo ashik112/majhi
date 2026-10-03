@@ -1,6 +1,11 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { type RoomServerMessage, RoomServerMessageSchema, ServerEventSchema } from "@majhi/shared";
+import {
+  EventsClientMessageSchema,
+  type RoomServerMessage,
+  RoomServerMessageSchema,
+  ServerEventSchema,
+} from "@majhi/shared";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { EventHub } from "./events/hub.ts";
 import { isLoopbackOrigin } from "./http/origin.ts";
@@ -14,6 +19,8 @@ export interface UpgradeSource {
 
 const TERMINAL_PATH = /^\/api\/term\/([A-Za-z0-9-]{1,64})$/;
 const ROOM_PATH = /^\/api\/tasks\/([A-Z][A-Z0-9]{0,9}-[1-9][0-9]*)\/room$/;
+/** A tab's report is a few dozen bytes. Anything longer is not one. */
+const MAX_CLIENT_MESSAGE = 1024;
 
 /** What the room socket needs from the task and room services. */
 export interface RoomFeed {
@@ -70,9 +77,26 @@ function serveEvents(ws: WebSocket, events: EventHub): void {
   const stop = events.subscribe((event) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(ServerEventSchema.parse(event)));
   });
-  ws.on("close", stop);
-  ws.on("error", stop);
-  // Clients send nothing on this channel. Ignore whatever arrives.
+  const leave = () => {
+    stop();
+    events.tabs.drop(ws);
+  };
+  ws.on("close", leave);
+  ws.on("error", leave);
+  // A tab sends only whether it can pop browser notifications. Anything else is ignored.
+  ws.on("message", (data, isBinary) => {
+    if (isBinary) return;
+    const text = data.toString();
+    if (text.length > MAX_CLIENT_MESSAGE) return;
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return;
+    }
+    const message = EventsClientMessageSchema.safeParse(json);
+    if (message.success) events.tabs.report(ws, message.data.active, Date.now());
+  });
 }
 
 /**

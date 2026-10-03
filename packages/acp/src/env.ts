@@ -30,10 +30,12 @@ export interface GitAttribution {
 
 /**
  * Git settings of every run that has majhi's hooks, in the command-line scope, so they win over the
- * repo's own. An agent's plain `git gc`, `git worktree prune` from gc, or `git reflog expire` then
- * drops nothing: no automatic gc, no pruning of loose objects or of other checkouts' worktree entries
- * (the run cannot see their folders), refs never packed, reflogs kept forever and written for every ref. Explicit
- * flags (`--prune=now`, `--expire=now`) still win over these.
+ * repo's own. An agent's plain `git gc` or `git reflog expire` then drops nothing: no automatic gc,
+ * no pruning of loose objects, refs never packed, reflogs kept forever and written for every ref.
+ * `gc.worktreePruneExpire` only stops `git gc` from pruning other checkouts' worktree entries (the run
+ * cannot see their folders); an explicit `git worktree prune` ignores it. What stops that is the
+ * read-only `.git/worktrees` mount and the lock on every task worktree. Explicit flags
+ * (`--prune=now`, `--expire=now`) still win over these.
  */
 export const RUN_GIT_CONFIG: readonly (readonly [key: string, value: string])[] = [
   ["gc.auto", "0"],

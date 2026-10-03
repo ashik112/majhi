@@ -296,7 +296,11 @@ export function teamFactsLines(f: TeamFacts): string[] {
     ...f.members.map(memberLine),
   ];
   if (f.joinable.length > 0) {
-    lines.push("", "Could join (mention one to add it to the team):", ...f.joinable.map(memberLine));
+    lines.push(
+      "",
+      'Could join (start a line with "@name:" or use the mention tool to add one to the team):',
+      ...f.joinable.map(memberLine),
+    );
   }
   lines.push("");
   if (f.running.length === 0) lines.push("Running now: nothing else.");

@@ -32,7 +32,15 @@ import {
   verdictOf,
   waitsOnly,
 } from "./coordinate.ts";
-import { asksByWords, mentionQuestion, QUIET_ON_NO, quietNote, readMentions } from "./mentions.ts";
+import {
+  addresses,
+  asksByWords,
+  mentionQuestion,
+  notAddedNote,
+  QUIET_ON_NO,
+  quietNote,
+  readMentions,
+} from "./mentions.ts";
 
 /** How much of a message the decision provider reads. */
 const STATE_MAX = 2000;
@@ -97,12 +105,18 @@ export class RoomCoordinator {
     ).filter((m) => m !== turn.agent);
     const removed = store.tasks.roomState(task.id).removed ?? [];
     const joined = new Set<string>();
+    // Agents that could have joined but were named in passing: the writer is told they did not.
+    const notAdded: string[] = [];
 
-    // An agent mentioned from outside the team joins when it may work in the org. One the owner
-    // removed stays out: only the owner brings it back.
+    // An agent addressed from outside the team joins when it may work in the org. A name in
+    // passing does not add anyone. One the owner removed stays out: only the owner brings it back.
     for (const m of mentions) {
       if (m === OWNER_HANDLE || task.team.includes(m) || removed.includes(m)) continue;
       const fm = agents.find((a) => a.id === m);
+      if (!addresses(text, m)) {
+        if (fm !== undefined && canWorkIn(fm, task.org)) notAdded.push(m);
+        continue;
+      }
       if (fm !== undefined && canWorkIn(fm, task.org)) {
         task = await this.deps.tasks.addToTeam(task.id, m, { by: turn.agent });
         joined.add(m);
@@ -130,10 +144,12 @@ export class RoomCoordinator {
     const named = mentions.filter(
       (m) => m !== OWNER_HANDLE && team.some((t) => t.id === m) && !joined.has(m),
     );
-    const quiet =
-      changed || waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
-        ? []
-        : await this.quietMentions(task.id, turn.agent, text, named, answersNote);
+    const { quiet, told } =
+      waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
+        ? { quiet: [], told: [] }
+        : await this.quietMentions(task.id, turn.agent, text, named, changed);
+    if (told.length > 0 || notAdded.length > 0)
+      this.tellQuiet(task.id, turn.agent, told, notAdded, answersNote);
     const routed = mentions.filter((m) => !quiet.includes(m));
     const verdict = await this.verdict(task, turn.agent, role, text, routed);
     const plan = planTurn({
@@ -209,32 +225,40 @@ export class RoomCoordinator {
   }
 
   /**
-   * The teammates in `asked` that the message only names, without asking them to act: they are
-   * not woken, and the room says so in a quiet line. Plain status by the words alone; otherwise
-   * the decision provider is asked, and only a sure "no" counts. Unsure, or no provider: none.
+   * The teammates in `named` that the message only names, without asking them to act: they are
+   * not woken. A name in passing ("reported to @x") is quiet by its place alone, unless the words
+   * ask. A name that addresses the agent goes by the words (plain status), then the decision
+   * provider, and only a sure "no" counts. Unsure, or no provider: none. A turn that changed files
+   * wakes the teammates it addresses without asking. `told` are the quiet ones the writer hears
+   * about; plain status has its own room line and no note.
    */
   private async quietMentions(
     task: string,
     from: string,
     text: string,
     named: string[],
-    answersNote: boolean,
-  ): Promise<string[]> {
+    changed: boolean,
+  ): Promise<{ quiet: string[]; told: string[] }> {
     const names = (agents: readonly string[]) => agents.map((a) => `@${a}`).join(", ");
     // Asked in so many words: woken without asking the provider, so a wrong "no" cannot drop a handoff.
     const asked = named.filter((a) => !asksByWords(text, a));
-    if (asked.length === 0) return [];
+    const passing = asked.filter((a) => !addresses(text, a));
+    const addressed = asked.filter((a) => addresses(text, a));
+    const told = (quiet: string[]) => ({ quiet, told: quiet });
+    if (asked.length === 0) return { quiet: [], told: [] };
+    if (changed) return told(passing);
     if (statusOnly(text)) {
       this.say(task, "info", `@${from} only reported status to ${names(asked)}, so nobody was woken.`);
-      return asked;
+      return { quiet: asked, told: [] };
     }
+    if (addressed.length === 0) return told(passing);
     const decisions = this.deps.decisions;
-    if (decisions === undefined) return [];
+    if (decisions === undefined) return told(passing);
     const result = await decisions
-      .decide(mentionQuestion(from, asked, text), { use: "routing", task, agent: from })
+      .decide(mentionQuestion(from, addressed, text), { use: "routing", task, agent: from })
       .catch(() => undefined);
-    if (result === undefined) return [];
-    const reading = readMentions(asked, result);
+    if (result === undefined) return told(passing);
+    const reading = readMentions(addressed, result);
     const quiet = QUIET_ON_NO ? reading.quiet : [];
     const parts = [
       reading.act.length > 0 ? `asks ${names(reading.act)} to act` : "",
@@ -246,20 +270,44 @@ export class RoomCoordinator {
       fellBack: reading.unsure.length > 0,
       choices: ["wake", "do not wake"],
     });
-    if (quiet.length > 0) {
+    return told([...passing, ...quiet]);
+  }
+
+  /**
+   * The room lines for mentions that woke nobody or added nobody, and one note for the writer.
+   * The writer's turn is over, so the lines never reach it: the note rides with its next prompt
+   * and starts no turn. Not for the turn that reads such a note, so a "thanks @x" back cannot go
+   * round.
+   */
+  private tellQuiet(
+    task: string,
+    from: string,
+    quiet: string[],
+    notAdded: string[],
+    answersNote: boolean,
+  ): void {
+    const names = (agents: readonly string[]) => agents.map((a) => `@${a}`).join(", ");
+    if (quiet.length > 0)
       this.say(
         task,
         "info",
         `@${from} mentioned ${names(quiet)} without asking for anything, so they were not woken.`,
       );
-      // The writer's turn is over, so the line above never reaches it. Not for the turn that
-      // answers such a note, so a "thanks @x" back cannot go round.
-      if (!answersNote) {
-        this.quietNoted.add(`${task}\u0000${from}`);
-        this.deps.runs.notify(task, from, quietNote(quiet));
-      }
-    }
-    return quiet;
+    if (notAdded.length > 0)
+      this.say(
+        task,
+        "info",
+        `@${from} named ${names(notAdded)} in passing, so ${notAdded.length === 1 ? "it was" : "they were"} not added to the team.`,
+      );
+    if (answersNote) return;
+    this.quietNoted.add(`${task}\u0000${from}`);
+    this.deps.runs.note(
+      task,
+      from,
+      [quiet.length > 0 ? quietNote(quiet) : "", notAdded.length > 0 ? notAddedNote(notAdded) : ""]
+        .filter((n) => n !== "")
+        .join("\n"),
+    );
   }
 
   /**

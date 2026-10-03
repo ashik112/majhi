@@ -117,6 +117,30 @@ describe("ProcessManager", () => {
     expect(ended.map((e) => [e.process.stoppedBy, e.wakes])).toEqual([["agent", false]]);
   });
 
+  it("counts an end as read only when its own agent saw it ended, until a restart", async () => {
+    const p = await start("sleep 0.1; echo done");
+    // Seen while it ran: the end is still news.
+    manager.markRead("ACM-1", p, "acme-builder");
+    await until(() => manager.get("ACM-1", "p1")?.status === "exited", "the end");
+    const end = manager.get("ACM-1", "p1");
+    if (end === undefined) throw new Error("no process");
+    expect(manager.readAfterEnd(end)).toBe(false);
+    manager.markRead("ACM-1", end, "acme-lead");
+    expect(manager.readAfterEnd(end)).toBe(false);
+    manager.markRead("ACM-1", end, "acme-builder");
+    expect(manager.readAfterEnd(end)).toBe(true);
+
+    const again = await manager.restart("ACM-1", "p1", "acme-builder");
+    // The old run read is not the new run.
+    manager.markRead("ACM-1", end, "acme-builder");
+    await until(() => manager.get("ACM-1", "p1")?.status === "exited", "the second end");
+    const second = manager.get("ACM-1", "p1");
+    if (second === undefined) throw new Error("no process");
+    expect(second.startedAt).toBe(again.startedAt);
+    expect(manager.readAfterEnd(second)).toBe(false);
+    expect(manager.readAfterEnd(end)).toBe(false);
+  });
+
   it("stops a process whose start was still under way", async () => {
     let go: () => void = () => {};
     const gate = new Promise<void>((r) => {

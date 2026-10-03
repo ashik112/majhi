@@ -252,7 +252,8 @@ async function mcpServer(
       return;
     }
     const headers = lists.includes("headers") ? await entries(h, "headers") : {};
-    plan.servers.push({ type: "http", name: h.id, url, headers });
+    const type = textValue(c, "protocol") === "sse" ? "sse" : "http";
+    plan.servers.push({ type, name: h.id, url, headers });
   }
   gate(h, {
     server: h.id,

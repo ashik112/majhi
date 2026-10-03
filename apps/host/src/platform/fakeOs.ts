@@ -3,6 +3,7 @@
  * recorded. Nothing real runs. Only tests import this, so the helper's bundle never holds it.
  */
 import { join } from "node:path";
+import type { Download } from "../download.ts";
 import type { RunOptions, RunResult } from "../ssh.ts";
 import type { PlatformDeps } from "./types.ts";
 
@@ -17,6 +18,8 @@ export interface FakeOsOptions {
   home?: string;
   majhiHome?: string;
   path?: string;
+  /** What a download gives. Without it the fake OS downloads nothing. */
+  download?: Download;
 }
 
 export interface FakeRun {
@@ -124,6 +127,7 @@ export function fakeOs(options: FakeOsOptions = {}) {
     log: (message) => {
       logs.push(message);
     },
+    ...(options.download === undefined ? {} : { download: options.download }),
   };
   return { deps, runs, logs, programs, files };
 }

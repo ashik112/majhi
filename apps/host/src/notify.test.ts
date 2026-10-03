@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { clickUrl, plainLine, showNotification } from "./notify.ts";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clickUrl, desktopNotifier, plainLine, showNotification } from "./notify.ts";
 import { type FakeProgram, failed, fakeOs, ok } from "./platform/fakeOs.ts";
 import { linuxPlatform } from "./platform/linux.ts";
 import { macosPlatform, notificationScript } from "./platform/macos.ts";
+import { installedProgram, type NotifierRelease } from "./platform/terminalNotifier.ts";
 import { POWERSHELL_APP_ID } from "./platform/toast.ts";
 import { wslPlatform } from "./platform/wsl.ts";
 
@@ -47,6 +52,114 @@ describe("showNotification on macOS", () => {
     expect(out.clickable).toBe(false);
     expect(os.runs[0]?.file).toBe("/usr/bin/osascript");
     expect(os.runs[0]?.args[1]).toContain('sound name "Glass"');
+  });
+});
+
+describe("majhi's own terminal-notifier on macOS", () => {
+  const base = "http://127.0.0.1:7070";
+  const params = { title: "majhi", message: "ACM-12 needs approval", path: "/t/ACM-12", sound: true };
+  const release = Buffer.from("a terminal-notifier release");
+  const pinned: NotifierRelease = {
+    version: "9.9.9",
+    url: "https://downloads.example/terminal-notifier.zip",
+    sha256: createHash("sha256").update(release).digest("hex"),
+  };
+  let majhiHome: string;
+
+  beforeEach(async () => {
+    majhiHome = await mkdtemp(join(tmpdir(), "majhi-notifier-"));
+  });
+  afterEach(async () => {
+    await rm(majhiHome, { recursive: true, force: true });
+  });
+
+  /** `ditto -x -k <zip> <dir>`: unpacks the app bundle, as the real release holds it. */
+  const ditto: FakeProgram = async (args) => {
+    const macos = join(args[3] ?? "", "terminal-notifier.app", "Contents", "MacOS");
+    await mkdir(macos, { recursive: true });
+    await writeFile(join(macos, "terminal-notifier"), "#!/bin/sh\n");
+    return ok();
+  };
+
+  function mac(download: (url: string) => Promise<Uint8Array>) {
+    const os = fakeOs({
+      home: "/Users/owner",
+      majhiHome,
+      programs: { "/usr/bin/osascript": () => ok(), "/usr/bin/ditto": ditto },
+      download,
+    });
+    return { os, notifier: macosPlatform(os.deps, { notifierRelease: pinned }).notifier };
+  }
+
+  it("never installs a download whose hash does not match, and stays on osascript", async () => {
+    const download = vi.fn(async () => new Uint8Array(Buffer.from("something else")));
+    const { os, notifier } = mac(download);
+
+    expect((await showNotification(notifier, base, params)).clickable).toBe(false);
+    await vi.waitFor(() => expect(os.logs.join("\n")).toContain("did not match its pinned SHA-256"));
+    expect((await showNotification(notifier, base, params)).clickable).toBe(false);
+
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(os.runs.map((run) => run.file)).toEqual(["/usr/bin/osascript", "/usr/bin/osascript"]);
+    expect(await readdir(majhiHome)).toEqual([]);
+  });
+
+  it("installs the pinned release, and the next notification opens majhi on click", async () => {
+    const download = vi.fn(async () => new Uint8Array(release));
+    const { os, notifier } = mac(download);
+
+    // The first one does not wait for the download.
+    expect((await showNotification(notifier, base, params)).clickable).toBe(false);
+    expect(os.runs[0]?.file).toBe("/usr/bin/osascript");
+    await vi.waitFor(() => expect(os.logs.join("\n")).toContain("installed terminal-notifier 9.9.9"));
+    expect(download).toHaveBeenCalledWith(pinned.url);
+
+    const program = installedProgram(majhiHome);
+    expect(program).toBe(
+      join(
+        majhiHome,
+        "bin",
+        "terminal-notifier",
+        "terminal-notifier.app",
+        "Contents",
+        "MacOS",
+        "terminal-notifier",
+      ),
+    );
+    // Only the installed app is left: the zip and the unpack folder are gone.
+    expect(await readdir(join(majhiHome, "bin"))).toEqual(["terminal-notifier"]);
+    expect(await readFile(program, "utf8")).toBe("#!/bin/sh\n");
+
+    os.programs.set(program, () => ok());
+    expect((await showNotification(notifier, base, params)).clickable).toBe(true);
+    const last = os.runs.at(-1);
+    expect(last?.file).toBe(program);
+    expect(last?.args).toEqual([
+      "-title",
+      "majhi",
+      "-message",
+      "ACM-12 needs approval",
+      "-group",
+      "majhi",
+      "-open",
+      "http://127.0.0.1:7070/t/ACM-12",
+      "-sound",
+      "Glass",
+    ]);
+    expect(download).toHaveBeenCalledTimes(1);
+  });
+
+  it("downloads nothing and shows nothing with MAJHI_HOST_NOTIFY=off", async () => {
+    const download = vi.fn(async () => new Uint8Array(release));
+    const { os, notifier } = mac(download);
+    const logs: string[] = [];
+    const off = desktopNotifier(false, notifier, (line) => logs.push(line));
+
+    expect((await showNotification(off, base, params)).clickable).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(download).not.toHaveBeenCalled();
+    expect(os.runs).toEqual([]);
+    expect(logs).toEqual(["notify (off): majhi: ACM-12 needs approval"]);
   });
 });
 

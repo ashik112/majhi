@@ -143,6 +143,15 @@ describe("e2e runner", () => {
     expect(env.TMPDIR?.startsWith(join(home, ".majhi", "e2e", "runs"))).toBe(true);
   });
 
+  it("never runs `git worktree prune`, with or without a worktree left from a past run", async () => {
+    const pass = runner(async () => 0);
+    await start(pass);
+    await start(pass);
+    const gits = calls.filter((c) => c.file.endsWith("/git")).map((c) => c.args);
+    expect(gits.some((args) => args.includes("worktree") && args.includes("add"))).toBe(true);
+    expect(gits.filter((args) => args.includes("prune"))).toEqual([]);
+  });
+
   it("uses taskpolicy and nice on a Mac", async () => {
     const run: RunFn = async (file, args, options) => {
       calls.push({ file, args, options });

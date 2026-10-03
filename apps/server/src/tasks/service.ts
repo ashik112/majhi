@@ -841,6 +841,7 @@ export class TaskService {
           base: stack?.branch ?? repo.base,
           branch: repo.branch,
           path,
+          task: id,
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
@@ -2547,8 +2548,9 @@ export class TaskService {
   /**
    * A background process ended (5.15). A `wait` process that exited by itself wakes the agent that
    * started it, once, and a task in review runs again. Not when a newer run of the same command
-   * started after it: that one's result counts, and the room only notes the old end. Any other end
-   * of a `wait` process may leave nobody working: the task may be ready for review.
+   * started after it: that one's result counts, and the room only notes the old end. Nor when the
+   * agent already read the end with `output` or `list`. Any other end of a `wait` process may leave
+   * nobody working: the task may be ready for review.
    */
   async processEnded(p: ProcessInfo, wakes: boolean): Promise<void> {
     this.waitNoted.delete(`${p.task} ${p.id} ${p.startedAt}`);
@@ -2568,6 +2570,15 @@ export class TaskService {
         type: "system",
         level: "info",
         text: `${p.id} \`${p.name}\` ended, but ${newer.id} is a newer run of it, so nobody is woken.`,
+      });
+      await this.agentsIdle(p.task);
+      return;
+    }
+    if (this.deps.processes?.readAfterEnd(p) === true) {
+      this.deps.room.post(task.id, itemId, {
+        type: "system",
+        level: "info",
+        text: `${p.id} \`${p.name}\` ended; @${p.agent} already read it, so nobody is woken.`,
       });
       await this.agentsIdle(p.task);
       return;

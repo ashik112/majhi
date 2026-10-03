@@ -59,6 +59,8 @@ export interface ConnectionDeps {
   uploads: UploadStore;
   agents: AgentStore;
   majhiHome: string;
+  /** Agents whose `connections` list lost an entry: their open sessions must restart. */
+  agentsChanged?: (agents: string[]) => void;
 }
 
 interface Found {
@@ -177,6 +179,7 @@ export class ConnectionService {
    */
   async remove(id: string, command: string, meta: CommandMeta): Promise<{ removed: string }> {
     let released: string[] = [];
+    const changed: string[] = [];
     await this.deps.config.change({ command, meta, summary: `removed connection ${id}` }, async () => {
       const found = await this.require(id);
       released = storedValues(found.connection);
@@ -188,8 +191,10 @@ export class ConnectionService {
           ...stored.agent,
           frontmatter: { ...frontmatter, connections: frontmatter.connections.filter((c) => c !== id) },
         });
+        changed.push(frontmatter.id);
       }
     });
+    this.deps.agentsChanged?.(changed);
     await this.release(id, released);
     await rm(this.dir(id), { recursive: true, force: true });
     this.tests.delete(id);
