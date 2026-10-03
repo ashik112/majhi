@@ -33,7 +33,9 @@ ifeq ($(MAJHI_LAYA_GPU),nvidia)
   export MAJHI_LAYA_TORCH_INDEX := $(or $(MAJHI_LAYA_TORCH_INDEX),$(call dotenv,MAJHI_LAYA_TORCH_INDEX),https://download.pytorch.org/whl/cu130)
   export MAJHI_LAYA_DEVICE := cuda
 endif
-SECRETS_KEY := $(or $(MAJHI_SECRETS_KEY),$(HOME)/.config/majhi/secrets.key)
+# The secrets key file: MAJHI_SECRETS_KEY from the command line, the environment or .env, else the
+# default. host.sh hands it to the helper, so its compose runs mount the same file.
+SECRETS_KEY := $(or $(MAJHI_SECRETS_KEY),$(call dotenv,MAJHI_SECRETS_KEY),$(HOME)/.config/majhi/secrets.key)
 export MAJHI_SECRETS_KEY := $(SECRETS_KEY)
 
 .PHONY: up down logs host-logs doctor ci
