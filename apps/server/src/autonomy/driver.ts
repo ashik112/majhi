@@ -232,6 +232,7 @@ export class AutonomyDriver {
       leftOut: pick.leftOut,
       rules: pick.rules,
       queue: status.queue.filter((q) => inOrg(q.org)),
+      accountStatus: Object.fromEntries(status.accounts.map((a) => [a.id, a.status])),
     });
     await this.deps.tasks.tellAgent({
       task: chat,

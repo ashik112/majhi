@@ -1157,7 +1157,8 @@ export const commands = {
   },
   "tasks.start": {
     risk: "change",
-    summary: "Create the worktrees if needed and start the task's agent",
+    summary:
+      "Create the worktrees if needed and start the task's agent. Also resumes a paused task. The captain may resume what it or Autonomous paused, and what stopped for a cause that is gone, never what the owner paused",
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },

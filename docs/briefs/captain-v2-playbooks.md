@@ -53,6 +53,23 @@ Gaps no product covers: a portfolio view for one developer serving several isola
 7. **Daily agenda and morning brief.** One planning turn per workspace fits playbooks, findings and backlog into the budget and the owner's review time. The morning brief leads with what needs the owner's minutes.
 8. **Business layer, drafts only.** Per-client economics from rates the owner enters (spend against retainer, unbilled work), scope watch, client update and release note drafts, an opportunities brief, a tech radar per project. Anything sent to a client is an owner decision; majhi never invoices, pays or sends.
 
+
+## Essentials the business packs need (added 2026-10-04)
+
+1. **Company knowledge base**: the owner's bio, products, pricing, positioning, past wins, metrics, screenshots and decks, per workspace and for the business. Grant applications, launches, investor mail and replies draw on it.
+2. **Voice profile**: how the owner writes, learned from sent mail and posts (with the owner's approval), with a voice per client where needed.
+3. **Light CRM**: people and organisations (clients, leads, investors, hackathon and grant contacts) with last touch, next step and deadline.
+4. **Deadlines and calendar**: hackathon, grant and launch dates and the owner's availability feed the agenda.
+5. **Approve from the phone**: decisions and drafts pushed to a chat app or mobile push with Approve and Reject, so the business runs while the owner is away.
+6. **Incident escalation**: an unanswered incident escalates after N minutes (louder alert, then a call).
+7. **Injection defense for everything inbound** (mail, DMs, web pages, issue text): a dedicated screening pass, and inbound text is always data, never instructions. Required before the inbox and social packs go live.
+8. **Platform rules and pacing**: posting caps and pacing per social platform, no impersonation, terms respected. Required before the social pack goes live.
+9. **One cost ceiling and a P&L**: model tokens plus paid APIs under one ceiling, and what the captain cost against what it earned or saved.
+10. **Backups and restore of majhi's data**: memory, CRM, knowledge base, goals and findings, not only the secrets key.
+11. **majhi watches itself**: a stalled server or a dead host helper pages the owner like a client outage.
+
+Order: 7 and 8 before the inbox and social packs; 1, 2 and 3 before the growth packs; 5, 6 and 11 with the ops watch pack; 9 with the scorecard; 10 before any pack stores business data.
+
 ## Rules that do not change
 
 The never list, org isolation, nothing outbound without approval or an org policy that allows it, the Autonomous switch and budgets, owner approval for anything that loosens the captain's own authority. The captain may tighten its rows by itself, never loosen them.
