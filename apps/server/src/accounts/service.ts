@@ -200,6 +200,13 @@ export class AccountService {
     return statusFromHealth((await this.deps.probes.cached(id)).health) === "needs-login";
   }
 
+  /** Since when the account needs a new sign-in (ISO), or undefined when it does not. */
+  async signedOutSince(id: string): Promise<string | undefined> {
+    const cached = await this.deps.probes.cached(id);
+    if (statusFromHealth(cached.health) !== "needs-login") return undefined;
+    return cached.signInFailed?.at ?? cached.health?.checkedAt;
+  }
+
   /** The agent's account when that account needs a new sign-in, else undefined. */
   async signedOutAccountOf(agent: string): Promise<string | undefined> {
     const stored = await this.deps.agents.get(agent).catch(() => undefined);

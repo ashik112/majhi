@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   getTool,
+  isAuthFailure,
   type PermissionAsk,
   type PromptBlock,
   type RuntimeOptions,
@@ -156,6 +157,27 @@ export interface RunDeps {
   onPaused?: (task: string, reason: PauseReason, why?: string) => void;
   /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
+  /** A turn failed on its account's sign-in: the account is `needs-login` from now, with `detail` for Accounts. */
+  markSignedOut?: (account: string, detail: string) => Promise<void>;
+  /** Whether a teammate of `agent` in the task runs on an account that is not known to need a sign-in. */
+  teamCanRun?: (task: string, agent: string) => Promise<boolean>;
+  /**
+   * A turn failed and its step goes back to the team: `signed-out` when the agent's account needs a
+   * new sign-in (the lead is woken to give the step to a teammate), `error` for any other failure.
+   */
+  onTurnFailed?: (turn: {
+    task: string;
+    agent: string;
+    text: string;
+    cause: "signed-out" | "error";
+    account?: string | undefined;
+  }) => void;
+  /**
+   * Autonomous mode's mid-turn cap check (PRV-74), asked at a running turn's tool calls with what the
+   * turn spent so far (USD, from the agent's running cost). A line when a cap is passed by more
+   * than its margin: the turn stops there and the run pauses with `limit`.
+   */
+  overCap?: (task: string, turnCostUsd: number) => Promise<string | undefined>;
   /** A paused or cut agent is resuming: the task runs again. */
   onResumed?: (task: string) => void;
   /** An agent failed in a way that looks like a lost connection: check the network now. */
@@ -984,7 +1006,15 @@ export class RunManager {
       );
       const fired = run.limitHit;
       run.limitHit = undefined;
-      if (stopReason === undefined) return;
+      if (stopReason === undefined) {
+        // Failed on the sign-in and paused: the same prompt goes out once the account works again.
+        if (run.requeue) {
+          run.requeue = false;
+          run.queue.unshift(entry);
+          this.live.refreshQueued(run);
+        }
+        return;
+      }
       if (stopReason === "recovered") continue;
       if (run.paused !== undefined) break;
       // A turn limit cut it: continue in a fresh session, or pause when it keeps happening.
@@ -1087,6 +1117,7 @@ export class RunManager {
     blocks: PromptBlock[],
   ): Promise<string | undefined> {
     this.setLive(run, { status: "working", nowDoing: undefined, turnAt: this.now().toISOString() });
+    run.costAtTurnStart = run.costNow;
     run.mapper?.beginTurn();
     this.markTurn(run, true);
     let stopReason: string;
@@ -1101,6 +1132,14 @@ export class RunManager {
       run.mapper?.endTurn(true);
       if (run.paused !== undefined) {
         this.markTurn(run, false, false);
+        return undefined;
+      }
+      // The CLI prints its auth error as the turn's text, then the prompt fails on ACP's auth error.
+      const said = run.mapper?.finalText().trim() ?? "";
+      if (run.account !== undefined && isAuthFailure(err, said)) {
+        this.endSession(run, "error");
+        void session.close().catch(() => undefined);
+        await this.signedOutMidTurn(run, run.account, said === "" ? message : said);
         return undefined;
       }
       if (looksLikeNetworkError(message)) {
@@ -1128,6 +1167,9 @@ export class RunManager {
       this.endSession(run, "error");
       void session.close().catch(() => undefined);
       this.setLive(run, { status: "error", nowDoing: undefined });
+      // A resume tries once more by itself; anything else is the team's to pick up.
+      if (!run.resuming && run.queue.length === 0)
+        this.deps.onTurnFailed?.({ task: run.task, agent: run.agent, text: message, cause: "error" });
       this.resumeFailed(run, message);
       return undefined;
     }
@@ -1139,6 +1181,73 @@ export class RunManager {
     // A turn cut by majhi (offline, a stall) keeps its in-flight mark, so it continues later.
     this.markTurn(run, false, run.paused === undefined);
     return stopReason;
+  }
+
+  /**
+   * A turn failed on the account's sign-in. The account is marked `needs-login` and the room says who
+   * cannot run. A teammate's step goes back to the lead, who is woken to give it to a teammate whose
+   * account works. When the agent is the lead, or no teammate's account works, the run pauses as
+   * `signed-out` with the prompt queued again, and continues once the account is signed in.
+   */
+  private async signedOutMidTurn(run: AgentRun, account: string, said: string): Promise<void> {
+    const line = said.split("\n", 1)[0]?.trim() ?? said;
+    const detail = `A run of @${run.agent} could not sign in: ${line} Sign in again from Studio > Accounts.`;
+    await this.deps.markSignedOut?.(account, detail).catch(() => undefined);
+    const cannot = `@${run.agent} cannot run: its account ${account} needs a new sign-in.`;
+    const lead = this.deps.store.tasks.get(run.task)?.team[0];
+    const teammates =
+      lead !== undefined &&
+      lead !== run.agent &&
+      (await this.deps.teamCanRun?.(run.task, run.agent).catch(() => false)) === true;
+    if (teammates) {
+      this.markTurn(run, false, true);
+      this.live.system(run, "error", `${cannot} Its step goes back to @${lead}.`);
+      this.setLive(run, { status: "error", nowDoing: undefined });
+      this.deps.onTurnFailed?.({
+        task: run.task,
+        agent: run.agent,
+        text: said,
+        cause: "signed-out",
+        account,
+      });
+      return;
+    }
+    // Kept in flight: after a restart the turn continues too.
+    this.markTurn(run, false, false);
+    run.requeue = true;
+    run.startFailure = { kind: "signed-out", text: `${account} needs a new sign-in.` };
+    const nobody = lead === run.agent ? "" : " No teammate with a working account can take its step.";
+    this.pause(
+      run,
+      "signed-out",
+      `${cannot}${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
+      true,
+    );
+  }
+
+  /**
+   * Autonomous mode's cap, inside a turn: at each tool call (one check at a time), asks whether the
+   * day's spend with what this turn spent so far passed a cap by more than its margin. When it did,
+   * the turn stops there and the run pauses with `limit`; "continue" waits in the queue for the cap
+   * to lift.
+   */
+  private async checkCap(run: AgentRun): Promise<void> {
+    if (run.capChecking) return;
+    if (!run.prompting || run.paused !== undefined || run.closing || run.internal !== undefined) return;
+    run.capChecking = true;
+    try {
+      const spent = run.costNow === undefined ? 0 : Math.max(0, run.costNow - (run.costAtTurnStart ?? 0));
+      const why = await this.deps.overCap?.(run.task, spent);
+      if (why === undefined || !run.prompting || run.paused !== undefined || run.closing) return;
+      run.queue.unshift({ kind: "continue" });
+      this.live.refreshQueued(run);
+      this.pause(run, "limit", why);
+      await this.cancelRun(run);
+    } catch {
+      // A check that fails leaves the turn alone; the gate between turns still holds.
+    } finally {
+      run.capChecking = false;
+    }
   }
 
   /**
@@ -1620,9 +1729,12 @@ export class RunManager {
         if (event.type === "tool" && run.prompting && !run.turnTools.has(event.toolCallId)) {
           run.turnTools.add(event.toolCallId);
           if (run.turnLimits?.maxToolCalls !== undefined) this.checkTurnLimit(run);
+          if (this.deps.overCap !== undefined) void this.checkCap(run);
         }
         break;
       case "usage":
+        if (event.cost !== undefined && event.cost.currency.toUpperCase() === "USD")
+          run.costNow = event.cost.amount;
         if (event.size > 0) {
           const usage = capUsage(event.used, event.size, run.budget?.cap ?? 0);
           run.noteUsage(usage);

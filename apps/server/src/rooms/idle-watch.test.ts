@@ -397,3 +397,117 @@ describe("the idle rule", () => {
     expect(lastLine("x".repeat(300))).toHaveLength(200);
   });
 });
+
+/** What Claude Code does with an OAuth session it cannot refresh: says so, then the prompt fails on ACP's auth error. */
+const signedOut = async (turn: Turn): Promise<Step> => {
+  turn.emit({
+    type: "text",
+    messageId: "auth",
+    text: "Failed to authenticate: OAuth session expired and could not be refreshed",
+  });
+  throw Object.assign(new Error("Authentication required"), { code: -32000 });
+};
+const fails = (message: string) => async (): Promise<Step> => {
+  throw new Error(message);
+};
+const statusOf = async (id: string) =>
+  ((await w.h.cmd("accounts.list")).body as { id: string; status: string }[]).find((a) => a.id === id)
+    ?.status;
+
+describe("a turn that failed on its account's sign-in", () => {
+  it("marks the account, hands the step back to the lead, and refuses to hand it to that agent again", async () => {
+    const { prompts } = await parentWorld({
+      "acme-lead": [
+        say("@acme-builder please build the export."),
+        say("@acme-builder please try the export again."),
+        say("@acme-reviewer please build the export instead."),
+        say("Done for now."),
+      ],
+      "acme-builder": [signedOut],
+      "acme-reviewer": [say("Built it.")],
+    });
+    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "the reviewer taking the step");
+    await settle();
+
+    expect(await statusOf("claude-acme")).toBe("needs-login");
+    const said = await systemTexts();
+    expect(said).toContain(
+      "@acme-builder cannot run: its account claude-acme needs a new sign-in. Its step goes back to @acme-lead.",
+    );
+    expect(said).toContain(
+      "@acme-builder could not run (its account claude-acme needs a new sign-in). Woke @acme-lead to give its step to a teammate.",
+    );
+    expect(prompts["acme-lead"]?.[1]).toContain(
+      "@acme-builder cannot run: its account claude-acme needs a new sign-in, so the step you gave it did not start.",
+    );
+    // The second handoff to the builder is refused: it never gets another prompt.
+    expect(said).toContain(
+      "@acme-builder cannot run: its account claude-acme needs a new sign-in. Give the step to another teammate.",
+    );
+    expect(prompts["acme-builder"]).toHaveLength(1);
+    expect(prompts["acme-lead"]?.[2]).toContain("Give the step to another teammate.");
+    // Nobody pretends that nothing is pending.
+    expect(said.some((t) => t.includes("nothing is pending"))).toBe(false);
+  });
+
+  it("refuses the mention tool for an agent whose account needs a sign-in", async () => {
+    const { prompts } = await parentWorld({ "acme-lead": [say("Planning.")] });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 1, "the lead's turn");
+    await w.h.majhi.services.accounts.markSignedOut("claude-acme", "Failed to authenticate");
+    await expect(
+      w.h.majhi.services.coordinator.mention(
+        { task: "ACM-1", agent: "acme-lead" },
+        "acme-builder",
+        "build it",
+      ),
+    ).rejects.toThrow(
+      "@acme-builder cannot run: its account claude-acme needs a new sign-in. Give the step to another teammate.",
+    );
+  });
+
+  it("pauses the task as signed-out when the lead cannot sign in, and goes on once it can", async () => {
+    const { prompts } = await parentWorld({
+      "acme-lead": [signedOut, say("@acme-builder please build the export.")],
+      "acme-builder": [say("Built.")],
+    });
+    await until(async () => (await task()).status === "paused", "the pause");
+    expect(await task()).toMatchObject({ status: "paused", pausedReason: "signed-out" });
+    expect(await statusOf("codex-acme")).toBe("needs-login");
+    const card = (await items()).find((i) => i.type === "paused");
+    expect(card).toMatchObject({ reason: "signed-out", state: "pending" });
+
+    // The owner signs in: the check passes, and the same prompt goes to the lead again.
+    w.h.runtime.usage = {
+      plan: "pro",
+      window: { usedPct: 1 },
+      weekly: { usedPct: 1 },
+      models: [],
+      estimated: false,
+      updatedAt: "2026-10-03T00:00:00.000Z",
+    };
+    await w.h.majhi.services.resilience.checkSignIns();
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the work going on");
+    expect(prompts["acme-lead"]?.[1]).toBe(prompts["acme-lead"]?.[0]);
+    expect(await statusOf("codex-acme")).not.toBe("needs-login");
+  });
+});
+
+describe("the owner's line names the real cause", () => {
+  it("says a teammate's turn failed instead of nothing is pending", async () => {
+    const { prompts } = await parentWorld({
+      "acme-lead": [say("@acme-builder please build the export."), say("Waiting on the build.")],
+      "acme-builder": [fails("Internal error: the adapter crashed")],
+    });
+    await until(async () => (await task()).status === "paused", "the owner asked");
+    await settle();
+    expect(prompts["acme-lead"]?.[1]).toContain(
+      '@acme-builder\'s turn failed with an error: "Internal error: the adapter crashed".',
+    );
+    const said = await systemTexts();
+    expect(said).toContain("Nobody was working on ACM-1 after @acme-builder failed. Woke @acme-lead.");
+    expect(said).toContain(
+      'Nobody is working on ACM-1: @acme-builder\'s last turn failed with "Internal error: the adapter crashed", and @acme-lead handed its step to nobody else. Give the step to another agent, or sign the account in and resume.',
+    );
+    expect(said.some((t) => t.includes("nothing is pending"))).toBe(false);
+  });
+});

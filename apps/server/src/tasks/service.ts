@@ -3251,8 +3251,15 @@ export class TaskService {
       task = await this.reopen(task.id);
     if (task.status === "done")
       throw new UserError(`Task ${task.id} is done.`, 409);
-    const targets = await this.ownerTargets(task, input.text, input.agent);
-    const agent = targets[0];
+    const named = await this.ownerTargets(task, input.text, input.agent);
+    // An agent whose account needs a new sign-in would only fail: the owner is told, and it gets nothing.
+    const signedOut = new Map<string, string>();
+    for (const m of named) {
+      const account = await this.deps.accounts.signedOutAccountOf(m);
+      if (account !== undefined) signedOut.set(m, account);
+    }
+    const targets = named.filter((m) => !signedOut.has(m));
+    const agent = targets[0] ?? named[0];
     if (agent === undefined)
       throw new UserError(`Task ${task.id} has no agent.`, 409);
     // A task that cannot start says so now, before the message is stored.
@@ -3299,6 +3306,12 @@ export class TaskService {
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emit(["tasks"]);
     const id = task.id;
+    for (const [m, account] of signedOut)
+      this.warn(
+        id,
+        `@${m} cannot run: its account ${account} needs a new sign-in. Sign it in on the Accounts page, or write to another teammate.`,
+      );
+    if (targets.length === 0) return item;
     this.deps.runs.inOrder(id, async () => {
       try {
         await this.deliver(id, item.id, targets, input, attachments.length > 0);

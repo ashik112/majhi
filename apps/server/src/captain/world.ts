@@ -11,6 +11,7 @@ import {
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
+import type { AccountService } from "../accounts/service.ts";
 import type { AdminService } from "../admin/service.ts";
 import { startsWork } from "../autonomy/policy.ts";
 import type { AutonomyService } from "../autonomy/service.ts";
@@ -27,7 +28,7 @@ import type { Store } from "../store/index.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
-import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
+import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 
 /**
@@ -39,6 +40,7 @@ import type { CaptainRepo } from "./repo.ts";
 
 export interface WorldDeps {
   store: Store;
+  accounts: AccountService;
   config: ConfigService;
   tasks: TaskService;
   mrs: MrService;
@@ -570,6 +572,74 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
 
     async pauseForOwner(_org, task, text) {
       await deps.tasks.pauseForOwner(task, text, "blocked");
+    },
+
+    async signInStalls(org) {
+      const out: SignInStall[] = [];
+      const firstWorking = async (team: readonly string[], except: string) => {
+        for (const a of team) {
+          if (a !== except && (await deps.accounts.signedOutAccountOf(a)) === undefined) return a;
+        }
+        return undefined;
+      };
+      for (const t of tasksOf(org)) {
+        if (deps.lanes.orgOf(t.id) !== undefined) continue;
+        const lead = t.team[0];
+        if (lead === undefined) continue;
+        const quiet = t.status === "running" && deps.idle.quiet(t.id) && !pendingOwnerCards(t.id);
+        const pausedSignedOut = t.status === "paused" && t.pausedReason === "signed-out";
+        if (!quiet && !pausedSignedOut) continue;
+        const leadAccount = await deps.accounts.signedOutAccountOf(lead);
+        const failed = quiet ? deps.idle.failedSignIn(t.id) : undefined;
+        const stuck =
+          leadAccount !== undefined
+            ? { agent: lead, account: leadAccount }
+            : failed !== undefined && (await deps.accounts.needsLogin(failed.account))
+              ? failed
+              : undefined;
+        if (stuck === undefined) continue;
+        const since = (await deps.accounts.signedOutSince(stuck.account)) ?? t.updatedAt;
+        const to = await firstWorking(t.team, stuck.agent);
+        out.push({
+          id: t.id,
+          lead,
+          agent: stuck.agent,
+          account: stuck.account,
+          since,
+          ...(to === undefined ? {} : { to }),
+        });
+      }
+      return out;
+    },
+
+    async moveLead(_org, task, to, reason) {
+      const old = store.tasks.get(task)?.team[0] ?? "the old lead";
+      await run("tasks.update", { id: task, agent: to }, reason, task);
+      if (store.tasks.get(task)?.status === "paused") await run("tasks.start", { id: task }, reason, task);
+      else
+        deps.runs.notify(
+          task,
+          to,
+          `You lead ${task} now: @${old}'s account needs a new sign-in. Read the room (majhi-room read_recent), then go on with the plan.`,
+        );
+    },
+
+    handBack(_org, task, agent, account) {
+      const lead = store.tasks.get(task)?.team[0];
+      if (lead === undefined) return;
+      deps.room.post(task as TaskId, `captain:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: `@${agent} cannot run: its account ${account} needs a new sign-in. The captain woke @${lead} to give its step to a teammate.`,
+      });
+      deps.runs.notify(
+        task,
+        lead,
+        [
+          `@${agent} cannot run: its account ${account} needs a new sign-in, so its step is not being done. Nobody is working on ${task} now.`,
+          `Give its step to a teammate whose account works (the majhi-room mention tool, or "@name: please ..."). Do not hand anything to @${agent} until the owner signs it in again.`,
+        ].join("\n"),
+      );
     },
 
     ownerAt(task) {

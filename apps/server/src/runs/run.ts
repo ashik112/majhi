@@ -139,6 +139,14 @@ export class AgentRun {
   paused: PauseReason | undefined;
   /** Why the last start failed, while it has not started since. Retryable failures (network) leave it unset. */
   startFailure: StartFailure | undefined;
+  /** The prompt of the turn that just failed goes back to the front of the queue, to send after a resume. */
+  requeue = false;
+  /** The running cost the agent reported when the current turn was sent, for the autonomy cap's mid-turn check. */
+  costAtTurnStart: number | undefined;
+  /** The running cost the agent reported last, USD. Undefined for tools that report none. */
+  costNow: number | undefined;
+  /** A mid-turn cap check is under way, so tool calls do not start a second one. */
+  capChecking = false;
   /** A resume is under way; failures count toward the limit of two. */
   resuming = false;
   resumeFailures = 0;

@@ -62,6 +62,8 @@ interface SimTask {
   due?: string;
   priority?: "high" | "normal" | "low";
   updatedAt: string;
+  /** An account of the team needs a new sign-in: the lead's, or a teammate's whose step failed. */
+  signedOut?: { lead: boolean; since: string; teammateWorks: boolean };
 }
 
 /** The simulated world the chores read and act in, with every call they make. */
@@ -250,6 +252,34 @@ class Sim {
         const t = this.tasks.get(id);
         if (t !== undefined) t.status = "paused";
       },
+      signInStalls: async (org) =>
+        of(org).flatMap((t) => {
+          const out = t.signedOut;
+          if (out === undefined || (t.status !== "running" && t.status !== "paused")) return [];
+          return [
+            {
+              id: t.id,
+              lead: "builder",
+              agent: out.lead ? "builder" : "helper",
+              account: out.lead ? "claude-builder" : "claude-helper",
+              since: out.since,
+              ...(out.teammateWorks ? { to: out.lead ? "helper" : "builder" } : {}),
+            },
+          ];
+        }),
+      moveLead: async (org, id) => {
+        this.act("moveLead", org, `${id}:${this.tasks.get(id)?.signedOut?.since}`, id);
+        const t = this.tasks.get(id);
+        if (t !== undefined) {
+          delete t.signedOut;
+          t.status = "running";
+          delete t.quietSince;
+        }
+      },
+      handBack: (org, id) => {
+        // The lead does not answer: the task stays held, and the captain must not wake it again.
+        this.act("handBack", org, `${id}:${this.tasks.get(id)?.signedOut?.since}`, id);
+      },
       ownerAt: (task) => this.tasks.get(task)?.ownerAt,
     };
   }
@@ -423,6 +453,14 @@ describe("the captain's soak test", () => {
       }
       if (rnd() < 0.1) sim.task(pick(ORGS), "inbox", { due: iso.slice(0, 10) });
       if (rnd() < 0.1) sim.task(pick(ORGS), "running", { quietSince: iso });
+      // An account signs out: the lead's, or a teammate's whose step failed; sometimes nobody can take over.
+      if (rnd() < 0.08) {
+        const lead = rnd() < 0.5;
+        sim.task(pick(ORGS), lead && rnd() < 0.5 ? "paused" : "running", {
+          quietSince: iso,
+          signedOut: { lead, since: iso, teammateWorks: rnd() < 0.8 },
+        });
+      }
       // A duplicate title, and a task nobody touched for 40 days.
       if (step === 20) {
         sim.task("acme", "inbox", { title: "Fix the login" });
@@ -535,6 +573,9 @@ describe("the captain's soak test", () => {
     expect(
       repeats.filter((c) => !(c.port === "ship" || c.port === "clean")).map((c) => `${c.port}:${c.key}`),
     ).toEqual([]);
+    // Sign-outs were handled: leads moved to a teammate whose account works, and leads woken.
+    expect(sim.calls.some((c) => c.port === "moveLead")).toBe(true);
+    expect(sim.calls.some((c) => c.port === "handBack")).toBe(true);
     const doneShips = actions.filter((a) => a.chore === "ship" && a.outcome === "done").map((a) => a.task);
     expect(new Set(doneShips).size).toBe(doneShips.length);
 

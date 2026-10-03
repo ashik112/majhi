@@ -507,6 +507,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       );
       return { status: account.status, resetsAt: full?.resetsAt ?? account.usage?.window?.resetsAt };
     },
+    markSignedOut: async (account, detail) => {
+      await accounts.markSignedOut(account, detail);
+    },
+    teamCanRun: async (task, agent) => {
+      const team = store.tasks.get(task)?.team ?? [];
+      for (const other of team) {
+        if (other === agent) continue;
+        if ((await accounts.signedOutAccountOf(other)) === undefined) return true;
+      }
+      return false;
+    },
+    onTurnFailed: (turn) => idleWatch.turnFailed(turn),
+    // Bound below: autonomous mode is built after the task service.
+    overCap: (task, spent) => autonomy.overCap(task, spent),
     onResumed: (task) => void tasks.resumedByRuns(task).catch(() => undefined),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
@@ -738,6 +752,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     config,
     decisions,
+    signedOut: (agent) => accounts.signedOutAccountOf(agent),
     waitsOnProcess: (task, agent) => processes.waiting(task).some((p) => p.agent === agent),
   });
   coordinator.sweepEmptyQuestions();
@@ -822,6 +837,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     lanes,
     ports: captainWorld({
       store,
+      accounts,
       config,
       tasks,
       mrs,

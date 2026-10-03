@@ -49,6 +49,13 @@ export interface CoordinatorDeps {
   decisions?: Decisions | undefined;
   /** Whether the agent waits on a background run it started (`wait: true`): then it asks nobody. */
   waitsOnProcess?: ((task: string, agent: string) => boolean) | undefined;
+  /** The agent's account when it needs a new sign-in: no work is handed to such an agent. */
+  signedOut?: ((agent: string) => Promise<string | undefined>) | undefined;
+}
+
+/** The line that refuses a handoff to an agent whose account needs a new sign-in. */
+export function signedOutRefusal(agent: string, account: string): string {
+  return `@${agent} cannot run: its account ${account} needs a new sign-in. Give the step to another teammate.`;
 }
 
 /**
@@ -64,6 +71,8 @@ export class RoomCoordinator {
   private readonly quietNoted = new Set<string>();
   /** Who each (task, agent) handed work to with the mention tool in the turn now running. */
   private readonly toolHandoffs = new Map<string, Set<string>>();
+  /** (task, agent) pairs told that a teammate they handed to cannot sign in, until their next turn ends. */
+  private readonly signInNoted = new Set<string>();
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
@@ -72,6 +81,7 @@ export class RoomCoordinator {
     const asked = this.askedInTurn.delete(`${turn.task}\u0000${turn.agent}`);
     // This turn answered a "not woken" note: it gets no second one.
     const answersNote = this.quietNoted.delete(`${turn.task}\u0000${turn.agent}`);
+    const answersSignIn = this.signInNoted.delete(`${turn.task}\u0000${turn.agent}`);
     // Teammates this turn already handed work to with the tool: its closing message does not wake them twice.
     const handedByTool = this.toolHandoffs.get(`${turn.task}\u0000${turn.agent}`) ?? new Set<string>();
     this.toolHandoffs.delete(`${turn.task}\u0000${turn.agent}`);
@@ -160,15 +170,29 @@ export class RoomCoordinator {
       void this.deps.tasks.pauseForOwner(task.id, plan.pause).catch(() => undefined);
       return;
     }
-    const handoffs = plan.handoffs.filter((h) => !handedByTool.has(h.to));
+    const handoffs: typeof plan.handoffs = [];
+    const refused: string[] = [];
+    for (const h of plan.handoffs) {
+      if (handedByTool.has(h.to)) continue;
+      const account = await this.deps.signedOut?.(h.to);
+      if (account === undefined) handoffs.push(h);
+      else refused.push(signedOutRefusal(h.to, account));
+    }
     for (const h of handoffs) runs.handoff(task, { from: turn.agent, to: h.to, via: h.via, text });
+    if (refused.length > 0) {
+      for (const line of refused) this.say(task.id, "warn", line);
+      // The writer's turn is over, so the room line never reaches it. Once, so it cannot go round.
+      if (!answersSignIn) {
+        this.signInNoted.add(`${task.id}\u0000${turn.agent}`);
+        runs.notify(task.id, turn.agent, refused.join("\n"));
+      }
+    }
     const handedOn = handoffs.length > 0 || handedByTool.size > 0;
     // Addressed to the owner in plain text: majhi puts the buttons under it.
     // The agent kept working: a question it asked before and nobody answered no longer waits.
     this.movedOn(task.id, turn.agent);
     const busy = this.deps.waitsOnProcess?.(task.id, turn.agent) === true;
-    const toOwner =
-      mentions.includes(OWNER_HANDLE) || (!handedOn && text !== "" && asksOwner(text));
+    const toOwner = mentions.includes(OWNER_HANDLE) || (!handedOn && text !== "" && asksOwner(text));
     const questioned = !asked && !waiting && !busy && toOwner;
     if (questioned) this.postQuestion(task.id, turn.agent, text);
     if (plan.toOwner !== undefined) {
@@ -254,6 +278,8 @@ export class RoomCoordinator {
         "The owner has a question pending. Waiting needs no handoff: end your turn, and the owner's answer starts the room again.",
         409,
       );
+    const account = await this.deps.signedOut?.(to);
+    if (account !== undefined) throw new UserError(signedOutRefusal(to, account), 409);
     if (!task.team.includes(to)) task = await this.deps.tasks.addToTeam(task.id, to, { by: caller.agent });
     const state = this.deps.store.tasks.roomState(task.id);
     const max = await this.maxAgentTurns(task);

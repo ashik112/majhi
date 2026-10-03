@@ -345,8 +345,55 @@ export function createChores(
 
     async stuck(run) {
       const { org } = run;
+      // An account that needs a new sign-in holds the task up: the step goes to a teammate whose
+      // account works, in every task of the workspace, autonomous or not.
+      const signIns = new Set<string>();
+      for (const s of await ports.signInStalls(org)) {
+        run.check();
+        if (away(s.id) !== undefined) continue;
+        signIns.add(s.id);
+        const key = `stuck:signin:${s.id}:${s.agent}:${s.since}`;
+        const to = s.to;
+        if (to === undefined) {
+          run.note(
+            key,
+            `${s.id} waits for a sign-in`,
+            `@${s.agent}'s account ${s.account} needs a new sign-in, and no teammate's account works`,
+            s.id,
+          );
+          continue;
+        }
+        if (s.agent === s.lead) {
+          const reason = `@${s.agent} cannot run until ${s.account} is signed in again, and @${to}'s account works`;
+          await run.act({
+            key,
+            text: `Moved ${s.id} from @${s.agent} to @${to}: ${s.account} needs a new sign-in`,
+            reason,
+            task: s.id,
+            recheck: async () => away(s.id),
+            do: async () => {
+              await ports.moveLead(org, s.id, to, reason);
+              return {
+                undoNote: `Move ${s.id} back to @${s.agent} on its page once ${s.account} is signed in`,
+              };
+            },
+          });
+          continue;
+        }
+        await run.act({
+          key,
+          text: `Woke @${s.lead} in ${s.id} to give @${s.agent}'s step to a teammate`,
+          reason: `${s.account} needs a new sign-in, so @${s.agent} cannot run`,
+          task: s.id,
+          do: async () => {
+            ports.handBack(org, s.id, s.agent, s.account);
+            return { undoNote: "A message to the lead: nothing to undo" };
+          },
+        });
+      }
       for (const s of ports.stalled(org)) {
         run.check();
+        if (signIns.has(s.id)) continue;
         const present = away(s.id);
         if (present !== undefined) continue;
         const wake = `stuck:wake:${s.id}:${s.quietSince}`;
