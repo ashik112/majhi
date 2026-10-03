@@ -40,7 +40,11 @@ describe("the Autonomous switch is On or Off", () => {
     expect(await call("majhi_autonomy_note", { text: "hello" })).toEqual(off);
     expect(await call("majhi_autonomy_answer", { task: "ACME-1", item: "ask:1", option: "a" })).toEqual(off);
     // And no start of work, with the same idea in its own words.
-    const start = await call("majhi_tasks_create", { text: "x", repos: [{ project: "acme-api" }], start: true });
+    const start = await call("majhi_tasks_create", {
+      text: "x",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
     expect(start.isError).toBe(true);
     expect(start.text).toContain("Autonomous is off, so the captain does not start or change work in Acme");
   });

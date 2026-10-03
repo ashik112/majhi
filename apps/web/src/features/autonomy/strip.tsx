@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { PAGE_PATH } from "@/lib/pages";
 import { OffDialog, useAutonomyActions } from "./controls";
-import { capText, MODE_LAMP, MODE_WORD, seenSummary } from "./model";
+import { MODE_LAMP, MODE_WORD, seenSummary, todayLine } from "./model";
 import { TaskRef } from "./task-ref";
 
 /** The strip carries the mode's lamp in its frame, like a lit card. */
@@ -77,8 +77,11 @@ export function AutonomyStrip() {
           <span className="min-w-0 truncate text-fg-muted">{idle}</span>
         )}
       </span>
-      <span title="Spent today against the day cap" className="tnum shrink-0 text-sm text-fg-soft">
-        {capText(status.spend.total)} <span className="text-fg-faint">today</span>
+      <span
+        title="Autonomous spend today against its day budget"
+        className="tnum shrink-0 text-sm text-fg-soft"
+      >
+        {todayLine(status.spend.total)}
       </span>
       {fresh && (
         <PageLink page="autonomous" className="shrink-0 text-sm text-blue hover:underline">
@@ -86,18 +89,8 @@ export function AutonomyStrip() {
         </PageLink>
       )}
       <div className="flex shrink-0 items-center gap-1">
-        {mode === "on" && (
-          <Button size="sm" variant="ghost" disabled={actions.busy} onClick={() => actions.pause()}>
-            Pause
-          </Button>
-        )}
-        {mode === "paused" && (
-          <Button size="sm" variant="ghost" disabled={actions.busy} onClick={() => actions.resume()}>
-            Resume
-          </Button>
-        )}
         <Button size="sm" variant="ghost" disabled={actions.busy} onClick={() => setStopOpen(true)}>
-          Stop
+          Turn off
         </Button>
         {!onPage && (
           <Button size="sm" asChild>
@@ -105,7 +98,7 @@ export function AutonomyStrip() {
           </Button>
         )}
       </div>
-      {stopOpen && <OffDialog mode={mode} onClose={() => setStopOpen(false)} />}
+      {stopOpen && <OffDialog status={status} onClose={() => setStopOpen(false)} />}
     </section>
   );
 }

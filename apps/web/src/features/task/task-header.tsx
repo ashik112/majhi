@@ -55,7 +55,12 @@ export function TaskHeader({
           <ArrowLeft aria-hidden="true" className="size-3.5" />
         </Link>
         <span className="font-mono text-fg-muted">{task.id}</span>
-        <StatusBadge status={task.status} pausedReason={task.pausedReason} yourTurn={yourTurn} />
+        <StatusBadge
+          status={task.status}
+          pausedReason={task.pausedReason}
+          pausedBy={task.pausedBy}
+          yourTurn={yourTurn}
+        />
 
         {repos.length > 0 ? (
           <span

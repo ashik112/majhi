@@ -173,16 +173,15 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
   return (
     <Modal label="Turn Autonomous off" onClose={onClose} className="w-[460px]">
       <div className="flex flex-col gap-4 p-5">
-        <h2 className="text-md font-semibold">{stopping ? "Autonomous is turning off" : "Turn Autonomous off?"}</h2>
+        <h2 className="text-md font-semibold">
+          {stopping ? "Autonomous is turning off" : "Turn Autonomous off?"}
+        </h2>
         <p className="text-base text-fg-muted text-pretty">
           {stopping
             ? "Its tasks are finishing the step they are on."
             : "The captain stops starting work, answering and shipping by itself. It still answers when you talk to it."}
           {working.length > 0 && !stopping && (
-            <span className="text-fg-faint">
-              {" "}
-              Working now: {taskList(working)}.
-            </span>
+            <span className="text-fg-faint"> Working now: {taskList(working)}.</span>
           )}
         </p>
         <div className="flex flex-col gap-2">
@@ -195,11 +194,7 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
             {stopping ? "Pause its tasks now" : "Turn off and pause its tasks"}
           </Button>
           {!stopping && working.length > 0 && (
-            <Button
-              size="lg"
-              disabled={actions.busy}
-              onClick={() => actions.turnOff("graceful", onClose)}
-            >
+            <Button size="lg" disabled={actions.busy} onClick={() => actions.turnOff("graceful", onClose)}>
               Turn off, let them finish this step
             </Button>
           )}

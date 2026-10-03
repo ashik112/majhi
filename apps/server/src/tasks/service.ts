@@ -925,7 +925,8 @@ export class TaskService {
     this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
       // Who paused it is kept for the labels: by the captain, or when Autonomous was turned off.
-      const pausedBy = by === "autonomy-off" ? "autonomy-off" : this.cards.byCaptain(by) ? "captain" : undefined;
+      const pausedBy =
+        by === "autonomy-off" ? "autonomy-off" : this.cards.byCaptain(by) ? "captain" : undefined;
       this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString(), pausedBy);
     }
     const stopped = this.get(id);

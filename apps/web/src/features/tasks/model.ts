@@ -1,4 +1,4 @@
-import type { AgentEntry, TaskKind, TaskStatus, TaskSummary } from "@majhi/shared";
+import type { AgentEntry, PausedBy, TaskKind, TaskStatus, TaskSummary } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
 
 // Status --------------------------------------------------------------------
@@ -23,8 +23,19 @@ const PAUSE_WORDS: Record<string, string> = {
   blocked: "waiting on another task",
 };
 
+/** Who paused it, when it was not the owner by hand. */
+export const PAUSED_BY_WORDS: Record<PausedBy, string> = {
+  captain: "by Captain",
+  "autonomy-off": "Autonomous turned off",
+};
+
 /** A task's status in words, and its lamp. Waiting on the owner (your turn, your review) is the red lamp. */
-export function statusInfo(status: TaskStatus, pausedReason?: string, yourTurn = false): StatusInfo {
+export function statusInfo(
+  status: TaskStatus,
+  pausedReason?: string,
+  yourTurn = false,
+  pausedBy?: PausedBy,
+): StatusInfo {
   if (status === "running" && yourTurn) return { label: "Your turn", lamp: "needs" };
   switch (status) {
     case "inbox":
@@ -35,7 +46,9 @@ export function statusInfo(status: TaskStatus, pausedReason?: string, yourTurn =
       return { label: "Working", lamp: "working" };
     case "paused":
       return {
-        label: pausedReason ? `Paused · ${PAUSE_WORDS[pausedReason] ?? pausedReason}` : "Paused",
+        label: pausedReason
+          ? `Paused · ${(pausedReason === "owner" && pausedBy !== undefined ? PAUSED_BY_WORDS[pausedBy] : undefined) ?? PAUSE_WORDS[pausedReason] ?? pausedReason}`
+          : "Paused",
         lamp: "paused",
       };
     case "review":

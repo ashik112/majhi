@@ -99,7 +99,14 @@ function Details({ id, onClose }: { id: string; onClose: () => void }) {
 function Status({ task, summary }: { task: Task; summary: TaskSummary | undefined }) {
   // Running with no agent at work means the task waits for the owner, as on the board.
   const yourTurn = task.status === "running" && summary !== undefined && summary.working.length === 0;
-  return <StatusBadge status={task.status} pausedReason={task.pausedReason} yourTurn={yourTurn} />;
+  return (
+    <StatusBadge
+      status={task.status}
+      pausedReason={task.pausedReason}
+      pausedBy={task.pausedBy}
+      yourTurn={yourTurn}
+    />
+  );
 }
 
 function Org({ task }: { task: Task }) {
