@@ -1,25 +1,79 @@
 # Progress
 
-## Phase 13: The captain per workspace (plan)
+## Phase 13: The captain per workspace (built)
 
-**Status.** Building on `feat/captain-levels`, from `main` (`80002454`). SPEC 5.18 and section 7, Phase 13.
+**Status.** Built on `feat/captain-levels`, from `main` (`80002454`). SPEC 5.18 and section 7, Phase 13. Migration 116.
 
-### What will be built, in order
+### What works
 
-1. **The choice.** `autonomy.orgs.<org>` gets `level` (`ask`, `tidy`, `runs`) and the "More rules" fields (hours, freeze dates, time zone, branches, providers, account). Defaults: Private `tidy`, every other workspace `ask`. A startup migration turns an old `autonomy.pick.orgs` list into `runs` for the listed workspaces, in one config commit by majhi.
-2. **The store.** Migration 116: the stop switch, lanes, chore runs, the captain's log (with an idempotency key per action), the per-chore circuit breaker, and the owner's last action per task (presence).
-3. **The guards.** One runner for every chore: one run per chore and workspace (a trigger during a run joins it), caps per run (actions, tokens, minutes) and per day, events tagged with their cause (the captain's own never start a run), idempotent actions, two failures in a row turn the chore off and tell the owner, the stop switch, and the always-on rules (never list, stricter rule wins, presence, re-check before anything irreversible, text is not instruction).
-4. **The chores.** Ship, approval cards, agents' questions, memory, projects, task triage, cleanup and stuck tasks, each reusing what majhi has (Ship, the AdminService policy, the curator, repos.scan and projects.register, the cleanup service, the idle watch). Judgment: rules, then Laya through the decision provider, then a short captain turn in the workspace's lane.
-5. **Lanes.** One chat of the captain per workspace. Autonomous mode ticks the lane of each "Runs it" workspace with a digest of that workspace only; the old autonomy chat stays readable. A lane may run on another account allowed in its workspace.
-6. **Autonomous mode.** The switch stays the master switch. "Runs it" acts as "Keeps things tidy" while it is off; on, the captain starts and ships work only in "Runs it" workspaces. The pick rule "workspaces it may work in" goes.
-7. **What the owner notices.** The bell, one summary line per workspace per day, and the captain's log with reason, evidence and Undo (a merge as a revert commit, a config change through the config history, a push marked as not undoable).
-8. **Web.** The Captain page (`/captain`) with a card per workspace, "More rules", the budget, the summary line and "Stop the captain"; the sidebar Captain row opens it (Cmd J still opens the chat); the Autonomous page shows a lane per "Runs it" workspace.
+**The choice** (`packages/shared/src/settings.ts`, `captain.ts`; `apps/server/src/captain/levels.ts`)
+- One choice per workspace in `autonomy.orgs.<org>.level`: `ask` (Only when I ask), `tidy` (Keeps things tidy), `runs` (Runs it). Defaults: Private `tidy`, every other workspace `ask`. The daily budget is the same entry's `cap`.
+- "More rules" in the same entry: working hours and freeze dates in the workspace's zone (`tz`), the branches it ships to, merge and push, allowed AI providers, and the account that pays for its decisions. All set through `autonomy.configure`, owner only; `null` clears a field. An account of another workspace is refused.
+- Autonomous mode stays the master switch: "Runs it" acts as "Keeps things tidy" unless the mode is on. "Only when I ask" runs nothing, in any mode.
+- At start, an old `autonomy.pick.orgs` list becomes "Runs it" for each listed workspace in one config commit by majhi; workspaces that already had a choice keep it, the rest keep their default. The pick rule "workspaces it may work in" is gone from the schema patch, the digest and the page.
 
-### How it will be tested
+**Upkeep chores** (`captain/chores.ts`, real ports in `captain/world.ts`)
+- They run only in workspaces on Keeps things tidy or Runs it, at fixed moments: when something happens (a task reaches review, a card arrives, an agent asks, a repo appears) and once an hour for those; once a day for memory, projects, triage and cleanup. Nothing stays awake.
+- Ship finished work: checks first (in review, nobody working, no card waiting, Ship says it merges, no protected repo, the diff readable and no secret in it). Runs it with "Merge into the branch" on: `tasks.merge` (and push when on), as the captain. Otherwise a ship-ready line on the review card, which the bell lists ("ACM-12 is ready to ship").
+- Approval cards: autonomous mode's table decides the routine ones as the card's agent; risky ones and the never list are left for the owner with the captain's line on the card; Keeps things tidy leaves starting and shipping work to the owner. Audited `captain`.
+- Agents' questions: rules (nothing to pick from goes to the owner), then Laya through the decision provider (only a sure answer counts), then a short turn of the captain in the workspace's lane, which answers with `majhi_autonomy_answer` or leaves it.
+- Memory: the curator keeps, merges or drops each waiting memory of the workspace; doubtful ones wait for the owner.
+- Projects: a new repo in `<root>/<workspace>/<repo>` is registered in that workspace with its base; an id clash is asked about.
+- Task triage: due within two days or overdue gets high priority (Undo puts it back); duplicate titles and tasks untouched for 30 days are suggested, never closed.
+- Cleanup: the cleanup service on the workspace's done tasks; it never removes uncommitted work.
+- Stuck tasks: a running task where nobody works and nothing is pending gets its lead woken once, then is paused for the owner. The idle watch of 5.3 still runs everywhere.
 
-- Unit tests for the crucial parts: the level defaults and the pick migration, the rule checks (hours, freeze, presence, never list), the runner's guards, the revert of a merge, the lane's account choice.
-- A soak test with the fake ACP agent that replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails when a cap is passed, an event re-triggers itself, an action repeats, or anything happens in an "Only when I ask" workspace. It runs in under a minute and joins the post-merge checks.
-- The migration against a copy of a real database. Screenshots of the Captain page and the Autonomous page with stubbed data, and a click test of the level and the budget.
+**Lanes** (`captain/lanes.ts`, `autonomy/driver.ts`)
+- One chat of the captain per workspace (brief "Captain lane", the workspace's org). Autonomous mode ticks the lane of each Runs it workspace with a digest of that workspace only: its tasks, cards, backlog, holds, spend and accounts; the owner's standing instructions are shared. The old autonomy chat stays readable and is never woken.
+- A lane refuses a call about another workspace's task or project, reads included. A lane runs on the captain's account only when it belongs to the workspace or to Private, else on the account "More rules" names; another workspace's account is refused at run start.
+- A lane rests at the day budget, the workspace's budget or its account's floor; rules and Laya go on, judgment calls wait.
+
+**Guards** (`captain/runner.ts`, `rules.ts`)
+- One run per chore and workspace; a trigger during a run joins it for one more pass.
+- Per run: 20 actions, 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, one memory run, and so on). A run that stops at a cap writes a line.
+- Every action has a key: doing it twice changes nothing. Two failures in a row turn the chore off for the workspace and tell the owner; Turn on brings it back.
+- Events carry their cause: the captain's own ships, cards and lane writes start nothing.
+- Right before a push, merge, card answer or post, the workspace's choice, its hours and freezes, the stop switch and presence are read again.
+- Presence: no action in a task the owner acted in during the last 10 minutes (any non-read command naming it, or a task they just made).
+- "Stop the captain" (`captain.stop`) stops autonomous mode now, cancels every lane's turn and ends runs at their next step; nothing acts until `captain.resume`. Autonomous mode cannot turn on while stopped.
+
+**What the owner notices**
+- The bell: ship-ready cards, a chore turned off, and once a day at the summary time one line per workspace for the day before.
+- `captain.status`: one line per workspace for today ("shipped 2, tidied 8 memories, 1 thing for you").
+- `captain.log`: each action with reason, evidence and Undo. A merge undoes as one revert commit (made in a throwaway worktree, then a fast-forward; refused when later work changed the same lines or the checkout holds changes); a config change through the config history; a priority through `tasks.update`; a memory step through `memory.undo`. A push and a cleanup say they cannot be undone.
+
+**Web**
+- The Captain page (`/captain`): a card per workspace with today's line, the three choices, the daily budget next to Runs it, chores that turned off with Turn on, and "More rules" folded away; the log beside it (its own view below 1280 px); "Stop the captain" and "Resume the captain" in the header.
+- The sidebar Captain row opens the page and shows Stopped; the chat button beside it (Cmd J) still opens the captain chat.
+- The Autonomous page: a Lanes section (one row per Runs it workspace: working or resting, open tasks, spend against its budget), and the chat on the right shows the picked lane and writes to it. Rules no longer has the workspace list.
+- Review cards show the captain's ship-ready line.
+
+### How to try it
+
+1. Open Captain in the sidebar. Private is on Keeps things tidy; client workspaces are on Only when I ask.
+2. Set Private to Runs it, give it a budget, and under More rules turn on Merge into the branch.
+3. Turn autonomous mode on. A Private task that reaches review with its checks passing is merged; the log says why, with Undo.
+4. Set a client workspace to Keeps things tidy: its finished tasks get a ship-ready line and show in the bell; nothing ships.
+5. Stop the captain from the page header; Resume it the same way.
+
+### Verified
+
+- **Typecheck:** all packages and `e2e`.
+- **Tests** (fake ACP agent, no tokens): `captain/rules.test.ts` (defaults, master switch, the pick move, hours over midnight and freezes in a zone, presence, branches, providers), `captain/runner.test.ts` (re-check before an irreversible step, joining, repeats, run cap, circuit breaker, stop, rest, tokens), `captain/undo.test.ts` (revert commit on a checked-out and a free branch, later work kept, conflicts and dirty checkouts change nothing), `captain/migrate.test.ts` (one config commit by majhi, once), `captain/done-when.test.ts` (Phase 13's Done when with real services and git: Private ships, Acme is untouched, Undo reverts, tidy asks), `runs/lane-account.test.ts`, and the autonomy tests moved to lanes (`pick.test.ts`, `approvals.test.ts`, `service.test.ts`, `driver.test.ts`, `summary.test.ts`).
+- **Soak test** (`captain/soak.test.ts`, about 3 s): 30 simulated hours in Private (Runs it), Acme (Keeps things tidy) and Globex (Only when I ask) with bursts of 25 cards, questions, memories, repos, quiet tasks, two failures in a row, a crash that leaves a run open, restarts, a Stop and Resume, and every ship and card of the captain echoed back as an event. Real lane turns run the fake agent. It checks: no run past its caps and none left open, no daily cap passed, every self event dropped (none started or joined a run), no action repeated, nothing in Globex, nothing while stopped or in a task the owner was in, each lane told only its own workspace's tasks, the lane resting at Private's budget while Laya's answers went on. `e2e/captain-soak.spec.ts` runs it in every Playwright run, so the background e2e after each merge (PRV-72) runs it too.
+- **Migration:** 116 applied to a copy of a real `majhi.db` (115 before, 116 after, a second run applies nothing, integrity ok).
+- **Browser:** `e2e/shots.captain.ts` (`playwright.captain.config.ts`, port 7199): the Captain page at 1440 and 1100 in both themes, More rules open, the log view, Stop and Resume, the Autonomous page with lanes; click tests of a level, the budget, the stop switch and the sidebar row. `pnpm e2e:smoke` passes.
+
+### Left and known issues
+
+- A lane refuses calls that name another workspace's task or project, but a list without a workspace filter (`tasks.list`, a memory search) still returns every workspace's rows to it. Narrowing those reads per lane is the follow-up.
+- The lane's budget is checked before each ask; turns already queued can pass it by a few cents, bounded by the run and daily caps.
+- Triage marks duplicates and stale tasks in the log and the bell; it adds no task link.
+- An ask card with several questions, or free text only, is left for the owner.
+- Ship needs "Merge into the branch". With push alone the captain asks; it opens no merge requests itself.
+- Migration 116 follows 115 on main; the git sign-in branch built in parallel may take 116 too. Whichever merges second renumbers.
+
+Only the owner can check a real captain account running lanes overnight with real spend.
 
 ## Onboarding and git connect (plan)
 
