@@ -85,6 +85,31 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
   const { org } = run;
   const threads = ports.openThreads(org).slice(0, MAX_THREADS);
   if (threads.length === 0) return;
+  const known = findings.list({ status: "live", limit: 500 }, { kind: "captain", org }).findings;
+
+  // Preflight, in code: when every thread is already a finding and none has a task of its own to
+  // watch, nothing is new. The findings are refreshed and no embedding, task read or model turn is spent.
+  const seenBefore = (t: Thread) => known.find((f) => f.dedupeKey === `followup:${t.id}`);
+  if (threads.every((t) => t.follow_up === undefined && seenBefore(t) !== undefined)) {
+    for (const t of threads) {
+      const f = seenBefore(t);
+      if (f === undefined) continue;
+      await findings.report(
+        {
+          org,
+          ...(f.project === undefined ? {} : { project: f.project }),
+          source: f.source,
+          title: f.title,
+          detail: "",
+          evidence: [],
+          severity: f.severity,
+          dedupeKey: f.dedupeKey,
+        },
+        { kind: "captain", org },
+      );
+    }
+    return;
+  }
 
   // Later work to compare with, read once per project.
   const doneByProject = new Map<string, DoneTask[]>();
@@ -118,7 +143,6 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
     return x !== undefined && y !== undefined ? cosine(x, y) : overlap(a, b);
   };
 
-  const known = findings.list({ status: "live", limit: 500 }, { kind: "captain", org }).findings;
   const closed = new Set<number>();
   const ambiguous: { thread: Thread; task: DoneTask }[] = [];
 

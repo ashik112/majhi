@@ -97,7 +97,7 @@ export class FindingsService {
     }
   }
 
-  private get(id: number): Finding {
+  get(id: number): Finding {
     const found = this.repo.get(id);
     if (found === undefined) throw new UserError(`Finding ${id} does not exist.`, 404);
     return found;
@@ -201,7 +201,7 @@ export class FindingsService {
   dismiss(id: number, reason: string, actor: FindingActor): Finding {
     const found = this.get(id);
     this.mayChange(actor, found);
-    if (!canMoveFinding(found.status, "dismissed")) {
+    if (found.status === "dismissed" || !canMoveFinding(found.status, "dismissed")) {
       throw new UserError(`A ${found.status} finding cannot be dismissed.`, 409);
     }
     const out = this.repo.patch(id, { at: this.at(), status: "dismissed", dismissedReason: reason });
