@@ -22,7 +22,7 @@ import { describeError } from "@/lib/errors";
 import { badgeLetters, formatAgo, formatTokens, plural } from "@/lib/format";
 import { useAccountModels, useHideModel, useRefreshUsage } from "@/lib/studio-queries";
 import { HealthSteps } from "./health-steps";
-import { authInfo, orgLabel, statusText } from "./model";
+import { authInfo, limitUntilText, orgLabel, statusText } from "./model";
 import { agentsByAccount, usedByGroups, whereLabel } from "./used-by-model";
 import { WindowMeter } from "./window-meter";
 
@@ -133,6 +133,13 @@ export function AccountDetail({
                 {status.label}
               </span>
             </Fact>
+            {account.limit && (
+              <Fact label="Limit">
+                <span className="cursor-help" title={account.limit.detail}>
+                  {limitUntilText(account.limit, now)}
+                </span>
+              </Fact>
+            )}
             <Fact label="Sign-in">
               <span className={cn("inline-flex items-center gap-2", toneText(auth.tone))}>
                 <Dot tone={auth.tone} size={7} />
