@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  type AccountModels,
   type AccountView,
   type Authority,
   type AuthorityRow,
@@ -57,7 +58,10 @@ import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
+import { ancestorsOf } from "../tasks/planner.ts";
+import { likelyPaths } from "../tasks/planning.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
@@ -74,6 +78,7 @@ import {
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
+import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -103,7 +108,7 @@ export interface AutonomyDeps {
   tasks: TaskService;
   runs: RunManager;
   room: RoomService;
-  accounts: { list(): Promise<AccountView[]> };
+  accounts: { list(): Promise<AccountView[]>; cachedModels?(id: string): Promise<AccountModels | undefined> };
   agents: AgentStore;
   events: EventHub;
   /** This computer's git logins, to tell whose a gh or glab login is. */
@@ -560,6 +565,158 @@ export class AutonomyService {
     }
   }
 
+  private staffingSource: StaffingSource | undefined;
+  /** Staffing lines waiting to be said in the room of the task they made, by the team they picked. */
+  private readonly staffLines: { key: string; reason: string }[] = [];
+
+  private staffing(): StaffingSource {
+    this.staffingSource ??= new StaffingSource({
+      store: this.deps.store,
+      agents: this.deps.agents,
+      accounts: this.deps.accounts,
+      config: this.deps.config,
+      capacity: (accounts) => this.deps.runs.capacity(accounts),
+      // Only a size already rated counts: staffing never asks the decision provider by itself, so a
+      // task not rated yet is staffed as a medium one and the reason says so.
+      size: async (request) =>
+        request.task === undefined ? undefined : this.sizes.known(request.task)?.size,
+      budgetLeft: (org) => this.budgetLeft(org),
+      floors: async () => (await this.deps.config.settings()).autonomy.floors,
+    });
+    return this.staffingSource;
+  }
+
+  /** USD left today under the tightest budget that covers the org: the autonomous budget or the workspace's. */
+  private async budgetLeft(org: string | undefined): Promise<number | undefined> {
+    const m = this.lastMeasure ?? (await this.measure());
+    const left: number[] = [];
+    const total = m.spend.total;
+    if (total.cap?.cost !== undefined) left.push(total.cap.cost - total.used.cost);
+    const mine = m.spend.orgs.find((o) => o.org === (org ?? PRIVATE));
+    if (mine?.cap?.cost !== undefined) left.push(mine.cap.cost - mine.used.cost);
+    return left.length === 0 ? undefined : Math.max(0, Math.min(...left));
+  }
+
+  /** `tasks.staff`: the proposal for an existing task, or for the text of one not made yet. */
+  async staff(input: {
+    task?: string | undefined;
+    text?: string | undefined;
+    title?: string | undefined;
+    kind?: string | undefined;
+    repos?: readonly { project: string; base?: string | undefined }[] | undefined;
+  }): Promise<{
+    team: string[];
+    lead: string | null;
+    reason: string;
+    ranked: { agent: string; score: number }[];
+  }> {
+    let request: StaffRequest;
+    if (input.task !== undefined) {
+      const task = this.deps.store.tasks.get(input.task);
+      if (task === undefined) throw new UserError(`There is no task ${input.task}.`, 404);
+      request = requestOf(task);
+    } else {
+      if (input.text === undefined) throw new UserError("Give a task id, or the text of the task.", 400);
+      const sections = await this.deps.config.sections();
+      const project = input.repos?.[0]?.project;
+      request = {
+        title: input.title ?? firstLine(input.text),
+        brief: input.text,
+        kind: input.kind ?? "code",
+        org: project === undefined ? undefined : sections.projects[project]?.org,
+        repos: input.repos ?? [],
+      };
+    }
+    const p = await this.staffing().propose(request);
+    return { team: p.team, lead: p.lead ?? null, reason: p.reason, ranked: p.ranked };
+  }
+
+  /**
+   * For the captain's `tasks.create` and `tasks.start` that name no team: the team staffing picks.
+   * A create gets it in its input; a start of a task still on its default team gets it set now.
+   * Undefined when the call names a team, is not the captain's, or no agent can take the task.
+   */
+  async staffCall(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined> {
+    if (
+      (command !== "tasks.create" && command !== "tasks.start") ||
+      (await this.callerKind(caller)) !== "boss"
+    ) {
+      return undefined;
+    }
+    const named = (v: unknown) => (Array.isArray(v) ? v.length > 0 : typeof v === "string");
+    let request: StaffRequest;
+    if (command === "tasks.start") {
+      const task = this.deps.store.tasks.get(str(input.id) ?? "");
+      if (task === undefined || (task.status !== "inbox" && task.status !== "ready")) return undefined;
+      // A team of more than one was chosen by the owner or the captain and is kept: only a task
+      // still on a single default agent is staffed.
+      if (task.team.length > 1 || task.kind === "chat") return undefined;
+      request = requestOf(task);
+    } else {
+      if (named(input.team) || named(input.agent) || typeof input.text !== "string") return undefined;
+      const repos = Array.isArray(input.repos) ? (input.repos as { project: string; base?: string }[]) : [];
+      if (repos.length === 0 || input.readOnly === true) return undefined;
+      const { world } = await this.context(caller, command, input);
+      request = {
+        title: str(input.title) ?? firstLine(input.text),
+        brief: input.text,
+        kind: str(input.kind) ?? "code",
+        org: world.org === PRIVATE ? undefined : world.org,
+        repos,
+      };
+    }
+    const p = await this.staffing().propose(request);
+    if (p.lead === undefined) return undefined;
+    this.staffLines.push({
+      key: command === "tasks.start" ? `start:${str(input.id)}` : p.team.join(","),
+      reason: p.reason,
+    });
+    if (this.staffLines.length > 20) this.staffLines.shift();
+    if (command === "tasks.create") return { ...input, team: p.team };
+    await this.deps.tasks.staffTeam(str(input.id) ?? "", p.team);
+    return input;
+  }
+
+  /** Says the staffing line in the room of the task the captain just made or started. */
+  private saidStaffing(command: CommandName, task: Task): void {
+    const key = command === "tasks.start" ? `start:${task.id}` : task.team.join(",");
+    const at = this.staffLines.findIndex((l) => l.key === key);
+    if (at === -1) return;
+    const [line] = this.staffLines.splice(at, 1);
+    if (line === undefined) return;
+    this.deps.room.post(task.id as never, `staffing:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: `Team: ${line.reason}`,
+    });
+  }
+
+  /** True while the mode is On: agent slots are shared evenly across workspaces (5.18). */
+  slotsFair(): boolean {
+    try {
+      return this.repo.state().mode === "on";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * True for a task the owner runs: one the captain did not take on, or one the owner resumed by
+   * hand. Its runs go first for a slot and are never stopped to rebalance.
+   */
+  ownerRuns(task: string): boolean {
+    try {
+      const row = this.repo.task(task);
+      return row === undefined || row.resumedAt !== undefined;
+    } catch {
+      return true;
+    }
+  }
+
   /** What holds the task's runs now, without recording it. */
   holdFor(task: string): { reason: HeldReason; why: string; scope?: string } | undefined {
     const { mode, since } = this.repo.state();
@@ -608,10 +765,12 @@ export class AutonomyService {
     const found = this.deps.store.tasks.get(id);
     this.roomWait.delete(id);
     if (found !== undefined && found.status !== "done") {
-      const full = await this.noRoomFor(found);
+      const noRoom = await this.noRoomFor(found);
+      const full =
+        noRoom === undefined ? await this.repoRuleFor(found, `${id} waits.`) : `${noRoom} ${id} waits.`;
       if (full !== undefined) {
         this.roomWait.add(id);
-        this.event({ kind: "task", text: `${full} ${id} waits.`, task: id, ...orgOf(found) });
+        this.event({ kind: "task", text: full, task: id, ...orgOf(found) });
         return;
       }
     }
@@ -1086,14 +1245,17 @@ export class AutonomyService {
         : lines.every((l) => l !== undefined)
           ? lines[0]
           : undefined;
-    if (full === undefined) return undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
         : command === "tasks.create"
           ? "Filed without starting: it waits in the backlog."
           : "Split without starting: the subtasks wait in the backlog.";
-    const line = `${full} ${then}`;
+    const line =
+      full !== undefined
+        ? `${full} ${then}`
+        : await this.repoRuleCall(command, input, sections, world.org, then);
+    if (line === undefined) return undefined;
     this.event({
       kind: "decision",
       text: `${summarize(command, input)}: ${line}`,
@@ -1104,6 +1266,79 @@ export class AutonomyService {
       org: world.org,
     });
     return line;
+  }
+
+  /**
+   * The repo rule for a start the captain asked for: the one line when another task running or in
+   * review already changes one of its repos on the same base branch, with no plan showing disjoint
+   * areas. A new task (no id yet) is judged on its repos and the paths its text names.
+   */
+  private async repoRuleCall(
+    command: CommandName,
+    input: Record<string, unknown>,
+    sections: ConfigSections,
+    org: string,
+    then: string,
+  ): Promise<string | undefined> {
+    if (command === "tasks.start") {
+      const id = str(input.id);
+      const task = id === undefined ? undefined : this.deps.store.tasks.get(id);
+      return task === undefined ? undefined : this.repoRuleFor(task, then);
+    }
+    if (command !== "tasks.create" || !Array.isArray(input.repos) || input.readOnly === true)
+      return undefined;
+    const text = `${str(input.title) ?? ""}\n${str(input.text) ?? ""}`;
+    const areas = areasOf(likelyPaths(text));
+    const repos = (input.repos as { project?: unknown; base?: unknown; writes?: unknown }[]).flatMap((r) =>
+      typeof r.project === "string"
+        ? [
+            {
+              project: r.project,
+              base:
+                (typeof r.base === "string" ? r.base : undefined) ??
+                sections.projects[r.project]?.base ??
+                sections.orgs[org]?.base ??
+                "",
+              areas,
+            },
+          ]
+        : [],
+    );
+    const candidate: RepoRuleTask = { id: "", repos };
+    const label = str(input.title) ?? "this task";
+    return repoRuleLine(label, candidate, await this.writers([]), then);
+  }
+
+  /** Tasks running or in review, except `skip` (a task's own ancestors hold its work). */
+  private async writers(skip: readonly string[]): Promise<RepoRuleTask[]> {
+    const out: RepoRuleTask[] = [];
+    for (const s of this.deps.store.tasks.list(false)) {
+      if ((s.status !== "running" && s.status !== "review") || skip.includes(s.id)) continue;
+      const task = this.deps.store.tasks.get(s.id);
+      if (task === undefined) continue;
+      out.push(await this.repoUses(task));
+    }
+    return out;
+  }
+
+  private async repoUses(task: Task): Promise<RepoRuleTask> {
+    const fps = await this.deps.tasks.footprints(task).catch(() => []);
+    return {
+      id: task.id,
+      repos: task.repos
+        .filter((r) => r.writes !== false)
+        .map((r) => ({
+          project: r.project,
+          base: r.base,
+          areas: areasOf(fps.find((f) => f.project === r.project)?.paths ?? []),
+        })),
+    };
+  }
+
+  /** The repo rule for an existing task the captain starts or resumes: a line, or undefined when it may go. */
+  async repoRuleFor(task: Task, then: string): Promise<string | undefined> {
+    const skip = [task.id, ...ancestorsOf(task, (id) => this.deps.store.tasks.get(id))];
+    return repoRuleLine(task.id, await this.repoUses(task), await this.writers(skip), then);
   }
 
   /** Decides a call that would wait for the owner, while the mode is on (rule 4). */
@@ -1246,6 +1481,12 @@ export class AutonomyService {
    * its chat join, and so do tasks an agent of an autonomous task creates or splits.
    */
   adopt(caller: AutonomyCaller, command: CommandName, output: unknown, reason = ""): void {
+    if (caller === "boss" && (command === "tasks.create" || command === "tasks.start")) {
+      const made =
+        typeof output === "object" && output !== null ? (output as { id?: unknown }).id : undefined;
+      const task = typeof made === "string" ? this.deps.store.tasks.get(made) : undefined;
+      if (task !== undefined) this.saidStaffing(command, task);
+    }
     if (this.repo.state().mode !== "on") return;
     const ids: string[] = [];
     const id = (o: unknown) => (typeof o === "object" && o !== null ? (o as { id?: unknown }).id : undefined);
@@ -1266,6 +1507,7 @@ export class AutonomyService {
         continue;
       joined = true;
       const t = this.deps.store.tasks.get(task);
+      if (t !== undefined && caller === "boss") this.saidStaffing(command, t);
       const verb =
         command === "tasks.start" ? "Started" : command === "tasks.split" ? "Split out" : "Created";
       this.event({ kind: "task", text: `${verb} ${task}: ${t?.title ?? task}`, task, ...orgOf(t) });
@@ -2094,6 +2336,27 @@ function str(value: unknown): string | undefined {
 /** The existing task a call is about: `id` for `tasks.*`, else `task`. */
 function targetOf(command: string, input: Record<string, unknown>): string | undefined {
   return command.startsWith("tasks.") ? (str(input.id) ?? str(input.task)) : str(input.task);
+}
+
+function firstLine(text: string): string {
+  return (
+    text
+      .split("\n")
+      .find((l) => l.trim() !== "")
+      ?.trim()
+      .slice(0, 120) ?? ""
+  );
+}
+
+function requestOf(task: Task): StaffRequest {
+  return {
+    task,
+    title: task.title,
+    brief: task.brief,
+    kind: task.kind,
+    org: task.org,
+    repos: task.repos.map((r) => ({ project: r.project, base: r.base })),
+  };
 }
 
 function orgOf(task: { org?: string | undefined } | undefined): { org?: string } {

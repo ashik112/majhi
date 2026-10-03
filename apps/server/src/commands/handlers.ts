@@ -603,6 +603,12 @@ export function createHandlers({
     "team.add": (input) =>
       services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
     "team.remove": (input) => services.tasks.removeFromTeam(input.task, input.agent),
+    "tasks.setLead": (input, ctx) =>
+      services.tasks.setLead({
+        ...input,
+        by: ctx.meta.actor.kind === "owner" ? { kind: "owner" } : { kind: "agent", id: ctx.meta.actor.id },
+      }),
+    "tasks.staff": (input) => services.autonomy.staff(input),
     "tasks.addAgent": (input) =>
       services.tasks.addToTeam(input.id, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
     "tasks.removeAgent": (input) => services.tasks.removeFromTeam(input.id, input.agent),

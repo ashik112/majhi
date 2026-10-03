@@ -86,6 +86,15 @@ export interface AutonomyGate {
     command: CommandName,
     input: Record<string, unknown>,
   ): Promise<string | undefined>;
+  /**
+   * The captain's create or start that names no team: the input with the team staffing picked, the
+   * same input when the team was set on the task already, or undefined when staffing does not apply.
+   */
+  staffCall(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined>;
   decide(
     caller: AdminCaller,
     command: CommandName,
@@ -281,6 +290,11 @@ export class AdminService {
         const filed = await this.callCommand(caller, command, { ...input, start: false }, ask);
         return filed.isError ? filed : { ...filed, text: `${filed.text}\n${full}` };
       }
+    }
+    // The captain names no team: staffing weighs the agents and accounts of the workspace and picks one.
+    if (autonomy !== undefined && auto === "boss") {
+      const staffed = await autonomy.staffCall(caller, command, input);
+      if (staffed !== undefined && staffed !== input) return this.callCommand(caller, command, staffed, ask);
     }
     const { policy } = await this.deps.config.settings();
     const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);

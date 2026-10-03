@@ -101,10 +101,12 @@ import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, type BriefConnection, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
+import { handoverNote } from "./handover.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
+import type { Footprint } from "./planning.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import {
@@ -312,6 +314,11 @@ export class TaskService {
       return open.get(id);
     };
     return pendingNotices(this.deps.store.room.waitingOnOwner(), subject);
+  }
+
+  /** What the task has changed per project, or names in its description (the repo rule reads it). */
+  footprints(task: Task): Promise<Footprint[]> {
+    return this.planner.footprints(task);
   }
 
   get(id: string): Task {
@@ -1094,6 +1101,117 @@ export class TaskService {
     this.deps.store.tasks.setOverrides(id, overrides, at);
     this.note(id, `@${replacement} (${fm.role}) took @${agent}'s place.`);
     return this.afterProcessesOf(id, held, await this.teamChanged(id));
+  }
+
+  /**
+   * Makes `agent` the lead (SPEC 5.18, lead handover). The owner, the captain and the current lead
+   * may; any other agent is refused. The new lead is on the team or is added (it must be allowed in
+   * the task's workspace, on an account that can run). The old lead stays as a builder unless
+   * `keepOldLead` is false. The room gets a note with the plan, what is done and what is next, and
+   * the new lead is woken with it.
+   */
+  async setLead(input: {
+    task: string;
+    agent: string;
+    reason?: string | undefined;
+    keepOldLead?: boolean | undefined;
+    by: { kind: "owner" } | { kind: "agent"; id: string };
+  }): Promise<Task> {
+    const task = this.get(input.task);
+    const old = task.team[0];
+    const byName = input.by.kind === "owner" ? "the owner" : `@${input.by.id}`;
+    if (input.by.kind === "agent") {
+      const captain = this.deps.config.knownBoss();
+      if (input.by.id !== captain && input.by.id !== old) {
+        throw new UserError(
+          `Only the owner, the captain or the lead, @${old ?? "nobody"}, can change the lead of ${task.id}.`,
+          409,
+        );
+      }
+    }
+    if (old === input.agent) throw new UserError(`@${input.agent} is already the lead of ${task.id}.`, 409);
+    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    const fm = await this.checkMember(task, input.agent);
+    const view = (await this.deps.accounts.list().catch(() => [])).find((v) => v.id === fm.account);
+    if (view !== undefined && ["needs-login", "at-limit", "unreachable"].includes(view.status)) {
+      throw new UserError(
+        `@${input.agent} runs on ${fm.account}, which cannot run now (${view.status}).`,
+        409,
+      );
+    }
+    const state = this.deps.store.tasks.roomState(task.id);
+    if (input.by.kind === "agent" && (state.removed ?? []).includes(input.agent)) {
+      throw new UserError(
+        `The owner removed @${input.agent} from ${task.id}. Only the owner can add it back.`,
+        409,
+      );
+    }
+    if ((state.removed ?? []).includes(input.agent)) {
+      this.deps.store.tasks.setRoomState(task.id, {
+        ...state,
+        removed: (state.removed ?? []).filter((a) => a !== input.agent),
+      });
+    }
+    const keep = input.keepOldLead !== false;
+    const rest = task.team.filter((a) => a !== input.agent && a !== old);
+    const team = [input.agent, ...(old !== undefined && keep ? [old] : []), ...rest];
+    const at = this.now().toISOString();
+    const plan = this.deps.store.plans.forTask(task.id).at(-1)?.plan;
+    const commits = await this.recentCommits(task);
+    this.deps.store.tasks.setTeam(task.id, team, at);
+    if (old !== undefined && !keep) {
+      // The old lead's session is closed unless it is mid-turn (it is the caller when it hands over):
+      // then it ends by itself and nothing wakes it again.
+      if (!this.deps.runs.working(task.id).includes(old)) {
+        await this.deps.runs.remove(task.id, old);
+        await this.stopProcessesOf(task.id, old);
+      }
+      const { [old]: _gone, ...overrides } = task.overrides;
+      this.deps.store.tasks.setOverrides(task.id, overrides, at);
+    }
+    const note = handoverNote({
+      task: task.id,
+      from: old ?? "nobody",
+      to: input.agent,
+      reason: input.reason,
+      by: byName,
+      plan,
+      commits,
+      oldStays: old !== undefined && keep,
+    });
+    this.deps.room.post(task.id as TaskId, `handover:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: note,
+    });
+    const changed = await this.teamChanged(task.id);
+    this.deps.runs.notify(task.id, input.agent, note);
+    return changed;
+  }
+
+  /** Sets the team of a task that has not started (the captain's staffing). The first is the lead. */
+  async staffTeam(id: string, team: readonly string[]): Promise<Task> {
+    const task = this.get(id);
+    if (team.length === 0 || team.join() === task.team.join()) return task;
+    for (const agent of team) await this.checkMember(task, agent);
+    const at = this.now().toISOString();
+    this.deps.store.tasks.setTeam(id, [...team], at);
+    const overrides = Object.fromEntries(Object.entries(task.overrides).filter(([a]) => team.includes(a)));
+    this.deps.store.tasks.setOverrides(id, overrides, at);
+    return this.teamChanged(id);
+  }
+
+  /** The newest commits of the task's branch in each repo since its base, newest first. */
+  private async recentCommits(task: Task): Promise<{ project: string; subjects: string[] }[]> {
+    const out: { project: string; subjects: string[] }[] = [];
+    for (const repo of task.repos) {
+      if (repo.worktree === undefined) continue;
+      const log = await git(repo.worktree, ["log", "--format=%s", "-n", "8", `${repo.base}..HEAD`]).catch(
+        () => "",
+      );
+      out.push({ project: repo.project, subjects: log.split("\n").filter((l) => l.trim() !== "") });
+    }
+    return out;
   }
 
   /** Stops the processes of an agent leaving the team. True when one of them held the task running. */

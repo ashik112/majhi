@@ -130,8 +130,8 @@ Each step ships on its own and is usable without the next.
 3. **Authority table** (2) replacing the three levels and the push and merge switches. Built: rows stored as `authority` per workspace, old fields still read; Hub setup and the Limits screen no longer carry push and merge.
 4. **Budgets and Limits screen** (3), with budget decisions. Built: the page `/limits` (autonomous budget with today's bar, a budget per workspace, Safety folded with account floors and the weekly budgets), and one question per budget and day with a today-only Raise, in the bell, on the Captain page and on the Limits screen; held tasks name their budget.
 5. **Decisions inbox** (4) and alerts for decisions only. Built: one `Decision` model derived from room cards, the captain's cap and budget questions and signed-out accounts (`decisions.list`, `decisions.answer`), the captain's `majhi_decisions_recommend` tool, the bell as the inbox plus the page `/decisions`, and desktop and browser alerts only for decisions, once each.
-6. **Collision rules** (7): fair slots per workspace and account, the repo rule.
-6b. **Staffing and lead handover** (7b).
+6. **Collision rules** (7): fair slots per workspace and account, the repo rule. Built: `fairOrder` in `runs/limits.ts` (owner first, then the workspace furthest below its share, accounts in turn), the repo rule in `autonomy/repo-rule.ts` for the captain's starts and resumes, and `ShipQueue` for ships per project and base branch.
+6b. **Staffing and lead handover** (7b). Built: `staffTask` (`tasks/staffing.ts`, pure) with its source `tasks/staffing-source.ts`; the captain's `tasks.create` and `tasks.start` use it when no team is named, and the reason goes into the task room; `tasks.staff` (tool `majhi_tasks_staff`) returns the proposal; `tasks.setLead` (tool `majhi_tasks_setLead` for the captain, `set_lead` in majhi-tasks for a lead) with the handover note.
 7. **Captain panel threads** (8), moving lane chats out of the task lists.
 8. **Presence rule replaced** (5) and **briefing** (9).
 

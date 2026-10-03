@@ -75,10 +75,47 @@ describe("the captain and free agent slots", () => {
     expect((await t.h.cmd("tasks.start", { id: mine })).status).toBe(200);
     expect(t.status(mine)).toBe("running");
 
-    // A slot frees up: the captain's start goes.
+    // A slot frees up (and the owner's task no longer holds the repo): the captain's start goes.
     spy.mockRestore();
+    expect((await t.h.cmd("tasks.stop", { id: mine })).status).toBe(200);
     const yes = await t.call("majhi_tasks_start", { id: first });
     expect(yes.text).not.toContain("No free slot");
     expect(t.status(first)).toBe("running");
+  });
+});
+
+describe("the captain and the repo rule", () => {
+  it("keeps a second task on the same repo and base in the backlog, allows disjoint areas, and never blocks the owner", async () => {
+    const t = await on();
+    const running = await t.ownerTask("Rework login in src/auth/login.ts");
+    expect((await t.h.cmd("tasks.start", { id: running })).status).toBe(200);
+    const same = await t.ownerTask("Fix a typo in src/auth/session.ts");
+    const no = await t.call("majhi_tasks_start", { id: same });
+    expect(no.isError).toBe(true);
+    expect(no.text).toMatch(
+      new RegExp(
+        `^Not starting ${same}: ${running} is already changing acme-api on \\S+\\. ${same} waits\\.$`,
+      ),
+    );
+    expect(t.status(same)).toBe("inbox");
+
+    // A new task the captain files with start waits in the backlog.
+    const filed = await t.call("majhi_tasks_create", {
+      text: "Tidy the login form in src/ui/form.ts",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
+    expect(filed.text).toContain(`${running} is already changing acme-api`);
+    expect(filed.text).toContain("Filed without starting");
+
+    // Plans naming different top-level areas may run together.
+    const docs = await t.ownerTask("Update the setup guide in docs/guide.md");
+    const yes = await t.call("majhi_tasks_start", { id: docs });
+    expect(yes.text).not.toContain("Not starting");
+    expect(t.status(docs)).toBe("running");
+
+    // The owner's own start is never blocked.
+    expect((await t.h.cmd("tasks.start", { id: same })).status).toBe(200);
+    expect(t.status(same)).toBe("running");
   });
 });
