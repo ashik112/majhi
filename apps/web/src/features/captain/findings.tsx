@@ -68,7 +68,12 @@ export function FindingsBox({ orgs, onOpen }: { orgs: readonly CaptainOrg[]; onO
           <span className="tnum font-mono text-sm text-fg-faint">{data.fresh} new</span>
         )}
         <div className="ml-auto flex items-center gap-2 text-sm">
-          <button type="button" onClick={onOpen} className="cursor-pointer text-blue hover:underline">
+          <button
+            type="button"
+            aria-label="All findings"
+            onClick={onOpen}
+            className="cursor-pointer text-blue hover:underline"
+          >
             See all
           </button>
         </div>
