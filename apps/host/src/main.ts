@@ -27,7 +27,7 @@ import { createKeyRestorer } from "./keyRestore.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger, type Logger } from "./log.ts";
-import { plainLine, showNotification } from "./notify.ts";
+import { desktopNotifier, plainLine, showNotification } from "./notify.ts";
 import { findExecutable } from "./paths.ts";
 import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
 import type { Platform } from "./platform/types.ts";
@@ -77,20 +77,14 @@ async function main(): Promise<void> {
   const log = createFileLogger(join(config.majhiHome, "logs", "host.log"));
   await ensureToken(config.majhiHome);
 
-  const deps = processDeps(os, { home: config.home, majhiHome: config.majhiHome, log });
+  const deps = processDeps(os, {
+    home: config.home,
+    majhiHome: config.majhiHome,
+    log,
+    downloads: config.notify,
+  });
   const real = createPlatform(os, deps);
-  // A helper next to a test server shows nothing on the owner's desktop: its tasks are test data.
-  const platform = config.notify
-    ? real
-    : {
-        ...real,
-        notifier: {
-          show: async (request: { title: string; message: string }) => {
-            log(`notify (off): ${request.title}: ${request.message}`);
-            return { clickable: false };
-          },
-        },
-      };
+  const platform = { ...real, notifier: desktopNotifier(config.notify, real.notifier, log) };
   const path = deps.path;
   const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =

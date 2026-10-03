@@ -1,3 +1,4 @@
+import type { Logger } from "./log.ts";
 import type { Notifier } from "./platform/types.ts";
 
 export interface NotifyParams {
@@ -40,4 +41,19 @@ export function showNotification(
     url: clickUrl(baseUrl, params.path),
     sound: params.sound,
   });
+}
+
+/**
+ * The notifier the helper uses: the OS's, or with MAJHI_HOST_NOTIFY=off one that only logs. A
+ * helper next to a test server shows nothing on the owner's desktop (its tasks are test data) and
+ * never downloads terminal-notifier.
+ */
+export function desktopNotifier(enabled: boolean, notifier: Notifier, log: Logger): Notifier {
+  if (enabled) return notifier;
+  return {
+    show: async (request) => {
+      log(`notify (off): ${request.title}: ${request.message}`);
+      return { clickable: false };
+    },
+  };
 }
