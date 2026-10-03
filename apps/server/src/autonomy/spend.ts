@@ -105,7 +105,8 @@ function left(w: UsageWindow | undefined, now: Date): number | undefined {
  * their floors, the weekly one says it: it lasts longer.
  */
 export function accountsOf(
-  views: readonly (Pick<AccountView, "id" | "org" | "tool" | "usage"> & Partial<Pick<AccountView, "status">>)[],
+  views: readonly (Pick<AccountView, "id" | "org" | "tool" | "usage"> &
+    Partial<Pick<AccountView, "status">>)[],
   floors: AutonomySettings["floors"],
   now: Date,
 ): AutonomyAccount[] {

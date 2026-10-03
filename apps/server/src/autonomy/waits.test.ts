@@ -20,7 +20,8 @@ const item = (state: "signed-in" | "available"): QueueItem => ({
 const NOW = new Date("2026-10-04T20:00:00.000Z");
 
 describe("queue items that wait for an account", () => {
-  const status = (s: AccountStatus | undefined) => (id: string) => (id === "claude-ideeza-pm" ? s : undefined);
+  const status = (s: AccountStatus | undefined) => (id: string) =>
+    id === "claude-ideeza-pm" ? s : undefined;
 
   it("becomes ready, with one line, when the account is signed in again", () => {
     const out = evaluateWaits([item("signed-in")], status("healthy"), NOW, () => true);

@@ -92,7 +92,8 @@ export function waitProblem(
 ): string | undefined {
   const wait = item.waitFor;
   if (wait === undefined) return undefined;
-  if (!known(wait.account)) return `There is no account ${wait.account}. Check majhi_accounts_list for the ids.`;
+  if (!known(wait.account))
+    return `There is no account ${wait.account}. Check majhi_accounts_list for the ids.`;
   const status = statusOf(wait.account);
   if (!meets(wait, status)) return undefined;
   const what = item.task === undefined ? `"${item.title}"` : item.task;

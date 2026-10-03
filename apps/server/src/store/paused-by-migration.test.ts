@@ -24,9 +24,9 @@ describe("the paused by autonomy off migration", () => {
       };
       for (const name of required) values[name] ??= name === "team" || name === "repos" ? "[]" : "";
       const names = Object.keys(values);
-      db.prepare(`INSERT INTO tasks (${names.join(", ")}) VALUES (${names.map((n) => `@${n}`).join(", ")})`).run(
-        values,
-      );
+      db.prepare(
+        `INSERT INTO tasks (${names.join(", ")}) VALUES (${names.map((n) => `@${n}`).join(", ")})`,
+      ).run(values);
     };
     const at = "2026-10-04T19:20:00.000Z";
     // Paused a few seconds before or after the "Turned off" event: Autonomous did it.

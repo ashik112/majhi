@@ -48,6 +48,13 @@ import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
+import {
+  loopLine,
+  NEAR_SAME_MS,
+  nudgeText,
+  type PastAnswer,
+  questionLoop,
+} from "../captain/question-loop.ts";
 import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -78,10 +85,8 @@ import {
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
-import { loopLine, NEAR_SAME_MS, nudgeText, type PastAnswer, questionLoop } from "../captain/question-loop.ts";
-import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
-import { evaluateWaits, waitProblem } from "./waits.ts";
 import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -95,6 +100,7 @@ import {
   spendOf,
 } from "./spend.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
+import { evaluateWaits, waitProblem } from "./waits.ts";
 
 /** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
 const OFF_BY = "autonomy-off";
@@ -501,10 +507,20 @@ export class AutonomyService {
     }
   }
 
-  /** A task the stop leaves paused for the owner: one that runs, or would resume by itself. */
+  /**
+   * A task the stop pauses for Autonomous being off: one that runs, or would resume by itself, or that
+   * the run gate paused when the stop began (it holds it for the owner). A task the owner paused by hand
+   * is theirs and stays so: marking it paused by the switch would let the captain resume it.
+   */
   private stoppable(task: Task): boolean {
     if (task.status === "running") return true;
-    return task.status === "paused" && ["offline", "limit", "owner"].includes(task.pausedReason ?? "");
+    if (task.status !== "paused") return false;
+    if (task.pausedReason === "offline" || task.pausedReason === "limit") return true;
+    return (
+      task.pausedReason === "owner" &&
+      task.pausedBy === undefined &&
+      this.repo.task(task.id)?.held === "owner"
+    );
   }
 
   private setMode(mode: AutonomyMode, by: "owner" | "majhi", text: string, line: string, why?: string): void {

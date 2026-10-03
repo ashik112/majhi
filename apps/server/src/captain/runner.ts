@@ -411,7 +411,9 @@ export class ChoreRunner {
         .pendingCapAsks()
         .some((a) => a.org === run.org && a.chore === run.chore && a.day === run.ws.day);
       deps.repo.addAction({
-        key: daily ? `cap:${run.org}:${run.chore}:${run.ws.day}:${note?.match(/cap of (\d+)/)?.[1]}` : `run:${run.id}:end`,
+        key: daily
+          ? `cap:${run.org}:${run.chore}:${run.ws.day}:${note?.match(/cap of (\d+)/)?.[1]}`
+          : `run:${run.id}:end`,
         run: run.id,
         org: run.org,
         chore: run.chore,

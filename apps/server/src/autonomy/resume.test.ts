@@ -39,7 +39,9 @@ describe("which paused tasks the captain may resume", () => {
       "Acme reached its cap",
     );
     expect(resumeRefusal(paused("limit"), account("healthy"))).toBeUndefined();
-    expect(resumeRefusal(paused("signed-out"), account("needs-login"))).toContain("claude-acme is signed out");
+    expect(resumeRefusal(paused("signed-out"), account("needs-login"))).toContain(
+      "claude-acme is signed out",
+    );
     expect(resumeRefusal(paused("signed-out"), account("healthy"))).toBeUndefined();
     expect(resumeRefusal(paused("offline"), account("unreachable"))).toContain("cannot be reached");
     expect(resumeRefusal(paused("offline"), account("healthy"))).toBeUndefined();

@@ -623,6 +623,8 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 - **Turning off** pauses the tasks it started, right away (default); the owner can choose "Let them finish their current step" instead. Nothing it started is lost.
 - **Turning on** lists the tasks it paused and resumes them, with a checkbox to leave them paused.
 - The captain itself is never stopped: the owner can always talk to it. While Off, only the memory and cleanup chores start; a run of any other chore in progress ends at its next step.
+- **The captain resumes what it or the switch paused.** While Autonomous is On and Start work is "Captain decides" in the workspace, the captain resumes (with `majhi_tasks_start`, which also resumes a paused task) a task it paused, a task paused when Autonomous was turned off, and a task that stopped on a limit, a sign-in or an offline agent once that cause is gone. The digest marks each paused task "you may resume it" or says why it stays. A task the owner paused, and one that is blocked or going in circles, is never resumed by the captain: majhi refuses the call with one line, and the captain leaves it as a decision. Turning Autonomous off never takes over a task the owner paused by hand.
+- **No stale beliefs about accounts.** The digest shows every account's state now (signed in, signed out, at its limit). A queue item that waits for an account carries `waitFor: { account, state: "signed-in" | "available" }`. majhi reads the account each minute, marks the item READY when it holds, and wakes the captain with one line ("claude-ideeza-pm is signed in again: IDE-6 can resume"). A plan that waits for an account that already meets the condition is refused.
 - A task the captain or this switch paused says so: "Paused by Captain", or "Paused when Autonomous was turned off", never "stopped by you" or "(owner)". The log says "Paused '<title>' because Autonomous was turned off".
 
 **The Captain page** (`/captain`) is one screen with no tabs; there is no separate Autonomous page. The owner does everything from it without switching views.
@@ -666,7 +668,7 @@ The **Limits screen** (`/limits`) is the one place for them: the autonomous budg
 |---|---|---|
 | Ship finished work | A task reaches review and its checks pass | Merge and push "Captain decides": ships by the workspace's ship rule. "Ask me": asks. |
 | Approval cards | A card arrives | Answers routine ones by the workspace's Approvals rules. Risky ones and the never list go to the owner. |
-| Agents' questions | An agent asks | Answers from the brief, memory or code. Real choices go to the owner. |
+| Agents' questions | An agent asks | Answers from the brief, memory or code. Real choices go to the owner, and so do answers Laya leads by less than 0.4. An agent that asks the same thing again within 10 minutes, or a third question within 5 minutes, is left for the owner ("@agent keeps asking in TASK (4 times in 5 minutes); it may be stuck") and gets one message to stop asking. |
 | Memory | Daily, and when 10 memories wait for review in a workspace (at most four runs a day) | Keeps, merges and drops waiting memories, all of them in one run. Private also reviews global memories; a client workspace never sees them. Asks about doubtful ones. |
 | Projects | A new repo appears, and daily | Registers it in the right workspace with base and remotes. Asks when unsure. Never touches protected repos. |
 | Task triage | Daily | Sets priority and due dates, marks duplicates and stale tasks. Suggests closing; never closes. |
@@ -691,7 +693,7 @@ The **Limits screen** (`/limits`) is the one place for them: the autonomous budg
 - One run per chore per workspace at a time. A trigger during a run joins it.
 - Every action checks the current state first, so running it twice changes nothing.
 - Two failures in a row turn that chore off for the workspace and tell the owner.
-- Daily caps per chore and workspace (for example five ships, four memory runs).
+- Daily caps per chore and workspace (for example five ships, four memory runs). A chore that reaches its cap with work left asks the owner once that day, with "Raise for today" (which runs it again), and the log says so once.
 - The captain's lane rests when its budget or its account's window runs out; rules and Laya keep routine upkeep moving, judgment calls wait.
 - The Autonomous switch turns every lane's own action off at once and pauses the tasks it started.
 - A soak test with the fake agent replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails if a run passes its caps, an event re-triggers itself, or an action repeats. It runs on every merge.

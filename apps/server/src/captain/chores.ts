@@ -205,7 +205,10 @@ export function createChores(
             task: card.task,
             do: async () => {
               await ports.flagLoop(org, card, line, nudgeText(card.task, loop));
-              return { outcome: "asked", undoNote: "A line for you and one message to the agent: nothing to undo" };
+              return {
+                outcome: "asked",
+                undoNote: "A line for you and one message to the agent: nothing to undo",
+              };
             },
           });
           continue;

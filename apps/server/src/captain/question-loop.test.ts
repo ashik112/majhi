@@ -25,7 +25,11 @@ describe("recognising an agent that keeps asking", () => {
 
   it("counts the third question in five minutes as a loop, whatever it says", () => {
     const past = [answered(0, "Use tabs?"), answered(2, "Rename the file?")];
-    expect(questionLoop(past, "Add a test?", at(4))).toMatchObject({ times: 3, minutes: 5, since: past[0]?.at });
+    expect(questionLoop(past, "Add a test?", at(4))).toMatchObject({
+      times: 3,
+      minutes: 5,
+      since: past[0]?.at,
+    });
     expect(questionLoop(past, "Add a test?", at(6))).toBeUndefined();
   });
 
