@@ -2,7 +2,7 @@ import type { AccountView, OrgView, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { PAGE_PATH, type PagePath } from "../../lib/pages";
-import { resetLabel } from "../accounts/model";
+import { limitResetAt, resetLabel } from "../accounts/model";
 
 // Organisations -------------------------------------------------------------
 
@@ -60,7 +60,7 @@ export interface Pulse {
 /** Whether an account has no room left: the tool says so, or a usage window is full. */
 export function accountAtLimit(account: AccountView | undefined): boolean {
   if (!account) return false;
-  if (account.status === "at-limit") return true;
+  if (account.status === "at-limit" || account.limit !== undefined) return true;
   const usage = account.usage;
   return (usage?.window?.usedPct ?? 0) >= 100;
 }
@@ -174,7 +174,7 @@ function pauses(input: AttentionInput): AttentionItem[] {
     const agent = task.team[0] ? input.agents.get(task.team[0]) : undefined;
     if (task.pausedReason === "limit") {
       const account = agent ? input.accounts.find((a) => a.id === agent.account) : undefined;
-      const resets = account?.usage?.window?.resetsAt ?? account?.usage?.weekly?.resetsAt;
+      const resets = account && limitResetAt(account);
       const who = account?.id ?? agent?.account;
       const reset = resets ? `, resets ${resetLabel(resets, input.now)}` : "";
       found.push({
