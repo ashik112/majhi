@@ -403,14 +403,14 @@ export const commands = {
   "git.logins": {
     risk: "read",
     summary:
-      "The accounts this Mac is logged in as on git hosts: gh and glab logins, and SSH keys per host or alias. Never returns a token",
+      "The accounts this computer is logged in as on git hosts: gh and glab logins, and SSH keys per host or alias. Never returns a token",
     input: z.object({ refresh: z.boolean().optional() }),
     output: GitLoginsResultSchema,
   },
   "orgs.useGitLogin": {
     risk: "change",
     summary:
-      "Use this Mac's gh or glab login as the org's token for a git host: the helper reads the token once and it is saved in secrets.age as that org's mr_tokens entry. Never returns the token",
+      "Use this computer's gh or glab login as the org's token for a git host: the helper reads the token once and it is saved in secrets.age as that org's mr_tokens entry. Never returns the token",
     input: z.object({
       id: IdSchema,
       via: z.enum(["gh", "glab"]),
@@ -422,7 +422,7 @@ export const commands = {
   "orgs.useSavedLogin": {
     risk: "change",
     summary:
-      "Use the login this Mac saved for an org's git account (Keychain or gh) as that account's token: the helper reads it once, the host's API must accept it, then it is saved in secrets.age for this org only. When it is not a token, nothing is saved and the reason says so. Never returns the secret",
+      "Use this computer's saved login (git credential helper or gh) for an org's git account as that account's token: the helper reads it once, the host's API must accept it, then it is saved in secrets.age for this org only. When it is not a token, nothing is saved and the reason says so. Never returns the secret",
     input: z.object({
       id: IdSchema,
       host: z.string().trim().min(1).max(255),
@@ -433,7 +433,7 @@ export const commands = {
   "orgs.setGitAccount": {
     risk: "change",
     summary:
-      "Bind a git account to an org on one host, like acme-dev on gitlab.com. Projects of this org then push with that account's SSH route. Adopts the Mac's gh or glab login token for it when one exists, or saves a pasted token. Fills the org's commit identity only when it has none. Never returns a token",
+      "Bind a git account to an org on one host, like acme-dev on gitlab.com. Projects of this org then push with that account's SSH route. Adopts this computer's gh or glab login token for it when one exists, or saves a pasted token. Fills the org's commit identity only when it has none. Never returns a token",
     input: z.object({
       id: IdSchema,
       host: z.string().trim().min(1).max(255),
@@ -448,17 +448,18 @@ export const commands = {
   "orgs.gitStatus": {
     risk: "read",
     summary:
-      "An org's git accounts per host: how each pushes (SSH key or this Mac's saved login), whether its merge request token works and as whom (one call to the host's API), and the hosts its projects use that have no account yet, with the logins found on this Mac. Never returns a token",
+      "An org's git accounts per host: how each pushes (SSH key or this computer's saved login), whether its merge request token works and as whom (one call to the host's API), and the hosts its projects use that have no account yet, with the logins found on this computer. Never returns a token",
     input: z.object({
       id: IdSchema,
-      /** Detect this Mac's logins again and recheck tokens, skipping the cache. */
+      /** Detect this computer's logins again and recheck tokens, skipping the cache. */
       refresh: z.boolean().optional(),
     }),
     output: GitStatusSchema,
   },
   "orgs.dismissGitLogin": {
     risk: "change",
-    summary: "Stop offering a login found on this Mac as an org's account on a host. Only that org changes",
+    summary:
+      "Stop offering a login found on this computer as an org's account on a host. Only that org changes",
     input: z.object({
       id: IdSchema,
       host: z.string().trim().min(1).max(255),
@@ -558,13 +559,14 @@ export const commands = {
   },
   "ssh.reload": {
     risk: "change",
-    summary: "Load the Mac's SSH keys into its agent again and report which need a passphrase",
+    summary:
+      "Load this computer's SSH keys into the agent majhi uses again and report which need a passphrase",
     input: Empty,
     output: SshStatusSchema,
   },
   "ssh.unlock": {
     risk: "change",
-    summary: "Unlock an SSH key with its passphrase once; the macOS Keychain keeps it, majhi does not",
+    summary: "Unlock an SSH key with its passphrase once; the Keychain or keyring keeps it, majhi does not",
     input: z.object({
       /** A path from the last status's `needsPassphrase`. */
       key: z.string().min(1),
@@ -1670,7 +1672,7 @@ export const commands = {
   "secrets.exportKey": {
     risk: "change",
     summary:
-      "Export the secrets key encrypted with a passphrase, as an age file to keep off this Mac. Decrypting it gives the key file back",
+      "Export the secrets key encrypted with a passphrase, as an age file to keep off this computer. Decrypting it gives the key file back",
     input: z.object({
       /** Used once to encrypt the export. Never logged, stored or returned. */
       passphrase: z
@@ -2021,7 +2023,8 @@ export const commands = {
   },
   "decisions.install": {
     risk: "change",
-    summary: "Install Laya on this Mac through the host helper and download its model (about 850 MB, once)",
+    summary:
+      "Install Laya natively on a Mac with Apple silicon through the host helper and download its model (about 850 MB, once)",
     input: Empty,
     output: LayaStatusSchema,
   },

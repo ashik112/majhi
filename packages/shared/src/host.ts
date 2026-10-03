@@ -45,13 +45,13 @@ export const RootSuggestionSchema = z.object({
 export type RootSuggestion = z.infer<typeof RootSuggestionSchema>;
 
 /**
- * What the helper knows about SSH keys in the Mac's agent. majhi's own git
- * (fetch now, push later) uses that agent through the forwarded socket.
+ * What the helper knows about SSH keys in the agent majhi's own git uses (fetch now, push later):
+ * the Mac's, through the forwarded socket, or on Linux and WSL2 the one behind `HOST_SSH_AGENT_SOCKET`.
  */
 export const SshStatusSchema = z.object({
   /** Keys the agent holds after the last check. */
   loaded: z.number().int().nonnegative(),
-  /** Private key files, with `~`, that have a passphrase the Keychain does not hold yet. */
+  /** Private key files, with `~`, whose passphrase the Keychain or keyring does not hold yet. */
   needsPassphrase: z.array(z.string()),
   error: z.string().optional(),
   checkedAt: z.string(),
@@ -82,9 +82,9 @@ export function sshUnlockCommand(key: string, os?: HostOs): string {
  */
 export const KeyFingerprintSchema = z.string().regex(/^[0-9a-f]{16}$/);
 
-/** The copy of the secrets key the helper keeps in the macOS Keychain. */
+/** The copy of the secrets key the helper keeps in the macOS Keychain, or a keyring on Linux and WSL2. */
 export const SecretsKeyBackupSchema = z.object({
-  /** The fingerprint of the key in the Keychain. Absent when the Keychain holds none. */
+  /** The fingerprint of the key in the Keychain or keyring. Absent when it holds none. */
   saved: KeyFingerprintSchema.optional(),
   /** Why the helper could not read or save the copy, in plain words. */
   error: z.string().optional(),
@@ -92,11 +92,11 @@ export const SecretsKeyBackupSchema = z.object({
 });
 export type SecretsKeyBackup = z.infer<typeof SecretsKeyBackupSchema>;
 
-/** Shortest passphrase for a secrets key export. The file leaves the Mac, so it must hold up offline. */
+/** Shortest secrets key export passphrase. The file leaves this computer, so it must hold up offline. */
 export const KEY_EXPORT_PASSPHRASE_MIN = 12;
 export const KEY_EXPORT_FILE_NAME = "majhi-secrets-key.age";
 
-/** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
+/** Which Docker runtime the helper found. It names the one that asks for folder access. */
 export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
 export type DockerRuntime = z.infer<typeof DockerRuntimeSchema>;
 
@@ -182,7 +182,7 @@ export const LayaDecideResultSchema = z.object({
 });
 export type LayaDecideResult = z.infer<typeof LayaDecideResultSchema>;
 
-/** One way the Mac can act as an account on a git host. Never holds a token. */
+/** One way this computer can act as an account on a git host. Never holds a token. */
 export const GitLoginSchema = z.object({
   via: z.enum(["gh", "glab", "ssh"]),
   /** The `Host` alias of ~/.ssh/config for `ssh`. Absent for a key used with the host name itself. */
@@ -259,7 +259,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
   /** Regenerate the compose override from majhi.yaml and recreate the server container. */
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
-  /** Load the Mac's SSH keys into its agent again and report the result. */
+  /** Load this computer's SSH keys into the agent majhi uses again and report the result. */
   z.object({ id: z.string(), method: z.literal("ssh.reload"), params: z.object({}) }),
   /** The checkout's HEAD, and the subjects of the commits after `from`, newest first. */
   z.object({
@@ -294,7 +294,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   /**
    * Run the project's Playwright suite in the helper's own worktree at `commit`, at low priority, and
    * answer when it ends (the call waits up to `timeoutMs`). `repo` is the project's path, the same on
-   * the Mac and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
+   * this computer and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
    */
   z.object({
     id: z.string(),
@@ -400,7 +400,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ url: CleanRemoteUrlSchema, auth: GitAuthSchema }),
   }),
   /**
-   * Asks the Mac's git credential helper (`git credential fill`) for the saved https secret of one
+   * Asks this computer's git credential helper (`git credential fill`) for the saved https secret of one
    * host and account. Only the owner's click may send it; the result goes straight to an API check
    * and then one org's secrets: never logged, cached or echoed.
    */
@@ -410,8 +410,9 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255) }),
   }),
   /**
-   * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
-   * must never be logged, stored or echoed in an error, on either side.
+   * Give a key its passphrase once: the helper loads the key, and the Keychain or keyring keeps the
+   * passphrase when there is one. `passphrase` must never be logged, stored or echoed in an error, on
+   * either side.
    */
   z.object({
     id: z.string(),
@@ -419,8 +420,9 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ key: z.string().min(1), passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX) }),
   }),
   /**
-   * Save the Mac's secrets key file to the Keychain, replacing any other key there. The helper refuses
-   * when the file's fingerprint is not `expected`, the key the server uses. The key never travels.
+   * Save this computer's secrets key file to the Keychain or keyring, replacing any other key there.
+   * The helper refuses when the file's fingerprint is not `expected`, the key the server uses. The key
+   * never travels.
    */
   z.object({
     id: z.string(),
@@ -488,13 +490,16 @@ export const HostInfoSchema = z.object({
   /** True when that checkout has uncommitted changes. */
   dirty: z.boolean().optional(),
   dockerRuntime: DockerRuntimeSchema.optional(),
-  /** Laya on this Mac. Absent from older helpers. */
+  /** Native Laya, on a Mac with Apple silicon only: `unsupported` elsewhere. Absent from older helpers. */
   laya: LayaStatusSchema.optional(),
-  /** The Keychain copy of the secrets key. Absent until the helper's first look, off macOS, and from older helpers. */
+  /**
+   * The Keychain or keyring copy of the secrets key. Absent until the helper's first look, while no
+   * keyring answers, and from older helpers.
+   */
   secretsKey: SecretsKeyBackupSchema.optional(),
   /**
    * When the helper last noticed a wake from sleep (clock gap). The server resumes turns that
-   * failed or stalled while the Mac slept each time this changes. Absent until the first wake.
+   * failed or stalled while the computer slept each time this changes. Absent until the first wake.
    */
   wokeAt: z.string().optional(),
 });
@@ -512,7 +517,7 @@ export function hostOsOf(info: Pick<HostInfo, "os" | "platform"> | undefined): H
 
 /** What `ssh -T` said about one git host that a registered project's remote uses. */
 export const SshHostCheckSchema = z.object({
-  /** The alias or `user@host` the remote uses, like `gitlab-ashik112`. */
+  /** The alias or `user@host` the remote uses, like `gitlab-acme`. */
   host: z.string(),
   state: z.enum(["reachable", "auth-failed", "unreachable"]),
   /** A fixed sentence. Never ssh's own output. */
