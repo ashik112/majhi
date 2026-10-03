@@ -1,12 +1,13 @@
 /**
  * macOS, as the helper always ran there: the login Keychain through `security`, launchd's SSH agent
  * with Apple's ssh-add keeping passphrases, the agent socket Docker Desktop and OrbStack give
- * containers, terminal-notifier or osascript, `open`, and OrbStack or Docker Desktop to start.
+ * containers, terminal-notifier (installed by majhi) or osascript, `open`, and OrbStack or Docker Desktop to start.
  */
 import { join } from "node:path";
 import type { EditorApp } from "@majhi/shared";
 import { plainLine } from "../notify.ts";
 import { openUrl } from "./openUrl.ts";
+import { type NotifierRelease, TERMINAL_NOTIFIER, terminalNotifier } from "./terminalNotifier.ts";
 import type { DockerHelpReason, Keyring, KeyringItem, Platform, PlatformDeps } from "./types.ts";
 
 const SECURITY = "/usr/bin/security";
@@ -145,9 +146,14 @@ export function notificationScript(
   return `display notification ${quoted(message)} with title ${quoted(options.title ?? "majhi")}${sound}`;
 }
 
-export function macosPlatform(deps: PlatformDeps): Platform {
+/** `notifierRelease` is the terminal-notifier release to install. Tests pin their own. */
+export function macosPlatform(
+  deps: PlatformDeps,
+  options: { notifierRelease?: NotifierRelease } = {},
+): Platform {
   const desktopEnv = async (): Promise<Record<string, string>> => ({ PATH: deps.path, HOME: deps.home });
   let lastSocketNote = "";
+  const findTerminalNotifier = terminalNotifier(deps, options.notifierRelease ?? TERMINAL_NOTIFIER);
 
   return {
     os: "macos",
@@ -186,26 +192,20 @@ export function macosPlatform(deps: PlatformDeps): Platform {
     },
     notifier: {
       /**
-       * With terminal-notifier a click opens majhi at the page. osascript cannot carry a click, so
-       * without it the notification shows and a click does nothing.
+       * With terminal-notifier a click opens majhi at the page. When there is none the helper
+       * installs its own copy in the background, and this one goes through osascript, which cannot
+       * carry a click. `-group majhi` keeps majhi's notifications together. No `-sender`: 3.x
+       * dropped it, and borrowing another app's identity would misattribute the notification.
        */
       async show(request) {
         const env = { PATH: deps.path };
-        const terminalNotifier = request.url === undefined ? undefined : await deps.find("terminal-notifier");
-        if (terminalNotifier !== undefined && request.url !== undefined) {
-          const args = [
-            "-title",
-            request.title,
-            "-message",
-            request.message,
-            "-open",
-            request.url,
-            "-group",
-            "majhi",
-          ];
+        const program = await findTerminalNotifier();
+        if (program !== undefined) {
+          const args = ["-title", request.title, "-message", request.message, "-group", "majhi"];
+          if (request.url !== undefined) args.push("-open", request.url);
           if (request.sound) args.push("-sound", "Glass");
-          const done = await deps.run(terminalNotifier, args, { env, timeoutMs: NOTIFY_TIMEOUT_MS });
-          if (done.code === 0) return { clickable: true };
+          const done = await deps.run(program, args, { env, timeoutMs: NOTIFY_TIMEOUT_MS });
+          if (done.code === 0) return { clickable: request.url !== undefined };
         }
         const script = notificationScript(request.message, { title: request.title, sound: request.sound });
         const done = await deps.run(OSASCRIPT, ["-e", script], { env, timeoutMs: NOTIFY_TIMEOUT_MS });

@@ -44,6 +44,19 @@ export const AttentionEventSchema = z.object({
 export type AttentionEvent = z.infer<typeof AttentionEventSchema>;
 
 /**
+ * What a tab sends on `/api/events`, the only thing it sends there: whether it can pop browser
+ * notifications (the browser granted them). It reports on connect and every
+ * `BROWSER_TAB_REPORT_MS`; the server counts a report for a minute, so a tab that went away without
+ * closing its socket stops counting.
+ */
+export const EventsClientMessageSchema = z.object({
+  type: z.literal("browser-notify"),
+  active: z.boolean(),
+});
+export type EventsClientMessage = z.infer<typeof EventsClientMessageSchema>;
+export const BROWSER_TAB_REPORT_MS = 20_000;
+
+/**
  * One item that waits for the owner in an open task or chat (`notify.pending`): an approval, a
  * permission, a secret request, a question or a decision. `text` is the line a notification would
  * show, like "ACM-12 needs approval: run migrations".

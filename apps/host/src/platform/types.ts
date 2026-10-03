@@ -3,12 +3,13 @@
  * names at start. Nothing else in the helper reads `process.platform` or names an OS program.
  * Implementations run programs only through `deps.run`, so a test fakes an OS by faking its programs.
  *
- * macOS: launchd, the Keychain, Docker's host-services SSH socket, osascript or terminal-notifier,
+ * macOS: launchd, the Keychain, Docker's host-services SSH socket, terminal-notifier or osascript,
  * `open`. Linux: systemd user units, a Secret Service keyring through `secret-tool`, the session's
  * SSH agent, `notify-send`, `xdg-open`. WSL2: Linux, plus Docker Desktop, the browser, the editor
  * and toasts on the Windows side, reached through WSL interop.
  */
 import type { EditorApp, HostOs, KeyringState } from "@majhi/shared";
+import type { Download } from "../download.ts";
 import type { Logger } from "../log.ts";
 import type { RunFn } from "../ssh.ts";
 
@@ -25,6 +26,11 @@ export interface PlatformDeps {
   find: (name: string) => Promise<string | undefined>;
   exists: (path: string) => Promise<boolean>;
   log: Logger;
+  /**
+   * Fetches a pinned tool the helper installs itself (macOS: terminal-notifier). Absent where
+   * nothing may be downloaded, as with MAJHI_HOST_NOTIFY=off.
+   */
+  download?: Download;
 }
 
 export interface Platform {
@@ -138,7 +144,7 @@ export interface Notifier {
   /**
    * Shows a desktop notification. `clickable` is true when a click opens `url`. Throws in plain
    * words when nothing was shown; the server then keeps the notice in the app only. macOS:
-   * terminal-notifier (clickable), else osascript. Linux: `notify-send`. WSL2: a Windows toast
+   * terminal-notifier (clickable), which the helper installs itself, else osascript. Linux: `notify-send`. WSL2: a Windows toast
    * through `powershell.exe` (clickable).
    */
   show(request: NotifyRequest): Promise<{ clickable: boolean }>;

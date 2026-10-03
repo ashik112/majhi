@@ -5,6 +5,7 @@
 import { access } from "node:fs/promises";
 import { release } from "node:os";
 import type { HostOs } from "@majhi/shared";
+import { downloadBytes } from "../download.ts";
 import type { Logger } from "../log.ts";
 import { findExecutable, toolPath } from "../paths.ts";
 import { runCommand } from "../runCommand.ts";
@@ -32,6 +33,8 @@ export interface ProcessDepsOptions {
   home: string;
   majhiHome: string;
   log: Logger;
+  /** False with MAJHI_HOST_NOTIFY=off: the helper then downloads nothing. */
+  downloads: boolean;
 }
 
 /** `PlatformDeps` over the real process: its environment, its PATH with `toolDirs`, real programs. */
@@ -50,5 +53,6 @@ export function processDeps(os: HostOs, options: ProcessDepsOptions): PlatformDe
         () => false,
       ),
     log: options.log,
+    ...(options.downloads ? { download: downloadBytes } : {}),
   };
 }

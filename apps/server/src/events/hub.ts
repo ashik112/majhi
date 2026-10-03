@@ -1,10 +1,13 @@
 import type { EventTopic, ServerEvent } from "@majhi/shared";
+import { BrowserTabs } from "./tabs.ts";
 
 type Listener = (event: ServerEvent) => void;
 
 /** Fan-out of change events to every open `/api/events` socket. */
 export class EventHub {
   private readonly listeners = new Set<Listener>();
+  /** The open tabs that can pop browser notifications, as they report it. */
+  readonly tabs = new BrowserTabs();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);

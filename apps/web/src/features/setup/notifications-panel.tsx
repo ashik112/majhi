@@ -161,9 +161,18 @@ export function NotificationsSection({ saved }: { saved: NotificationsSettings }
           <Switch
             label="In this browser, while a majhi tab is open"
             checked={form.browser}
-            onChange={(v) => set("browser", v)}
+            onChange={(v) => {
+              set("browser", v);
+              // Turning it on is a click, the one moment a browser lets a page ask.
+              if (v && permission === "default") prompt.enable();
+            }}
           />
           <Switch label="Play a sound" checked={form.sound} onChange={(v) => set("sound", v)} />
+          {form.mac && form.browser && (
+            <p className="text-sm text-fg-faint">
+              While a majhi tab can show notifications, the computer skips its own, so you get one alert.
+            </p>
+          )}
           {form.browser && permission !== "granted" && (
             <p className="flex flex-wrap items-center gap-2 text-sm text-fg-faint">
               {permission === "denied"
