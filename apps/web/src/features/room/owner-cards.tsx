@@ -191,7 +191,7 @@ const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
   offline: "majhi lost its connection. It resumes by itself when the connection is back.",
   error: "An agent hit an error it could not get past.",
   "signed-out": "An account is signed out. Sign in, then resume.",
-  limit: "A weekly budget reached 100%. It continues when the budget is raised or on Monday.",
+  limit: "A spending cap or usage limit was reached. It continues when the limit lifts.",
 };
 
 /** The task paused: Resume, and the fix when majhi knows the cause. Settled: what happened. */
