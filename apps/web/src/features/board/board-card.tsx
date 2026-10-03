@@ -173,7 +173,7 @@ function TaskChips({
       <PriorityChip priority={priority} />
       {due && <DueChip due={due} />}
       {task.autonomous && (
-        <Badge title="Autonomous mode runs this task" className="h-[18px]">
+        <Badge title="Autonomous runs this task" className="h-[18px]">
           Auto
         </Badge>
       )}

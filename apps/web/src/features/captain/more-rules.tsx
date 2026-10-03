@@ -193,7 +193,7 @@ export function MoreRules({
           </fieldset>
           <span className="text-xs text-fg-faint text-pretty">
             {form.providers.length === 0 ? "Every provider." : `Only ${form.providers.join(", ")}.`} For its
-            lane and the work it starts here.
+            captain's own turns and the work it starts here.
           </span>
         </div>
         <Field label="Pays for its decisions" hint="Only an account of this workspace, or a Private one.">

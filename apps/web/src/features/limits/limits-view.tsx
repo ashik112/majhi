@@ -181,7 +181,7 @@ function LimitsForm({
     const out = limitsPatch(form, settings, BROWSER_ZONE);
     if ("problem" in out) return setProblem(out.problem);
     save.mutate(
-      { input: out.patch, reason: "Owner changed the limits of autonomous mode" },
+      { input: out.patch, reason: "Owner changed the limits of Autonomous" },
       { onSuccess: () => setDraft(undefined) },
     );
   };
