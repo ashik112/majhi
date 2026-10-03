@@ -59,7 +59,7 @@ export function AuthorityTable({ org, autonomyOn }: { org: CaptainOrg; autonomyO
           Autonomous is off, so the captain asks you about everything.
         </p>
       )}
-      <div role="group" aria-label={`Who decides in ${org.name}`} className="flex min-w-0 flex-col">
+      <fieldset aria-label={`Who decides in ${org.name}`} className="m-0 flex min-w-0 flex-col border-0 p-0">
         {AUTHORITY_ROWS_ORDER.map((row, i) => (
           <div
             key={row}
@@ -85,7 +85,7 @@ export function AuthorityTable({ org, autonomyOn }: { org: CaptainOrg; autonomyO
             />
           </div>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }

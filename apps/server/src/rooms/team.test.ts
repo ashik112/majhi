@@ -57,7 +57,9 @@ async function teamWorld(
       const list = prompts[agent] ?? [];
       prompts[agent] = list;
       list.push(turn.text);
-      (full[agent] ??= []).push(turn.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
+      const texts = full[agent] ?? [];
+      full[agent] = texts;
+      texts.push(turn.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
       const step = scripts[agent]?.[list.length - 1];
       const text = step === undefined ? "ok" : await step(turn);
       turn.emit({ type: "text", messageId: `m${list.length}`, text });
