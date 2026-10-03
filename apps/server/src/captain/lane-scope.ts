@@ -238,19 +238,29 @@ export function narrow(
   return { value: prune(value, lane, world) };
 }
 
-function prune(value: unknown, lane: string, world: ScopeWorld): unknown {
+/**
+ * `owned`: inside a row of the lane's own workspace, like a room item of its own task. Text there is
+ * the lane's own (an agent may name any word, "majhi" or another client's project), so only rows
+ * that belong to another workspace go, not rows that merely mention one.
+ */
+function prune(value: unknown, lane: string, world: ScopeWorld, owned = false): unknown {
   if (Array.isArray(value)) {
     return value.flatMap((item) => {
       if (typeof item === "object" && item !== null && !Array.isArray(item)) {
-        const of = rowWorkspace(item as Record<string, unknown>, world) ?? textWorkspace(item, lane, world);
+        const own = rowWorkspace(item as Record<string, unknown>, world);
+        const of = own ?? (owned ? undefined : textWorkspace(item, lane, world));
         if (of !== undefined && of !== lane) return [];
+        return [prune(item, lane, world, owned || own === lane)];
       }
       // A list of names, like the agents or workspaces a filter offers.
       if (typeof item === "string") {
-        const of = scopeWorkspace(item, world) ?? nameWorkspace(item, world) ?? mentions(item, lane, world);
+        const of =
+          scopeWorkspace(item, world) ??
+          nameWorkspace(item, world) ??
+          (owned ? undefined : mentions(item, lane, world));
         if (of !== undefined && of !== lane) return [];
       }
-      return [prune(item, lane, world)];
+      return [prune(item, lane, world, owned)];
     });
   }
   if (typeof value === "object" && value !== null) {
@@ -263,7 +273,7 @@ function prune(value: unknown, lane: string, world: ScopeWorld): unknown {
         const of = nameWorkspace(v, world);
         if (of !== undefined && of !== lane) continue;
       }
-      out[key] = prune(v, lane, world);
+      out[key] = prune(v, lane, world, owned);
     }
     return out;
   }
