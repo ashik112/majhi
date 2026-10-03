@@ -32,7 +32,7 @@ function amount(row: BudgetRow): string {
  * field for each, and a banner when one is over. Budgets are `budgets` in majhi.yaml, set through
  * `settings.set`, and apply at once.
  */
-export function BudgetsPanel({ className }: { className?: string }) {
+export function BudgetsPanel({ className, bare = false }: { className?: string; bare?: boolean }) {
   const status = useBudgetStatus();
   const orgs = useOrgs();
   const accounts = useAccounts();
@@ -48,7 +48,11 @@ export function BudgetsPanel({ className }: { className?: string }) {
   return (
     <section
       aria-label="Budgets"
-      className={cn("flex shrink-0 flex-col overflow-hidden rounded-2xl", GLASS, className)}
+      className={cn(
+        "flex shrink-0 flex-col overflow-hidden",
+        bare ? "rounded-lg border border-line" : cn("rounded-2xl", GLASS),
+        className,
+      )}
     >
       <div className="flex shrink-0 items-center gap-3 px-4 pt-3 pb-1">
         <h2 className="text-base font-semibold">Budgets</h2>

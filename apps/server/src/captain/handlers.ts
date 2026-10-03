@@ -1,6 +1,6 @@
+import type { AutonomyService } from "../autonomy/service.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
-import type { AutonomyService } from "../autonomy/service.ts";
 import type { CaptainService } from "./service.ts";
 
 type CaptainCommand =

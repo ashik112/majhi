@@ -6,6 +6,7 @@ import { useRunAttention } from "@/components/shell/banner";
 import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { BudgetAskButtons } from "@/features/limits/budget-ask";
 import { type AttentionItem, attentionItems } from "@/features/shell/model";
 import { useAgentIndex } from "@/lib/agent-index";
 import { useCaptainAsks } from "@/lib/captain-queries";
@@ -25,6 +26,7 @@ function useAttentionItems(): AttentionItem[] {
   const agents = useAgentIndex();
   const pending = usePendingNotices().data;
   const asks = useCaptainAsks().data?.asks;
+  const budgets = useCaptainAsks().data?.budgets;
   const now = useNow(60_000);
   return useMemo(
     () =>
@@ -35,8 +37,9 @@ function useAttentionItems(): AttentionItem[] {
         now,
         pending: pending ?? [],
         asks: asks ?? [],
+        budgets: budgets ?? [],
       }),
-    [tasks, agents, accounts, pending, asks, now],
+    [tasks, agents, accounts, pending, asks, budgets, now],
   );
 }
 
@@ -169,7 +172,7 @@ function NoticeRow({ item, onOpen }: { item: AttentionItem; onOpen: () => void }
   const run = useRunAttention();
   const orgs = useOrgs().data;
   const org = item.task?.org === undefined ? undefined : orgs?.find((o) => o.id === item.task?.org);
-  return (
+  const row = (
     <button
       type="button"
       data-notice=""
@@ -196,5 +199,15 @@ function NoticeRow({ item, onOpen }: { item: AttentionItem; onOpen: () => void }
         </span>
       </span>
     </button>
+  );
+  if (item.budget === undefined) return row;
+  // A budget question is answered right here: the buttons sit under the row, which opens the Limits screen.
+  return (
+    <div className="flex flex-col pb-2">
+      {row}
+      <div className="pl-[27px]">
+        <BudgetAskButtons ask={item.budget} compact />
+      </div>
+    </div>
   );
 }

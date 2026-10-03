@@ -47,7 +47,7 @@ export function taskList(ids: readonly string[], max = 4): string {
   return `${ids.slice(0, max).join(", ")} and ${ids.length - max} more`;
 }
 
-/** Opens Rules, where the budgets are. */
+/** Opens the Limits screen, where the budgets are. */
 function EditBudgets({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   return (
@@ -56,7 +56,7 @@ function EditBudgets({ onClose }: { onClose: () => void }) {
       size="sm"
       onClick={() => {
         onClose();
-        void navigate({ to: PAGE_PATH.autonomous, search: { tab: "rules" } });
+        void navigate({ to: PAGE_PATH.limits });
       }}
     >
       Edit budgets

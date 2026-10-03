@@ -186,6 +186,11 @@ const autonomousRoute = createRoute({
   path: PAGE_PATH.autonomous,
   component: lazyRouteComponent(() => import("@/pages/autonomous-page"), "AutonomousPage"),
 });
+const limitsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.limits,
+  component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
+});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -250,6 +255,7 @@ export const router = createRouter({
     automationsRoute,
     autonomousRoute,
     captainRoute,
+    limitsRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

@@ -57,6 +57,7 @@ import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
+import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
 import { type AnswerableCard, answerableText, type BacklogTask, backlogOrder } from "./digest.ts";
 import {
@@ -68,7 +69,6 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
-import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
@@ -799,7 +799,12 @@ export class AutonomyService {
     if (ask === undefined) {
       throw new UserError(`The captain is not asking about a budget for ${scope} today.`, 409);
     }
-    this.repo.answerBudgetAsk(scope, ask.day, answer === "raise" ? "raised" : "left", this.now().toISOString());
+    this.repo.answerBudgetAsk(
+      scope,
+      ask.day,
+      answer === "raise" ? "raised" : "left",
+      this.now().toISOString(),
+    );
     this.deps.events.emit(["autonomy", "captain"]);
     if (answer === "raise") {
       await this.noteCaps();

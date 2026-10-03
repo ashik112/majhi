@@ -57,7 +57,8 @@ export function withRaises(
   const orgs = { ...settings.orgs };
   for (const [org, rules] of Object.entries(settings.orgs)) {
     const today = raised[org];
-    if (rules.cap !== undefined && today !== undefined) orgs[org] = { ...rules, cap: larger(rules.cap, today) };
+    if (rules.cap !== undefined && today !== undefined)
+      orgs[org] = { ...rules, cap: larger(rules.cap, today) };
   }
   const day = raised[DAY_SCOPE];
   return { ...settings, orgs, day: day === undefined ? settings.day : larger(settings.day, day) };
