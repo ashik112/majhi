@@ -159,8 +159,16 @@ describe("the workspace's choice and the lane", () => {
         start: false,
       }),
     ).toEqual({ isError: true, text: tidy });
-    // Runs it again: it starts.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+    // Runs it again, but only on Codex: work on Acme's Claude account does not start.
+    expect(
+      (await t.h.cmd("autonomy.configure", { orgs: { acme: { level: "runs", providers: ["codex"] } } }))
+        .status,
+    ).toBe(200);
+    expect(await t.call("majhi_tasks_start", { id: acme })).toEqual({
+      isError: true,
+      text: "Refused: Acme lets the captain start work on codex only, and this would run on claude.",
+    });
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { providers: null } } })).status).toBe(200);
     expect((await t.call("majhi_tasks_start", { id: acme })).isError).toBe(false);
     // With autonomous mode off, Runs it acts as Keeps things tidy.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);

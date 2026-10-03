@@ -60,7 +60,7 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
-import { leftOutWhy, levelProblem, type OrgNames, pickLines } from "./pick.ts";
+import { leftOutWhy, levelProblem, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason } from "./repo.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
@@ -202,6 +202,10 @@ export class AutonomyService {
   async laneChat(org: string): Promise<string | undefined> {
     if (this.repo.state().mode !== "on") return undefined;
     if (!(await this.runsOrgs()).includes(org)) return undefined;
+    // Outside the workspace's hours or on a freeze date the captain is not woken there.
+    const settings = (await this.deps.config.settings()).autonomy;
+    const rules = settings.orgs[org];
+    if (restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz)) !== undefined) return undefined;
     const before = this.deps.lanes.chat(org);
     const found = before === undefined ? undefined : this.deps.store.tasks.get(before);
     const boss = await this.bossId();
@@ -690,7 +694,7 @@ export class AutonomyService {
     command: CommandName,
     input: Record<string, unknown>,
     org: string,
-    ctx: { sections: ConfigSections } | undefined,
+    ctx: { sections: ConfigSections; world: LimitWorld } | undefined,
   ): Promise<string | undefined> {
     const state = this.repo.state();
     const legacy = state.chat !== undefined && caller.task === state.chat;
@@ -717,6 +721,17 @@ export class AutonomyService {
     if (group === "tasks" || group === "team" || starts) {
       const outside = levelProblem(levelOf(settings, org), state.mode, org, names);
       if (outside !== undefined) return `Refused: ${outside}.`;
+    }
+    // "More rules": the AI tools the work it starts here may run on.
+    const providers = settings.orgs[org]?.providers;
+    if (starts && providers !== undefined && ctx !== undefined) {
+      const tools = this.teamAccounts(command, input, ctx.world, sections).flatMap(
+        (id) => sections.accounts[id]?.tool ?? [],
+      );
+      const other = tools.find((t) => !providers.includes(t));
+      if (other !== undefined) {
+        return `Refused: ${orgName(org, names)} lets the captain start work on ${providers.join(", ")} only, and this would run on ${other}.`;
+      }
     }
     if (!starts || pick.size === "any") return undefined;
     const big = await this.sizeRefusal(command, input);
