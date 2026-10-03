@@ -47,9 +47,10 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * What keeps a repo from running commands in majhi's git. An agent can edit its worktree's
  * `.gitattributes` and, outside a container, `.git/config`, and majhi's git runs in that worktree and
  * in the project's checkout. So hooks, fsmonitor and `ext::` remotes are off for every command; the
- * filter and merge drivers the repo defines are turned off by name (`repoDrivers`); and diffs get
- * `--no-ext-diff --no-textconv`. majhi's own hooks reach only runs, through the run's environment
- * (`buildEnv`), so nothing here relied on them, and an agent's git in a run is unchanged.
+ * filter and merge drivers and the remote commands the repo sets are turned off (`repoCommands`);
+ * and diffs get `--no-ext-diff --no-textconv`. `core.sshCommand` needs nothing: `gitEnv` always
+ * sets `GIT_SSH_COMMAND`, which wins. majhi's own hooks reach only runs, through the run's
+ * environment (`buildEnv`), so nothing here relied on them, and an agent's git in a run is unchanged.
  */
 const SERVER_CONFIG: readonly (readonly [string, string])[] = [
   ["core.hooksPath", "/dev/null"],
@@ -60,8 +61,11 @@ const SERVER_CONFIG: readonly (readonly [string, string])[] = [
 /** Commands that run textconv or an external diff unless told not to. */
 const DIFF_COMMANDS = new Set(["diff", "log", "show", "whatchanged"]);
 
-/** Commands that never read a file's content or merge, so no driver can run: no lookup. */
-const NO_DRIVERS = new Set([
+/**
+ * Commands that never read a file's content, merge or reach a remote, so nothing `repoCommands`
+ * turns off can run: no lookup.
+ */
+const NO_LOOKUP = new Set([
   "rev-parse",
   "symbolic-ref",
   "rev-list",
@@ -69,47 +73,118 @@ const NO_DRIVERS = new Set([
   "update-ref",
   "for-each-ref",
   "show-ref",
-  "ls-remote",
   "remote",
   "config",
 ]);
 
 /**
- * The filter and merge drivers the repo's own config sets a command for (its `.git/config`, its
- * worktree config and what they include), turned off: a filter converts nothing and is not
- * required, a merge driver fails, which git reports as a conflict. The owner's global and system
- * drivers (git-lfs, say) stay on: turning those off would commit LFS files whole. Empty when there
- * are none or git cannot tell. Read with `git config`, which runs nothing.
+ * Settings that name a command git runs when it reaches a remote, where the last value wins:
+ * askpass for a password and the command that lists an alternate's refs. When the repo sets one,
+ * it gets the owner's own value (global, system or command line), else nothing.
  */
-async function repoDrivers(cwd: string, env: NodeJS.ProcessEnv): Promise<(readonly [string, string])[]> {
-  const listed = await run(
-    "git",
-    [
-      "config",
-      "-z",
-      "--show-scope",
-      "--name-only",
-      "--get-regexp",
-      "^(filter\\..+\\.(clean|smudge|process)|merge\\..+\\.driver)$",
-    ],
-    { cwd, env, timeout: GIT_TIMEOUT_MS },
-  ).then(
+const REMOTE_COMMANDS: readonly RegExp[] = [/^core\.askpass$/, /^core\.alternaterefscommand$/];
+
+/**
+ * The upload-pack or receive-pack a command runs for a remote on a local path or `file://`. git
+ * keeps the first `remote.<name>.uploadpack` it reads, so the repo's beats the command line; the
+ * command's own option beats both. When the repo sets one, the option names the owner's own value,
+ * else git's default.
+ */
+const PACK_OPTIONS: Readonly<Record<string, { option: string; key: RegExp; fallback: string }>> = {
+  fetch: { option: "--upload-pack", key: /^remote\..+\.uploadpack$/, fallback: "git-upload-pack" },
+  pull: { option: "--upload-pack", key: /^remote\..+\.uploadpack$/, fallback: "git-upload-pack" },
+  "ls-remote": { option: "--upload-pack", key: /^remote\..+\.uploadpack$/, fallback: "git-upload-pack" },
+  push: { option: "--receive-pack", key: /^remote\..+\.receivepack$/, fallback: "git-receive-pack" },
+};
+
+/** `credential.helper` and `credential.<url>.helper`: one list, in config order. */
+const HELPER = /^credential\.(.+\.)?helper$/;
+
+/** Every key `repoCommands` reads, as git's own regexp. */
+const REPO_COMMAND_KEYS =
+  "^(filter\\..+\\.(clean|smudge|process)|merge\\..+\\.driver|credential\\.(.+\\.)?helper" +
+  "|remote\\..+\\.(uploadpack|receivepack)|core\\.(askpass|alternaterefscommand|gitproxy))$";
+
+interface ConfigEntry {
+  scope: string;
+  key: string;
+  value: string | undefined;
+}
+
+/** The repo's own config: its `.git/config`, its worktree config and what they include. */
+function fromRepo(entry: ConfigEntry): boolean {
+  return entry.scope === "local" || entry.scope === "worktree";
+}
+
+/**
+ * The commands the repo's own config names, turned off; the owner's global and system settings
+ * stay on. A filter converts nothing and is not required, a merge driver fails, which git reports
+ * as a conflict; turning the owner's drivers off (git-lfs, say) would commit LFS files whole. A
+ * credential helper the repo adds is dropped by emptying the list and adding the owner's helpers
+ * back in order, so osxkeychain still answers. `core.gitProxy` takes the first entry that matches,
+ * and the repo's come before the command line, so it is overridden with `GIT_PROXY_COMMAND`: the
+ * server's own, else none, which also drops an owner's `core.gitProxy` for that repo (git:// only).
+ * Upload-pack and receive-pack go in `options` (`PACK_OPTIONS`). `url.<base>.insteadOf` cannot be
+ * dropped (the first of equal rewrites wins), but every command it could point a remote at is off
+ * here or in `SERVER_CONFIG`. Nothing when git cannot tell. Read with `git config`, which runs
+ * nothing.
+ */
+async function repoCommands(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  command: string,
+): Promise<{ settings: (readonly [string, string])[]; env: NodeJS.ProcessEnv; options: string[] }> {
+  const listed = await run("git", ["config", "-z", "--show-scope", "--get-regexp", REPO_COMMAND_KEYS], {
+    cwd,
+    env,
+    timeout: GIT_TIMEOUT_MS,
+  }).then(
     ({ stdout }) => stdout.split("\0"),
     () => [],
   );
-  const off = new Map<string, string>();
+  const entries: ConfigEntry[] = [];
   for (let i = 0; i + 1 < listed.length; i += 2) {
-    const [scope, key = ""] = [listed[i], listed[i + 1]];
-    if (scope !== "local" && scope !== "worktree") continue;
+    const [scope = "", item = ""] = [listed[i], listed[i + 1]];
+    const at = item.indexOf("\n");
+    entries.push(
+      at === -1
+        ? { scope, key: item, value: undefined }
+        : { scope, key: item.slice(0, at), value: item.slice(at + 1) },
+    );
+  }
+  const planted = entries.filter(fromRepo);
+  const owners = entries.filter((e) => !fromRepo(e));
+  const own = (key: string, last: boolean) => {
+    const values = owners.filter((e) => e.key === key && e.value !== undefined);
+    return (last ? values.at(-1) : values[0])?.value;
+  };
+  const off = new Map<string, string>();
+  const pack = PACK_OPTIONS[command];
+  let option: string | undefined;
+  for (const { key } of planted) {
     const driver = key.slice(0, key.lastIndexOf("."));
     if (key.startsWith("filter.")) {
       for (const name of ["clean", "smudge", "process"]) off.set(`${driver}.${name}`, "");
       off.set(`${driver}.required`, "false");
-    } else if (key.endsWith(".driver")) {
+    } else if (key.startsWith("merge.")) {
       off.set(key, "false");
+    } else if (REMOTE_COMMANDS.some((c) => c.test(key))) {
+      off.set(key, own(key, true) ?? "");
+    } else if (pack?.key.test(key)) {
+      option = `${pack.option}=${own(key, false) ?? pack.fallback}`;
     }
   }
-  return [...off];
+  const settings: (readonly [string, string])[] = [...off];
+  if (planted.some((e) => HELPER.test(e.key))) {
+    settings.push(["credential.helper", ""]);
+    for (const e of owners) if (HELPER.test(e.key) && e.value !== undefined) settings.push([e.key, e.value]);
+  }
+  const proxy = planted.some((e) => e.key === "core.gitproxy");
+  return {
+    settings,
+    env: proxy ? { GIT_PROXY_COMMAND: env.GIT_PROXY_COMMAND ?? "" } : {},
+    options: option === undefined ? [] : [option],
+  };
 }
 
 /**
@@ -151,15 +226,16 @@ export async function git(
     const at = commandAt(args);
     const command = args[at] ?? "";
     const base = { ...gitEnv(process.env), ...options.env };
-    const drivers = NO_DRIVERS.has(command) ? [] : await repoDrivers(cwd, base);
-    const argv = DIFF_COMMANDS.has(command)
-      ? [...args.slice(0, at + 1), "--no-ext-diff", "--no-textconv", ...args.slice(at + 1)]
-      : [...args];
+    const off = NO_LOOKUP.has(command)
+      ? { settings: [], env: {}, options: [] }
+      : await repoCommands(cwd, base, command);
+    const extra = DIFF_COMMANDS.has(command) ? ["--no-ext-diff", "--no-textconv"] : off.options;
+    const argv = [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)];
     const { stdout } = await run("git", argv, {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       maxBuffer: options.maxBufferBytes ?? 64 * 1024 * 1024,
-      env: withConfig(base, [...SERVER_CONFIG, ...drivers]),
+      env: { ...withConfig(base, [...SERVER_CONFIG, ...off.settings]), ...off.env },
     });
     return stdout;
   } catch (err) {

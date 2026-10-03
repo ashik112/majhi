@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -10,16 +12,23 @@ import { mergeBranch, mergeConflicts } from "./merge.ts";
 
 describe("majhi's own git", () => {
   let dir: string;
-  const saved = { sock: process.env.SSH_AUTH_SOCK, ssh: process.env.GIT_SSH_COMMAND };
+  const envNames = [
+    "SSH_AUTH_SOCK",
+    "GIT_SSH_COMMAND",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_NOSYSTEM",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "GIT_PROXY_COMMAND",
+  ] as const;
+  const saved = Object.fromEntries(envNames.map((name) => [name, process.env[name]]));
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "majhi-git-env-"));
   });
   afterEach(async () => {
-    for (const [name, value] of [
-      ["SSH_AUTH_SOCK", saved.sock],
-      ["GIT_SSH_COMMAND", saved.ssh],
-    ] as const) {
+    for (const name of envNames) {
+      const value = saved[name];
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
@@ -130,5 +139,74 @@ describe("majhi's own git", () => {
     await plain(repo, ["merge-tree", "--write-tree", "other", "task/x"]);
     await plain(repo, ["update-ref", "refs/heads/probe", "HEAD"]);
     expect(await ran()).toMatch(/clean[\s\S]*merge-driver[\s\S]*hook reference-transaction/);
+  });
+
+  it("runs none of the commands a repo's config names for a remote, and keeps the owner's", async () => {
+    const upstream = join(dir, "upstream");
+    const repo = join(dir, "repo");
+    const marker = join(dir, "ran");
+    const ran = () => readFile(marker, "utf8").catch(() => "");
+    const say = (what: string) => `echo ${what} >> '${marker}'`;
+    await git(dir, ["init", "-q", "-b", "main", upstream]);
+    await writeFile(join(upstream, "a.txt"), "one\n");
+    await git(upstream, ["add", "a.txt"]);
+    await git(upstream, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"]);
+    await git(dir, ["init", "-q", "-b", "main", repo]);
+
+    // A server that asks for a password, so git asks the credential helpers and askpass.
+    const server = createServer((_req, res) => {
+      res.writeHead(401, { "WWW-Authenticate": 'Basic realm="acme"' }).end();
+    });
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const { port } = server.address() as AddressInfo;
+    try {
+      // The owner's own helper, which must keep answering.
+      const global = join(dir, "global");
+      await writeFile(global, `[credential]\n\thelper = "!f() { ${say("owner-helper")}; }; f"\n`);
+      process.env.GIT_CONFIG_GLOBAL = global;
+      process.env.GIT_CONFIG_NOSYSTEM = "1";
+      for (const name of ["GIT_ASKPASS", "SSH_ASKPASS", "GIT_PROXY_COMMAND"]) delete process.env[name];
+
+      // What an agent could plant: the remote reaches the local path through an insteadOf.
+      const proxy = join(dir, "proxy.sh");
+      await writeFile(proxy, `#!/bin/sh\n${say("git-proxy")}\nexit 1\n`, { mode: 0o755 });
+      for (const [key, value] of [
+        ["remote.origin.url", "https://example.test/upstream.git"],
+        ["remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"],
+        [`url.${upstream}.insteadOf`, "https://example.test/upstream.git"],
+        ["remote.origin.uploadpack", `${say("uploadpack")}; git-upload-pack`],
+        ["remote.origin.receivepack", `${say("receivepack")}; git-receive-pack`],
+        ["credential.helper", `!f() { ${say("helper")}; }; f`],
+        [`credential.http://127.0.0.1:${port}.helper`, `!f() { ${say("url-helper")}; }; f`],
+        ["core.askPass", join(dir, "askpass.sh")],
+        ["core.gitProxy", proxy],
+      ] as const) {
+        await git(repo, ["config", key, value]);
+      }
+      await writeFile(join(dir, "askpass.sh"), `#!/bin/sh\n${say("askpass")}\n`, { mode: 0o755 });
+
+      await git(repo, ["fetch", "--quiet", "origin"]);
+      expect(await git(repo, ["rev-parse", "origin/main"])).toBe(await git(upstream, ["rev-parse", "main"]));
+      await git(repo, ["push", "--quiet", "origin", "refs/remotes/origin/main:refs/heads/task/x"]);
+      expect(await git(upstream, ["rev-parse", "task/x"])).toBe(await git(upstream, ["rev-parse", "main"]));
+      await expect(git(repo, ["ls-remote", `http://127.0.0.1:${port}/x.git`])).rejects.toThrow();
+      await expect(git(repo, ["ls-remote", "git://127.0.0.1:1/x.git"])).rejects.toThrow();
+      const asked = await ran();
+      expect(asked).toMatch(/^(owner-helper\n)+$/);
+
+      // The same repo with plain git does run them, so the setup above is live.
+      const { GIT_CONFIG_COUNT: _count, ...env } = gitEnv(process.env);
+      const plain = (args: string[]) =>
+        promisify(execFile)("git", args, { cwd: repo, env }).catch(() => undefined);
+      await plain(["fetch", "--quiet", "origin"]);
+      await plain(["push", "--quiet", "origin", "refs/remotes/origin/main:refs/heads/task/y"]);
+      await plain(["ls-remote", `http://127.0.0.1:${port}/x.git`]);
+      await plain(["ls-remote", "git://127.0.0.1:1/x.git"]);
+      expect((await ran()).slice(asked.length)).toMatch(
+        /uploadpack\nreceivepack\nowner-helper\nhelper\nurl-helper\naskpass\n[\s\S]*git-proxy/,
+      );
+    } finally {
+      server.close();
+    }
   });
 });
