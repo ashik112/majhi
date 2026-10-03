@@ -1,5 +1,13 @@
 # Progress
 
+## One Captain page (built)
+
+The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomous switch and today's spend as a sub-row. `/captain` has the tabs Today, Chat, Log and Rules (`?tab=`); `/autonomous` redirects to the matching tab.
+
+- **Try it:** open Captain; switch tabs; open `/autonomous?tab=rules`.
+- **Checked:** typecheck, `pnpm exec tsc -p e2e`, and the shot spec `playwright.captain.config.ts` (port 7201, `MAJHI_E2E_SEED=ui`) at 1440 and 1100, dark and light. No server change, so no new unit tests.
+- **Left:** the notify service still names `/autonomous` as a link path (the redirect covers it); the Today line "N things need you" links to the board until the Decisions inbox lands.
+
 ## Phase 11: Trackers (built)
 
 **Status.** Built on `task/prv-26-phase-11-trackers`, from `main`. The three adapters came from PRV-112. DECISIONS has its rows (2026-10-03). SPEC 5.11.

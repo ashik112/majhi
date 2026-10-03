@@ -1,6 +1,6 @@
 # Proposal: the captain as chief of staff
 
-Status: approved by the owner on 2026-10-04. It changes SPEC 5.16 and 5.18 and replaces how autonomous mode (PRV-74) is shown and switched. Built so far: steps 1, 2 and 7.
+Status: approved by the owner on 2026-10-04. It changes SPEC 5.16 and 5.18 and replaces how autonomous mode (PRV-74) is shown and switched. Built so far: steps 1, 2, 3, 4 and 7, and the one Captain page (below).
 
 ## Why
 
@@ -111,6 +111,15 @@ One summary per day, at 08:00 by default and changeable on the Captain page: wha
 | Day cap | Autonomous budget per day |
 | Workspace cap | Workspace budget per day |
 | Lane chat tasks | Workspace threads in the Captain panel |
+
+## One Captain page (built 2026-10-04)
+
+The owner found two pages for one idea confusing (Captain and Autonomous both had rules and limits, and two chats for the same thing). They are now one:
+
+- **Sidebar:** one Captain row with its Cmd J chat button, and the Autonomous switch with today's spend as a sub-row under it. Autonomous is no longer a page.
+- **Captain page, four tabs** kept in the address (`?tab=today|chat|log|rules`): Today (summary, questions, what needs you, running now, next with why, spend per workspace), Chat (the panel), Log (the captain's record and autonomous events merged, filtered by workspace and kind) and Rules (what holds everywhere, then a card per workspace; money only as a one-line budget linking to Limits).
+- `/autonomous` and its old views redirect to the matching tab. The separate Autonomous chat went away: its messages were already the workspace threads (`autonomy.guide` posts into the lane chat), so nothing moved.
+- Chats show title, agent, workspace and last activity, never the task id.
 
 ## Build order
 
