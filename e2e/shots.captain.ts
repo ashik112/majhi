@@ -23,6 +23,7 @@ const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "c
 
 function org(o: Partial<CaptainOrg> & Pick<CaptainOrg, "org" | "name" | "level">): CaptainOrg {
   return {
+    thread: "idle",
     effective: o.level,
     rules: { push: false, merge: false, ...(o.level === "ask" ? {} : { level: o.level }) },
     used: { tokens: 0, cost: 0 },
@@ -207,6 +208,7 @@ function autonomy(): AutonomyStatus {
   });
   return {
     mode: "on",
+    stopped: [],
     since: iso(95),
     by: "owner",
     boss: { id: "setup", chat: "LOCAL-31", working: true, nowDoing: "Reading the Private backlog" },
