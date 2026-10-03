@@ -714,6 +714,8 @@ export const commands = {
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
       git_accounts: OrgConfigSchema.shape.git_accounts.nullable().optional(),
       dismissed_logins: OrgConfigSchema.shape.dismissed_logins.nullable().optional(),
+      /** The org's tracker. null removes it. */
+      tracker: OrgConfigSchema.shape.tracker.nullable().optional(),
     }),
     output: OrgViewSchema,
   },
