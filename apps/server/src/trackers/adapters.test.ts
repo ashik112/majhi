@@ -145,7 +145,7 @@ describe("Jira", () => {
       `Basic ${Buffer.from(`dev@acme.example:${TOKEN}`).toString("base64")}`,
     );
     expect(calls[0]?.body).toEqual({
-      jql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+      jql: "project = ACME AND assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
       maxResults: 100,
       fields: ["summary", "description", "status", "assignee", "labels", "updated"],
     });

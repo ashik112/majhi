@@ -44,12 +44,12 @@ export class JiraAdapter implements TrackerAdapter {
 
   async pull(opts: { assignedToMe: boolean }): Promise<TrackerItem[]> {
     const { project } = this.init.config;
-    const scope = opts.assignedToMe
-      ? "assignee = currentUser() AND "
-      : project
-        ? `project = ${project} AND `
-        : "";
-    const jql = `${scope}statusCategory != Done ORDER BY updated DESC`;
+    const scope = [
+      ...(project === undefined ? [] : [`project = ${project}`]),
+      ...(opts.assignedToMe ? ["assignee = currentUser()"] : []),
+      "statusCategory != Done",
+    ];
+    const jql = `${scope.join(" AND ")} ORDER BY updated DESC`;
     const data = await this.call("/rest/api/3/search/jql", "POST", { jql, maxResults: 100, fields: FIELDS });
     return parse(SearchSchema, data, "the Jira search").issues.map((issue) => this.item(issue));
   }
