@@ -44,6 +44,19 @@ describe("majhi's own git", () => {
     });
   });
 
+  it("drops the caller's author and committer, which would win over the identity a commit names", () => {
+    const env = gitEnv({
+      PATH: "/usr/bin",
+      GIT_AUTHOR_NAME: "Someone",
+      GIT_AUTHOR_EMAIL: "someone@example.com",
+      GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+      GIT_COMMITTER_NAME: "Someone",
+      GIT_COMMITTER_EMAIL: "someone@example.com",
+    });
+    expect(Object.keys(env).filter((k) => /^GIT_(AUTHOR|COMMITTER)_/.test(k))).toEqual([]);
+    expect(env.PATH).toBe("/usr/bin");
+  });
+
   it("hands the socket to ssh when it fetches", async () => {
     const seen = join(dir, "seen");
     const probe = join(dir, "ssh-probe.sh");
