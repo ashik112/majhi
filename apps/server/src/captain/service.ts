@@ -44,6 +44,7 @@ const TRIGGER_MS = 1_500;
 export interface AutonomyLink {
   mode(): AutonomyMode;
   stopNowForCaptain(): Promise<void>;
+  startForCaptain(): Promise<void>;
   /** Today's spend of the captain and autonomous work in a workspace, and its daily budget. */
   orgSpend(org: string): Promise<{ used: Spend; tz: string }>;
 }
@@ -107,11 +108,14 @@ export class CaptainService {
     return this.deps.now?.() ?? new Date();
   }
 
-  /** "Stop the captain" is on, or this service closed: nothing of the captain acts. */
+  /**
+   * Autonomous is Off, or this service closed: nothing of the captain acts by itself. The captain
+   * is never stopped for the owner: its lanes and chats always answer.
+   */
   stopped(): boolean {
     if (this.closed) return true;
     try {
-      return this.repo.state().stopped;
+      return this.deps.autonomy.mode() === "off";
     } catch {
       // The database closed under a shutdown: nothing acts.
       return true;
@@ -169,9 +173,9 @@ export class CaptainService {
 
   /** The minute sweep: daily chores once a day, the others once an hour, and the summary line. */
   async sweepNow(): Promise<void> {
-    if (this.stopped()) return;
+    if (this.closed) return;
     const sections = await this.deps.config.sections();
-    for (const org of workspaceIds(sections.orgs)) {
+    for (const org of this.stopped() ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
       if (ws === undefined || ws.level === "ask" || ws.rest !== undefined) continue;
       for (const chore of choresOf(ws.level)) {
@@ -425,8 +429,8 @@ export class CaptainService {
       });
     }
     return {
-      stopped: state.stopped,
-      ...(state.stoppedAt === undefined ? {} : { stoppedAt: state.stoppedAt }),
+      // The captain is never stopped; the field stays for older clients. The switch is `autonomy`.
+      stopped: false,
       autonomy: mode,
       ...(sections.boss === undefined ? {} : { captain: sections.boss }),
       day,
@@ -441,21 +445,22 @@ export class CaptainService {
     };
   }
 
-  /** "Stop the captain": autonomous mode stops now, every lane's turn ends, every run ends at its next step. */
+  /**
+   * The old "Stop the captain" is now turning Autonomous off and pausing its tasks: every upkeep run
+   * ends at its next step and the lanes' turns end. The captain still answers when spoken to.
+   */
   async stop(): Promise<CaptainStatus> {
-    this.repo.setStopped(true, this.now().toISOString());
     for (const p of this.pending.values()) clearTimeout(p.timer);
     this.pending.clear();
-    if (this.deps.autonomy.mode() !== "off")
-      await this.deps.autonomy.stopNowForCaptain().catch(() => undefined);
-    for (const lane of this.deps.lanes.all()) await this.deps.cancelTurn(lane.chat).catch(() => undefined);
+    if (this.deps.autonomy.mode() !== "off") await this.deps.autonomy.stopNowForCaptain();
     this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
   }
 
+  /** The old "Resume the captain" is turning Autonomous on, resuming the tasks it paused. */
   async resume(): Promise<CaptainStatus> {
-    this.repo.setStopped(false, this.now().toISOString());
-    this.deps.events.emit(["captain"]);
+    await this.deps.autonomy.startForCaptain();
+    this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
   }
 

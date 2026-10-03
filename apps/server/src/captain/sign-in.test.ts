@@ -32,6 +32,7 @@ describe("the stuck-task chore and a lead that cannot sign in", () => {
       }),
     );
     must(await h.cmd("autonomy.configure", { tz: "UTC", orgs: { acme: { level: "tidy" } } }));
+    must(await h.cmd("autonomy.start", {}));
 
     // The builder's account cannot sign in: its turn fails the way Claude Code's does.
     const prompts: Record<string, number> = {};

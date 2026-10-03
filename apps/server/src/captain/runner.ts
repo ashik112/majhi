@@ -119,7 +119,7 @@ export class ChoreRun {
 
   /** Ends the run when it reached a cap or the captain was stopped. */
   check(): void {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Stop the captain is on");
+    if (this.deps.stopped()) throw new RunEnd("stopped", "Autonomous is off");
     const actions = runActions(this.chore);
     if (this.actions >= actions) {
       throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
@@ -236,7 +236,7 @@ export class ChoreRun {
 
   /** The workspace's rules read again, then the step's own check. */
   private async recheck(a: ActInput): Promise<string | undefined> {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Stop the captain is on");
+    if (this.deps.stopped()) throw new RunEnd("stopped", "Autonomous is off");
     const now = await this.deps.workspace(this.org);
     if (now === undefined || !choresOf(now.level).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");

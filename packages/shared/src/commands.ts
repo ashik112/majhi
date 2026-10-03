@@ -2594,21 +2594,21 @@ export const commands = {
   "autonomy.start": {
     risk: "change",
     summary:
-      "Turn autonomous mode on, or resume it when paused. Owner only. Refused when there is no captain",
+      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain",
     input: AutonomyStartInputSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.pause": {
     risk: "change",
     summary:
-      "Pause autonomous mode: the captain gets no ticks and autonomous tasks pause after their current turn, until autonomy.start resumes them. Owner only",
+      "Kept for older callers: the same as autonomy.stop with how=now. Autonomous is On or Off; it has no pause. Owner only",
     input: Empty,
     output: AutonomyStatusSchema,
   },
   "autonomy.stop": {
     risk: "change",
     summary:
-      "Stop autonomous mode. now: stop every run of its tasks and the captain's autonomy turn at once. graceful: current turns finish, nothing new starts, then it turns off. Owner only",
+      "Turn Autonomous off. now: pause the tasks it started at once. graceful: current steps finish, nothing new starts, then they pause. Either way turning it on again can resume them. Owner only",
     input: AutonomyStopInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -2643,7 +2643,7 @@ export const commands = {
   "captain.status": {
     risk: "read",
     summary:
-      "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also whether Stop the captain is on",
+      "The captain per workspace: each workspace's choice (ask, tidy, runs) and what it does now, its budget and today's spend, today's one-line summary, why it rests, its lane, and each upkeep chore with today's count and whether it is off. Also the Autonomous switch (autonomy: on or off)",
     input: Empty,
     output: CaptainStatusSchema,
   },
@@ -2657,13 +2657,14 @@ export const commands = {
   "captain.stop": {
     risk: "change",
     summary:
-      "Stop the captain: every lane's turn, every upkeep run and autonomous mode stop at once, and nothing of the captain acts on its own until captain.resume. Owner only",
+      "Same as autonomy.stop with how=now: turns Autonomous off and pauses the tasks it started. The captain is never stopped; it still answers when spoken to. Kept for older callers. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },
   "captain.resume": {
     risk: "change",
-    summary: "Let the captain act again after Stop the captain, by each workspace's choice. Owner only",
+    summary:
+      "Same as autonomy.start with resumeStopped: turns Autonomous on and resumes the tasks it paused. Kept for older callers. Owner only",
     input: Empty,
     output: CaptainStatusSchema,
   },

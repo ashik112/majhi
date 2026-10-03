@@ -22,16 +22,17 @@ import { formatMoney, formatTokens } from "@/lib/format";
 export const MODE_WORD: Record<AutonomyMode, string> = {
   off: "Off",
   on: "On",
-  paused: "Paused",
-  stopping: "Stopping",
+  // Not a state any more: the server reads it as On.
+  paused: "On",
+  stopping: "Turning off",
 };
 
-/** On and stopping are running work; paused is the paused lamp; off is idle. */
+/** On is running work; turning off is the paused lamp; off is idle. */
 export const MODE_LAMP: Record<AutonomyMode, LampState> = {
   off: "idle",
   on: "working",
-  paused: "paused",
-  stopping: "working",
+  paused: "working",
+  stopping: "paused",
 };
 
 /** One line under the page title. */
@@ -42,9 +43,9 @@ export function modeLine(mode: AutonomyMode): string {
     case "on":
       return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "paused":
-      return "Paused. The captain gets no wake-ups and autonomous tasks wait after their current turn.";
+      return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "stopping":
-      return "Stopping. Current turns finish, nothing new starts, then it turns off.";
+      return "Turning off. Tasks finish their current step, nothing new starts, then they pause.";
   }
 }
 
@@ -60,6 +61,21 @@ export function capText(use: CapUse): string {
   if (parts.length === 0) parts.push(formatMoney(use.used.cost), `${formatTokens(use.used.tokens)} tokens`);
   if (use.changed === true) parts.push("cap changed during the day");
   return parts.join(" · ");
+}
+
+/**
+ * Today's autonomous spend against the autonomous day budget, short: "$12.40 of $200 today". A
+ * budget in tokens only reads in tokens; no budget reads as what was spent.
+ */
+export function todayLine(use: CapUse): string {
+  const cost = use.cap?.cost;
+  if (cost !== undefined) {
+    const cap = Number.isInteger(cost) ? `$${cost.toLocaleString("en-US")}` : formatMoney(cost);
+    return `${formatMoney(use.used.cost)} of ${cap} today`;
+  }
+  if (use.cap?.tokens !== undefined)
+    return `${formatTokens(use.used.tokens)} of ${formatTokens(use.cap.tokens)} tokens today`;
+  return `${formatMoney(use.used.cost)} today`;
 }
 
 /** "$20.00 a day", "5M tokens a day", "$20.00 or 5M tokens a day". */

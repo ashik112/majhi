@@ -162,10 +162,10 @@ export type CaptainOrg = z.infer<typeof CaptainOrgSchema>;
 
 /** `captain.status`. */
 export const CaptainStatusSchema = z.object({
-  /** "Stop the captain" is on: no lane, run or chore acts until the owner resumes it. */
+  /** Always false: the captain is never stopped, Autonomous is the switch. Kept for older clients. */
   stopped: z.boolean(),
   stoppedAt: z.string().optional(),
-  /** Autonomous mode, the master switch for "Runs it". */
+  /** Autonomous, the master switch for everything the captain does by itself. */
   autonomy: AutonomyModeSchema,
   /** The captain agent. Absent: none chosen yet, and nothing runs. */
   captain: IdSchema.optional(),

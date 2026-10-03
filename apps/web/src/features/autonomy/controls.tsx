@@ -1,23 +1,21 @@
-import type { AutonomyMode, AutonomyStatus } from "@majhi/shared";
+import type { AutonomyStatus } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
-import { cn } from "@/lib/cn";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { PAGE_PATH } from "@/lib/pages";
-import { budgetText, capText, SIZE_LIMIT_WORD } from "./model";
+import { budgetText, capText } from "./model";
 
-/** Turn on, Pause, Resume and the two stops, each with the line the history keeps. */
+/** Autonomous has one switch: turning it on, and turning it off in one of two ways. */
 export function useAutonomyActions() {
   const toast = useToast();
   const start = useAutonomyCommand("autonomy.start");
-  const pause = useAutonomyCommand("autonomy.pause");
   const stop = useAutonomyCommand("autonomy.stop");
   // A dialog closes in `onDone`, once the server agreed: a closed dialog would drop the error toast.
   const settle = (what: string, onDone: (() => void) | undefined) => ({
@@ -25,126 +23,109 @@ export function useAutonomyActions() {
     ...(onDone ? { onSuccess: onDone } : {}),
   });
   return {
-    busy: start.isPending || pause.isPending || stop.isPending,
+    busy: start.isPending || stop.isPending,
     start,
-    resume: (onDone?: () => void) =>
-      start.mutate(
-        { input: {}, reason: "Owner resumed autonomous mode" },
-        settle("Could not resume autonomous mode", onDone),
-      ),
-    pause: (onDone?: () => void) =>
-      pause.mutate(
-        { input: {}, reason: "Owner paused autonomous mode" },
-        settle("Could not pause autonomous mode", onDone),
-      ),
-    stop: (how: "now" | "graceful", onDone?: () => void) =>
+    /** Pause its tasks now, or let them finish their step first. */
+    turnOff: (how: "now" | "graceful", onDone?: () => void) =>
       stop.mutate(
         {
           input: { how },
           reason:
-            how === "now" ? "Owner stopped autonomous mode now" : "Owner stopped autonomous mode gracefully",
+            how === "now"
+              ? "Owner turned Autonomous off and paused its tasks"
+              : "Owner turned Autonomous off and let its tasks finish their step",
         },
-        settle("Could not stop autonomous mode", onDone),
+        settle("Could not turn Autonomous off", onDone),
       ),
   };
 }
 
-/** The limits it turns on with: the day cap, each org's cap, and where it may push and merge. */
+/** "PRV-105, IDE-6 and 2 more": a few ids, then a count. */
+export function taskList(ids: readonly string[], max = 4): string {
+  if (ids.length <= max) return ids.join(", ");
+  return `${ids.slice(0, max).join(", ")} and ${ids.length - max} more`;
+}
+
+/** Opens Rules, where the budgets are. */
+function EditBudgets({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        onClose();
+        void navigate({ to: PAGE_PATH.autonomous, search: { tab: "rules" } });
+      }}
+    >
+      Edit budgets
+    </Button>
+  );
+}
+
+/**
+ * Turning on: the budget and the workspaces it acts in, in plain words, and a checked box to resume
+ * the tasks it paused when it was turned off.
+ */
 export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
   const { start } = useAutonomyActions();
-  // Tasks Stop now paused stay paused unless the owner resumes them here.
-  const stopped = status.stopped;
-  const [resumeStopped, setResumeStopped] = useState(true);
-  const settings = status.settings;
-  // It starts and ships work only in the workspaces set to Runs it.
-  const ids = status.lanes.map((l) => l.org);
-  const name = (id: string) => status.lanes.find((l) => l.org === id)?.name ?? id;
+  const captain = useCaptainStatus().data;
+  const paused = status.stopped;
+  const [resume, setResume] = useState(true);
+  // Every workspace where the captain does more than answer.
+  const acts = (captain?.orgs ?? []).filter((o) => o.level !== "ask").map((o) => o.name);
+  const noCaptain = status.boss === undefined;
+  const day = status.settings.day;
+  const noWorkspace = captain !== undefined && acts.length === 0;
 
   return (
-    <Modal label="Turn on autonomous mode" onClose={onClose} className="w-[500px]">
+    <Modal label="Turn Autonomous on" onClose={onClose} className="w-[480px]">
       <div className="flex flex-col gap-4 p-5">
-        <h2 className="text-md font-semibold">Turn on autonomous mode</h2>
+        <h2 className="text-md font-semibold">Turn Autonomous on</h2>
         <p className="text-base text-fg-muted text-pretty">
-          In each workspace set to Runs it, the captain picks work from the backlog, starts it, ships it and
-          decides its own cards, within these limits. Every decision lands in the log with one line why. You
-          can pause or stop it at any time.
+          The captain picks up work, answers questions and cards, and tidies up on its own, inside each
+          workspace's rules. Every step lands in its log.
         </p>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-base">
-          <dt className="text-fg-muted">Day cap</dt>
-          <dd className="text-fg">
-            {budgetText(settings.day)}
+        <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2 text-base">
+          <dt className="text-fg-muted">Budget</dt>
+          <dd className="min-w-0 text-fg">
+            {budgetText(day)}
             <span className="ml-2 text-sm text-fg-faint">{capText(status.spend.total)} so far today</span>
           </dd>
-          <dt className="text-fg-muted">Picks</dt>
-          <dd className="text-fg">{SIZE_LIMIT_WORD[settings.pick.size]}.</dd>
-          <dt className="text-fg-muted">Works in</dt>
-          <dd className={ids.length === 0 ? "text-amber" : "text-fg"}>
-            {ids.length === 0 ? (
-              <>
-                No workspace is set to Runs it yet. Set one on the{" "}
-                <PageLink page="captain" className="text-blue hover:underline">
-                  Captain
-                </PageLink>{" "}
-                page.
-              </>
-            ) : (
-              ids.map(name).join(", ")
-            )}
-          </dd>
-          <dt className="text-fg-muted">Accounts</dt>
-          <dd className="text-fg">
-            Keeps {settings.floors.window}% of each 5-hour window and {settings.floors.weekly}% of each week
+          <dt className="text-fg-muted">Acts in</dt>
+          <dd className={noWorkspace ? "text-amber" : "min-w-0 break-words text-fg"}>
+            {captain === undefined ? "Loading" : noWorkspace ? "No workspace yet" : acts.join(", ")}
           </dd>
         </dl>
-        {ids.length > 0 && (
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-fg-faint">
-              <tr>
-                <th className="pb-1 font-normal">Workspace</th>
-                <th className="pb-1 font-normal">Cap</th>
-                <th className="pb-1 font-normal">Push</th>
-                <th className="pb-1 font-normal">Merge</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ids.map((id) => {
-                const org = settings.orgs[id];
-                return (
-                  <tr key={id} className="border-t border-line">
-                    <td className="py-1.5 pr-3 text-fg">{name(id)}</td>
-                    <td className="py-1.5 pr-3 text-fg-soft">{budgetText(org?.cap)}</td>
-                    <td className={cn("py-1.5 pr-3", org?.push ? "text-green" : "text-fg-faint")}>
-                      {org?.push ? "Allowed" : "Off"}
-                    </td>
-                    <td className={cn("py-1.5", org?.merge ? "text-green" : "text-fg-faint")}>
-                      {org?.merge ? "Allowed" : "Off"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {noWorkspace && (
+          <p className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber text-pretty">
+            Nothing would happen yet. On the{" "}
+            <PageLink page="captain" onClick={onClose} className="underline">
+              Captain page
+            </PageLink>
+            , choose "Runs it" for one workspace, then come back.
+          </p>
         )}
-        <p className="text-sm text-fg-faint">
-          Change these under Rules on the{" "}
-          <PageLink page="autonomous" onClick={onClose} className="text-blue hover:underline">
-            Autonomous page
-          </PageLink>
-          .
-        </p>
-        {stopped.length > 0 && (
-          <Switch
-            label={`Also resume the ${stopped.length === 1 ? "task" : `${stopped.length} tasks`} Stop now paused (${stopped.join(", ")})`}
-            checked={resumeStopped}
-            onChange={setResumeStopped}
-          />
+        {paused.length > 0 && (
+          <label className="flex items-start gap-2.5 text-base text-fg">
+            <input
+              type="checkbox"
+              checked={resume}
+              onChange={(event) => setResume(event.target.checked)}
+              className="mt-1"
+            />
+            <span className="min-w-0 text-pretty">
+              Resume the {paused.length === 1 ? "task" : `${paused.length} tasks`} it paused
+              <span className="text-fg-muted"> ({taskList(paused)})</span>
+            </span>
+          </label>
         )}
-        {status.boss === undefined && (
+        {noCaptain && (
           <p
             role="alert"
-            className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber"
+            className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber text-pretty"
           >
-            There is no captain yet. Pick one on Agents first: autonomous mode runs through it.
+            There is no captain yet. Pick one on the Agents page first.
           </p>
         )}
         {start.error && (
@@ -155,16 +136,18 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
             {describeError(start.error)}
           </p>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center gap-2">
+          <EditBudgets onClose={onClose} />
+          <span className="flex-1" />
           <Button onClick={onClose}>Cancel</Button>
           <Button
             variant="primary"
-            disabled={start.isPending || status.boss === undefined}
+            disabled={start.isPending || noCaptain || noWorkspace}
             onClick={() =>
               start.mutate(
                 {
-                  input: { resumeStopped: stopped.length > 0 && resumeStopped },
-                  reason: "Owner turned autonomous mode on",
+                  input: { resumeStopped: paused.length > 0 && resume },
+                  reason: "Owner turned Autonomous on",
                 },
                 { onSuccess: onClose },
               )
@@ -178,86 +161,54 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
   );
 }
 
-const STOP_NOW_BODY =
-  "Every run of an autonomous task and the captain's own turn stop at once. Turns in progress are cut off, and those tasks stay paused for you.";
-
-/** What switching it off offers: Pause (or Resume), Stop gracefully and Stop now, which asks first. */
-export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () => void }) {
+/**
+ * Turning off: pause its tasks now (the default), or let them finish the step they are on. One
+ * sentence says what Off means; the captain still answers when the owner talks to it.
+ */
+export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
   const actions = useAutonomyActions();
-  const navigate = useNavigate();
-  const [confirmNow, setConfirmNow] = useState(false);
-
-  if (confirmNow)
-    return (
-      <ConfirmDialog
-        title="Stop autonomous mode now?"
-        body={STOP_NOW_BODY}
-        confirmLabel="Stop now"
-        busy={actions.busy}
-        onConfirm={() => actions.stop("now", onClose)}
-        onCancel={() => setConfirmNow(false)}
-      />
-    );
-
-  const options: { label: string; text: string; run: () => void; primary?: boolean }[] = [];
-  // Caps change while it runs: nothing needs stopping for that.
-  options.push({
-    label: "Edit caps",
-    text: "Change the day cap and each workspace's cap. It keeps running.",
-    run: () => {
-      onClose();
-      void navigate({ to: PAGE_PATH.autonomous, search: { tab: "rules" } });
-    },
-  });
-  if (mode === "on")
-    options.push({
-      label: "Pause",
-      text: "Autonomous tasks pause after their current turn. Resume restarts exactly those.",
-      run: () => actions.pause(onClose),
-    });
-  if (mode === "paused")
-    options.push({
-      label: "Resume",
-      text: "The captain picks up again, and the tasks the pause held restart.",
-      run: () => actions.resume(onClose),
-      primary: true,
-    });
-  if (mode !== "stopping")
-    options.push({
-      label: "Stop gracefully",
-      text: "Current turns finish, nothing new starts, then it turns off.",
-      run: () => actions.stop("graceful", onClose),
-    });
-  options.push({
-    label: "Stop now",
-    text: "Stops every autonomous run at once.",
-    run: () => setConfirmNow(true),
-  });
+  const working = status.now.filter((n) => n.status === "running").map((n) => n.task);
+  const stopping = status.mode === "stopping";
 
   return (
-    <Modal label="Turn off autonomous mode" onClose={onClose} className="w-[440px]">
+    <Modal label="Turn Autonomous off" onClose={onClose} className="w-[460px]">
       <div className="flex flex-col gap-4 p-5">
-        <h2 className="text-md font-semibold">
-          {mode === "stopping" ? "Autonomous mode is stopping" : "Turn off autonomous mode"}
-        </h2>
-        <ul className="flex flex-col gap-2">
-          {options.map((option) => (
-            <li key={option.label} className="flex items-center gap-3">
-              <Button
-                variant={option.primary ? "primary" : "secondary"}
-                className="w-[132px]"
-                disabled={actions.busy}
-                onClick={option.run}
-              >
-                {option.label}
-              </Button>
-              <span className="text-sm text-fg-muted text-pretty">{option.text}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="flex justify-end">
+        <h2 className="text-md font-semibold">{stopping ? "Autonomous is turning off" : "Turn Autonomous off?"}</h2>
+        <p className="text-base text-fg-muted text-pretty">
+          {stopping
+            ? "Its tasks are finishing the step they are on."
+            : "The captain stops starting work, answering and shipping by itself. It still answers when you talk to it."}
+          {working.length > 0 && !stopping && (
+            <span className="text-fg-faint">
+              {" "}
+              Working now: {taskList(working)}.
+            </span>
+          )}
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={actions.busy}
+            onClick={() => actions.turnOff("now", onClose)}
+          >
+            {stopping ? "Pause its tasks now" : "Turn off and pause its tasks"}
+          </Button>
+          {!stopping && working.length > 0 && (
+            <Button
+              size="lg"
+              disabled={actions.busy}
+              onClick={() => actions.turnOff("graceful", onClose)}
+            >
+              Turn off, let them finish this step
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <EditBudgets onClose={onClose} />
+          <span className="flex-1" />
           <Button variant="ghost" onClick={onClose}>
-            Keep it {mode === "paused" ? "paused" : "on"}
+            {stopping ? "Close" : "Keep it on"}
           </Button>
         </div>
       </div>
@@ -265,35 +216,18 @@ export function OffDialog({ mode, onClose }: { mode: AutonomyMode; onClose: () =
   );
 }
 
-/** The status bar's controls: Turn on while off; Pause or Resume, and Stop, which offers both stops. */
+/** The header's switch on a page: Autonomous On or Off, with the two dialogs. */
 export function ModeControls({ status }: { status: AutonomyStatus }) {
-  const actions = useAutonomyActions();
-  const [open, setOpen] = useState<"on" | "stop">();
-  const mode = status.mode;
+  const [open, setOpen] = useState<"on" | "off">();
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {mode === "off" && (
-        <Button variant="primary" onClick={() => setOpen("on")}>
-          Turn on
-        </Button>
-      )}
-      {mode === "on" && (
-        <Button disabled={actions.busy} onClick={() => actions.pause()}>
-          Pause
-        </Button>
-      )}
-      {mode === "paused" && (
-        <Button variant="primary" disabled={actions.busy} onClick={() => actions.resume()}>
-          Resume
-        </Button>
-      )}
-      {mode !== "off" && (
-        <Button disabled={actions.busy} onClick={() => setOpen("stop")}>
-          Stop
-        </Button>
-      )}
+      <Switch
+        label="Autonomous"
+        checked={status.mode !== "off"}
+        onChange={(next) => setOpen(next ? "on" : "off")}
+      />
       {open === "on" && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
-      {open === "stop" && <OffDialog mode={mode} onClose={() => setOpen(undefined)} />}
+      {open === "off" && <OffDialog status={status} onClose={() => setOpen(undefined)} />}
     </div>
   );
 }

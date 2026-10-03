@@ -13,6 +13,8 @@ export const tasks = sqliteTable("tasks", {
   org: text("org"),
   status: text("status").notNull(),
   pausedReason: text("paused_reason"),
+  /** `captain` or `autonomy-off` when one of them paused the task (migration 120). */
+  pausedBy: text("paused_by"),
   folder: text("folder").notNull(),
   /** JSON array of agent ids. */
   team: text("team").notNull(),
