@@ -12,7 +12,8 @@ describe("decisions.* through the command table", () => {
   it("lists a waiting card, refuses an agent's answer, and gives the owner's answer to the card", async () => {
     w = await taskWorld();
     expect(
-      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })).status,
+      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false }))
+        .status,
     ).toBe(200);
     w.h.majhi.services.room.post("ACM-1", "q1", {
       type: "choice",

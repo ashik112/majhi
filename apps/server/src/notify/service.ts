@@ -1,15 +1,8 @@
 import type { AttentionEvent, NotificationsSettings, RoomItem } from "@majhi/shared";
-import type { EventHub } from "../events/hub.ts";
 import { decisionsNeedText, roomDecisionId } from "@majhi/shared";
+import type { EventHub } from "../events/hub.ts";
 import { isDecisionItem } from "../inbox/build.ts";
-import {
-  type Attention,
-  attentionOf,
-  inQuietHours,
-  pathOf,
-  type Subject,
-  subjectName,
-} from "./attention.ts";
+import { type Attention, attentionOf, inQuietHours, pathOf, type Subject, subjectName } from "./attention.ts";
 
 /** An item that was answered within this long never sends anything. */
 export const SETTLE_MS = 5_000;
@@ -125,7 +118,11 @@ export class Notifier {
    * (a chore turned off, the daily summary) is read in the log and never alerts.
    */
   captain(key: string, text: string): void {
-    const path = key.startsWith("budget:") ? "/limits" : key.startsWith("captain-cap:") ? "/captain" : undefined;
+    const path = key.startsWith("budget:")
+      ? "/limits"
+      : key.startsWith("captain-cap:")
+        ? "/captain"
+        : undefined;
     if (path === undefined || this.seen.has(key)) return;
     this.seen.add(key);
     this.enqueue({

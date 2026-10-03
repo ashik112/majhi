@@ -37,7 +37,12 @@ function budgetText(b: BudgetAsk["cap"]): string {
   if (b.cost !== undefined) parts.push(Number.isInteger(b.cost) ? `$${b.cost}` : `$${b.cost.toFixed(2)}`);
   if (b.tokens !== undefined) {
     const t = b.tokens;
-    const short = t >= 1_000_000 ? `${+(t / 1_000_000).toFixed(1)}M` : t >= 1_000 ? `${+(t / 1_000).toFixed(1)}k` : `${t}`;
+    const short =
+      t >= 1_000_000
+        ? `${+(t / 1_000_000).toFixed(1)}M`
+        : t >= 1_000
+          ? `${+(t / 1_000).toFixed(1)}k`
+          : `${t}`;
     parts.push(`${short} tokens`);
   }
   return parts.join(" / ");
@@ -60,10 +65,15 @@ interface Draft {
 }
 
 /** The first option is the primary one, the rest follow in their order. */
-function withPrimary(options: readonly { id: string; label: string }[], primary: string | undefined): DecisionOption[] {
+function withPrimary(
+  options: readonly { id: string; label: string }[],
+  primary: string | undefined,
+): DecisionOption[] {
   const at = options.findIndex((o) => o.id === primary);
   const first = at === -1 ? 0 : at;
-  const ordered = options.map((o, i) => ({ ...o, i })).sort((a, b) => (a.i === first ? -1 : b.i === first ? 1 : a.i - b.i));
+  const ordered = options
+    .map((o, i) => ({ ...o, i }))
+    .sort((a, b) => (a.i === first ? -1 : b.i === first ? 1 : a.i - b.i));
   return ordered.map(({ id, label }, i) => (i === 0 ? { id, label, primary: true as const } : { id, label }));
 }
 
@@ -106,7 +116,9 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         : undefined;
     case "permission": {
       if (item.state !== "pending") return undefined;
-      const allow = item.options.find((o) => o.kind === "allow_once") ?? item.options.find((o) => o.kind.startsWith("allow"));
+      const allow =
+        item.options.find((o) => o.kind === "allow_once") ??
+        item.options.find((o) => o.kind.startsWith("allow"));
       return {
         kind: "approval",
         title: `@${item.agent} needs approval: ${oneLine(item.title)}`,
@@ -134,7 +146,8 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
     case "review": {
       if (item.state !== "pending") return undefined;
       if (item.ready === undefined) return { kind: "ship", title: "Ready for review", options: [] };
-      const option = subject.repos === 0 ? { id: "done", label: "Mark done" } : { id: "merge", label: "Merge" };
+      const option =
+        subject.repos === 0 ? { id: "done", label: "Mark done" } : { id: "merge", label: "Merge" };
       return {
         kind: "ship",
         title: item.why === undefined ? "Ready to ship" : `Ready to ship. ${oneLine(item.why, 100)}`,
@@ -144,7 +157,8 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
     }
     case "paused": {
       const title = PAUSE_TITLE[item.reason];
-      if (item.state !== "pending" || PAUSE_TEXT[item.reason] === undefined || title === undefined) return undefined;
+      if (item.state !== "pending" || PAUSE_TEXT[item.reason] === undefined || title === undefined)
+        return undefined;
       return {
         kind: "paused",
         title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
@@ -176,13 +190,19 @@ function priority(d: OwnerDecision): number {
  */
 export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   const out: OwnerDecision[] = [];
-  /** The captain's recommendation when it names an option the decision has, else the card's own suggestion. */
-  const suggestion = (id: string, options: readonly DecisionOption[], own?: DecisionSuggestion) => {
+  /**
+   * The options and the suggestion. The captain's recommendation wins when it names an option the
+   * decision has, else the card's own suggestion; the suggested option goes first, as the primary one.
+   */
+  const decorate = (id: string, options: DecisionOption[], own?: DecisionSuggestion) => {
     const stored = src.recommendations.get(id);
-    if (stored !== undefined && options.some((o) => o.id === stored.option)) {
-      return { suggestion: { option: stored.option, reason: stored.reason, by: "captain" as const } };
-    }
-    return own === undefined ? {} : { suggestion: own };
+    const chosen: DecisionSuggestion | undefined =
+      stored !== undefined && options.some((o) => o.id === stored.option)
+        ? { option: stored.option, reason: stored.reason, by: "captain" }
+        : own;
+    return chosen === undefined
+      ? { options }
+      : { options: withPrimary(options, chosen.option), suggestion: chosen };
   };
 
   for (const item of src.items) {
@@ -199,8 +219,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       taskTitle: subject.title,
       ...(subject.chat ? { chat: true as const } : {}),
       title: draft.title,
-      options: draft.options,
-      ...suggestion(id, draft.options, draft.suggestion),
+      ...decorate(id, draft.options, draft.suggestion),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
     });
@@ -217,8 +236,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       kind: "cap",
       org: ask.org,
       title: oneLine(ask.text),
-      options,
-      ...suggestion(id, options),
+      ...decorate(id, options),
       at: ask.at,
       link: { kind: "captain" },
     });
@@ -235,8 +253,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       kind: "budget",
       ...(ask.scope === "day" ? {} : { org: ask.scope }),
       title: oneLine(ask.text),
-      options,
-      ...suggestion(id, options),
+      ...decorate(id, options),
       at: ask.at,
       link: { kind: "limits" },
     });

@@ -10,7 +10,6 @@ import {
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
 } from "@majhi/shared";
-import { authorityOf } from "./captain/levels.ts";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
 import { startLogin } from "./accounts/login.ts";
@@ -36,6 +35,7 @@ import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { Lanes } from "./captain/lanes.ts";
+import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { captainWorld } from "./captain/world.ts";
@@ -67,6 +67,8 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { RecommendationRepo } from "./inbox/recommendations.ts";
+import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
@@ -87,8 +89,6 @@ import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
-import { RecommendationRepo } from "./inbox/recommendations.ts";
-import { InboxService } from "./inbox/service.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -902,7 +902,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     gitLogins,
     tell: (key, text) => notifier.captain(key, text),
-    recommend: (input, lane) => inbox.recommend(input, lane),
+    recommend: async (input, lane) => {
+      await inbox.recommend(input, lane);
+      events.emit(["tasks"]);
+    },
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.

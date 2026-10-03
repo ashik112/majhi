@@ -193,7 +193,11 @@ describe("building decisions", () => {
       options: [{ id: "raise", label: "Raise to $40 for today", primary: true }, { id: "leave" }],
       link: { kind: "limits" },
     });
-    expect(by("signin:claude-acme")).toMatchObject({ kind: "sign-in", options: [], link: { kind: "account" } });
+    expect(by("signin:claude-acme")).toMatchObject({
+      kind: "sign-in",
+      options: [],
+      link: { kind: "account" },
+    });
   });
 
   it("puts ship and budget first, then the oldest", () => {
@@ -243,6 +247,10 @@ describe("building decisions", () => {
       reason: "keeps a backup branch, nothing pushed",
       by: "captain",
     });
+    expect(out[0]?.options).toEqual([
+      { id: "keep", label: "Keep", primary: true },
+      { id: "rebuild", label: "Rebuild" },
+    ]);
     expect(out[1]?.suggestion).toBeUndefined();
   });
 });
@@ -305,7 +313,9 @@ describe("answering a decision", () => {
 
   it("refuses an option the decision does not offer, a secret and a sign-in, and does nothing", async () => {
     const inbox = service();
-    await expect(inbox.answer({ id: "room:ACM-1:ch1", option: "maybe" })).rejects.toThrow(/not one of the options/);
+    await expect(inbox.answer({ id: "room:ACM-1:ch1", option: "maybe" })).rejects.toThrow(
+      /not one of the options/,
+    );
     await expect(inbox.answer({ id: "room:ACM-1:sr1", option: "save" })).rejects.toThrow();
     await expect(inbox.answer({ id: "signin:claude-acme", option: "x" })).rejects.toThrow();
     await expect(inbox.answer({ id: "room:ACM-1:nope", option: "x" })).rejects.toThrow(/gone/);
@@ -339,12 +349,12 @@ describe("the captain's recommendation", () => {
 
   it("is refused for another workspace's decision, a missing option and a decision with no buttons", async () => {
     const inbox = service();
-    await expect(inbox.recommend({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, "globex")).rejects.toThrow(
-      /another workspace/,
-    );
-    await expect(inbox.recommend({ id: "room:ACM-1:ask1", option: "nope", reason: "x" }, "acme")).rejects.toThrow(
-      /one of: rebuild, keep/,
-    );
+    await expect(
+      inbox.recommend({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, "globex"),
+    ).rejects.toThrow(/another workspace/);
+    await expect(
+      inbox.recommend({ id: "room:ACM-1:ask1", option: "nope", reason: "x" }, "acme"),
+    ).rejects.toThrow(/one of: rebuild, keep/);
     await expect(inbox.recommend({ id: "room:ACM-1:sr1", option: "x", reason: "x" }, "acme")).rejects.toThrow(
       /no buttons/,
     );

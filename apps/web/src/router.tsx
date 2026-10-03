@@ -191,6 +191,11 @@ const limitsRoute = createRoute({
   path: PAGE_PATH.limits,
   component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
 });
+const decisionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.decisions,
+  component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
+});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -256,6 +261,7 @@ export const router = createRouter({
     autonomousRoute,
     captainRoute,
     limitsRoute,
+    decisionsRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,
