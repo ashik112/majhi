@@ -445,6 +445,7 @@ describe("the captain's soak test", () => {
           org,
           path: `/work/${org}/repo-${step}`,
           name: `repo-${step}`,
+          aliases: [],
           id: `repo-${step}`,
           base: "main",
           remotes: [],

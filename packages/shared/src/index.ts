@@ -18,6 +18,7 @@ export * from "./connections.ts";
 export * from "./containers.ts";
 export * from "./decisions.ts";
 export * from "./e2e.ts";
+export * from "./project-card.ts";
 export * from "./emoji.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";

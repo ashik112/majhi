@@ -59,6 +59,8 @@ export interface WorldDeps {
   repo: CaptainRepo;
   /** Whether the owner is typing in a task now. */
   typing: (task: string) => boolean;
+  /** Alias suggestions for a repo, from its folder and package names (the project card's scan). */
+  aliasesOf: (path: string, id: string) => Promise<string[]>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
@@ -473,6 +475,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
             id: id ?? slug,
             base,
             remotes: repo.remotes.map((r) => ({ name: r.name, url: r.url })),
+            aliases: await deps.aliasesOf(repo.path, id ?? slug),
             ...(id === undefined ? { unsure: `The ids ${slug} and ${org}-${slug} are taken` } : {}),
           });
           if (id !== undefined) taken.add(id);
@@ -484,7 +487,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     async register(org, repo, reason) {
       const done = await run(
         "projects.register",
-        { id: repo.id, org, path: repo.path, aliases: [], base: repo.base },
+        { id: repo.id, org, path: repo.path, aliases: repo.aliases, base: repo.base },
         reason,
       );
       return done.commit === undefined ? {} : { commit: done.commit };

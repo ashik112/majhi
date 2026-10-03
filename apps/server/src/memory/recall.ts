@@ -14,6 +14,8 @@ export const TASK_MEMORY_CHARS = TASK_MEMORY_TOKENS * CHARS_PER_TOKEN;
 
 /** How much of the section each part may use at most, in characters. */
 export const BRIEF_CHARS = 1_600;
+/** The project cards (stack, commands, layout, readiness) of a task's repos, together. */
+export const CARD_CHARS = 1_400;
 export const RECORD_CHARS = 800;
 export const THREAD_CHARS = 700;
 
@@ -82,6 +84,8 @@ function threadLine(t: Thread): string {
 
 export interface MemorySectionInput {
   briefs: readonly { project: string; body: string }[];
+  /** Compact project cards, from the scan of each repo. */
+  cards?: readonly { project: string; text: string }[] | undefined;
   records: readonly TaskRecord[];
   threads: readonly Thread[];
   lessons: readonly Fact[];
@@ -115,6 +119,19 @@ export function renderMemorySection(
       const title = `### Project brief: ${b.project}`;
       const text = compactBrief(b.body, Math.max(0, each - title.length - 2));
       if (text !== "") add(`${title}\n${text}`);
+    }
+  }
+
+  const cards = (input.cards ?? []).filter((c) => c.text.trim() !== "");
+  if (cards.length > 0) {
+    const each = Math.floor(Math.min(CARD_CHARS, room()) / cards.length);
+    for (const c of cards) {
+      const title = `### Project card: ${c.project}`;
+      const body =
+        c.text.length > each - title.length - 2
+          ? `${c.text.slice(0, Math.max(0, each - title.length - 6)).trimEnd()} ...`
+          : c.text;
+      if (each > title.length + 20) add(`${title}\n${body}`);
     }
   }
 

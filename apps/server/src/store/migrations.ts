@@ -837,6 +837,21 @@ WHERE chore = 'memory'
   AND at < '2026-10-03T19:27:50.000Z';
 `,
   },
+  {
+    // The project knowledge card (SPEC 5.18, captain v2): one JSON card per project, rewritten when
+    // the base branch moves. facts_hash tells whether the facts changed, so the model's paragraph is
+    // only rewritten when they did.
+    id: 125,
+    name: "project cards",
+    sql: `
+CREATE TABLE project_cards (
+  project TEXT PRIMARY KEY,
+  card TEXT NOT NULL,
+  facts_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -174,7 +174,7 @@ export function replyFacts(reply: Pick<RecordReply, "lessons" | "statements" | "
 export type Parsed<T> = { ok: true; value: T } | { ok: false; problem: string };
 
 /** The JSON object in a reply (a code fence or a stray sentence is tolerated), checked. */
-function parseJson<T>(text: string, schema: z.ZodType<T>): Parsed<T> {
+export function parseJson<T>(text: string, schema: z.ZodType<T>): Parsed<T> {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) return { ok: false, problem: "There was no JSON object in the reply." };

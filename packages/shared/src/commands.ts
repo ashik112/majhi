@@ -92,6 +92,7 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
+import { ProjectCardSchema } from "./project-card.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
@@ -946,6 +947,20 @@ export const commands = {
     summary: "List registered projects",
     input: Empty,
     output: z.array(ProjectViewSchema),
+  },
+  "projects.cards": {
+    risk: "read",
+    summary:
+      "The knowledge card of each project (or one): what it is, stack, how to run, build, test and lint, structure, conventions, CI, deploy hints, aliases, the commit it was read at, and a readiness score from 0 to 5 with a checklist of what is missing. Read it before working in a repo",
+    input: z.object({ project: IdSchema.optional() }),
+    output: z.array(ProjectCardSchema),
+  },
+  "projects.cardRefresh": {
+    risk: "change",
+    summary:
+      "Read a project's files again and rewrite its knowledge card now. The scan is cheap code; the model only rewrites the one-paragraph summary when the facts changed",
+    input: z.object({ project: IdSchema }),
+    output: ProjectCardSchema,
   },
   "projects.register": {
     risk: "change",
