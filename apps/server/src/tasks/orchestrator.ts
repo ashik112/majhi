@@ -156,23 +156,33 @@ export class Orchestrator {
   }
 
   /** The owner's answer to a choice card. */
-  async answer(roomTask: string, itemId: string, option: string): Promise<void> {
+  /** The owner's pick on a choice card, or the captain's (`captain`). */
+  async answer(roomTask: string, itemId: string, option: string, captain = false): Promise<void> {
     const { room, store } = this.deps;
     const item = room.get(roomTask, itemId);
     if (item?.type !== "choice" || item.state !== "pending" || !item.options.some((o) => o.id === option)) {
       throw new Error("That choice was already answered.");
     }
     const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = item;
-    room.post(item.task, item.id, { ...payload, state: "answered", chosen: option });
+    room.post(item.task, item.id, {
+      ...payload,
+      state: "answered",
+      chosen: option,
+      ...(captain ? { by: "captain" as const } : {}),
+    });
     const [kind, id, on] = option.split(":");
     const task = id === undefined ? undefined : store.tasks.get(id);
     if (task === undefined) return;
     if (kind === "start") {
       this.said.delete(id as string);
-      this.line([task.id], `Owner: start ${task.id} now. Merge it after the tasks it overlaps.`);
+      this.line(
+        [task.id],
+        `${captain ? "Captain" : "Owner"}: start ${task.id} now. Merge it after the tasks it overlaps.`,
+      );
       await this.startNow(task.id);
     } else if (kind === "wait") {
-      await this.waitFor(task, (on ?? "").split(",").filter(Boolean), "the owner chose to wait");
+      const who = captain ? "the captain" : "the owner";
+      await this.waitFor(task, (on ?? "").split(",").filter(Boolean), `${who} chose to wait`);
     }
   }
 

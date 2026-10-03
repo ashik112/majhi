@@ -25,6 +25,7 @@ import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import type { Store } from "../store/index.ts";
+import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
@@ -381,24 +382,32 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     },
 
     async answer(_org, card, option, reason) {
+      // Recorded as the captain's answer, never the owner's (5.18).
+      const captain = (await deps.lanes.boss()) ?? "captain";
+      let answered: RoomItem;
       switch (card.kind) {
         case "permission":
-          deps.tasks.answerPermission(card.task, card.item, option);
+          answered = deps.tasks.answerPermission(card.task, card.item, option, captain);
           break;
         case "choice":
-          await deps.tasks.answerChoice(card.task, card.item, option);
+          answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
           break;
         case "ask":
-          await deps.tasks.answerAsk(card.task, card.item, { [card.question ?? "q"]: option });
+          answered = await deps.tasks.answerAsk(
+            card.task,
+            card.item,
+            { [card.question ?? "q"]: option },
+            captain,
+          );
           break;
         case "owner-question":
-          await deps.tasks.answerQuestion(card.task, card.item, option);
+          answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
           break;
       }
       deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
         type: "system",
         level: "info",
-        text: `Answered by the captain: ${reason}`,
+        text: captainAnsweredLine(answered, reason),
       });
     },
 

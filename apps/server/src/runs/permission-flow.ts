@@ -102,7 +102,7 @@ export class PermissionFlow {
   }
 
   /** The owner picked one of the prompt's options. */
-  answer(run: AgentRun | undefined, task: string, itemId: string, option: string): RoomItem {
+  answer(run: AgentRun | undefined, task: string, itemId: string, option: string, captain = false): RoomItem {
     const { store, room } = this.deps;
     const pending = run?.pending.get(itemId);
     const item = room.get(task, itemId);
@@ -117,13 +117,17 @@ export class PermissionFlow {
     }
     run.pending.delete(itemId);
     const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
+    const by = captain ? "captain" : "owner";
     if (pending.writes !== undefined) {
-      this.logWrites(run, pending.writes, allowed ? "allow" : "deny", "owner");
+      this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);
     } else {
-      this.log(run, pending.ask, allowed ? "allow" : "deny", "owner");
+      this.log(run, pending.ask, allowed ? "allow" : "deny", by);
       if (chosen.kind === "allow_always") store.permissions.allow(task, pending.ask.kind ?? "other");
     }
-    room.post(item.task, itemId, permissionPayload(item, { state: "answered", chosen: option }));
+    room.post(item.task, itemId, {
+      ...permissionPayload(item, { state: "answered", chosen: option }),
+      ...(captain ? { by: "captain" as const } : {}),
+    });
     pending.resolve(option);
     this.backToWork(run);
     const updated = room.get(task, itemId);
@@ -160,7 +164,7 @@ export class PermissionFlow {
     run: AgentRun,
     writes: readonly GateWrite[],
     decision: "allow" | "deny" | "cancelled",
-    by: "owner" | "rule",
+    by: "owner" | "rule" | "captain",
   ): void {
     for (const write of writes) {
       const org = run.connections?.uses.find((u) => u.id === write.connection)?.org;
@@ -185,7 +189,7 @@ export class PermissionFlow {
     run: AgentRun,
     ask: PermissionAsk,
     decision: "allow" | "deny" | "cancelled",
-    by: "owner" | "rule",
+    by: "owner" | "rule" | "captain",
   ): void {
     this.deps.store.permissions.log({
       task: run.task,

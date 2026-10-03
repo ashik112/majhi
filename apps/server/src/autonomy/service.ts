@@ -50,6 +50,7 @@ import type { EventHub } from "../events/hub.ts";
 import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
+import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
@@ -450,7 +451,8 @@ export class AutonomyService {
     try {
       // Nothing is in a turn: tasks that would wake again (a process, a handoff) stop for the owner.
       for (const task of this.openTasks()) {
-        if (this.stoppable(task)) await this.deps.tasks.stop(task.id).catch(() => undefined);
+        if (this.stoppable(task))
+          await this.deps.tasks.stop(task.id, "owner", undefined, "autonomy").catch(() => undefined);
       }
       this.repo.releaseAll();
       if (this.repo.state().mode !== "stopping") return;
@@ -1498,20 +1500,20 @@ export class AutonomyService {
         case "permission":
           if (item.connection !== undefined) return fail("A write through a connection needs the owner.");
           if (option === undefined) return fail("Give option: the id of one of the prompt's options.");
-          answered = this.deps.tasks.answerPermission(input.task, item.id, option);
+          answered = this.deps.tasks.answerPermission(input.task, item.id, option, caller.agent);
           break;
         case "choice":
           if (option === undefined) return fail("Give option: the id of one of the choices.");
-          answered = await this.deps.tasks.answerChoice(input.task, item.id, option);
+          answered = await this.deps.tasks.answerChoice(input.task, item.id, option, caller.agent);
           break;
         case "ask":
           if (input.answers === undefined)
             return fail("Give answers: each question's id to an option id or text.");
-          answered = await this.deps.tasks.answerAsk(input.task, item.id, input.answers);
+          answered = await this.deps.tasks.answerAsk(input.task, item.id, input.answers, caller.agent);
           break;
         case "owner-question":
           if (option === undefined) return fail("Give option: the choice to answer with.");
-          answered = await this.deps.tasks.answerQuestion(input.task, item.id, option);
+          answered = await this.deps.tasks.answerQuestion(input.task, item.id, option, caller.agent);
           break;
         case "secret-request":
           return fail("Only the owner gives secrets.");
@@ -1523,10 +1525,11 @@ export class AutonomyService {
     } catch (err) {
       return fail(errorMessage(err));
     }
+    // Said as the captain's, never the owner's (5.18): the card itself carries `by: "captain"`.
     this.deps.room.post(input.task as TaskId, `autonomy:${randomUUID()}`, {
       type: "system",
       level: "info",
-      text: redactText(`Answered by autonomous mode: ${reason === "" ? "no reason given" : reason}`),
+      text: redactText(captainAnsweredLine(answered, reason)),
     });
     this.event({
       kind: "answer",

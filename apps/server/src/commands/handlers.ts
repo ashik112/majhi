@@ -494,7 +494,7 @@ export function createHandlers({
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
     "tasks.stop": async (input, ctx) => {
-      const stopped = await services.tasks.stop(input.id);
+      const stopped = await services.tasks.stop(input.id, "owner", undefined, actorName(ctx.meta.actor));
       // The owner's own stop: autonomous mode does not restart this task on Resume.
       if (ctx.meta.actor.kind === "owner") services.autonomy.forgetHold(input.id);
       return stopped;

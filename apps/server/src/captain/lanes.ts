@@ -155,7 +155,7 @@ export class Lanes {
       const chat = await this.ensure(org);
       const boss = chat.team[0];
       if (boss === undefined) return { sent: false, why: "the lane has no captain" };
-      await this.deps.tasks.tellAgent({ task: chat.id, agent: boss, text, settled });
+      await this.deps.tasks.tellAgent({ task: chat.id, agent: boss, text, settled, by: "majhi" });
       return { sent: true, chat: chat.id };
     } catch (err) {
       return { sent: false, why: errorMessage(err) };
