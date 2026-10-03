@@ -21,6 +21,7 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitAuth } from "@majhi/shared";
+import { GUARD_CONFIG, GUARD_ENV } from "./gitGuard.ts";
 
 export const ASKPASS_SCRIPT = `#!/bin/sh
 # majhi askpass: answers git's prompts for one job. Written by majhi's host helper.
@@ -66,8 +67,9 @@ export interface AuthEnvDeps {
 }
 
 /**
- * The environment and `-c` options to run git with for one job. Only PATH, HOME and what the auth
- * needs: the helper's own environment is not passed on.
+ * The environment and `-c` options to run git with for one job. Only PATH, HOME, what the auth
+ * needs and the guards that keep a repo from running commands (gitGuard.ts): the helper's own
+ * environment is not passed on.
  */
 export async function gitAuthEnv(deps: AuthEnvDeps, auth: GitAuth): Promise<GitAuthEnv> {
   const env: Record<string, string> = {
@@ -76,10 +78,10 @@ export async function gitAuthEnv(deps: AuthEnvDeps, auth: GitAuth): Promise<GitA
     GIT_TERMINAL_PROMPT: "0",
     GCM_INTERACTIVE: "never",
     LC_ALL: "C",
+    ...GUARD_ENV,
   };
-  const config = ["-c", "credential.helper=", "-c", "core.askPass="];
+  const config = [...GUARD_CONFIG, "-c", "credential.helper=", "-c", "core.askPass="];
   if (auth.kind === "ssh") {
-    env.GIT_SSH_COMMAND = "ssh -o BatchMode=yes";
     if (deps.sshAuthSock !== undefined) env.SSH_AUTH_SOCK = deps.sshAuthSock;
     return { env, config, cleanup: async () => undefined };
   }

@@ -47,7 +47,8 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * What keeps a repo from running commands in majhi's git. An agent can edit its worktree's
  * `.gitattributes` and, outside a container, `.git/config`, and majhi's git runs in that worktree and
  * in the project's checkout. So hooks, fsmonitor and `ext::` remotes are off for every command; the
- * filter and merge drivers and the remote commands the repo sets are turned off (`repoCommands`);
+ * filter and merge drivers, remote commands and signing programs the repo sets are turned off
+ * (`repoCommands`);
  * and diffs get `--no-ext-diff --no-textconv`. `core.sshCommand` needs nothing: `gitEnv` always
  * sets `GIT_SSH_COMMAND`, which wins. majhi's own hooks reach only runs, through the run's
  * environment (`buildEnv`), so nothing here relied on them, and an agent's git in a run is unchanged.
@@ -85,6 +86,26 @@ const NO_LOOKUP = new Set([
 const REMOTE_COMMANDS: readonly RegExp[] = [/^core\.askpass$/, /^core\.alternaterefscommand$/];
 
 /**
+ * The programs that sign or check a signature, and the settings that make `log`, `show`, `merge`,
+ * `pull`, `commit`, `tag` and `push` sign or check one. When the repo sets one, it gets the owner's
+ * own value (the last one), else git's default: a signature is then neither made nor checked unless
+ * the owner asks for it, and only with the owner's program.
+ */
+const SIGNING: ReadonlyMap<string, string> = new Map([
+  ["gpg.program", "gpg"],
+  ["gpg.openpgp.program", "gpg"],
+  ["gpg.x509.program", "gpgsm"],
+  ["gpg.ssh.program", "ssh-keygen"],
+  ["gpg.ssh.defaultkeycommand", ""],
+  ["log.showsignature", "false"],
+  ["merge.verifysignatures", "false"],
+  ["commit.gpgsign", "false"],
+  ["tag.gpgsign", "false"],
+  ["tag.forcesignannotated", "false"],
+  ["push.gpgsign", "false"],
+]);
+
+/**
  * The upload-pack or receive-pack a command runs for a remote on a local path or `file://`. git
  * keeps the first `remote.<name>.uploadpack` it reads, so the repo's beats the command line; the
  * command's own option beats both. When the repo sets one, the option names the owner's own value,
@@ -103,7 +124,9 @@ const HELPER = /^credential\.(.+\.)?helper$/;
 /** Every key `repoCommands` reads, as git's own regexp. */
 const REPO_COMMAND_KEYS =
   "^(filter\\..+\\.(clean|smudge|process)|merge\\..+\\.driver|credential\\.(.+\\.)?helper" +
-  "|remote\\..+\\.(uploadpack|receivepack)|core\\.(askpass|alternaterefscommand|gitproxy))$";
+  "|remote\\..+\\.(uploadpack|receivepack)|core\\.(askpass|alternaterefscommand|gitproxy)" +
+  "|gpg\\.((openpgp|x509|ssh)\\.)?program|gpg\\.ssh\\.defaultkeycommand|log\\.showsignature" +
+  "|merge\\.verifysignatures|(commit|tag|push)\\.gpgsign|tag\\.forcesignannotated)$";
 
 interface ConfigEntry {
   scope: string;
@@ -124,10 +147,10 @@ function fromRepo(entry: ConfigEntry): boolean {
  * back in order, so osxkeychain still answers. `core.gitProxy` takes the first entry that matches,
  * and the repo's come before the command line, so it is overridden with `GIT_PROXY_COMMAND`: the
  * server's own, else none, which also drops an owner's `core.gitProxy` for that repo (git:// only).
- * Upload-pack and receive-pack go in `options` (`PACK_OPTIONS`). `url.<base>.insteadOf` cannot be
- * dropped (the first of equal rewrites wins), but every command it could point a remote at is off
- * here or in `SERVER_CONFIG`. Nothing when git cannot tell. Read with `git config`, which runs
- * nothing.
+ * Upload-pack and receive-pack go in `options` (`PACK_OPTIONS`), signing as in `SIGNING`.
+ * `url.<base>.insteadOf` cannot be dropped (the first of equal rewrites wins), but every command it
+ * could point a remote at is off here or in `SERVER_CONFIG`. Nothing when git cannot tell. Read
+ * with `git config`, which runs nothing.
  */
 async function repoCommands(
   cwd: string,
@@ -170,6 +193,8 @@ async function repoCommands(
       off.set(key, "false");
     } else if (REMOTE_COMMANDS.some((c) => c.test(key))) {
       off.set(key, own(key, true) ?? "");
+    } else if (SIGNING.has(key)) {
+      off.set(key, own(key, true) ?? SIGNING.get(key) ?? "");
     } else if (pack?.key.test(key)) {
       option = `${pack.option}=${own(key, false) ?? pack.fallback}`;
     }

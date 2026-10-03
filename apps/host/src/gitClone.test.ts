@@ -14,6 +14,7 @@ import {
   type StreamingRun,
   streamingGit,
 } from "./gitClone.ts";
+import { GUARD_CONFIG } from "./gitGuard.ts";
 import { type GitPushDeps, gitPush } from "./gitPush.ts";
 import { runCommand } from "./runCommand.ts";
 
@@ -102,7 +103,7 @@ describe("askpass", () => {
     const auth = await gitAuthEnv(d, { kind: "token", username: "x-access-token", password: TOKEN });
     // The token is in no environment variable, and its file is readable by the owner only.
     expect(JSON.stringify(auth.env)).not.toContain(TOKEN);
-    expect(auth.config).toEqual(["-c", "credential.helper=", "-c", "core.askPass="]);
+    expect(auth.config).toEqual([...GUARD_CONFIG, "-c", "credential.helper=", "-c", "core.askPass="]);
     const file = auth.env.MAJHI_ASKPASS_FILE ?? "";
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     const ask = (prompt: string) => exec(d.askpass, [prompt], { env: auth.env }).then((r) => r.stdout);
@@ -146,7 +147,13 @@ describe("gitClone", () => {
     const call = seen[0];
     expect(call?.args.join(" ")).not.toContain(TOKEN);
     expect(JSON.stringify(call?.env)).not.toContain(TOKEN);
-    expect(call?.args.slice(0, 4)).toEqual(["-c", "credential.helper=", "-c", "core.askPass="]);
+    expect(call?.args.slice(0, 10)).toEqual([
+      ...GUARD_CONFIG,
+      "-c",
+      "credential.helper=",
+      "-c",
+      "core.askPass=",
+    ]);
     expect(call?.env.GIT_TERMINAL_PROMPT).toBe("0");
     expect(await exists(tokenFile)).toBe(false);
     // Nothing of the job is left in the helper's folder.
@@ -236,11 +243,13 @@ describe("gitPush with a workspace token", () => {
     expect(call?.args).toEqual([
       "-C",
       dir,
+      ...GUARD_CONFIG,
       "-c",
       "credential.helper=",
       "-c",
       "core.askPass=",
       "push",
+      "--receive-pack=git-receive-pack",
       "--quiet",
       "https://github.com/acme/api.git",
       "refs/heads/main:refs/heads/main",

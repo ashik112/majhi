@@ -8,6 +8,7 @@ import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { type ClonePhase, cloneTempPath, type GitAuth, type HostCloneProgress } from "@majhi/shared";
 import { type AuthEnvDeps, gitAuthEnv } from "./gitAuth.ts";
+import { UPLOAD_PACK } from "./gitGuard.ts";
 import { stripCredentials } from "./gitPush.ts";
 import type { RunFn } from "./ssh.ts";
 
@@ -216,7 +217,8 @@ export async function gitLsRemote(
   if (/^-/.test(params.url) || /[\s\0]/.test(params.url)) throw new Error("That is not a git remote URL.");
   const auth = await env(deps, params.auth);
   try {
-    const run = await deps.run("git", [...auth.config, "ls-remote", "--symref", "--", params.url], {
+    const args = [...auth.config, "ls-remote", UPLOAD_PACK, "--symref", "--", params.url];
+    const run = await deps.run("git", args, {
       env: auth.env,
       timeoutMs: LS_REMOTE_TIMEOUT_MS,
     });
