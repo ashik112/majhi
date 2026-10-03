@@ -418,6 +418,22 @@ export const AccountUsageSchema = z.object({
 });
 export type AccountUsage = z.infer<typeof AccountUsageSchema>;
 
+/**
+ * A run hit the account's usage or rate limit (5.7). The account counts as `at-limit` until
+ * `until`: the reset the error named, else the full window's reset, else a short default.
+ */
+export const AccountLimitSchema = z.object({
+  /** When a run hit it (ISO). */
+  since: z.string(),
+  /** When majhi tries the account again (ISO). */
+  until: z.string(),
+  /** False when the error named no reset and `until` is majhi's guess. */
+  resetKnown: z.boolean(),
+  /** The CLI's error, first line. */
+  detail: z.string(),
+});
+export type AccountLimit = z.infer<typeof AccountLimitSchema>;
+
 export const AccountViewSchema = z.object({
   id: IdSchema,
   tool: ToolIdSchema,
@@ -433,8 +449,10 @@ export const AccountViewSchema = z.object({
   signedInAs: z.string().optional(),
   lastHealth: HealthCheckSchema.optional(),
   usage: AccountUsageSchema.optional(),
+  /** Set while a run's limit error holds the account (5.7). */
+  limit: AccountLimitSchema.optional(),
 });
-export type AccountView = z.infer<typeof AccountViewSchema>;
+export type AccountView =z.infer<typeof AccountViewSchema>;
 
 export const OrgViewSchema = z.object({
   id: IdSchema,

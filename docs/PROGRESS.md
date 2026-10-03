@@ -1,5 +1,24 @@
 # Progress
 
+## Phase 7: Resilience and health (PRV-22, in progress)
+
+Built on `task/prv-22-phase-7-resilience-and-health`, with `main` merged (Phases 6 and 11 in). Phase 2b already gives checkpoints, offline pause and resume (probe plus network-looking errors), wake, restart and crash resume, and context-window recovery (`isContextError`, `max_tokens`, `max_turn_requests` go to the note built by majhi). The usage reads, the Usage page meters and the health checks exist since Phases 1 and 2c. What Phase 7 adds:
+
+### Plan, in order
+
+1. **Limit error shapes per CLI** (`packages/acp/src/limit-failure.ts`, shapes in each tool's registry entry). Claude Code and Codex, login and API key: usage limits, rate limits (429) and quota or credit errors, with the reset time when the text gives one ("resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes", an epoch after `|`). Checked on errors and on a short last message of a failed turn, never on prose. A context-window error and an overload are not limits.
+2. **Account at limit.** A run's limit error marks its account (`AccountView.limit`: since, until, resetKnown, detail). The account is `at-limit` until then. Without a reset in the error: the full usage window's reset, else 15 minutes.
+3. **Fallback handoff.** When the agent's `fallback` exists, its account is not at limit and is signed in, and `resume.handoff` allows it (majhi, org; default on): the fallback takes the agent's place in the team, gets majhi's handoff note and the pending prompt, and continues from the checkpoint. One room line says so. The same applies before a turn when the account is already at limit, and to a start that fails on a limit.
+4. **Pause and auto-resume at reset.** Otherwise the run pauses with reason `limit`, the prompt queued again. Other agents on the account pause at their next turn boundary. The budget lift sweep (every 60 s) resumes them once the account's `until` passes, when `resume.auto` allows; otherwise the room says the limit reset and the owner resumes.
+5. **Context-window errors**: check the shapes of both CLIs against `isContextError`, add tests.
+6. **Usage and health in the top bar and Studio.** The board's top bar shows the busiest account's window, with its reset and a link to Usage; at-limit accounts show until when, in Usage and Accounts. Orgs form: the handoff switch next to auto-resume.
+
+### How it is tested
+
+- Unit: every limit shape per CLI and auth type, reset parsing, negatives (context errors, overload, auth errors, prose).
+- Integration with the fake agent (a new `limit:<message>` prompt): hand off to a fallback, pause without one, fallback also at limit, policy off, resume at reset with a fake clock, auto-resume off, a second agent on the account pausing.
+- E2E: a simulated limit hands off to the fallback; network drop and return (`phase2b-runs.spec.ts`) still pass.
+
 ## Captain step 6b: staffing and lead handover (built)
 
 - **Staffing:** `staffTask` (`tasks/staffing.ts`) picks a lead and a team from slots, usage left, floors, budgets, cost, model tier against size, skills and past results, and gives one reason line. The captain's create or start without a team uses it and the room says why; `tasks.staff` (`majhi_tasks_staff`) shows the proposal.
