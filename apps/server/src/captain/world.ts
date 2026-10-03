@@ -616,12 +616,12 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       const old = store.tasks.get(task)?.team[0] ?? "the old lead";
       await run("tasks.update", { id: task, agent: to }, reason, task);
       if (store.tasks.get(task)?.status === "paused") await run("tasks.start", { id: task }, reason, task);
-      else
-        deps.runs.notify(
-          task,
-          to,
-          `You lead ${task} now: @${old}'s account needs a new sign-in. Read the room (majhi-room read_recent), then go on with the plan.`,
-        );
+      // The brief went to the old lead already: the new one is told what happened, which starts it.
+      deps.runs.notify(
+        task,
+        to,
+        `You lead ${task} now: @${old}'s account needs a new sign-in. Read TASK.md and the room (majhi-room read_recent), then go on with the plan.`,
+      );
     },
 
     handBack(_org, task, agent, account) {
