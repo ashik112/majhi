@@ -452,7 +452,7 @@ export const AccountViewSchema = z.object({
   /** Set while a run's limit error holds the account (5.7). */
   limit: AccountLimitSchema.optional(),
 });
-export type AccountView =z.infer<typeof AccountViewSchema>;
+export type AccountView = z.infer<typeof AccountViewSchema>;
 
 export const OrgViewSchema = z.object({
   id: IdSchema,

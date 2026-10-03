@@ -3,7 +3,7 @@ import { claude } from "./claude.ts";
 import { codex } from "./codex.ts";
 import type { ToolDef } from "./types.ts";
 
-export type { AuthStatus, ToolDef } from "./types.ts";
+export type { AuthStatus, LimitShapes, ToolDef } from "./types.ts";
 
 export const tools: Record<ToolId, ToolDef> = { claude, codex };
 
