@@ -639,7 +639,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.hostLink === undefined
       ? {}
       : {
-          mac: async (notice) => {
+          desktop: async (notice) => {
             await options.hostLink?.call("notify", notice);
           },
         }),

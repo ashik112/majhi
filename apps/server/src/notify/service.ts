@@ -19,7 +19,7 @@ export const BURST_MAX = 3;
 export const BURST_WINDOW_MS = 10_000;
 const SEEN_MAX = 2_000;
 
-export interface MacNotice {
+export interface DesktopNotice {
   title: string;
   message: string;
   path: string;
@@ -33,8 +33,11 @@ export interface NotifierDeps {
   item: (task: string, id: string) => RoomItem | undefined;
   settings: () => Promise<NotificationsSettings>;
   events: EventHub;
-  /** Shows a macOS notification through the host helper. Absent without a helper. */
-  mac?: (notice: MacNotice) => Promise<void>;
+  /**
+   * Shows a desktop notification through the host helper: Notification Center on macOS, `notify-send`
+   * on Linux and WSL2. Absent without a helper.
+   */
+  desktop?: (notice: DesktopNotice) => Promise<void>;
   now?: () => number;
 }
 
@@ -48,13 +51,13 @@ interface Waiting {
 }
 
 export interface TestResult {
-  mac: "sent" | "off" | "no-helper" | "failed";
+  desktop: "sent" | "off" | "no-helper" | "failed";
   error?: string;
   browser: boolean;
 }
 
 /**
- * Turns "an item now waits for the owner" into one notification: a Mac banner and an `attention`
+ * Turns "an item now waits for the owner" into one notification: a desktop banner and an `attention`
  * event for open tabs. One per item, none when the owner answered it within five seconds, and a burst
  * becomes a single "4 things need you". Settings decide the channels, the muted kinds and quiet hours.
  */
@@ -125,16 +128,17 @@ export class Notifier {
   async test(): Promise<TestResult> {
     const settings = await this.deps.settings();
     const text = "This is a test. majhi can reach you here.";
-    let mac: TestResult["mac"] = "off";
+    let desktop: TestResult["desktop"] = "off";
     let error: string | undefined;
+    // `notifications.mac` keeps its name on every OS: majhi.yaml files have it.
     if (settings.mac) {
-      if (this.deps.mac === undefined) mac = "no-helper";
+      if (this.deps.desktop === undefined) desktop = "no-helper";
       else {
         try {
-          await this.deps.mac({ title: "majhi", message: text, path: "/", sound: settings.sound });
-          mac = "sent";
+          await this.deps.desktop({ title: "majhi", message: text, path: "/", sound: settings.sound });
+          desktop = "sent";
         } catch (err) {
-          mac = "failed";
+          desktop = "failed";
           error = err instanceof Error ? err.message : "The notification failed.";
         }
       }
@@ -143,7 +147,7 @@ export class Notifier {
       { id: `test:${this.now()}`, kind: "test", title: "majhi", text, path: "/", count: 1 },
       settings,
     );
-    return { mac, ...(error === undefined ? {} : { error }), browser: settings.browser };
+    return { desktop, ...(error === undefined ? {} : { error }), browser: settings.browser };
   }
 
   close(): void {
@@ -226,9 +230,9 @@ export class Notifier {
     settings: NotificationsSettings,
   ): Promise<void> {
     this.emit(event, settings);
-    if (settings.mac && this.deps.mac !== undefined) {
+    if (settings.mac && this.deps.desktop !== undefined) {
       await this.deps
-        .mac({ title: "majhi", message: event.text, path: event.path, sound: settings.sound })
+        .desktop({ title: "majhi", message: event.text, path: event.path, sound: settings.sound })
         .catch(() => undefined);
     }
   }

@@ -305,7 +305,7 @@ export function SetupView() {
 
 function notificationsStatus(n: Settings["notifications"]): string {
   if (!n.mac && !n.browser) return "Off";
-  return n.mac && n.browser ? "Mac and browser" : n.mac ? "Mac" : "Browser";
+  return n.mac && n.browser ? "Desktop and browser" : n.mac ? "Desktop" : "Browser";
 }
 
 function containersStatus(data: ReturnType<typeof useContainers>["data"]): string | undefined {

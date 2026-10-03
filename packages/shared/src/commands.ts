@@ -591,12 +591,12 @@ export const commands = {
   "notify.test": {
     risk: "change",
     summary:
-      "Send a test notification to the Mac and to open browser tabs, as the notification settings allow, so the owner can see they work",
+      "Send a test notification to this computer and to open browser tabs, as the notification settings allow, so the owner can see they work",
     input: z.object({}),
     output: z.object({
       /** `off`: turned off in settings. `no-helper`: the host helper is not connected. */
-      mac: z.enum(["sent", "off", "no-helper", "failed"]),
-      /** Why the Mac notification failed, in plain words. */
+      desktop: z.enum(["sent", "off", "no-helper", "failed"]),
+      /** Why the desktop notification failed, in plain words. */
       error: z.string().optional(),
       /** Whether open tabs were told to show one. */
       browser: z.boolean(),
