@@ -837,6 +837,35 @@ WHERE chore = 'memory'
   AND at < '2026-10-03T19:27:50.000Z';
 `,
   },
+  {
+    // Outcome labels for decisions (SPEC 5.12): the right answer to one question of one decision,
+    // with where it came from. \`decision_links\` holds a decision until its outcome is known (a task
+    // finishes, a woken agent's turn ends, the owner keeps or drops a fact), then the labeler writes
+    // the label and removes the link.
+    id: 125,
+    name: "decision labels and links",
+    sql: `
+CREATE TABLE decision_labels (
+  decision_id TEXT NOT NULL,
+  use TEXT NOT NULL,
+  question TEXT NOT NULL,
+  label TEXT NOT NULL,
+  source TEXT NOT NULL,
+  note TEXT,
+  at TEXT NOT NULL,
+  PRIMARY KEY (decision_id, question, source)
+);
+CREATE INDEX decision_labels_use ON decision_labels (use, question);
+CREATE TABLE decision_links (
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  decision_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (kind, ref, decision_id, question)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

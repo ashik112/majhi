@@ -129,7 +129,7 @@ export function notAddedNote(agents: readonly string[]): string {
 }
 
 /** The question key for the i-th agent asked. */
-function key(i: number): string {
+export function key(i: number): string {
   return `acts_${i + 1}`;
 }
 

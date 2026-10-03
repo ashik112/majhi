@@ -16,6 +16,7 @@ export * from "./commands.ts";
 export * from "./config.ts";
 export * from "./connections.ts";
 export * from "./containers.ts";
+export * from "./decision-learning.ts";
 export * from "./decisions.ts";
 export * from "./e2e.ts";
 export * from "./emoji.ts";

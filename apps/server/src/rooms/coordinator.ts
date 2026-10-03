@@ -35,6 +35,7 @@ import {
 import {
   addresses,
   asksByWords,
+  key as mentionKey,
   mentionQuestion,
   notAddedNote,
   QUIET_ON_NO,
@@ -136,6 +137,14 @@ export class RoomCoordinator {
     const before = store.tasks.roomState(task.id);
     const fingerprint = await worktreeFingerprint(task);
     const changed = fingerprint !== undefined && fingerprint !== before.fingerprint;
+    // This agent was woken by a mention the provider judged: did it act, or only reply with status?
+    const acted = changed || (text !== "" && !statusOnly(text));
+    this.deps.decisions?.resolve?.(
+      "wake",
+      `${task.id}\u0000${turn.agent}`,
+      acted ? "true" : "false",
+      acted ? "the woken agent acted" : "the woken agent only reported status",
+    );
     const state = changed ? { ...before, agentTurns: 0, fingerprint, nudged: false } : before;
     // The owner has yet to answer and this turn only waits: nobody else needs to wake for it.
     const waiting = !changed && this.ownerQuestionPending(task.id) && waitsOnly(text);
@@ -258,6 +267,9 @@ export class RoomCoordinator {
       .decide(mentionQuestion(from, addressed, text), { use: "routing", task, agent: from })
       .catch(() => undefined);
     if (result === undefined) return told(passing);
+    addressed.forEach((agent, i) => {
+      decisions.link?.("wake", `${task}\u0000${agent}`, result.id, mentionKey(i));
+    });
     const reading = readMentions(addressed, result);
     const quiet = QUIET_ON_NO ? reading.quiet : [];
     const parts = [

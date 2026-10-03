@@ -73,6 +73,7 @@ export class MemoryService {
   private readonly now: () => Date;
   private filling = false;
   private curate: Curate | undefined;
+  private ownerChose: ((id: number, action: "approved" | "rejected") => void) | undefined;
   private listener: (() => void) | undefined;
   private waitingListener: ((fact: Fact) => void) | undefined;
   /** Task records, project briefs and open threads, in the same database. */
@@ -220,11 +221,20 @@ export class MemoryService {
   // Status
 
   approve(id: number, actor: Actor, reason?: string): Fact {
-    return this.move(id, ["pending", "rejected"], "active", "approved", actor, reason);
+    const fact = this.move(id, ["pending", "rejected"], "active", "approved", actor, reason);
+    if (actor.kind === "owner") this.ownerChose?.(id, "approved");
+    return fact;
   }
 
   reject(id: number, actor: Actor, reason?: string): Fact {
-    return this.move(id, ["pending"], "rejected", "rejected", actor, reason);
+    const fact = this.move(id, ["pending"], "rejected", "rejected", actor, reason);
+    if (actor.kind === "owner") this.ownerChose?.(id, "rejected");
+    return fact;
+  }
+
+  /** Told when the owner approves or rejects a fact, so the decision that judged it can be labeled. */
+  onOwnerChoice(listener: (id: number, action: "approved" | "rejected") => void): void {
+    this.ownerChose = listener;
   }
 
   /**

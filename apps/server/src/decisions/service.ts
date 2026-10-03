@@ -14,6 +14,7 @@ import {
   type Gate,
   gateAnswer,
   type LayaStatus,
+  type LinkKind,
   type ProviderId,
   type Question,
 } from "@majhi/shared";
@@ -28,6 +29,7 @@ import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { cacheKey, DecisionCache } from "./cache.ts";
 import { CircuitBreaker, runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
+import { type LabelStore, sizeBucket, type TaskOutcome } from "./labels.ts";
 import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
 import type { DecisionProvider } from "./providers.ts";
@@ -47,6 +49,7 @@ const NAMES: Record<ProviderId, string> = {
 export interface DecisionServiceDeps {
   config: ConfigService;
   log: DecisionLog;
+  labels: LabelStore;
   tokens: DecideTokens;
   laya: LayaProvider;
   acp: DecisionProvider;
@@ -173,6 +176,25 @@ export class DecisionService implements Decisions {
     return record;
   }
 
+  labels(): LabelStore {
+    return this.deps.labels;
+  }
+
+  link(kind: LinkKind, ref: string, decisionId: string, question: string): void {
+    this.deps.labels.link(kind, ref, decisionId, question);
+  }
+
+  /** The outcome of `ref` is known. The links go: a fact kept once stays kept. */
+  resolve(kind: LinkKind, ref: string, label: string, note?: string): void {
+    this.deps.labels.resolve(kind, ref, { label, note }, true);
+  }
+
+  /** A task reached review: its size decisions get the size it turned out to be. Again at the next review. */
+  taskReviewed(task: string, outcome: TaskOutcome): void {
+    const size = sizeBucket(outcome);
+    this.deps.labels.resolve("task", task, { label: size.label, note: size.note });
+  }
+
   ask(request: DecideRequest): Promise<DecisionResult> {
     return this.decide(request, { use: "owner" });
   }
@@ -234,6 +256,7 @@ export class DecisionService implements Decisions {
       });
       const a = result.answers.difficulty;
       if (a === undefined) return undefined;
+      if (request.task !== undefined) this.link("task", request.task, result.id, "difficulty");
       const level = isDifficulty(a.value) ? a.value : undefined;
       return {
         ...(level === undefined ? {} : { level }),

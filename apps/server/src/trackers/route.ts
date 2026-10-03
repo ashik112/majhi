@@ -19,6 +19,10 @@ export interface RouteProject {
 export interface RouteDecisions {
   decide(input: DecideRequestInput, use: { use: "routing"; task?: string }): Promise<DecisionResult>;
   outcome(id: string, outcome: DecisionOutcome): void;
+  /** Holds the decision until the owner's pick for the item is known, which labels it. */
+  link?(kind: "tracker", ref: string, decisionId: string, question: string): void;
+  /** The owner picked `label` for the item: labels the decision linked to it. */
+  resolve?(kind: "tracker", ref: string, label: string, note?: string): void;
 }
 
 export interface Route {
@@ -134,6 +138,7 @@ async function ask(
     )
     .catch(() => undefined);
   if (result === undefined) return undefined;
+  if (choose) args.decisions.link?.("tracker", args.item.key, result.id, "project");
   const flag = result.answers.injection;
   const flagged = flag?.value === true && flag.gate?.accepted === true;
   if (!choose) return { project: undefined, line: "", why: "", flagged };
