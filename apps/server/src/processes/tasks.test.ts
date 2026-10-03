@@ -189,8 +189,11 @@ describe("background processes and the task", () => {
 
   it("an end the agent read with output before majhi handled it wakes nobody, and the task goes to review", async () => {
     const { h } = await startWith("until [ -e go ]; do sleep 0.05; done; echo 3 passed", true);
-    const { processes, runs, tasks } = h.majhi.services;
-    await until(async () => (await systems(h)).some((t) => t.startsWith("Waiting for p1")), "the waiting note");
+    const { runs, tasks } = h.majhi.services;
+    await until(
+      async () => (await systems(h)).some((t) => t.startsWith("Waiting for p1")),
+      "the waiting note",
+    );
     const held: ProcessInfo[] = [];
     const handle = vi.spyOn(tasks, "processEnded").mockImplementation(async (p) => {
       held.push(p);
