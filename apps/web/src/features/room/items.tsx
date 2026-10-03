@@ -702,7 +702,10 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
     return (
       <QuietLine
         quiet={{
-          short: label === undefined ? `Not answered: ${item.question}` : `You chose: ${label}`,
+          short:
+            label === undefined
+              ? `Not answered: ${item.question}`
+              : `${item.by === "captain" ? "Captain" : "You"} chose: ${label}`,
           detail: item.question,
         }}
         at={item.at}
@@ -749,7 +752,10 @@ function AskCard({ item }: { item: Of<"ask"> }) {
             <QuietLine
               key={q.id}
               quiet={{
-                short: label === undefined ? `Not answered: ${q.question}` : `You ${verb}: ${label}`,
+                short:
+                  label === undefined
+                    ? `Not answered: ${q.question}`
+                    : `${item.by === "captain" ? "Captain" : "You"} ${verb}: ${label}`,
                 detail: q.question,
               }}
               at={item.at}

@@ -18,7 +18,25 @@ export function actorName(actor: Actor | undefined): string {
  * the task's state settles it with what happened, by whom and when.
  */
 export class OwnerCards {
-  constructor(private readonly deps: { store: Store; room: RoomService; now: () => Date }) {}
+  constructor(
+    private readonly deps: {
+      store: Store;
+      room: RoomService;
+      now: () => Date;
+      /** The captain's agent id now, so its actions show as "Captain", not as the owner or an agent (5.18). */
+      captain?: () => string | undefined;
+    },
+  ) {}
+
+  /**
+   * True when `by` is the captain: its agent id (`@id` too), or `autonomy`, which acts for it.
+   * Recorded on the item when it is written, so a later change of captain does not relabel history.
+   */
+  byCaptain(by: string): boolean {
+    if (by === "autonomy") return true;
+    const captain = this.deps.captain?.();
+    return captain !== undefined && by.replace(/^@/, "") === captain;
+  }
 
   /**
    * "Ready for review", with the lead that "Ask for changes" addresses, and `why` when majhi meant
@@ -36,8 +54,11 @@ export class OwnerCards {
     return this.must(task.id, id);
   }
 
-  /** The task paused. A pending review card settles: the task is not waiting for review any more. */
-  paused(task: Task, reason: PausedReason, why?: string): RoomItem {
+  /**
+   * The task paused. A pending review card settles: the task is not waiting for review any more.
+   * `by` is who paused it, for a card the captain caused.
+   */
+  paused(task: Task, reason: PausedReason, why?: string, by = "owner"): RoomItem {
     this.settle(task.id, "review", "Paused before a review", "majhi");
     this.replace(task.id, "paused");
     const id = `paused:${randomUUID()}`;
@@ -45,6 +66,7 @@ export class OwnerCards {
       type: "paused",
       reason,
       ...(why === undefined ? {} : { why }),
+      ...(this.byCaptain(by) ? { by: "captain" as const } : {}),
       state: "pending",
     });
     return this.must(task.id, id);
@@ -61,7 +83,12 @@ export class OwnerCards {
   settle(task: string, type: CardType, text: string, by: string): RoomItem | undefined {
     const card = this.pending(task, type);
     if (card === undefined) return undefined;
-    const outcome = { text, by, at: this.deps.now().toISOString() };
+    const outcome: CardOutcome = {
+      text,
+      by,
+      at: this.deps.now().toISOString(),
+      ...(this.byCaptain(by) ? { captain: true as const } : {}),
+    };
     this.deps.room.post(task as TaskId, card.id, withState(card, "settled", outcome));
     return this.deps.room.get(task, card.id);
   }
@@ -128,7 +155,35 @@ function withState(card: Card, state: CardState, outcome?: CardOutcome): RoomPay
         type: "paused",
         reason: card.reason,
         ...(card.why === undefined ? {} : { why: card.why }),
+        ...(card.by === undefined ? {} : { by: card.by }),
         state,
         ...end,
       };
+}
+
+/** The answer on a card the captain answered, in words: the option's label, or what it typed. */
+function answerLabel(item: RoomItem): string {
+  switch (item.type) {
+    case "permission":
+      return item.options.find((o) => o.id === item.chosen)?.name ?? item.chosen ?? "answered";
+    case "choice":
+      return item.options.find((o) => o.id === item.chosen)?.label ?? item.chosen ?? "answered";
+    case "owner-question":
+      return item.chosen ?? "answered";
+    case "ask":
+      return item.questions
+        .map((q) => {
+          const answer = item.answers?.[q.id];
+          return q.options.find((o) => o.id === answer)?.label ?? answer;
+        })
+        .filter((a): a is string => a !== undefined)
+        .join(", ");
+    default:
+      return "answered";
+  }
+}
+
+/** The room line when the captain answered a card: "Captain answered: Rebuild (the plan says so)". */
+export function captainAnsweredLine(item: RoomItem, reason: string): string {
+  return `Captain answered: ${answerLabel(item)}${reason.trim() === "" ? "" : ` (${reason.trim()})`}`;
 }

@@ -604,13 +604,14 @@ export class AdminService {
         done.ok
           ? {
               text: `The captain approved: ${item.summary}. Result: ${lineOf(done.output)}`,
-              shown: `The captain approved: ${lowerFirst(item.summary)}. ${verdict.why}`,
+              shown: `Captain approved: ${lowerFirst(item.summary)}. ${verdict.why}`,
             }
           : {
               text: `The captain approved: ${item.summary}, but it failed: ${done.error}`,
-              shown: `The captain approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
+              shown: `Captain approved: ${lowerFirst(item.summary)}. It failed: ${done.error}`,
               level: "warn",
             },
+        captain,
       );
       return done.ok
         ? { ok: true, ...(done.commit === undefined ? {} : { commit: done.commit }) }
@@ -881,10 +882,12 @@ export class AdminService {
    * The owner's answer: `shown` as a quiet line in the room, `text` to the agent in its session
    * (queued when it is busy; it wakes an idle agent).
    */
+  /** `by`: who decided, `owner` unless the captain did (its agent id). */
   private async notify(
     task: string,
     agent: string,
     message: { text: string; shown: string; level?: "info" | "warn" },
+    by = "owner",
   ): Promise<void> {
     this.deps.room.post(task as TaskId, `info:${randomUUID()}`, {
       type: "system",
@@ -892,7 +895,7 @@ export class AdminService {
       text: redactText(message.shown),
     });
     try {
-      await this.deps.tasks.tellAgent({ task, agent, text: message.text, settled: message.shown });
+      await this.deps.tasks.tellAgent({ task, agent, text: message.text, settled: message.shown, by });
     } catch (err) {
       this.deps.room.post(task as TaskId, `warn:${randomUUID()}`, {
         type: "system",

@@ -231,6 +231,7 @@ export class AutonomyDriver {
       agent: boss,
       text,
       settled: "Autonomous mode woke the captain",
+      by: "majhi",
     });
     lane.lastTickAt = this.now().getTime();
     autonomy.ticked(reasons, org, chat);

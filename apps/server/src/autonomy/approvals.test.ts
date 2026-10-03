@@ -293,9 +293,12 @@ describe("the captain's own tools", () => {
       answers: { q1: "pg" },
     });
     expect(answered.isError).toBe(false);
-    expect(room.get(id, "ask:db")).toMatchObject({ state: "answered", answers: { q1: "pg" } });
-    const lines = ((await w?.items(id)) ?? []).flatMap((i) => (i.type === "system" ? [i.text] : []));
-    expect(lines).toContain("Answered by autonomous mode: the plan says so");
+    // The captain's answer, not the owner's: the card says so, and no owner message is posted.
+    expect(room.get(id, "ask:db")).toMatchObject({ state: "answered", answers: { q1: "pg" }, by: "captain" });
+    const items = (await w?.items(id)) ?? [];
+    const lines = items.flatMap((i) => (i.type === "system" ? [i.text] : []));
+    expect(lines).toContain("Captain answered: Postgres (the plan says so)");
+    expect(items.some((i) => i.type === "owner" && i.text.includes("chose"))).toBe(false);
     expect((await t.events()).find((e) => e.kind === "answer")).toMatchObject({ task: id, item: "ask:db" });
 
     expect((await t.call("majhi_autonomy_answer", { task: id, item: "secret:key", option: "x" })).text).toBe(

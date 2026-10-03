@@ -245,6 +245,7 @@ export class TaskService {
       store: deps.store,
       room: deps.room,
       now: this.now,
+      captain: () => deps.config.knownBoss(),
     });
     this.planner = new TaskPlanner({
       store: deps.store,
@@ -903,7 +904,13 @@ export class TaskService {
   }
 
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
-  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner", why?: string): Promise<Task> {
+  /** `by`: who stopped it (`owner`, an agent id, `autonomy`), so the paused card can say the captain did. */
+  async stop(
+    id: string,
+    reason: "owner" | "loop" | "blocked" = "owner",
+    why?: string,
+    by = "owner",
+  ): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
     await this.deps.processes?.stopTask(id);
@@ -914,7 +921,7 @@ export class TaskService {
       this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason, why);
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason, why, by);
     this.deps.room.publishTask(stopped);
     return stopped;
   }
@@ -1871,10 +1878,10 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Parallel planning
 
-  /** The owner's answer to a choice card in a room. */
-  async answerChoice(task: string, item: string, option: string) {
+  /** The owner's answer to a choice card in a room, or the captain's (`captain`: its agent id). */
+  async answerChoice(task: string, item: string, option: string, captain?: string) {
     try {
-      await this.orchestrator.answer(task, item, option);
+      await this.orchestrator.answer(task, item, option, captain !== undefined);
     } catch (err) {
       throw new UserError(errorMessage(err), 409);
     }
@@ -1883,7 +1890,8 @@ export class TaskService {
     return answered;
   }
 
-  async answerAsk(task: string, item: string, answers: Record<string, string>) {
+  /** The owner's answers to an ask card, or the captain's (`captain`: its agent id). */
+  async answerAsk(task: string, item: string, answers: Record<string, string>, captain?: string) {
     const card = this.deps.room.get(task, item);
     if (card?.type !== "ask" || card.state !== "pending") {
       throw new UserError("That is not a pending ask card.", 409);
@@ -1907,15 +1915,16 @@ export class TaskService {
       }
     }
 
+    const who = captain === undefined ? "Owner" : "The captain";
     const message =
       questions.length === 1
         ? (() => {
             const q = questions[0]!;
             const answer = validated[q.id];
             const option = q.options.find((o) => o.id === answer);
-            return `Owner chose: ${option?.label ?? answer}`;
+            return `${who} chose: ${option?.label ?? answer}`;
           })()
-        : `Owner answered:\n${questions
+        : `${who} answered:\n${questions
             .map((q) => {
               const answer = validated[q.id];
               const option = q.options.find((o) => o.id === answer);
@@ -1929,14 +1938,19 @@ export class TaskService {
       questions: card.questions,
       state: "answered",
       answers: validated,
+      ...(captain === undefined ? {} : { by: "captain" as const }),
     });
-    await this.send({
-      task,
-      text: message,
-      attachments: [],
-      mode: "queue",
-      agent,
-    });
+    // The captain's answer is no owner message: the card says who answered.
+    if (captain !== undefined)
+      await this.tellAgent({ task, agent, text: message, settled: "The captain answered", by: captain });
+    else
+      await this.send({
+        task,
+        text: message,
+        attachments: [],
+        mode: "queue",
+        agent,
+      });
     return (
       this.deps.room.get(task, item) ??
       (() => {
@@ -2034,8 +2048,11 @@ export class TaskService {
     };
   }
 
-  /** One of the choices under an agent's plain-text question: sent to that agent as the owner's answer. */
-  async answerQuestion(task: string, item: string, choice: string): Promise<RoomItem> {
+  /**
+   * One of the choices under an agent's plain-text question: sent to that agent as the owner's
+   * answer, or as the captain's (`captain`: its agent id).
+   */
+  async answerQuestion(task: string, item: string, choice: string, captain?: string): Promise<RoomItem> {
     const card = this.deps.room.get(task, item);
     if (card?.type !== "owner-question") throw new UserError("That is not a question card.", 404);
     if (card.state !== "pending") throw new UserError("This question was already answered.", 409);
@@ -2050,15 +2067,25 @@ export class TaskService {
       ...fields,
       state: "answered",
       chosen: choice,
+      ...(captain === undefined ? {} : { by: "captain" as const }),
     });
     try {
-      await this.send({
-        task,
-        text: `Owner chose: ${choice}`,
-        attachments: [],
-        mode: "queue",
-        agent: card.agent,
-      });
+      if (captain !== undefined)
+        await this.tellAgent({
+          task,
+          agent: card.agent,
+          text: `The captain chose: ${choice}`,
+          settled: "The captain answered",
+          by: captain,
+        });
+      else
+        await this.send({
+          task,
+          text: `Owner chose: ${choice}`,
+          attachments: [],
+          mode: "queue",
+          agent: card.agent,
+        });
     } catch (err) {
       this.deps.room.post(current.id, item, fields);
       throw err;
@@ -2791,11 +2818,18 @@ export class TaskService {
    * The agent gets `text`, with whatever detail it needs; the room gets no owner message, so the
    * caller posts its own plain line. Like a message, it wakes the task.
    */
-  async tellAgent(input: { task: string; agent: string; text: string; settled: string }): Promise<void> {
+  async tellAgent(input: {
+    task: string;
+    agent: string;
+    text: string;
+    settled: string;
+    /** Who answered: `owner` (default), the captain's agent id, or `majhi`. */
+    by?: string;
+  }): Promise<void> {
     const task = this.get(input.task);
     if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
     if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on this task.`);
-    this.cards.settle(task.id, "review", input.settled, "owner");
+    this.cards.settle(task.id, "review", input.settled, input.by ?? "owner");
     if (task.status !== "running") await this.start(task.id);
     const state = this.deps.store.tasks.roomState(task.id);
     if (state.agentTurns > 0 || state.nudged === true)
@@ -2855,9 +2889,10 @@ export class TaskService {
     return this.deps.runs.cancel(id, agent);
   }
 
-  answerPermission(id: string, item: string, option: string): RoomItem {
+  /** The owner's answer to a permission prompt, or the captain's (`captain`: its agent id). */
+  answerPermission(id: string, item: string, option: string, captain?: string): RoomItem {
     this.get(id);
-    return this.deps.runs.answerPermission(id, item, option);
+    return this.deps.runs.answerPermission(id, item, option, captain !== undefined);
   }
 
   items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {

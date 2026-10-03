@@ -607,10 +607,10 @@ export class RunManager {
     );
   }
 
-  /** Answers a pending permission prompt with one of its options. */
-  answerPermission(task: string, itemId: string, option: string): RoomItem {
+  /** Answers a pending permission prompt with one of its options, for the owner or the `captain`. */
+  answerPermission(task: string, itemId: string, option: string, captain = false): RoomItem {
     const run = [...this.runs.values()].find((r) => r.task === task && r.pending.has(itemId));
-    return this.permissions.answer(run, task, itemId, option);
+    return this.permissions.answer(run, task, itemId, option, captain);
   }
 
   /**
@@ -1916,6 +1916,12 @@ export class RunManager {
   private async takeSlot(run: AgentRun): Promise<boolean> {
     const key = this.key(run.task, run.agent);
     if (this.slots.holds(key)) return true;
+    if (await this.ownSlot(run)) {
+      if (run.closing) return false;
+      run.queuedNoted = false;
+      if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
+      return true;
+    }
     const granted = await this.slots.acquire({ key, task: run.task, account: run.account ?? run.agent });
     run.queuedNoted = false;
     if (!granted || run.closing) {
@@ -1924,6 +1930,19 @@ export class RunManager {
     }
     if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
     return true;
+  }
+
+  /**
+   * The captain in one of its own chats (a lane, the Cmd J chat, a topic chat) has its own run
+   * slot: it never waits in line and does not count toward `agents_max` or `per_account` (SPEC
+   * 5.16), so the owner's message is answered in seconds. Its turns are short and there is one run
+   * per chat, since a (task, agent) has one loop. Its spend is recorded and capped as before. The
+   * captain on an ordinary task is a normal agent and takes a slot.
+   */
+  private async ownSlot(run: AgentRun): Promise<boolean> {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined || !isBossChat(task)) return false;
+    return run.agent === (await this.deps.config.sections()).boss;
   }
 
   /** Shows each waiting run's place in line. */
