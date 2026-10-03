@@ -16,6 +16,9 @@ let done: () => Promise<void>;
 beforeEach(async () => {
   vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+  // Whoever started the server: the revert is still made as the identity it is given.
+  vi.stubEnv("GIT_AUTHOR_NAME", "Someone");
+  vi.stubEnv("GIT_COMMITTER_NAME", "Someone");
   ({ dir, cleanup: done } = await tempDir());
 });
 afterEach(async () => {
@@ -62,7 +65,7 @@ describe("undoing the captain's merge", () => {
     expect(head).toBe(await tip(repo, "main"));
     // A new commit on top: nothing rewritten.
     expect(await git(repo, "rev-parse", `${head}^`)).toBe(later);
-    expect(await git(repo, "log", "-1", "--format=%s %an")).toBe("Revert the merge majhi");
+    expect(await git(repo, "log", "-1", "--format=%s %an %cn")).toBe("Revert the merge majhi majhi");
     expect(await read(repo, "app.txt")).toBe("one\n");
     await expect(read(repo, "work.txt")).rejects.toThrow();
     expect(await read(repo, "notes.txt")).toBe("notes, later\n");

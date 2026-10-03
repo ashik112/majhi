@@ -26,7 +26,9 @@ export const FETCH_TIMEOUT_MS = 60_000;
  * The environment of majhi's own git: the server's, so the forwarded SSH agent socket
  * (`SSH_AUTH_SOCK`) reaches fetches and pushes. Agent runs never get it (SPEC 4.5). Never a run's
  * `MAJHI_TASK`, which majhi's hooks read as "this is that task's agent": majhi started by an agent
- * (its tests, a dev server) still makes and moves every task's branches.
+ * (its tests, a dev server) still makes and moves every task's branches. Never the caller's
+ * `GIT_AUTHOR_*` or `GIT_COMMITTER_*` either: they win over `-c user.name`, so a merge, revert or
+ * rebase would be made as whoever started majhi instead of the identity it names.
  */
 export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const {
@@ -36,6 +38,7 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     MAJHI_TRAILER: _trailer,
     ...rest
   } = source;
+  for (const key of Object.keys(rest)) if (/^GIT_(AUTHOR|COMMITTER)_/.test(key)) delete rest[key];
   return {
     ...rest,
     GIT_TERMINAL_PROMPT: "0",
