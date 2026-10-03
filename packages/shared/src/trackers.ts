@@ -71,7 +71,10 @@ const HostNameSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Use a host name like acme.atlassian.net");
+  .regex(
+    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/,
+    "Use a host name like acme.atlassian.net",
+  );
 
 export const JiraTrackerSchema = z.strictObject({
   type: z.literal("jira"),
@@ -186,3 +189,20 @@ export const TrackerPullResultSchema = z.object({
   error: z.string().optional(),
 });
 export type TrackerPullResult = z.infer<typeof TrackerPullResultSchema>;
+
+/** An item a pull could not route to a project: it waits for the owner to pick one. */
+export const TrackerUnroutedSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  url: z.string(),
+  /** Why no project was picked. */
+  why: z.string(),
+});
+export type TrackerUnrouted = z.infer<typeof TrackerUnroutedSchema>;
+
+/** An org's tracker as the page shows it: the last pull since majhi started and what waits. */
+export const TrackerStatusSchema = z.object({
+  last: TrackerPullResultSchema.nullable(),
+  unrouted: z.array(TrackerUnroutedSchema),
+});
+export type TrackerStatus = z.infer<typeof TrackerStatusSchema>;

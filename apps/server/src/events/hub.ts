@@ -56,6 +56,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "connections":
       // A change is a config commit, may save or delete secrets, and remove edits agent files.
       return ["connections", "config", "secrets", "agents"];
+    case "trackers":
+      // A pull or a push makes or links tasks; the org page shows the last pull.
+      return ["tasks", "orgs"];
     case "usage":
       return ["usage", "config"];
     case "memory":

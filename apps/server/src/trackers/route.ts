@@ -61,7 +61,11 @@ export async function routeItem(args: {
   }
   const only = projects.length === 1 ? projects[0] : undefined;
   if (only !== undefined) {
-    return { project: only.id, line: `Project: ${only.id}, the org's only project.`, flagged: await flagOnly() };
+    return {
+      project: only.id,
+      line: `Project: ${only.id}, the org's only project.`,
+      flagged: await flagOnly(),
+    };
   }
   const named = [
     ...new Set(
@@ -104,9 +108,7 @@ async function ask(
         state: {
           item: args.item.title,
           text: args.item.body.slice(0, STATE_BODY) || "(empty)",
-          ...(choose
-            ? { projects: options.map((p) => [p.id, ...p.aliases].join(" / ")).join(", ") }
-            : {}),
+          ...(choose ? { projects: options.map((p) => [p.id, ...p.aliases].join(" / ")).join(", ") } : {}),
         },
         questions: {
           ...(choose

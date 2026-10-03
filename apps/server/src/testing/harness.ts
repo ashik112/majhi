@@ -11,6 +11,7 @@ import { generateKey } from "../secrets/store.ts";
 import type { Majhi } from "../server.ts";
 import { createMajhi } from "../server.ts";
 import type { LinkOptions } from "../tasks/links.ts";
+import type { TrackerAdapter, TrackerAdapterInit } from "../trackers/types.ts";
 import { type FakeRuntime, fakeRuntime } from "./fakeRuntime.ts";
 import { git, tempDir, testEnv, writeKeyFile } from "./fixtures.ts";
 
@@ -54,6 +55,10 @@ export interface HarnessOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
+  /** Replaces `fetch` for the trackers' APIs. */
+  trackerFetch?: typeof fetch;
+  /** Replaces the tracker adapters. */
+  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -90,6 +95,8 @@ function build(
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
+    ...(options.trackerFetch === undefined ? {} : { trackerFetch: options.trackerFetch }),
+    ...(options.trackerAdapter === undefined ? {} : { trackerAdapter: options.trackerAdapter }),
   });
   const h: Harness = {
     dir,

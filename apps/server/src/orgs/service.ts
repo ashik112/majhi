@@ -77,6 +77,7 @@ export class OrgService {
       "mr_tokens",
       "git_accounts",
       "dismissed_logins",
+      "tracker",
     ] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
@@ -165,5 +166,6 @@ function view(
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;
   if (org.git_accounts !== undefined && org.git_accounts.length > 0) out.gitAccounts = org.git_accounts;
+  if (org.tracker !== undefined) out.tracker = org.tracker;
   return out;
 }

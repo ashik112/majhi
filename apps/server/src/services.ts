@@ -112,6 +112,9 @@ import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
+import { createAdapter } from "./trackers/index.ts";
+import { TrackerService } from "./trackers/service.ts";
+import type { TrackerAdapter, TrackerAdapterInit } from "./trackers/types.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -155,6 +158,10 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
+  trackerFetch?: typeof fetch;
+  /** Replaces the tracker adapters, so tests can play a tracker without its API. */
+  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -208,6 +215,8 @@ export interface Services {
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
+  /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
+  trackers: TrackerService;
   /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
@@ -925,6 +934,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     majhiHome: env.majhiHome,
   });
+  const trackers = new TrackerService({
+    store,
+    config,
+    secrets,
+    room,
+    events,
+    projects,
+    tasks,
+    decisions,
+    adapter: options.trackerAdapter ?? createAdapter,
+    ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
+  });
   return {
     config,
     runtime,
@@ -972,6 +993,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cleanup,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
+    trackers,
     processes,
     containers,
     autonomy,
@@ -1008,6 +1030,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
+      await trackers.stop();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.
       await settled;

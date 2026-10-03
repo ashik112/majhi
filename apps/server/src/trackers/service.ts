@@ -10,7 +10,9 @@ import {
   type TrackerItem,
   type TrackerLink,
   type TrackerPullResult,
+  type TrackerStatus,
   type TrackerTestResult,
+  type TrackerUnrouted,
   trackerStage,
   trackerStatuses,
 } from "@majhi/shared";
@@ -24,14 +26,6 @@ import type { Store } from "../store/index.ts";
 import type { CreateInput } from "../tasks/service.ts";
 import { type RouteDecisions, routeItem } from "./route.ts";
 import { type TrackerAdapter, type TrackerAdapterInit, TrackerError } from "./types.ts";
-
-/** An item a pull could not route to a project: it waits for the owner to pick one. */
-export interface UnroutedItem {
-  key: string;
-  title: string;
-  url: string;
-  why: string;
-}
 
 export interface TrackerServiceDeps {
   store: Store;
@@ -68,7 +62,7 @@ const BODY_MAX = 100_000;
 export class TrackerService {
   private readonly now: () => Date;
   private readonly lastPull = new Map<string, TrackerPullResult>();
-  private readonly unrouted = new Map<string, UnroutedItem[]>();
+  private readonly unrouted = new Map<string, TrackerUnrouted[]>();
   private readonly pulling = new Map<string, Promise<TrackerPullResult>>();
   private syncing: Promise<void> | undefined;
   private syncAgain = false;
@@ -114,11 +108,17 @@ export class TrackerService {
     if (config === undefined) throw new UserError(`The org ${org} has no tracker. Set one in Orgs.`, 409);
     const ref = config.token ?? (config.type === "github" ? orgs[org]?.mr_tokens?.github : undefined);
     if (ref === undefined) {
-      throw new UserError(`The ${TRACKER_LABEL[config.type]} tracker of ${org} has no token. Set one in Orgs.`, 409);
+      throw new UserError(
+        `The ${TRACKER_LABEL[config.type]} tracker of ${org} has no token. Set one in Orgs.`,
+        409,
+      );
     }
     const token = await this.deps.secrets.get(ref.replace(/^secret:/, "")).catch(() => undefined);
     if (token === undefined || token === "") {
-      throw new UserError(`The tracker of ${org} uses ${ref}, but there is no such secret. Set the token again.`, 409);
+      throw new UserError(
+        `The tracker of ${org} uses ${ref}, but there is no such secret. Set the token again.`,
+        409,
+      );
     }
     return { adapter: this.deps.adapter({ config, token, fetch: this.deps.fetch ?? fetch }), config };
   }
@@ -150,8 +150,8 @@ export class TrackerService {
   }
 
   /** The last pull of each org since majhi started. */
-  status(org: string): { last: TrackerPullResult | undefined; unrouted: UnroutedItem[] } {
-    return { last: this.lastPull.get(org), unrouted: this.unrouted.get(org) ?? [] };
+  status(org: string): TrackerStatus {
+    return { last: this.lastPull.get(org) ?? null, unrouted: this.unrouted.get(org) ?? [] };
   }
 
   /** Pulls one org's tracker. One pull per org at a time: a second call gets the running one. */
@@ -171,13 +171,18 @@ export class TrackerService {
       const items = await adapter.pull({ assignedToMe: config.assigned ?? true });
       result.seen = items.length;
       const projects = (await this.deps.projects.infos()).filter((p) => p.org === org && !p.protected);
-      const unrouted: UnroutedItem[] = [];
+      const unrouted: TrackerUnrouted[] = [];
       for (const item of items) {
         if (this.stopped) break;
         const linked = this.deps.store.trackers.byKey(org, config.type, item.key);
         if (linked !== undefined) {
           if (linked.status !== item.status || linked.title !== item.title) {
-            this.deps.store.trackers.update(linked.task, { status: item.status, title: item.title }, at, linked.error);
+            this.deps.store.trackers.update(
+              linked.task,
+              { status: item.status, title: item.title },
+              at,
+              linked.error,
+            );
             result.updated.push(linked.task);
           }
           continue;
@@ -210,7 +215,8 @@ export class TrackerService {
     if (linked !== undefined) throw new UserError(`${key} is already ${linked.task}.`, 409);
     if (project !== undefined) {
       const info = (await this.deps.projects.infos()).find((p) => p.id === project);
-      if (info === undefined || info.org !== org) throw new UserError(`${project} is not a project of ${org}.`, 404);
+      if (info === undefined || info.org !== org)
+        throw new UserError(`${project} is not a project of ${org}.`, 404);
     }
     const item = await adapter.get(key);
     const task = await this.createFromItem(org, config, item, project, ["Project picked by you."]);
@@ -328,7 +334,8 @@ export class TrackerService {
 
   /** Forgets the link. The tracker item stays. */
   unlink(taskId: string): void {
-    if (!this.deps.store.trackers.remove(taskId)) throw new UserError(`${taskId} is not linked to a tracker.`, 404);
+    if (!this.deps.store.trackers.remove(taskId))
+      throw new UserError(`${taskId} is not linked to a tracker.`, 404);
     this.deps.events.emit(["tasks"]);
   }
 
@@ -381,7 +388,9 @@ export class TrackerService {
     const link = this.deps.store.trackers.get(taskId);
     const task = this.deps.store.tasks.get(taskId);
     if (link === undefined || task === undefined || task.org === undefined) return;
-    const mrs = task.repos.flatMap((r) => (r.mr === undefined ? [] : [{ project: r.project, url: r.mr.url }]));
+    const mrs = task.repos.flatMap((r) =>
+      r.mr === undefined ? [] : [{ project: r.project, url: r.mr.url }],
+    );
     const newMrs = mrs.filter((m) => !link.mrs.includes(m.url));
     const stage = trackerStage(task.status);
     const newStage = stage !== undefined && stage !== link.stage ? stage : undefined;
@@ -431,7 +440,9 @@ function oneLine(text: string): string {
 /** What a pushed item says: the task's description, without majhi's own paths. */
 function pushBody(task: Task): string {
   const [, ...rest] = task.brief.split("\n");
-  const description = (task.title === task.brief.split("\n")[0]?.trim() ? rest.join("\n") : task.brief).trim();
+  const description = (
+    task.title === task.brief.split("\n")[0]?.trim() ? rest.join("\n") : task.brief
+  ).trim();
   return [description, "", `From majhi task ${task.id}.`].join("\n").trim();
 }
 
