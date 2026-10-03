@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   type AgentSession,
   buildEnv,
@@ -31,7 +31,7 @@ import type { Decisions } from "../decisions/api.ts";
 import { DECIDE_SERVER_NAME } from "../decisions/service.ts";
 import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
-import { type RepairResult, repairWorktree } from "../git/worktrees.ts";
+import { lockWorktree, type RepairResult, repairWorktree, samePath } from "../git/worktrees.ts";
 import type { ProcessLaunch } from "../processes/manager.ts";
 import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
@@ -213,7 +213,11 @@ export async function launch(
       mounts: [
         // Read-only checkouts first: a task repo's own .git below one stays writable.
         ...(await readMounts(deps, task, run.agent, fm.scope)),
-        ...(await repoMounts(task, { readOnly: await readOnlyRepos(deps.config, task), guardRefs: true })),
+        ...(await repoMounts(task, {
+          readOnly: await readOnlyRepos(deps.config, task),
+          guardRefs: true,
+          warn: (line) => notices.push(line),
+        })),
         ...hooksMount(attribution.hooks),
         ...(held?.mounts ?? []),
       ],
@@ -328,8 +332,9 @@ export async function readOnlyRepos(config: ConfigService, task: Task): Promise<
 
 /**
  * Gives each task worktree back its entry in the source repo when that entry went missing, since
- * every git command in it fails otherwise. Never stops the start: what it did or could not do comes
- * back as lines for the room.
+ * every git command in it fails otherwise, and locks it, so no `git worktree prune` drops the entry
+ * again (worktrees made before majhi locked them get their lock here). Never stops the start: what it
+ * did or could not do comes back as lines for the room.
  */
 export async function repairWorktrees(task: Task): Promise<string[]> {
   const lines: string[] = [];
@@ -351,7 +356,16 @@ export async function repairWorktrees(task: Task): Promise<string[]> {
         `Git does not work in ${repo.worktree}: its entry in ${repo.source} is missing, and majhi ` +
           `could not repair it (${result.reason}).`,
       );
+      continue;
     }
+    // A folder the owner removed by hand has nothing to protect.
+    if (!(await isDirectory(repo.worktree))) continue;
+    await lockWorktree(repo.source, repo.worktree, task.id).catch((err: unknown) => {
+      lines.push(
+        `Could not lock ${repo.worktree} in ${repo.source}, so a \`git worktree prune\` could drop its entry: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   }
   return lines;
 }
@@ -412,12 +426,13 @@ export async function processLaunch(
  * What a runner needs besides the task folder: each task repo's `.git`, where the worktree keeps
  * its objects and refs. `config` and `hooks` are read-only, so a run cannot plant a hook or a
  * command in the config that the owner's own git would later run on the host. A repo in `readOnly`
- * gets only its worktree, read-only. For an agent's run (`guardRefs`) the refs are read-only too, but
- * for majhi's task branches: see `refMounts`.
+ * gets only its worktree, read-only. Other checkouts' entries in `worktrees` are always read-only (see
+ * `worktreeMounts`). For an agent's run (`guardRefs`) the refs are read-only too, but for majhi's task
+ * branches: see `guardMounts`. `warn` hears when the run's own entry could not be found.
  */
 export async function repoMounts(
   task: Task,
-  options: { readOnly?: ReadonlySet<string>; guardRefs?: boolean } = {},
+  options: { readOnly?: ReadonlySet<string>; guardRefs?: boolean; warn?: (line: string) => void } = {},
 ): Promise<RunMount[]> {
   const readOnly = options.readOnly ?? new Set<string>();
   const mounts: RunMount[] = [];
@@ -438,41 +453,60 @@ export async function repoMounts(
       { path: join(gitDir, "config"), readOnly: true },
       { path: join(gitDir, "hooks"), readOnly: true },
     );
-    if (options.guardRefs === true) mounts.push(...(await guardMounts(gitDir, repo.worktree, repo.branch)));
+    mounts.push(...(await worktreeMounts(gitDir, repo.worktree, options.warn)));
+    if (options.guardRefs === true) mounts.push(...(await guardMounts(gitDir, repo.branch)));
   }
   return mounts;
 }
 
 /**
- * What a run may not write in the shared git folder, read-only:
- * - `worktrees`, but the run's own entry. A run sees only its own worktree, so a `git worktree
- *   prune` there would delete the entry of every other checkout (the owner's, other tasks'), and
- *   with it their HEAD and index.
- * - `refs/heads`, `refs/remotes` and `refs/tags`, but `refs/heads/task`, where majhi's task branches
- *   live. majhi's hooks refuse every other ref change git makes in a transaction, but git writes the
- *   branch of a `git branch -C` (copy) without one, so the hooks never see it; a read-only folder
- *   refuses it, and a hand-written ref file too. A packed ref changes as a new loose file, so it is
- *   covered the same way. A repo whose working branch the owner named outside `task/` keeps only the
- *   hooks for its refs: that branch must stay writable.
+ * `worktrees` read-only, but the run's own entry. A run (or the task terminal) sees only its own
+ * worktree, so a `git worktree prune` there would delete the entry of every other checkout (the
+ * owner's, other tasks'), and with it their HEAD and index. The own entry is matched by inode, so a
+ * symlinked or oddly written path still finds it; when it cannot be found the folder stays read-only
+ * all the same and `warn` says so.
  */
-async function guardMounts(gitDir: string, worktree: string, branch: string): Promise<RunMount[]> {
-  const mounts: RunMount[] = [];
+async function worktreeMounts(
+  gitDir: string,
+  worktree: string,
+  warn: ((line: string) => void) | undefined,
+): Promise<RunMount[]> {
+  const entries = join(gitDir, "worktrees");
+  await mkdir(entries, { recursive: true });
+  const mounts: RunMount[] = [{ path: entries, readOnly: true }];
   const own = await worktreeEntry(worktree);
-  if (own !== undefined && dirname(own) === join(gitDir, "worktrees")) {
-    mounts.push({ path: join(gitDir, "worktrees"), readOnly: true }, { path: own });
+  if (own !== undefined && (await samePath(dirname(own), entries))) {
+    mounts.push({ path: join(entries, basename(own)) });
+  } else if (await isDirectory(worktree)) {
+    warn?.(
+      `Could not find the git entry of ${worktree} in ${entries}, so its .git/worktrees stays read-only ` +
+        "and git commands there may fail.",
+    );
   }
-  if (!branch.startsWith("task/")) return mounts;
+  return mounts;
+}
+
+/**
+ * The refs a run may not write in the shared git folder, read-only: `refs/heads`, `refs/remotes` and
+ * `refs/tags`, but `refs/heads/task`, where majhi's task branches live. majhi's hooks refuse every
+ * other ref change git makes in a transaction, but git writes the branch of a `git branch -C` (copy)
+ * without one, so the hooks never see it; a read-only folder refuses it, and a hand-written ref file
+ * too. A packed ref changes as a new loose file, so it is covered the same way. A repo whose working
+ * branch the owner named outside `task/` keeps only the hooks for its refs: that branch must stay
+ * writable.
+ */
+async function guardMounts(gitDir: string, branch: string): Promise<RunMount[]> {
+  if (!branch.startsWith("task/")) return [];
   const refs = join(gitDir, "refs");
   for (const dir of [join(refs, "heads", "task"), join(refs, "remotes"), join(refs, "tags")]) {
     await mkdir(dir, { recursive: true });
   }
-  mounts.push(
+  return [
     { path: join(refs, "heads"), readOnly: true },
     { path: join(refs, "heads", "task") },
     { path: join(refs, "remotes"), readOnly: true },
     { path: join(refs, "tags"), readOnly: true },
-  );
-  return mounts;
+  ];
 }
 
 /** The worktree's own entry in the repo's git folder, from its `.git` file. Undefined when unreadable. */
