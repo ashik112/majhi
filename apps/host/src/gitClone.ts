@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
-import { type ClonePhase, cloneTempPath, type GitAuth, type HostProgress } from "@majhi/shared";
+import { type ClonePhase, cloneTempPath, type GitAuth, type HostCloneProgress } from "@majhi/shared";
 import { type AuthEnvDeps, gitAuthEnv } from "./gitAuth.ts";
 import { stripCredentials } from "./gitPush.ts";
 import type { RunFn } from "./ssh.ts";
@@ -77,7 +77,7 @@ const PHASES: readonly [RegExp, ClonePhase][] = [
 ];
 
 /** The phase and percent of one line of `git clone --progress`, or undefined for any other line. */
-export function parseProgress(line: string): Omit<HostProgress, "id"> | undefined {
+export function parseProgress(line: string): Omit<HostCloneProgress, "id"> | undefined {
   const text = line.trim();
   for (const [pattern, phase] of PHASES) {
     if (!pattern.test(text)) continue;
@@ -147,7 +147,7 @@ async function env(deps: GitCloneDeps, auth: GitAuth) {
 export async function gitClone(
   deps: GitCloneDeps,
   params: { clone: string; url: string; path: string; branch?: string | undefined; auth: GitAuth },
-  progress: (progress: Omit<HostProgress, "id">) => void,
+  progress: (progress: Omit<HostCloneProgress, "id">) => void,
 ): Promise<{ head: string; branch: string }> {
   if (!isAbsolute(params.path) || params.path.includes("\0")) throw new Error("The path must be absolute.");
   if (/^-/.test(params.url) || /[\s\0]/.test(params.url)) throw new Error("That is not a git remote URL.");

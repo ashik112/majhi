@@ -1,5 +1,4 @@
 import { type GitAuth, type MrHost, type OAuthGrant, OAuthGrantSchema, type OrgConfig } from "@majhi/shared";
-import { bitbucketConsumer, type EffectiveApps } from "./apps.ts";
 import type { Fetch } from "./http.ts";
 import { TokenRefused } from "./http.ts";
 import { refreshToken } from "./oauth.ts";
@@ -62,7 +61,6 @@ export interface GitTokensDeps {
     get(name: string): Promise<string | undefined>;
     set(name: string, value: string): Promise<void>;
   };
-  apps: () => Promise<EffectiveApps>;
   fetch: Fetch;
   now?: () => number;
 }
@@ -73,7 +71,7 @@ export type TokenUse<T> =
   | { state: "refused"; account: string };
 
 /**
- * Reads a workspace's token for a host, refreshing a signed-in GitLab or Bitbucket token first
+ * Reads a workspace's token for a host, refreshing a signed-in GitLab token first
  * when it is about to expire. A refresh rewrites the token and the grant in `secrets.age` in place,
  * so majhi.yaml never changes. Refreshes of one token run one at a time.
  */
@@ -173,16 +171,15 @@ export class GitTokens {
     const task = (async () => {
       // Another refresh may have finished while this one waited: read the grant again.
       const current = (await this.grant(oauthRef)) ?? grant;
-      if (current.kind === "github") throw new TokenRefused("GitHub tokens are not refreshed.");
-      const secret =
-        current.kind === "bitbucket"
-          ? (await bitbucketConsumer(await this.deps.apps(), (n) => this.deps.secrets.get(n))).secret
-          : undefined;
+      // Only GitLab grants are refreshed. A Bitbucket OAuth grant from an older majhi has no
+      // consumer any more: the owner signs in again with an API token.
+      if (current.kind !== "gitlab") {
+        throw new TokenRefused(`${current.host} needs a new sign-in for this workspace.`);
+      }
       const answer = await refreshToken(
         this.deps.fetch,
-        current.kind,
         current.host,
-        { clientId: current.clientId, secret },
+        current.clientId,
         current.refreshToken,
       );
       const next: OAuthGrant = {

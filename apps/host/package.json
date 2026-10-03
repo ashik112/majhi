@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/majhi-host.mjs",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/majhi-host.mjs --banner:js=\"import { createRequire as __majhiCreateRequire } from 'node:module'; const require = __majhiCreateRequire(import.meta.url);\"",
     "ssh:dry-run": "tsx src/sshDryRun.ts",
     "typecheck": "tsc -p tsconfig.json",
     "embed": "node scripts/embed-layad.mjs"
   },
   "dependencies": {
     "@majhi/shared": "workspace:*",
+    "yaml": "2.9.1",
     "zod": "4.6.5"
   },
   "devDependencies": {

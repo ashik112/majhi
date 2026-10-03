@@ -180,7 +180,10 @@ export function writeGitApps(file: string, apps: GitAppsConfig): Promise<void> {
   return editConfig(file, (doc) => {
     const left = Object.fromEntries(
       Object.entries(apps).filter(
-        ([, value]) => value !== undefined && !(typeof value === "object" && Object.keys(value).length === 0),
+        ([, value]) =>
+          value !== undefined &&
+          value !== null &&
+          !(typeof value === "object" && Object.keys(value).length === 0),
       ),
     );
     if (Object.keys(left).length === 0) doc.delete("git_apps");

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { CommandMeta, MrHost, OAuthGrant, SignInStatus } from "@majhi/shared";
+import type { CommandMeta, GitCli, MrHost, OAuthGrant, SignInStatus } from "@majhi/shared";
 
 /** A sign-in never waits longer than this, whatever the host says. */
 export const MAX_FLOW_MS = 15 * 60_000;
@@ -12,10 +12,16 @@ export interface HeldToken {
   grant?: OAuthGrant | undefined;
 }
 
-/** The secret parts of a flow. Never returned, logged or put in an event. */
+/**
+ * How a flow signs in, with its secret parts. Never returned, logged or put in an event.
+ * - `device`: majhi's own device flow with a client ID.
+ * - `cli`: the host's CLI on the owner's computer (`gh`, `glab`), run by the host helper.
+ * - `paste`: a token the owner pasted, checked with the host before it is saved.
+ */
 export type FlowSecret =
   | { kind: "device"; clientId: string; deviceCode: string; intervalMs: number }
-  | { kind: "browser"; key: string; state: string; used: boolean };
+  | { kind: "cli"; cli: GitCli }
+  | { kind: "paste" };
 
 export interface Flow {
   id: string;
@@ -39,11 +45,6 @@ export function newSignInId(): string {
   let id = "si_";
   for (const b of bytes) id += ID_CHARS[b % ID_CHARS.length];
   return id;
-}
-
-/** 32 random bytes, base64url: the Bitbucket `state`. */
-export function newOAuthState(): string {
-  return randomBytes(32).toString("base64url");
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -112,16 +113,18 @@ export class SignInFlows {
     return this.flows.get(id);
   }
 
-  /** The pending browser flow with this `state`, marking the state used. Undefined when unknown, used or ended. */
-  takeState(state: string): Flow | undefined {
-    this.sweep();
-    for (const flow of this.flows.values()) {
-      if (flow.secret.kind !== "browser" || flow.secret.state !== state) continue;
-      if (flow.secret.used || flow.status.state !== "pending") return undefined;
-      flow.secret.used = true;
-      return flow;
-    }
-    return undefined;
+  /** Fills in the page and code of a pending flow once they are known (a CLI prints them a moment after it starts). */
+  show(id: string, shown: { userCode?: string; verificationUri?: string; authorizeUrl?: string }): boolean {
+    const flow = this.get(id);
+    if (flow === undefined || flow.status.state !== "pending") return false;
+    flow.status = {
+      ...flow.status,
+      ...(shown.userCode === undefined ? {} : { userCode: shown.userCode }),
+      ...(shown.verificationUri === undefined ? {} : { verificationUri: shown.verificationUri }),
+      ...(shown.authorizeUrl === undefined ? {} : { authorizeUrl: shown.authorizeUrl }),
+    };
+    this.onChange(flow);
+    return true;
   }
 
   /** Every flow still pending or confirming. */

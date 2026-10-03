@@ -9,7 +9,6 @@ import type { AdminTokens } from "../admin/tokens.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import { type DecideMcpDeps, decideMcpRoutes } from "../decisions/mcp.ts";
 import { errorMessage } from "../errors.ts";
-import { type OAuthRoutesDeps, oauthRoutes } from "../gitConnect/routes.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
 import { type RoomMcpDeps, roomMcpRoutes } from "../rooms/mcp.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
@@ -36,8 +35,6 @@ export interface AppDeps {
   decideMcp?: DecideMcpDeps;
   /** majhi-room at `/mcp/room` and majhi-tasks at `/mcp/tasks`. */
   roomMcp?: RoomMcpDeps;
-  /** Ends browser sign-ins at `/oauth/<host>/callback`. Without it the callback answers 501. */
-  oauth?: OAuthRoutesDeps;
   /** True for a request from an agent's runner container: it may reach only `/mcp` (Phase 2c). */
   isRunner?: (remoteAddress: string | undefined) => boolean;
 }
@@ -96,8 +93,6 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/host", hostRoutes(deps.host));
   app.route("/api/uploads", uploadRoutes(deps.uploads));
   app.route("/api/tasks", taskFileRoutes(deps.taskFiles));
-
-  app.route("/oauth", oauthRoutes(deps.oauth));
 
   app.all("/api/*", (c) =>
     c.json({ error: `Not found: ${c.req.method} ${c.req.path}` } satisfies ApiError, 404),

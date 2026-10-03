@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import {
-  type CloneJob,
-  gitAppSetup,
-  type OnboardingStatus,
-  type OnboardingStepId,
-  type RemoteRepo,
-  type SignInStatus,
+import type {
+  CloneJob,
+  MrHost,
+  OnboardingStatus,
+  OnboardingStepId,
+  RemoteRepo,
+  SignInStatus,
 } from "../packages/shared/src/index.ts";
 
 /**
@@ -162,7 +162,8 @@ interface Stubs {
   scene: Scene;
   accounts?: unknown[];
   agents?: unknown[];
-  signIn?: "device" | "needs-app" | "fail";
+  /** `device`: gh shows its code. `glab`: glab's approve page. `no-cli`: no CLI, so a token. */
+  signIn?: "device" | "glab" | "no-cli" | "fail";
   poll?: SignInStatus;
   jobs?: CloneJob[];
   remote?: "ok" | "refused";
@@ -272,13 +273,28 @@ async function stub(page: Page, s: Stubs) {
         contentType: "application/json",
         body: JSON.stringify({ error: "GitHub did not answer. Check the connection and try again." }),
       });
-    if (s.signIn === "needs-app") {
+    const input = r.request().postDataJSON() as { kind: MrHost };
+    const host = { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" }[input.kind];
+    if (s.signIn === "no-cli" || input.kind === "bitbucket") {
       return r.fulfill(
         json({
-          state: "needs-app",
-          kind: "github",
-          host: "github.com",
-          setup: gitAppSetup("github", "github.com", "http://127.0.0.1:7070"),
+          state: "paste",
+          kind: input.kind,
+          host,
+          reason: input.kind === "bitbucket" ? "bitbucket" : "no-cli",
+        }),
+      );
+    }
+    if (s.signIn === "glab") {
+      return r.fulfill(
+        json({
+          state: "browser",
+          signIn: SIGN_IN,
+          kind: "gitlab",
+          host: "gitlab.com",
+          authorizeUrl: "https://gitlab.com/oauth/authorize?client_id=glab&state=example",
+          expiresAt: later(14),
+          opened: true,
         }),
       );
     }
@@ -296,6 +312,23 @@ async function stub(page: Page, s: Stubs) {
     );
   });
   await page.route("**/api/cmd/git.signIn.poll", (r) => r.fulfill(json(s.poll ?? pending)));
+  await page.route("**/api/cmd/git.signIn.token", (r) => {
+    const input = r.request().postDataJSON() as { org: string; kind: MrHost; host?: string };
+    const host =
+      input.host ?? { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" }[input.kind];
+    const account = { github: "globex-dev", gitlab: "globex-ops", bitbucket: "globex-bb" }[input.kind];
+    return r.fulfill(
+      json({
+        state: "done",
+        signIn: SIGN_IN,
+        org: input.org,
+        kind: input.kind,
+        host,
+        account,
+        alsoUsedBy: [],
+      }),
+    );
+  });
   await page.route("**/api/cmd/git.signIn.cancel", (r) =>
     r.fulfill(json({ ...pending, state: "cancelled" })),
   );

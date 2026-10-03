@@ -1,49 +1,63 @@
 import {
-  type BitbucketCallbackQuery,
   type CommandMeta,
   DEFAULT_GIT_HOST,
   type GitAccount,
-  gitAppSetup,
+  type GitCli,
+  type GitCliLoginResult,
+  GLAB_CLIENT_ID,
   type MrHost,
   normalizeSshRoute,
   type OAuthGrant,
   type OrgConfig,
   type SignInStart,
   type SignInStatus,
+  type SignInTokenInput,
   type SignOut,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { bitbucketConsumer, clientIdFor, type EffectiveApps } from "./apps.ts";
-import { type Flow, type HeldToken, newOAuthState, SignInFlows } from "./flows.ts";
+import { HostJobError, HostOfflineError } from "../host/link.ts";
+import { clientIdFor, type EffectiveApps } from "./apps.ts";
+import { type Flow, type HeldToken, MAX_FLOW_MS, SignInFlows } from "./flows.ts";
 import { type Fetch, HostUnreachable, TokenRefused } from "./http.ts";
-import {
-  bitbucketAuthorizeUrl,
-  bitbucketExchange,
-  pollDevice,
-  revoke,
-  revokePage,
-  startDevice,
-  type TokenAnswer,
-  whoAmI,
-} from "./oauth.ts";
+import { pollDevice, revoke, revokePage, startDevice, type TokenAnswer, whoAmI } from "./oauth.ts";
 import { alsoUsedBy, credentialOf } from "./tokens.ts";
 
 /** GitHub's and GitLab's poll interval when they name none. */
 const DEFAULT_INTERVAL_MS = 5_000;
 /** `slow_down` adds this to the interval (RFC 8628). */
 const SLOW_DOWN_MS = 5_000;
-/** How long a Bitbucket authorize link is good for. */
-const BROWSER_FLOW_MS = 10 * 60_000;
+/** How long `git.signIn.start` waits for the CLI to print its page before it gives up. */
+const CLI_PAGE_TIMEOUT_MS = 30_000;
+/** The CLI each host signs in with. */
+const CLI_OF = { github: "gh", gitlab: "glab" } as const satisfies Record<"github" | "gitlab", GitCli>;
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const nameOf = (ref: string) => ref.replace(/^secret:/, "");
 
+/** The host helper's side of a CLI sign-in. */
+export interface CliRunner {
+  /** False when the host helper is not connected: there is then no CLI to run. */
+  connected(): boolean;
+  /**
+   * Runs `gh` or `glab auth login --web` for one workspace on the owner's computer. `onPage` gets
+   * the page to open (and gh's code) once the CLI printed it. Resolves when the CLI ended.
+   */
+  login(
+    params: { signIn: string; cli: GitCli; org: string; host: string },
+    onPage: (page: { url: string; code?: string | undefined }) => void,
+  ): Promise<GitCliLoginResult>;
+  /** Stops the CLI of that sign-in. */
+  cancel(signIn: string): Promise<void>;
+}
+
 export interface SignInDeps {
   fetch: Fetch;
   now?: () => number;
-  /** majhi's address as the browser reaches it (`MAJHI_ORIGIN`). */
-  origin: () => string;
   apps: () => Promise<EffectiveApps>;
+  /** Runs the host's CLI through the host helper. Undefined: never. */
+  cli?: CliRunner | undefined;
+  /** How long `start` waits for the CLI's page. Tests shorten it. */
+  cliPageTimeoutMs?: number;
   readSecret: (name: string) => Promise<string | undefined>;
   /** Opens a page through the host helper. False when the helper is missing or could not open it. */
   openUrl: (url: string) => Promise<boolean>;
@@ -71,9 +85,10 @@ export interface SignInDeps {
 
 /**
  * Signing a workspace in to GitHub, GitLab or Bitbucket. Flows and their state machine live in
- * `SignInFlows`; this drives them: it asks the host for a code, polls it, takes the Bitbucket
- * callback, checks the token with the host's user API, and saves it for the named workspace only.
- * A token is never returned, logged, put in an error or in an event.
+ * `SignInFlows`; this drives them: it runs the host's CLI through the host helper (or majhi's own
+ * device flow when it has a client ID), takes a pasted token, checks the token with the host's
+ * user API, and saves it for the named workspace only. A token is never returned, logged, put in an
+ * error or in an event.
  */
 export class SignInService {
   readonly flows: SignInFlows;
@@ -84,57 +99,220 @@ export class SignInService {
     );
   }
 
+  /**
+   * Starts a sign-in. In order: the host's CLI on the owner's computer (gh, glab for gitlab.com),
+   * then majhi's own device flow when it has a client ID, else `paste` with the reason.
+   */
   async start(
     input: { org: string; kind: MrHost; host?: string | undefined },
     meta: CommandMeta,
   ): Promise<SignInStart> {
+    const host = await this.hostFor(input);
+    const paste = (reason: Extract<SignInStart, { state: "paste" }>["reason"]): SignInStart => ({
+      state: "paste",
+      kind: input.kind,
+      host,
+      reason,
+    });
+    if (input.kind === "bitbucket") return paste("bitbucket");
+    const kind = input.kind;
+    this.stopOpen(input.org, host);
+    const cli = this.deps.cli;
+    if (host === DEFAULT_GIT_HOST[kind] && cli?.connected() === true) {
+      const started = await this.startCli(cli, { org: input.org, kind, host }, meta);
+      if (started !== "missing") return started;
+    }
+    const clientId = clientIdFor(await this.deps.apps(), kind, host);
+    if (clientId !== undefined) return this.startDevice({ org: input.org, kind, host }, clientId, meta);
+    if (host !== DEFAULT_GIT_HOST[kind]) return paste("self-hosted");
+    return paste(cli?.connected() === true ? "no-cli" : "no-helper");
+  }
+
+  /**
+   * Saves a pasted token for one workspace, after the host said whose it is. Bitbucket takes the
+   * Atlassian email with an API token, saved as `email:token`. Answers `done`, `confirm` when other
+   * workspaces use the account, or `failed` with a plain reason. Nothing is saved on failure.
+   */
+  async token(input: SignInTokenInput, meta: CommandMeta): Promise<SignInStatus> {
+    const host = await this.hostFor(input);
+    if (input.kind === "bitbucket" && input.email === undefined) {
+      throw new UserError("Bitbucket needs the email of your Atlassian account.");
+    }
+    const value = input.kind === "bitbucket" ? `${input.email}:${input.token}` : input.token;
+    this.stopOpen(input.org, host);
+    const flow = this.flows.start({
+      org: input.org,
+      kind: input.kind,
+      host,
+      expiresInMs: MAX_FLOW_MS,
+      meta,
+      secret: { kind: "paste" },
+      shown: {},
+    });
+    await this.finish(flow, { access_token: value }, "");
+    return this.flows.get(flow.id)?.status ?? flow.status;
+  }
+
+  /** The host a call means, after checking the workspace and that majhi signs in there. */
+  private async hostFor(input: { org: string; kind: MrHost; host?: string | undefined }): Promise<string> {
     const orgs = await this.deps.orgs();
     if (orgs[input.org] === undefined) throw new UserError(`Workspace "${input.org}" does not exist.`, 404);
     const host = input.host ?? DEFAULT_GIT_HOST[input.kind];
     if (input.kind !== "gitlab" && host !== DEFAULT_GIT_HOST[input.kind]) {
       throw new UserError(
         input.kind === "github"
-          ? "majhi signs in to github.com only. For GitHub Enterprise, paste a token."
+          ? "majhi signs in to github.com only. GitHub Enterprise is not covered yet."
           : "majhi signs in to bitbucket.org only.",
       );
     }
-    const apps = await this.deps.apps();
-    const origin = this.deps.origin();
-    if (input.kind === "bitbucket") {
-      if (apps.bitbucket === undefined) {
-        return { state: "needs-app", kind: "bitbucket", host, setup: gitAppSetup("bitbucket", host, origin) };
+    return host;
+  }
+
+  /** Stops the CLI of every open sign-in of this workspace and host. The flows themselves end on the next start. */
+  private stopOpen(org: string, host: string): void {
+    for (const flow of this.flows.open()) {
+      if (flow.org === org && flow.host === host && flow.secret.kind === "cli") {
+        void this.deps.cli?.cancel(flow.id).catch(() => undefined);
       }
-      // The secret must be there before the owner is sent off to allow majhi.
-      await bitbucketConsumer(apps, this.deps.readSecret);
-      const state = newOAuthState();
-      const authorizeUrl = bitbucketAuthorizeUrl(apps.bitbucket.key, state);
-      const flow = this.flows.start({
-        org: input.org,
-        kind: "bitbucket",
-        host,
-        expiresInMs: BROWSER_FLOW_MS,
-        meta,
-        secret: { kind: "browser", key: apps.bitbucket.key, state, used: false },
-        shown: { authorizeUrl },
-      });
-      const opened = await this.deps.openUrl(authorizeUrl).catch(() => false);
+    }
+  }
+
+  /**
+   * Runs the host's CLI and waits for the page it prints. `missing` when the CLI is not installed.
+   * Throws a plain sentence when it ends or stalls before showing a page.
+   */
+  private async startCli(
+    cli: CliRunner,
+    input: { org: string; kind: "github" | "gitlab"; host: string },
+    meta: CommandMeta,
+  ): Promise<SignInStart | "missing"> {
+    const name = CLI_OF[input.kind];
+    const flow = this.flows.start({
+      org: input.org,
+      kind: input.kind,
+      host: input.host,
+      expiresInMs: MAX_FLOW_MS,
+      meta,
+      secret: { kind: "cli", cli: name },
+      shown: {},
+    });
+    let showPage: (page: { url: string; code?: string | undefined }) => void = () => undefined;
+    const page = new Promise<{ url: string; code?: string | undefined }>((resolve) => {
+      showPage = resolve;
+    });
+    const job = cli.login({ signIn: flow.id, cli: name, org: input.org, host: input.host }, (p) =>
+      showPage(p),
+    );
+    void job.then(
+      (result) => this.cliEnded(flow.id, result),
+      (err: unknown) => this.flows.failed(flow.id, safeReason(err, `${name} did not finish the sign-in.`)),
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const first = await Promise.race([
+      page.then((p) => ({ kind: "page" as const, page: p })),
+      job.then(
+        (result) => ({ kind: "ended" as const, result }),
+        (err: unknown) => ({ kind: "error" as const, err }),
+      ),
+      new Promise<{ kind: "timeout" }>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ kind: "timeout" }),
+          this.deps.cliPageTimeoutMs ?? CLI_PAGE_TIMEOUT_MS,
+        );
+        timer.unref?.();
+      }),
+    ]);
+    clearTimeout(timer);
+    if (first.kind === "ended" && first.result.state === "missing") {
+      this.flows.cancel(flow.id);
+      return "missing";
+    }
+    if (first.kind === "error") {
+      if (first.err instanceof HostOfflineError) {
+        this.flows.cancel(flow.id);
+        return "missing";
+      }
+      throw new UserError(safeReason(first.err, `${name} did not start the sign-in. Try again.`), 409);
+    }
+    if (first.kind === "timeout") {
+      void cli.cancel(flow.id).catch(() => undefined);
+      this.flows.failed(flow.id, `${name} did not show a sign-in page.`);
+      throw new UserError(`${name} did not show a sign-in page. Try again, or paste a token instead.`, 409);
+    }
+    const expiresAt = new Date(flow.expiresAt).toISOString();
+    if (first.kind === "ended") {
+      // Ended before it printed a page: the flow already shows how it went.
       return {
         state: "browser",
         signIn: flow.id,
-        kind: "bitbucket",
-        host,
-        authorizeUrl,
-        expiresAt: new Date(flow.expiresAt).toISOString(),
-        opened,
+        kind: input.kind,
+        host: input.host,
+        authorizeUrl: `https://${input.host}/`,
+        expiresAt,
+        opened: false,
       };
     }
-    const clientId = clientIdFor(apps, input.kind, host);
-    if (clientId === undefined) {
-      return { state: "needs-app", kind: input.kind, host, setup: gitAppSetup(input.kind, host, origin) };
+    const { url, code } = first.page;
+    if (code !== undefined) this.flows.show(flow.id, { userCode: code, verificationUri: url });
+    else this.flows.show(flow.id, { authorizeUrl: url });
+    const opened = await this.deps.openUrl(url).catch(() => false);
+    return code !== undefined
+      ? {
+          state: "device",
+          signIn: flow.id,
+          kind: input.kind,
+          host: input.host,
+          userCode: code,
+          verificationUri: url,
+          expiresAt,
+          opened,
+        }
+      : {
+          state: "browser",
+          signIn: flow.id,
+          kind: input.kind,
+          host: input.host,
+          authorizeUrl: url,
+          expiresAt,
+          opened,
+        };
+  }
+
+  /** The CLI ended: save its token, or end the flow the way it ended. */
+  private async cliEnded(id: string, result: GitCliLoginResult): Promise<void> {
+    const flow = this.flows.get(id);
+    if (flow === undefined || flow.status.state !== "pending") return;
+    if (result.state === "missing") return;
+    if (result.state === "cancelled") {
+      this.flows.cancel(id);
+      return;
     }
+    const now = (this.deps.now ?? Date.now)();
+    const expiresIn =
+      result.expiresAt === undefined
+        ? undefined
+        : Math.max(60, Math.round((Date.parse(result.expiresAt) - now) / 1000));
+    await this.finish(
+      flow,
+      {
+        access_token: result.token,
+        ...(result.refreshToken === undefined ? {} : { refresh_token: result.refreshToken }),
+        ...(expiresIn === undefined ? {} : { expires_in: expiresIn }),
+      },
+      // glab's own OAuth app made the token, so refreshing needs its client ID.
+      flow.kind === "gitlab" ? GLAB_CLIENT_ID : "",
+    );
+  }
+
+  /** majhi's own device flow, with a client ID from `git_apps` or `BUILT_IN_OAUTH_APPS`. */
+  private async startDevice(
+    input: { org: string; kind: "github" | "gitlab"; host: string },
+    clientId: string,
+    meta: CommandMeta,
+  ): Promise<SignInStart> {
     let code: Awaited<ReturnType<typeof startDevice>>;
     try {
-      code = await startDevice(this.deps.fetch, input.kind, host, clientId);
+      code = await startDevice(this.deps.fetch, input.kind, input.host, clientId);
     } catch (err) {
       if (err instanceof HostUnreachable) throw new UserError(err.message, 409);
       throw err;
@@ -142,7 +320,7 @@ export class SignInService {
     const flow = this.flows.start({
       org: input.org,
       kind: input.kind,
-      host,
+      host: input.host,
       expiresInMs: code.expires_in * 1000,
       meta,
       secret: {
@@ -161,7 +339,7 @@ export class SignInService {
       state: "device",
       signIn: flow.id,
       kind: input.kind,
-      host,
+      host: input.host,
       userCode: code.user_code,
       verificationUri: code.verification_uri,
       ...(code.verification_uri_complete === undefined
@@ -178,10 +356,13 @@ export class SignInService {
     return flow.status;
   }
 
+  /** Ends a pending or confirming flow, and stops its CLI. Nothing is saved. */
   cancel(id: string): SignInStatus {
     const flow = this.flows.get(id);
     if (flow === undefined) throw new UserError("That sign-in is over. Start again.", 404);
+    const wasOpen = flow.status.state === "pending" || flow.status.state === "confirm";
     this.flows.cancel(id);
+    if (wasOpen && flow.secret.kind === "cli") void this.deps.cli?.cancel(id).catch(() => undefined);
     return flow.status;
   }
 
@@ -195,51 +376,6 @@ export class SignInService {
     const { account } = flow.status;
     await this.save(flow, account, flow.held);
     return flow.status;
-  }
-
-  /** Ends the Bitbucket flow whose `state` this is. Answers one plain sentence; never the code or a token. */
-  async bitbucketCallback(query: BitbucketCallbackQuery): Promise<{ ok: boolean; message: string }> {
-    const flow = this.flows.takeState(query.state);
-    if (flow === undefined) {
-      return { ok: false, message: "This sign-in link is not valid any more. Start again in majhi." };
-    }
-    if (query.error !== undefined) {
-      if (query.error === "access_denied") {
-        this.flows.denied(flow.id);
-        return { ok: false, message: "You did not allow majhi on Bitbucket. Nothing was saved." };
-      }
-      this.flows.failed(flow.id, "Bitbucket ended the sign-in.");
-      return { ok: false, message: "Bitbucket ended the sign-in. Nothing was saved. Start again in majhi." };
-    }
-    if (query.code === undefined) {
-      this.flows.failed(flow.id, "Bitbucket sent no code.");
-      return { ok: false, message: "Bitbucket sent no code. Start again in majhi." };
-    }
-    let token: TokenAnswer;
-    let consumer: { key: string; secret: string };
-    try {
-      consumer = await bitbucketConsumer(await this.deps.apps(), this.deps.readSecret);
-      token = await bitbucketExchange(this.deps.fetch, consumer, query.code);
-    } catch (err) {
-      const reason = safeReason(err, "Bitbucket did not finish the sign-in.");
-      this.flows.failed(flow.id, reason);
-      return { ok: false, message: `${reason} Nothing was saved.` };
-    }
-    await this.finish(flow, token, consumer.key);
-    const status = this.flows.get(flow.id)?.status ?? flow.status;
-    if (status.state === "done") {
-      return { ok: true, message: `Signed in to Bitbucket as ${status.account}. Go back to majhi.` };
-    }
-    if (status.state === "confirm") {
-      return { ok: true, message: `Signed in as ${status.account}. Go back to majhi to confirm.` };
-    }
-    return {
-      ok: false,
-      message:
-        status.state === "failed"
-          ? `${status.reason} Nothing was saved.`
-          : "The sign-in ended. Nothing was saved.",
-    };
   }
 
   /**
@@ -261,12 +397,14 @@ export class SignInService {
     }
     const tokenRef = cred.tokenRef;
     let outcome: SignOut["revoke"] = "local";
+    const token = await this.deps.readSecret(nameOf(tokenRef)).catch(() => undefined);
     if (cred.oauthRef !== undefined) {
-      const token = await this.deps.readSecret(nameOf(tokenRef)).catch(() => undefined);
       const grantText = await this.deps.readSecret(nameOf(cred.oauthRef)).catch(() => undefined);
       const clientId = grantClientId(grantText);
       if (token !== undefined) outcome = await revoke(this.deps.fetch, input.kind, host, token, clientId);
     }
+    // A browser sign-in shows on the host's authorized apps page; a pasted token on its tokens page.
+    const viaApp = input.kind === "github" ? token?.startsWith("gho_") === true : cred.oauthRef !== undefined;
     const accounts = (org.git_accounts ?? []).map((a): GitAccount => {
       if (a.host !== host || a.token !== tokenRef) return a;
       const { token: _token, oauth: _oauth, ...rest } = a;
@@ -291,7 +429,7 @@ export class SignInService {
       ...(cred.account === undefined ? {} : { account: cred.account }),
       removed: true,
       revoke: outcome,
-      ...(outcome === "revoked" ? {} : { revokeUrl: revokePage(input.kind, host) }),
+      ...(outcome === "revoked" ? {} : { revokeUrl: revokePage(input.kind, host, viaApp) }),
     };
   }
 
@@ -444,9 +582,18 @@ function grantClientId(text: string | undefined): string | undefined {
   }
 }
 
-/** Messages of our own errors are plain sentences without secrets; anything else gets `fallback`. */
+/**
+ * Messages of our own errors are plain sentences without secrets, and so are the host helper's
+ * (it never puts a CLI's output or a token in one); anything else gets `fallback`.
+ */
 function safeReason(err: unknown, fallback: string): string {
-  if (err instanceof UserError || err instanceof HostUnreachable || err instanceof TokenRefused)
+  if (
+    err instanceof UserError ||
+    err instanceof HostUnreachable ||
+    err instanceof TokenRefused ||
+    err instanceof HostJobError ||
+    err instanceof HostOfflineError
+  )
     return err.message;
   return fallback;
 }

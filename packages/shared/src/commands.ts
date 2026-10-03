@@ -94,6 +94,7 @@ import {
   SignInStartInputSchema,
   SignInStartSchema,
   SignInStatusSchema,
+  SignInTokenInputSchema,
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
@@ -489,23 +490,30 @@ export const commands = {
   "git.oauthApps.get": {
     risk: "read",
     summary:
-      "The OAuth apps majhi signs workspaces in to git hosts with: the GitHub client ID, GitLab application IDs per host, and the Bitbucket consumer key. Never returns the consumer secret",
+      "The OAuth apps for majhi's own device-flow sign-in: the GitHub client ID and GitLab application IDs per host. Optional: without them, sign-in uses the host's CLI or a pasted token",
     input: Empty,
     output: GitAppsViewSchema,
   },
   "git.oauthApps.set": {
     risk: "change",
     summary:
-      "Save or remove one host's OAuth app: a GitHub client ID, a GitLab application ID for a host, or the Bitbucket consumer key and secret (the secret goes to secrets.age). Owner only",
+      "Save or remove one host's OAuth app for the device-flow sign-in: a GitHub client ID or a GitLab application ID for a host. Owner only",
     input: GitAppsSetInputSchema,
     output: GitAppsViewSchema,
   },
   "git.signIn.start": {
     risk: "change",
     summary:
-      "Start signing a workspace in to GitHub, GitLab or Bitbucket in the browser. Answers needs-app with setup steps when the host's app is not registered, else the code and page to open. The token is saved for that workspace only. Owner only",
+      "Start signing a workspace in to GitHub or GitLab in the browser, through the host's CLI on this computer (gh, glab). Answers the code and page to open, or paste when a token is needed instead (always for Bitbucket). The token is saved for that workspace only. Owner only",
     input: SignInStartInputSchema,
     output: SignInStartSchema,
+  },
+  "git.signIn.token": {
+    risk: "change",
+    summary:
+      "Save a pasted token for one workspace and git host after the host confirmed whose it is: a GitHub token, a GitLab personal access token, or a Bitbucket API token with the Atlassian email. Answers done, confirm when another workspace uses the account, or failed. Never returns the token. Owner only",
+    input: SignInTokenInputSchema,
+    output: SignInStatusSchema,
   },
   "git.signIn.poll": {
     risk: "read",

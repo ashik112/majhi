@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { LayaStatusSchema } from "./decisions.ts";
 import { E2eRunResultSchema } from "./e2e.ts";
+import { GitHostNameSchema, SignInIdSchema } from "./git-signin.ts";
+import { IdSchema } from "./ids.ts";
 import { CloneIdSchema, ClonePhaseSchema } from "./remote-repos.ts";
 import { EditorAppSchema } from "./settings.ts";
 
@@ -196,18 +198,63 @@ export const CleanRemoteUrlSchema = z
   .max(2048)
   .refine((url) => !/^https?:\/\/[^/]*@/i.test(url), "Leave the user name and token out of the URL");
 
-/**
- * Progress of a long job, posted by the helper to `POST /api/host/progress` while the job runs.
- * Only `git.clone` sends it today. The server drops progress for a job nobody waits for.
- */
-export const HostProgressSchema = z.object({
+/** Progress of a `git.clone` job: the phase git reports. */
+export const HostCloneProgressSchema = z.object({
   /** The job's id. */
   id: z.string(),
   phase: ClonePhaseSchema,
   /** 0 to 100 within the phase, when git printed one. */
   percent: z.number().int().min(0).max(100).optional(),
 });
+export type HostCloneProgress = z.infer<typeof HostCloneProgressSchema>;
+
+/**
+ * Progress of a `git.cliLogin` job: the page the CLI wants opened, and for `gh` the one-time code
+ * the owner types there. Neither is a secret on its own; the token never travels as progress.
+ */
+export const HostLoginProgressSchema = z.object({
+  id: z.string(),
+  login: z.object({
+    url: z.url({ protocol: /^https?$/ }).max(4096),
+    code: z
+      .string()
+      .regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+      .optional(),
+  }),
+});
+export type HostLoginProgress = z.infer<typeof HostLoginProgressSchema>;
+
+/**
+ * Progress of a long job, posted by the helper to `POST /api/host/progress` while the job runs:
+ * `git.clone` phases, or the page and code of a `git.cliLogin`. The server drops progress for a
+ * job nobody waits for.
+ */
+export const HostProgressSchema = z.union([HostCloneProgressSchema, HostLoginProgressSchema]);
 export type HostProgress = z.infer<typeof HostProgressSchema>;
+
+/** The git host CLIs majhi signs in with. */
+export const GitCliSchema = z.enum(["gh", "glab"]);
+export type GitCli = z.infer<typeof GitCliSchema>;
+
+/**
+ * What a `git.cliLogin` ended with.
+ * - `missing`: the CLI is not installed on this computer. Nothing ran.
+ * - `done`: the CLI signed in. `token` (and for glab its OAuth refresh token and expiry) go
+ *   straight into one workspace's secrets: never logged, cached or echoed.
+ * - `cancelled`: `git.cliLoginCancel` stopped it.
+ */
+export const GitCliLoginResultSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("missing") }),
+  z.object({
+    state: z.literal("done"),
+    token: z.string().min(1).max(4096),
+    refreshToken: z.string().min(1).max(4096).optional(),
+    /** When the access token stops working, from glab's config. */
+    expiresAt: z.iso.datetime({ offset: true }).optional(),
+  }),
+  z.object({ state: z.literal("cancelled") }),
+]);
+export type GitCliLoginResult = z.infer<typeof GitCliLoginResultSchema>;
 
 /** Longest path the editor jobs take. */
 export const EDITOR_PATH_MAX = 4096;
@@ -338,6 +385,30 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ url: z.url({ protocol: /^https?$/ }).max(4096) }),
   }),
   /**
+   * Sign a workspace in to a git host with the host's own CLI in the browser: `gh auth login --web`
+   * or `glab auth login --web`. The CLI runs with a config folder of the workspace's own
+   * (`<MAJHI_HOME>/git/<org>/<cli>`, mode 700, never the owner's own CLI login), stores the token
+   * in that folder only (never a system keyring), and the folder is removed when the job ends.
+   * Posts `HostLoginProgress` once the page is known. Ends `missing` when the CLI is not installed.
+   * `signIn` names the job for `git.cliLoginCancel`.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.cliLogin"),
+    params: z.object({
+      signIn: SignInIdSchema,
+      cli: GitCliSchema,
+      org: IdSchema,
+      host: GitHostNameSchema,
+    }),
+  }),
+  /** Stops the `git.cliLogin` of this sign-in: kills the CLI. `cancelled` is false when none ran. */
+  z.object({
+    id: z.string(),
+    method: z.literal("git.cliLoginCancel"),
+    params: z.object({ signIn: SignInIdSchema }),
+  }),
+  /**
    * `git clone` a remote into `path` with the workspace's credential, posting `HostProgress` as it
    * goes. Clones into a temporary sibling folder and renames it to `path` only when it finished,
    * so a failed clone leaves nothing behind. Refuses when `path` exists and is not empty. Never
@@ -418,6 +489,8 @@ export const HostResultSchemas = {
   "git.clone": z.object({ head: CommitSchema, branch: z.string() }),
   /** `empty`: the remote has no branches. `defaultBranch`: where its HEAD points, when it has one. */
   "git.lsRemote": z.object({ empty: z.boolean(), defaultBranch: z.string().optional() }),
+  "git.cliLogin": GitCliLoginResultSchema,
+  "git.cliLoginCancel": z.object({ cancelled: z.boolean() }),
   "git.credential": z.object({ secret: z.string().min(1) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),

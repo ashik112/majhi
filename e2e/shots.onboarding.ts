@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import {
-  type CloneJob,
-  gitAppSetup,
-  type OnboardingStatus,
-  type OnboardingStepId,
-  type RemoteRepo,
-  type SignInStatus,
+import type {
+  CloneJob,
+  MrHost,
+  OnboardingStatus,
+  OnboardingStepId,
+  RemoteRepo,
+  SignInStatus,
 } from "../packages/shared/src/index.ts";
 
 /**
@@ -162,7 +162,8 @@ interface Stubs {
   scene: Scene;
   accounts?: unknown[];
   agents?: unknown[];
-  signIn?: "device" | "needs-app" | "fail";
+  /** `device`: gh shows its code. `glab`: glab's approve page. `no-cli`: no CLI, so a token. */
+  signIn?: "device" | "glab" | "no-cli" | "fail";
   poll?: SignInStatus;
   jobs?: CloneJob[];
   remote?: "ok" | "refused";
@@ -272,13 +273,28 @@ async function stub(page: Page, s: Stubs) {
         contentType: "application/json",
         body: JSON.stringify({ error: "GitHub did not answer. Check the connection and try again." }),
       });
-    if (s.signIn === "needs-app") {
+    const input = r.request().postDataJSON() as { kind: MrHost };
+    const host = { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" }[input.kind];
+    if (s.signIn === "no-cli" || input.kind === "bitbucket") {
       return r.fulfill(
         json({
-          state: "needs-app",
-          kind: "github",
-          host: "github.com",
-          setup: gitAppSetup("github", "github.com", "http://127.0.0.1:7070"),
+          state: "paste",
+          kind: input.kind,
+          host,
+          reason: input.kind === "bitbucket" ? "bitbucket" : "no-cli",
+        }),
+      );
+    }
+    if (s.signIn === "glab") {
+      return r.fulfill(
+        json({
+          state: "browser",
+          signIn: SIGN_IN,
+          kind: "gitlab",
+          host: "gitlab.com",
+          authorizeUrl: "https://gitlab.com/oauth/authorize?client_id=glab&state=example",
+          expiresAt: later(14),
+          opened: true,
         }),
       );
     }
@@ -296,6 +312,23 @@ async function stub(page: Page, s: Stubs) {
     );
   });
   await page.route("**/api/cmd/git.signIn.poll", (r) => r.fulfill(json(s.poll ?? pending)));
+  await page.route("**/api/cmd/git.signIn.token", (r) => {
+    const input = r.request().postDataJSON() as { org: string; kind: MrHost; host?: string };
+    const host =
+      input.host ?? { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" }[input.kind];
+    const account = { github: "globex-dev", gitlab: "globex-ops", bitbucket: "globex-bb" }[input.kind];
+    return r.fulfill(
+      json({
+        state: "done",
+        signIn: SIGN_IN,
+        org: input.org,
+        kind: input.kind,
+        host,
+        account,
+        alsoUsedBy: [],
+      }),
+    );
+  });
   await page.route("**/api/cmd/git.signIn.cancel", (r) =>
     r.fulfill(json({ ...pending, state: "cancelled" })),
   );
@@ -546,20 +579,100 @@ test("git: signing out shows where to finish it at the host", async ({ page }) =
   await open(page, "git", "dark", { scene: SCENES.git });
   await page.getByRole("button", { name: /^Acme/ }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page.getByRole("link", { name: /Remove majhi on GitHub/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Remove it on GitHub/ })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/git-signed-out.png` });
 });
 
-test("git: the host needs majhi registered once", async ({ page }) => {
-  await open(page, "git", "dark", { scene: SCENES.git, signIn: "needs-app" });
-  await startGitHub(page);
-  await expect(page.getByRole("heading", { name: "Register majhi on GitHub once" })).toBeVisible();
+async function startHost(page: Page, label: "GitHub" | "GitLab" | "Bitbucket") {
+  const globex = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: /^Globex/ }) });
+  await globex.getByRole("button", { name: `Sign in with ${label}` }).click();
+}
+
+test("git: GitLab through glab waits for the approve page", async ({ page }) => {
+  await open(page, "git", "dark", { scene: SCENES.git, signIn: "glab" });
+  await startHost(page, "GitLab");
+  await expect(page.getByText(/Approve GitLab CLI on GitLab's page/)).toBeVisible();
   await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOTS}/git-needs-app.png` });
-  await page.getByRole("region", { name: "Register majhi on GitHub once" }).scrollIntoViewIfNeeded();
-  await page.getByRole("textbox", { name: "Client ID" }).fill("Ov23liAcmeExample01");
-  await page.getByRole("textbox", { name: "Client ID" }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `${SHOTS}/git-needs-app-filled.png` });
+  await page.screenshot({ path: `${SHOTS}/git-gitlab-glab.png` });
+});
+
+test("git: GitHub without gh asks for a token from a prefilled page", async ({ page }) => {
+  await open(page, "git", "dark", { scene: SCENES.git, signIn: "no-cli" });
+  await startHost(page, "GitHub");
+  const form = page.getByRole("region", { name: "GitHub token for Globex" });
+  await expect(form).toContainText("gh is not installed on this computer");
+  await expect(form.getByRole("link", { name: /Open GitHub's new token page/ })).toHaveAttribute(
+    "href",
+    "https://github.com/settings/tokens/new?description=majhi-globex&scopes=repo,read:org,workflow",
+  );
+  await form.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/git-github-paste.png` });
+  await form.getByRole("textbox", { name: "Token" }).fill("ghp_ExampleTokenForAScreenshot");
+  await form.getByRole("button", { name: "Check and save" }).click();
+  await expect(page.getByText(/Works as @globex-dev on GitHub/)).toBeVisible();
+});
+
+test("git: GitLab without glab takes a personal access token, on any host", async ({ page }) => {
+  await open(page, "git", "dark", { scene: SCENES.git, signIn: "no-cli" });
+  await startHost(page, "GitLab");
+  const form = page.getByRole("region", { name: "GitLab token for Globex" });
+  await expect(form).toContainText("glab is not installed on this computer");
+  await form.getByLabel("GitLab host").fill("gitlab.globex.test");
+  await expect(
+    form.getByRole("link", { name: /Open personal access tokens on gitlab.globex.test/ }),
+  ).toHaveAttribute(
+    "href",
+    "https://gitlab.globex.test/-/user_settings/personal_access_tokens?name=majhi-globex&scopes=api,read_user,write_repository",
+  );
+  await form.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/git-gitlab-paste.png` });
+});
+
+test("git: Bitbucket takes an Atlassian API token with the email, no admin", async ({ page }) => {
+  await open(page, "git", "dark", { scene: SCENES.git });
+  await startHost(page, "Bitbucket");
+  const form = page.getByRole("region", { name: "Bitbucket token for Globex" });
+  await expect(form.getByRole("heading", { name: "Sign in with a Bitbucket API token" })).toBeVisible();
+  await expect(form).toContainText("No admin access is needed.");
+  await expect(form.getByRole("list", { name: "Scopes" })).toContainText("write:pullrequest:bitbucket");
+  await form.getByLabel("Atlassian account email").fill("dev@globex.test");
+  await form.getByLabel("API token").fill("ATATTExampleTokenForAScreenshot");
+  await form.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/git-bitbucket-token.png` });
+  await form.getByRole("button", { name: "Check and save" }).click();
+  await expect(page.getByText(/Works as @globex-bb on Bitbucket/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/git-bitbucket-signed-in.png` });
+});
+
+test("workspace page: Git accounts has the same sign-in, after onboarding", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("majhi.appearance", JSON.stringify({ theme: "dark", accent: "amber" }));
+  });
+  await stub(page, {
+    scene: { done: [...ORDER], roots: [`${HOME}/Work`], git: { acme: ACME_GITHUB }, projects: { acme: 1 } },
+    signIn: "device",
+  });
+  await page.goto("/orgs");
+  await page.getByRole("button", { name: /^Acme/ }).first().click();
+  const section = page
+    .getByRole("region", { name: "Git accounts" })
+    .or(page.locator("section").filter({ has: page.getByRole("heading", { name: "Git accounts" }) }));
+  await expect(section.first().getByRole("button", { name: "Sign in with GitHub" })).toBeVisible();
+  await section.first().scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/workspace-git-accounts.png` });
+  await section.first().getByRole("button", { name: "Sign in with Bitbucket" }).click();
+  await expect(page.getByRole("region", { name: "Bitbucket token for Acme" })).toBeVisible();
+  await page.getByRole("region", { name: "Bitbucket token for Acme" }).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/workspace-git-bitbucket.png` });
+  await section.first().getByRole("button", { name: "Sign in with GitHub" }).click();
+  await expect(page.getByLabel("Sign-in code")).toHaveText("WDJB-MJHT");
+  await page.screenshot({ path: `${SHOTS}/workspace-git-github.png` });
 });
 
 test("git: a failed start says why", async ({ page }) => {

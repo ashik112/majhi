@@ -885,7 +885,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store,
     events,
     hostLink: options.hostLink,
-    origin: env.origin,
     hostHome: env.hostHome,
     tokens: gitTokens,
     fetch: options.gitFetch ?? fetch,
