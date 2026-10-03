@@ -187,8 +187,7 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ??
-          error("Autonomous is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Autonomous is off.")
         );
       }
       const refused = refuseForAgents(spec.command, input);
