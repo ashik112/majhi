@@ -280,14 +280,13 @@ test("every sidebar item opens its page", async ({ page }) => {
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
 
-  // Captain opens its drawer; Workspaces open from the switcher.
-  await nav(page)
-    .getByRole("button", { name: /^Captain/ })
-    .click();
-  await expect(nav(page).getByRole("button", { name: /^Captain/ })).toHaveAttribute("aria-pressed", "true");
-  await nav(page)
-    .getByRole("button", { name: /^Captain/ })
-    .click();
+  // Captain opens its page, and the chat button beside it opens the drawer; Workspaces open from the switcher.
+  await nav(page).getByRole("link", { name: /^Captain/ }).click();
+  await expect(page).toHaveURL(/\/captain$/);
+  const chat = nav(page).getByRole("button", { name: "Open the captain chat" });
+  await chat.click();
+  await expect(chat).toHaveAttribute("aria-pressed", "true");
+  await chat.click();
   await switcher(page).click();
   await workspaces(page).getByRole("menuitem", { name: "Manage workspaces" }).click();
   await expect(page).toHaveURL(/\/orgs$/);
