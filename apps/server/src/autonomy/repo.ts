@@ -9,6 +9,8 @@ import {
   type AutonomySummary,
   AutonomySummarySchema,
   type Budget,
+  type BudgetAsk,
+  BudgetAskSchema,
   BudgetSchema,
   PRIVATE,
   type QueueItem,
@@ -129,6 +131,14 @@ function parsed<T>(json: string | null, schema: z.ZodType<T>, fallback: T): T {
     return out.success ? out.data : fallback;
   } catch {
     return fallback;
+  }
+}
+
+function safeJson(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
   }
 }
 
@@ -388,6 +398,78 @@ export class AutonomyRepo {
       caps: parsed(row.caps, DayCapsSchema, { orgs: {} }),
       changed: parsed(row.changed, z.array(z.string()), []),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Budget questions and today's raises
+
+  /** Records the question; false when this budget was asked about on this day already. */
+  addBudgetAsk(ask: BudgetAsk): boolean {
+    return (
+      this.db
+        .prepare(
+          "INSERT OR IGNORE INTO autonomy_budget_asks (scope, day, name, cap, raise_to, waiting, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          ask.scope,
+          ask.day,
+          ask.name,
+          JSON.stringify(ask.cap),
+          JSON.stringify(ask.raiseTo),
+          ask.waiting,
+          ask.text,
+          ask.at,
+        ).changes > 0
+    );
+  }
+
+  /** Whether this budget was asked about on this day, answered or not. */
+  hasBudgetAsk(scope: string, day: string): boolean {
+    return (
+      this.db.prepare("SELECT 1 FROM autonomy_budget_asks WHERE scope = ? AND day = ?").get(scope, day) !==
+      undefined
+    );
+  }
+
+  /** Questions on `day` still waiting for the owner, oldest first. */
+  pendingBudgetAsks(day: string): BudgetAsk[] {
+    const rows = this.db
+      .prepare(
+        "SELECT scope, day, name, cap, raise_to, waiting, text, at FROM autonomy_budget_asks WHERE state = 'pending' AND day = ? ORDER BY at",
+      )
+      .all(day) as (Omit<BudgetAsk, "cap" | "raiseTo"> & { cap: string; raise_to: string })[];
+    return rows.flatMap(({ raise_to, cap, ...r }) => {
+      const ask = BudgetAskSchema.safeParse({
+        ...r,
+        cap: safeJson(cap),
+        raiseTo: safeJson(raise_to),
+      });
+      return ask.success ? [ask.data] : [];
+    });
+  }
+
+  /** The owner's answer to the day's question. False when there was none waiting. */
+  answerBudgetAsk(scope: string, day: string, state: "raised" | "left", at: string): boolean {
+    return (
+      this.db
+        .prepare(
+          "UPDATE autonomy_budget_asks SET state = ?, answered_at = ? WHERE scope = ? AND day = ? AND state = 'pending'",
+        )
+        .run(state, at, scope, day).changes > 0
+    );
+  }
+
+  /** The budgets the owner raised for `day`, by scope: what each one is for that day. */
+  raisedBudgets(day: string): Record<string, Budget> {
+    const rows = this.db
+      .prepare("SELECT scope, raise_to FROM autonomy_budget_asks WHERE day = ? AND state = 'raised'")
+      .all(day) as { scope: string; raise_to: string }[];
+    const out: Record<string, Budget> = {};
+    for (const r of rows) {
+      const budget = BudgetSchema.safeParse(safeJson(r.raise_to));
+      if (budget.success) out[r.scope] = budget.data;
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------

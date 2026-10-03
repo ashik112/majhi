@@ -21,6 +21,7 @@ import {
   type AutonomySummary,
   type AutonomyWaiting,
   type Budget,
+  type BudgetAsk,
   type CapUse,
   type CommandMeta,
   type CommandName,
@@ -67,6 +68,7 @@ import {
   type OrgLookup,
   textLimit,
 } from "./limits.ts";
+import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
@@ -104,6 +106,8 @@ export interface AutonomyDeps {
   events: EventHub;
   /** This computer's git logins, to tell whose a gh or glab login is. */
   gitLogins?: { list(refresh?: boolean): Promise<GitLoginsResult> };
+  /** Tells the owner a budget ran out and asks about it (a decision for the bell). */
+  tell?: (key: string, text: string) => void;
   /** Tells the owner the daily summary is ready (notify kind `autonomy`). */
   notify?: (summary: AutonomySummary, line: string) => void;
   /** The kind of action a schedule or trigger has now, for an update that leaves it as it is. */
@@ -133,7 +137,12 @@ export type AutonomyCaller = "boss" | "agent";
 
 /** Today's numbers, read once for the status and the holds. */
 interface Measure {
+  /** The saved settings. */
   settings: AutonomySettings;
+  /** The settings as they hold today: the saved budgets with today's raises. */
+  effective: AutonomySettings;
+  /** The budgets the owner raised for today, by scope. */
+  raised: Record<string, Budget>;
   spend: AutonomySpend;
   accounts: AutonomyAccount[];
   names: Record<string, string>;
@@ -166,6 +175,8 @@ export class AutonomyService {
   private driver: DriverHooks | undefined;
   /** Tasks a resume left held because no agent slot was free; the minute sweep tries them again. */
   private readonly roomWait = new Set<string>();
+  /** The numbers of the last measure, for the words on a held task's card. */
+  private lastMeasure: Measure | undefined;
 
   constructor(private readonly deps: AutonomyDeps) {
     this.repo = new AutonomyRepo(deps.store.raw);
@@ -525,7 +536,7 @@ export class AutonomyService {
       const window = dayWindow(this.now(), tz);
       const spend = spendOf(
         this.repo.spendRows(window.start, window.end, this.spendChats()),
-        settings,
+        withRaises(settings, this.repo.raisedBudgets(window.day)),
         window,
         tz,
       );
@@ -533,7 +544,12 @@ export class AutonomyService {
       const passed = capPassed(spend, this.deps.store.tasks.get(task)?.org ?? PRIVATE, turnCostUsd, names);
       if (passed === undefined) return undefined;
       this.repo.hold(task, "limit", passed.scope);
-      return `${passed.text}, so this agent stopped in the middle of its turn. It continues when the cap lifts.`;
+      const used =
+        passed.scope === DAY_SCOPE
+          ? spend.total.used.cost
+          : (spend.orgs.find((o) => o.org === passed.scope)?.used.cost ?? 0);
+      const line = waitText(passed.scope, askName(passed.scope, names), used + turnCostUsd);
+      return `${line}. This agent stopped in the middle of its turn and continues when the budget is raised or tomorrow.`;
     } catch {
       // The database closed under a shutdown: the run stops anyway.
       return undefined;
@@ -557,7 +573,7 @@ export class AutonomyService {
     if (cap === undefined) return undefined;
     return {
       reason: "limit",
-      why: `${cap.text}, so this agent waits. It continues when the cap lifts.`,
+      why: `${this.waitLine(cap)}. It continues when the budget is raised or tomorrow.`,
       scope: capScope(cap),
     };
   }
@@ -661,12 +677,27 @@ export class AutonomyService {
     const now = this.now();
     const window = dayWindow(now, tz);
     const rows = this.repo.spendRows(window.start, window.end, this.spendChats());
-    return {
+    const raised = this.repo.raisedBudgets(window.day);
+    const effective = withRaises(settings, raised);
+    const measured: Measure = {
       settings,
-      spend: spendOf(rows, settings, window, tz),
+      effective,
+      raised,
+      spend: spendOf(rows, effective, window, tz),
       accounts: accountsOf(views, settings.floors, now),
       names: Object.fromEntries(Object.entries(sections.orgs).map(([id, o]) => [id, o.name])),
     };
+    this.lastMeasure = measured;
+    return measured;
+  }
+
+  /** "Waiting for Pyzasoft's daily budget, $20 used": the budget that holds, by name, on a held task's card. */
+  private waitLine(hold: AutonomyHold): string {
+    const m = this.lastMeasure;
+    const scope = capScope(hold);
+    const used =
+      scope === DAY_SCOPE ? m?.spend.total.used.cost : m?.spend.orgs.find((o) => o.org === scope)?.used.cost;
+    return waitText(scope, askName(scope, m?.names ?? {}), used ?? 0);
   }
 
   /**
@@ -687,9 +718,16 @@ export class AutonomyService {
       return [];
     }
     const m = measured ?? (await this.measure());
+    this.lastMeasure = m;
+    const holds = await this.applyHolds(state.holds, m);
+    await this.askAboutBudgets(holds, m);
+    return holds;
+  }
+
+  private async applyHolds(before: readonly AutonomyHold[], m: Measure): Promise<AutonomyHold[]> {
     const holds = holdsOf(m.spend, m.accounts, m.names);
     this.holds = holds;
-    const { started, lifted } = diffHolds(state.holds, holds);
+    const { started, lifted } = diffHolds(before, holds);
     if (started.length === 0 && lifted.length === 0) return holds;
     this.repo.setHolds(holds);
     for (const h of started) {
@@ -705,6 +743,70 @@ export class AutonomyService {
       this.wake(started.length > 0 ? `${first.text}` : `No longer held: ${lowerFirst(first.text)}`, org);
     }
     return holds;
+  }
+
+  /** Autonomous tasks a budget holds and backlog tasks it keeps from starting, for `scope` (`day` or a workspace). */
+  private waitingOn(scope: string, settings: AutonomySettings): number {
+    const held = this.repo.tasks().filter((r) => r.held === "limit" && r.heldScope === scope).length;
+    // Backlog the captain would start where it decides when work starts.
+    const backlog = this.backlog().filter(
+      (b) =>
+        b.task.noAutonomy !== true &&
+        (scope === DAY_SCOPE || (b.org ?? PRIVATE) === scope) &&
+        authorityOf(settings, b.org ?? PRIVATE).start === "decide",
+    ).length;
+    return held + backlog;
+  }
+
+  /**
+   * A budget ran out while work waits: ask the owner once per budget and day whether to raise it for
+   * today (the decision shows in the bell, on the Captain page and on the Limits screen). Never throws.
+   */
+  private async askAboutBudgets(holds: readonly AutonomyHold[], m: Measure): Promise<void> {
+    try {
+      for (const hold of askableHolds(holds)) {
+        const scope = capScope(hold);
+        if (this.repo.hasBudgetAsk(scope, m.spend.day)) continue;
+        const ask = buildAsk({
+          scope,
+          name: askName(scope, m.names),
+          spend: m.spend,
+          waiting: this.waitingOn(scope, m.settings),
+          day: m.spend.day,
+          at: this.now().toISOString(),
+        });
+        if (ask === undefined || !this.repo.addBudgetAsk(ask)) continue;
+        this.deps.tell?.(`budget:${ask.scope}:${ask.day}`, ask.text);
+        this.deps.events.emit(["autonomy", "captain"]);
+      }
+    } catch {
+      // The database closed under a shutdown: the next sweep asks.
+    }
+  }
+
+  /** The budget questions waiting for the owner today. */
+  async budgetAsks(): Promise<BudgetAsk[]> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    return this.repo.pendingBudgetAsks(localDay(this.now(), zoneOr(settings.tz)));
+  }
+
+  /**
+   * The owner's answer about a budget that ran out today. Raise doubles it for today only: the saved
+   * budget stays, tomorrow it is the saved one again, and the hold lifts at once. Leave keeps it.
+   */
+  async answerBudget(scope: string, answer: "raise" | "leave"): Promise<BudgetAsk[]> {
+    const ask = (await this.budgetAsks()).find((a) => a.scope === scope);
+    if (ask === undefined) {
+      throw new UserError(`The captain is not asking about a budget for ${scope} today.`, 409);
+    }
+    this.repo.answerBudgetAsk(scope, ask.day, answer === "raise" ? "raised" : "left", this.now().toISOString());
+    this.deps.events.emit(["autonomy", "captain"]);
+    if (answer === "raise") {
+      await this.noteCaps();
+      // Looks at the spend again with the raise: the hold lifts and what it held starts.
+      await this.refreshHolds();
+    }
+    return this.budgetAsks();
   }
 
   /** Restarts the tasks a cap held once no cap holds their org. Only while the mode is on. */
@@ -1698,7 +1800,8 @@ export class AutonomyService {
   /** Notes today's caps, so the summary of today compares against what applied. Never throws. */
   private async noteCaps(): Promise<void> {
     try {
-      const settings = (await this.deps.config.settings()).autonomy;
+      const saved = (await this.deps.config.settings()).autonomy;
+      const settings = withRaises(saved, this.repo.raisedBudgets(localDay(this.now(), zoneOr(saved.tz))));
       const orgs: Record<string, Budget> = {};
       for (const [org, o] of Object.entries(settings.orgs)) if (o.cap !== undefined) orgs[org] = o.cap;
       this.repo.noteCaps(localDay(this.now(), zoneOr(settings.tz)), {
@@ -1734,7 +1837,7 @@ export class AutonomyService {
       const nowDoing =
         chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
       const used = m.spend.orgs.find((o) => o.org === org);
-      const cap = settings.orgs[org]?.cap;
+      const cap = m.effective.orgs[org]?.cap;
       const spend: CapUse = used ?? {
         used: { tokens: 0, cost: 0 },
         ...(cap === undefined ? {} : { cap }),
@@ -1795,6 +1898,7 @@ export class AutonomyService {
       accounts: m.accounts,
       waiting: this.waiting(),
       settings: m.settings,
+      raised: m.raised,
       ...(summary === undefined ? {} : { summary }),
       ...(after.lastTick === undefined ? {} : { lastTick: after.lastTick }),
       stopped: this.stoppedNow(),

@@ -844,6 +844,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     gitLogins,
     notify: (summary, line) => notifier.autonomySummary(summary.day, line),
+    tell: (key, text) => notifier.captain(key, text),
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.

@@ -217,8 +217,39 @@ export const CaptainCapAskSchema = z.object({
 });
 export type CaptainCapAsk = z.infer<typeof CaptainCapAskSchema>;
 
-/** `captain.asks`: what the captain asks the owner about its caps today. */
-export const CaptainAsksSchema = z.object({ asks: z.array(CaptainCapAskSchema) });
+/**
+ * A budget ran out while autonomous work waits, and the captain asks the owner whether to raise it for
+ * today: one per budget and day. `scope` is `day` for the autonomous budget, else the workspace id.
+ * "Raise" doubles the budget for that day only and never writes the saved setting.
+ */
+export const BudgetAskSchema = z.object({
+  scope: z.string().min(1).max(63),
+  /** What the budget is called on a card: "Autonomous work" or the workspace's name. */
+  name: z.string(),
+  /** The workspace's day, `YYYY-MM-DD`. */
+  day: z.string(),
+  /** The budget that ran out. */
+  cap: BudgetSchema,
+  /** The budget for the rest of the day after "Raise". */
+  raiseTo: BudgetSchema,
+  /** Tasks waiting on it when it was asked. */
+  waiting: z.number().int().nonnegative(),
+  /** "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
+  text: z.string(),
+  at: z.string(),
+});
+export type BudgetAsk = z.infer<typeof BudgetAskSchema>;
+
+/** `captain.asks`: what the captain asks the owner about its caps and budgets today. */
+export const CaptainAsksSchema = z.object({
+  asks: z.array(CaptainCapAskSchema),
+  budgets: z.array(BudgetAskSchema).default([]),
+});
+
+export const BudgetAnswerInputSchema = z.object({
+  scope: z.string().min(1).max(63),
+  answer: z.enum(["raise", "leave"]),
+});
 
 export const CaptainCapAnswerInputSchema = z.object({
   org: z.string().min(1).max(63),

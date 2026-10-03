@@ -52,6 +52,7 @@ import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
   CaptainAsksSchema,
+  BudgetAnswerInputSchema,
   CaptainCapAnswerInputSchema,
   CaptainChoreInputSchema,
   CaptainLogInputSchema,
@@ -2711,6 +2712,13 @@ export const commands = {
     summary:
       "Answer the captain's question about a chore that reached its daily cap in a workspace: raise doubles that chore's caps for today only, leave keeps them. Owner only",
     input: CaptainCapAnswerInputSchema,
+    output: CaptainAsksSchema,
+  },
+  "captain.answerBudget": {
+    risk: "change",
+    summary:
+      "Answer the captain's question about a budget that ran out while work waits: raise doubles that budget for today only (the saved budget stays), leave keeps it. scope is day for the autonomous budget, else the workspace id. Owner only",
+    input: BudgetAnswerInputSchema,
     output: CaptainAsksSchema,
   },
   "autonomy.plan": {

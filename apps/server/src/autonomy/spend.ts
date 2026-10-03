@@ -86,7 +86,7 @@ export function capText(cap: Budget): string {
   return parts.join(" / ");
 }
 
-function tokenText(n: number): string {
+export function tokenText(n: number): string {
   if (n >= 1_000_000) return `${Number((n / 1_000_000).toFixed(1))}M`;
   if (n >= 1_000) return `${Number((n / 1_000).toFixed(1))}k`;
   return String(n);

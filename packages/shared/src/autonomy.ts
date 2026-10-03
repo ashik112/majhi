@@ -282,6 +282,11 @@ export const AutonomyStatusSchema = z.object({
   lastTick: z.string().optional(),
   /** Tasks Stop now paused that are still paused: turning on can resume them. */
   stopped: z.array(TaskIdSchema).default([]),
+  /**
+   * Budgets the owner raised for today only, by scope (`day` or a workspace id). `spend` already
+   * counts them; `settings` holds the saved budgets, which they never change.
+   */
+  raised: z.record(z.string(), BudgetSchema).default({}),
 });
 export type AutonomyStatus = z.infer<typeof AutonomyStatusSchema>;
 
