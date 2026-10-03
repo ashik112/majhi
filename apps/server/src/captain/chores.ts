@@ -214,7 +214,7 @@ export function createChores(
         // Then a short turn of the captain in this workspace's lane, unless the lane rests.
         const rest = await ports.laneRest(org);
         if (rest !== undefined) {
-          run.note(`${key}:rests`, `A question in ${card.task} waits`, `The lane rests: ${rest}`, card.task);
+          run.note(`${key}:rests`, `A question in ${card.task} waits`, `The captain is resting here: ${rest}`, card.task);
           continue;
         }
         await run.act({

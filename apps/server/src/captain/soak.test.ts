@@ -604,7 +604,7 @@ describe("the captain's soak test", () => {
     }
     expect(sim.laneTexts.length).toBeGreaterThan(0);
     // The lane rested once Private's small budget was used; Laya's answers went on.
-    expect(actions.some((a) => a.org === "private" && a.reason.startsWith("The lane rests"))).toBe(true);
+    expect(actions.some((a) => a.org === "private" && a.reason.startsWith("The captain is resting here"))).toBe(true);
     expect(sim.calls.filter((c) => c.org === "private" && c.port === "answer").length).toBeGreaterThan(0);
 
     // Each lane reads its own workspace only: every read command an agent may call, from the command table.

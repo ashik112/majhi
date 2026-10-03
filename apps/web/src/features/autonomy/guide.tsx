@@ -50,6 +50,7 @@ export function ChatLog({ chat }: { chat: string }) {
         answering={answer.isPending ? answer.variables?.item : undefined}
         task={{ id: chat, folder: task?.folder ?? "" }}
         owner={owner}
+        foldSteps
       />
     </div>
   );

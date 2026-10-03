@@ -179,7 +179,7 @@ export class AdminService {
       if (BOSS_TOOLS.has(spec.command)) {
         return (
           (await this.autonomy?.bossTool(caller, spec.command, input, why)) ??
-          error("Autonomous mode is off.")
+          error("Autonomous is off.")
         );
       }
       const refused = refuseForAgents(spec.command, input);
@@ -364,7 +364,7 @@ export class AdminService {
     ask: { reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
-    if (autonomy === undefined) return error("Autonomous mode is not available.");
+    if (autonomy === undefined) return error("Autonomous is not available.");
     const verdict = await autonomy.decide(caller, command, parsed, input, {
       confirm: ask.confirm === true,
       reason: ask.reason,

@@ -8,7 +8,9 @@ import { describeError } from "@/lib/errors";
 /** The room of one task, without the task screen around it. */
 export function ChatRoom({ task }: { task: Task }) {
   const room = useRoom(task.id);
-  return <RoomPane task={task} state={room.state} dispatch={room.dispatch} loadOlder={room.loadOlder} />;
+  return (
+    <RoomPane task={task} state={room.state} dispatch={room.dispatch} loadOlder={room.loadOlder} foldSteps />
+  );
 }
 
 /**
