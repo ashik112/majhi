@@ -42,8 +42,8 @@ majhi turns that into a desk you can run all day:
 | **Checks after every merge** | After a merge into main, majhi runs the whole e2e suite by itself, at low priority, so nobody waits on it. The result shows on Health and in the room of the task that merged. A break opens one task with the failing specs and the traces. |
 | **It learns your codebase** | Lasting facts from each task are kept per repo and recalled in the next one, so agents stop relearning the same things. |
 | **Run everything by asking** | The captain agent sets up clients, accounts, agents and repos when you describe them, and asks before anything risky. |
-| **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your Mac and uses the right one per client. |
-| **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your Mac's GPU, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
+| **Use the logins you already have** | majhi finds your GitHub, GitLab and Bitbucket logins and SSH keys on your computer and uses the right one per client. |
+| **Spend less on every task** | [Laya](https://github.com/NandhaKishorM/laya), a small model running free on your own computer, makes the many small calls: which model and effort a task needs, which client and team it belongs to, whether a memory is new. Big models only get the work that needs them. |
 | **Know what it costs** | Tokens, cost and each account's usage limits, per client, project and agent. Long sessions compact before they fill up, so costs do not climb. |
 | **Never lose work** | Unshipped commits are counted before any task can close. Updates roll back on their own if something breaks. |
 
@@ -76,12 +76,59 @@ majhi hands them to **Laya**, an open model that runs on your machine (natively 
 
 ## Install
 
-You need Docker (Docker Desktop or OrbStack) on a Mac.
+majhi runs on macOS, Linux and Windows through WSL2. `make up` checks the computer first and stops with the step to take when something is missing.
+
+### macOS
+
+You need:
+
+- OrbStack or Docker Desktop
+- git and Node 20 or newer (`brew install git node`)
 
 ```sh
 git clone https://github.com/ashik112/majhi.git && cd majhi
 make up    # opens on http://127.0.0.1:7070
 ```
+
+At login, the host helper (the LaunchAgent `dev.majhi.host`) opens OrbStack or Docker Desktop when it is not running, then starts majhi. On Apple silicon it also runs Laya on the Mac's GPU.
+
+### Linux
+
+You need:
+
+- [Docker Engine](https://docs.docker.com/engine/install/) running as root, with the Compose plugin. Docker Desktop for Linux and rootless Docker are not supported yet.
+- Your user in the `docker` group: `sudo usermod -aG docker $USER`, then log out and back in
+- git, make and Node 20 or newer
+- systemd, which most distros run
+- `secret-tool` (`libsecret-tools` on Debian and Ubuntu, `libsecret` on Fedora and Arch) and a keyring such as GNOME Keyring, which keeps a copy of majhi's secrets key. Without one, export the key on majhi's Health page and keep the file safe.
+- `notify-send` (`libnotify-bin` on Debian and Ubuntu) for notifications
+
+```sh
+git clone https://github.com/ashik112/majhi.git && cd majhi
+make up    # opens on http://127.0.0.1:7070
+```
+
+At login, systemd starts two user units: the host helper (`majhi-host.service`), which starts majhi, and majhi's SSH agent (`majhi-ssh-agent.service`), used when your session has none. Docker Engine starts at boot once you run `sudo systemctl enable --now docker`.
+
+With an NVIDIA GPU and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), `make up` gives Laya the GPU. Its image is then a few GB bigger. `make up LAYA_GPU=off` keeps it on the CPU, and `.env.example` says what an older GPU needs.
+
+### Windows (WSL2)
+
+You need:
+
+- WSL2 with a Linux distro: `wsl --install` in PowerShell sets up Ubuntu
+- Docker Desktop, set to start when you sign in (Settings > General), with WSL integration on for the distro (Settings > Resources > WSL integration)
+- systemd in the distro. Ubuntu from `wsl --install` has it. Otherwise add `systemd=true` under `[boot]` in `/etc/wsl.conf`, then run `wsl --shutdown` in Windows.
+- git, make and Node 20 or newer in the distro
+
+Run these in the distro's terminal. Keep majhi and your repos in the distro (for example under `~/code`), not under `/mnt/c`, which is much slower to reach from Linux.
+
+```sh
+git clone https://github.com/ashik112/majhi.git && cd majhi
+make up    # opens on http://127.0.0.1:7070
+```
+
+At sign-in, Docker Desktop starts the distro, and systemd starts the host helper and majhi's SSH agent there, as on Linux. `make up` turns on lingering for your user so they run with no terminal open, or prints the `sudo loginctl enable-linger` line to run. WSL2 usually has no keyring, so export the secrets key on majhi's Health page and keep the file safe. With an NVIDIA driver in Windows, `make up` gives Laya the GPU, as on Linux.
 
 The first screen walks you through your folders, your first AI account and the captain agent. After that, updates are one click.
 
@@ -106,7 +153,7 @@ Each client is sealed off: its agents run in their own containers with only thei
 <details>
 <summary><b>For developers</b></summary>
 
-majhi is TypeScript end to end: a Hono server, SQLite and a React app in one Docker compose file, plus a small helper on the Mac for logins, folders and updates. Agents speak the [Agent Client Protocol](https://agentclientprotocol.com).
+majhi is TypeScript end to end: a Hono server, SQLite and a React app in one Docker compose file, plus a small helper on the owner's computer for logins, folders and updates. Agents speak the [Agent Client Protocol](https://agentclientprotocol.com).
 
 ```sh
 pnpm install

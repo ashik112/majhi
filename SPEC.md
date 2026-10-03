@@ -175,49 +175,70 @@ docker compose
 ├── runner     image with agent CLIs + ACP adapters + gh + glab + git + Serena
 │              + language servers + kubectl and other connection CLIs;
 │              the server spawns agent processes here
-└── laya       local Laya decision model (Python, PyTorch on CPU), behind a
-               compose profile; used on Linux, Windows and Intel Macs, and as
-               the fallback on Apple silicon; see 5.12
+└── laya       local Laya decision model (Python, PyTorch on the CPU or an
+               NVIDIA GPU), behind a compose profile; used on Linux, Windows
+               and Intel Macs, and as the fallback on Apple silicon; see 5.12
 
-host helper   `apps/host`, a small Node process on the owner's machine (not in
-              Docker), installed by `make up` as a login item (macOS LaunchAgent).
-              It opens no port: it long-polls the server over the published
-              127.0.0.1 port with a token from `~/.majhi/host.token`, and does
-              only fixed jobs: list host folders, suggest roots, remount roots,
-              keep the Mac's SSH agent loaded (below), and give a key's
-              passphrase to the macOS Keychain once (`ssh.unlock`; the
-              passphrase travels browser, server, helper over localhost, is
-              never logged or stored by majhi, and the Keychain holds it).
+host helper   `apps/host`, a small Node process on the owner's computer (not
+              in Docker), installed by `make up` as a login service: a macOS
+              LaunchAgent, or systemd user units on Linux and WSL2 (the table
+              below has what differs per OS). It opens no port: it long-polls
+              the server over the published 127.0.0.1 port with a token from
+              `~/.majhi/host.token`, and does only fixed jobs: list host
+              folders, suggest roots, remount roots, keep the SSH agent loaded
+              (below), and give a key's passphrase to `ssh-add` once
+              (`ssh.unlock`; the passphrase travels browser, server, helper
+              over localhost, is never logged by majhi, and only the OS
+              keyring keeps it).
               SSH keys: at start (login), after a wake from sleep, when a
-              fetch fails for lack of SSH access, and on `ssh.reload` it runs
-              `/usr/bin/ssh-add --apple-load-keychain`, then loads every
-              private key from `~/.ssh/config` `IdentityFile` entries and the
-              default names that has no passphrase and is not loaded yet, and
-              reports the count and the keys that still need a passphrase.
+              fetch fails for lack of SSH access, and on `ssh.reload` it loads
+              the keys whose passphrase the keyring keeps, then every private
+              key from `~/.ssh/config` `IdentityFile` entries and the default
+              names that has no passphrase and is not loaded yet, and reports
+              the count and the keys that still need a passphrase.
               Ops jobs (Phase 2b): it reports the checkout's HEAD, whether it
-              has uncommitted changes and which Docker runtime is in use
-              (OrbStack or Docker Desktop) in its poll header;
-              `version.changes` answers with the commit subjects between the
-              running image's commit and HEAD (`git log --format=%s
-              running..HEAD -n 20`); `update` rebuilds and restarts majhi
-              (below); `restart` exits so launchd starts it again. At start
-              (login) it makes sure Docker is up (`open -a OrbStack` or Docker,
-              waiting up to 2 minutes, polling every 5 s) and that majhi is
-              running (`docker compose up -d --wait` in the checkout when its
-              container is not), logs each step, retries a failed start twice
-              a minute apart, and only then posts a macOS notification with the
-              one step the owner must take. `update`: `docker compose build`
-              with the same environment as `make up` (HOST_UID, HOST_GID, HOME,
-              MAJHI_COMMIT from `git rev-parse HEAD`), create the secrets key
-              if missing, regenerate the override, `up -d --wait`, copy the
-              helper bundle out of the new image over `~/.majhi/bin`, then exit
-              so launchd restarts the new helper. Progress goes to
-              `~/.majhi/update.json` (the server that would relay it is
-              replaced part-way); the UI reads it through `system.version`
-              and reloads when `/health` reports the new commit.
+              has uncommitted changes and which Docker runtime is in use in
+              its poll header; `version.changes` answers with the commit
+              subjects between the running image's commit and HEAD (`git log
+              --format=%s running..HEAD -n 20`); `update` rebuilds and
+              restarts majhi (below); `restart` exits so the login service
+              starts it again. At start (login) it makes sure Docker is up
+              (starting it where it can, waiting up to 2 minutes, polling
+              every 5 s) and that majhi is running (`docker compose up -d
+              --wait` in the checkout when its container is not), logs each
+              step, retries a failed start twice a minute apart, and only then
+              posts a notification with the one step the owner must take.
+              `update`: `docker compose build` with the same environment as
+              `make up` (HOST_UID, HOST_GID, HOME, MAJHI_COMMIT from `git
+              rev-parse HEAD`, and the agent socket and Laya GPU `make up`
+              picked), create the secrets key if missing, regenerate the
+              override, `up -d --wait`, copy the helper bundle out of the new
+              image over `~/.majhi/bin`, then exit so the login service starts
+              the new helper. Progress goes to `~/.majhi/update.json` (the
+              server that would relay it is replaced part-way); the UI reads
+              it through `system.version` and reloads when `/health` reports
+              the new commit.
               On Apple silicon it also runs Laya natively with `laya-mlx`
               (MLX on the GPU). Later it is also where MAJHI_RUNNER=native
               spawns agents.
+```
+
+The host helper per OS:
+
+| | macOS | Linux | WSL2 |
+|---|---|---|---|
+| Login service | LaunchAgent `dev.majhi.host` | systemd user units `majhi-host.service` and `majhi-ssh-agent.service` (majhi's own SSH agent), enabled for `default.target`, with the helper's environment in `~/.config/systemd/user/majhi-host.env` | The same units, plus `loginctl enable-linger`: WSL has no login of its own, so Docker Desktop starts the distro at Windows sign-in and the lingering user's systemd starts the units |
+| Restart after `update` or `restart` | launchd `KeepAlive` | `Restart=always` | Same |
+| Secrets key copy | The login Keychain through `security` | A Secret Service keyring through `secret-tool`, asked over D-Bus first whether it is locked, so it never prompts. With none: `keyring: none` and the reason, and the export on Health is the only other copy | Same; usually there is none |
+| Agent the keys go into | The helper's `SSH_AUTH_SOCK`, else `launchctl getenv SSH_AUTH_SOCK` | The helper's `SSH_AUTH_SOCK`, else the systemd user manager's, else majhi's own agent at `~/.majhi/run/agent.sock` | Same |
+| Agent socket in the server (4.5) | `/run/host-services/ssh-auth.sock`, from OrbStack or Docker Desktop | `~/.majhi/run/ssh-agent.sock`, which the helper serves and forwards to the agent above | Same |
+| Key passphrases | Apple's `ssh-add --apple-use-keychain`, reloaded with `--apple-load-keychain` | Kept in the keyring and given to `ssh-add` through a throwaway askpass at each check; with no keyring, kept nowhere | Same |
+| Docker | OrbStack or Docker Desktop, started with `open -a` | Docker Engine run as root, a system service the helper cannot start: its notification says `sudo systemctl enable --now docker` | Docker Desktop with WSL integration, started through `powershell.exe`; `docker` is looked for again once it runs |
+| Notifications | terminal-notifier (clickable), else osascript | `notify-send` (not clickable) | A Windows toast through `powershell.exe` (clickable) |
+| Open a URL | `open` | `xdg-open` | `wslview`, else `explorer.exe` |
+| Open in editor | `code` or `cursor` CLI, the CLI inside the app, then `open -a` | `code` or `cursor` on PATH | `code` or `cursor` on PATH, else the Windows install's |
+| Laya | Native on Apple silicon, else Docker on the CPU | Docker, on the CPU or an NVIDIA GPU (5.12) | Same, with the NVIDIA driver in Windows |
+| Folder defaults | `~/Work` | `~/code` | `~/code` |
 
 v1 can merge `server` and `runner` into one container if that is simpler. Keep the process-spawning code behind an interface so agents can later run in their own container per run.
 
@@ -249,6 +270,7 @@ v1 can merge `server` and `runner` into one container if that is simpler. Keep t
 ├── AGENTS.md, CLAUDE.md     generated, point to TASK.md
 ├── attachments/             images, docs, fetched link content
 └── <repo-short>/            one git worktree per task repo
+```
 
 Agent file example:
 
@@ -314,9 +336,10 @@ projects:
 - The image bakes the git commit it was built from (`ARG MAJHI_COMMIT`, exposed as the env var `MAJHI_COMMIT`, `dev` when unknown). `make up` and the host helper pass `git rev-parse HEAD`. `/health` reports it, so a browser can tell the new server from the old one after an update. Building never needs the owner: `docker compose build` reads the same variables the Makefile exports. Docker access: macOS asks once whether OrbStack or Docker Desktop may read `~/Documents`, `~/Desktop`, `~/Downloads` and iCloud Drive; without a yes the container sees an empty folder, so the roots screen warns before saving a root there and names the runtime the helper found.
 - `health.run` runs the same checks as `make doctor` (config, config folder, git, each root mounted, tasks folder, host helper, SSH agent, each git host, secrets key, each CLI version, each account from its cached health, disk space). Each failed check that majhi can fix carries a `fix` label and `health.fix` runs it: mount a root (helper remount), create a missing folder, reload SSH keys, check an account again, open an account's sign-in (the UI opens the terminal), restart the helper. A failed check with no fix says the exact step in plain words.
 - Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so majhi generates `docker-compose.override.yml` with one mount per root from `majhi.yaml`. The host helper regenerates it and recreates the server container whenever roots change; `make up` does the same on first start. Only roots are mounted, never the whole home folder, so agents cannot reach other credentials in it.
-- Mount `~/.ssh/config` and `known_hosts` read-only. Forward the host SSH agent (Docker Desktop: `/run/host-services/ssh-auth.sock`; OrbStack exposes its own socket) to majhi's own git only (fetching the base when a task starts, pushing after approval). It is never forwarded to agent runs: agents have no SSH access, which also closes the push-by-script gap in the push check. Private keys never enter the container. Only the **public** keys (`<IdentityFile>.pub` for every `IdentityFile` in `~/.ssh/config` and the default names, when the file exists) are bind-mounted read-only at their host paths, in the generated override next to the roots: with `IdentitiesOnly yes` OpenSSH reads the `.pub` file to choose the matching agent key when the private file is missing. A mount source without the `.pub` suffix is refused. The image adds a passwd entry for the owner's uid at start (home = the host home), because ssh will not run without one. `doctor` runs `ssh -T -o BatchMode=yes -o ConnectTimeout=5` against each ssh alias or `user@host` used by a registered project's remotes and reports reachable, auth failed or unreachable; `host.status` carries the same result (`sshHosts`) and Repos names a host that took no key. The host helper keeps the Mac's agent loaded (4.2); a key with a passphrase is unlocked once from the Repos screen and kept by the macOS Keychain.
+- Docker per OS: OrbStack or Docker Desktop on macOS, Docker Engine run as root on Linux, Docker Desktop with WSL integration on WSL2. `make up` refuses Docker Desktop for Linux and rootless Docker for now: both map container uids through a user namespace, so the owner's uid in the server lands on another uid outside, and worktrees and `~/.majhi` would stop belonging to the owner.
+- Mount `~/.ssh/config` and `known_hosts` read-only. Forward an SSH agent from the host to majhi's own git only (fetching the base when a task starts, pushing after approval). The generated override adds it from `MAJHI_SSH_AGENT`, which `make up` sets per OS and the host helper keeps for remounts and updates: on macOS `/run/host-services/ssh-auth.sock`, the Mac's agent as OrbStack and Docker Desktop give it to containers, mounted at `/run/ssh-agent.sock`; on Linux and WSL2 `~/.majhi/run/ssh-agent.sock`, the host helper's forwarder (4.2), which the server already sees through the `~/.majhi` mount, so only `SSH_AUTH_SOCK` is set and the path stays the same when the agent behind it restarts; any other absolute path is mounted at `/run/ssh-agent.sock`; `off` gives none. It is never forwarded to agent runs: agents have no SSH access, which also closes the push-by-script gap in the push check, and the runner isolation check makes sure a runner cannot see `~/.majhi/run`. Private keys never enter the container. Only the **public** keys (`<IdentityFile>.pub` for every `IdentityFile` in `~/.ssh/config` and the default names, when the file exists) are bind-mounted read-only at their host paths, in the generated override next to the roots: with `IdentitiesOnly yes` OpenSSH reads the `.pub` file to choose the matching agent key when the private file is missing. A mount source without the `.pub` suffix is refused. The image adds a passwd entry for the owner's uid at start (home = the host home), because ssh will not run without one. `doctor` runs `ssh -T -o BatchMode=yes -o ConnectTimeout=5` against each ssh alias or `user@host` used by a registered project's remotes and reports reachable, auth failed or unreachable; `host.status` carries the same result (`sshHosts`) and Repos names a host that took no key. The host helper keeps the agent loaded (4.2); a key with a passphrase is unlocked once from the Repos screen and kept by the OS keyring: the macOS Keychain, or a Secret Service keyring on Linux and WSL2.
 - Mount `~/.majhi` read-write.
-- The macOS Keychain is not reachable from Linux containers. Login credentials live in each account's config home under `~/.majhi/accounts/<id>/`. Tracker tokens and API keys live in `secrets.age`, decrypted at startup with a key passed as a Docker secret.
+- The host's keyring (the macOS Keychain or a Secret Service keyring) is not reachable from the containers. Login credentials live in each account's config home under `~/.majhi/accounts/<id>/`. Tracker tokens and API keys live in `secrets.age`, decrypted at startup with a key passed as a Docker secret.
 - Provide a `MAJHI_RUNNER=native` option that spawns agents directly on the host instead of in the runner container, for when bind-mount performance hurts (large test suites on macOS). UI and services stay in Docker either way.
 - Ship `docker-compose.yml`, a `.env.example`, and a `Makefile` or `justfile` with `up`, `down`, `logs`, `login <account>`, `doctor`.
 - Healthchecks on every service. `doctor` checks: SSH agent reachable, each workspace root mounted, each account's auth, CLIs present with versions, git identity per org, disk space for worktrees.
@@ -463,7 +486,7 @@ Root agents can also:
 Decision models answer typed questions against a state in one pass, with probabilities and a confidence score. They do not write text and do not speak ACP, so they are not agents. majhi uses them for small, frequent decisions.
 
 - One interface, `DecisionProvider`, with four implementations:
-  - **laya:** the default. Laya open-weights model (`convaiinnovations/laya`, 421M parameters, about 850 MB). Local, free, nothing leaves the machine. On Apple silicon Macs it runs natively through the host helper with `laya-mlx`, on the GPU. On Linux, Windows and Intel Macs, or when the native one is not available, it runs in the `laya` Docker service with `laya` on PyTorch CPU. Both load on first use and unload when idle. Weak without fine-tuning, reads about 512 tokens per state (English checkpoint), and gets worse past about 20 options, so questions must stay small.
+  - **laya:** the default. Laya open-weights model (`convaiinnovations/laya`, 421M parameters, about 850 MB). Local, free, nothing leaves the machine. On Apple silicon Macs it runs natively through the host helper with `laya-mlx`, on the GPU. On Linux, Windows and Intel Macs, or when the native one is not available, it runs in the `laya` Docker service with `laya` on PyTorch, on the CPU or with CUDA on an NVIDIA GPU. `make up` gives it the GPU when Docker can use one (the NVIDIA Container Toolkit's runtime on Linux, the Windows NVIDIA driver on WSL2) and sets `MAJHI_LAYA_GPU=nvidia`: the image then takes PyTorch's CUDA 13.0 wheels (`MAJHI_LAYA_TORCH_INDEX` picks another index, such as CUDA 12.6 for a GPU older than Turing or a driver older than 580), and the generated override reserves the GPUs for `laya` and sets `LAYA_DEVICE=cuda`. `make up LAYA_GPU=off` keeps it on the CPU. Both load on first use and unload when idle. Weak without fine-tuning, reads about 512 tokens per state (English checkpoint), and gets worse past about 20 options, so questions must stay small.
   - **jev:** TypeSafe Jev hosted API. Needs an API key in `secrets.age`. Sends the state off the machine, so it is off by default and the owner enables it explicitly.
   - **acp:** simulates Jev or Laya with an ACP agent, for when neither is available. majhi sends the same state and typed questions as a prompt to a chosen agent (default: the Dispatcher, on its cheapest model and lowest effort) and asks for JSON only. The answer is checked with the same zod schema as the other providers, and retried once if it does not match. Its probabilities are self-reported, not calibrated, so the UI labels them as estimated.
   - **rules:** plain code, no model (the task box parser, fixed defaults). Always available as the last fallback.
@@ -549,7 +572,7 @@ majhi replaces the agent CLIs for everything, not only repo work.
 
 #### Containers for agents
 
-Agents run without Docker on purpose (the socket is root on the Mac). When they need containers (to build and try a branch of majhi itself, or a database for tests), majhi runs them from a short list of actions, never a raw socket. The `majhi-containers` MCP tool (on for every session when majhi runs in Docker) has `preview_build`, `preview_run`, `preview_stop`, `service_start`, `service_stop`, `list` and `logs`. The captain and the Hub have the same actions as `containers.*` commands.
+Agents run without Docker on purpose (the socket is root on the host). When they need containers (to build and try a branch of majhi itself, or a database for tests), majhi runs them from a short list of actions, never a raw socket. The `majhi-containers` MCP tool (on for every session when majhi runs in Docker) has `preview_build`, `preview_run`, `preview_stop`, `service_start`, `service_stop`, `list` and `logs`. The captain and the Hub have the same actions as `containers.*` commands.
 
 - **Preview.** `preview_build` builds a repo's Dockerfile as `majhi-preview-<task>` on the task's own BuildKit builder, as a process that wakes the agent when it ends. `preview_run` runs it with a throwaway folder and nothing of the host, on the runner network, with one port on `127.0.0.1` for the owner's link.
 - **Services.** `service_start` runs an allowed image (postgres, redis) on a per-task internal network that only that task's runners join, with only named volumes majhi creates for the task. A port is never published.
@@ -597,7 +620,7 @@ The owner can run majhi by talking to one agent. The captain sets things up, cha
 ## 6. Security
 
 - Per-run environment built from scratch (5.1). An org's agent never gets another org's credentials, unless the owner explicitly allows that agent to work in the other org. Show a warning in the editor when they do.
-- Private SSH keys stay on the host. Only the agent socket is forwarded, and only to majhi's own git, never to agent runs. A key's passphrase is typed into majhi once, goes to the host helper over localhost, and ends in the macOS Keychain; majhi never stores or logs it.
+- Private SSH keys stay on the host. Only the agent socket is forwarded, and only to majhi's own git, never to agent runs. A key's passphrase is typed into majhi once, goes to the host helper over localhost, and ends in the OS keyring (the macOS Keychain or a Secret Service keyring; with none, it is kept nowhere); majhi never writes it to its own files or logs.
 - Tracker tokens encrypted at rest (`secrets.age`).
 - Anything read from attachments, links, tracker items or repos is data, not instructions. Wrap it as such in prompts.
 - majhi binds to `127.0.0.1` only by default.
@@ -662,7 +685,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - Commands `usage.summary` and `usage.breakdown`, so the captain can answer questions like "what did Acme cost this week?"
 - Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
 - Desktop notifications when a task needs the owner (review, permission prompt, limit, failed run), with per-event settings.
-- Backups: the secrets key kept in the macOS Keychain with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
+- Backups: the secrets key kept in the OS keyring (the macOS Keychain or a Secret Service keyring) with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
 - **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the captain answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions
