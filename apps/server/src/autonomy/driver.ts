@@ -9,7 +9,7 @@ import type { AutonomyService } from "./service.ts";
 
 /**
  * The driver (PRV-74, rule 8; 5.18 lanes): wakes the captain with a tick in the lane of each
- * workspace set to "Runs it" when something it should decide happened there. Each lane has its own
+ * workspace where the captain starts work when something it should decide happened there. Each lane has its own
  * batch: events are batched for `DEBOUNCE_MS`, at most one tick waits per lane, and while the captain
  * is in a turn in that lane the next tick goes when the turn ends. A tick holds only its workspace's
  * tasks, cards, backlog and spend. Nothing ticks unless the mode is on.
@@ -28,8 +28,13 @@ const SEEN_MAX = 2_000;
 export interface DriverDeps {
   autonomy: AutonomyService;
   tasks: Pick<TaskService, "tellAgent">;
-  runs: Pick<RunManager, "working">;
+  runs: Pick<RunManager, "working" | "busy">;
   room: Pick<RoomService, "onWrite">;
+  /**
+   * A running task where nothing waits: no owner card, no background process, no subtask that moves
+   * (the idle watch's own check). Absent: only the runs are looked at.
+   */
+  quiet?: (task: string) => boolean;
   store: Store;
   events: EventHub;
   now?: () => Date;
@@ -102,7 +107,7 @@ export class AutonomyDriver {
 
   /**
    * Something the captain should look at happened in a workspace: batched into that lane's next
-   * tick. Without a workspace it goes to every lane of a workspace set to "Runs it".
+   * tick. Without a workspace it goes to every lane of a workspace where the captain starts work.
    */
   wake(line: string, org?: string): void {
     if (this.deps.autonomy.mode() !== "on") return;
@@ -146,7 +151,8 @@ export class AutonomyDriver {
 
   /**
    * A run's loop ended. The captain's in a lane: a tick that waited there goes now. An autonomous
-   * task's that is still running with nobody working: the captain looks, in its workspace's lane.
+   * task's that is still running with nobody working, queued or starting, and nothing pending: the
+   * captain looks, in its workspace's lane.
    */
   loopEnded(task: string): void {
     const laneOrg = this.deps.autonomy.laneOrg(task);
@@ -159,9 +165,10 @@ export class AutonomyDriver {
     }
     if (!this.deps.autonomy.isAutonomous(task)) return;
     const found = this.deps.store.tasks.get(task);
-    if (found?.status === "running" && this.deps.runs.working(task).length === 0) {
-      this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE);
-    }
+    // Stuck only when nobody works, nobody waits for a slot or a gate, and nothing is pending.
+    if (found?.status !== "running" || this.deps.runs.busy(task)) return;
+    if (this.deps.quiet !== undefined && !this.deps.quiet(task)) return;
+    this.wake(`${task} is running, but no agent is working on it`, found.org ?? PRIVATE);
   }
 
   /** Sends a lane's batch now, or after the captain's turn there. One send per lane at a time. */
@@ -231,6 +238,7 @@ export class AutonomyDriver {
       agent: boss,
       text,
       settled: "Autonomous mode woke the captain",
+      by: "majhi",
     });
     lane.lastTickAt = this.now().getTime();
     autonomy.ticked(reasons, org, chat);
@@ -282,7 +290,8 @@ export class AutonomyDriver {
       return;
     }
     for (const t of all) {
-      if (!ids.has(t.id)) continue;
+      // A lane chat is not work the owner asked for: it has no line in the log.
+      if (!ids.has(t.id) || t.kind === "chat") continue;
       const key = `${t.status}:${t.pausedReason ?? ""}`;
       const before = this.statuses.get(t.id);
       this.statuses.set(t.id, key);
@@ -296,7 +305,7 @@ export class AutonomyDriver {
         ...(t.org === undefined ? {} : { org: t.org }),
         status: t.status,
       });
-      if (change.wake) this.wake(change.text, t.org ?? PRIVATE);
+      if (change.wake) this.wake(change.wakeText, t.org ?? PRIVATE);
     }
   }
 
@@ -317,23 +326,61 @@ export class AutonomyDriver {
   }
 }
 
-/** What a status change says, and whether the captain should look now. */
-function changeOf(
-  t: Pick<Task, "id" | "title" | "status" | "pausedReason">,
-): { text: string; wake: boolean } | undefined {
+/** Why a task paused, in words for the log. The owner is named only when the owner did it. */
+function pauseWhy(t: Pick<Task, "pausedReason" | "pausedBy">): string {
+  if (t.pausedBy === "autonomy-off") return "because Autonomous was turned off";
+  if (t.pausedBy === "captain") return "by Captain";
+  switch (t.pausedReason ?? "owner") {
+    case "owner":
+      return "by you";
+    case "error":
+      return "because the agent hit an error";
+    case "loop":
+      return "because the agent was going in circles";
+    case "blocked":
+      return "because it is blocked";
+    case "limit":
+      return "because an account limit was reached";
+    case "offline":
+      return "because the agent went offline";
+    default:
+      return "because the agent signed out";
+  }
+}
+
+/**
+ * What a status change says, and whether the captain should look now. `text` is for the log, in
+ * plain words with the title; `wakeText` is for the lane agent and names the task by id.
+ */
+export function changeOf(
+  t: Pick<Task, "id" | "title" | "status" | "pausedReason" | "pausedBy">,
+): { text: string; wakeText: string; wake: boolean } | undefined {
+  const title = `'${t.title}'`;
   switch (t.status) {
     case "review":
-      return { text: `${t.id} is ready for review: ${t.title}`, wake: true };
+      return {
+        text: `${title} is ready for review`,
+        wakeText: `${t.id} is ready for review: ${t.title}`,
+        wake: true,
+      };
     case "mr":
-      return { text: `${t.id} has a merge request open: ${t.title}`, wake: true };
+      return {
+        text: `${title} has a merge request open`,
+        wakeText: `${t.id} has a merge request open: ${t.title}`,
+        wake: true,
+      };
     case "done":
-      return { text: `${t.id} is done: ${t.title}`, wake: true };
+      return { text: `${title} is done`, wakeText: `${t.id} is done: ${t.title}`, wake: true };
     case "running":
-      return { text: `${t.id} is running: ${t.title}`, wake: false };
+      return { text: `Started ${title}`, wakeText: `${t.id} is running: ${t.title}`, wake: false };
     case "paused": {
       const reason = t.pausedReason ?? "owner";
       const stuck = reason === "error" || reason === "loop" || reason === "blocked";
-      return { text: `${t.id} paused (${reason}): ${t.title}`, wake: stuck };
+      return {
+        text: `Paused ${title} ${pauseWhy(t)}`,
+        wakeText: `${t.id} paused (${t.pausedBy === undefined ? reason : "by the system"}): ${t.title}`,
+        wake: stuck,
+      };
     }
     default:
       return undefined;

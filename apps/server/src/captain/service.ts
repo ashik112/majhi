@@ -1,14 +1,15 @@
 import {
   type AutonomyMode,
   type AutonomySettings,
+  type CaptainCapAsk,
   type CaptainChore,
-  type CaptainLevel,
   type CaptainOrg,
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
   type CommandName,
   commands,
+  type Fact,
   PRIVATE,
   type RoomItem,
   type Spend,
@@ -19,12 +20,13 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
-import { createChores } from "./chores.ts";
+import { createChores, memoryKey } from "./chores.ts";
 import type { Lanes } from "./lanes.ts";
-import { choresOf, effectiveLevel, levelOf, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { DAILY_CAPS, DAILY_CHORES, restWhy } from "./rules.ts";
+import { DAILY_CHORES, dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -42,6 +44,7 @@ const TRIGGER_MS = 1_500;
 export interface AutonomyLink {
   mode(): AutonomyMode;
   stopNowForCaptain(): Promise<void>;
+  startForCaptain(): Promise<void>;
   /** Today's spend of the captain and autonomous work in a workspace, and its daily budget. */
   orgSpend(org: string): Promise<{ used: Spend; tz: string }>;
 }
@@ -55,6 +58,10 @@ export interface CaptainDeps {
   ports: CaptainPorts;
   /** Tells the owner through the bell, once per key. */
   tell: (key: string, text: string) => void;
+  /** What a thread is doing now: the captain in a turn, an item waiting on the owner, or neither. */
+  threadState?: (chat: string, org: string) => "working" | "waiting" | "idle";
+  /** Replaces the thread's session with a fresh one that carries a summary (the room's "fresh session"). */
+  fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
   cancelTurn: (chat: string) => Promise<void>;
   /** The org's identity for revert commits. */
@@ -98,6 +105,10 @@ export class CaptainService {
       },
       chores: createChores(deps.ports, () => this.now()),
       changed: () => this.deps.events.emit(["captain"]),
+      capAsked: (ask) => {
+        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
+        this.deps.events.emit(["captain"]);
+      },
     });
   }
 
@@ -105,15 +116,13 @@ export class CaptainService {
     return this.deps.now?.() ?? new Date();
   }
 
-  /** "Stop the captain" is on, or this service closed: nothing of the captain acts. */
+  /**
+   * This service closed: nothing of the captain acts. Autonomous being Off is not this: it keeps
+   * memory review and cleanup going (`choresNow`) and stops everything else through the workspace's
+   * authority. The captain's lanes and chats always answer.
+   */
   stopped(): boolean {
-    if (this.closed) return true;
-    try {
-      return this.repo.state().stopped;
-    } catch {
-      // The database closed under a shutdown: nothing acts.
-      return true;
-    }
+    return this.closed;
   }
 
   // ---------------------------------------------------------------------------
@@ -144,7 +153,7 @@ export class CaptainService {
         summary:
           names.length === 0
             ? "moved autonomous mode's workspace list to the captain's choice per workspace"
-            : `set ${names.join(", ")} to Runs it, from autonomous mode's workspace list`,
+            : `let the captain start work in ${names.join(", ")}, from autonomous mode's workspace list`,
       },
     );
     return true;
@@ -167,12 +176,12 @@ export class CaptainService {
 
   /** The minute sweep: daily chores once a day, the others once an hour, and the summary line. */
   async sweepNow(): Promise<void> {
-    if (this.stopped()) return;
+    if (this.closed) return;
     const sections = await this.deps.config.sections();
-    for (const org of workspaceIds(sections.orgs)) {
+    for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
-      if (ws === undefined || ws.level === "ask" || ws.rest !== undefined) continue;
-      for (const chore of choresOf(ws.level)) {
+      if (ws === undefined || ws.rest !== undefined) continue;
+      for (const chore of choresNow(ws.authority, ws.mode)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
         if (DAILY_CHORES.includes(chore)) {
           if (this.repo.runsToday(org, chore, ws.day) > 0) continue;
@@ -215,6 +224,8 @@ export class CaptainService {
     why: string,
     cause: "owner" | "agent" | "captain" | "majhi",
     subject?: string,
+    /** Read once the burst is over: why the chore should run now, or undefined to start nothing. */
+    gate?: () => Promise<string | undefined>,
   ): void {
     if (cause === "captain") {
       this.runner.selfDropped += 1;
@@ -224,8 +235,19 @@ export class CaptainService {
     const key = `${org}:${chore}`;
     if (this.pending.has(key)) return;
     const timer = setTimeout(() => {
-      this.pending.delete(key);
-      void this.runner.trigger({ org, chore, cause, why, subject }).catch(() => undefined);
+      const fire = async () => {
+        let reason: string | undefined = why;
+        try {
+          if (gate !== undefined) reason = await gate();
+        } catch {
+          reason = undefined;
+        }
+        // Held in `pending` until the gate is read, so `settled` waits for it. The runner marks the
+        // run as starting before its first await, so a trigger after this joins it.
+        this.pending.delete(key);
+        if (reason !== undefined) await this.runner.trigger({ org, chore, cause, why: reason, subject });
+      };
+      void fire().catch(() => undefined);
     }, this.deps.triggerMs ?? TRIGGER_MS);
     timer.unref();
     this.pending.set(key, { timer, why, ...(subject === undefined ? {} : { subject }) });
@@ -285,26 +307,35 @@ export class CaptainService {
     for (const org of new Set(orgs)) this.trigger(org, "projects", "A new repo appeared", "majhi");
   }
 
-  /** The owner acted in a task: the captain keeps out of it for 10 minutes. */
-  ownerActed(command: string, input: unknown, meta: CommandMeta, output?: unknown): void {
-    if (meta.actor.kind !== "owner") return;
-    // Reading a room is not acting in it.
-    if (command.startsWith("captain.") || !Object.hasOwn(commands, command)) return;
-    if (commands[command as CommandName].risk === "read") return;
-    const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-    // A task the owner just made is one they act in too.
-    const made =
-      command === "tasks.create" && typeof output === "object" && output !== null
-        ? (output as { id?: unknown }).id
-        : undefined;
-    const task = [fields.task, fields.id, made].find(
-      (v): v is string => typeof v === "string" && /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/.test(v),
-    );
-    if (task === undefined) return;
-    try {
-      this.repo.ownerActed(task, this.now().toISOString());
-    } catch {
-      // The database closed under a shutdown.
+  /**
+   * Curation left a memory waiting for review. Once the workspace that reviews it has
+   * `MEMORY_WAITING` memories its chore has not looked at, the memory chore runs, not only daily.
+   * A memory from the captain's own lane, or from a task it just acted in, starts nothing.
+   */
+  async memoryWaiting(fact: Pick<Fact, "scope" | "task">): Promise<void> {
+    // Not by agent: the Housekeeper is the captain's agent unless the owner picked another.
+    const task = fact.task;
+    const own =
+      task !== undefined && (this.causedByCaptain(task) || this.deps.lanes.orgOf(task) !== undefined);
+    const org = laneOfScope(fact.scope, (await this.deps.config.sections()).projects);
+    if (org === undefined) return;
+    this.trigger(org, "memory", "Memories wait", own ? "captain" : "agent", undefined, async () => {
+      const waiting = (await this.deps.ports.pendingFacts(org)).filter(
+        (f) => !this.repo.hasAction(memoryKey(f.id)),
+      ).length;
+      return waiting >= MEMORY_WAITING ? `${waiting} memories wait for review` : undefined;
+    });
+  }
+
+  /**
+   * The owner stopped typing in a task (sent, left or went quiet) that the captain waited on: the
+   * chores that wait on typing look again, now (SPEC 5.18, Presence).
+   */
+  ownerIdle(task: string): void {
+    const org = this.orgOfTask(task);
+    if (org === undefined) return;
+    for (const chore of ["ship", "cards", "questions"] as const) {
+      this.trigger(org, chore, `You stopped typing in ${task}`, "majhi", task);
     }
   }
 
@@ -330,7 +361,8 @@ export class CaptainService {
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
-      level: effectiveLevel(levelOf(autonomy, org), this.deps.autonomy.mode()),
+      mode: this.deps.autonomy.mode(),
+      authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
       rules,
       tz,
       day: localDay(now, tz),
@@ -353,7 +385,7 @@ export class CaptainService {
     for (const org of workspaceIds(sections.orgs)) {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
-      const level: CaptainLevel = levelOf(settings.autonomy, org);
+      const authority = authorityOf(settings.autonomy, org);
       const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
       const spend = await this.deps.autonomy
         .orgSpend(org)
@@ -363,18 +395,19 @@ export class CaptainService {
       orgs.push({
         org,
         name: ws.name,
-        level,
-        effective: ws.level,
-        rules: settings.autonomy.orgs[org] ?? { push: false, merge: false },
+        authority,
+        effective: ws.authority,
+        rules: settings.autonomy.orgs[org] ?? {},
         ...(cap === undefined ? {} : { budget: cap }),
         used: spend.used,
         summary: line,
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
-        chores: choresOf(ws.level === "ask" ? level : ws.level).map((chore) => {
+        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane, org) ?? "idle"),
+        chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = DAILY_CAPS[chore];
+          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
@@ -390,8 +423,8 @@ export class CaptainService {
       });
     }
     return {
-      stopped: state.stopped,
-      ...(state.stoppedAt === undefined ? {} : { stoppedAt: state.stoppedAt }),
+      // The captain is never stopped; the field stays for older clients. The switch is `autonomy`.
+      stopped: false,
       autonomy: mode,
       ...(sections.boss === undefined ? {} : { captain: sections.boss }),
       day,
@@ -406,28 +439,82 @@ export class CaptainService {
     };
   }
 
-  /** "Stop the captain": autonomous mode stops now, every lane's turn ends, every run ends at its next step. */
+  /**
+   * The old "Stop the captain" is now turning Autonomous off and pausing its tasks: every upkeep run
+   * ends at its next step and the lanes' turns end. The captain still answers when spoken to.
+   */
   async stop(): Promise<CaptainStatus> {
-    this.repo.setStopped(true, this.now().toISOString());
     for (const p of this.pending.values()) clearTimeout(p.timer);
     this.pending.clear();
-    if (this.deps.autonomy.mode() !== "off")
-      await this.deps.autonomy.stopNowForCaptain().catch(() => undefined);
-    for (const lane of this.deps.lanes.all()) await this.deps.cancelTurn(lane.chat).catch(() => undefined);
+    if (this.deps.autonomy.mode() !== "off") await this.deps.autonomy.stopNowForCaptain();
     this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
   }
 
+  /** The old "Resume the captain" is turning Autonomous on, resuming the tasks it paused. */
   async resume(): Promise<CaptainStatus> {
-    this.repo.setStopped(false, this.now().toISOString());
-    this.deps.events.emit(["captain"]);
+    await this.deps.autonomy.startForCaptain();
+    this.deps.events.emit(["captain", "autonomy"]);
     return this.status();
+  }
+
+  /**
+   * "Start fresh" in a workspace's thread: the session ends and a new one starts, seeded with the
+   * summary majhi's fresh-session handoff writes (the agent's own note, else one built from the
+   * saved state). The thread's messages stay, and the room shows the summary as an item.
+   */
+  async startFresh(org: string): Promise<{ item: RoomItem }> {
+    const chat = this.deps.lanes.chat(org);
+    const agent = chat === undefined ? undefined : this.deps.store.tasks.get(chat)?.team[0];
+    if (chat === undefined || agent === undefined || this.deps.fresh === undefined) {
+      throw new UserError("That workspace has no captain thread yet.", 404);
+    }
+    const item = await this.deps.fresh(chat, agent);
+    this.deps.events.emit(["captain"]);
+    return { item };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {
     this.repo.turnOn(org, chore);
     this.deps.events.emit(["captain"]);
     return this.status();
+  }
+
+  /** The questions about daily caps that wait for the owner, of each workspace's today only. */
+  async asks(): Promise<{ asks: CaptainCapAsk[] }> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const today = (org: string) => localDay(this.now(), zoneOr(settings.orgs[org]?.tz ?? settings.tz));
+    return { asks: this.repo.pendingCapAsks().filter((a) => a.day === today(a.org)) };
+  }
+
+  /**
+   * The owner's answer about a chore that reached its daily cap today. Raise doubles the chore's caps
+   * for that day only, and the chore looks again at once; Leave it keeps them.
+   */
+  async answerCap(
+    org: string,
+    chore: CaptainChore,
+    answer: "raise" | "leave",
+  ): Promise<{ asks: CaptainCapAsk[] }> {
+    const ask = (await this.asks()).asks.find((a) => a.org === org && a.chore === chore);
+    if (ask === undefined) {
+      throw new UserError(
+        `The captain is not asking about ${CHORE_LABEL[chore].toLowerCase()} in ${org} today.`,
+        409,
+      );
+    }
+    this.repo.answerCapAsk(
+      org,
+      chore,
+      ask.day,
+      answer === "raise" ? "raised" : "left",
+      this.now().toISOString(),
+    );
+    this.deps.events.emit(["captain"]);
+    if (answer === "raise") {
+      void this.runner.start(org, chore, "The owner raised today's limit").catch(() => undefined);
+    }
+    return this.asks();
   }
 
   /** Undo one action of the log through majhi's own paths. */

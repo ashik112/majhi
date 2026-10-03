@@ -86,7 +86,7 @@ export function capText(cap: Budget): string {
   return parts.join(" / ");
 }
 
-function tokenText(n: number): string {
+export function tokenText(n: number): string {
   if (n >= 1_000_000) return `${Number((n / 1_000_000).toFixed(1))}M`;
   if (n >= 1_000) return `${Number((n / 1_000).toFixed(1))}k`;
   return String(n);
@@ -147,7 +147,7 @@ export function holdsOf(
   if (spend.total.reached && spend.total.cap !== undefined) {
     holds.push({
       kind: "day-cap",
-      text: `Autonomous mode reached its ${capText(spend.total.cap)} cap for today`,
+      text: `Autonomous reached its ${capText(spend.total.cap)} cap for today`,
       until: spend.resetsAt,
     });
   }
@@ -216,7 +216,7 @@ export function capPassed(
   names: Readonly<Record<string, string>> = {},
 ): { text: string; scope: string } | undefined {
   if (spend.total.cap !== undefined && pastMargin(spend.total, turnCost)) {
-    return { text: `Autonomous mode passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
+    return { text: `Autonomous passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
   }
   const own = spend.orgs.find((o) => o.org === org);
   if (own?.cap !== undefined && pastMargin(own, turnCost)) {

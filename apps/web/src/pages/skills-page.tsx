@@ -1,6 +1,6 @@
 import { SkillsView } from "@/features/skills/skills-view";
 
-/** "Skills" page, rendered by the app shell inside the main area. Skills arrive in Phase 6. */
+/** "Skills & MCP" page, rendered by the app shell inside the main area. */
 export function SkillsPage() {
   return <SkillsView />;
 }

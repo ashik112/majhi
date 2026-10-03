@@ -1,6 +1,8 @@
 import {
   type CaptainAction,
   CaptainActionSchema,
+  type CaptainCapAsk,
+  CaptainCapAskSchema,
   type CaptainChore,
   type CaptainRun,
   CaptainRunSchema,
@@ -321,6 +323,15 @@ export class CaptainRepo {
     ).flatMap((r) => actionOf(r) ?? []);
   }
 
+  /** Lines made in `[from, to)` (UTC ISO), oldest first: the daily summary's upkeep. */
+  actionsBetween(from: string, to: string): StoredAction[] {
+    return (
+      this.db
+        .prepare("SELECT * FROM captain_actions WHERE at >= ? AND at < ? ORDER BY id")
+        .all(from, to) as ActionRow[]
+    ).flatMap((r) => actionOf(r) ?? []);
+  }
+
   action(id: number): StoredAction | undefined {
     const row = this.db.prepare("SELECT * FROM captain_actions WHERE id = ?").get(id) as
       | ActionRow
@@ -403,21 +414,58 @@ export class CaptainRepo {
   }
 
   // ---------------------------------------------------------------------------
-  // Presence
+  // Daily caps the owner is asked about
 
-  ownerActed(task: string, at: string): void {
-    this.db
+  /** Records the question; false when one was asked about this chore, workspace and day already. */
+  addCapAsk(ask: CaptainCapAsk): boolean {
+    const done = this.db
       .prepare(
-        "INSERT INTO captain_presence (task, at) VALUES (?, ?) ON CONFLICT (task) DO UPDATE SET at = excluded.at",
+        "INSERT OR IGNORE INTO captain_cap_asks (org, chore, day, kind, cap, raise_to, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(task, at);
+      .run(ask.org, ask.chore, ask.day, ask.kind, ask.cap, ask.raiseTo, ask.text, ask.at);
+    return done.changes > 0;
   }
 
-  ownerAt(task: string): string | undefined {
-    const row = this.db.prepare("SELECT at FROM captain_presence WHERE task = ?").get(task) as
-      | { at: string }
-      | undefined;
-    return row?.at;
+  /** The owner raised the chore's caps in the workspace for that day. */
+  capRaised(org: string, chore: CaptainChore, day: string): boolean {
+    const row = this.db
+      .prepare(
+        "SELECT 1 AS yes FROM captain_cap_asks WHERE org = ? AND chore = ? AND day = ? AND state = 'raised'",
+      )
+      .get(org, chore, day);
+    return row !== undefined;
+  }
+
+  /** Questions still waiting for the owner, oldest first. */
+  pendingCapAsks(): CaptainCapAsk[] {
+    const rows = this.db
+      .prepare(
+        "SELECT org, chore, day, kind, cap, raise_to, text, at FROM captain_cap_asks WHERE state = 'pending' ORDER BY at",
+      )
+      .all() as {
+      org: string;
+      chore: string;
+      day: string;
+      kind: string;
+      cap: number;
+      raise_to: number;
+      text: string;
+      at: string;
+    }[];
+    return rows.flatMap((r) => {
+      const ask = CaptainCapAskSchema.safeParse({ ...r, raiseTo: r.raise_to });
+      return ask.success ? [ask.data] : [];
+    });
+  }
+
+  /** The owner's answer to the day's question. False when there was none waiting. */
+  answerCapAsk(org: string, chore: CaptainChore, day: string, state: "raised" | "left", at: string): boolean {
+    const done = this.db
+      .prepare(
+        "UPDATE captain_cap_asks SET state = ?, answered_at = ? WHERE org = ? AND chore = ? AND day = ? AND state = 'pending'",
+      )
+      .run(state, at, org, chore, day);
+    return done.changes > 0;
   }
 
   // ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
 import { IdSchema } from "./ids.ts";
-import { AutonomyOrgSchema, BudgetSchema, CaptainLevelSchema } from "./settings.ts";
+import { AutonomyOrgSchema, BudgetSchema, type CaptainLevelSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
 
 /**
@@ -9,12 +10,6 @@ import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
  * fixed moments, its lane (one chat per workspace), its log with Undo, and the guards that keep it
  * from running away. The rules are in docs/PROGRESS.md under Phase 13.
  */
-
-export const LEVEL_LABEL = {
-  ask: "Only when I ask",
-  tidy: "Keeps things tidy",
-  runs: "Runs it",
-} as const satisfies Record<z.infer<typeof CaptainLevelSchema>, string>;
 
 /** The upkeep chores (the table in 5.18). */
 export const CaptainChoreSchema = z.enum([
@@ -139,10 +134,10 @@ export type CaptainChoreState = z.infer<typeof CaptainChoreStateSchema>;
 export const CaptainOrgSchema = z.object({
   org: z.string(),
   name: z.string(),
-  /** The choice, defaults applied. */
-  level: CaptainLevelSchema,
-  /** What it does now: "Runs it" acts as "Keeps things tidy" while autonomous mode is not on. */
-  effective: CaptainLevelSchema,
+  /** Who decides each row, defaults applied and old settings carried over. */
+  authority: AuthoritySchema,
+  /** What holds now: every row but upkeep is "ask" while Autonomous is not On. */
+  effective: AuthoritySchema,
   /** The settings as saved, for "More rules". */
   rules: AutonomyOrgSchema,
   /** The daily budget (its cap) and what the captain and autonomous work spent here today. */
@@ -154,18 +149,20 @@ export const CaptainOrgSchema = z.object({
   forYou: z.number().int().nonnegative(),
   /** Why it does not act right now (outside hours, a freeze, budget reached). */
   resting: z.string().optional(),
-  /** The captain's chat for this workspace. */
+  /** The captain's thread for this workspace (a chat that is not a task to the owner). */
   lane: TaskIdSchema.optional(),
+  /** What the thread is doing: the captain is in a turn, something waits on the owner, or neither. */
+  thread: z.enum(["working", "waiting", "idle"]).default("idle"),
   chores: z.array(CaptainChoreStateSchema),
 });
 export type CaptainOrg = z.infer<typeof CaptainOrgSchema>;
 
 /** `captain.status`. */
 export const CaptainStatusSchema = z.object({
-  /** "Stop the captain" is on: no lane, run or chore acts until the owner resumes it. */
+  /** Always false: the captain is never stopped, Autonomous is the switch. Kept for older clients. */
   stopped: z.boolean(),
   stoppedAt: z.string().optional(),
-  /** Autonomous mode, the master switch for "Runs it". */
+  /** Autonomous, the master switch for everything the captain does by itself. */
   autonomy: AutonomyModeSchema,
   /** The captain agent. Absent: none chosen yet, and nothing runs. */
   captain: IdSchema.optional(),
@@ -192,3 +189,80 @@ export const CaptainChoreInputSchema = z.object({
   org: z.string().min(1).max(63),
   chore: CaptainChoreSchema,
 });
+
+/**
+ * A chore reached its daily cap in a workspace, and the captain asks the owner whether to raise it
+ * for today: one per chore, workspace and day. `kind` says which cap it reached, actions or runs.
+ * "Raise" doubles the chore's caps for that day only; "Leave it" keeps them.
+ */
+export const CaptainCapAskSchema = z.object({
+  org: z.string(),
+  chore: CaptainChoreSchema,
+  /** The workspace's day, `YYYY-MM-DD`. */
+  day: z.string(),
+  kind: z.enum(["actions", "runs"]),
+  /** The cap it reached. */
+  cap: z.number().int().positive(),
+  /** The cap for the rest of the day after "Raise". */
+  raiseTo: z.number().int().positive(),
+  /** "Pyzasoft: the captain answered its 20 questions for today. Raise the limit for today?" */
+  text: z.string(),
+  at: z.string(),
+});
+export type CaptainCapAsk = z.infer<typeof CaptainCapAskSchema>;
+
+/**
+ * A budget ran out while autonomous work waits, and the captain asks the owner whether to raise it for
+ * today: one per budget and day. `scope` is `day` for the autonomous budget, else the workspace id.
+ * "Raise" doubles the budget for that day only and never writes the saved setting.
+ */
+export const BudgetAskSchema = z.object({
+  scope: z.string().min(1).max(63),
+  /** What the budget is called on a card: "Autonomous work" or the workspace's name. */
+  name: z.string(),
+  /** The workspace's day, `YYYY-MM-DD`. */
+  day: z.string(),
+  /** The budget that ran out. */
+  cap: BudgetSchema,
+  /** The budget for the rest of the day after "Raise". */
+  raiseTo: BudgetSchema,
+  /** Tasks waiting on it when it was asked. */
+  waiting: z.number().int().nonnegative(),
+  /** "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
+  text: z.string(),
+  at: z.string(),
+});
+export type BudgetAsk = z.infer<typeof BudgetAskSchema>;
+
+/** `captain.asks`: what the captain asks the owner about its caps and budgets today. */
+export const CaptainAsksSchema = z.object({
+  asks: z.array(CaptainCapAskSchema),
+  budgets: z.array(BudgetAskSchema).default([]),
+});
+
+export const BudgetAnswerInputSchema = z.object({
+  scope: z.string().min(1).max(63),
+  answer: z.enum(["raise", "leave"]),
+});
+
+export const CaptainCapAnswerInputSchema = z.object({
+  org: z.string().min(1).max(63),
+  chore: CaptainChoreSchema,
+  answer: z.enum(["raise", "leave"]),
+});
+
+/** Agent slots under the concurrency limits (5.17): held by running agents, waiting in line, free. */
+export const SlotRoomSchema = z.object({
+  inUse: z.number().int().nonnegative(),
+  waiting: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+  free: z.number().int().nonnegative(),
+});
+export type SlotRoom = z.infer<typeof SlotRoomSchema>;
+
+/** `tasks.slots`: free agent slots overall (`agents_max`) and per account (`per_account`), for planning. */
+export const SlotCapacitySchema = z.object({
+  agents: SlotRoomSchema,
+  accounts: z.array(SlotRoomSchema.extend({ account: z.string() })),
+});
+export type SlotCapacity = z.infer<typeof SlotCapacitySchema>;

@@ -1,5 +1,6 @@
 import type { AutonomyEvent, AutonomySummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { Harness } from "../testing/harness.ts";
 import { UsageRepo } from "../usage/repo.ts";
@@ -76,6 +77,10 @@ describe("buildSummary", () => {
           why: "Only the owner removes things",
         },
       ],
+      upkeep: [],
+      decisions: [{ id: "room:LOCAL-1:approval:1", title: "Remove ACM-9" }],
+      queue: [],
+      names: new Map(),
     });
     expect(summary.shipped).toEqual([
       { task: "ACM-1", title: "Fix login", org: "acme", how: "merged" },
@@ -89,6 +94,84 @@ describe("buildSummary", () => {
     expect(summary.decisions).toBe(5);
     expect(summaryLine(summary)).toBe(
       "Daily summary for 2026-10-02: shipped 3, spent $4.20 of $20.00, unsure about 2, 1 waiting for you.",
+    );
+  });
+});
+
+describe("buildSummary lists", () => {
+  const cap = { cost: 50 };
+  const input = (over: Partial<Parameters<typeof buildSummary>[0]> = {}) => ({
+    day: "2026-10-02",
+    from: "2026-10-01T00:00:00.000Z",
+    to: "2026-10-02T00:00:00.000Z",
+    at: "2026-10-02T08:00:10.000Z",
+    events: [],
+    tasks: new Map(),
+    spent: {
+      total: { used: { tokens: 1, cost: 1 }, percent: 2, reached: false },
+      orgs: [],
+    },
+    waiting: [],
+    upkeep: [],
+    decisions: [],
+    queue: [],
+    names: new Map([
+      ["acme", "Acme"],
+      ["globex", "Globex"],
+      ["private", "Private"],
+    ]),
+    ...over,
+  });
+
+  it("groups what shipped by workspace with three titles each, biggest first, and names what waits and what is next", () => {
+    const orgs = ["acme", "globex", "northwind", "private"];
+    const tasks = new Map<string, { title: string; org?: string }>();
+    const events: AutonomyEvent[] = [];
+    for (let i = 1; i <= 30; i++) {
+      const org = orgs[i % 4] ?? "acme";
+      const id = `T-${i}`;
+      tasks.set(id, { title: `Task ${i}`, ...(org === "private" ? {} : { org }) });
+      events.push({
+        seq: i,
+        at: "2026-10-01T12:00:00.000Z",
+        kind: "task",
+        text: id,
+        task: id,
+        status: "done",
+      });
+    }
+    const summary = buildSummary(
+      input({
+        events,
+        tasks,
+        // A ship line for a task the feed knows already, and two lines that ship nothing.
+        upkeep: [{ chore: "ship", task: "T-4" }, { chore: "memory" }, { chore: "cleanup" }],
+        decisions: [1, 2, 3, 4, 5].map((n) => ({ id: `room:T-${n}:1`, title: `Decide ${n}`, org: "acme" })),
+        queue: [1, 2, 3, 4].map((n) => ({ title: `Next ${n}`, why: `Because ${n}` })),
+      }),
+    );
+    expect(summary.shipped).toHaveLength(30);
+    expect(summary.shipGroups.map((g) => [g.name, g.count, g.titles.length])).toEqual([
+      ["Globex", 8, 3],
+      ["northwind", 8, 3],
+      ["Acme", 7, 3],
+      ["Private", 7, 3],
+    ]);
+    expect(summary.shipGroups.find((g) => g.org === "acme")?.titles).toEqual(["Task 4", "Task 8", "Task 12"]);
+    expect(summary.upkeep).toBe(2);
+    expect(summary.needs).toEqual({
+      count: 5,
+      top: [1, 2, 3].map((n) => ({ id: `room:T-${n}:1`, title: `Decide ${n}`, org: "acme" })),
+    });
+    expect(summary.next.map((n) => n.title)).toEqual(["Next 1", "Next 2", "Next 3"]);
+  });
+
+  it("flags overspend in the line and names the workspace", () => {
+    const over = { used: { tokens: 9, cost: 80.56 }, cap, percent: 161, reached: true };
+    const summary = buildSummary(input({ spent: { total: over, orgs: [{ ...over, org: "acme" }] } }));
+    expect(summary.spent.orgs[0]).toMatchObject({ org: "acme", name: "Acme", percent: 161 });
+    expect(summaryLine(summary)).toBe(
+      "Daily summary for 2026-10-02: shipped 0, spent $80.56 of $50.00 (over).",
     );
   });
 });
@@ -112,7 +195,7 @@ describe("the daily summary", () => {
         await h.cmd("autonomy.configure", {
           tz: "UTC",
           summary_at: "08:00",
-          orgs: { acme: { level: "runs" } },
+          orgs: { acme: { authority: RUNS } },
         })
       ).status,
     ).toBe(200);
@@ -157,7 +240,7 @@ describe("the daily summary", () => {
       tz: "UTC",
       summary_at: "08:00",
       day: { cost: 200 },
-      orgs: { acme: { level: "runs" } },
+      orgs: { acme: { authority: RUNS } },
     });
     expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
     const autonomy = h.majhi.services.autonomy;
@@ -207,5 +290,54 @@ describe("the daily summary", () => {
     expect(summaryLine(second)).toBe(
       "Daily summary for 2026-10-02: shipped 0, spent $10.00 (the cap changed during the day, to $30.00).",
     );
+  });
+
+  it("is made while Autonomous is Off, from the upkeep and the spend, and alerts nobody", async () => {
+    let now = new Date("2026-09-29T10:00:00.000Z");
+    w = await bossWorld({ real: false, runClock: () => now });
+    const { h } = w;
+    expect(
+      (
+        await h.cmd("autonomy.configure", {
+          tz: "UTC",
+          summary_at: "08:00",
+          orgs: { acme: { authority: RUNS } },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await h.cmd("autonomy.start")).body.mode).toBe("on");
+    const autonomy = h.majhi.services.autonomy;
+    const lane = (await autonomy.laneChat("acme")) ?? "";
+    now = new Date("2026-09-30T10:00:00.000Z");
+    expect((await h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
+    // October 1st: Off all day, with a lane turn that cost money.
+    new UsageRepo(h.majhi.services.store.raw).insert({
+      at: "2026-10-01T12:00:00.000Z",
+      task: lane,
+      agent: "boss",
+      account: "claude-acme",
+      tool: "claude",
+      auth: "login",
+      org: "acme",
+      project: null,
+      runId: null,
+      model: "sonnet",
+      inputTokens: 1000,
+      outputTokens: 100,
+      reasoningTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 3.5,
+      costSource: "reported",
+      estimated: true,
+    });
+    // The 30th is the day it was turned off; the 1st is Off all through.
+    now = new Date("2026-10-01T08:00:30.000Z");
+    expect(((await autonomy.dailySummary()) as AutonomySummary).day).toBe("2026-09-30");
+    now = new Date("2026-10-02T08:00:30.000Z");
+    const made = (await autonomy.dailySummary()) as AutonomySummary;
+    expect(made.day).toBe("2026-10-01");
+    expect(made.spent.total.used.cost).toBe(3.5);
+    expect((await h.cmd("autonomy.status")).body.mode).toBe("off");
   });
 });

@@ -78,7 +78,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       system,
     }),
     (name) => services.events.emit(topicsFor(name)),
-    (name, input, meta, output) => services.captain.ownerActed(name, input, meta, output),
   );
   services.admin.bind(dispatch);
   services.bindCaptain(dispatch);
@@ -152,6 +151,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.watcher.start();
       services.usageSweeper.start();
       services.mrPoller.start();
+      services.trackers.start();
       services.e2e?.start();
       services.resilience.start();
       services.automation.scheduler.start();

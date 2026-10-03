@@ -125,6 +125,7 @@ Search tasks and memory, and run commands: new task, add account, new agent, ins
 - Keyboard shortcuts for the palette, new task, send, next/previous task, approve.
 - Fast: task switching under 100 ms, room updates stream live.
 - Dark theme first. IBM Plex Sans and IBM Plex Mono, as in the demo.
+- Ids are for support, not for the owner: a chat shows its title, its agent, its workspace and when it was last active, never its task id (the id stays in the address and in a tooltip). One concept gets one place: the captain, its delegation, its log and its chat are one screen, the Captain page (5.18), not separate pages or tabs.
 
 ### 3.5 Workspace roots
 Set during onboarding (3.6) and changed later from the palette or by the captain. The owner never types a path: a folder browser lists folders on the host (via the host helper, 4.2), marks git repos, and suggests likely roots (folders under home that hold repos, with their repo counts). Typing a path stays possible for keyboard users. Container mounts are fixed at start, so when a new root is saved, the host helper regenerates the mounts and restarts majhi on its own; the UI shows "Restarting to mount ~/X" and comes back with the new repos. Only when no host helper is connected does majhi show the `make up` command.
@@ -234,7 +235,7 @@ The host helper per OS:
 | Agent socket in the server (4.5) | `/run/host-services/ssh-auth.sock`, from OrbStack or Docker Desktop | `~/.majhi/run/ssh-agent.sock`, which the helper serves and forwards to the agent above | Same |
 | Key passphrases | Apple's `ssh-add --apple-use-keychain`, reloaded with `--apple-load-keychain` | Kept in the keyring and given to `ssh-add` through a throwaway askpass at each check; with no keyring, kept nowhere | Same |
 | Docker | OrbStack or Docker Desktop, started with `open -a` | Docker Engine run as root, a system service the helper cannot start: its notification says `sudo systemctl enable --now docker` | Docker Desktop with WSL integration, started through `powershell.exe`; `docker` is looked for again once it runs |
-| Notifications | terminal-notifier (clickable), else osascript | `notify-send` (not clickable) | A Windows toast through `powershell.exe` (clickable) |
+| Notifications | terminal-notifier, which majhi installs (clickable), else osascript | `notify-send` (not clickable) | A Windows toast through `powershell.exe` (clickable) |
 | Open a URL | `open` | `xdg-open` | `wslview`, else `explorer.exe` |
 | Open in editor | `code` or `cursor` CLI, the CLI inside the app, then `open -a` | `code` or `cursor` on PATH | `code` or `cursor` on PATH, else the Windows install's |
 | Laya | Native on Apple silicon, else Docker on the CPU | Docker, on the CPU or an NVIDIA GPU (5.12) | Same, with the NVIDIA driver in Windows |
@@ -257,9 +258,8 @@ v1 can merge `server` and `runner` into one container if that is simpler. Keep t
 ~/.majhi/
 ├── majhi.yaml                 workspace roots, orgs, accounts, projects, aliases, links, policies, defaults
 ├── agents/<id>.md           one agent per file: YAML frontmatter + instructions body
-├── skills/<name>/SKILL.md   installed skills (Agent Skills format)
-├── accounts/<id>/           each account's own CLI config home (login credentials live here)
-├── agent-homes/<id>/        per-agent config home (see 5.2)
+├── skills/<name>/SKILL.md   installed skills (Agent Skills format), with skills-lock.json beside them (5.2)
+├── accounts/<id>/           each account's own CLI config home, shared by its agents (login credentials live here)
 ├── memory/memory.db         memory store
 ├── majhi.db                   tasks, rooms, runs, usage, index of the files above
 ├── secrets.age              tracker tokens and API keys, encrypted with age
@@ -303,7 +303,7 @@ tasks_dir: ~/Work/.majhi             # default: <first root>/.majhi
 decisions: { provider: laya, fallback: acp, acp_agent: dispatcher }   # laya | jev | acp | rules
 context: { cap: 200000, compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
 boss: majhi-boss                  # which root agent is the captain (5.16)
-limits: { agents_max: 6, idle_timeout: 10m, per_account: 2 }   # see 5.17
+limits: { agents_max: 6, idle_timeout: 3m, per_account: 2 }   # see 5.17
 turns: { max_length: 2h, idle: 25m, max_tool_calls: 0 }   # per turn, off or 0 turns one off (5.13)
 accounts:
   claude-globex-2: { tool: claude, org: globex, auth: login }
@@ -361,8 +361,14 @@ projects:
 ### 5.2 Accounts, per-agent homes and skills
 
 - A login account has one config home holding its credentials. Login runs the tool's own login inside the runner, shown in an embedded terminal (device-code or browser flow). An API-key account needs no login: its key is stored in `secrets.age` and injected only into runs on that account.
-- Several agents can share an account but need different skills. So each agent gets its own config home in `~/.majhi/agent-homes/<id>/` that links to the account's credential file and contains only that agent's enabled skills.
-- **Verify early (Phase 1):** that each CLI works with a linked credential file, and that token refresh does not break when two agents on the same account run at once. If it breaks, fall back to one shared home per account and give per-agent skills through the prompt instead. Log the result.
+- Several agents can share an account but need different skills. Agents on one account share its config home (checked in Phase 1: a linked credential file breaks Claude's token refresh, see DECISIONS 2026-09-29), so per-agent skills reach a run through the run itself, never through a shared `.claude/skills`.
+- **Skills** use the open Agent Skills format: a folder with a `SKILL.md` whose YAML frontmatter has `name` and `description`.
+  - **Store.** Installed once into `~/.majhi/skills/<name>/`, with `skills-lock.json` beside them recording source, ref or commit, content hash and install time.
+  - **Install.** The Vercel `skills` CLI, pinned in the runner image, runs non-interactively in a runner with a throwaway home: `skills add <source> -y --copy --agent claude-code codex [--skill <name>]`, telemetry off. Sources: `owner/repo`, repo or `tree/.../skills/<name>` URLs, other git URLs, a SKILL.md or archive URL, a folder inside a workspace root or the tasks folder, or an uploaded zip (extracted with path containment). Private repos use the org's git login. Installing is two steps: a preview (name, description, files, source) and a confirm of exactly what was previewed. Installing never enables.
+  - **Per agent.** The agent file's `skills` list. Each run gets read-only copies of only its agent's enabled skills in a folder of its own, removed when the session ends, and the session's first prompt names each skill with its SKILL.md path. Changing an agent's skills restarts its open sessions when their turn ends, so the next turn has them.
+  - **Browse** searches the skills.sh directory and shows each result's source repo. Update previews the change first; remove takes the skill off every agent that lists it. Every install, update, enable, disable and remove gets an audit row.
+- **MCP servers** are `mcp` connections (5.14), installed from the same page: the official MCP Registry (`/v0.1/servers`, falling back to `/v0`), a remote URL (Streamable HTTP or SSE, with headers), a local command, or a pasted `mcpServers` snippet. A registry package is always pinned to a version. Fields marked secret are set through the write-only secret flow, required ones must be filled before saving, and Test runs right after and shows the tool list. Per agent, a server is turned on in the agent's `connections`, inside its own org only.
+- **By message.** In a room, the owner's "@agent install this skill <link>" or "@agent add this MCP server <name or link>" gets one approval card (what, source, which agent). Approving installs it and turns it on for that agent; secrets an MCP server needs are asked for with secret requests, never in chat. The same `skills.*` and `mcp.*` commands serve the page, the room and the captain.
 
 ### 5.3 Rooms and coordination
 
@@ -578,16 +584,16 @@ Agents run without Docker on purpose (the socket is root on the host). When they
 - **Preview.** `preview_build` builds a repo's Dockerfile as `majhi-preview-<task>` on the task's own BuildKit builder, as a process that wakes the agent when it ends. `preview_run` runs it with a throwaway folder and nothing of the host, on the runner network, with one port on `127.0.0.1` for the owner's link.
 - **Services.** `service_start` runs an allowed image (postgres, redis) on a per-task internal network that only that task's runners join, with only named volumes majhi creates for the task. A port is never published.
 - **Images.** A new image asks the owner once through an approval card (`containers.images.allow`), and PRV-49's always-allow rules apply. `settings.get` lists the allowed images.
-- **Limits.** `containers` in `majhi.yaml`: `cpus`, `memory`, `per_task`, `build_cpus`, `build_memory`.
+- **Limits.** `containers` in `majhi.yaml`: `cpus`, `memory` (default 512m per service or preview), `per_task`, `build_cpus`, `build_memory`.
 - **Processes.** Each container is a majhi process: the Processes card, `majhi-processes output`, Stop and waking the agent work as for any process.
-- **Cleanup.** Stopping a task removes its containers and network and keeps its volumes. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start.
+- **Cleanup.** A task that leaves running (review, paused, stopped) stops its services and preview, removes its network and keeps its volumes; when it runs again they start again the same way. The builder stops when a build ends. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start, and once a week removes its own preview images that no container uses and builder cache older than 7 days (never volumes, never anything it did not label or name).
 
 ### 5.16 The captain and the control plane
 
 The owner can run majhi by talking to one agent. The captain sets things up, changes them, runs tasks and debugs, the way the owner would use a CLI agent today, but with access to all of majhi.
 
 - **One control plane.** Every change is a typed command with zod input and output, defined in `packages/shared/commands` and handled in majhi. Examples: create an org, clone a repo into a root and register it, add an account, start a login, create or remove an agent, set a limit, create a task, stop an agent. The UI, the palette, the captain and the tests all call the same commands. A feature is not done until its commands exist. There are no UI-only or file-only features.
-- **Who the captain is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's private account. The owner can make any root agent the captain, in Studio or by asking the current captain. The captain is always one keystroke away (Cmd J opens its chat from any screen). Its chat is a `chat` task, so it streams, stops and resumes like any other room.
+- **Who the captain is.** `boss: <agent-id>` in `majhi.yaml`, by default a root agent on the owner's private account. The owner can make any root agent the captain, in Studio or by asking the current captain. The captain is always one keystroke away (Cmd J opens the Captain panel from any screen). The panel holds one thread per workspace and an "All" view (5.18); those threads are not tasks, never show in Chats or on the Board, and cannot be deleted ("Start fresh" clears one and keeps a summary). A topic chat the owner starts with the captain is an ordinary `chat` task. The captain has its own run slot, outside "agents at once" and "per account", so the owner's message is answered in seconds; its spend still counts against the autonomous budget and the account floors.
 - **What it gets.** The `majhi-admin` MCP tool, which exposes every command, plus every other majhi tool and every connection of every org.
 - **What it can do**, for example:
   - Clone a repo into a workspace root, create an org for it, register the project with aliases and links.
@@ -606,39 +612,75 @@ The owner can run majhi by talking to one agent. The captain sets things up, cha
 - **Secrets never pass through a model.** When the owner pastes something that looks like a secret into any chat, the composer offers "Save as secret" and the agent only receives a reference such as `secret:newrelic-globex`. When the captain needs a secret, it asks for it through a secure input card that the UI renders, never as chat text.
 - **Live changes.** Config changes apply without a restart (file watchers and in-memory registries). The only exception is adding or removing a workspace root, because Docker mounts are fixed at start. The captain says so and shows the command.
 
-### 5.18 How much the captain does, per workspace
+### 5.18 Autonomous mode and the captain's authority
 
-The captain never acts on its own unless the owner chose that for the workspace. Outside that choice it answers only when the owner talks to it.
+The captain works like a chief of staff: the owner gives it a budget and authority per workspace, sees only the decisions that need them, and keeps one switch. The proposal and its reasons are in `docs/briefs/captain-chief-of-staff.md` (approved 2026-10-04).
 
-**What the owner sees: one choice per workspace,** "How much does the captain do here?"
+**One switch: Autonomous, On or Off,** in the sidebar, as a sub-row under Captain with today's spend (it is a switch, not a page).
 
-- **Only when I ask.** The captain answers in its chat. Nothing else. Default for every new client workspace.
-- **Keeps things tidy.** Upkeep (below), done by the captain. Shipping always asks the owner. Default for Private.
-- **Runs it.** Upkeep, and the captain also picks tasks, runs them and ships them within the workspace's daily budget (autonomous mode, PRV-74, now set per workspace). A budget field sits next to this choice.
+- **On:** the captain acts by itself in each workspace, within that workspace's authority and budget.
+- **Off:** it acts only when the owner talks to it. It starts nothing, ships nothing (no merge, no push), answers no cards or questions and spends nothing on worker agents. It still does the cheap upkeep: memory review and cleanup of done tasks, in each workspace whose Upkeep row is "Captain decides", under the same chore caps and no-runaway rules.
+- **Turning off** pauses the tasks it started, right away (default); the owner can choose "Let them finish their current step" instead. Nothing it started is lost.
+- **Turning on** lists the tasks it paused and resumes them, with a checkbox to leave them paused.
+- The captain itself is never stopped: the owner can always talk to it. While Off, only the memory and cleanup chores start; a run of any other chore in progress ends at its next step.
+- A task the captain or this switch paused says so: "Paused by Captain", or "Paused when Autonomous was turned off", never "stopped by you" or "(owner)". The log says "Paused '<title>' because Autonomous was turned off".
 
-"More rules", folded away, holds what most owners never change: working hours and freeze dates in the workspace's time zone, which branches it ships to, allowed AI providers, and the account that pays for the captain's decisions (the captain's own account unless set).
+**The Captain page** (`/captain`) is one screen with no tabs; there is no separate Autonomous page. The owner does everything from it without switching views.
+
+- **Header (always visible).** The title, the Autonomous switch with a state word and lamp (On or Off), and today's spend per workspace against its budget on one line ("Private $31 · Pyzasoft $29 · of $200"; a workspace over its budget in red, with "(over)"). One sentence that is true now: Off, "Off: it only answers when you ask, and keeps memory and cleanup going. 5 decisions wait for you."; On, "On: 2 running, 3 next. 5 decisions wait for you." (the decisions count is the bell's). A "Delegation" button and a small "Limits" link. When there is a daily summary the owner has not opened, a one-line chip ("Yesterday: shipped 30, spent $80.56 of $50 (over), 9 notes") opens it in a sheet; the page never lists the day's shipped tasks.
+- **Left: Conversation.** One surface for talking to the captain. Chips at the top: All, then each workspace that has a thread. A chip shows a dot only when that thread has something waiting for the owner, with a tooltip saying what. All is the owner's own chat with the captain and the default target for a new message; a workspace chip sends to that workspace's thread, whose composer has the "Keep as standing instruction" switch. Messages show only what the owner and the captain said; the captain's tool calls and permission lines fold into one line per turn ("12 steps it took") that opens on a click. The Cmd J drawer shows the same Conversation.
+- **Right: Now.** Stacked boxes that each scroll inside themselves. Needs you: the Decisions inbox rows (compact), answered in place, at most four then "All 5 in Decisions"; budget and cap questions are decisions and show here. Running and Next: the task title first, the workspace, one line of why, the task id small, and a button to leave a task alone. Did recently: the last eight log entries as plain sentences that start with the actor and name tasks by title ("Shipped 'Move the notes export' to main", "Paused 'Phase 7: Resilience' because Autonomous was turned off", "Started 'Resilience and health': top of the backlog", "Asked you to ship 'Shop orders created twice'"), with Undo where it exists. "See all" opens the whole log in a sheet with the kind and workspace filters, and each entry's reason and checks. The log shows no task ids as text, no chat threads and no "Decision: applied".
+- **Delegation (a sheet).** One grid: rows Start work, Answer questions, Approvals, Upkeep, Merge, Push and Daily budget; columns the workspaces (scrolling sideways past five, first column fixed, long names cut with a tooltip). Each cell is a two-state toggle, Captain (filled) or You (hollow), saved on click; the budget cell is an amount ("shared" when empty) saved through `autonomy.configure`. A column menu has the presets "Hands off" and "Ask me first" and "Hours, freezes and more" (working hours, freezes, branches, providers, account). Under the grid: the largest task it starts (Small, Up to medium, Any size), the standing instructions (with remove), the tasks left alone (with "Let it take"), and chores that turned themselves off (with "Turn on").
+- Old addresses keep working: `/autonomous` lands on `/captain`, `?tab=rules` opens Delegation, `?tab=log` opens the log, `?tab=today`, `?tab=chat` and `?thread=<org>` show the page (a thread link selects that chip).
+
+The words "lane" and "autonomous mode" are not used in the UI; the switch is called Autonomous.
+
+**Authority per workspace,** a table read as a delegation policy, each row "Captain decides" or "Ask me": pick and start work from the backlog, answer agents' questions, answer routine approval cards, upkeep, merge into the base branch, push and open merge requests. New client workspaces start with every row on "Ask me" except upkeep; Private starts with questions, approvals and upkeep on "Captain decides". The Delegation sheet of the Captain page shows the table as a grid, one column per workspace, with a Captain/You toggle per cell and two presets in each column's menu: "Hands off" (every row Captain except push) and "Ask me first" (every row You except upkeep). It is saved as `settings.autonomy.orgs.<id>.authority`; the older level, push and merge fields still read, mapping "Only when I ask" to every row "Ask me", "Keeps things tidy" to questions, approvals and upkeep "Captain decides", and "Runs it" to every row "Captain decides" except merge and push, which follow the old switches, and the first save from the page writes the new form. While Autonomous is Off every row but Upkeep behaves as "Ask me", and the page says so; Upkeep keeps its choice and runs only memory and cleanup. Each row governs its action: starts and changes of tasks (start), the captain's answers to questions, choices and owner questions (questions) and to permission prompts (approvals), the upkeep chores (upkeep; the cards chore follows approvals, the questions chore follows questions), merging (merge) and pushing or opening merge requests (push). When a row is "Ask me" the item waits for the owner, and a refusal names the row ("Refused: in Acme you decide when work starts, so the captain does not start it."). The never list below is not a row and always holds.
+
+**Budgets.** An autonomous budget per day for all autonomous work (the captain's own turns and every task it starts or resumes), required while Autonomous is On. An optional workspace budget per day inside it; empty means the workspace shares the whole autonomous budget. Account floors and weekly budgets stay, on the same Limits screen under "Safety". When a budget runs out the captain asks as a decision ("Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?"), and a held task names the budget that holds it ("Waiting for Pyzasoft's daily budget, $20 used").
+
+The **Limits screen** (`/limits`) is the one place for them: the autonomous budget per day with today's spend and a bar; one row per workspace with its optional daily budget (empty shares the autonomous budget), today's spend and a bar (the Captain page shows spend in its header and takes a daily budget amount in the Delegation grid); and a folded **Safety** section with the account floors (what to keep of each 5-hour window and week) and the weekly budgets per workspace and account, which also limit the owner's own tasks. Save and Cancel show only while a field changed. The sidebar switch's "Edit budgets", the Captain page, Hub setup and the palette lead to it. The autonomous budget is never empty: `autonomy.configure` changes it and never clears it.
+
+**Budget decisions.** When the autonomous budget or a workspace budget is used up and a task waits for it, the owner is asked once per budget and day, in the bell (with Raise and Leave buttons), in Needs you on the Captain page and on the Limits screen. While the autonomous budget holds everything, only it is asked about. "Raise" doubles the budget for that day only: it is a dated override that never changes the saved budget and ends at midnight; the hold lifts at once and the tasks it held continue. "Leave it" keeps the budget; the question is not asked again that day. The questions are `captain.asks` (`budgets`) and `captain.answerBudget`.
+
+**Decisions.** Everything that waits for the owner is a decision in one inbox, with the captain's recommendation and one-click answers. The bell opens it. Alerts go out only for decisions.
+
+- **One model.** A decision has a kind (question, approval, ship, budget, cap, paused, sign-in, secret), a workspace, a task when it has one, one plain line, its options (primary first), the captain's recommendation when there is one, when it arrived and a link that opens its context. Decisions are derived, never stored: from the pending cards of open tasks (ask, choice, owner question, permission, approval, secret request, review, paused), the captain's daily-cap and budget questions, and accounts that need a sign-in. An answered card, a raised budget or a signed-in account is simply gone from the list. `decisions.list` reads them; `decisions.answer { id, option, text? }` answers one through the path its card already has (answer, approve or reject, merge or mark done, resume, raise or leave) and returns what still waits. Only the owner answers: agents, the captain included, are refused. A question with several questions in one card, a secret request and a sign-in have no buttons; their link opens the place that answers them.
+- **Recommendation.** The captain records its opinion with `majhi_decisions_recommend { id, option, reason }`, one option of the decision and one line, from its lane and for its own workspace, whether Autonomous is on or off. It is kept by decision id and shown as "Captain recommends **Rebuild**: keeps a backup branch, nothing pushed", with that option first and primary. Without one, an ask card's default shows as "The agent suggests ...", and a ready-to-ship card shows the captain's checks line as its recommendation to merge. The captain no longer writes "I would choose X" in chat for this.
+- **The inbox.** The bell opens it as a popover, and `/decisions` shows the same rows as a page with the workspace filter (grouped by workspace under All workspaces). Each row has the workspace, the task, one line, the recommendation, the option buttons and "Open task". Ship and budget decisions come first, then the oldest. Empty: "Nothing needs you." There is no Undo toast: none of the answers can be reversed today.
+- **Alerts.** Desktop and browser alerts are sent only for decisions, once per decision, and a burst becomes one "4 decisions need you". A card the captain is about to answer by itself (Autonomous on and the row on "Captain decides") alerts only if it is still waiting after two minutes. What the captain tells without asking (a chore turned off, the daily summary) is read in its log and never alerts; its daily-cap and budget questions are decisions and do.
+
+**Workspaces never collide.** One session per workspace ("lane"), reading and acting in its own workspace only. While Autonomous is On the agent slots are split evenly across the workspaces with runnable work; a workspace with nothing to run leaves its share to the others, and the owner's own tasks come first. Workspaces that share an account take its per-account slots and floors in turn. The captain never runs two tasks that write to the same repo and base branch at once unless their plans touch different areas (the top-level folders of the files each changed or names; no information counts as overlapping), refusing with one line and keeping the task in the backlog ("Not starting ACM-14: ACM-12 is already changing acme-api on main. It waits."), and ships into one base branch one at a time, in order. The owner's own starts are never blocked.
+
+**Staffing.** For each task the captain weighs the task's size and kind, every agent that may work in the workspace (role, skills, model, effort), each account's free slots and usage left, floors and budgets, expected cost, past results on similar work in the repo, and the repo rule, with no built-in preference. It picks the team that does the work best, from one agent to a lead with builders and a reviewer, and says why in one line, which is posted in the task room when the task starts ("Team: @acme-lead leads on claude-acme-2: free slot, 60% of its window left; @acme-builder joins to build."). It does this when it creates or starts a task without naming a team (`tasks.staff` shows the proposal without acting); a team it names is kept. Another workspace's agents and accounts are never considered.
+
+**Lead handover.** The lead, the captain or the owner can make another team member the lead (`tasks.setLead`): when the lead's account is at its limit, the task needs another skill or model, or the lead is stuck. The new lead must be on the team or able to join it (same workspace, an account that can run); the old lead stays as a builder unless `keepOldLead` is false. Any other agent is refused. A handover note in the room carries the plan, what is done and what is next, and wakes the new lead; the lead's task brief says when to hand over.
+
+**Labels.** Every captain action is labelled "Captain", never "You", in rooms, cards and the log, with its reason and Undo where Undo exists.
+
+**Daily summary** at 08:00 by default, changeable on the Limits screen and in the summary sheet's footer, shown as the one-line chip in the Captain page header, which opens it. The sheet is short: what shipped, grouped by workspace with a count and the first three titles then "+N more"; spend per workspace against its budget, with overspend flagged; what waits on the owner, the count and the first three decisions by title, linking to Decisions; and what the captain plans next, the first three queue entries with why. Notes (what it was unsure about) show three one-line items and "+N more" opens the rest. It is made whatever the mode: with Autonomous Off it reports the captain's upkeep and the spend, and a day with the mode off all through and nothing done or spent makes none. It never alerts: it is not a decision.
 
 **Upkeep.** Short runs at fixed moments, never a captain that stays awake:
 
 | Chore | When it runs | What the captain does |
 |---|---|---|
-| Ship finished work | A task reaches review and its checks pass | "Runs it": ships by the workspace's ship rule. "Keeps things tidy": asks. |
+| Ship finished work | A task reaches review and its checks pass | Merge and push "Captain decides": ships by the workspace's ship rule. "Ask me": asks. |
 | Approval cards | A card arrives | Answers routine ones by the workspace's Approvals rules. Risky ones and the never list go to the owner. |
 | Agents' questions | An agent asks | Answers from the brief, memory or code. Real choices go to the owner. |
-| Memory | Daily | Keeps, merges and drops waiting memories. Asks about doubtful ones. |
+| Memory | Daily, and when 10 memories wait for review in a workspace (at most four runs a day) | Keeps, merges and drops waiting memories, all of them in one run. Private also reviews global memories; a client workspace never sees them. Asks about doubtful ones. |
 | Projects | A new repo appears, and daily | Registers it in the right workspace with base and remotes. Asks when unsure. Never touches protected repos. |
 | Task triage | Daily | Sets priority and due dates, marks duplicates and stale tasks. Suggests closing; never closes. |
 | Cleanup | Daily | Removes worktrees and containers of done tasks. Never removes uncommitted work. |
 | Stuck tasks | Nobody works and nothing is pending | Wakes the lead once, then tells the owner (5.3). |
 
-**One captain, one conversation per workspace.** There is only the owner's captain. It keeps a separate session per workspace ("lane"), so one client's code and details are never in its context while it decides for another. Lanes share only the owner's global instructions and counts, never content.
+**One captain, one conversation per workspace.** There is only the owner's captain. It keeps a separate session per workspace ("lane"), so one client's code and details are never in its context while it decides for another. Lanes share only the owner's global instructions and counts, never content. The threads are not tasks: they appear only in the Captain panel (Cmd J and the Captain page), never in Chats, on the Board or in task search, and they cannot be closed or deleted. "Start fresh" ends a thread's session and starts a new one carrying a summary (the same handoff as "Fresh session" in a room); the messages stay. An old address of a thread (`/t/<id>`) opens the Captain page on that workspace's tab.
 
 **Rules that always hold** (never shown as settings):
 
 - **The never list:** no force push, no deleting uncommitted work, no moving one workspace's secrets, accounts or logins to another, no change to a protected repo, no secret in a diff that ships.
 - **The stricter rule wins:** never list, then protected repo, then the workspace's choice, then the global default. A standing instruction can tighten a rule, never loosen it.
 - **Time never approves anything.** What needs the owner waits, with one reminder a day.
-- **Presence:** the captain does not act in a task the owner touched in the last 10 minutes.
+- **Presence:** while the owner is typing in a task, the captain waits until they send or leave. Otherwise it acts within its authority, and the owner overrules with Undo. The composer tells the server over the events socket (`typing` message: the task id, repeated every 5 s while the draft is not empty and the box has focus, and an empty one when it stops, on send, blur, task change or unmount). The server counts a report for 15 s, drops it when the socket closes, and keeps it in memory only. A chore that finds the task held writes one line, "waiting: you are typing in PYZ-3", and leaves it; when the typing ends, the chores that waited (ship, cards, questions) run again at once. A captain tool call in that task is refused with the same line and the captain tries again on its next wake.
 - **Re-check before anything that cannot be undone.** The rules are read again right before a push, merge, request or post, so a change the owner made a second ago applies.
 - **Text is not instruction.** Words in repos, issues, attachments or messages never authorise an action; checks and the owner's rules do.
 
@@ -649,16 +691,16 @@ The captain never acts on its own unless the owner chose that for the workspace.
 - One run per chore per workspace at a time. A trigger during a run joins it.
 - Every action checks the current state first, so running it twice changes nothing.
 - Two failures in a row turn that chore off for the workspace and tell the owner.
-- Daily caps per chore and workspace (for example five ships, one memory run).
+- Daily caps per chore and workspace (for example five ships, four memory runs).
 - The captain's lane rests when its budget or its account's window runs out; rules and Laya keep routine upkeep moving, judgment calls wait.
-- One "Stop the captain" switch stops every lane and run at once.
+- The Autonomous switch turns every lane's own action off at once and pauses the tasks it started.
 - A soak test with the fake agent replays hours of events (restarts, failures, bursts of cards, the captain's own ships) and fails if a run passes its caps, an event re-triggers itself, or an action repeats. It runs on every merge.
 
 **What the owner notices:** the bell for what needs them, one daily summary line per workspace ("Acme: shipped 2, tidied 8 memories, 1 thing for you"), and the captain's log with each action's reason, evidence and Undo where Undo is possible (a merge undoes as a revert commit; a push cannot be undone, which is why the captain pushes only after checks pass).
 
 ### 5.17 Performance and resource use
 
-- **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 10 minutes). Sessions come back with ACP `session/resume` or `session/load`.
+- **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 3 minutes; the runner container goes with the process). Sessions come back with ACP `session/resume` or `session/load`.
 - **Concurrency limits.** A global maximum of running agent processes (`agents_max`, default 6), a maximum per account, and a maximum per task. Extra runs wait in the jobs table and show as queued, with their place in line.
 - **Budgets.** Optional token or cost budgets per account, org and task, per day. At the budget, runs pause with reason `limit`. The owner or the captain can raise them.
 - **Models load lazily.** Laya and the embedding model load on first use and unload after idle. Docker memory limits cap each service.
@@ -763,9 +805,10 @@ Delivered in two parts, each usable and reviewed on its own.
 - **Done when:** a fact learned in one task is approved and then recalled in a later task in the same repo.
 
 
-### Phase 6: Skills
-- Install from link, registry name, zip or folder via the skills CLI. Per-agent enablement. Installing by message in a room ("@agent install this skill <link>").
-- **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run.
+### Phase 6: Skills and MCP servers
+- Install skills from a link, registry name, zip or folder via the skills CLI. Per-agent enablement. Installing by message in a room ("@agent install this skill <link>", "@agent add this MCP server <name>").
+- MCP servers on the same Skills & MCP page, installed as Phase 10 `mcp` connections from the MCP Registry, a URL, a command or a pasted snippet (5.2).
+- **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run. An MCP server picked from the registry or pasted as a URL is installed as a connection, passes Test, is enabled for one agent, and its tools are available in that agent's next run.
 
 
 ### Phase 7: Resilience and health
@@ -805,11 +848,11 @@ Delivered in two parts, each usable and reviewed on its own.
 - **Done when:** a task for a project produces a short captioned video and three post drafts in the room, the owner approves one, it is scheduled, and it posts through the platform API at the set time.
 
 ### Phase 13: The captain per workspace
-- The "How much does the captain do here?" choice per workspace, with "More rules"; autonomous mode moves under "Runs it".
+- The chief-of-staff model (5.18, `docs/briefs/captain-chief-of-staff.md`), built in its eight steps: the captain's own slot and labels, one switch, the authority table, budgets, the Decisions inbox, collision rules, staffing and lead handover, the Captain panel threads, the presence rule and the summary.
 - Captain lanes (one session per workspace), the upkeep chores, the never list and the rules in 5.18.
 - The runaway and loop guards and the soak test.
 - The daily summary line per workspace and the captain's log with Undo.
-- **Done when:** with Private on "Runs it" and a client on "Only when I ask", a simulated night ships Private's ready work within its budget, touches nothing of the client's, and the soak test passes.
+- **Done when:** with Autonomous On, Private's rows on "Captain decides" and a client's on "Ask me", a simulated night ships Private's ready work within its budget, touches nothing of the client's, and the soak test passes.
 
 ---
 

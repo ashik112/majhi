@@ -7,8 +7,9 @@ import type { HostLink } from "../host/link.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import type { LinkOptions } from "../tasks/links.ts";
+import type { TrackerAdapter, TrackerAdapterInit } from "../trackers/types.ts";
 import { git } from "./fixtures.ts";
-import { type Harness, harness } from "./harness.ts";
+import { type Harness, type HarnessOptions, harness } from "./harness.ts";
 
 export interface World {
   h: Harness;
@@ -38,6 +39,11 @@ export interface WorldOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
+  trackerFetch?: typeof fetch;
+  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
+  skillsCommand?: HarnessOptions["skillsCommand"];
+  skillsFetch?: HarnessOptions["skillsFetch"];
+  mcpFetch?: HarnessOptions["mcpFetch"];
 }
 
 /**
@@ -58,6 +64,11 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
+    ...(options.trackerFetch === undefined ? {} : { trackerFetch: options.trackerFetch }),
+    ...(options.trackerAdapter === undefined ? {} : { trackerAdapter: options.trackerAdapter }),
+    ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
+    ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
+    ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
   });
   const world: World = {
     h,

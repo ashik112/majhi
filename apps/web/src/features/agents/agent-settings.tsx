@@ -31,6 +31,7 @@ import { capFromField } from "@/features/boss/model";
 import { useConnections } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
+import { useSkills } from "@/lib/skills-queries";
 import { useAccountModels, useAgentAttached, useTools, useUpdateAgent } from "@/lib/studio-queries";
 import {
   type AgentDraft,
@@ -40,6 +41,7 @@ import {
   draftFromAgent,
   entryId,
   fallbackCandidates,
+  mergeConnections,
   type OkAgent,
   PERMS,
   ROOT_SCOPE,
@@ -57,6 +59,8 @@ const SECTIONS = {
   perms: ["perms"],
   tools: ["tools"],
   connections: ["connections"],
+  mcp: ["connections"],
+  skills: ["skills"],
   fallback: ["fallback"],
   context: ["contextCap"],
   instructions: ["instructions"],
@@ -74,8 +78,20 @@ function pick(draft: AgentDraft, section: SectionId): Partial<AgentDraft> {
   return Object.fromEntries(SECTIONS[section].map((key) => [key, draft[key]]));
 }
 
-function same(a: AgentDraft, b: AgentDraft, section: SectionId): boolean {
-  return JSON.stringify(pick(a, section)) === JSON.stringify(pick(b, section));
+function same(a: AgentDraft, b: AgentDraft, section: SectionId, owns: Owns): boolean {
+  const own = (d: AgentDraft) => {
+    const picked = pick(d, section);
+    return section === "connections" || section === "mcp"
+      ? { connections: (picked.connections ?? []).filter(owns[section]).sort() }
+      : picked;
+  };
+  return JSON.stringify(own(a)) === JSON.stringify(own(b));
+}
+
+/** Which connection ids a section shows: MCP servers in one, everything else in the other. */
+interface Owns {
+  connections: (id: string) => boolean;
+  mcp: (id: string) => boolean;
 }
 
 /**
@@ -95,6 +111,9 @@ export function AgentSettings({
 }) {
   const update = useUpdateAgent();
   const client = useQueryClient();
+  const allConnections = useConnections().data;
+  const mcpIds = new Set((allConnections ?? []).filter((c) => c.type === "mcp").map((c) => c.id));
+  const owns: Owns = { connections: (id) => !mcpIds.has(id), mcp: (id) => mcpIds.has(id) };
   const base = draftFromAgent(entry.agent);
   const [drafts, setDrafts] = useState<Partial<Record<SectionId, AgentDraft>>>({});
   const [saves, setSaves] = useState<Partial<Record<SectionId, SaveState>>>({});
@@ -104,7 +123,7 @@ export function AgentSettings({
   const view = (section: SectionId): AgentDraft => drafts[section] ?? base;
   const dirty = (section: SectionId) => {
     const draft = drafts[section];
-    return draft !== undefined && !same(draft, base, section);
+    return draft !== undefined && !same(draft, base, section, owns);
   };
   const change = (section: SectionId, patch: Partial<AgentDraft>) => {
     setDrafts((prev) => ({ ...prev, [section]: { ...(prev[section] ?? base), ...patch } }));
@@ -118,7 +137,11 @@ export function AgentSettings({
     const draft = drafts[section];
     if (!draft) return;
     setSaves((prev) => ({ ...prev, [section]: { kind: "saving" } }));
-    update.mutate(updateInput(entry.agent, { ...base, ...pick(draft, section) }), {
+    const picked = { ...base, ...pick(draft, section) };
+    if (section === "connections" || section === "mcp") {
+      picked.connections = mergeConnections(base.connections, draft.connections, owns[section]);
+    }
+    update.mutate(updateInput(entry.agent, picked), {
       onSuccess: async (result) => {
         setServerWarnings(result.status === "ok" ? result.warnings : undefined);
         // Wait for the fresh file, so the section never flashes the old value.
@@ -185,6 +208,12 @@ export function AgentSettings({
         draft={view("connections")}
         onChange={(patch) => change("connections", patch)}
         {...sectionProps("connections")}
+      />
+      <McpSection draft={view("mcp")} onChange={(patch) => change("mcp", patch)} {...sectionProps("mcp")} />
+      <SkillsSection
+        draft={view("skills")}
+        onChange={(patch) => change("skills", patch)}
+        {...sectionProps("skills")}
       />
       <FallbackSection
         draft={view("fallback")}
@@ -502,7 +531,7 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
       <ul className="flex flex-col gap-2">
         {TOOL_CATALOG.map((tool) => (
           <li key={tool.name} className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="font-mono text-base">{tool.name}</div>
               <div className="text-sm text-fg-muted text-pretty">
                 {tool.summary}. {tool.rule}.
@@ -512,6 +541,7 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
               label={`${tool.name} setting`}
               value={toolSetting(draft.tools, tool.name)}
               segments={TOOL_SETTINGS}
+              className="shrink-0"
               onChange={(setting) => onChange({ tools: withToolSetting(draft.tools, tool.name, setting) })}
             />
           </li>
@@ -542,12 +572,13 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
       </DetailSection>
     );
   }
-  const own = (connections ?? []).filter((c) => c.org === draft.scope);
-  const gone = draft.connections.filter((id) => connections !== undefined && !own.some((c) => c.id === id));
+  const inOrg = (connections ?? []).filter((c) => c.org === draft.scope);
+  const own = inOrg.filter((c) => c.type !== "mcp");
+  const gone = draft.connections.filter((id) => connections !== undefined && !inOrg.some((c) => c.id === id));
   return (
     <SettingsSection
       title="Connections"
-      note="What it may reach outside its repos. Only this workspace's connections."
+      note="What it may reach outside its repos. Only this workspace's connections. MCP servers are in their own section below."
       {...section}
     >
       {own.length === 0 ? (
@@ -564,7 +595,11 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
           className="@[560px]:max-w-[calc(50%-6px)]"
           options={own.map((c) => ({ value: c.id, label: `${c.name} (${connectionType(c.type).label})` }))}
           value={draft.connections.filter((id) => own.some((c) => c.id === id))}
-          onChange={(next) => onChange({ connections: [...next, ...gone] })}
+          onChange={(next) =>
+            onChange({
+              connections: [...next, ...draft.connections.filter((id) => !own.some((c) => c.id === id))],
+            })
+          }
           emptyText="None"
           clearText="None"
         />
@@ -577,6 +612,117 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
             type="button"
             className="cursor-pointer text-fg underline-offset-2 hover:underline"
             onClick={() => onChange({ connections: draft.connections.filter((id) => !gone.includes(id)) })}
+          >
+            Remove from the list
+          </button>
+        </p>
+      )}
+    </SettingsSection>
+  );
+}
+
+/** The MCP servers (mcp connections) of the agent's org it may use. They are installed on the Skills & MCP page. */
+function McpSection({ draft, onChange, ...section }: SectionProps) {
+  const connections = useConnections().data;
+  if (draft.scope === ROOT_SCOPE) {
+    return (
+      <DetailSection title="MCP servers">
+        <p className="text-sm text-fg-muted text-pretty">
+          A root agent gets every MCP server of the task's workspace, like its other connections.
+        </p>
+      </DetailSection>
+    );
+  }
+  const servers = (connections ?? []).filter((c) => c.org === draft.scope && c.type === "mcp");
+  const toggle = (id: string, on: boolean) =>
+    onChange({
+      connections: on ? [...draft.connections, id] : draft.connections.filter((c) => c !== id),
+    });
+  return (
+    <SettingsSection
+      title="MCP servers"
+      note="Servers it may use in its next run. Only this workspace's MCP servers."
+      {...section}
+    >
+      {servers.length === 0 ? (
+        <p className="text-sm text-fg-muted text-pretty">
+          This workspace has no MCP servers yet.{" "}
+          <PageLink
+            page="skills"
+            search={{ tab: "mcp" }}
+            className="text-fg underline-offset-2 hover:underline"
+          >
+            Install one
+          </PageLink>
+          .
+        </p>
+      ) : (
+        <ul aria-label="MCP servers" className="flex flex-col gap-0.5">
+          {servers.map((server) => (
+            <li key={server.id} className="flex flex-col">
+              <Switch
+                label={server.name}
+                checked={draft.connections.includes(server.id)}
+                onChange={(on) => toggle(server.id, on)}
+              />
+              {server.description && (
+                <p className="pl-[42px] text-sm text-fg-faint text-pretty">{server.description}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SettingsSection>
+  );
+}
+
+/** The installed skills this agent uses. Each run gets read-only copies of just these. */
+function SkillsSection({ draft, onChange, ...section }: SectionProps) {
+  const skills = useSkills();
+  const installed = skills.data ?? [];
+  const gone = draft.skills.filter((n) => skills.data !== undefined && !installed.some((s) => s.name === n));
+  const toggle = (name: string, on: boolean) =>
+    onChange({ skills: on ? [...draft.skills, name] : draft.skills.filter((n) => n !== name) });
+  return (
+    <SettingsSection
+      title="Skills"
+      note="Skills it may use in its next run, as read-only copies. Install them on the Skills & MCP page."
+      {...section}
+    >
+      {skills.isError ? (
+        <p role="alert" className="text-sm text-red text-pretty">
+          Could not load skills: {describeError(skills.error)}
+        </p>
+      ) : installed.length === 0 && skills.data !== undefined ? (
+        <p className="text-sm text-fg-muted text-pretty">
+          No skills are installed yet.{" "}
+          <PageLink page="skills" className="text-fg underline-offset-2 hover:underline">
+            Install one
+          </PageLink>
+          .
+        </p>
+      ) : (
+        <ul aria-label="Skills" className="flex flex-col gap-0.5">
+          {installed.map((skill) => (
+            <li key={skill.name} className="flex flex-col">
+              <Switch
+                label={skill.name}
+                checked={draft.skills.includes(skill.name)}
+                onChange={(on) => toggle(skill.name, on)}
+              />
+              <p className="pl-[42px] text-sm text-fg-faint text-pretty">{skill.description}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {gone.length > 0 && (
+        <p className="text-sm text-amber text-pretty">
+          Lists {gone.join(", ")}, which {gone.length === 1 ? "is" : "are"} not installed, so it gets{" "}
+          {gone.length === 1 ? "it" : "them"} nowhere.{" "}
+          <button
+            type="button"
+            className="cursor-pointer text-fg underline-offset-2 hover:underline"
+            onClick={() => onChange({ skills: draft.skills.filter((n) => !gone.includes(n)) })}
           >
             Remove from the list
           </button>

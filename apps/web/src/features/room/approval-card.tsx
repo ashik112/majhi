@@ -98,7 +98,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
         {item.autonomy?.decision === "left" && (
           <p className="flex items-start gap-1.5 pl-6 text-sm text-amber text-pretty">
             <Bot aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span className="min-w-0">Autonomous mode left this for you: {item.autonomy.why}</span>
+            <span className="min-w-0">Captain left this for you: {item.autonomy.why}</span>
           </p>
         )}
         <Details input={item.input} command={item.command} onToggle={setOpen} />
@@ -151,7 +151,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const short = cut === -1 ? item.summary : item.summary.slice(0, cut);
   const label =
     item.state === "applied" && item.autonomy?.decision === "approved"
-      ? "Approved by autonomous mode"
+      ? "Captain approved"
       : item.rule !== undefined && item.state === "applied"
         ? AUTO_LABEL[item.rule]
         : outcome;
@@ -206,7 +206,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
           {item.reason && <p className="text-sm text-fg-muted text-pretty">{item.reason}</p>}
           {item.autonomy && (
             <p className="text-sm text-fg-muted text-pretty">
-              Autonomous mode {item.autonomy.decision === "approved" ? "approved it" : "left it for you"}:{" "}
+              Captain {item.autonomy.decision === "approved" ? "approved it" : "left it for you"}:{" "}
               {item.autonomy.why}
             </p>
           )}

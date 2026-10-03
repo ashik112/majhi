@@ -41,7 +41,7 @@ const TOOLS = [
   {
     name: "service_start",
     description:
-      "Start a service container for tests, like postgres or redis, from an image the owner allowed. It is reachable as <name>:<port> from this task's runners only, never from the host, and has only named volumes. An image that is not allowed yet asks the owner in the room: you get a message with the answer, then call service_start again. At most containers.per_task previews and services run at once in a task.",
+      "Start a service container for tests, like postgres or redis, from an image the owner allowed. It is reachable as <name>:<port> from this task's runners only, never from the host, and has only named volumes. An image that is not allowed yet asks the owner in the room: you get a message with the answer, then call service_start again. At most containers.per_task previews and services run at once in a task. Services and the preview stop while the task is in review or paused and start again when it runs; keep data you need in a named volume.",
     input: ServiceStartInputSchema,
   },
   {

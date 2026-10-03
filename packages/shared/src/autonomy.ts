@@ -16,6 +16,8 @@ import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } fr
  * gracefully was pressed; current turns finish, nothing new starts, then majhi turns it `off`.
  */
 export const AutonomyModeSchema = z.enum(["off", "on", "paused", "stopping"]);
+// `paused` is no state any more: a database that holds it reads as `on`. `stopping` is the moment
+// between "let them finish this step" and Off.
 export type AutonomyMode = z.infer<typeof AutonomyModeSchema>;
 
 /** Tokens (input + output + cache write, as budgets count them) and dollars. */
@@ -185,6 +187,9 @@ export const AutonomyEventSchema = z.object({
 });
 export type AutonomyEvent = z.infer<typeof AutonomyEventSchema>;
 
+/** How many titles the daily summary names in a list before "and N more". */
+export const SUMMARY_TITLES = 3;
+
 /** The daily summary: what autonomous mode shipped, what it spent, what it is unsure about. */
 export const AutonomySummarySchema = z.object({
   /**
@@ -205,21 +210,56 @@ export const AutonomySummarySchema = z.object({
       how: z.enum(["merged", "pushed", "mr-open", "mr-merged", "review", "done"]),
     }),
   ),
+  /** Per workspace: how many shipped and the first three titles, biggest first. Summaries made before it have none. */
+  shipGroups: z
+    .array(
+      z.object({
+        org: z.string(),
+        /** The workspace's name; the id when it has none. */
+        name: z.string(),
+        count: z.number().int().positive(),
+        titles: z.array(z.string()).max(SUMMARY_TITLES),
+      }),
+    )
+    .default([]),
   spent: z.object({
     total: CapUseSchema,
-    orgs: z.array(CapUseSchema.extend({ org: z.string() })),
+    orgs: z.array(CapUseSchema.extend({ org: z.string(), name: z.string().optional() })),
   }),
   /** Decisions it marked unsure, and calls a hard limit refused. */
   unsure: z.array(z.object({ text: z.string(), task: TaskIdSchema.optional(), item: z.string().optional() })),
   /** Cards still waiting for the owner when it was made. */
   waiting: z.array(AutonomyWaitingSchema),
+  /** What waits in the owner's Decisions inbox when it was made: the count and the oldest three. */
+  needs: z
+    .object({
+      count: z.number().int().nonnegative(),
+      top: z
+        .array(z.object({ id: z.string(), title: z.string(), org: z.string().optional() }))
+        .max(SUMMARY_TITLES),
+    })
+    .optional(),
+  /** The first three entries of the captain's queue: what it plans next, and why. */
+  next: z
+    .array(
+      z.object({
+        title: z.string(),
+        why: z.string(),
+        task: TaskIdSchema.optional(),
+        org: z.string().optional(),
+      }),
+    )
+    .max(SUMMARY_TITLES)
+    .default([]),
+  /** How many upkeep actions the captain took that day (memory, cards, projects, cleanup), not counting ships. */
+  upkeep: z.number().int().nonnegative().default(0),
   /** How many decisions it logged in the span. */
   decisions: z.number().int().nonnegative(),
 });
 export type AutonomySummary = z.infer<typeof AutonomySummarySchema>;
 
 /**
- * One workspace set to "Runs it" (5.18): the captain's lane there, and what autonomous mode does in
+ * One workspace where the captain starts work (5.18): the captain's lane there, and what autonomous mode does in
  * it today. The lane's chat holds only that workspace's matters.
  */
 export const AutonomyLaneSchema = z.object({
@@ -260,7 +300,7 @@ export const AutonomyStatusSchema = z.object({
       nowDoing: z.string().optional(),
     })
     .optional(),
-  /** Each workspace set to "Runs it", in the order of the workspaces. */
+  /** Each workspace where the captain starts work, in the order of the workspaces. */
   lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
   now: z.array(AutonomyNowSchema),
@@ -278,6 +318,13 @@ export const AutonomyStatusSchema = z.object({
   summary: AutonomySummarySchema.optional(),
   /** When majhi last woke the captain, UTC ISO. */
   lastTick: z.string().optional(),
+  /** Tasks Stop now paused that are still paused: turning on can resume them. */
+  stopped: z.array(TaskIdSchema).default([]),
+  /**
+   * Budgets the owner raised for today only, by scope (`day` or a workspace id). `spend` already
+   * counts them; `settings` holds the saved budgets, which they never change.
+   */
+  raised: z.record(z.string(), BudgetSchema).default({}),
 });
 export type AutonomyStatus = z.infer<typeof AutonomyStatusSchema>;
 
@@ -324,7 +371,7 @@ export const AutonomyAnswerInputSchema = z
 export const AutonomyGuideInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),
   keep: z.boolean().default(false),
-  /** The workspace whose lane hears it. Default: the first workspace set to "Runs it". */
+  /** The workspace whose lane hears it. Default: the first workspace where the captain starts work. */
   org: z.string().min(1).max(63).optional(),
 });
 export const AutonomyGuideResultSchema = z.object({
@@ -335,11 +382,19 @@ export const AutonomyGuideResultSchema = z.object({
 
 export const AutonomyStopInputSchema = z.object({ how: z.enum(["now", "graceful"]) });
 
+/** `autonomy.start`: `resumeStopped` also resumes the tasks Stop now paused (`status.stopped`). */
+export const AutonomyStartInputSchema = z.object({ resumeStopped: z.boolean().default(false) });
+
 /** `autonomy.exclude`: the owner marks a task Not for autonomous mode, or clears the mark. */
 export const AutonomyExcludeInputSchema = z.object({ task: TaskIdSchema, exclude: z.boolean() });
 
 /** The captain's own tools: no approval card, only for the captain in its autonomy chat while the mode is not off. */
-export const AUTONOMY_BOSS_COMMANDS = ["autonomy.plan", "autonomy.note", "autonomy.answer"] as const;
+export const AUTONOMY_BOSS_COMMANDS = [
+  "autonomy.plan",
+  "autonomy.note",
+  "autonomy.answer",
+  "decisions.recommend",
+] as const;
 
 /** What `autonomy.answer` returns. */
 export const AutonomyAnswerResultSchema = z.object({ item: RoomItemSchema });

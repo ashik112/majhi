@@ -1,5 +1,134 @@
 # Progress
 
+## Captain step 6b: staffing and lead handover (built)
+
+- **Staffing:** `staffTask` (`tasks/staffing.ts`) picks a lead and a team from slots, usage left, floors, budgets, cost, model tier against size, skills and past results, and gives one reason line. The captain's create or start without a team uses it and the room says why; `tasks.staff` (`majhi_tasks_staff`) shows the proposal.
+- **Handover:** `tasks.setLead` for the owner, the captain and the current lead (`set_lead` in majhi-tasks); other agents are refused. It reorders the team, keeps or drops the old lead, posts the handover note (plan, commits, next) and wakes the new lead. The lead brief says when to hand over.
+- **Tests:** `tasks/staffing.test.ts`, `tasks/set-lead.test.ts`, `autonomy/staffing.test.ts`.
+- **Left:** past results are per task, not per agent; a lead that leaves while mid-turn keeps its session until the turn ends; no UI beyond the room lines.
+
+## Captain step 6: workspaces never collide (built)
+
+- **Fair slots:** while Autonomous is On, `fairOrder` (`runs/limits.ts`) orders the line for a slot: the owner's own runs first, then the workspace with the fewest running agents, with workspaces that share an account taking its slots in turn. A workspace with nothing waiting leaves its share. Nothing running is stopped. Per-account and per-task limits stay hard caps.
+- **Repo rule:** `autonomy/repo-rule.ts`. The captain's start, create-with-start and resume refuse with one line when a running or in-review task changes the same repo and base, unless the top-level areas differ. The owner's starts are not checked.
+- **Ships:** `mrs/ship-queue.ts` runs ships into the same project and branch one at a time, in order.
+- **Tests:** `runs/fair-slots.test.ts`, `autonomy/repo-rule.test.ts`, `mrs/ship-queue.test.ts`, and the repo rule through the captain's tools in `autonomy/slots.test.ts`.
+- **Left:** `tasks.split` children are not checked against the repo rule.
+
+## One Captain page (built)
+## Captain page redesign: one screen (built)
+
+The Captain page is one screen with no tabs. Header: the Autonomous switch and state, one true sentence, spend per workspace (over budget in red), a Delegation button and a one-line summary chip. Left: the Conversation (chips All and one per workspace; the captain's steps fold into "N steps it took"). Right: Needs you (Decisions rows, compact, answered in place), Running, Next, Did recently. Delegation, the full log and the daily summary open in sheets.
+
+- **Autonomous Off still does upkeep.** Off stops starting, shipping, answering and anything that spends on workers. Memory review and cleanup of done tasks keep running in each workspace whose Upkeep row is "Captain decides", under the same caps. `effectiveAuthority` keeps the Upkeep row; `choresNow` limits the chores to memory and cleanup; `CaptainService.stopped()` is only "closing" now.
+- **Pause lines name who paused.** The log says "Paused 'Phase 7' because Autonomous was turned off", "by Captain" or "by you", never "(owner)" for the other two. Chat threads no longer write task events.
+- **Log lines** are plain sentences with task titles ("Shipped 'X' to main"); no ids, no "Decision: applied". Old stored lines are rewritten on the page.
+- **Try it:** open Captain; toggle Autonomous; open Delegation, change a cell and a budget; "See all" for the log; `/autonomous?tab=rules` and `/captain?tab=log` open the matching sheet; Cmd J shows the same Conversation.
+- **Checked:** typecheck, `pnpm exec tsc -p e2e`, vitest for the captain and autonomy files touched, and `e2e/shots.captain.ts` (stubs at the volume of a real day: 4 workspaces, 30 shipped, 9 notes, 5 decisions, 120 events, a 40-call turn, one workspace over budget; a second set with 6 workspaces and a very long name) at 1440 and 1100, dark and light.
+- **Left:** the All chip sends to the owner's own chat, whose composer has no "Keep as standing instruction" switch (the workspace threads do). The summary chip hides once opened; "Summary" in Did recently reopens it.
+
+## One Captain page (built, replaced above)
+
+The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomous switch and today's spend as a sub-row. `/captain` has the tabs Today, Chat, Log and Rules (`?tab=`); `/autonomous` redirects to the matching tab.
+
+- **Try it:** open Captain; switch tabs; open `/autonomous?tab=rules`.
+- **Checked:** typecheck, `pnpm exec tsc -p e2e`, and the shot spec `playwright.captain.config.ts` (port 7201, `MAJHI_E2E_SEED=ui`) at 1440 and 1100, dark and light. No server change, so no new unit tests.
+- **Left:** the notify service still names `/autonomous` as a link path (the redirect covers it); the Today line "N things need you" links to the board until the Decisions inbox lands.
+
+## Phase 11: Trackers (built)
+
+**Status.** Built on `task/prv-26-phase-11-trackers`, from `main`. The three adapters came from PRV-112. DECISIONS has its rows (2026-10-03). SPEC 5.11.
+
+### What works
+
+- **One tracker per org.** Jira Cloud, ClickUp or GitHub Issues, set on the org page under Tracker: the site, email and project for Jira, the list for ClickUp, `owner/repo` for GitHub. The token is saved in secrets and never shown again. Test signs in and checks the project, list or repo. GitHub falls back to the org's `mr_tokens.github`.
+- **The adapters** (`apps/server/src/trackers/`) share one interface: `pull(assignedToMe)`, `get`, `comment`, `setStatus`, `link`, `create`, `test`. Each reply is checked with zod. Calls time out after 20 s, and tokens, including Jira's Basic form, are removed from every error. Jira moves an issue through its transitions and says which statuses it can reach when the wanted one is not one of them.
+- **Pull.** On demand (Pull now on the org page, `trackers.pull`) and on a schedule (`pull_every`: off, 15m, 1h, 6h; default 1h). By default only items assigned to the token's user. A new item becomes a task in Up next, unstarted, routed to a project through the Dispatcher's order: the org's only project, a project the item names, else the decision provider. An item with no sure project waits on the org page with a project picker. A pulled item is linked once; later pulls only update its status.
+- **Item text is reference material.** It goes into `attachments/tracker-<key>.md` (mode 600) with a warning line, never into the brief. The routing call also asks whether the text reads like instructions to an agent, and a sure yes adds a warning to the room.
+- **Push.** "Push to Jira/ClickUp/GitHub" in a task's menu creates the item and links it. "Unlink" drops the link and leaves the item alone.
+- **Write-back.** Each linked task's MR links and stage are written once, and again only when they change: Jira gets a remote link, ClickUp and GitHub a comment. Running is working, review and mr are review, done is done, each with a status name per tracker that the org page can change. A failed write stays on the link (the chip turns red), is said once in the room, and is tried again.
+- **On the board.** A linked task shows a chip with the item key on its card and page.
+
+### How to try it
+
+1. Org page, Tracker: pick the type, fill in the fields, paste a token, Save, then Test.
+2. Pull now. New items appear in Up next; items without a project wait under the Tracker section with a project picker.
+3. Start a pulled task and open its MR: the item moves to In Progress and then In Review, and gets the MR link.
+4. On a local task, open the menu and pick Push to the tracker.
+
+### Verified
+
+- Typecheck (shared, server, web) and biome on the touched files.
+- `apps/server/src/trackers` tests: routing, pull, write-back, push, the store, and the adapters against a fake fetch. The phase's done-when is `flow.test.ts`, with the real Jira and ClickUp adapters behind a fake REST API: a Jira item flows into a room and its MR link is written back as a remote link, then the issue moves to In Review. A local task pushed to ClickUp is created on the list and follows the task through in progress, review and complete.
+- A screenshot of the org page's Tracker section (`e2e/shots.trackers.ts`).
+
+### Owner-only checks
+
+- Real Jira Cloud, ClickUp and GitHub accounts and tokens: Test, a pull, a push, and status names on a real workflow.
+
+### Left and known issues
+
+- The last pull and the unrouted items are kept in memory, so a restart empties the list until the next pull.
+- Status names are typed on the org page; majhi does not read a workflow's statuses to offer them. A wrong name shows as a red chip, with the names the tracker accepts.
+- GitHub Issues has only open and closed, so it gets no working or review status.
+- Closing an item in the tracker does not change its task.
+
+## Phase 6: Skills and MCP servers (PRV-21, built)
+
+**Status.** Built on `task/prv-21-phase-6-skills`, from `main`. SPEC 5.2 and section 7, Phase 6. DECISIONS has a row per part (2026-10-03).
+
+### What works
+
+- **Skills backend** (`apps/server/src/skills/`, `packages/shared/src/skills.ts`).
+  - `skills.search|install|list|enable|disable|remove|update`.
+  - Installs run the pinned `skills@1.7.0` in a runner with a throwaway home, then move the result into `~/.majhi/skills/<name>/` with `skills-lock.json`.
+  - Install and update are a preview and then a confirm of exactly what was previewed (hash checked). Installing never enables.
+  - Sources: `owner/repo`, URLs, a folder inside a workspace root or the tasks folder, or an uploaded zip (zip-slip and symlinks refused). Private repos use the org's git token as an env header.
+  - Every install, update, enable, disable and remove writes an audit row.
+- **Skills in runs** (`apps/server/src/runs/skills.ts`).
+  - Each session gets read-only copies of only its agent's enabled skills, and its first prompt names each SKILL.md.
+  - Changing an agent's `skills` or `connections` restarts its open sessions at the end of the turn (`RunManager.remountAgent`).
+- **MCP servers** (`apps/server/src/mcp-servers/`).
+  - `mcp.search|install|enable|disable` create and switch Phase 10 `mcp` connections. There is no second store.
+  - Sources: the MCP Registry (`/v0.1`, then `/v0`), a URL (Streamable HTTP or SSE), a command, or a pasted `mcpServers` snippet.
+  - Registry packages are always pinned. Secrets are never taken at install: they come back as `needs` for the write-only secret flow. Required fields block confirm.
+  - Test runs after install and returns the full tool list. Enabling stays inside the agent's org.
+- **Skills & MCP page** (`/skills`, `apps/web/src/features/skills/`).
+  - Skills and MCP servers tabs (`?tab=`), each with Install and a review card, Browse, and the installed list with per-agent toggles.
+  - The agent editor has Skills and MCP servers sections.
+- **Install by message** (`apps/server/src/installs/`).
+  - The owner's "@agent install this skill <link>" or "@agent add this MCP server <name, URL, command or snippet>" gets one approval card instead of a turn.
+  - Approving installs the item and turns it on for that agent.
+  - Secrets come as secret requests bound to the connection, then Test runs.
+  - Root agents get the server in the task's org, not enabled for them.
+
+### How to try it
+
+1. Open Skills & MCP. Paste `owner/repo` or a folder path, Review, then Install. Turn it on for one agent. That agent's next turn names the skill in its prompt.
+2. On MCP servers, search the registry or paste a URL, Review, then Install. Set any secret it asks for, check that Test lists its tools, and turn it on for one agent.
+3. In a task room, write "@agent install this skill acme/agent-skills" and approve the card.
+
+### Verified
+
+- Typecheck clean. 190 tests pass in the touched areas:
+  - skills: fake skills CLI, zip-slip, containment, preview and confirm, the next session has the skill
+  - MCP servers: fake registry with the `/v0` fallback, fake stdio MCP server, pinning, secrets, org scoping, the next session has the tools
+  - install by message: the card, reject, the skill in the next session, a root agent
+  - connections, agents and admin
+- Screenshots of both tabs and the agent editor against a real server, the real skills CLI 1.7.0 and a fake stdio MCP server.
+
+### Owner-only checks
+
+- Build the runner image with `skills@1.7.0`.
+- Install a private skill repo with an org login.
+- Install a real registry server with an API key.
+
+### Left and known issues
+
+- The sidebar link still reads "Skills", because e2e tests match that label.
+- An optional secret a registry server lists is not created: it is added on the Connections page.
+- A skill from a URL that needed a query token cannot be updated, because tokens are dropped from recorded sources. Use the org login instead.
+
 ## PRV-97: Run majhi on Linux, and on Windows through WSL2 (built)
 
 **Status.** Built on `task/prv-97-run-majhi-and-through-wsl2`, from `main`. The brief is `docs/briefs/linux-and-wsl2.md`. DECISIONS has its rows (2026-10-03).
@@ -90,11 +219,11 @@ On Linux (Debian 12, arm64, with no Docker and no systemd), on `2cf75320`:
 
 **Guards** (`captain/runner.ts`, `rules.ts`)
 - One run per chore and workspace; a trigger during a run joins it for one more pass.
-- Per run: 20 actions, 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, one memory run, and so on). A run that stops at a cap writes a line.
+- Per run: 20 actions (100 for memory), 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, four memory runs, and so on). A run that stops at a cap writes a line.
 - Every action has a key: doing it twice changes nothing. Two failures in a row turn the chore off for the workspace and tell the owner; Turn on brings it back.
 - Events carry their cause: the captain's own ships, cards and lane writes start nothing.
 - Right before a push, merge, card answer or post, the workspace's choice, its hours and freezes, the stop switch and presence are read again.
-- Presence: no action in a task the owner acted in during the last 10 minutes (any non-read command naming it, or a task they just made).
+- Presence: the captain waits only while the owner is typing in that task (step 8; the 10-minute rule is gone). See SPEC 5.18.
 - "Stop the captain" (`captain.stop`) stops autonomous mode now, cancels every lane's turn and ends runs at their next step; nothing acts until `captain.resume`. Autonomous mode cannot turn on while stopped.
 
 **What the owner notices**

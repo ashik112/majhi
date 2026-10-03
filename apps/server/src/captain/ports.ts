@@ -1,4 +1,4 @@
-import type { CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
+import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -96,11 +96,11 @@ export interface CaptainPorts {
     card: ApprovalCard,
     verdict: { decision: "approved" | "left"; why: string },
   ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
-  /** The table that decides a card, with the workspace's level. */
+  /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(
     org: string,
     card: ApprovalCard,
-    level: "tidy" | "runs",
+    authority: Authority,
   ): Promise<{ decision: "approved" | "left"; why: string }>;
 
   // Agents' questions
@@ -148,8 +148,8 @@ export interface CaptainPorts {
   pauseForOwner(org: string, task: string, text: string): Promise<void>;
 
   // Always
-  /** When the owner last acted in the task. */
-  ownerAt(task: string): string | undefined;
+  /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */
+  typing(task: string): boolean;
 }
 
 /** A task an account that needs a new sign-in holds up. */

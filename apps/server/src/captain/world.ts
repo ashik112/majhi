@@ -5,9 +5,7 @@ import {
   commands,
   detectSecrets,
   type Fact,
-  orgScope,
   PRIVATE,
-  projectScope,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -25,9 +23,12 @@ import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
 import type { Store } from "../store/index.ts";
+import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
+import { askedSentence, SHIP_ROW } from "./levels.ts";
+import { laneScopes } from "./memory-scopes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 
@@ -56,19 +57,14 @@ export interface WorldDeps {
   runs: { working(task: string): string[]; notify(task: string, agent: string, text: string): void };
   lanes: Lanes;
   repo: CaptainRepo;
+  /** Whether the owner is typing in a task now. */
+  typing: (task: string) => boolean;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
 
-/** Commands that ship or start work: "Keeps things tidy" leaves them to the owner. */
-const SHIPS: ReadonlySet<string> = new Set([
-  "tasks.merge",
-  "tasks.push",
-  "tasks.openMrs",
-  "tasks.mergeMrs",
-  "tasks.markMerged",
-  "tasks.resolveShip",
-]);
+/** The most waiting memories one look reads. */
+const PENDING_LIMIT = 1_000;
 
 export function captainWorld(deps: WorldDeps): CaptainPorts {
   const { store } = deps;
@@ -298,7 +294,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
-    async cardVerdict(_org, card, level) {
+    async cardVerdict(org, card, authority) {
       const call = deps.admin.cardCall(card.task, card.item);
       if (call === undefined) return { decision: "left", why: "The card is no longer waiting" };
       const verdict = await deps.autonomy.decide(
@@ -314,8 +310,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           why: `The captain never does this: ${verdict.why.replace(/^Refused: /, "")}`,
         };
       if (verdict.decision === "left") return verdict;
-      if (level === "tidy" && (SHIPS.has(call.command) || startsWork(call.command, call.parsed))) {
-        return { decision: "left", why: "Keeps things tidy leaves starting and shipping work to you" };
+      const row = startsWork(call.command, call.parsed) ? "start" : SHIP_ROW[call.command];
+      if (row !== undefined && authority[row] !== "decide") {
+        const name = (await deps.config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org);
+        return { decision: "left", why: askedSentence(row, name) };
       }
       return verdict;
     },
@@ -381,24 +379,32 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     },
 
     async answer(_org, card, option, reason) {
+      // Recorded as the captain's answer, never the owner's (5.18).
+      const captain = (await deps.lanes.boss()) ?? "captain";
+      let answered: RoomItem;
       switch (card.kind) {
         case "permission":
-          deps.tasks.answerPermission(card.task, card.item, option);
+          answered = deps.tasks.answerPermission(card.task, card.item, option, captain);
           break;
         case "choice":
-          await deps.tasks.answerChoice(card.task, card.item, option);
+          answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
           break;
         case "ask":
-          await deps.tasks.answerAsk(card.task, card.item, { [card.question ?? "q"]: option });
+          answered = await deps.tasks.answerAsk(
+            card.task,
+            card.item,
+            { [card.question ?? "q"]: option },
+            captain,
+          );
           break;
         case "owner-question":
-          await deps.tasks.answerQuestion(card.task, card.item, option);
+          answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
           break;
       }
       deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
         type: "system",
         level: "info",
-        text: `Answered by the captain: ${reason}`,
+        text: captainAnsweredLine(answered, reason),
       });
     },
 
@@ -413,16 +419,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Memory
 
     async pendingFacts(org) {
-      // The workspace's own scope and its projects'. Never the global one: that is the owner's.
+      // The workspace's own scope and its projects'; Private's also the global one. Never another
+      // workspace's.
       const { projects } = await deps.config.sections();
-      const scopes = [
-        orgScope(org),
-        ...Object.entries(projects)
-          .filter(([, p]) => p.org === org)
-          .map(([id]) => projectScope(id)),
-      ];
       return deps.memory
-        .list({ status: "pending", scopes, limit: 100 })
+        .list({ status: "pending", scopes: laneScopes(org, projects), limit: PENDING_LIMIT })
         .map((f) => ({ id: f.id, text: f.text }));
     },
 
@@ -642,8 +643,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       );
     },
 
-    ownerAt(task) {
-      return deps.repo.ownerAt(task);
+    typing(task) {
+      return deps.typing(task);
     },
   };
 }

@@ -727,6 +727,99 @@ INSERT INTO autonomy_summaries (day, at, summary) SELECT day, at, summary FROM a
 DROP TABLE autonomy_summaries_moved;
 `,
   },
+  {
+    // A task's link to its tracker item (5.11). The org is the task's own, so a rename follows it.
+    // `stage` and `mrs` record what majhi already wrote back, so each is written once.
+    id: 118,
+    name: "tracker links",
+    sql: `
+CREATE TABLE tracker_links (
+  task TEXT PRIMARY KEY REFERENCES tasks (id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  key TEXT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  status TEXT NOT NULL,
+  stage TEXT,
+  mrs TEXT NOT NULL DEFAULT '[]',
+  synced_at TEXT NOT NULL,
+  error TEXT
+);
+CREATE INDEX tracker_links_key ON tracker_links (type, key);
+`,
+  },
+  {
+    // A chore that reached its daily cap in a workspace asks the owner once that day whether to
+    // raise it (SPEC 5.18). The key keeps it to one question per chore, workspace and day. `state`:
+    // `pending`, `raised` (that day's caps of the chore are doubled) or `left`.
+    id: 119,
+    name: "captain cap asks",
+    sql: `
+CREATE TABLE captain_cap_asks (
+  org TEXT NOT NULL,
+  chore TEXT NOT NULL,
+  day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  cap INTEGER NOT NULL,
+  raise_to INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  answered_at TEXT,
+  PRIMARY KEY (org, chore, day)
+);
+`,
+  },
+  {
+    // Who paused a task when it was not the owner by hand: the captain, or Autonomous turned off.
+    id: 120,
+    name: "paused by",
+    sql: `ALTER TABLE tasks ADD COLUMN paused_by TEXT;`,
+  },
+  {
+    // A budget (the autonomous budget, `day`, or a workspace's) ran out while work waits: the owner is
+    // asked once per budget and day whether to raise it for that day (SPEC 5.18). `state`: `pending`,
+    // `raised` (the day's budget is `raise_to`, the saved setting stays) or `left`. Budgets are JSON.
+    id: 121,
+    name: "autonomy budget asks",
+    sql: `
+CREATE TABLE autonomy_budget_asks (
+  scope TEXT NOT NULL,
+  day TEXT NOT NULL,
+  name TEXT NOT NULL,
+  cap TEXT NOT NULL,
+  raise_to TEXT NOT NULL,
+  waiting INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  answered_at TEXT,
+  PRIMARY KEY (scope, day)
+);
+`,
+  },
+  {
+    // The captain's recommendation on a decision of the owner's inbox (SPEC 5.18), by decision id.
+    // Decisions themselves are derived from cards and questions; only the opinion is stored.
+    id: 122,
+    name: "decision recommendations",
+    sql: `
+CREATE TABLE decision_recommendations (
+  id TEXT PRIMARY KEY,
+  option TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+`,
+  },
+  {
+    // The captain waits while the owner types in a task (SPEC 5.18), kept in memory: the 10-minute
+    // "owner acted" table is not used any more.
+    id: 123,
+    name: "drop captain presence",
+    sql: "DROP TABLE captain_presence;",
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

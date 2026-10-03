@@ -121,7 +121,7 @@ export function renderTaskMd(
     // In a team the rules hold for everyone, so only what every member may do is allowed.
     ...outboundRules(multi ? sharedPerms(members) : (agent?.perms ?? [])),
     multi
-      ? "- Your turn ends when you reply. It then waits for the agent you mention, or for the owner."
+      ? "- Your turn ends when you reply. It then waits for the agent you address, or for the owner."
       : "- Your turn ends when you reply, and the task then waits for the owner.",
     "- Run anything slow or long-running (test suites, builds, servers) with the majhi-processes tool. majhi wakes you when a `wait` process ends, so you can end your turn meanwhile. Use `wait: false` for servers and watchers. Do not use your own background shell: nothing wakes you for that.",
     "- For work with more than two steps, keep a short checklist the owner can follow: Claude Code's TodoWrite tool (load it with ToolSearch if it is not listed) or Codex's plan tool. Write it before you start, 3 to 7 plain steps, and mark each step in progress and done as you go. majhi shows it as the task's Plan.",
@@ -224,8 +224,7 @@ function teamLines(task: Task, members: readonly BriefAgent[]): string[] {
       return `- @${m.id} (${m.role}${repos})`;
     }),
     "",
-    "Your last message in a turn is posted to the room. Mention a teammate (like @" +
-      `${members[1]?.id ?? lead?.id ?? "agent"}) to hand work to them: majhi wakes them with your message. With nothing to hand on, mention no one. Mention @owner only when you need the owner. Only one agent edits a worktree at a time; majhi makes the others wait.`,
+    `Your last message in a turn is posted to the room. To hand work to a teammate, start a line with their name (like "@${members[1]?.id ?? lead?.id ?? "agent"}: please ...") or use the mention tool: majhi wakes them with your message. A name in the middle of a sentence wakes nobody. With nothing to hand on, address no one. Mention @owner only when you need the owner. Only one agent edits a worktree at a time; majhi makes the others wait.`,
   ];
 }
 

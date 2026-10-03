@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
@@ -9,9 +9,8 @@ import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Switch } from "@/components/ui/switch";
-import { OffDialog, TurnOnDialog } from "@/features/autonomy/controls";
 import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
+import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
@@ -19,9 +18,8 @@ import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/feature
 import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
-import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
-import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
@@ -123,6 +121,7 @@ function MainNav() {
   const checks = useHealthChecks().data?.checks;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const needYou = checksNeedingYou(checks);
+  const waiting = useDecisions().data?.decisions.length ?? 0;
   const pendingFacts = useFacts({ status: "pending" }).data ?? [];
   const projects = useProjects().data;
   const toReview = pendingFacts.length;
@@ -140,6 +139,11 @@ function MainNav() {
       <div className="flex flex-col gap-px">
         <NavRow page="board" active={isActive(PAGE_PATH.board)} />
         <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
+        <NavRow
+          page="decisions"
+          active={isActive(PAGE_PATH.decisions)}
+          badge={waiting > 0 ? { text: String(waiting), alert: true } : undefined}
+        />
         <CaptainRow />
         <AutonomyRow />
       </div>
@@ -215,14 +219,12 @@ function NavRow({
 }
 
 /**
- * The captain: the row opens the Captain page (how much it does per workspace, its log and the stop
- * switch), with a lamp when it is stopped. The chat button beside it opens the captain chat drawer,
+ * The captain: the row opens the Captain page (today, chat, log and rules). The chat button beside it opens the captain chat drawer,
  * like Cmd+J.
  */
 function CaptainRow() {
   const { open, toggle } = useBoss();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const stopped = useCaptainStatus().data?.stopped === true;
   const active = pathname.startsWith(PAGE_PATH.captain);
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
@@ -237,12 +239,6 @@ function CaptainRow() {
         )}
       >
         <span className="truncate">Captain</span>
-        {stopped && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-lamp-paused">
-            <Lamp state="paused" size={6} />
-            Stopped
-          </span>
-        )}
       </Link>
       <button
         type="button"
@@ -264,48 +260,30 @@ function CaptainRow() {
 }
 
 /**
- * Autonomous mode: the row opens its page, the switch turns it on (after a confirm that shows the
- * caps and the push and merge permissions) or offers Pause, Stop gracefully and Stop now.
+ * Autonomous, a sub-row of Captain: its lamp, state and the switch, with today's spend under the
+ * name. It is not a page: the switch turns it on (after a short dialog) or off (pause its tasks, or
+ * let them finish their step).
  */
 function AutonomyRow() {
-  const query = useAutonomyStatus();
-  const status = query.data;
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const [open, setOpen] = useState<"on" | "off">();
-  const active = pathname.startsWith(PAGE_PATH.autonomous);
-  const mode = status?.mode ?? "off";
+  const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
   const lamp = MODE_LAMP[mode];
-  const unavailable = query.isError
-    ? autonomyMissing(query.error)
-      ? "Autonomous mode is not ready on this server yet"
-      : "Could not read autonomous mode"
-    : undefined;
   return (
-    <div title={unavailable} className="flex h-8 shrink-0 items-center gap-1">
-      <Link
-        to={PAGE_PATH.autonomous}
-        search={{}}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          ITEM,
-          "h-8 min-w-0 flex-1 gap-2 px-2.5 text-body font-medium",
-          active ? ROW_SELECTED : "text-fg-muted",
-        )}
-      >
-        <Lamp state={lamp} size={7} />
-        <span className="truncate">Autonomous</span>
-        <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
-      </Link>
-      <Switch
-        label="Autonomous mode"
-        hideLabel
-        checked={mode !== "off"}
-        disabled={status === undefined}
-        title={unavailable ?? (mode === "off" ? "Turn autonomous mode on" : "Pause or stop autonomous mode")}
-        onChange={(next) => setOpen(next ? "on" : "off")}
-      />
-      {open === "on" && status && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
-      {open === "off" && status && <OffDialog mode={status.mode} onClose={() => setOpen(undefined)} />}
+    <div
+      title={unavailable}
+      className="mb-1 ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
+    >
+      <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
+        <span className="flex min-w-0 items-center gap-2">
+          <Lamp state={lamp} size={7} />
+          <span className="truncate">Autonomous</span>
+          <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>
+            {MODE_WORD[mode]}
+          </span>
+        </span>
+        {status && <SpendToday status={status} className="pl-[15px] text-xs font-normal" />}
+      </div>
+      {toggle}
+      {dialogs}
     </div>
   );
 }

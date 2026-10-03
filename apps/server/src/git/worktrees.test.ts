@@ -95,6 +95,37 @@ describe("removing", () => {
   });
 });
 
+describe("locking task worktrees", () => {
+  const locked = async () =>
+    (await testGit(source, "worktree", "list", "--porcelain"))
+      .split("\n")
+      .filter((l) => l.startsWith("locked"));
+
+  it("locks a new task worktree, so a prune that cannot see its folder keeps the entry", async () => {
+    await createWorktree({ source, base: "develop", branch: "task/t-1-x", path: wt("api"), task: "T-1" });
+    expect(await locked()).toEqual(["locked majhi task T-1"]);
+    await rename(wt("api"), `${wt("api")}.away`);
+    await testGit(source, "worktree", "prune");
+    await rename(`${wt("api")}.away`, wt("api"));
+    expect((await testGit(wt("api"), "symbolic-ref", "--short", "HEAD")).trim()).toBe("task/t-1-x");
+  });
+
+  it("removes a locked worktree, and keeps the lock when git refuses a dirty one", async () => {
+    await createWorktree({ source, base: "develop", branch: "task/t-1-x", path: wt("api"), task: "T-1" });
+    await writeFile(join(wt("api"), "a.txt"), "edited\n");
+    await expect(removeWorktree(source, wt("api"), false)).rejects.toBeInstanceOf(WorktreeProblem);
+    expect(await locked()).toEqual(["locked majhi task T-1"]);
+    await removeWorktree(source, wt("api"), true);
+    await expect(stat(wt("api"))).rejects.toThrow();
+    expect(await testGit(source, "worktree", "list", "--porcelain")).not.toContain(wt("api"));
+
+    await createWorktree({ source, base: "develop", branch: "task/t-2-y", path: wt("web"), task: "T-1" });
+    await removeWorktree(source, wt("web"), false);
+    await expect(stat(wt("web"))).rejects.toThrow();
+    expect(await locked()).toEqual([]);
+  });
+});
+
 describe("repairWorktree", () => {
   const entryOf = async (path: string) =>
     (await readFile(join(path, ".git"), "utf8")).slice("gitdir: ".length).trim();

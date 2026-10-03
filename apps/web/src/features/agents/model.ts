@@ -162,6 +162,8 @@ export interface AgentDraft {
   tools: string[];
   /** Connection ids of the agent's org it may use (5.14). Root agents get every connection of the task's org. */
   connections: string[];
+  /** Names of installed skills the agent uses (SPEC 5.2). */
+  skills: string[];
   fallback: string | undefined;
   /** The agent's own context cap in thousands of tokens, `0` for no cap, `""` for the org's or majhi's. */
   contextCap: string;
@@ -182,13 +184,14 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     perms: f.perms,
     tools: f.tools,
     connections: f.connections,
+    skills: f.skills,
     fallback: f.fallback,
     contextCap: capToField(f.context?.cap),
     instructions: agent.instructions,
   };
 }
 
-/** The `agents.update` input: the draft laid over the file's other fields (skills, ...), which the editor does not touch. */
+/** The `agents.update` input: the draft laid over the file's other fields, which the editor does not touch. */
 export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
   const {
     id: _id,
@@ -209,6 +212,7 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
     perms: draft.perms,
     tools: draft.tools,
     connections: draft.connections,
+    skills: draft.skills,
   };
   if (draft.model) frontmatter.model = draft.model;
   if (draft.effort) frontmatter.effort = draft.effort;
@@ -343,4 +347,17 @@ export function tasksOf<T extends Pick<TaskSummary, "status" | "team" | "working
         Number(b.working.includes(id)) - Number(a.working.includes(id)) ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+}
+
+/**
+ * An agent's `connections` list holds two kinds of entry that two sections edit: MCP servers and
+ * the other connections. Each section saves only the ids it shows, over the list as the file has it
+ * now, so saving one never undoes an unsaved change of the other.
+ */
+export function mergeConnections(
+  file: readonly string[],
+  draft: readonly string[],
+  owns: (id: string) => boolean,
+): string[] {
+  return [...file.filter((id) => !owns(id)), ...draft.filter(owns)];
 }

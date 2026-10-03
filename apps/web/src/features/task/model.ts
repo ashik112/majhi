@@ -1,4 +1,4 @@
-import type { AgentLive, RoomItem, Task, TaskStatus, TaskSummary } from "@majhi/shared";
+import type { AgentLive, PausedBy, RoomItem, Task, TaskStatus, TaskSummary } from "@majhi/shared";
 import type { LampState } from "../../components/ui/lamp";
 import type { DotTone } from "../../components/ui/status-dot";
 import { workingText } from "../board/model";
@@ -85,9 +85,16 @@ const PAUSE_TEXT: Record<string, string> = {
   owner: "You stopped the task. Resume when you are ready.",
 };
 
+/** The same for a task the captain, or Autonomous being turned off, paused. */
+const PAUSED_BY_TEXT: Record<PausedBy, string> = {
+  captain: "Paused by Captain. Resume when you are ready.",
+  "autonomy-off":
+    "Paused when Autonomous was turned off. Resume it, or turn Autonomous on to resume it with the others.",
+};
+
 /** The card under "In this room": one sentence and the one main action for the task's status. */
 export function actionCopy(
-  task: Pick<Task, "status" | "pausedReason" | "kind">,
+  task: Pick<Task, "status" | "pausedReason" | "pausedBy" | "kind">,
   yourTurn: boolean,
 ): ActionCopy {
   switch (task.status) {
@@ -114,7 +121,12 @@ export function actionCopy(
     case "paused":
       return {
         kind: "resume",
-        text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused. Resume when you are ready.",
+        text:
+          (task.pausedReason === "owner" && task.pausedBy !== undefined
+            ? PAUSED_BY_TEXT[task.pausedBy]
+            : undefined) ??
+          PAUSE_TEXT[task.pausedReason ?? ""] ??
+          "Paused. Resume when you are ready.",
         tone: "paused",
         warm: true,
       };
@@ -216,13 +228,13 @@ export interface SubtaskLine {
  * "Paused · usage limit", "MR open", "Done".
  */
 export function subtaskLine(
-  task: Pick<TaskSummary, "status" | "working" | "waitingOn" | "pausedReason">,
+  task: Pick<TaskSummary, "status" | "working" | "waitingOn" | "pausedReason" | "pausedBy">,
 ): SubtaskLine {
   if ((task.status === "inbox" || task.status === "ready") && task.waitingOn.length > 0)
     return { lamp: "idle", text: "Waiting on", waitingOn: task.waitingOn };
   if (task.status === "running" && task.working.length > 0)
     return { lamp: "working", text: workingText(task.working), waitingOn: [] };
-  const info = statusInfo(task.status, task.pausedReason, isYourTurn(task));
+  const info = statusInfo(task.status, task.pausedReason, isYourTurn(task), task.pausedBy);
   return { lamp: info.lamp, text: info.label, waitingOn: [] };
 }
 

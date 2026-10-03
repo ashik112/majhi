@@ -236,6 +236,25 @@ export class E2eRepo {
     ).map(runOf);
   }
 
+  /** The project's newest finished run. */
+  lastFinished(project: string): E2eRun | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM e2e_runs WHERE project = ? AND status IN ${FINISHED} ORDER BY finished_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(project) as RunRow | undefined;
+    return row === undefined ? undefined : runOf(row);
+  }
+
+  /** Whether any run of the project was queued at or after `at` (an ISO time). */
+  queuedSince(project: string, at: string): boolean {
+    return (
+      this.db
+        .prepare("SELECT 1 FROM e2e_runs WHERE project = ? AND queued_at >= ? LIMIT 1")
+        .get(project, at) !== undefined
+    );
+  }
+
   /** The commit of the project's newest passed run. */
   lastGreen(project: string): string | undefined {
     const row = this.db

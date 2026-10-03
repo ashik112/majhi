@@ -17,7 +17,7 @@ if (os === undefined) {
 }
 const { home, majhiHome } = parseHostConfig();
 const log = (): void => undefined;
-const deps = processDeps(os, { home, majhiHome, log });
+const deps = processDeps(os, { home, majhiHome, log, downloads: false });
 const platform = createPlatform(os, deps);
 const ssh = createSsh({
   run: deps.run,

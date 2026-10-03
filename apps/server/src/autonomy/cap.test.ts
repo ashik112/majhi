@@ -1,5 +1,6 @@
-import type { AutonomyStatus, RoomItem, Task } from "@majhi/shared";
+import type { AutonomyStatus, BudgetAsk, RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession, Turn } from "../testing/fakeSession.ts";
 import { CAP_MARGIN } from "./spend.ts";
@@ -67,7 +68,7 @@ describe("the day cap of autonomous mode", () => {
     };
     const configured = await h.cmd("autonomy.configure", {
       day: { cost: CAP },
-      orgs: { acme: { level: "runs" } },
+      orgs: { acme: { authority: RUNS } },
     });
     expect(configured.status).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);
@@ -92,7 +93,7 @@ describe("the day cap of autonomous mode", () => {
     // The paused card names the cap that stopped it, not a generic budget.
     const items = (await h.cmd("room.items", { task: id, limit: 500 })).body.items as RoomItem[];
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("cap for today");
+    expect(card?.type === "paused" && card.why).toContain("Waiting for the autonomous daily budget, $");
 
     const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
     const used = status.spend.total.used.cost;
@@ -108,5 +109,38 @@ describe("the day cap of autonomous mode", () => {
     await pause(100);
     await h.majhi.services.runs.idle();
     expect(sessions.reduce((n, s) => n + s.prompts.length, 0)).toBe(prompts);
+
+    // The owner is asked once, with the doubled budget, and the answer lifts the hold for today only.
+    const asked = async () => (await h.cmd("captain.asks")).body.budgets as BudgetAsk[];
+    expect(await asked()).toMatchObject([
+      { scope: "day", name: "Autonomous work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
+    ]);
+    await h.majhi.services.autonomy.refreshHolds();
+    expect(await asked()).toHaveLength(1);
+    const answered = await h.cmd("captain.answerBudget", { scope: "day", answer: "raise" });
+    expect(answered.status).toBe(200);
+    expect(answered.body.budgets).toEqual([]);
+    const after = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    expect(after.holds.map((x) => x.kind)).not.toContain("day-cap");
+    expect(after.spend.total.cap).toEqual({ cost: CAP * 2 });
+    expect(after.raised).toEqual({ day: { cost: CAP * 2 } });
+    // The saved budget is the owner's number still.
+    expect(after.settings.day).toEqual({ cost: CAP });
+    expect(h.majhi.services.autonomy.repo.task(id)?.held).toBeUndefined();
+    // Answered once: no second question that day, and a second answer is refused.
+    expect(await asked()).toEqual([]);
+    expect((await h.cmd("captain.answerBudget", { scope: "day", answer: "raise" })).status).toBe(409);
+  });
+
+  it("keeps the autonomous budget: configure never clears it", async () => {
+    w = await bossWorld({ real: false });
+    const { h } = w;
+    expect((await h.cmd("autonomy.configure", { day: { cost: CAP } })).status).toBe(200);
+    expect((await h.cmd("autonomy.start")).status).toBe(200);
+    for (const day of [null, {}, { cost: 0 }]) {
+      expect((await h.cmd("autonomy.configure", { day })).status).toBe(400);
+    }
+    const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    expect(status.settings.day).toEqual({ cost: CAP });
   });
 });

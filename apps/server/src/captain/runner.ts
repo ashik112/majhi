@@ -1,16 +1,18 @@
 import type {
+  Authority,
+  AutonomyMode,
   AutonomyOrg,
+  CaptainCapAsk,
   CaptainCause,
   CaptainChore,
-  CaptainLevel,
   CaptainRunStatus,
   CaptainUndo,
 } from "@majhi/shared";
 import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
-import { choresOf } from "./levels.ts";
+import { choresNow } from "./levels.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, FAILURES_OFF, RUN_CAPS } from "./rules.ts";
+import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -25,8 +27,10 @@ import { DAILY_CAPS, FAILURES_OFF, RUN_CAPS } from "./rules.ts";
 export interface Workspace {
   org: string;
   name: string;
-  /** What it does now (autonomous mode applied). */
-  level: CaptainLevel;
+  /** Autonomous now: only memory and cleanup run while it is not On. */
+  mode: AutonomyMode;
+  /** Who decides each row now (Autonomous applied: all "ask" but upkeep while it is not On). */
+  authority: Authority;
   rules: AutonomyOrg | undefined;
   tz: string;
   /** Today in the workspace's zone. */
@@ -50,6 +54,33 @@ export interface RunnerDeps {
   chores: Record<CaptainChore, (run: ChoreRun) => Promise<void>>;
   /** Something in the log or the runs changed. */
   changed?: () => void;
+  /** A chore reached a daily cap with work left, and the owner is asked whether to raise it today. */
+  capAsked?: (ask: CaptainCapAsk) => void;
+}
+
+/**
+ * A chore reached a daily cap while it had work: the owner is asked once that day whether to raise
+ * it. After a raise the raised cap holds for the rest of the day, with no second question.
+ */
+function askToRaise(
+  deps: RunnerDeps,
+  ws: Workspace,
+  chore: CaptainChore,
+  kind: CaptainCapAsk["kind"],
+  cap: number,
+): void {
+  if (deps.repo.capRaised(ws.org, chore, ws.day)) return;
+  const ask: CaptainCapAsk = {
+    org: ws.org,
+    chore,
+    day: ws.day,
+    kind,
+    cap,
+    raiseTo: cap * RAISE_FACTOR,
+    text: capAskText(ws.name, chore, kind, cap),
+    at: deps.now().toISOString(),
+  };
+  if (deps.repo.addCapAsk(ask)) deps.capAsked?.(ask);
 }
 
 /** Why a run ended before its chore finished. */
@@ -119,9 +150,10 @@ export class ChoreRun {
 
   /** Ends the run when it reached a cap or the captain was stopped. */
   check(): void {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Stop the captain is on");
-    if (this.actions >= RUN_CAPS.actions) {
-      throw new RunEnd("capped", `reached its cap of ${RUN_CAPS.actions} actions in one run`);
+    if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
+    const actions = runActions(this.chore);
+    if (this.actions >= actions) {
+      throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
     }
     const minutes = (this.deps.now().getTime() - this.started) / 60_000;
     if (minutes >= RUN_CAPS.minutes) {
@@ -134,8 +166,9 @@ export class ChoreRun {
         `reached its cap of ${RUN_CAPS.tokens.toLocaleString("en-US")} tokens in one run`,
       );
     }
-    const daily = DAILY_CAPS[this.chore].actions;
+    const daily = dailyCaps(this.chore, this.deps.repo.capRaised(this.org, this.chore, this.ws.day)).actions;
     if (daily !== undefined && this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily) {
+      askToRaise(this.deps, this.ws, this.chore, "actions", daily);
       throw new RunEnd(
         "capped",
         `reached today's cap of ${daily} for ${CHORE_LABEL[this.chore].toLowerCase()}`,
@@ -235,9 +268,9 @@ export class ChoreRun {
 
   /** The workspace's rules read again, then the step's own check. */
   private async recheck(a: ActInput): Promise<string | undefined> {
-    if (this.deps.stopped()) throw new RunEnd("stopped", "Stop the captain is on");
+    if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
     const now = await this.deps.workspace(this.org);
-    if (now === undefined || !choresOf(now.level).includes(this.chore)) {
+    if (now === undefined || !choresNow(now.authority, now.mode).includes(this.chore)) {
       throw new RunEnd("stopped", "the workspace no longer lets the captain do this");
     }
     if (now.rest !== undefined) throw new RunEnd("rested", now.rest);
@@ -304,10 +337,14 @@ export class ChoreRunner {
     let run: ChoreRun | undefined;
     try {
       const ws = await deps.workspace(org);
-      if (ws === undefined || !choresOf(ws.level).includes(chore) || ws.rest !== undefined) return undefined;
+      if (ws === undefined || !choresNow(ws.authority, ws.mode).includes(chore) || ws.rest !== undefined)
+        return undefined;
       if (deps.repo.chore(org, chore).offAt !== undefined) return undefined;
-      const runs = DAILY_CAPS[chore].runs;
-      if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) return undefined;
+      const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;
+      if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {
+        askToRaise(deps, ws, chore, "runs", runs);
+        return undefined;
+      }
       const at = deps.now().toISOString();
       const id = deps.repo.openRun({ org, chore, day: ws.day, at, trigger: why });
       if (id === undefined) return undefined;

@@ -9,14 +9,14 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "orgs":
       return [queryKeys.orgs, queryKeys.connections, queryKeys.onboarding];
     case "accounts":
-      return [queryKeys.accounts, queryKeys.accountModels, queryKeys.onboarding];
+      return [queryKeys.accounts, queryKeys.accountModels, queryKeys.onboarding, queryKeys.decisions];
     case "agents":
       // A connection lists the agents that use it.
-      return [queryKeys.agents, queryKeys.connections, queryKeys.onboarding];
+      return [queryKeys.agents, queryKeys.connections, queryKeys.skills, queryKeys.onboarding];
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding];
     case "tasks":
-      return [queryKeys.tasks];
+      return [queryKeys.tasks, queryKeys.decisions];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":
@@ -34,9 +34,9 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "connections":
       return [queryKeys.connections];
     case "autonomy":
-      return [queryKeys.autonomy];
+      return [queryKeys.autonomy, queryKeys.decisions];
     case "captain":
-      return [queryKeys.captain];
+      return [queryKeys.captain, queryKeys.decisions];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":

@@ -49,8 +49,17 @@ export class ConfigService {
     return config;
   }
 
-  sections(): Promise<ConfigSections> {
-    return readSections(this.file);
+  async sections(): Promise<ConfigSections> {
+    const sections = await readSections(this.file);
+    this.boss = sections.boss;
+    return sections;
+  }
+
+  /** The captain as of the last read of majhi.yaml, for code that cannot wait for a read. */
+  private boss: string | undefined;
+
+  knownBoss(): string | undefined {
+    return this.boss;
   }
 
   setWorkspaces(update: WorkspacesUpdate, change: ChangeRecord): Promise<LoadedConfig> {

@@ -6,26 +6,79 @@ import { localDay } from "../usage/ranges.ts";
  * keep it from running away. Pure.
  */
 
-/** The captain keeps out of a task the owner acted in during the last 10 minutes. */
-export const PRESENCE_MS = 10 * 60_000;
-
 /** The hard caps of one run of a chore. A run stops at the first it reaches, with a line in the log. */
 export const RUN_CAPS = { actions: 20, tokens: 60_000, minutes: 10 } as const;
 
 /**
+ * A chore whose run may take more actions than `RUN_CAPS.actions`: one memory run looks at every
+ * waiting memory of its workspace, in chunks, without a model turn of the lane per memory.
+ */
+const RUN_ACTIONS: Partial<Record<CaptainChore, number>> = { memory: 100 };
+
+/** The cap on actions in one run of the chore. */
+export function runActions(chore: CaptainChore): number {
+  return RUN_ACTIONS[chore] ?? RUN_CAPS.actions;
+}
+
+/** A workspace with this many memories its memory chore has not looked at runs the chore, not only daily. */
+export const MEMORY_WAITING = 10;
+
+/**
  * The daily caps per chore and workspace: `actions` counts what it did or handed to the owner,
- * `runs` counts runs. "Five ships, one memory run."
+ * `runs` counts runs. "Five ships, four memory runs": the daily one and up to three when memories pile up.
  */
 export const DAILY_CAPS: Record<CaptainChore, { actions?: number; runs?: number }> = {
   ship: { actions: 5 },
   cards: { actions: 40 },
   questions: { actions: 20 },
-  memory: { runs: 1 },
+  memory: { runs: 4 },
   projects: { runs: 3, actions: 10 },
   triage: { runs: 1, actions: 20 },
   cleanup: { runs: 1, actions: 20 },
   stuck: { actions: 10 },
 };
+
+/** A raise the owner gave for one day multiplies that day's caps of the chore. */
+export const RAISE_FACTOR = 2;
+
+/** A chore's daily caps on one day: `raised` when the owner raised them for that day. */
+export function dailyCaps(chore: CaptainChore, raised: boolean): { actions?: number; runs?: number } {
+  const base = DAILY_CAPS[chore];
+  if (!raised) return base;
+  return {
+    ...(base.actions === undefined ? {} : { actions: base.actions * RAISE_FACTOR }),
+    ...(base.runs === undefined ? {} : { runs: base.runs * RAISE_FACTOR }),
+  };
+}
+
+/** What reaching a cap means, per chore and cap: "answered its 20 questions". */
+const REACHED: Record<CaptainChore, { actions?: (n: number) => string; runs?: (n: number) => string }> = {
+  ship: { actions: (n) => `shipped its ${n} tasks` },
+  cards: { actions: (n) => `answered its ${n} approval cards` },
+  questions: { actions: (n) => `answered its ${n} questions` },
+  memory: { runs: (n) => `did its ${n} memory runs` },
+  projects: { runs: (n) => `did its ${n} project checks`, actions: (n) => `made its ${n} project changes` },
+  triage: {
+    runs: (n) => (n === 1 ? "did its triage run" : `did its ${n} triage runs`),
+    actions: (n) => `triaged its ${n} tasks`,
+  },
+  cleanup: {
+    runs: (n) => (n === 1 ? "did its cleanup run" : `did its ${n} cleanup runs`),
+    actions: (n) => `cleaned up its ${n} items`,
+  },
+  stuck: { actions: (n) => `looked at its ${n} stuck tasks` },
+};
+
+/** The question to the owner when a chore reached a daily cap in a workspace. */
+export function capAskText(
+  workspace: string,
+  chore: CaptainChore,
+  kind: "actions" | "runs",
+  cap: number,
+): string {
+  const reached = REACHED[chore][kind]?.(cap) ?? `reached its daily cap of ${cap}`;
+  return `${workspace}: the captain ${reached} for today. Raise the limit for today?`;
+}
 
 /** Two failures in a row turn a chore off for the workspace. */
 export const FAILURES_OFF = 2;
@@ -72,13 +125,9 @@ export function withinHours(hours: { from: string; to: string }, clock: string):
     : clock >= hours.from || clock < hours.to;
 }
 
-/** Why presence keeps the captain out of a task, or undefined. */
-export function presenceWhy(ownerAt: string | undefined, now: Date): string | undefined {
-  if (ownerAt === undefined) return undefined;
-  const ago = now.getTime() - Date.parse(ownerAt);
-  if (!(ago >= 0 && ago < PRESENCE_MS)) return undefined;
-  const minutes = Math.max(1, Math.round(ago / 60_000));
-  return `the owner acted in it ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+/** Why the owner typing keeps the captain out of a task, or undefined. One line, the same everywhere. */
+export function typingWhy(task: string, typing: boolean): string | undefined {
+  return typing ? `waiting: you are typing in ${task}` : undefined;
 }
 
 /** Whether a branch is one the workspace lets the captain ship to. No list: each project's own base. */

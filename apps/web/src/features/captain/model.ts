@@ -1,27 +1,58 @@
-import type { AutonomyOrg, AutonomyOrgPatch, CaptainLevel, Freeze } from "@majhi/shared";
+import type {
+  Authority,
+  AuthorityRow,
+  AutonomyMode,
+  AutonomyOrg,
+  AutonomyOrgPatch,
+  Freeze,
+} from "@majhi/shared";
 
-/** The three choices, in the words of the Captain page. */
-export const LEVELS: readonly { value: CaptainLevel; label: string; help: string }[] = [
-  { value: "ask", label: "Only when I ask", help: "Answers when you talk to it. Nothing else." },
-  {
-    value: "tidy",
-    label: "Keeps things tidy",
-    help: "Routine cards, memory, new repos and cleanup. Asks before shipping.",
-  },
-  {
-    value: "runs",
-    label: "Runs it",
-    help: "Also picks tasks, runs them and ships them, within today's budget.",
-  },
+/** The rows of the delegation grid, in the order it shows them. */
+export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
+  "start",
+  "questions",
+  "approvals",
+  "upkeep",
+  "merge",
+  "push",
 ];
 
-/** "$20" or "20.50" as dollars, or undefined when it is not a positive amount. */
-export function parseDollars(text: string): number | undefined {
-  const plain = text.trim().replace(/^\$/, "").replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(plain)) return undefined;
-  const n = Number(plain);
-  return n > 0 && n <= 10_000 ? n : undefined;
-}
+export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string }> = {
+  start: { label: "Start work", hint: "Takes tasks from the backlog" },
+  questions: { label: "Answer questions", hint: "When the brief or the code settles them" },
+  approvals: { label: "Approvals", hint: "Routine cards your rules allow" },
+  upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, stuck tasks" },
+  merge: { label: "Merge", hint: "Into the base branch, after checks pass" },
+  push: { label: "Push", hint: "Branches and merge requests" },
+};
+
+/** The two quick presets in a workspace's column menu. */
+export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Authority }[] = [
+  {
+    label: "Hands off",
+    help: "Captain decides everything except pushing",
+    rows: {
+      start: "decide",
+      questions: "decide",
+      approvals: "decide",
+      upkeep: "decide",
+      merge: "decide",
+      push: "ask",
+    },
+  },
+  {
+    label: "Ask me first",
+    help: "You decide everything except upkeep",
+    rows: {
+      start: "ask",
+      questions: "ask",
+      approvals: "ask",
+      upkeep: "decide",
+      merge: "ask",
+      push: "ask",
+    },
+  },
+];
 
 /** What "More rules" edits, as the form holds it. */
 export interface RulesDraft {
@@ -35,8 +66,6 @@ export interface RulesDraft {
   providers: string[];
   /** Empty: the captain's own account. */
   account: string;
-  merge: boolean;
-  push: boolean;
 }
 
 export function rulesDraft(rules: AutonomyOrg): RulesDraft {
@@ -49,8 +78,6 @@ export function rulesDraft(rules: AutonomyOrg): RulesDraft {
     branches: [...(rules.branches ?? [])],
     providers: [...(rules.providers ?? [])],
     account: rules.account ?? "",
-    merge: rules.merge,
-    push: rules.push,
   };
 }
 
@@ -73,8 +100,6 @@ export function rulesPatch(draft: RulesDraft, rules: AutonomyOrg): AutonomyOrgPa
     patch.providers = draft.providers.length === 0 ? null : draft.providers;
   }
   if (draft.account !== (rules.account ?? "")) patch.account = draft.account === "" ? null : draft.account;
-  if (draft.merge !== rules.merge) patch.merge = draft.merge;
-  if (draft.push !== rules.push) patch.push = draft.push;
   return Object.keys(patch).length === 0 ? undefined : patch;
 }
 
@@ -94,4 +119,30 @@ export function upperFirst(text: string): string {
 export function shortDay(day: string): string {
   const d = new Date(`${day}T12:00:00Z`);
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/**
+ * The one sentence under the title that is true right now. Off: what still runs and what waits.
+ * On: what runs and what is next. Both end with how many decisions wait for the owner.
+ */
+export function statusSentence(input: {
+  mode: AutonomyMode;
+  /** Whether any workspace lets the captain do upkeep, which keeps running while Off. */
+  upkeep: boolean;
+  running: number;
+  next: number;
+  decisions: number;
+}): string {
+  const waits =
+    input.decisions === 0
+      ? "Nothing waits for you."
+      : `${input.decisions} ${input.decisions === 1 ? "decision waits" : "decisions wait"} for you.`;
+  switch (input.mode) {
+    case "off":
+      return `Off: it only answers when you ask${input.upkeep ? ", and keeps memory and cleanup going" : ""}. ${waits}`;
+    case "stopping":
+      return `Turning off: tasks finish their step, then pause. ${waits}`;
+    default:
+      return `On: ${input.running} running, ${input.next} next. ${waits}`;
+  }
 }

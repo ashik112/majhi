@@ -24,13 +24,14 @@ const WORD: Record<E2eRun["status"], { text: string; tone: DotTone }> = {
   replaced: { text: "replaced", tone: "idle" },
 };
 
-function RunLine({ run, now }: { run: E2eRun; now: number }) {
+/** One run: lamp, commit, result, duration, when. Hub setup leaves the project name out. */
+export function RunLine({ run, now, hideProject }: { run: E2eRun; now: number; hideProject?: boolean }) {
   const word = WORD[run.status];
   const when = run.finishedAt ?? run.startedAt ?? run.queuedAt;
   return (
     <li className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
       <Dot tone={word.tone} />
-      <span className="font-medium">{run.project}</span>
+      {!hideProject && <span className="font-medium">{run.project}</span>}
       <span className="font-mono text-xs text-fg-muted" title={run.subject}>
         {run.commit.slice(0, 7)}
       </span>
@@ -63,7 +64,7 @@ export function E2ePanel() {
   const now = useNow(30_000);
   const data = status.data;
   if (data === undefined) return null;
-  const on = new Set(data.projects.filter((p) => p.on).map((p) => p.id));
+  const on = new Set(data.projects.filter((p) => p.mode !== "off").map((p) => p.id));
   const latest = data.latest.filter((r) => on.has(r.project));
   if (on.size === 0 && data.running === undefined) return null;
   const pending = data.queued.length;
@@ -76,9 +77,7 @@ export function E2ePanel() {
           {latest.map((run) => (
             <RunLine key={run.id} run={run} now={now} />
           ))}
-          {latest.length === 0 && !data.running && (
-            <li className="text-sm text-fg-faint">Waiting for the next merge into main.</li>
-          )}
+          {latest.length === 0 && !data.running && <li className="text-sm text-fg-faint">No run yet.</li>}
         </ul>
         {pending > 0 && <span className="text-sm text-fg-faint">{pending} waiting</span>}
       </div>

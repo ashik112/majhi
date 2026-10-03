@@ -40,9 +40,9 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
       return autonomy.status();
     },
     "autonomy.events": async (input) => autonomy.events(input),
-    "autonomy.start": async (_input, ctx) => {
+    "autonomy.start": async (input, ctx) => {
       ownerOnly(ctx);
-      return autonomy.start();
+      return autonomy.start(input.resumeStopped);
     },
     "autonomy.pause": async (_input, ctx) => {
       ownerOnly(ctx);

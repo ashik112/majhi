@@ -9,7 +9,7 @@ import {
   type RuntimeOptions,
   type SessionEvent,
 } from "@majhi/acp";
-import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
+import type { Attachment, HandoffVia, ProcessInfo, RoomItem, SlotCapacity, Task } from "@majhi/shared";
 import { durationMs, isAutonomyChat } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
@@ -52,7 +52,7 @@ import { checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
-import { Slots } from "./limits.ts";
+import { capacityOf, Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
@@ -107,10 +107,17 @@ export interface RunDeps {
   serena?: SerenaLaunch;
   /** Where connections keep their files (5.14). Absent: runs get no connections. */
   connectionFiles?: LaunchDeps["connectionFiles"];
+  /** The skills store: runs get their agent's enabled skills (5.2). */
+  skills?: LaunchDeps["skills"];
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
-  processes?: { running(task: string): ProcessInfo[]; list(task: string): ProcessInfo[] };
+  processes?: {
+    running(task: string): ProcessInfo[];
+    list(task: string): ProcessInfo[];
+    /** The agent already read this end with `output` or `list`: it is not told again. */
+    readAfterEnd(p: ProcessInfo): boolean;
+  };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: () => void;
   /**
@@ -138,6 +145,11 @@ export interface RunDeps {
    * or stopping, `limit` under a cap, with the line to say. The run then pauses with that reason.
    */
   held?: (task: string, agent: string) => Promise<{ reason: "owner" | "limit"; why: string } | undefined>;
+  /**
+   * Autonomous mode's say in the line for a slot: `fair` while it is On (slots are shared evenly
+   * across workspaces), and `owner` for a task the owner runs, which always goes first (5.18).
+   */
+  slotPolicy?: { fair(): boolean; owner(task: string): boolean };
   /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
   onLoopEnd?: (task: string, agent: string) => void;
   /**
@@ -224,6 +236,7 @@ export class RunManager {
         return run !== undefined && run.session !== undefined && !run.turning;
       },
       evict: (key) => this.evict(key),
+      fair: () => deps.slotPolicy?.fair() ?? false,
       onQueue: (positions) => this.showLine(positions),
       now: () => this.now().getTime(),
     });
@@ -242,6 +255,32 @@ export class RunManager {
   /** True when the agent is queued, starting, working or waiting in any task. */
   isWorking(agent: string): boolean {
     return [...this.runs.values()].some((r) => r.agent === agent && WORKING.has(r.live.status));
+  }
+
+  /**
+   * Free slots now, overall and per account (`accounts` are listed even when nothing uses them). The
+   * captain's own slot is outside the limits and not counted.
+   */
+  async capacity(accounts: readonly string[] = []): Promise<SlotCapacity> {
+    const { limits } = await this.deps.config.settings();
+    return capacityOf(this.slots.state(), limits, accounts);
+  }
+
+  /**
+   * True while something of the task's agents is on its way: one queued for a slot, starting,
+   * working or waiting, a loop about to send, or a run a gate holds (a cap, a lost connection) that
+   * goes on by itself. A task is stuck only when this is false.
+   */
+  busy(task: string): boolean {
+    return [...this.runs.values()].some(
+      (r) =>
+        r.task === task &&
+        !r.closing &&
+        (WORKING.has(r.live.status) ||
+          r.turning ||
+          r.paused !== undefined ||
+          this.slots.position(this.key(r.task, r.agent)) !== undefined),
+    );
   }
 
   /** Agents of the task that are queued, starting, working or waiting, or whose loop is about to send. */
@@ -470,6 +509,14 @@ export class RunManager {
   }
 
   /**
+   * Tells an agent something with its next prompt, like a "not woken" note. Unlike `notify` it
+   * starts no turn: an idle agent reads it when something else wakes it.
+   */
+  note(task: string, agent: string, text: string): void {
+    this.runFor(task, agent).notes.push(text);
+  }
+
+  /**
    * A background process of `p.agent` ended by itself (5.15). Queued once per run of the process,
    * and every end that waits is sent in one prompt: while the agent works, or is paused, they pile
    * up and go out together, without the ones a newer run replaced by then.
@@ -592,10 +639,10 @@ export class RunManager {
     );
   }
 
-  /** Answers a pending permission prompt with one of its options. */
-  answerPermission(task: string, itemId: string, option: string): RoomItem {
+  /** Answers a pending permission prompt with one of its options, for the owner or the `captain`. */
+  answerPermission(task: string, itemId: string, option: string, captain = false): RoomItem {
     const run = [...this.runs.values()].find((r) => r.task === task && r.pending.has(itemId));
-    return this.permissions.answer(run, task, itemId, option);
+    return this.permissions.answer(run, task, itemId, option, captain);
   }
 
   /**
@@ -630,6 +677,14 @@ export class RunManager {
     if (run?.session === undefined) return;
     if (run.turning) run.remountDue = true;
     else this.evict(this.key(task, agent));
+  }
+
+  /**
+   * The agent's skills or connections changed. Every session it has open, in any task, restarts the
+   * way `remount` does, so its next turn has the new skills and MCP tools.
+   */
+  remountAgent(agent: string): void {
+    for (const run of [...this.runs.values()]) if (run.agent === agent) this.remount(run.task, agent);
   }
 
   /** What the agent's open session holds of its connections (5.14), or undefined. */
@@ -985,7 +1040,11 @@ export class RunManager {
         entry.kind === "brief" ||
         run.carry !== undefined ||
         (unbriefed && (entry.kind === "owner" || entry.kind === "handoff"));
-      const raw = await this.withFacts(run, brief, this.withProcesses(run, await this.blocksFor(run, entry)));
+      const raw = await this.withFacts(
+        run,
+        brief,
+        this.withNotes(run, this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry)))),
+      );
       if (raw === undefined) continue;
 
       // One read of the settings per turn: before the prompt and after it.
@@ -1357,8 +1416,19 @@ export class RunManager {
       case "notice":
         return [{ type: "text", text: entry.text }];
       case "processes": {
-        const ends = run.processEnds;
+        const queued = run.processEnds;
         run.processEnds = [];
+        // Read while it waited, mostly in the turn that ran when it ended: the agent has it already.
+        const read = queued.filter((p) => this.deps.processes?.readAfterEnd(p) === true);
+        const ends = queued.filter((p) => !read.includes(p));
+        if (read.length > 0) {
+          const ids = read.map((p) => p.id).join(", ");
+          this.live.system(
+            run,
+            "info",
+            `${ids} ended, but @${run.agent} already read ${read.length === 1 ? "it" : "them"}, so @${run.agent} is not told again.`,
+          );
+        }
         const { current, replaced } = splitCurrent(ends, this.deps.processes?.list(run.task) ?? []);
         if (replaced.length > 0) {
           const ids = replaced.map((p) => p.id).join(", ");
@@ -1428,6 +1498,28 @@ export class RunManager {
     if (blocks === undefined || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
     const line = runningLine(this.deps.processes?.running(run.task) ?? []);
     return line === undefined ? blocks : [...blocks, { type: "text", text: line }];
+  }
+
+  /**
+   * Names the agent's enabled skills in the first prompt of each session, with the path of each
+   * SKILL.md in the run's own copy. Not to slash commands: the note waits for the next prompt.
+   */
+  private withSkills(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
+    const first = blocks?.[0];
+    if (blocks === undefined || run.skills === undefined || !run.skills.due) return blocks;
+    if (first?.type === "text" && first.text.startsWith("/")) return blocks;
+    run.skills.due = false;
+    return [...blocks, { type: "text", text: run.skills.note }];
+  }
+
+  /** Adds the notes `note` left after the prompt, once. Not to slash commands, which keep them waiting. */
+  private withNotes(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
+    const first = blocks?.[0];
+    if (blocks === undefined || run.notes.length === 0) return blocks;
+    if (first?.type === "text" && first.text.startsWith("/")) return blocks;
+    const text = run.notes.join("\n");
+    run.notes = [];
+    return [...blocks, { type: "text", text }];
   }
 
   /** Adds what `beforePrompt` returns after the prompt. Not to slash commands. A failing hook adds nothing. */
@@ -1564,6 +1656,7 @@ export class RunManager {
       run.decideToken = opened.decideToken;
       run.roomTokens = opened.roomTokens;
       run.connections = opened.connections;
+      run.skills = opened.skills === undefined ? undefined : { ...opened.skills, due: true };
       this.rememberSecrets(run.task, opened.connections?.secrets ?? []);
       run.turns = 0;
       run.usage = undefined;
@@ -1833,6 +1926,8 @@ export class RunManager {
     run.roomTokens = undefined;
     if (run.connections !== undefined) void removeRunFiles(run.connections.dir).catch(() => undefined);
     run.connections = undefined;
+    if (run.skills !== undefined) void removeRunFiles(run.skills.dir).catch(() => undefined);
+    run.skills = undefined;
     if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
     run.idleTimer = undefined;
     this.permissions.cancelAll(run);
@@ -1850,7 +1945,20 @@ export class RunManager {
   private async takeSlot(run: AgentRun): Promise<boolean> {
     const key = this.key(run.task, run.agent);
     if (this.slots.holds(key)) return true;
-    const granted = await this.slots.acquire({ key, task: run.task, account: run.account ?? run.agent });
+    if (await this.ownSlot(run)) {
+      if (run.closing) return false;
+      run.queuedNoted = false;
+      if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
+      return true;
+    }
+    const task = this.deps.store.tasks.get(run.task);
+    const granted = await this.slots.acquire({
+      key,
+      task: run.task,
+      account: run.account ?? run.agent,
+      workspace: task?.org ?? "",
+      owner: this.deps.slotPolicy?.owner(run.task) ?? true,
+    });
     run.queuedNoted = false;
     if (!granted || run.closing) {
       if (granted) this.slots.release(key);
@@ -1858,6 +1966,19 @@ export class RunManager {
     }
     if (run.live.status === "queued") this.setLive(run, { status: "starting", slot: undefined });
     return true;
+  }
+
+  /**
+   * The captain in one of its own chats (a lane, the Cmd J chat, a topic chat) has its own run
+   * slot: it never waits in line and does not count toward `agents_max` or `per_account` (SPEC
+   * 5.16), so the owner's message is answered in seconds. Its turns are short and there is one run
+   * per chat, since a (task, agent) has one loop. Its spend is recorded and capped as before. The
+   * captain on an ordinary task is a normal agent and takes a slot.
+   */
+  private async ownSlot(run: AgentRun): Promise<boolean> {
+    const task = this.deps.store.tasks.get(run.task);
+    if (task === undefined || !isBossChat(task)) return false;
+    return run.agent === (await this.deps.config.sections()).boss;
   }
 
   /** Shows each waiting run's place in line. */

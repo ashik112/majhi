@@ -1,5 +1,6 @@
 import type { Spawned } from "@majhi/acp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -55,8 +56,21 @@ export class SpawnedTransport implements Transport {
   }
 }
 
-/** A remote server over Streamable HTTP, with headers on every request. */
-export function remoteTransport(url: string, headers: Record<string, string>): Transport {
+/** A remote server over Streamable HTTP, or SSE, with headers on every request. */
+export function remoteTransport(
+  url: string,
+  headers: Record<string, string>,
+  protocol: "http" | "sse" = "http",
+): Transport {
+  if (protocol === "sse") {
+    // The stream and the POSTs both carry the headers. The SDK takes them in two places.
+    return new SSEClientTransport(new URL(url), {
+      requestInit: { headers },
+      eventSourceInit: {
+        fetch: (input, init) => fetch(input, { ...init, headers: { ...headers, ...init?.headers } }),
+      },
+    });
+  }
   // The SDK's optional `sessionId` does not fit exactOptionalPropertyTypes; the shape is the same.
   return new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers },

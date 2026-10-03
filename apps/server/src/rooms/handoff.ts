@@ -28,7 +28,7 @@ export const VERDICT_ASK = "End your reply with APPROVED, or with CHANGES NEEDED
 
 /** What every handoff prompt says first. Fixed text, so it is the same in every one. */
 export const HANDOFF_RULES = [
-  "Your reply is posted to the room. To hand work on, mention the agent by its @name. Mention @owner only when you need the owner. With nothing to hand on, mention no one: a message without a mention wakes nobody.",
+  'Your reply is posted to the room. To hand work on, start a line with "@name:" or use the mention tool; a name in the middle of a sentence wakes nobody. Mention @owner only when you need the owner. With nothing to hand on, address no one: a message that addresses nobody wakes nobody.',
   "Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
 ].join("\n");
 

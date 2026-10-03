@@ -81,7 +81,7 @@ export function useGuideAutonomy() {
   return useMutation<CommandOutput<"autonomy.guide">, ApiRequestError, CommandInput<"autonomy.guide">>({
     mutationFn: (input) =>
       cmd("autonomy.guide", input, {
-        reason: input.keep ? "Owner added a standing instruction" : "Owner asked autonomous mode",
+        reason: input.keep ? "Owner added a standing instruction" : "Owner wrote to the captain",
       }),
     onSuccess: () =>
       Promise.all([

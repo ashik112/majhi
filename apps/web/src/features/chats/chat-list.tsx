@@ -112,6 +112,7 @@ export function ChatList({
                     creating={creating === agent.id}
                     now={now}
                     searching={query.trim() !== ""}
+                    workspace={group.label}
                   />
                 ))}
               </section>
@@ -135,8 +136,10 @@ function AgentBlock({
   creating,
   now,
   searching,
+  workspace,
 }: {
   agent: ChatAgentRow;
+  workspace: string;
   expanded: boolean;
   onToggle: () => void;
   selected: string | undefined;
@@ -196,6 +199,8 @@ function AgentBlock({
               onOpen={() => onOpen(chat.id)}
               onRename={() => onRename(chat)}
               onDelete={() => onDelete(chat)}
+              agent={agent.id}
+              workspace={workspace}
               now={now}
             />
           ))}
@@ -222,8 +227,12 @@ function ChatRow({
   onOpen,
   onRename,
   onDelete,
+  agent,
+  workspace,
   now,
 }: {
+  agent: string;
+  workspace: string;
   chat: TaskSummary;
   active: boolean;
   onOpen: () => void;
@@ -237,6 +246,7 @@ function ChatRow({
       <button
         type="button"
         aria-current={active ? "true" : undefined}
+        title={`${title} · @${agent} · ${workspace} · ${formatAgo(chat.updatedAt, now)}`}
         onClick={onOpen}
         className={cn(
           ROW,

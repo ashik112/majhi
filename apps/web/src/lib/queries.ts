@@ -54,10 +54,14 @@ export const queryKeys = {
   triggers: ["triggers"],
   /** Every `connections.*` read: the list, one connection and the types. */
   connections: ["connections"],
+  /** Every `skills.*` read: the installed list and directory searches. */
+  skills: ["skills"],
   /** Every `autonomy.*` read: the status and the feed. */
   autonomy: ["autonomy"],
   /** Every `captain.*` read: the status per workspace and the log. */
   captain: ["captain"],
+  /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
+  decisions: ["decisions"],
   /** `git.signIn.poll` for each flow. */
   signins: ["signins"],
   /** `projects.cloneStatus`. */

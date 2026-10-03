@@ -39,6 +39,8 @@ export interface AppSearch {
   /** On Memory: the project shown (or `global`), and its tab. */
   project?: string;
   tab?: string;
+  /** On Captain: the workspace whose thread is shown. */
+  thread?: string;
   /** On Hub setup: the section shown. */
   section?: string;
   /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
@@ -68,6 +70,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const view = search.view === "tree" ? "tree" : undefined;
   const project = text(search.project);
   const tab = text(search.tab);
+  const thread = text(search.thread);
   const section = text(search.section);
   const scope = text(search.scope);
   const about = text(search.about);
@@ -89,6 +92,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(item ? { item } : {}),
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
+    ...(thread ? { thread } : {}),
     ...(section ? { section } : {}),
     ...(scope ? { scope } : {}),
     ...(about ? { about } : {}),
@@ -177,10 +181,26 @@ const automationsRoute = createRoute({
   path: PAGE_PATH.automations,
   component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
 });
+// The Autonomous page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
 const autonomousRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.autonomous,
-  component: lazyRouteComponent(() => import("@/pages/autonomous-page"), "AutonomousPage"),
+  path: "/autonomous",
+  beforeLoad: ({ search }) => {
+    throw redirect({
+      to: PAGE_PATH.captain,
+      search: search.tab === "rules" || search.tab === "log" ? { tab: search.tab } : {},
+    });
+  },
+});
+const limitsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.limits,
+  component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
+});
+const decisionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.decisions,
+  component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
 });
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -246,6 +266,8 @@ export const router = createRouter({
     automationsRoute,
     autonomousRoute,
     captainRoute,
+    limitsRoute,
+    decisionsRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

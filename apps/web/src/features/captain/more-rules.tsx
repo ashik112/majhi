@@ -172,15 +172,6 @@ export function MoreRules({
             />
           )}
         </Field>
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-sm text-fg-faint">When it ships</span>
-          <Switch label="Merge into the branch" checked={form.merge} onChange={(merge) => set({ merge })} />
-          <Switch label="Push after merging" checked={form.push} onChange={(push) => set({ push })} />
-          <span className="text-xs text-fg-faint text-pretty">
-            Only under Runs it, and only after the checks pass. A push cannot be undone. Otherwise it asks you
-            on the task.
-          </span>
-        </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <span className="text-sm text-fg-faint">AI providers</span>
           <fieldset className="m-0 flex flex-wrap gap-1.5 border-0 p-0" aria-label="AI providers it may use">
@@ -202,7 +193,7 @@ export function MoreRules({
           </fieldset>
           <span className="text-xs text-fg-faint text-pretty">
             {form.providers.length === 0 ? "Every provider." : `Only ${form.providers.join(", ")}.`} For its
-            lane and the work it starts here.
+            captain's own turns and the work it starts here.
           </span>
         </div>
         <Field label="Pays for its decisions" hint="Only an account of this workspace, or a Private one.">

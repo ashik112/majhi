@@ -1,6 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
-import type { CaptainPorts, QuestionCard } from "./ports.ts";
-import { branchAllowed, presenceWhy } from "./rules.ts";
+import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
+import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 
 /**
@@ -13,16 +13,46 @@ import type { ChoreRun } from "./runner.ts";
 const DUE_SOON_DAYS = 2;
 /** A task no one changed for this long is suggested for closing. */
 const STALE_DAYS = 30;
-/** At most this many memories per run. */
-const FACTS_PER_RUN = 20;
+/** Waiting memories are read and looked at this many at a time. */
+const FACTS_PER_CHUNK = 20;
 const DAY_MS = 86_400_000;
+
+/** The log key of the memory chore's look at one memory: a memory it looked at is not counted as waiting. */
+export function memoryKey(fact: number): string {
+  return `memory:${fact}`;
+}
 
 export function createChores(
   ports: CaptainPorts,
   now: () => Date,
 ): Record<CaptainChore, (run: ChoreRun) => Promise<void>> {
-  /** Why presence keeps the captain out of this task now. */
-  const away = (task: string) => presenceWhy(ports.ownerAt(task), now());
+  /** Why the owner typing keeps the captain out of this task now (SPEC 5.18, Presence). */
+  const away = (task: string) => typingWhy(task, ports.typing(task));
+
+  /** Keeps, merges or drops one waiting memory, or leaves it for the owner. */
+  const curateOne = async (run: ChoreRun, fact: PendingFact) => {
+    run.check();
+    const words = clip(fact.text, 80);
+    await run.act({
+      key: memoryKey(fact.id),
+      text: `Looked at a waiting memory: ${words}`,
+      reason: "Memories that wait are kept, merged or dropped by the captain's upkeep",
+      do: async () => {
+        const r = await ports.curate(run.org, fact);
+        const undo = r.event === undefined ? undefined : { kind: "memory" as const, event: r.event };
+        switch (r.outcome) {
+          case "kept":
+            return { text: `Kept a memory: ${words}`, undo };
+          case "merged":
+            return { text: `Merged a memory into one it repeats: ${words}`, undo };
+          case "dropped":
+            return { text: `Dropped a memory: ${words}`, undo };
+          default:
+            return { text: `Not sure about a memory, so it waits for you: ${words}`, outcome: "asked" };
+        }
+      },
+    });
+  };
 
   return {
     async ship(run) {
@@ -31,7 +61,7 @@ export function createChores(
         run.check();
         const present = away(t.id);
         if (present !== undefined) {
-          run.note(`ship:${t.id}:presence`, `Left ${t.id} for now`, present, t.id);
+          run.note(`ship:${t.id}:presence`, `Waiting on ${t.id}`, present, t.id);
           continue;
         }
         const check = await ports.shipCheck(org, t.id);
@@ -41,15 +71,12 @@ export function createChores(
         }
         const into = [...new Set(check.targets.map((x) => x.into))].join(", ");
         const outside = check.targets.filter((x) => !branchAllowed(ws.rules, x.into, x.base));
-        const merges = ws.rules?.merge === true;
         const blocker =
-          ws.level !== "runs"
-            ? `${ws.name} is set to Keeps things tidy, so the captain asks before shipping`
-            : !merges
-              ? `${ws.name} does not let the captain merge`
-              : outside.length > 0
-                ? `${outside.map((o) => o.into).join(", ")} is not a branch ${ws.name} ships to`
-                : undefined;
+          ws.authority.merge !== "decide"
+            ? `In ${ws.name} you decide when work is merged, so the captain asks before shipping`
+            : outside.length > 0
+              ? `${outside.map((o) => o.into).join(", ")} is not a branch ${ws.name} ships to`
+              : undefined;
         const recheck = async () => {
           const again = away(t.id);
           if (again !== undefined) return again;
@@ -72,8 +99,8 @@ export function createChores(
           });
           continue;
         }
-        const push = ws.rules?.push === true;
-        const reason = `${ws.name} is set to Runs it and lets the captain merge${push ? " and push" : ""}`;
+        const push = ws.authority.push === "decide";
+        const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
         await run.act({
           key: `ship:${t.id}:${t.heads}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
@@ -89,20 +116,20 @@ export function createChores(
 
     async cards(run) {
       const { org, ws } = run;
-      if (ws.level === "ask") return;
+      if (ws.authority.approvals !== "decide") return;
       for (const card of ports.approvals(org)) {
         run.check();
         const present = away(card.task);
         if (present !== undefined) {
           run.note(
             `card:${card.task}:${card.item}:presence`,
-            `Left a card in ${card.task} for now`,
+            `Waiting on a card in ${card.task}`,
             present,
             card.task,
           );
           continue;
         }
-        const verdict = await ports.cardVerdict(org, card, ws.level);
+        const verdict = await ports.cardVerdict(org, card, ws.authority);
         const key = `card:${card.task}:${card.item}`;
         if (verdict.decision === "left") {
           await run.act({
@@ -145,7 +172,7 @@ export function createChores(
         if (present !== undefined) {
           run.note(
             `question:${card.task}:${card.item}:presence`,
-            `Left a question in ${card.task} for now`,
+            `Waiting on a question in ${card.task}`,
             present,
             card.task,
           );
@@ -187,7 +214,12 @@ export function createChores(
         // Then a short turn of the captain in this workspace's lane, unless the lane rests.
         const rest = await ports.laneRest(org);
         if (rest !== undefined) {
-          run.note(`${key}:rests`, `A question in ${card.task} waits`, `The lane rests: ${rest}`, card.task);
+          run.note(
+            `${key}:rests`,
+            `A question in ${card.task} waits`,
+            `The captain is resting here: ${rest}`,
+            card.task,
+          );
           continue;
         }
         await run.act({
@@ -207,28 +239,18 @@ export function createChores(
 
     async memory(run) {
       const { org } = run;
-      for (const fact of (await ports.pendingFacts(org)).slice(0, FACTS_PER_RUN)) {
-        run.check();
-        const words = clip(fact.text, 80);
-        await run.act({
-          key: `memory:${fact.id}`,
-          text: `Looked at a waiting memory: ${words}`,
-          reason: "Memories that wait are kept, merged or dropped once a day",
-          do: async () => {
-            const r = await ports.curate(org, fact);
-            const undo = r.event === undefined ? undefined : { kind: "memory" as const, event: r.event };
-            switch (r.outcome) {
-              case "kept":
-                return { text: `Kept a memory: ${words}`, undo };
-              case "merged":
-                return { text: `Merged a memory into one it repeats: ${words}`, undo };
-              case "dropped":
-                return { text: `Dropped a memory: ${words}`, undo };
-              default:
-                return { text: `Not sure about a memory, so it waits for you: ${words}`, outcome: "asked" };
-            }
-          },
-        });
+      // Every waiting memory it has not looked at, a chunk at a time, read again before each chunk
+      // so what a step merged away is not looked at. One it looked at in this run is not tried again.
+      const looked = new Set<number>();
+      for (;;) {
+        const chunk = (await ports.pendingFacts(org))
+          .filter((f) => !looked.has(f.id) && !run.done(memoryKey(f.id)))
+          .slice(0, FACTS_PER_CHUNK);
+        if (chunk.length === 0) return;
+        for (const fact of chunk) {
+          looked.add(fact.id);
+          await curateOne(run, fact);
+        }
       }
     },
 

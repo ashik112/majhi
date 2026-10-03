@@ -1,14 +1,8 @@
 import type { AttentionEvent, NotificationsSettings, RoomItem } from "@majhi/shared";
+import { decisionsNeedText, roomDecisionId } from "@majhi/shared";
 import type { EventHub } from "../events/hub.ts";
-import {
-  type Attention,
-  attentionOf,
-  groupText,
-  inQuietHours,
-  pathOf,
-  type Subject,
-  subjectName,
-} from "./attention.ts";
+import { isDecisionItem } from "../inbox/build.ts";
+import { type Attention, attentionOf, inQuietHours, pathOf, type Subject, subjectName } from "./attention.ts";
 
 /** An item that was answered within this long never sends anything. */
 export const SETTLE_MS = 5_000;
@@ -17,6 +11,8 @@ export const COLLECT_MS = 1_500;
 /** More than this many notifications in `BURST_WINDOW_MS` become one. */
 export const BURST_MAX = 3;
 export const BURST_WINDOW_MS = 10_000;
+/** A card the captain is about to answer by itself waits this long before it alerts the owner. */
+export const CAPTAIN_GRACE_MS = 120_000;
 const SEEN_MAX = 2_000;
 
 export interface DesktopNotice {
@@ -38,6 +34,11 @@ export interface NotifierDeps {
    * on Linux and WSL2. Absent without a helper.
    */
   desktop?: (notice: DesktopNotice) => Promise<void>;
+  /**
+   * Whether the captain answers this item by itself now (Autonomous is on and the workspace lets it
+   * decide). Such an item alerts only if it is still waiting after `CAPTAIN_GRACE_MS`.
+   */
+  captainHandles?: (item: RoomItem, subject: Subject) => Promise<boolean>;
   now?: () => number;
 }
 
@@ -57,9 +58,10 @@ export interface TestResult {
 }
 
 /**
- * Turns "an item now waits for the owner" into one notification: a desktop banner and an `attention`
- * event for open tabs. One per item, none when the owner answered it within five seconds, and a burst
- * becomes a single "4 things need you". Settings decide the channels, the muted kinds and quiet hours.
+ * Turns "a decision now waits for the owner" into one notification: a desktop banner and an `attention`
+ * event for open tabs. Only decisions alert (SPEC 5.18), once each by decision id; none when the owner
+ * or the captain answered it within five seconds, and a burst becomes a single "4 decisions need you".
+ * Settings decide the channels, the muted kinds and quiet hours.
  */
 export class Notifier {
   private readonly seen = new Set<string>();
@@ -80,7 +82,7 @@ export class Notifier {
     const key = `${task}:${item.id}`;
     const subject = this.deps.subject(task);
     if (subject === undefined) return;
-    const attention = attentionOf(item, subjectName(subject));
+    const attention = isDecisionItem(item, subject) ? attentionOf(item, subjectName(subject)) : undefined;
     if (attention === undefined) {
       // Answered, replaced or cancelled: if it was still in its quiet wait, it sends nothing.
       this.forget(key);
@@ -91,7 +93,7 @@ export class Notifier {
     if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value as string);
     const timer = setTimeout(() => {
       this.timers.delete(key);
-      this.settled({ task, id: item.id, subject, attention });
+      void this.settled({ task, id: item.id, subject, attention }, true).catch(() => undefined);
     }, SETTLE_MS);
     timer.unref();
     this.timers.set(key, timer);
@@ -110,33 +112,25 @@ export class Notifier {
     });
   }
 
-  /** Autonomous mode's daily summary (PRV-74) has no card the owner must answer. Told once per day. */
-  autonomySummary(day: string, text: string): void {
-    const key = `autonomy:${day}`;
-    if (this.seen.has(key)) return;
-    this.seen.add(key);
-    this.enqueue({
-      task: "",
-      id: key,
-      subject: { id: "", title: "majhi", chat: false },
-      attention: { kind: "autonomy", text },
-      path: "/autonomous",
-    });
-  }
-
   /**
-   * Something of the captain the owner should know (5.18): a chore it turned off, the daily summary
-   * lines. Told once per key, under the kind `autonomy`, linking the Captain page.
+   * A question of the captain's that waits for the owner: a chore at its daily limit or a budget that
+   * ran out (SPEC 5.18). Told once per key, and only these: what the captain tells without asking
+   * (a chore turned off, the daily summary) is read in the log and never alerts.
    */
   captain(key: string, text: string): void {
-    if (this.seen.has(key)) return;
+    const path = key.startsWith("budget:")
+      ? "/limits"
+      : key.startsWith("captain-cap:")
+        ? "/captain"
+        : undefined;
+    if (path === undefined || this.seen.has(key)) return;
     this.seen.add(key);
     this.enqueue({
       task: "",
       id: key,
       subject: { id: "", title: "majhi", chat: false },
       attention: { kind: "autonomy", text },
-      path: "/captain",
+      path,
     });
   }
 
@@ -180,10 +174,20 @@ export class Notifier {
     this.timers.delete(key);
   }
 
-  /** The five seconds passed. It still waits for the owner, so it is a notification. */
-  private settled(waiting: Waiting): void {
+  /** The five seconds passed. It still waits for the owner, so it is a notification, unless the captain answers it. */
+  private async settled(waiting: Waiting, first: boolean): Promise<void> {
     const now = this.deps.item(waiting.task, waiting.id);
-    if (now === undefined || attentionOf(now, subjectName(waiting.subject)) === undefined) return;
+    if (now === undefined || !isDecisionItem(now, waiting.subject)) return;
+    if (first && (await this.deps.captainHandles?.(now, waiting.subject)) === true) {
+      const key = `${waiting.task}:${waiting.id}`;
+      const timer = setTimeout(() => {
+        this.timers.delete(key);
+        void this.settled(waiting, false).catch(() => undefined);
+      }, CAPTAIN_GRACE_MS);
+      timer.unref();
+      this.timers.set(key, timer);
+      return;
+    }
     this.enqueue(waiting);
   }
 
@@ -216,7 +220,7 @@ export class Notifier {
           id: `group:${now}`,
           kind: "group",
           title: "majhi",
-          text: groupText(total),
+          text: decisionsNeedText(total),
           path: "/",
           count: total,
         },
@@ -228,7 +232,7 @@ export class Notifier {
       this.recent.push(now);
       await this.deliver(
         {
-          id: `${w.task}:${w.id}`,
+          id: w.task === "" ? w.id : roomDecisionId(w.task, w.id),
           kind: w.attention.kind,
           ...(w.task === "" ? {} : { task: w.task }),
           title: w.subject.title,
@@ -246,7 +250,12 @@ export class Notifier {
     settings: NotificationsSettings,
   ): Promise<void> {
     this.emit(event, settings);
-    if (settings.mac && this.deps.desktop !== undefined) {
+    // A tab that can pop browser notifications reports it on /api/events every 20 s. While one did
+    // within the last minute, that tab tells the owner (and its click focuses majhi), so the desktop
+    // banner would only repeat it. The server cannot see whether the tab popped, so a fresh report is
+    // the signal; with no tab, or none allowed to, the desktop banner goes out as before.
+    const tabTells = settings.browser && this.deps.events.tabs.popping(this.now());
+    if (settings.mac && !tabTells && this.deps.desktop !== undefined) {
       await this.deps
         .desktop({ title: "majhi", message: event.text, path: event.path, sound: settings.sound })
         .catch(() => undefined);

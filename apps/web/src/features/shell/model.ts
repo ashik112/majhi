@@ -1,4 +1,4 @@
-import type { AccountView, OrgView, PendingNotice, TaskSummary } from "@majhi/shared";
+import type { AccountView, OrgView, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { PAGE_PATH, type PagePath } from "../../lib/pages";
@@ -113,7 +113,7 @@ export type BannerAction =
   | { kind: "page"; to: PagePath; search?: { account: string } }
   | { kind: "element"; id: string };
 
-/** One thing that needs the owner: a row of the notifications panel, or the banner. */
+/** One thing that needs the owner, as the banner above the page shows it. */
 export interface AttentionItem {
   key: string;
   tone: BannerTone;
@@ -124,6 +124,8 @@ export interface AttentionItem {
   action: BannerAction;
   /** The task or chat it is about, for the row's second line. Absent for an account. */
   task?: AttentionTask;
+  /** The row's second line when it is about no task: "Accounts", "Captain". */
+  where?: string;
 }
 
 export type AttentionTask = Pick<TaskSummary, "id" | "title" | "org" | "chat">;
@@ -249,35 +251,6 @@ function signIns(accounts: readonly AccountView[]): AttentionItem[] {
       actionLabel: "Accounts",
       action: { kind: "page", to: PAGE_PATH.accounts, search: { account: account.id } },
     }));
-}
-
-/**
- * Everything that needs the owner, most urgent first, for the notifications panel: limit pauses,
- * errors, loops and blocks, then each waiting approval, secret request or question (from
- * `notify.pending`, one row per item; a task the list has not caught up with gets one general row),
- * then sign-ins. The banner shows the first of the same list.
- */
-export function attentionItems(
-  input: AttentionInput & { pending: readonly PendingNotice[] },
-): AttentionItem[] {
-  const byTask = new Map<string, PendingNotice[]>();
-  for (const notice of input.pending) byTask.set(notice.task, [...(byTask.get(notice.task) ?? []), notice]);
-  const waiting = input.tasks
-    .filter((task) => task.asking === true && task.status !== "done")
-    .flatMap((task) => {
-      const notices = byTask.get(task.id);
-      if (notices === undefined) return [asking(task)];
-      return notices.map<AttentionItem>((notice) => ({
-        key: `notice:${task.id}:${notice.item}`,
-        tone: "amber",
-        lamp: "needs",
-        text: notice.text,
-        actionLabel: "Open",
-        action: task.chat === true ? open(task) : { kind: "task", id: task.id, item: notice.item },
-        task: about(task),
-      }));
-    });
-  return [...pauses(input), ...waiting, ...signIns(input.accounts)];
 }
 
 /** The one thing that needs the owner most: limit pauses, errors, a prompt in the open task, then sign-ins. */

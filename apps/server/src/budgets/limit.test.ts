@@ -139,8 +139,10 @@ describe("the 100% action", () => {
     expect(await turns(id)).toBe(1);
 
     // Turn 2 starts and is in progress; a third prompt waits behind it. Then the budget drops
-    // below what is already used, so the 100% alert fires at once.
-    await w.h.cmd("room.send", { task: id, text: "echo: second" });
+    // below what is already used, so the 100% alert fires at once. Turn 2 must be a real, slow turn:
+    // the fake agent answers an `echo:` prompt at once, so only a plain prompt runs the scripted
+    // turn that `slowMs` stretches.
+    await w.h.cmd("room.send", { task: id, text: "also add a version field" });
     await until(() => services().runs.working(id).length > 0, "turn 2 to start");
     await w.h.cmd("room.send", { task: id, text: "echo: third" });
     expect((await budget({ orgs: { acme: { tokens: TURN } } })).status).toBe(200);
@@ -151,7 +153,7 @@ describe("the 100% action", () => {
     expect(await turns(id)).toBe(2);
     const page = await w.h.cmd("room.items", { task: id, limit: 500 });
     const texts = (page.body.items as RoomItem[]).flatMap((i) => (i.type === "agent" ? [i.text] : []));
-    expect(texts.join("\n")).toContain("second");
+    expect(texts.join("\n")).not.toContain("echo: third");
     expect(task(id)).toMatchObject({ status: "paused", pausedReason: "limit" });
     expect(services().runs.pausedForLimit()).toEqual([{ task: id, agent: "acme-builder" }]);
   });

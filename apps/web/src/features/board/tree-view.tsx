@@ -118,7 +118,11 @@ export function TreeView({
                   {shortAgo(task.updatedAt, now)}
                 </span>
                 <span className="flex w-32 shrink-0 justify-end">
-                  <StatusBadge status={task.status} pausedReason={task.pausedReason} />
+                  <StatusBadge
+                    status={task.status}
+                    pausedReason={task.pausedReason}
+                    pausedBy={task.pausedBy}
+                  />
                 </span>
               </button>
             </li>

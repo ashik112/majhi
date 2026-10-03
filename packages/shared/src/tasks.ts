@@ -123,6 +123,13 @@ export const PausedReasonSchema = z.enum([
 ]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
+/**
+ * Who paused a task, when it was not the owner by hand: the captain, or Autonomous being turned off.
+ * Absent on older rows and on pauses by majhi itself (limits, going offline).
+ */
+export const PausedBySchema = z.enum(["captain", "autonomy-off"]);
+export type PausedBy = z.infer<typeof PausedBySchema>;
+
 /** Paused until the owner continues it: never resumed by majhi on its own. */
 export function waitsForOwner(reason: PausedReason | undefined): boolean {
   return reason === "owner" || reason === "loop" || reason === "blocked";
@@ -251,6 +258,7 @@ export const TaskSchema = z.object({
   org: IdSchema.optional(),
   status: TaskStatusSchema,
   pausedReason: PausedReasonSchema.optional(),
+  pausedBy: PausedBySchema.optional(),
   /** The owner's priority. Absent: normal. */
   priority: TaskPrioritySchema.optional(),
   /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
@@ -409,6 +417,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   org: true,
   status: true,
   pausedReason: true,
+  pausedBy: true,
   priority: true,
   due: true,
   noAutonomy: true,
@@ -430,6 +439,8 @@ export const TaskSummarySchema = TaskSchema.pick({
   waitingOn: z.array(TaskIdSchema),
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
+  /** A workspace thread of the captain (5.18): not a task to the owner, never listed by `tasks.list`. */
+  lane: z.boolean().optional(),
   /**
    * The task or chat waits for the owner on an item: an approval, a permission, a secret, a question.
    * It counts under Needs you even while an agent still works. A quiet chat is shown on the board only then.
@@ -574,6 +585,8 @@ export const CardOutcomeSchema = z.object({
   text: z.string(),
   by: z.string(),
   at: z.string(),
+  /** The captain did it, itself or through autonomous mode: shown as "Captain" (5.18). Older outcomes lack it. */
+  captain: z.literal(true).optional(),
 });
 export type CardOutcome = z.infer<typeof CardOutcomeSchema>;
 
@@ -587,6 +600,9 @@ export type CardState = z.infer<typeof CardStateSchema>;
 /** Actions on a review or paused card (`room.cardAction`). */
 export const CardActionSchema = z.enum(["merge", "mergePush", "push", "mr", "done", "resume"]);
 export type CardAction = z.infer<typeof CardActionSchema>;
+
+/** Who did it, on a room item the owner usually answers: only ever the captain, absent for the owner. */
+export const CaptainBySchema = z.literal("captain");
 
 export const RoomItemSchema = z.discriminatedUnion("type", [
   RoomItemBase.extend({
@@ -650,6 +666,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["pending", "answered", "auto", "cancelled"]),
     /** The option picked, by the owner (`answered`) or by the agent's permissions (`auto`). */
     chosen: z.string().optional(),
+    /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
+    by: CaptainBySchema.optional(),
     /**
      * A write to one of the run's connections (5.14): which one, the action and why it counts as a
      * write. No remembered choice covers it, and Allow counts once.
@@ -704,6 +722,11 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     name: IdSchema,
     /** What to paste, in plain words. */
     label: z.string(),
+    /**
+     * Set when the value belongs to one secret entry of a connection (an installed MCP server's
+     * key): it is stored there, not under `name`.
+     */
+    bind: z.object({ connection: IdSchema, list: z.enum(["headers", "env"]), field: z.string() }).optional(),
     state: z.enum(["pending", "saved", "cancelled"]),
   }),
   /** An agent asks the owner one or more questions with preset options. */
@@ -724,6 +747,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["pending", "answered", "cancelled"]),
     /** questionId -> the option id chosen, or free text typed. */
     answers: z.record(z.string(), z.string()).optional(),
+    /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
+    by: CaptainBySchema.optional(),
   }),
   /**
    * A context budget event (5.13): compaction, handoff to a fresh session, or rotation. `auto` is a
@@ -751,6 +776,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     options: z.array(z.object({ id: z.string(), label: z.string() })).min(2),
     state: z.enum(["pending", "answered", "cancelled"]),
     chosen: z.string().optional(),
+    /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
+    by: CaptainBySchema.optional(),
   }),
   /**
    * The task waits for the owner's review (majhi posts it when the agents are done). One per task:
@@ -773,6 +800,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     reason: PausedReasonSchema,
     /** The cause in words, when it is more specific than the reason ("claude-acme is signed out"). */
     why: z.string().optional(),
+    /** Set when the captain paused it, itself or through autonomous mode (5.18). Older cards lack it. */
+    by: CaptainBySchema.optional(),
     state: CardStateSchema,
     outcome: CardOutcomeSchema.optional(),
   }),
@@ -789,6 +818,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     choices: z.array(z.string()).max(6),
     state: z.enum(["pending", "answered", "replied", "moved-on"]),
     chosen: z.string().optional(),
+    /** Set when the captain answered it instead of the owner (5.18). Older items lack it. */
+    by: CaptainBySchema.optional(),
   }),
   /** The lead's plan (`record_plan`), shown as one line. Not the ACP to-do list, which is `plan`. */
   RoomItemBase.extend({

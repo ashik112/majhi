@@ -91,7 +91,8 @@ function coveringScopes(scope: MemoryScope, org: string | undefined): MemoryScop
  * 2. Repo docs: a lesson the repo's CLAUDE.md, AGENTS.md or README already says is not kept.
  * 3. Duplicates, without a model: cosine 0.92 or more with an active or pending fact in the same
  *    or a wider scope. The candidate is the same fact.
- * 4. `review_all` and a global scope wait for the owner, without a model.
+ * 4. `review_all` and a global scope wait for the owner, without a model. The captain's memory
+ *    chore in Private decides global facts too (`upkeep`).
  * 5. Decide, one call on the decision provider: lasting lesson or chatter; against the nearest fact
  *    (cosine 0.75 to 0.92) the same, contradicting or unrelated; secret or personal data.
  * 6. Apply: a suspected secret is dropped; chatter the gate is sure of (a lift over chance of at
@@ -106,10 +107,14 @@ export class Curator {
     return this.deps.allowed(task);
   }
 
-  /** An agent's proposal, already stored as pending. Never throws: the fact stays pending. */
-  async curate(fact: Fact): Promise<void> {
+  /**
+   * An agent's proposal, already stored as pending. Never throws: the fact stays pending.
+   * `upkeep`: the captain's memory chore asks, in Private's lane for a global fact, so a global fact
+   * is decided like any other instead of waiting for the owner.
+   */
+  async curate(fact: Fact, options: { upkeep?: boolean } = {}): Promise<void> {
     try {
-      await this.run(fact, { checkDuplicate: true });
+      await this.run(fact, { checkDuplicate: true, upkeep: options.upkeep === true });
     } catch (err) {
       console.error(`Memory curation of fact ${fact.id} failed: ${errorMessage(err)}`);
     }
@@ -207,7 +212,9 @@ export class Curator {
       memory.keep(fact.id, { reason: "The owner said it, so it holds without review.", provider: "owner" });
       return "kept";
     }
-    return this.run(fact, { checkDuplicate: false, near, docsChecked: true, review: true });
+    const outcome = await this.run(fact, { checkDuplicate: false, near, docsChecked: true, review: true });
+    if (outcome === "pending") memory.waiting(fact);
+    return outcome;
   }
 
   /**
@@ -221,6 +228,7 @@ export class Curator {
       near?: { fact: Fact; cosine: number }[];
       docsChecked?: boolean;
       review?: boolean;
+      upkeep?: boolean;
     },
   ): Promise<Outcome> {
     const { memory } = this.deps;
@@ -250,9 +258,10 @@ export class Curator {
       return "duplicate";
     }
 
-    // The owner decides these without spending a model on them.
+    // The owner decides these without spending a model on them. A global fact waits for the
+    // captain's upkeep in Private when it is not the one asking.
     const settings = await this.deps.settings();
-    if (settings.review_all || fact.scope === "global") return "pending";
+    if (settings.review_all || (fact.scope === "global" && options.upkeep !== true)) return "pending";
 
     const related = near.find(
       (n) => n.fact.status === "active" && n.cosine >= RELATED_COSINE && n.cosine < DUPLICATE_COSINE,

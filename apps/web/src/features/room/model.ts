@@ -308,7 +308,9 @@ export function permissionSummary(item: PermissionItem): PermissionSummary {
         ? " by rule"
         : ` by ${item.connection.name}'s allow list`;
   const write = item.connection === undefined ? "" : ` a change to ${item.connection.name}`;
-  return { pending: false, verdict: `${allowed ? "Allowed" : "Denied"}${write}${extra}${by}`, ...base };
+  const verb =
+    item.by === "captain" ? (allowed ? "Captain allowed" : "Captain denied") : allowed ? "Allowed" : "Denied";
+  return { pending: false, verdict: `${verb}${write}${extra}${by}`, ...base };
 }
 
 // Touched files -------------------------------------------------------------

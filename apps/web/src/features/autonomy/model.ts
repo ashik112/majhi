@@ -22,16 +22,17 @@ import { formatMoney, formatTokens } from "@/lib/format";
 export const MODE_WORD: Record<AutonomyMode, string> = {
   off: "Off",
   on: "On",
-  paused: "Paused",
-  stopping: "Stopping",
+  // Not a state any more: the server reads it as On.
+  paused: "On",
+  stopping: "Turning off",
 };
 
-/** On and stopping are running work; paused is the paused lamp; off is idle. */
+/** On is running work; turning off is the paused lamp; off is idle. */
 export const MODE_LAMP: Record<AutonomyMode, LampState> = {
   off: "idle",
   on: "working",
-  paused: "paused",
-  stopping: "working",
+  paused: "working",
+  stopping: "paused",
 };
 
 /** One line under the page title. */
@@ -42,9 +43,9 @@ export function modeLine(mode: AutonomyMode): string {
     case "on":
       return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "paused":
-      return "Paused. The captain gets no wake-ups and autonomous tasks wait after their current turn.";
+      return "The captain runs the desk: it picks work, decides within your limits and logs every decision.";
     case "stopping":
-      return "Stopping. Current turns finish, nothing new starts, then it turns off.";
+      return "Turning off. Tasks finish their current step, nothing new starts, then they pause.";
   }
 }
 
@@ -60,6 +61,21 @@ export function capText(use: CapUse): string {
   if (parts.length === 0) parts.push(formatMoney(use.used.cost), `${formatTokens(use.used.tokens)} tokens`);
   if (use.changed === true) parts.push("cap changed during the day");
   return parts.join(" · ");
+}
+
+/**
+ * Today's autonomous spend against the autonomous day budget, short: "$12.40 of $200 today". A
+ * budget in tokens only reads in tokens; no budget reads as what was spent.
+ */
+export function todayLine(use: CapUse): string {
+  const cost = use.cap?.cost;
+  if (cost !== undefined) {
+    const cap = Number.isInteger(cost) ? `$${cost.toLocaleString("en-US")}` : formatMoney(cost);
+    return `${formatMoney(use.used.cost)} of ${cap} today`;
+  }
+  if (use.cap?.tokens !== undefined)
+    return `${formatTokens(use.used.tokens)} of ${formatTokens(use.cap.tokens)} tokens today`;
+  return `${formatMoney(use.used.cost)} today`;
 }
 
 /** "$20.00 a day", "5M tokens a day", "$20.00 or 5M tokens a day". */
@@ -81,7 +97,7 @@ export function capTone(use: Pick<CapUse, "percent" | "reached">): "calm" | "amb
 // The feed ------------------------------------------------------------------
 
 export const EVENT_WORD: Record<AutonomyEventKind, string> = {
-  mode: "Mode",
+  mode: "Autonomous",
   tick: "Woke",
   decision: "Decision",
   approval: "Approval",
@@ -181,10 +197,7 @@ export interface CapDraft {
   tokens: string;
 }
 
-export interface OrgDraft extends CapDraft {
-  push: boolean;
-  merge: boolean;
-}
+export type OrgDraft = CapDraft;
 
 export interface LimitsDraft {
   day: CapDraft;
@@ -204,7 +217,7 @@ export function limitsDraft(settings: AutonomySettings, orgIds: readonly string[
   const orgs: Record<string, OrgDraft> = {};
   for (const id of [...orgIds, ...Object.keys(settings.orgs)]) {
     const org = settings.orgs[id];
-    orgs[id] = { ...capDraft(org?.cap), push: org?.push ?? false, merge: org?.merge ?? false };
+    orgs[id] = capDraft(org?.cap);
   }
   return {
     day: capDraft(settings.day),
@@ -237,7 +250,7 @@ const sameBudget = (a: Budget | undefined, b: Budget | undefined) =>
 
 /**
  * The `autonomy.configure` input for what the form changed, or the first problem in it. Only rows
- * that changed are sent; an org left with no cap and push and merge off is removed (null). The
+ * that changed are sent, and only their cap (who decides what is on the Captain page). The
  * browser's zone always goes along, so the day and the summary time follow the owner's clock.
  */
 export function limitsPatch(
@@ -245,9 +258,10 @@ export function limitsPatch(
   settings: AutonomySettings,
   tz: string,
 ): { patch: AutonomyPatch } | { problem: string } {
-  const day = parseCap(draft.day, "Day cap");
+  const day = parseCap(draft.day, "Autonomous budget");
   if (day.problem) return { problem: day.problem };
-  if (!day.budget) return { problem: "Day cap: set dollars, tokens or both. It is always on." };
+  if (!day.budget)
+    return { problem: "Autonomous budget: set dollars, tokens or both. Autonomous needs one." };
   const window = parsePercent(draft.window, "5-hour floor");
   if (window.problem !== undefined || window.value === undefined) return { problem: window.problem ?? "" };
   const weekly = parsePercent(draft.weekly, "Weekly floor");
@@ -259,18 +273,11 @@ export function limitsPatch(
   if (!sameBudget(day.budget, settings.day)) patch.day = day.budget;
   const orgs: NonNullable<AutonomyPatch["orgs"]> = {};
   for (const [id, row] of Object.entries(draft.orgs)) {
-    const cap = parseCap(row, `Cap of ${id}`);
+    const cap = parseCap(row, `Budget of ${id}`);
     if (cap.problem) return { problem: cap.problem };
     const was = settings.orgs[id];
-    const same =
-      sameBudget(cap.budget, was?.cap) &&
-      row.push === (was?.push ?? false) &&
-      row.merge === (was?.merge ?? false);
-    if (same) continue;
-    orgs[id] =
-      cap.budget === undefined && !row.push && !row.merge
-        ? null
-        : { cap: cap.budget ?? null, push: row.push, merge: row.merge };
+    if (sameBudget(cap.budget, was?.cap)) continue;
+    orgs[id] = { cap: cap.budget ?? null };
   }
   if (Object.keys(orgs).length > 0) patch.orgs = orgs;
   if (window.value !== settings.floors.window || weekly.value !== settings.floors.weekly)

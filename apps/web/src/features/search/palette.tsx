@@ -2,11 +2,13 @@ import { canWorkIn, type TaskSummary } from "@majhi/shared";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronLeft, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { AgentEmoji } from "@/components/agent-avatar";
 import { Kbd } from "@/components/ui/kbd";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { matchesQuery } from "@/features/board/model";
 import { useBoss } from "@/features/boss/boss-context";
+import { chatTitle } from "@/features/chats/model";
 import { GLOBAL } from "@/features/memory/model";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { AskBox } from "@/features/setup/decisions-panel";
@@ -15,11 +17,12 @@ import { openTaskIds } from "@/features/shell/use-shortcuts";
 import { useCandidates } from "@/features/task/team-controls";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
-import { MOD_KEY } from "@/lib/format";
+import { formatAgo, MOD_KEY } from "@/lib/format";
 import { useMemorySearch } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { MIN_SEARCH_LENGTH, useDebounced, useRoomSearch } from "@/lib/search-queries";
+import { useOrgs } from "@/lib/studio-queries";
 import { useStartTask, useTask, useTasks, useTeamCommand, useUpdateTask } from "@/lib/task-queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { matchCommands, type PaletteCommand } from "./commands";
@@ -55,11 +58,34 @@ interface Entry {
   run: () => void;
 }
 
-function taskNode(t: Pick<TaskSummary, "id" | "title">): ReactNode {
+/**
+ * A task shows its id; a chat has none the owner uses, so it shows its title, the agent, the
+ * workspace and when it was last active.
+ */
+function TaskNode({
+  task: t,
+}: {
+  task: Pick<TaskSummary, "id" | "title" | "chat" | "team" | "org" | "updatedAt">;
+}) {
+  const orgs = useOrgs().data;
+  if (t.chat !== true)
+    return (
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="shrink-0 font-mono text-xs text-fg-muted">{t.id}</span>
+        <span className="min-w-0 truncate text-base">{t.title}</span>
+      </span>
+    );
+  const agent = t.team[0];
+  const workspace = t.org === undefined ? "Private" : (orgs?.find((o) => o.id === t.org)?.name ?? t.org);
   return (
     <span className="flex min-w-0 items-baseline gap-2">
-      <span className="shrink-0 font-mono text-xs text-fg-muted">{t.id}</span>
-      <span className="min-w-0 truncate text-base">{t.title}</span>
+      <span className="min-w-0 truncate text-base">{chatTitle(t)}</span>
+      <span className="flex min-w-0 shrink-0 items-center gap-1.5 text-xs text-fg-muted">
+        {agent && <AgentEmoji id={agent} />}
+        {agent && <span className="font-mono">@{agent}</span>}
+        <span className="truncate">{workspace}</span>
+        <span className="shrink-0 text-fg-faint">{formatAgo(t.updatedAt, Date.now())}</span>
+      </span>
     </span>
   );
 }
@@ -197,10 +223,10 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "budgets",
-      name: "Budgets and alerts",
-      keywords: "limits spend cost tokens weekly",
-      hint: "On Health and usage",
-      run: () => go(PAGE_PATH.usage),
+      name: "Edit budgets",
+      keywords: "limits spend cost tokens daily weekly alerts floors",
+      hint: "On Limits",
+      run: () => go(PAGE_PATH.limits),
     },
     {
       id: "roots",
@@ -228,10 +254,22 @@ export function Palette({ onClose }: { onClose: () => void }) {
       run: () => (onClose(), boss.show()),
     },
     {
-      id: "autonomous",
-      name: "Open autonomous mode",
-      keywords: "autonomy autopilot away caps spend queue decisions feed",
-      run: () => go(PAGE_PATH.autonomous),
+      id: "captain-today",
+      name: "Captain: what it is doing now",
+      keywords: "autonomous autopilot away summary running next queue decisions",
+      run: () => go(PAGE_PATH.captain, {}),
+    },
+    {
+      id: "captain-log",
+      name: "Captain: log of what it did",
+      keywords: "autonomous decisions undo feed history",
+      run: () => go(PAGE_PATH.captain, { tab: "log" }),
+    },
+    {
+      id: "captain-rules",
+      name: "Captain: delegation",
+      keywords: "autonomous rules authority who decides what budget leave alone standing instructions",
+      run: () => go(PAGE_PATH.captain, { tab: "rules" }),
     },
   ];
 
@@ -248,7 +286,12 @@ export function Palette({ onClose }: { onClose: () => void }) {
     const out: Entry[] = [];
     const taskList = tasks ?? [];
     const fromTasks = (list: readonly TaskSummary[], section: string) =>
-      list.map<Entry>((t) => ({ key: `task:${t.id}`, section, node: taskNode(t), run: () => open(t.id) }));
+      list.map<Entry>((t) => ({
+        key: `task:${t.id}`,
+        section,
+        node: <TaskNode task={t} />,
+        run: () => open(t.id),
+      }));
 
     if (page.kind === "root") {
       for (const c of matchCommands(commands, typed, taskId !== undefined)) {

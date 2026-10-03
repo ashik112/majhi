@@ -1,6 +1,7 @@
 import type { CaptainAction, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 
 /**
  * The captain's stuck-task chore and an account that needs a new sign-in (5.18): in a workspace set
@@ -31,7 +32,8 @@ describe("the stuck-task chore and a lead that cannot sign in", () => {
         instructions: "Lead.\n",
       }),
     );
-    must(await h.cmd("autonomy.configure", { tz: "UTC", orgs: { acme: { level: "tidy" } } }));
+    must(await h.cmd("autonomy.configure", { tz: "UTC", orgs: { acme: { authority: TIDY } } }));
+    must(await h.cmd("autonomy.start", {}));
 
     // The builder's account cannot sign in: its turn fails the way Claude Code's does.
     const prompts: Record<string, number> = {};

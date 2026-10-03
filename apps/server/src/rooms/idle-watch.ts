@@ -156,7 +156,12 @@ interface Failure {
 export interface IdleWatchDeps {
   store: Store;
   room: RoomService;
-  runs: { working(task: string): string[]; notify(task: string, agent: string, text: string): void };
+  runs: {
+    working(task: string): string[];
+    /** Something of the task's agents is on its way (queued for a slot, starting, held by a gate). */
+    busy?(task: string): boolean;
+    notify(task: string, agent: string, text: string): void;
+  };
   /** Pauses the task for the owner with this line in the room ("needs you"). */
   pauseForOwner: (task: string, text: string) => Promise<void>;
   /** Whether an agent of the task waits on a background process it started. */
@@ -296,13 +301,14 @@ export class IdleWatch {
   }
 
   /**
-   * Whether a running task is quiet right now: nobody works, no owner card waits, no background
-   * process is waited on and no subtask moves. The captain's stuck-task chore (5.18) reads it.
+   * Whether a running task is quiet right now: nobody works, waits for a slot or starts, no owner
+   * card waits, no background process is waited on and no subtask moves. The captain's stuck-task chore (5.18) reads it.
    */
   quiet(id: string): boolean {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status !== "running" || isBossChat(task)) return false;
-    return stalled(this.facts(task, this.deps.runs.working(id).length));
+    const busy = this.deps.runs.busy?.(id) ?? this.deps.runs.working(id).length > 0;
+    return stalled(this.facts(task, busy ? 1 : 0));
   }
 
   stop(): void {

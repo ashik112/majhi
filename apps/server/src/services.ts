@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { dockerTty, localSpawner } from "@majhi/acp";
+import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
+  type CaptainChore,
   isOwnerChat,
   NotificationsSettingsSchema,
+  PRIVATE,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
 } from "@majhi/shared";
@@ -33,6 +35,7 @@ import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { Lanes } from "./captain/lanes.ts";
+import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { captainWorld } from "./captain/world.ts";
@@ -64,6 +67,11 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { RecommendationRepo } from "./inbox/recommendations.ts";
+import { InboxService } from "./inbox/service.ts";
+import { InstallRequests } from "./installs/service.ts";
+import { McpRegistry } from "./mcp-servers/registry.ts";
+import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
@@ -80,6 +88,7 @@ import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
+import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
@@ -104,6 +113,11 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import { SkillsCli } from "./skills/cli.ts";
+import { skillGitEnv } from "./skills/git-env.ts";
+import { SkillRegistry } from "./skills/registry.ts";
+import { SkillService } from "./skills/service.ts";
+import { SkillStore } from "./skills/store.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
@@ -112,6 +126,9 @@ import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
+import { createAdapter } from "./trackers/index.ts";
+import { TrackerService } from "./trackers/service.ts";
+import type { TrackerAdapter, TrackerAdapterInit } from "./trackers/types.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -122,6 +139,8 @@ import { UsageService } from "./usage/service.ts";
 const CHAT_SWEEP_MS = 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+/** How often majhi looks whether the weekly prune of its old images is due. */
+const PRUNE_SWEEP_MS = 86_400_000;
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
@@ -155,6 +174,16 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
+  trackerFetch?: typeof fetch;
+  /** Replaces the tracker adapters, so tests can play a tracker without its API. */
+  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
+  /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
+  skillsCommand?: Command;
+  /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
+  skillsFetch?: ConstructorParameters<typeof SkillRegistry>[0];
+  /** Replaces `fetch` for the MCP Registry, so tests never reach it. */
+  mcpFetch?: ConstructorParameters<typeof McpRegistry>[0];
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -169,6 +198,14 @@ export interface Services {
   connections: ConnectionService;
   /** The Test of each connection, for connections.test and the Health page. */
   connectionTests: ConnectionTester;
+  /** Installed skills and the per-agent switches (5.2). */
+  skills: SkillService;
+  /** The skills store, for runs to copy from. */
+  skillStore: SkillStore;
+  /** MCP servers: install as connections and the per-agent switches (5.2). */
+  mcpServers: McpService;
+  /** "@agent install this skill <link>" in a room (Phase 6): one approval card, then install and enable. */
+  installRequests: InstallRequests;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
   /** The captain's tool calls, approvals and secret requests. */
@@ -208,6 +245,8 @@ export interface Services {
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
+  /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
+  trackers: TrackerService;
   /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
@@ -216,6 +255,8 @@ export interface Services {
   containers: ContainerService;
   /** Autonomous mode (PRV-74): the mode, its tasks, the run gate, spend, holds and the feed. */
   autonomy: AutonomyService;
+  /** The owner's inbox of everything that waits for them (5.18). */
+  inbox: InboxService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
   /** The captain's chat per workspace (5.18). */
@@ -326,6 +367,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       events.emit(["tasks"]);
     },
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
+    toolsChanged: (agent) => runs.remountAgent(agent),
   });
   const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
   const sessionOptions = runner.sessionOptions;
@@ -475,11 +517,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => containers.startup(),
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
   );
+  const skillStore = new SkillStore(env.majhiHome);
+  // The weekly prune of majhi's old images and build cache: looked at on start and once a day.
+  const pruneContainers = () =>
+    background.run(
+      () => containers.pruneIfDue(),
+      (err) => console.error(`Could not prune old images: ${errorMessage(err)}`),
+    );
+  pruneContainers();
+  const pruneSweep = setInterval(pruneContainers, PRUNE_SWEEP_MS);
+  pruneSweep.unref();
   const runs = new RunManager({
     store,
     limited: limitedRun,
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
+    slotPolicy: { fair: () => autonomy.slotsFair(), owner: (task) => autonomy.ownerRuns(task) },
     onLoopEnd: (task) => autonomy.loopEnded(task),
     // Bound below: the captain's lanes are built after the task service.
     accountFor: (task, agent) => lanes.accountFor(task, agent),
@@ -496,6 +549,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     admin: new AdminAccess(adminTokens),
     decisions,
     connectionFiles,
+    skills: skillStore,
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
@@ -660,10 +714,36 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     setTitle: (id, title) => tasks.autoTitleChat(id, title),
   });
+  /** The task an item belongs to, as notifications and the Decisions inbox name it. */
+  const subjectOf = (id: string): Subject | undefined => {
+    const task = store.tasks.get(id);
+    return task === undefined
+      ? undefined
+      : {
+          id: task.id,
+          title: task.title,
+          chat: isOwnerChat(task),
+          ...(task.org === undefined ? {} : { org: task.org }),
+          repos: task.repos.length,
+        };
+  };
   const notifier = new Notifier({
-    subject: (id) => {
-      const task = store.tasks.get(id);
-      return task === undefined ? undefined : { id: task.id, title: task.title, chat: isOwnerChat(task) };
+    subject: subjectOf,
+    // The captain answers it by itself when Autonomous is on and the workspace lets it decide: an
+    // alert waits a while, so a card it handles never alerts (SPEC 5.18).
+    captainHandles: async (item, subject) => {
+      if (autonomy.mode() !== "on") return false;
+      const row =
+        item.type === "permission"
+          ? item.connection === undefined
+            ? "approvals"
+            : undefined
+          : item.type === "ask" || item.type === "choice" || item.type === "owner-question"
+            ? "questions"
+            : undefined;
+      if (row === undefined) return false;
+      const settings = (await config.settings()).autonomy;
+      return authorityOf(settings, subject.org ?? PRIVATE)[row] === "decide";
     },
     item: (task, id) => store.room.get(task, id),
     settings: async () => {
@@ -774,6 +854,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const scheduleRows = new ScheduleRepo(store.raw);
   const triggerRows = new TriggerRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
+  const cardActions = new CardActions({ tasks, mrs, room });
+  const inbox = new InboxService({
+    items: () => store.room.waitingDecisions(),
+    subject: (id) => {
+      const task = store.tasks.get(id);
+      return task === undefined || task.status === "done" ? undefined : subjectOf(id);
+    },
+    caps: async () => (await captain.asks()).asks,
+    budgets: () => autonomy.budgetAsks(),
+    signedOut: async () =>
+      (await accounts.list())
+        .filter((a) => a.status === "needs-login" || a.status === "unreachable")
+        .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
+    recommendations: new RecommendationRepo(store.raw),
+    actions: {
+      answerAsk: (task, item, answers) => tasks.answerAsk(task, item, answers),
+      answerQuestion: (task, item, choice) => tasks.answerQuestion(task, item, choice),
+      answerChoice: (task, item, option) => tasks.answerChoice(task, item, option),
+      answerPermission: (task, item, option) => tasks.answerPermission(task, item, option),
+      decideApproval: (task, item, decision) => admin.decide(task, item, decision, undefined),
+      cardAction: (task, item, action) => cardActions.act({ task, item, action, by: "owner", agent: false }),
+      answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
+      answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
+    },
+  });
   const lanes = new Lanes({
     repo: captainRepo,
     store,
@@ -786,15 +891,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const autonomy = new AutonomyService({
     lanes,
-    // Bound below: the captain holds the stop switch and the owner's presence.
-    captainStopped: () => {
-      try {
-        return captainRepo.state().stopped;
-      } catch {
-        return false;
-      }
-    },
-    ownerAt: (task) => captainRepo.ownerAt(task),
+    typing: (task) => events.typing.holds(task),
+    upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
+    decisions: () => inbox.list(),
     store,
     config,
     tasks,
@@ -804,7 +903,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: agentStore,
     events,
     gitLogins,
-    notify: (summary, line) => notifier.autonomySummary(summary.day, line),
+    tell: (key, text) => notifier.captain(key, text),
+    recommend: async (input, lane) => {
+      await inbox.recommend(input, lane);
+      events.emit(["tasks"]);
+    },
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
@@ -826,6 +929,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       tasks,
       runs,
       room,
+      quiet: (task) => idleWatch.quiet(task),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -841,6 +945,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
+    threadState: (chat, org) =>
+      store.room.tasksWaitingOnOwner().has(chat) ||
+      [...store.room.tasksPausedOnOwner()].some((id) => (store.tasks.get(id)?.org ?? PRIVATE) === org)
+        ? "waiting"
+        : runs.working(chat).length > 0
+          ? "working"
+          : "idle",
+    fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
       store,
       accounts,
@@ -852,13 +964,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy,
       decisions,
       memory,
-      curate: (fact) => curator.curate(fact),
+      curate: (fact) => curator.curate(fact, { upkeep: true }),
       scanner: new RepoScanner(),
       cleanup,
       idle: idleWatch,
       runs,
       lanes,
       repo: captainRepo,
+      typing: (task) => events.typing.holds(task),
       dispatch: () => captainDispatch,
     }),
     tell: (key, text) => notifier.captain(key, text),
@@ -874,6 +987,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
+  events.typing.onIdle((task) => captain.ownerIdle(task));
+  memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   background.run(
     () => captain.boot(),
     (err) => console.error(`Could not pick up the captain: ${errorMessage(err)}`),
@@ -924,6 +1040,107 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     uploads,
     agents: agentStore,
     majhiHome: env.majhiHome,
+    agentsChanged: (list) => {
+      for (const agent of list) runs.remountAgent(agent);
+    },
+  });
+  const skills = new SkillService({
+    store: skillStore,
+    cli: new SkillsCli({
+      spawner: sessionOptions.spawner ?? localSpawner,
+      base: sessionOptions.base,
+      // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
+      scratchRoot: async () => {
+        const loaded = await config.load();
+        if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+        return join(loaded.state.config.tasksDir, ".skills");
+      },
+      ...(options.skillsCommand === undefined ? {} : { command: options.skillsCommand }),
+      gitEnv: async (org, source) => skillGitEnv(gitTokens, (await config.sections()).orgs, org, source),
+    }),
+    registry: new SkillRegistry(options.skillsFetch ?? fetch),
+    agents: {
+      skillLists: async () =>
+        (await agents.list()).flatMap((e) =>
+          e.status === "ok" ? [{ id: e.agent.frontmatter.id, skills: e.agent.frontmatter.skills }] : [],
+        ),
+      setSkills: async (agent, list, command, meta) => {
+        await agents.edit(agent, { set: { skills: list } }, command, meta);
+      },
+    },
+    uploads,
+    audit: (row) => store.permissions.log(row),
+    roots: async () => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") return [];
+      return [...loaded.state.config.workspaces, loaded.state.config.tasksDir];
+    },
+    hostHome: env.hostHome,
+  });
+  const connectionTests = new ConnectionTester({
+    connections,
+    secrets,
+    spawner: sessionOptions.spawner ?? localSpawner,
+    base: sessionOptions.base,
+    // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
+    scratchRoot: async () => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+      return join(loaded.state.config.tasksDir, ".connections");
+    },
+    hostHome: env.hostHome,
+    // The runner image has the browser servers, so a Test there downloads nothing.
+    ...(env.runner.mode === "container"
+      ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
+      : {}),
+  });
+  const mcpServers = new McpService({
+    connections,
+    tester: connectionTests,
+    registry: new McpRegistry(options.mcpFetch ?? fetch),
+    agents: {
+      connectionLists: async () =>
+        (await agents.list()).flatMap((e) =>
+          e.status === "ok"
+            ? [
+                {
+                  id: e.agent.frontmatter.id,
+                  scope: e.agent.frontmatter.scope,
+                  connections: e.agent.frontmatter.connections,
+                },
+              ]
+            : [],
+        ),
+      setConnections: async (agent, list, command, meta) => {
+        await agents.edit(agent, { set: { connections: list } }, command, meta);
+      },
+    },
+    orgs: async () => Object.keys((await config.sections()).orgs),
+    audit: (row) => store.permissions.log(row),
+  });
+  const installRequests = new InstallRequests({
+    tasks,
+    room,
+    runs,
+    admin,
+    mcp: mcpServers,
+    skills,
+    scopeOf: async (agent) => {
+      const found = (await agents.list()).find((e) => e.status === "ok" && e.agent.frontmatter.id === agent);
+      return found?.status === "ok" ? found.agent.frontmatter.scope : undefined;
+    },
+  });
+  const trackers = new TrackerService({
+    store,
+    config,
+    secrets,
+    room,
+    events,
+    projects,
+    tasks,
+    decisions,
+    adapter: options.trackerAdapter ?? createAdapter,
+    ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
   });
   return {
     config,
@@ -932,23 +1149,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
     connections,
-    connectionTests: new ConnectionTester({
-      connections,
-      secrets,
-      spawner: sessionOptions.spawner ?? localSpawner,
-      base: sessionOptions.base,
-      // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
-      scratchRoot: async () => {
-        const loaded = await config.load();
-        if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
-        return join(loaded.state.config.tasksDir, ".connections");
-      },
-      hostHome: env.hostHome,
-      // The runner image has the browser servers, so a Test there downloads nothing.
-      ...(env.runner.mode === "container"
-        ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
-        : {}),
-    }),
+    skills: skills,
+    skillStore,
+    mcpServers,
+    installRequests,
+    connectionTests,
     adminTokens,
     admin,
     agents,
@@ -967,14 +1172,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     mrs,
     gitLogins,
     gitConnect,
-    cardActions: new CardActions({ tasks, mrs, room }),
+    cardActions,
     pendingShips,
     cleanup,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
+    trackers,
     processes,
     containers,
     autonomy,
+    inbox,
     captain,
     lanes,
     bindCaptain: (dispatch) => {
@@ -1000,6 +1207,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);
+      clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();
       notifier.close();
@@ -1008,6 +1216,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       e2e?.close();
       layaDocker?.close();
       await runs.closeAll();
+      await trackers.stop();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.
       await settled;

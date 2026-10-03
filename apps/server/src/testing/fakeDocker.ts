@@ -20,6 +20,7 @@ export class FakeDocker implements ContainerDocker {
   runners = ["majhi-run-aaa"];
   connected: string[] = [];
   stoppedBuilders: string[] = [];
+  prunedBuilders: string[] = [];
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -99,6 +100,9 @@ export class FakeDocker implements ContainerDocker {
         return out("");
       case "buildx stop":
         this.stoppedBuilders.push(last);
+        return out("");
+      case "buildx prune":
+        this.prunedBuilders.push(args[3] ?? "");
         return out("");
       case "buildx rm":
         this.builders.delete(last);

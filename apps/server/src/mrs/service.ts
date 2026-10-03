@@ -59,6 +59,7 @@ import {
   ownerOf,
   type PushRoute,
 } from "./route.ts";
+import { ShipQueue } from "./ship-queue.ts";
 
 export interface MrDeps {
   /** Which accounts the owner's keys log in as per git host. Without it https remotes need an alias. */
@@ -139,6 +140,8 @@ class FixableError extends UserError {
 /** Pushing, opening, watching and merging the MRs of a task's repos (SPEC 5.5). */
 export class MrService {
   private readonly busy = new Set<string>();
+  /** Ships into one project and base branch go one at a time, in the order asked (5.18). */
+  private readonly ships = new ShipQueue();
   /** Problems already said in the room, by task and kind, so a poll that fails the same way stays quiet. */
   private readonly said = new Map<string, string>();
 
@@ -743,7 +746,11 @@ export class MrService {
     deleteAfter?: boolean | undefined;
   }): Promise<{ results: ShipResult[]; task: Task }> {
     const task = this.deps.tasks.get(input.id);
-    return this.exclusive(input.id, async () => {
+    const into = (project: string, base: string): string => input.targets?.[project] ?? input.into ?? base;
+    const keys = task.repos
+      .filter((r) => input.project === undefined || r.project === input.project)
+      .map((r) => ShipQueue.key(r.project, into(r.project, r.base)));
+    return this.exclusive(input.id, keys, async () => {
       const plan = await this.deps.tasks.shipPlan(task, input);
       const ready = await this.pushReady(
         task,
@@ -1258,7 +1265,8 @@ export class MrService {
       );
     }
     if (trigger === "owner") this.resolved(id, "");
-    return this.exclusive(id, async () => {
+    const keys = first.repos.filter((r) => r.mr !== undefined).map((r) => ShipQueue.key(r.project, r.base));
+    return this.exclusive(id, keys, async () => {
       const merged: string[] = [];
       let stoppedAt: MergeMrsResult["stoppedAt"];
       for (let guard = 0; guard < 50; guard += 1) {
@@ -1536,12 +1544,22 @@ export class MrService {
   }
 
   /** One command at a time per task, so the timer and a click never merge the same MR twice. */
-  private async exclusive<T>(id: string, run: () => Promise<T>): Promise<T> {
+  private async exclusive<T>(id: string, run: () => Promise<T>): Promise<T>;
+  /** With `keys` (see `ShipQueue.key`), the step also waits its turn behind earlier ships into the same project and branch. */
+  private async exclusive<T>(id: string, keys: readonly string[], run: () => Promise<T>): Promise<T>;
+  private async exclusive<T>(
+    id: string,
+    a: readonly string[] | (() => Promise<T>),
+    b?: () => Promise<T>,
+  ): Promise<T> {
+    const keys = typeof a === "function" ? [] : a;
+    const run = typeof a === "function" ? a : b;
+    if (run === undefined) throw new Error("exclusive needs a step to run");
     if (this.busy.has(id))
       throw new UserError(`Another merge request step is running for ${id}. Try again in a moment.`, 409);
     this.busy.add(id);
     try {
-      return await run();
+      return await this.ships.run(keys, run);
     } finally {
       this.busy.delete(id);
     }

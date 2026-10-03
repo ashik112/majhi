@@ -9,6 +9,8 @@ import {
   type AutonomySummary,
   AutonomySummarySchema,
   type Budget,
+  type BudgetAsk,
+  BudgetAskSchema,
   BudgetSchema,
   PRIVATE,
   type QueueItem,
@@ -34,6 +36,9 @@ export interface AutonomyState {
 }
 
 export type HeldReason = "owner" | "limit";
+
+/** The hold scope that marks a task Stop now paused, so turning on again can resume it. */
+export const STOPPED_NOW = "stop-now";
 
 export interface AutonomyTaskRow {
   task: string;
@@ -129,8 +134,25 @@ function parsed<T>(json: string | null, schema: z.ZodType<T>, fallback: T): T {
   }
 }
 
+function safeJson(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+}
+
 function present<K extends string, V>(key: K, value: V | null): { [P in K]?: V } {
   return (value === null ? {} : { [key]: value }) as { [P in K]?: V };
+}
+
+/**
+ * The mode as stored. `paused` is gone from the owner's switch (On or Off): a database that still
+ * holds it reads as On, so the tasks it held restart when the owner next turns it on or off.
+ */
+export function modeOf(stored: string): AutonomyMode {
+  const mode = AutonomyModeSchema.catch("off").parse(stored);
+  return mode === "paused" ? "on" : mode;
 }
 
 /** The autonomy tables in `majhi.db`: state, tasks, the feed and the daily summaries. */
@@ -143,7 +165,7 @@ export class AutonomyRepo {
     const by: "owner" | "majhi" | null =
       row.changed_by === "owner" || row.changed_by === "majhi" ? row.changed_by : null;
     return {
-      mode: AutonomyModeSchema.catch("off").parse(row.mode),
+      mode: modeOf(row.mode),
       ...present("since", row.since),
       ...present("by", by),
       ...present("why", row.why),
@@ -232,8 +254,13 @@ export class AutonomyRepo {
     this.db.prepare("UPDATE autonomy_tasks SET held = NULL, held_scope = NULL WHERE task = ?").run(task);
   }
 
+  /** Every hold goes, but Stop now's marks stay until the owner turns autonomous mode on again. */
   releaseAll(): void {
-    this.db.prepare("UPDATE autonomy_tasks SET held = NULL, held_scope = NULL").run();
+    this.db
+      .prepare(
+        "UPDATE autonomy_tasks SET held = NULL, held_scope = NULL WHERE held_scope IS NULL OR held_scope != ?",
+      )
+      .run(STOPPED_NOW);
   }
 
   // ---------------------------------------------------------------------------
@@ -371,6 +398,78 @@ export class AutonomyRepo {
       caps: parsed(row.caps, DayCapsSchema, { orgs: {} }),
       changed: parsed(row.changed, z.array(z.string()), []),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Budget questions and today's raises
+
+  /** Records the question; false when this budget was asked about on this day already. */
+  addBudgetAsk(ask: BudgetAsk): boolean {
+    return (
+      this.db
+        .prepare(
+          "INSERT OR IGNORE INTO autonomy_budget_asks (scope, day, name, cap, raise_to, waiting, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          ask.scope,
+          ask.day,
+          ask.name,
+          JSON.stringify(ask.cap),
+          JSON.stringify(ask.raiseTo),
+          ask.waiting,
+          ask.text,
+          ask.at,
+        ).changes > 0
+    );
+  }
+
+  /** Whether this budget was asked about on this day, answered or not. */
+  hasBudgetAsk(scope: string, day: string): boolean {
+    return (
+      this.db.prepare("SELECT 1 FROM autonomy_budget_asks WHERE scope = ? AND day = ?").get(scope, day) !==
+      undefined
+    );
+  }
+
+  /** Questions on `day` still waiting for the owner, oldest first. */
+  pendingBudgetAsks(day: string): BudgetAsk[] {
+    const rows = this.db
+      .prepare(
+        "SELECT scope, day, name, cap, raise_to, waiting, text, at FROM autonomy_budget_asks WHERE state = 'pending' AND day = ? ORDER BY at",
+      )
+      .all(day) as (Omit<BudgetAsk, "cap" | "raiseTo"> & { cap: string; raise_to: string })[];
+    return rows.flatMap(({ raise_to, cap, ...r }) => {
+      const ask = BudgetAskSchema.safeParse({
+        ...r,
+        cap: safeJson(cap),
+        raiseTo: safeJson(raise_to),
+      });
+      return ask.success ? [ask.data] : [];
+    });
+  }
+
+  /** The owner's answer to the day's question. False when there was none waiting. */
+  answerBudgetAsk(scope: string, day: string, state: "raised" | "left", at: string): boolean {
+    return (
+      this.db
+        .prepare(
+          "UPDATE autonomy_budget_asks SET state = ?, answered_at = ? WHERE scope = ? AND day = ? AND state = 'pending'",
+        )
+        .run(state, at, scope, day).changes > 0
+    );
+  }
+
+  /** The budgets the owner raised for `day`, by scope: what each one is for that day. */
+  raisedBudgets(day: string): Record<string, Budget> {
+    const rows = this.db
+      .prepare("SELECT scope, raise_to FROM autonomy_budget_asks WHERE day = ? AND state = 'raised'")
+      .all(day) as { scope: string; raise_to: string }[];
+    const out: Record<string, Budget> = {};
+    for (const r of rows) {
+      const budget = BudgetSchema.safeParse(safeJson(r.raise_to));
+      if (budget.success) out[r.scope] = budget.data;
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------

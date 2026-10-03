@@ -48,7 +48,7 @@ function Outcome({ icon, outcome }: { icon: React.ReactNode; outcome: CardOutcom
         {outcome.text}
         <span className="text-fg-faint">
           {" "}
-          · {byName(outcome.by)} · {clock(outcome.at)}
+          · {outcome.captain ? "Captain" : byName(outcome.by)} · {clock(outcome.at)}
         </span>
       </span>
     </p>
@@ -234,7 +234,12 @@ function PendingPause({
         <CirclePause aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
         <span className="min-w-0 break-words">
           <span className="font-medium">Paused.</span>{" "}
-          <span className="text-fg-muted">{item.why ?? PAUSE_WHY[item.reason]}</span>
+          <span className="text-fg-muted">
+            {item.why ??
+              (item.by === "captain" && item.reason === "owner"
+                ? "Captain paused it."
+                : PAUSE_WHY[item.reason])}
+          </span>
         </span>
       </p>
       <div className="flex flex-wrap items-center gap-2 pl-6">
@@ -380,7 +385,7 @@ export function QuestionActions({
     return (
       <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
         <MessageSquareReply aria-hidden="true" className="size-3.5 shrink-0" />
-        You chose: {item.chosen}
+        {item.by === "captain" ? "Captain" : "You"} chose: {item.chosen}
       </p>
     );
   }

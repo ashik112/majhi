@@ -1,10 +1,19 @@
-import type { AutonomyEvent, AutonomySummary, AutonomyWaiting, CapUse } from "@majhi/shared";
+import {
+  type AutonomyEvent,
+  type AutonomySummary,
+  type AutonomyWaiting,
+  type CapUse,
+  PRIVATE,
+  type QueueItem,
+  SUMMARY_TITLES,
+} from "@majhi/shared";
 import { capText } from "./spend.ts";
 
 /**
- * The daily summary (PRV-74, rule 10): what autonomous mode shipped in the span, what it spent
- * against the caps, what it is unsure about (unsure notes and refusals), and the cards still waiting
- * for the owner. Pure: built from the span's feed and the task titles.
+ * The daily summary (SPEC 5.18): what shipped in the span (grouped by workspace, three titles each),
+ * what was spent per workspace against its budget, what waits on the owner (the count and three
+ * decisions) and what the captain plans next (three queue entries). Pure: built from the span's
+ * feed, the captain's upkeep log, the task titles, the inbox and the queue.
  */
 
 type How = AutonomySummary["shipped"][number]["how"];
@@ -32,6 +41,14 @@ export interface SummaryInput {
   tasks: ReadonlyMap<string, { title: string; org?: string | undefined }>;
   spent: { total: CapUse; orgs: (CapUse & { org: string })[] };
   waiting: readonly AutonomyWaiting[];
+  /** The captain's own actions in the span that went through (upkeep), with what each was about. */
+  upkeep: readonly { chore: string; task?: string | undefined }[];
+  /** The owner's Decisions inbox now, in its order. */
+  decisions: readonly { id: string; title: string; org?: string | undefined }[];
+  /** The captain's queue, in order. */
+  queue: readonly Pick<QueueItem, "title" | "why" | "task" | "org">[];
+  /** Workspace names by id; an id without a name reads as itself. */
+  names: ReadonlyMap<string, string>;
 }
 
 export function buildSummary(input: SummaryInput): AutonomySummary {
@@ -43,6 +60,12 @@ export function buildSummary(input: SummaryInput): AutonomySummary {
   };
   const unsure: AutonomySummary["unsure"] = [];
   let decisions = 0;
+  let upkeep = 0;
+  // The ship chore merges and pushes on its own, in any mode, without a feed event.
+  for (const a of input.upkeep) {
+    if (a.chore === "ship" && a.task !== undefined) reach(a.task, "merged");
+    else if (a.chore !== "ship") upkeep++;
+  }
   for (const e of [...input.events].sort((a, b) => a.seq - b.seq)) {
     if (e.kind === "task") {
       reach(
@@ -72,18 +95,45 @@ export function buildSummary(input: SummaryInput): AutonomySummary {
       });
     }
   }
+  const shipped = [...furthest].map(([task, how]) => {
+    const t = input.tasks.get(task);
+    return { task, title: t?.title ?? task, ...(t?.org === undefined ? {} : { org: t.org }), how };
+  });
+  const name = (org: string) => input.names.get(org) ?? org;
+  const groups = new Map<string, { titles: string[]; count: number }>();
+  for (const s of shipped) {
+    const g = groups.get(s.org ?? PRIVATE) ?? { titles: [], count: 0 };
+    g.count++;
+    if (g.titles.length < SUMMARY_TITLES) g.titles.push(s.title);
+    groups.set(s.org ?? PRIVATE, g);
+  }
   return {
     day: input.day,
     from: input.from,
     to: input.to,
     at: input.at,
-    shipped: [...furthest].map(([task, how]) => {
-      const t = input.tasks.get(task);
-      return { task, title: t?.title ?? task, ...(t?.org === undefined ? {} : { org: t.org }), how };
-    }),
-    spent: input.spent,
+    shipped,
+    shipGroups: [...groups]
+      .map(([org, g]) => ({ org, name: name(org), count: g.count, titles: g.titles }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    spent: { total: input.spent.total, orgs: input.spent.orgs.map((o) => ({ ...o, name: name(o.org) })) },
     unsure,
     waiting: [...input.waiting],
+    needs: {
+      count: input.decisions.length,
+      top: input.decisions.slice(0, SUMMARY_TITLES).map((d) => ({
+        id: d.id,
+        title: d.title,
+        ...(d.org === undefined ? {} : { org: d.org }),
+      })),
+    },
+    next: input.queue.slice(0, SUMMARY_TITLES).map((q) => ({
+      title: q.title,
+      why: q.why,
+      ...(q.task === undefined ? {} : { task: q.task }),
+      ...(q.org === undefined ? {} : { org: q.org }),
+    })),
+    upkeep,
     decisions,
   };
 }
@@ -98,8 +148,10 @@ export function summaryLine(s: AutonomySummary): string {
         ? ` (the cap changed during the day, to ${capText(total.cap)})`
         : ` of ${capText(total.cap)}`;
   const spent = `$${total.used.cost.toFixed(2)}${cap}`;
-  const parts = [`shipped ${s.shipped.length}`, `spent ${spent}`];
+  const over = total.cap !== undefined && total.percent > 100 ? " (over)" : "";
+  const parts = [`shipped ${s.shipped.length}`, `spent ${spent}${over}`];
   if (s.unsure.length > 0) parts.push(`unsure about ${s.unsure.length}`);
-  if (s.waiting.length > 0) parts.push(`${s.waiting.length} waiting for you`);
+  const waits = s.needs?.count ?? s.waiting.length;
+  if (waits > 0) parts.push(`${waits} waiting for you`);
   return `Daily summary for ${s.day}: ${parts.join(", ")}.`;
 }

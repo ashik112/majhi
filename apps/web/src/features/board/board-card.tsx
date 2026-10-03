@@ -12,6 +12,7 @@ import { badgeLetters } from "@/lib/format";
 import { orgSearch } from "@/lib/org-filter";
 import { prefetchTask } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
+import { TrackerChip } from "../task/tracker-chip";
 import { taskLamp } from "../tasks/model";
 import { fullTime, openDue, shortAgo } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
@@ -98,6 +99,7 @@ export const BoardCard = memo(function BoardCard({
           </Link>
         )}
         {task.kind === "chat" && <span className="shrink-0 text-xs text-fg-faint">chat</span>}
+        <TrackerChip task={task.id} />
         <AvatarStack ids={task.team} working={task.working} size={18} max={3} className="ml-auto shrink-0" />
         {/* The age of the last change; the card's menu takes its place on hover and focus. */}
         <span className="relative flex h-5 min-w-5 shrink-0 items-center justify-end">
@@ -171,7 +173,7 @@ function TaskChips({
       <PriorityChip priority={priority} />
       {due && <DueChip due={due} />}
       {task.autonomous && (
-        <Badge title="Autonomous mode runs this task" className="h-[18px]">
+        <Badge title="Autonomous runs this task" className="h-[18px]">
           Auto
         </Badge>
       )}

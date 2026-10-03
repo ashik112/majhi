@@ -155,7 +155,7 @@ export function buildTeamFacts(input: FactsInput): TeamFacts {
 
 const UNUSABLE: ReadonlySet<AccountStatus> = new Set(["needs-login", "at-limit", "unreachable"]);
 
-function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFacts {
+export function memberFacts(fm: AgentFrontmatter, input: FactsInput): MemberFacts {
   const { task } = input;
   const run = input.runs.get(fm.id);
   const override = task.overrides[fm.id];
@@ -296,7 +296,11 @@ export function teamFactsLines(f: TeamFacts): string[] {
     ...f.members.map(memberLine),
   ];
   if (f.joinable.length > 0) {
-    lines.push("", "Could join (mention one to add it to the team):", ...f.joinable.map(memberLine));
+    lines.push(
+      "",
+      'Could join (start a line with "@name:" or use the mention tool to add one to the team):',
+      ...f.joinable.map(memberLine),
+    );
   }
   lines.push("");
   if (f.running.length === 0) lines.push("Running now: nothing else.");
@@ -318,6 +322,7 @@ export function leadPlanLines(lead: string): string[] {
     "- Rules of thumb, not limits: give bulk implementation to cheaper agents; keep expensive models for planning and review; split large work into child tasks so turns stay short; run independent parts in parallel on different accounts when their limits allow. Doing it alone is right when handing over would cost more than the work.",
     "- Do not give a long job to an agent whose account is nearly out.",
     "- The owner may reply to change the plan. Follow the new plan, and record it again with record_plan.",
+    "- Hand over the lead (majhi-tasks set_lead, naming a teammate or an agent that may join) when your account is at its limit, the task needs another skill or model, or you are stuck. The new lead gets a note with the plan, what is done and what is next; you stay as a builder unless you set keepOldLead to false.",
   ];
 }
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AuthoritySchema } from "./authority.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { E2eSettingsSchema } from "./e2e.ts";
 import { NotifyKindSchema } from "./notify.ts";
@@ -71,7 +72,7 @@ export const LimitsSettingsSchema = z.strictObject({
   agents_max: limitsFields.agents_max.default(6),
   per_account: limitsFields.per_account.default(2),
   per_task: limitsFields.per_task.default(3),
-  idle_timeout: limitsFields.idle_timeout.default("10m"),
+  idle_timeout: limitsFields.idle_timeout.default("3m"),
 });
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
 export const LimitsPatchSchema = z.strictObject(limitsFields).partial();
@@ -289,7 +290,7 @@ const containersFields = {
 export const ContainersSettingsSchema = z.strictObject({
   images: containersFields.images.default([]),
   cpus: containersFields.cpus.default(1),
-  memory: containersFields.memory.default("2g"),
+  memory: containersFields.memory.default("512m"),
   per_task: containersFields.per_task.default(3),
   build_cpus: containersFields.build_cpus.default(2),
   build_memory: containersFields.build_memory.default("4g"),
@@ -399,17 +400,16 @@ const ProviderIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 export const AutonomyOrgSchema = z.strictObject({
-  /** How much the captain does here. */
+  /** Who decides each row (SPEC 5.18). Absent: derived from `level`, `push` and `merge`, or the defaults. */
+  authority: AuthoritySchema.optional(),
+  /** Before the authority table: how much the captain does here. Read only while `authority` is absent. */
   level: CaptainLevelSchema.optional(),
-  /** This org's cap per day (the daily budget next to "Runs it"). Absent: only the overall `day` cap holds it. */
+  /** This org's cap per day (the daily budget next to the authority table). Absent: only the overall `day` cap holds it. */
   cap: BudgetSchema.optional(),
-  /** May push this org's task branches and open MRs. Off by default. */
-  push: z.boolean().default(false),
-  /**
-   * May merge this org's tasks into their base branch, and merge their MRs where the org's own
-   * `merge` policy is not `never`. Off by default.
-   */
-  merge: z.boolean().default(false),
+  /** Before the authority table: may push. Read only while `authority` is absent. */
+  push: z.boolean().optional(),
+  /** Before the authority table: may merge. Read only while `authority` is absent. */
+  merge: z.boolean().optional(),
   /** "More rules": when the captain may act on its own, in `tz`. Absent: any time. */
   hours: WorkHoursSchema.optional(),
   /** "More rules": days it does nothing on its own. */
@@ -446,13 +446,13 @@ export type TaskSizeLimit = z.infer<typeof TaskSizeLimitSchema>;
 
 /**
  * What autonomous mode may pick: the task sizes. Tasks marked `noAutonomy` are left alone, and it
- * works only in workspaces set to "Runs it" (`orgs.<org>.level`).
+ * works only in workspaces where `orgs.<org>.authority.start` is `decide`.
  */
 export const AutonomyPickSchema = z.strictObject({
   size: TaskSizeLimitSchema.default("any"),
   /**
    * Before Phase 13: the orgs it could work in. Read once at start, when majhi moves the listed orgs
-   * to "Runs it" and removes this list. Nothing else reads it.
+   * to the old "Runs it" level and removes this list. Nothing else reads it.
    */
   orgs: z.array(BudgetIdSchema).max(100).optional(),
 });
@@ -487,10 +487,9 @@ export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
  */
 export const AutonomyOrgPatchSchema = z
   .strictObject({
-    level: CaptainLevelSchema.nullable(),
+    /** Only the rows that change. Saving writes the new form and drops the old level, push and merge. */
+    authority: AuthoritySchema.partial(),
     cap: BudgetSchema.nullable(),
-    push: z.boolean(),
-    merge: z.boolean(),
     hours: WorkHoursSchema.nullable(),
     freeze: z.array(FreezeSchema).max(50).nullable(),
     tz: z.string().trim().min(1).max(64).nullable(),

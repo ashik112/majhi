@@ -101,10 +101,12 @@ import { pickDefaultAgent } from "./agents.ts";
 import { type BriefAgent, type BriefConnection, branchName, renderPointer, renderTaskMd } from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
+import { handoverNote } from "./handover.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
+import type { Footprint } from "./planning.ts";
 import { TaskPlans } from "./plans.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import {
@@ -153,9 +155,13 @@ export interface TaskDeps {
   decisions?: Decisions;
   /** Background processes (5.15): stopped with the task, and they keep it running while agents wait. */
   processes?: ProcessManager;
-  /** Previews and services (PRV-53): their containers go with the task, and their volumes when it is done or removed. */
+  /**
+   * Previews and services (PRV-53): they stop while the task does not run (review, paused) and
+   * start again when it runs. Their volumes go when it is done or removed.
+   */
   containers?: {
-    taskStopped(id: string): Promise<void>;
+    taskPaused(id: string, options?: { keepUnsaved?: boolean }): Promise<{ kept: string[] }>;
+    taskRunning(id: string): Promise<{ started: string[]; failed: string[] }>;
     taskEnded(id: string): Promise<void>;
   };
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
@@ -245,6 +251,7 @@ export class TaskService {
       store: deps.store,
       room: deps.room,
       now: this.now,
+      captain: () => deps.config.knownBoss(),
     });
     this.planner = new TaskPlanner({
       store: deps.store,
@@ -307,6 +314,11 @@ export class TaskService {
       return open.get(id);
     };
     return pendingNotices(this.deps.store.room.waitingOnOwner(), subject);
+  }
+
+  /** What the task has changed per project, or names in its description (the repo rule reads it). */
+  footprints(task: Task): Promise<Footprint[]> {
+    return this.planner.footprints(task);
   }
 
   get(id: string): Task {
@@ -779,6 +791,7 @@ export class TaskService {
       this.deps.onOwnerResumedLimit?.(id);
     }
     if (task.status === "paused" && by === "owner") this.deps.onOwnerResumed?.(id);
+    await this.containersRunAgain(id);
     await this.recallMemory(task);
     const started = this.get(id);
     this.deps.room.publishTask(started);
@@ -841,6 +854,7 @@ export class TaskService {
           base: stack?.branch ?? repo.base,
           branch: repo.branch,
           path,
+          task: id,
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
@@ -902,18 +916,28 @@ export class TaskService {
   }
 
   /** Cancels every turn, closes the sessions, and pauses a running or reviewed task with reason owner. */
-  async stop(id: string, reason: "owner" | "loop" | "blocked" = "owner"): Promise<Task> {
+  /** `by`: who stopped it (`owner`, an agent id, `autonomy`), so the paused card can say the captain did. */
+  async stop(
+    id: string,
+    reason: "owner" | "loop" | "blocked" = "owner",
+    why?: string,
+    by = "owner",
+  ): Promise<Task> {
     const task = this.get(id);
     await this.deps.runs.stop(id);
+    // Before the processes stop: it notes which services ran, to start them again on resume.
+    await this.deps.containers?.taskPaused(id);
     await this.deps.processes?.stopTask(id);
-    await this.deps.containers?.taskStopped(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.dropPendingShip(id, "you stopped the task");
     if (task.status === "running" || task.status === "paused" || task.status === "review") {
-      this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
+      // Who paused it is kept for the labels: by the captain, or when Autonomous was turned off.
+      const pausedBy =
+        by === "autonomy-off" ? "autonomy-off" : this.cards.byCaptain(by) ? "captain" : undefined;
+      this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString(), pausedBy);
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason);
+    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason, why, by);
     this.deps.room.publishTask(stopped);
     return stopped;
   }
@@ -1077,6 +1101,117 @@ export class TaskService {
     this.deps.store.tasks.setOverrides(id, overrides, at);
     this.note(id, `@${replacement} (${fm.role}) took @${agent}'s place.`);
     return this.afterProcessesOf(id, held, await this.teamChanged(id));
+  }
+
+  /**
+   * Makes `agent` the lead (SPEC 5.18, lead handover). The owner, the captain and the current lead
+   * may; any other agent is refused. The new lead is on the team or is added (it must be allowed in
+   * the task's workspace, on an account that can run). The old lead stays as a builder unless
+   * `keepOldLead` is false. The room gets a note with the plan, what is done and what is next, and
+   * the new lead is woken with it.
+   */
+  async setLead(input: {
+    task: string;
+    agent: string;
+    reason?: string | undefined;
+    keepOldLead?: boolean | undefined;
+    by: { kind: "owner" } | { kind: "agent"; id: string };
+  }): Promise<Task> {
+    const task = this.get(input.task);
+    const old = task.team[0];
+    const byName = input.by.kind === "owner" ? "the owner" : `@${input.by.id}`;
+    if (input.by.kind === "agent") {
+      const captain = this.deps.config.knownBoss();
+      if (input.by.id !== captain && input.by.id !== old) {
+        throw new UserError(
+          `Only the owner, the captain or the lead, @${old ?? "nobody"}, can change the lead of ${task.id}.`,
+          409,
+        );
+      }
+    }
+    if (old === input.agent) throw new UserError(`@${input.agent} is already the lead of ${task.id}.`, 409);
+    if (task.status === "done") throw new UserError(`${task.id} is done.`, 409);
+    const fm = await this.checkMember(task, input.agent);
+    const view = (await this.deps.accounts.list().catch(() => [])).find((v) => v.id === fm.account);
+    if (view !== undefined && ["needs-login", "at-limit", "unreachable"].includes(view.status)) {
+      throw new UserError(
+        `@${input.agent} runs on ${fm.account}, which cannot run now (${view.status}).`,
+        409,
+      );
+    }
+    const state = this.deps.store.tasks.roomState(task.id);
+    if (input.by.kind === "agent" && (state.removed ?? []).includes(input.agent)) {
+      throw new UserError(
+        `The owner removed @${input.agent} from ${task.id}. Only the owner can add it back.`,
+        409,
+      );
+    }
+    if ((state.removed ?? []).includes(input.agent)) {
+      this.deps.store.tasks.setRoomState(task.id, {
+        ...state,
+        removed: (state.removed ?? []).filter((a) => a !== input.agent),
+      });
+    }
+    const keep = input.keepOldLead !== false;
+    const rest = task.team.filter((a) => a !== input.agent && a !== old);
+    const team = [input.agent, ...(old !== undefined && keep ? [old] : []), ...rest];
+    const at = this.now().toISOString();
+    const plan = this.deps.store.plans.forTask(task.id).at(-1)?.plan;
+    const commits = await this.recentCommits(task);
+    this.deps.store.tasks.setTeam(task.id, team, at);
+    if (old !== undefined && !keep) {
+      // The old lead's session is closed unless it is mid-turn (it is the caller when it hands over):
+      // then it ends by itself and nothing wakes it again.
+      if (!this.deps.runs.working(task.id).includes(old)) {
+        await this.deps.runs.remove(task.id, old);
+        await this.stopProcessesOf(task.id, old);
+      }
+      const { [old]: _gone, ...overrides } = task.overrides;
+      this.deps.store.tasks.setOverrides(task.id, overrides, at);
+    }
+    const note = handoverNote({
+      task: task.id,
+      from: old ?? "nobody",
+      to: input.agent,
+      reason: input.reason,
+      by: byName,
+      plan,
+      commits,
+      oldStays: old !== undefined && keep,
+    });
+    this.deps.room.post(task.id as TaskId, `handover:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: note,
+    });
+    const changed = await this.teamChanged(task.id);
+    this.deps.runs.notify(task.id, input.agent, note);
+    return changed;
+  }
+
+  /** Sets the team of a task that has not started (the captain's staffing). The first is the lead. */
+  async staffTeam(id: string, team: readonly string[]): Promise<Task> {
+    const task = this.get(id);
+    if (team.length === 0 || team.join() === task.team.join()) return task;
+    for (const agent of team) await this.checkMember(task, agent);
+    const at = this.now().toISOString();
+    this.deps.store.tasks.setTeam(id, [...team], at);
+    const overrides = Object.fromEntries(Object.entries(task.overrides).filter(([a]) => team.includes(a)));
+    this.deps.store.tasks.setOverrides(id, overrides, at);
+    return this.teamChanged(id);
+  }
+
+  /** The newest commits of the task's branch in each repo since its base, newest first. */
+  private async recentCommits(task: Task): Promise<{ project: string; subjects: string[] }[]> {
+    const out: { project: string; subjects: string[] }[] = [];
+    for (const repo of task.repos) {
+      if (repo.worktree === undefined) continue;
+      const log = await git(repo.worktree, ["log", "--format=%s", "-n", "8", `${repo.base}..HEAD`]).catch(
+        () => "",
+      );
+      out.push({ project: repo.project, subjects: log.split("\n").filter((l) => l.trim() !== "") });
+    }
+    return out;
   }
 
   /** Stops the processes of an agent leaving the team. True when one of them held the task running. */
@@ -1870,10 +2005,10 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Parallel planning
 
-  /** The owner's answer to a choice card in a room. */
-  async answerChoice(task: string, item: string, option: string) {
+  /** The owner's answer to a choice card in a room, or the captain's (`captain`: its agent id). */
+  async answerChoice(task: string, item: string, option: string, captain?: string) {
     try {
-      await this.orchestrator.answer(task, item, option);
+      await this.orchestrator.answer(task, item, option, captain !== undefined);
     } catch (err) {
       throw new UserError(errorMessage(err), 409);
     }
@@ -1882,7 +2017,8 @@ export class TaskService {
     return answered;
   }
 
-  async answerAsk(task: string, item: string, answers: Record<string, string>) {
+  /** The owner's answers to an ask card, or the captain's (`captain`: its agent id). */
+  async answerAsk(task: string, item: string, answers: Record<string, string>, captain?: string) {
     const card = this.deps.room.get(task, item);
     if (card?.type !== "ask" || card.state !== "pending") {
       throw new UserError("That is not a pending ask card.", 409);
@@ -1906,15 +2042,16 @@ export class TaskService {
       }
     }
 
+    const who = captain === undefined ? "Owner" : "The captain";
     const message =
       questions.length === 1
         ? (() => {
             const q = questions[0]!;
             const answer = validated[q.id];
             const option = q.options.find((o) => o.id === answer);
-            return `Owner chose: ${option?.label ?? answer}`;
+            return `${who} chose: ${option?.label ?? answer}`;
           })()
-        : `Owner answered:\n${questions
+        : `${who} answered:\n${questions
             .map((q) => {
               const answer = validated[q.id];
               const option = q.options.find((o) => o.id === answer);
@@ -1928,14 +2065,19 @@ export class TaskService {
       questions: card.questions,
       state: "answered",
       answers: validated,
+      ...(captain === undefined ? {} : { by: "captain" as const }),
     });
-    await this.send({
-      task,
-      text: message,
-      attachments: [],
-      mode: "queue",
-      agent,
-    });
+    // The captain's answer is no owner message: the card says who answered.
+    if (captain !== undefined)
+      await this.tellAgent({ task, agent, text: message, settled: "The captain answered", by: captain });
+    else
+      await this.send({
+        task,
+        text: message,
+        attachments: [],
+        mode: "queue",
+        agent,
+      });
     return (
       this.deps.room.get(task, item) ??
       (() => {
@@ -2033,8 +2175,11 @@ export class TaskService {
     };
   }
 
-  /** One of the choices under an agent's plain-text question: sent to that agent as the owner's answer. */
-  async answerQuestion(task: string, item: string, choice: string): Promise<RoomItem> {
+  /**
+   * One of the choices under an agent's plain-text question: sent to that agent as the owner's
+   * answer, or as the captain's (`captain`: its agent id).
+   */
+  async answerQuestion(task: string, item: string, choice: string, captain?: string): Promise<RoomItem> {
     const card = this.deps.room.get(task, item);
     if (card?.type !== "owner-question") throw new UserError("That is not a question card.", 404);
     if (card.state !== "pending") throw new UserError("This question was already answered.", 409);
@@ -2049,15 +2194,25 @@ export class TaskService {
       ...fields,
       state: "answered",
       chosen: choice,
+      ...(captain === undefined ? {} : { by: "captain" as const }),
     });
     try {
-      await this.send({
-        task,
-        text: `Owner chose: ${choice}`,
-        attachments: [],
-        mode: "queue",
-        agent: card.agent,
-      });
+      if (captain !== undefined)
+        await this.tellAgent({
+          task,
+          agent: card.agent,
+          text: `The captain chose: ${choice}`,
+          settled: "The captain answered",
+          by: captain,
+        });
+      else
+        await this.send({
+          task,
+          text: `Owner chose: ${choice}`,
+          attachments: [],
+          mode: "queue",
+          agent: card.agent,
+        });
     } catch (err) {
       this.deps.room.post(current.id, item, fields);
       throw err;
@@ -2485,6 +2640,17 @@ export class TaskService {
     );
   }
 
+  /** The task only waits: its services stop, except ones whose data has no named volume to survive in. */
+  private async parkServices(id: TaskId): Promise<void> {
+    const { kept } = (await this.deps.containers?.taskPaused(id, { keepUnsaved: true })) ?? { kept: [] };
+    if (kept.length > 0) {
+      this.note(
+        id,
+        `${kept.join(", ")} kept running while ${id} waits: its data has no named volume, so stopping would lose it. Start it with a volume to let majhi stop it.`,
+      );
+    }
+  }
+
   private note(task: TaskId, text: string): void {
     this.deps.room.post(task, `info:${randomUUID()}`, {
       type: "system",
@@ -2534,6 +2700,7 @@ export class TaskService {
       return;
     }
     this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
+    await this.parkServices(id as TaskId);
     const reviewed = this.get(id);
     this.cards.review(reviewed);
     this.deps.room.publishTask(reviewed);
@@ -2547,8 +2714,9 @@ export class TaskService {
   /**
    * A background process ended (5.15). A `wait` process that exited by itself wakes the agent that
    * started it, once, and a task in review runs again. Not when a newer run of the same command
-   * started after it: that one's result counts, and the room only notes the old end. Any other end
-   * of a `wait` process may leave nobody working: the task may be ready for review.
+   * started after it: that one's result counts, and the room only notes the old end. Nor when the
+   * agent already read the end with `output` or `list`. Any other end of a `wait` process may leave
+   * nobody working: the task may be ready for review.
    */
   async processEnded(p: ProcessInfo, wakes: boolean): Promise<void> {
     this.waitNoted.delete(`${p.task} ${p.id} ${p.startedAt}`);
@@ -2572,6 +2740,15 @@ export class TaskService {
       await this.agentsIdle(p.task);
       return;
     }
+    if (this.deps.processes?.readAfterEnd(p) === true) {
+      this.deps.room.post(task.id, itemId, {
+        type: "system",
+        level: "info",
+        text: `${p.id} \`${p.name}\` ended; @${p.agent} already read it, so nobody is woken.`,
+      });
+      await this.agentsIdle(p.task);
+      return;
+    }
     if (!task.team.includes(p.agent)) return;
     if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
     if (task.status === "paused" && waitsForOwner(task.pausedReason)) return;
@@ -2580,6 +2757,7 @@ export class TaskService {
       this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
       this.deps.events.emit(["tasks"]);
+      await this.containersRunAgain(task.id);
       await this.statusChanged(task.id);
     }
     this.deps.room.post(task.id, itemId, {
@@ -2605,6 +2783,7 @@ export class TaskService {
     if (reason === "error" || reason === "signed-out")
       this.dropPendingShip(id, "the agent stopped with an error");
     this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
+    await this.parkServices(id as TaskId);
     const paused = this.get(id);
     this.cards.paused(paused, reason, why);
     this.deps.room.publishTask(paused);
@@ -2618,7 +2797,21 @@ export class TaskService {
     this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     this.cards.settle(id, "paused", "Resumed by itself", "majhi");
     this.deps.room.publishTask(this.get(id));
+    await this.containersRunAgain(id);
     await this.statusChanged(id);
+  }
+
+  /** The task runs again: its services and preview that stopped with it start again, with one line in the room. */
+  private async containersRunAgain(id: string): Promise<void> {
+    const containers = this.deps.containers;
+    if (containers === undefined) return;
+    try {
+      const { started, failed } = await containers.taskRunning(id);
+      if (started.length > 0) this.note(id as TaskId, `Started ${started.join(", ")} again.`);
+      if (failed.length > 0) this.warn(id, `Did not start again: ${failed.join("; ")}`);
+    } catch (err) {
+      this.warn(id, `Services did not start again: ${errorMessage(err)}`);
+    }
   }
 
   /** "Fresh session" on an agent in the room (5.13). */
@@ -2780,11 +2973,18 @@ export class TaskService {
    * The agent gets `text`, with whatever detail it needs; the room gets no owner message, so the
    * caller posts its own plain line. Like a message, it wakes the task.
    */
-  async tellAgent(input: { task: string; agent: string; text: string; settled: string }): Promise<void> {
+  async tellAgent(input: {
+    task: string;
+    agent: string;
+    text: string;
+    settled: string;
+    /** Who answered: `owner` (default), the captain's agent id, or `majhi`. */
+    by?: string;
+  }): Promise<void> {
     const task = this.get(input.task);
     if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
     if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on this task.`);
-    this.cards.settle(task.id, "review", input.settled, "owner");
+    this.cards.settle(task.id, "review", input.settled, input.by ?? "owner");
     if (task.status !== "running") await this.start(task.id);
     const state = this.deps.store.tasks.roomState(task.id);
     if (state.agentTurns > 0 || state.nudged === true)
@@ -2844,9 +3044,10 @@ export class TaskService {
     return this.deps.runs.cancel(id, agent);
   }
 
-  answerPermission(id: string, item: string, option: string): RoomItem {
+  /** The owner's answer to a permission prompt, or the captain's (`captain`: its agent id). */
+  answerPermission(id: string, item: string, option: string, captain?: string): RoomItem {
     this.get(id);
-    return this.deps.runs.answerPermission(id, item, option);
+    return this.deps.runs.answerPermission(id, item, option, captain !== undefined);
   }
 
   items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {

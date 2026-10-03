@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { Command } from "@majhi/acp";
 import { COMMAND_META_HEADER } from "@majhi/shared";
 import type { RemoteRunFn } from "../connections/remote.ts";
 import type { ContainerDocker } from "../containers/service.ts";
@@ -10,7 +11,9 @@ import type { Probe } from "../runs/network.ts";
 import { generateKey } from "../secrets/store.ts";
 import type { Majhi } from "../server.ts";
 import { createMajhi } from "../server.ts";
+import type { ServiceOptions } from "../services.ts";
 import type { LinkOptions } from "../tasks/links.ts";
+import type { TrackerAdapter, TrackerAdapterInit } from "../trackers/types.ts";
 import { type FakeRuntime, fakeRuntime } from "./fakeRuntime.ts";
 import { git, tempDir, testEnv, writeKeyFile } from "./fixtures.ts";
 
@@ -54,6 +57,16 @@ export interface HarnessOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
+  /** Replaces `fetch` for the trackers' APIs. */
+  trackerFetch?: typeof fetch;
+  /** Replaces the tracker adapters. */
+  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
+  /** Replaces the `skills` CLI, so tests never run the real one. */
+  skillsCommand?: Command;
+  /** Replaces `fetch` for the skills.sh directory. */
+  skillsFetch?: NonNullable<ServiceOptions["skillsFetch"]>;
+  /** Replaces `fetch` for the MCP Registry. */
+  mcpFetch?: NonNullable<ServiceOptions["mcpFetch"]>;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -90,6 +103,11 @@ function build(
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
+    ...(options.trackerFetch === undefined ? {} : { trackerFetch: options.trackerFetch }),
+    ...(options.trackerAdapter === undefined ? {} : { trackerAdapter: options.trackerAdapter }),
+    ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
+    ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
+    ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
   });
   const h: Harness = {
     dir,

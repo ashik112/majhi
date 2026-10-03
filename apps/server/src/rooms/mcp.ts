@@ -77,7 +77,7 @@ const ROOM_TOOLS: Tool[] = [
   {
     name: "post",
     description:
-      "Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or mention the agent in your final reply.",
+      'Post a message to the room now, as yourself, without ending your turn. It wakes nobody: to hand work on, use mention, or start a line of your final reply with "@name:". A name in the middle of a sentence wakes nobody.',
     input: z.object({ text: z.string().trim().min(1).max(20_000) }),
   },
   {
@@ -186,7 +186,19 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "e2e_latest",
     command: "e2e.status",
     description:
-      "The latest result of the full e2e suite, which majhi runs by itself in the background after each merge into main: per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
+      "The latest result of the full e2e suite, which majhi runs by itself in the background (after each merge into main, once a day, or when the owner starts it, per project): per project the commit, passed or failed, the failing specs, duration and when, plus the run in progress and the queue. Read this instead of running the suite, which you never do. Changes nothing.",
+  },
+  {
+    name: "set_lead",
+    command: "tasks.setLead",
+    description:
+      "Hand the lead of your task to another agent (only the current lead may): when your account is at its limit, the task needs another skill or model, or you are stuck. Give agent (a teammate, or an agent allowed in the task's workspace, who is added). You stay as a builder unless keepOldLead is false. majhi posts a handover note with the plan, what is done and what is next, and wakes the new lead with it. Say why in reason.",
+  },
+  {
+    name: "staff",
+    command: "tasks.staff",
+    description:
+      "Propose a team for a task: who should lead and who should join, weighing size, accounts, limits, budgets, cost and past results. Changes nothing.",
   },
   {
     name: "link",
@@ -451,6 +463,18 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         return fail(
           "You do not have the Merge permission. Say in the room that the branch is ready to merge.",
         );
+      }
+      if (tool.command === "tasks.setLead") {
+        const target = typeof args.task === "string" ? deps.store.tasks.get(args.task) : undefined;
+        if (target === undefined) return fail("Give the id of the task.");
+        if (target.team[0] !== caller.agent) {
+          return fail(
+            `Only the lead, @${target.team[0] ?? "nobody"}, can hand over ${target.id}. Say in the room that it should change hands.`,
+          );
+        }
+        const reason = typeof args.reason === "string" ? args.reason.trim().slice(0, 500) : "";
+        const done = await deps.admin.runAllowed(caller, "tasks.setLead", args, { reason });
+        return done.isError ? fail(done.text) : ok(done.text);
       }
       if (tool.command === "tasks.plan" && fm.scope !== "root" && args.id === undefined) {
         return fail("Give the id of the parent or the task to check.");

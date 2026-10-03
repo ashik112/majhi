@@ -1,10 +1,16 @@
 import type { EventTopic, ServerEvent } from "@majhi/shared";
+import { BrowserTabs } from "./tabs.ts";
+import { OwnerTyping } from "./typing.ts";
 
 type Listener = (event: ServerEvent) => void;
 
 /** Fan-out of change events to every open `/api/events` socket. */
 export class EventHub {
   private readonly listeners = new Set<Listener>();
+  /** The open tabs that can pop browser notifications, as they report it. */
+  readonly tabs = new BrowserTabs();
+  /** The tasks the owner types in right now. */
+  readonly typing = new OwnerTyping();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -56,6 +62,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "connections":
       // A change is a config commit, may save or delete secrets, and remove edits agent files.
       return ["connections", "config", "secrets", "agents"];
+    case "trackers":
+      // A pull or a push makes or links tasks; the org page shows the last pull.
+      return ["tasks", "orgs"];
     case "usage":
       return ["usage", "config"];
     case "memory":

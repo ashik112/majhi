@@ -1,4 +1,10 @@
-import type { CaptainChore, CaptainLevel } from "@majhi/shared";
+import {
+  ALL_ASK,
+  type Authority,
+  type AutonomyMode,
+  type CaptainCapAsk,
+  type CaptainChore,
+} from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -11,20 +17,31 @@ const DAY = "2026-10-03";
 function setup(chore: (run: ChoreRun) => Promise<void>) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const state = {
-    level: "runs" as CaptainLevel,
+    authority: {
+      start: "decide",
+      questions: "decide",
+      approvals: "decide",
+      upkeep: "decide",
+      merge: "decide",
+      push: "decide",
+    } as Authority,
     rest: undefined as string | undefined,
+    mode: "on" as AutonomyMode,
     stopped: false,
     tokens: 0,
+    day: DAY,
   };
   const told: string[] = [];
+  const asked: CaptainCapAsk[] = [];
   const caused: string[] = [];
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",
-    level: state.level,
+    mode: state.mode,
+    authority: state.authority,
     rules: undefined,
     tz: "UTC",
-    day: DAY,
+    day: state.day,
     ...(state.rest === undefined ? {} : { rest: state.rest }),
   });
   const chores = Object.fromEntries(
@@ -34,15 +51,16 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
   ) as RunnerDeps["chores"];
   const runner = new ChoreRunner({
     repo,
-    now: () => new Date(`${DAY}T12:00:00.000Z`),
+    now: () => new Date(`${state.day}T12:00:00.000Z`),
     workspace: async () => ws(),
     stopped: () => state.stopped,
     tellOwner: (_org, text) => told.push(text),
     caused: (s) => caused.push(s),
     laneTokens: () => state.tokens,
     chores,
+    capAsked: (ask) => asked.push(ask),
   });
-  return { repo, state, told, caused, runner };
+  return { repo, state, told, caused, runner, asked };
 }
 
 describe("the chore runner", () => {
@@ -67,9 +85,9 @@ describe("the chore runner", () => {
     expect(t.repo.allActions()).toEqual([
       expect.objectContaining({ outcome: "skipped", text: "Left ACM-1: a check fails now" }),
     ]);
-    // The owner moved the workspace to Only when I ask a moment ago: the run stops before the step.
+    // The owner moved the workspace to Ask me for everything a moment ago: the run stops before the step.
     const u = setup(async (run) => {
-      u.state.level = "ask";
+      u.state.authority = ALL_ASK;
       await run.act({ key: "k", text: "x", reason: "y", irreversible: true, do: async () => ({}) });
     });
     expect(await u.runner.start("acme", "ship", "test")).toBe("stopped");
@@ -143,6 +161,22 @@ describe("the chore runner", () => {
     expect(await t.runner.start("acme", "cleanup", "daily")).toBeUndefined();
   });
 
+  it("runs only memory and cleanup while Autonomous is off, and only where upkeep is the captain's", async () => {
+    const t = setup(async () => {});
+    t.state.mode = "off";
+    for (const chore of ["ship", "cards", "questions", "projects", "triage", "stuck"] as const) {
+      expect(await t.runner.start("acme", chore, "test")).toBeUndefined();
+    }
+    expect(await t.runner.start("acme", "memory", "test")).toBe("done");
+    expect(await t.runner.start("acme", "cleanup", "test")).toBe("done");
+    // Upkeep on "You decide": even those two stay put.
+    t.state.authority = { ...ALL_ASK, merge: "decide" };
+    expect(await t.runner.start("acme", "memory", "test")).toBeUndefined();
+    t.state.mode = "on";
+    t.state.authority = { ...ALL_ASK, upkeep: "decide" };
+    expect(await t.runner.start("acme", "ship", "test")).toBe("done");
+  });
+
   it("starts nothing while stopped, resting or in Only when I ask, and stops a run at the next step", async () => {
     let steps = 0;
     const t = setup(async (run) => {
@@ -166,9 +200,74 @@ describe("the chore runner", () => {
     t.state.rest = "outside working hours (09:00 to 17:00)";
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
     t.state.rest = undefined;
-    t.state.level = "ask";
+    t.state.authority = ALL_ASK;
     expect(await t.runner.start("acme", "ship", "go")).toBeUndefined();
     expect(t.repo.allRuns()).toHaveLength(1);
+  });
+
+  it("asks the owner once per chore, workspace and day when a daily cap is reached, and a raise holds for that day only", async () => {
+    let n = 0;
+    const t = setup(async (run) => {
+      for (let i = 0; i < 8; i++) {
+        n += 1;
+        await run.act({ key: `ship:${n}`, text: "Shipped", reason: "checks pass", do: async () => ({}) });
+      }
+    });
+    const ships = (day: string) => t.repo.actionsToday("acme", "ship", day);
+    expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
+    expect(ships(DAY)).toBe(5);
+    // Another trigger the same day: still capped, and no second question.
+    expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
+    expect(t.asked).toEqual([
+      {
+        org: "acme",
+        chore: "ship",
+        day: DAY,
+        kind: "actions",
+        cap: 5,
+        raiseTo: 10,
+        text: "Acme: the captain shipped its 5 tasks for today. Raise the limit for today?",
+        at: `${DAY}T12:00:00.000Z`,
+      },
+    ]);
+    expect(t.repo.pendingCapAsks()).toHaveLength(1);
+
+    // Raise: it ships on up to 10 today, and asks nothing more at the raised cap.
+    expect(t.repo.answerCapAsk("acme", "ship", DAY, "raised", `${DAY}T12:01:00.000Z`)).toBe(true);
+    expect(t.repo.answerCapAsk("acme", "ship", DAY, "left", `${DAY}T12:02:00.000Z`)).toBe(false);
+    expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
+    expect(ships(DAY)).toBe(10);
+    expect(t.asked).toHaveLength(1);
+    expect(t.repo.pendingCapAsks()).toEqual([]);
+
+    // The next day the cap is 5 again, and it asks again. Leave it keeps the cap.
+    const next = "2026-10-04";
+    t.state.day = next;
+    expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
+    expect(ships(next)).toBe(5);
+    expect(t.asked.map((a) => a.day)).toEqual([DAY, next]);
+    expect(t.repo.answerCapAsk("acme", "ship", next, "left", `${next}T12:01:00.000Z`)).toBe(true);
+    expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
+    expect(ships(next)).toBe(5);
+    expect(t.asked).toHaveLength(2);
+  });
+
+  it("asks when a chore's runs reach their daily cap", async () => {
+    const t = setup(async () => {});
+    for (let i = 0; i < 4; i++) expect(await t.runner.start("acme", "memory", "memories wait")).toBe("done");
+    expect(await t.runner.start("acme", "memory", "memories wait")).toBeUndefined();
+    expect(await t.runner.start("acme", "memory", "memories wait")).toBeUndefined();
+    expect(t.asked).toEqual([
+      expect.objectContaining({
+        chore: "memory",
+        kind: "runs",
+        cap: 4,
+        raiseTo: 8,
+        text: "Acme: the captain did its 4 memory runs for today. Raise the limit for today?",
+      }),
+    ]);
+    t.repo.answerCapAsk("acme", "memory", DAY, "raised", `${DAY}T12:01:00.000Z`);
+    expect(await t.runner.start("acme", "memory", "memories wait")).toBe("done");
   });
 
   it("stops a run that spent its tokens in the lane", async () => {

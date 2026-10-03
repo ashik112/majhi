@@ -56,6 +56,8 @@ export interface TesterDeps {
 interface Outcome {
   ok: boolean;
   detail: string;
+  /** An MCP server's tool names. */
+  tools?: string[];
   warnings: string[];
 }
 
@@ -120,6 +122,7 @@ export class ConnectionTester {
     const result: ConnectionTestResult = {
       ok: outcome.ok,
       detail: redact(outcome.detail, id, secrets),
+      ...(outcome.tools === undefined ? {} : { tools: outcome.tools.map((t) => redact(t, id, secrets)) }),
       warnings: outcome.warnings.map((w) => redact(w, id, secrets)),
       at: (this.deps.now?.() ?? new Date()).toISOString(),
       durationMs: Math.max(0, Date.now() - started),
@@ -193,7 +196,10 @@ export class ConnectionTester {
     if ((v.fields.transport ?? "remote") === "remote") {
       const headers: Record<string, string> = {};
       for (const e of v.lists.headers ?? []) if (e.value !== undefined) headers[e.name] = e.value;
-      return toolsOutcome(await listTools(remoteTransport(v.fields.url ?? "", headers), MCP_TIMEOUT_MS));
+      const protocol = v.fields.protocol === "sse" ? "sse" : "http";
+      return toolsOutcome(
+        await listTools(remoteTransport(v.fields.url ?? "", headers, protocol), MCP_TIMEOUT_MS),
+      );
     }
     return this.scratch(async (dir) => {
       const env = this.runEnv(dir, await this.variables(dir, v.lists.env));
@@ -434,12 +440,18 @@ function fail(detail: string): Outcome {
 
 function toolsOutcome(names: readonly string[]): Outcome {
   if (names.length === 0)
-    return { ok: true, detail: "It answers, with no tools.", warnings: ["The server lists no tools."] };
+    return {
+      ok: true,
+      detail: "It answers, with no tools.",
+      tools: [],
+      warnings: ["The server lists no tools."],
+    };
   const shown = names.slice(0, 5).join(", ");
   const more = names.length > 5 ? `, and ${names.length - 5} more` : "";
   return {
     ok: true,
     detail: `${names.length} ${names.length === 1 ? "tool" : "tools"}: ${shown}${more}.`,
+    tools: [...names],
     warnings: [],
   };
 }

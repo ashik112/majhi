@@ -1,5 +1,6 @@
 import type { AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import type { Harness } from "../testing/harness.ts";
@@ -67,7 +68,7 @@ async function world() {
     },
     /** Turns on, and has the captain create and start a task in Acme; waits for its first turn. */
     async startWorking(): Promise<string> {
-      expect((await h.cmd("autonomy.configure", { orgs: { acme: { level: "runs" } } })).status).toBe(200);
+      expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
       const on = await h.cmd("autonomy.start");
       expect(on.status).toBe(200);
       const chat = await h.majhi.services.autonomy.laneChat("acme");
@@ -95,7 +96,7 @@ describe("autonomous mode's state machine", () => {
     expect((await plain.h.cmd("autonomy.status")).body.mode).toBe("off");
   });
 
-  it("turns on, works in the lane, adopts the captain's task, and pauses it after its current turn", async () => {
+  it("turns on, works in the lane, adopts the captain's task, and finishes its step when turned off", async () => {
     const t = await world();
     const id = await t.startWorking();
     const on = await t.status();
@@ -104,77 +105,63 @@ describe("autonomous mode's state machine", () => {
     expect(on.now.map((n) => n.task)).toEqual([id]);
     const listed = (await t.h.cmd("tasks.list")).body as { id: string; autonomous?: boolean }[];
     expect(listed.find((x) => x.id === id)?.autonomous).toBe(true);
-    // The chat is a chat: not on the board, not the owner's Cmd J chat.
-    const chat = t.task(on.boss?.chat ?? "");
-    expect(listed.find((x) => x.id === chat.id)).toMatchObject({ chat: true });
-    expect((await t.h.cmd("boss.chat")).body.id).not.toBe(chat.id);
 
-    expect((await t.h.cmd("autonomy.pause")).body.mode).toBe("paused");
-    // Something more for the agent while its turn runs: it waits behind the pause.
+    expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");
+    // Something more for the agent while its turn runs: it waits behind the stop.
     t.h.majhi.services.runs.notify(id, "acme-builder", "one more thing");
     expect(t.task(id).status).toBe("running");
+    // While it turns off, calls that start work are refused.
+    const refused = await t.h.majhi.services.admin.call(
+      { task: on.boss?.chat ?? "", agent: "boss" },
+      "majhi_tasks_start",
+      { id, reason: "go on" },
+    );
+    expect(refused).toEqual({ text: "Autonomous is turning off: nothing new starts.", isError: true });
     t.release();
-    await t.w.until(() => t.task(id).status === "paused", "the pause");
-    expect(t.task(id).pausedReason).toBe("owner");
+    await t.w.until(async () => (await t.status()).mode === "off", "the stop to finish");
+    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" });
     expect(t.prompts()).toHaveLength(1);
-    expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe("owner");
-    // Paused: calls that start work are refused.
-    const chatCaller = { task: chat.id, agent: "boss" };
-    const refused = await t.h.majhi.services.admin.call(chatCaller, "majhi_tasks_start", {
-      id,
-      reason: "go on",
-    });
-    expect(refused).toEqual({
-      text: "Autonomous mode is paused: nothing new starts until the owner resumes it.",
-      isError: true,
-    });
+    // The task is marked, so turning on can resume exactly it.
+    expect((await t.status()).stopped).toEqual([id]);
 
-    // Resume: exactly the held task goes on, with the prompt that waited and no extra "continue".
-    expect((await t.h.cmd("autonomy.start")).body.mode).toBe("on");
-    await t.w.until(() => t.prompts().length === 2, "the prompt that waited");
-    expect(t.prompts()[1]).toBe("one more thing");
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).body.mode).toBe("on");
     await t.w.until(() => t.task(id).status !== "paused", "the task to run again");
+    expect(t.task(id).pausedBy).toBeUndefined();
     expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe(undefined);
     const modes = (await t.h.cmd("autonomy.events", { limit: 50 })).body.events
       .filter(
         (e: { kind: string; text: string }) => e.kind === "mode" && !e.text.startsWith("The captain works"),
       )
       .map((e: { text: string }) => e.text);
-    expect(modes).toEqual(["Resumed", "Paused", "Turned on"]);
+    expect(modes).toEqual([
+      "Turned on",
+      "Turned off after the current turns",
+      "Stopping after the current turns",
+      "Turned on",
+    ]);
   });
 
-  it("lets the owner resume one held task by hand while paused, until the next pause", async () => {
+  it("does not resume a task the owner resumed by hand when turning on", async () => {
     const t = await world();
     const id = await t.startWorking();
     const { autonomy, runs } = t.h.majhi.services;
-    expect((await t.h.cmd("autonomy.pause")).body.mode).toBe("paused");
+    expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");
     runs.notify(id, "acme-builder", "one more thing");
     t.release();
-    await t.w.until(() => t.task(id).status === "paused", "the pause");
+    await t.w.until(async () => (await t.status()).mode === "off", "the stop to finish");
     expect(autonomy.repo.task(id)?.held).toBe("owner");
 
-    // The owner resumes this one task by hand: it runs past the pause, and leaves the held set.
+    // The owner resumes this one task by hand: it runs, and leaves the marked set.
     expect((await t.h.cmd("tasks.start", { id })).status).toBe(200);
-    await t.w.until(() => t.prompts().includes("one more thing"), "the task to go on");
+    await t.w.until(() => t.task(id).status !== "paused", "the task to go on");
     await runs.idle(id);
     expect(autonomy.repo.task(id)?.held).toBe(undefined);
-    expect(autonomy.holdFor(id)).toBe(undefined);
     const sent = t.prompts().length;
 
-    // Resuming autonomous mode does not start it a second time.
-    expect((await t.h.cmd("autonomy.start")).body.mode).toBe("on");
+    // Turning on with resume does not start it a second time.
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).body.mode).toBe("on");
     await runs.idle(id);
     expect(t.prompts()).toHaveLength(sent);
-
-    // The next pause holds it again.
-    expect((await t.h.cmd("autonomy.pause")).body.mode).toBe("paused");
-    runs.notify(id, "acme-builder", "and another");
-    await t.w.until(
-      () => t.task(id).status === "paused" && t.task(id).pausedReason === "owner",
-      "the next pause",
-    );
-    expect(t.prompts()).not.toContain("and another");
-    expect(autonomy.repo.task(id)?.held).toBe("owner");
   });
 
   it("stops now: the turn is cut, the task waits for the owner, and the mode is off", async () => {
@@ -183,9 +170,34 @@ describe("autonomous mode's state machine", () => {
     const off = (await t.h.cmd("autonomy.stop", { how: "now" })).body as AutonomyStatus;
     expect(off).toMatchObject({ mode: "off", by: "owner" });
     expect(t.sessions[0]?.cancels).toBeGreaterThan(0);
-    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner" });
-    // Off: the gate holds nothing, and Resume is a fresh start.
+    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" });
+    // Off: the gate holds nothing.
     expect(t.h.majhi.services.autonomy.holdFor(id)).toBe(undefined);
+    // On with resume restarts exactly the tasks it paused, and a task paused by hand stays paused.
+    const made = await t.h.cmd("tasks.create", {
+      text: "another job",
+      repos: [{ project: "acme-api" }],
+      attachments: [],
+      start: false,
+    });
+    expect(made.status).toBe(200);
+    const other = made.body as Task;
+    expect((await t.status()).stopped).toEqual([id]);
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).body.mode).toBe("on");
+    await t.w.until(() => t.task(id).status === "running", "the paused task to run again");
+    expect(t.task(other.id).status).toBe("inbox");
+    expect((await t.status()).stopped).toEqual([]);
+  });
+
+  it("turns on without resume: the tasks it paused stay paused and are no longer offered", async () => {
+    const t = await world();
+    const id = await t.startWorking();
+    expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
+    expect((await t.status()).stopped).toEqual([id]);
+    expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).body.mode).toBe("on");
+    expect(t.task(id).status).toBe("paused");
+    expect((await t.status()).stopped).toEqual([]);
+    expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe(undefined);
   });
 
   it("stops gracefully: the current turn finishes, nothing new starts, then majhi turns it off", async () => {
@@ -199,11 +211,11 @@ describe("autonomous mode's state machine", () => {
     expect(await t.status()).toMatchObject({
       mode: "off",
       by: "majhi",
-      why: "stopped after the current turns",
+      why: "turned off after the current turns",
     });
     expect(t.prompts()).toHaveLength(1);
-    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner" });
-    // The held task stays paused: turning on again does not resume it.
+    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" });
+    // Turning on without resume leaves it paused.
     expect((await t.h.cmd("autonomy.start")).body.mode).toBe("on");
     expect(t.task(id).status).toBe("paused");
   });
@@ -225,7 +237,7 @@ describe("autonomous mode's state machine", () => {
     );
     expect((await again.cmd("autonomy.status")).body).toMatchObject({
       by: "majhi",
-      why: "stopped after the current turns",
+      why: "turned off after the current turns",
     });
     t.release();
   });

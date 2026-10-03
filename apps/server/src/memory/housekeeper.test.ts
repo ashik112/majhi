@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import { git } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
-import { MAX_LESSONS, parseRecordReply, ROOM_TOKENS, roomSources } from "./housekeeper.ts";
+import { MAX_LESSONS, parseRecordReply, ROOM_TOKENS, roomSources, transient } from "./housekeeper.ts";
 
 let w: World | undefined;
 afterEach(async () => {
@@ -68,6 +68,32 @@ describe("the Housekeeper's answer", () => {
     expect(parseRecordReply("Nothing to say.")).toMatchObject({ ok: false });
     expect(parseRecordReply('{"threads":[]}')).toMatchObject({ ok: false });
     expect(parseRecordReply(reply({ record: { done: "" } }))).toMatchObject({ ok: false });
+  });
+
+  it("proposes no lesson or playbook about a test that failed only that once", () => {
+    const flaky = {
+      text: "team.test.ts times out at 5s under full suite load but passes isolated.",
+      scope: "project:acme-api",
+      happened: "Five team.test.ts tests timed out during the full run.",
+    };
+    const playbook = {
+      symptom: "Five team.test.ts tests timed out at 5s during the full suite",
+      checked: "Ran the file alone: it passed",
+      cause: "CPU contention when every test file runs in parallel",
+      fix: "Raised the timeout of those tests",
+      scope: "project:acme-api",
+    };
+    const parsed = parseRecordReply(
+      JSON.stringify({
+        ...JSON.parse(reply({ lessons: [flaky, LESSON] })),
+        playbooks: [playbook, { ...playbook, symptom: "A flaky login test", cause: "A race in the fixture" }],
+      }),
+    );
+    expect(parsed.ok && parsed.value.lessons.map((l) => l.text)).toEqual([LESSON.text]);
+    expect(parsed.ok && parsed.value.playbooks).toEqual([]);
+    // A real timeout with a lasting cause is still a lesson.
+    expect(transient(LESSON.text)).toBe(false);
+    expect(transient("Requests to the billing api time out unless the proxy env is set")).toBe(false);
   });
 
   it("gives the last agent messages whole as the hand-back, and cuts the rest of the room", () => {

@@ -27,12 +27,16 @@ describe("moving the old workspace list to the choice per workspace", () => {
     expect(autonomy.pick).toEqual({ size: "medium" });
     expect(autonomy.orgs).toEqual({ acme: { level: "runs", cap: { cost: 3 }, push: false, merge: false } });
     const [last] = await config.historyEntries(1);
-    expect(last).toMatchObject({ summary: "set Acme to Runs it, from autonomous mode's workspace list" });
+    expect(last).toMatchObject({
+      summary: "let the captain start work in Acme, from autonomous mode's workspace list",
+    });
     // Private was not listed: it keeps its default.
-    const status = (await w.h.cmd("captain.status")).body as { orgs: { org: string; level: string }[] };
-    expect(status.orgs.map((o) => [o.org, o.level])).toEqual([
-      ["private", "tidy"],
-      ["acme", "runs"],
+    const status = (await w.h.cmd("captain.status")).body as {
+      orgs: { org: string; authority: { start: string } }[];
+    };
+    expect(status.orgs.map((o) => [o.org, o.authority.start])).toEqual([
+      ["private", "ask"],
+      ["acme", "decide"],
     ]);
     // A second start finds nothing to move and makes no commit.
     expect(await captain.migratePick()).toBe(false);

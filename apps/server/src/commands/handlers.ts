@@ -32,6 +32,8 @@ import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
+import { inboxHandlers } from "../inbox/handlers.ts";
+import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import {
   checkSavedLogin,
@@ -52,11 +54,13 @@ import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
+import { skillHandlers } from "../skills/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
+import { trackerHandlers } from "../trackers/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -92,7 +96,7 @@ export interface HandlerDeps {
   sshHosts?: SshHostProbe;
   /** `health.run` and `health.fix`. Without it they answer 501. */
   health?: HealthService;
-  /** `e2e.status`. Without it the command answers 501. */
+  /** `e2e.status` and `e2e.runNow`. Without it they answer 501. */
   e2e?: E2eService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
@@ -155,10 +159,14 @@ export function createHandlers({
     ...scheduleHandlers(services.automation.schedules),
     ...triggerHandlers(services.automation.triggers),
     ...autonomyHandlers(services.autonomy),
-    ...captainHandlers(services.captain),
+    ...captainHandlers(services.captain, services.autonomy),
+    ...inboxHandlers(services.inbox),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
+    ...skillHandlers(services.skills),
+    ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
+    ...trackerHandlers(services.trackers),
 
     "config.get": async () => (await config.load()).state,
 
@@ -460,7 +468,9 @@ export function createHandlers({
       return { removed: input.id };
     },
 
-    "tasks.list": async (input) => services.tasks.list(input.includeDone === true),
+    // The captain's workspace threads are not tasks to the owner: they never show in a list.
+    "tasks.list": async (input) =>
+      services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
     "tasks.get": async (input) => services.tasks.get(input.id),
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
@@ -493,8 +503,10 @@ export function createHandlers({
     },
     "tasks.start": (input, ctx) =>
       services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
+    "tasks.slots": async () =>
+      services.runs.capacity(Object.keys((await services.config.sections()).accounts)),
     "tasks.stop": async (input, ctx) => {
-      const stopped = await services.tasks.stop(input.id);
+      const stopped = await services.tasks.stop(input.id, "owner", undefined, actorName(ctx.meta.actor));
       // The owner's own stop: autonomous mode does not restart this task on Resume.
       if (ctx.meta.actor.kind === "owner") services.autonomy.forgetHold(input.id);
       return stopped;
@@ -591,6 +603,12 @@ export function createHandlers({
     "team.add": (input) =>
       services.tasks.addToTeam(input.task, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
     "team.remove": (input) => services.tasks.removeFromTeam(input.task, input.agent),
+    "tasks.setLead": (input, ctx) =>
+      services.tasks.setLead({
+        ...input,
+        by: ctx.meta.actor.kind === "owner" ? { kind: "owner" } : { kind: "agent", id: ctx.meta.actor.id },
+      }),
+    "tasks.staff": (input) => services.autonomy.staff(input),
     "tasks.addAgent": (input) =>
       services.tasks.addToTeam(input.id, input.agent, input.lead === undefined ? {} : { lead: input.lead }),
     "tasks.removeAgent": (input) => services.tasks.removeFromTeam(input.id, input.agent),
@@ -602,6 +620,18 @@ export function createHandlers({
       services.tasks.get(input.task);
       // Secrets are saved and swapped for references before the text reaches an agent or the room.
       const captured = await services.secretService.capture(input.text);
+      // The owner asking for a skill or an MCP server gets one approval card, not a turn of the agent.
+      if (ctx.meta.actor.kind === "owner") {
+        const asked = await services.installRequests.offer({
+          task: input.task,
+          text: captured.text,
+          agent: input.agent,
+        });
+        if (asked !== undefined) {
+          noteSecrets(services, input.task, captured.saved);
+          return { item: asked };
+        }
+      }
       const item = await services.tasks.send({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, input.task, captured.saved);
       return { item };
@@ -836,6 +866,12 @@ export function createHandlers({
         actorName(ctx.meta.actor),
       ),
     "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
+    "e2e.runNow": (input, ctx) => {
+      // The suite takes the owner's CPU for up to 90 minutes: only they start it by hand.
+      if (ctx.meta.actor.kind !== "owner")
+        throw new UserError("Only the owner starts a background e2e run.", 409);
+      return e2e ? e2e.runNow(input.project) : notBuilt();
+    },
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
     "system.version": () => (system ? system.version() : notBuilt()),
