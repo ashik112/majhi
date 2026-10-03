@@ -123,6 +123,8 @@ export const CaptainChoreStateSchema = z.object({
   chore: CaptainChoreSchema,
   /** Turned off after two failures in a row, with why. Absent: on. */
   off: z.string().optional(),
+  /** A run is going now. */
+  running: z.boolean().optional(),
   /** Actions it took today, against its daily cap. */
   today: z.number().int().nonnegative(),
   cap: z.number().int().positive(),
@@ -189,6 +191,24 @@ export const CaptainChoreInputSchema = z.object({
   org: z.string().min(1).max(63),
   chore: CaptainChoreSchema,
 });
+
+/** The chores the owner can run by hand: the two that run while Autonomous is Off. */
+export const CaptainRunnableChoreSchema = z.enum(["memory", "cleanup"]);
+export type CaptainRunnableChore = z.infer<typeof CaptainRunnableChoreSchema>;
+
+export const CaptainRunChoreInputSchema = z.object({
+  org: z.string().min(1).max(63),
+  chore: CaptainRunnableChoreSchema,
+});
+
+/** `captain.runChore`: whether a run started, and one plain line either way. The run goes on in the background. */
+export const CaptainRunChoreResultSchema = z.object({
+  started: z.boolean(),
+  text: z.string(),
+  /** The run went past today's cap because the owner asked for it. */
+  overCap: z.boolean(),
+});
+export type CaptainRunChoreResult = z.infer<typeof CaptainRunChoreResultSchema>;
 
 /**
  * A chore reached its daily cap in a workspace, and the captain asks the owner whether to raise it

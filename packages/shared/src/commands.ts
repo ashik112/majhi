@@ -55,6 +55,8 @@ import {
   CaptainAsksSchema,
   CaptainCapAnswerInputSchema,
   CaptainChoreInputSchema,
+  CaptainRunChoreInputSchema,
+  CaptainRunChoreResultSchema,
   CaptainLogInputSchema,
   CaptainLogResultSchema,
   CaptainStatusSchema,
@@ -2765,6 +2767,13 @@ export const commands = {
       "Turn an upkeep chore back on in a workspace after two failures in a row turned it off. Owner only",
     input: CaptainChoreInputSchema,
     output: CaptainStatusSchema,
+  },
+  "captain.runChore": {
+    risk: "change",
+    summary:
+      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; a run that goes past today's cap is allowed once because the owner asked, and the answer says so. The run goes on in the background: captain.status shows chores[].running. Owner only",
+    input: CaptainRunChoreInputSchema,
+    output: CaptainRunChoreResultSchema,
   },
   "captain.asks": {
     risk: "read",
