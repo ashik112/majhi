@@ -48,6 +48,7 @@ import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
+import { permissionVerdict } from "../captain/permission-rules.ts";
 import {
   loopLine,
   NEAR_SAME_MS,
@@ -2052,6 +2053,15 @@ export class AutonomyService {
     const stuck = await this.questionLoopLine(input.task, item);
     if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
     const option = input.option;
+    // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
+    if (item.type === "permission") {
+      const rule = permissionVerdict(item.title);
+      const kind = item.options.find((o) => o.id === option)?.kind;
+      if (rule.decision === "unreadable") return fail(`Refused: ${rule.why}. Leave it to the owner.`);
+      if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
+        return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
+      }
+    }
     let answered: RoomItem;
     try {
       switch (item.type) {

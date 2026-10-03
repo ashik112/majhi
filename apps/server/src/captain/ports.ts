@@ -44,7 +44,7 @@ export interface QuestionCard {
   /** The question, one line. */
   text: string;
   /** The options to pick from: an option id and its words. Empty for an ask card with free text. */
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; effect?: "allow" | "deny" }[];
   /** For an ask card: the question's id. */
   question?: string | undefined;
 }
@@ -105,11 +105,6 @@ export interface CaptainPorts {
 
   // Agents' questions
   questions(org: string): QuestionCard[];
-  /** Laya through the decision provider: an option id when it is sure, else undefined with why. */
-  laya(
-    org: string,
-    card: QuestionCard,
-  ): Promise<{ option?: string | undefined; why: string; margin?: number | undefined }>;
   /**
    * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
    * agent gets one message telling it to stop asking.

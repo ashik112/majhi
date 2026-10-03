@@ -21,12 +21,6 @@ export const BURST_COUNT = 3;
 /** Two questions this alike (shared words over all words) are the same question. */
 const SAME = 0.8;
 
-/**
- * The captain does not answer for the owner when the winning option leads the next by less than
- * this. Laya's own gate is looser; this is the floor for answering unseen.
- */
-export const ANSWER_MARGIN_FLOOR = 0.4;
-
 export interface QuestionLoop {
   /** Questions of the loop so far, counting the new one. */
   times: number;

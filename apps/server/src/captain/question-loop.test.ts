@@ -48,25 +48,24 @@ function desk() {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   let now = at(0);
   const cards: QuestionCard[] = [];
-  const answers: string[] = [];
+  const answers: { item: string; option: string }[] = [];
   const flags: { line: string; nudge: string }[] = [];
-  let margin = 0.6;
+  const lane: string[] = [];
+  // No decision provider here: the chore has no port for one, so a call to it would throw.
   const ports = {
-    questions: () => cards.filter((c) => !answers.includes(c.item)),
+    questions: () => cards.filter((c) => !answers.some((a) => a.item === c.item)),
     typing: () => false,
-    laya: async (_org: string, card: QuestionCard) => ({
-      option: card.options[0]?.id,
-      why: "the brief settles it",
-      margin,
-    }),
-    answer: async (_org: string, card: QuestionCard) => {
-      answers.push(card.item);
+    answer: async (_org: string, card: QuestionCard, option: string) => {
+      answers.push({ item: card.item, option });
     },
     flagLoop: async (_org: string, _card: QuestionCard, line: string, nudge: string) => {
       flags.push({ line, nudge });
     },
-    laneRest: async () => "resting",
-    askLane: async () => ({ sent: false as const, why: "resting" }),
+    laneRest: async () => undefined,
+    askLane: async (_org: string, text: string) => {
+      lane.push(text);
+      return { sent: true as const };
+    },
   } as unknown as CaptainPorts; // Only the ports the questions chore calls.
   const runner = new ChoreRunner({
     repo,
@@ -86,11 +85,25 @@ function desk() {
     laneTokens: () => 0,
     chores: createChores(ports, () => now),
   });
-  const ask = async (item: string, text: string, agent = "pyzasoft-claude") => {
+  const permission = async (item: string, text: string, agent = "pyzasoft-claude") => {
     cards.push({
       task: "PYZ-7",
       item,
       agent,
+      kind: "permission",
+      text,
+      options: [
+        { id: "once", label: "Allow once", effect: "allow" },
+        { id: "no", label: "Reject", effect: "deny" },
+      ],
+    });
+    await runner.start("acme", "questions", "a prompt");
+  };
+  const question = async (item: string, text: string) => {
+    cards.push({
+      task: "PYZ-7",
+      item,
+      agent: "pyzasoft-claude",
       kind: "choice",
       text,
       options: [
@@ -102,58 +115,67 @@ function desk() {
   };
   const actions = () => repo.actions({ org: "acme", limit: 100 }).map((a) => [a.outcome, a.text]);
   return {
-    ask,
+    permission,
+    question,
     answers,
     flags,
+    lane,
     actions,
     advance: (seconds: number) => {
       now = new Date(now.getTime() + seconds * 1000);
     },
-    setMargin: (m: number) => {
-      margin = m;
-    },
   };
 }
 
-describe("the questions chore and an agent that keeps asking", () => {
-  it("answers the first ask, then leaves a repeat for the owner, tells the agent once, and answers no more of the loop", async () => {
+describe("the questions chore and permission prompts", () => {
+  it("never approves a prompt whose text says nothing", async () => {
     const d = desk();
-    for (let i = 0; i < 15; i++) {
-      await d.ask(`choice:${i}`, "Should I go on with the migration?");
+    await d.permission("p1", "\u2026");
+    await d.permission("p2", "   ");
+    expect(d.answers).toEqual([]);
+    expect(d.lane).toEqual([]);
+    expect(d.actions().map(([outcome]) => outcome)).toEqual(["asked", "asked"]);
+  });
+
+  it("rejects a dangerous argument by rule and allows a read tool of majhi by rule", async () => {
+    const d = desk();
+    await d.permission("p1", "Bash: git push --force origin main");
+    await d.permission("p2", "mcp__majhi-containers__logs");
+    expect(d.answers).toEqual([
+      { item: "p1", option: "no" },
+      { item: "p2", option: "once" },
+    ]);
+  });
+
+  it("does not settle a write by rule: the captain's own turn looks, with the prompt", async () => {
+    const d = desk();
+    await d.permission("p1", "mcp__majhi-containers__service_start");
+    expect(d.answers).toEqual([]);
+    expect(d.lane).toHaveLength(1);
+    expect(d.lane[0]).toContain("mcp__majhi-containers__service_start");
+  });
+
+  it("flags an agent whose read prompts repeat, and answers no more of the loop", async () => {
+    const d = desk();
+    for (let i = 0; i < 6; i++) {
+      await d.permission(`p${i}`, "mcp__majhi-containers__logs");
       d.advance(16);
     }
-    expect(d.answers).toEqual(["choice:0"]);
+    expect(d.answers).toHaveLength(1);
     expect(d.flags).toHaveLength(1);
     expect(d.flags[0]?.line).toBe(
       "@pyzasoft-claude keeps asking in PYZ-7 (2 times in 10 minutes); it may be stuck",
     );
-    expect(d.flags[0]?.nudge).toContain('The captain answered: "Yes"');
     expect(d.flags[0]?.nudge).toContain("do not ask it again");
-    const asked = d.actions().filter(([outcome]) => outcome === "asked");
-    expect(asked).toEqual([["asked", d.flags[0]?.line]]);
   });
+});
 
-  it("answers different questions from other agents, and a different one after the loop is over", async () => {
+describe("the questions chore and agents' questions", () => {
+  it("is not answered by a decision provider: it goes to the captain's turn", async () => {
     const d = desk();
-    await d.ask("choice:0", "Should I go on with the migration?");
-    await d.ask("choice:1", "Which logger should the worker use?", "pyzasoft-codex");
-    expect(d.answers).toEqual(["choice:0", "choice:1"]);
-    d.advance(11 * 60);
-    await d.ask("choice:2", "Should I go on with the migration?");
-    expect(d.answers).toEqual(["choice:0", "choice:1", "choice:2"]);
-    expect(d.flags).toEqual([]);
-  });
-
-  it("never answers when Laya led by less than the floor, and leaves it for the owner", async () => {
-    const d = desk();
-    d.setMargin(0.27);
-    await d.ask("choice:0", "Should I go on with the migration?");
+    await d.question("c1", "Should I go on with the migration?");
     expect(d.answers).toEqual([]);
-    expect(d.actions()).toEqual([
-      ["asked", "Left a question in PYZ-7 for you: Should I go on with the migration?"],
-    ]);
-    d.setMargin(0.47);
-    await d.ask("choice:1", "Which logger should the worker use?");
-    expect(d.answers).toEqual(["choice:1"]);
+    expect(d.lane).toHaveLength(1);
+    expect(d.lane[0]).toContain("Should I go on with the migration?");
   });
 });

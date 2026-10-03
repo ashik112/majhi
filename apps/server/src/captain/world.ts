@@ -161,7 +161,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
               text: item.title,
               options: item.options
                 .filter((o) => o.kind === "allow_once" || o.kind === "reject_once")
-                .map((o) => ({ id: o.id, label: o.name })),
+                .map((o) => ({
+                  id: o.id,
+                  label: o.name,
+                  effect: o.kind === "allow_once" ? ("allow" as const) : ("deny" as const),
+                })),
             }
           : undefined;
       default:
@@ -338,44 +342,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         }
       }
       return out;
-    },
-
-    async laya(_org, card) {
-      const task = store.tasks.get(card.task);
-      if (card.options.length < 2) return { why: "there is nothing to pick between" };
-      const keys = card.options
-        .slice(0, 20)
-        .map((o, i) => ({ key: String.fromCharCode(65 + i), id: o.id, label: o.label }));
-      try {
-        const result = await deps.decisions.decide(
-          {
-            state: {
-              task: (task?.title ?? card.task).slice(0, 400),
-              brief: (task?.brief ?? "").slice(0, 4_000),
-              question: card.text.slice(0, 2_000),
-            },
-            questions: {
-              pick: {
-                type: "choice",
-                instructions:
-                  "An agent working on the task asks this. Pick the option the task's brief clearly settles. Pick none when it is a real choice for the owner.",
-                options: keys.map((k) => ({ key: k.key, description: k.label.slice(0, 200) })),
-              },
-            },
-          },
-          { use: "captain", task: card.task },
-        );
-        const answer = result.answers.pick;
-        if (result.provider === "rules") return { why: "no decision model answered" };
-        if (answer === undefined || answer.gate?.accepted !== true) {
-          return { why: answer?.gate?.reason ?? "it was not sure enough" };
-        }
-        const picked = keys.find((k) => k.key === answer.value && answer.value !== ABSTAIN.key);
-        if (picked === undefined) return { why: "none of the options fits" };
-        return { option: picked.id, why: answer.gate.reason, margin: answer.gate.margin };
-      } catch (err) {
-        return { why: err instanceof Error ? err.message : "the decision provider failed" };
-      }
     },
 
     async answer(_org, card, option, reason) {

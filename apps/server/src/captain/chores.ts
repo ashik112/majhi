@@ -1,6 +1,7 @@
 import type { CaptainChore } from "@majhi/shared";
+import { permissionVerdict } from "./permission-rules.ts";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
-import { ANSWER_MARGIN_FLOOR, loopLine, nudgeText, questionLoop } from "./question-loop.ts";
+import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 
@@ -213,35 +214,38 @@ export function createChores(
           });
           continue;
         }
-        // Then Laya, when it is sure.
-        const laya = await ports.laya(org, card);
-        const option = laya.option;
-        if (option !== undefined && laya.margin !== undefined && laya.margin < ANSWER_MARGIN_FLOOR) {
-          await run.act({
-            key,
-            text: `Left a question in ${card.task} for you: ${card.text}`,
-            reason: `Laya was only ${laya.margin.toFixed(2)} ahead, and the captain needs ${ANSWER_MARGIN_FLOOR.toFixed(2)} to answer for you`,
-            task: card.task,
-            do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
-          });
-          continue;
-        }
-        if (option !== undefined) {
-          const label = card.options.find((o) => o.id === option)?.label ?? option;
-          await run.act({
-            key,
-            text: `Answered @${card.agent} in ${card.task}: ${label}`,
-            reason: `Laya was sure: ${laya.why}`,
-            evidence: card.text,
-            task: card.task,
-            irreversible: true,
-            recheck: async () => away(card.task),
-            do: async () => {
-              await ports.answer(org, card, option, `Laya was sure: ${laya.why}`);
-              return { undoNote: "An answer an agent already read cannot be taken back" };
-            },
-          });
-          continue;
+        // A permission prompt is settled by the rule table or not at all: no model decides it.
+        if (card.kind === "permission") {
+          const verdict = permissionVerdict(card.text);
+          if (verdict.decision === "unreadable") {
+            await run.act({
+              key,
+              text: `Left a permission prompt in ${card.task} for you: ${clip(card.text, 80) || "no text"}`,
+              reason: verdict.why,
+              task: card.task,
+              do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
+            });
+            continue;
+          }
+          if (verdict.decision === "allow" || verdict.decision === "deny") {
+            const pick = card.options.find((o) => o.effect === verdict.decision);
+            if (pick !== undefined) {
+              await run.act({
+                key,
+                text: `Answered @${card.agent} in ${card.task}: ${pick.label}`,
+                reason: `By rule: ${verdict.why}`,
+                evidence: card.text,
+                task: card.task,
+                irreversible: true,
+                recheck: async () => away(card.task),
+                do: async () => {
+                  await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
+                  return { undoNote: "An answer an agent already read cannot be taken back" };
+                },
+              });
+              continue;
+            }
+          }
         }
         // Then a short turn of the captain in this workspace's lane, unless the lane rests.
         const rest = await ports.laneRest(org);
@@ -257,7 +261,7 @@ export function createChores(
         await run.act({
           key: `${key}:lane`,
           text: `Asked the captain about a question in ${card.task}`,
-          reason: `Laya was not sure: ${laya.why}`,
+          reason: "No rule settles it, so the captain looks with the whole question",
           evidence: card.text,
           task: card.task,
           do: async () => {
