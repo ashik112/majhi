@@ -46,7 +46,7 @@ export function composeEnv(
     HOST_UID: String(owner.uid),
     HOST_GID: String(owner.gid),
     PATH: owner.path,
-    // Days of tokens and cost follow the Mac's zone, as with `make up`.
+    // Days of tokens and cost follow this computer's zone, as with `make up`.
     MAJHI_TZ: base.MAJHI_TZ || Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
@@ -133,6 +133,10 @@ export async function regenerateAndUp(
       "-T",
       "-e",
       "MAJHI_SSH_PUBKEYS",
+      "-e",
+      "MAJHI_SSH_AGENT",
+      "-e",
+      "MAJHI_LAYA_GPU",
       "server",
       "node",
       "dist/cli.js",

@@ -728,7 +728,7 @@ export class RunManager {
     if (run?.paused === "offline") this.resumeRun(run, why);
   }
 
-  /** The Mac woke from sleep: continue turns that failed while it slept, and restart ones that stalled. */
+  /** The computer woke from sleep: continue turns that failed while it slept, restart ones that stalled. */
   async wake(): Promise<void> {
     const views = [...this.runs.values()]
       .filter(
@@ -749,7 +749,7 @@ export class RunManager {
     const plan = wakePlan(views, this.now().getTime());
     for (const key of plan.resume) {
       const run = this.runs.get(key);
-      if (run !== undefined) this.resumeRun(run, "the Mac woke up");
+      if (run !== undefined) this.resumeRun(run, "the computer woke up");
     }
     await Promise.all(
       plan.restart.map(async (key) => {
@@ -759,7 +759,7 @@ export class RunManager {
         // Quietly: the resume says what happened.
         run.paused = "offline";
         await this.cancelRun(run);
-        this.resumeRun(run, "its turn stalled while the Mac slept");
+        this.resumeRun(run, "its turn stalled while the computer slept");
       }),
     );
   }

@@ -68,7 +68,10 @@ export function patchOf(saved: NotificationsSettings, form: Form): Notifications
 
 const CLOCK = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
-/** When majhi tells you: a Mac banner and a browser notification, per kind, with quiet hours and a test. */
+/**
+ * When majhi tells you: a desktop banner and a browser notification, per kind, with quiet hours and a
+ * test. The form keeps the setting's name, `mac`, on every OS.
+ */
 export function NotificationsSection({ saved }: { saved: NotificationsSettings }) {
   const save = useSaveSettings();
   const test = useSendTestNotification();
@@ -107,20 +110,20 @@ export function NotificationsSection({ saved }: { saved: NotificationsSettings }
     setResult(undefined);
     test.mutate(undefined, {
       onSuccess: (out) => {
-        const mac =
-          out.mac === "sent"
-            ? "Sent to your Mac."
-            : out.mac === "no-helper"
-              ? "The host helper is not connected, so the Mac got nothing."
-              : out.mac === "failed"
-                ? `The Mac did not show it. ${out.error ?? ""}`.trim()
-                : "Mac notifications are off.";
+        const desktop =
+          out.desktop === "sent"
+            ? "Sent to this computer."
+            : out.desktop === "no-helper"
+              ? "The host helper is not connected, so this computer got nothing."
+              : out.desktop === "failed"
+                ? `This computer did not show it. ${out.error ?? ""}`.trim()
+                : "Desktop notifications are off.";
         const browser = !out.browser
           ? "Browser notifications are off."
           : permission === "granted"
             ? "Sent to this browser."
             : "This browser has not allowed notifications yet.";
-        setResult(`${mac} ${browser}`);
+        setResult(`${desktop} ${browser}`);
       },
       onError: (e) => toast("Could not send the test", { detail: describeError(e), tone: "error" }),
     });
@@ -151,7 +154,7 @@ export function NotificationsSection({ saved }: { saved: NotificationsSettings }
         <fieldset className="flex flex-col gap-1">
           <legend className="mb-1 text-sm font-medium text-fg-muted">Where</legend>
           <Switch
-            label="On this Mac, through the host helper"
+            label="On this computer, through the host helper"
             checked={form.mac}
             onChange={(v) => set("mac", v)}
           />

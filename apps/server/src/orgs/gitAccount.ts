@@ -104,7 +104,7 @@ export interface GitAccountDeps {
       }
     | undefined
   >;
-  /** The Mac's detected logins per host. Empty when the helper is not connected. */
+  /** This computer's detected logins per host. Empty when the helper is not connected. */
   logins: () => Promise<readonly GitHostLogins[]>;
   /** Adopts the gh or glab token of the login into this org only, and returns its secret ref. */
   adopt: (via: "gh" | "glab", host: string) => Promise<string>;
@@ -233,7 +233,7 @@ export async function fetchPublicProfile(
 
 export interface SavedLoginDeps {
   org: GitAccountDeps["org"];
-  /** Asks the Mac's git credential helper for the saved secret of an account. Throws a safe sentence. */
+  /** Asks the computer's git credential helper for an account's saved secret. Throws a safe sentence. */
   readSecret: (host: string, account: string) => Promise<string>;
   probe: Probe;
   saveSecret: GitAccountDeps["saveSecret"];
@@ -245,7 +245,7 @@ export interface SavedLoginDeps {
 }
 
 /**
- * Whether the Mac saved a login for the account, and whether the host's API takes it as a token.
+ * Whether this computer saved a login for the account, and whether the host's API takes it as a token.
  * A silent check for showing a button: it never throws and never says why.
  */
 export async function checkSavedLogin(
@@ -265,9 +265,9 @@ export async function checkSavedLogin(
 }
 
 /**
- * Adopts the Mac's saved https login (Keychain or `gh`) as the account's token, only for the chosen
- * org and only when the host's API accepts it. An account password or a stale login is refused with
- * a plain sentence. The secret is never returned or logged.
+ * Adopts this computer's saved https login (git credential helper or `gh`) as the account's token,
+ * only for the chosen org and only when the host's API accepts it. An account password or a stale
+ * login is refused with a plain sentence. The secret is never returned or logged.
  */
 export async function useSavedLogin(
   deps: SavedLoginDeps,
@@ -285,7 +285,7 @@ export async function useSavedLogin(
   } catch (err) {
     return {
       saved: false,
-      reason: err instanceof Error ? err.message : "The Mac has no saved login for it.",
+      reason: err instanceof Error ? err.message : "This computer has no saved login for it.",
     };
   }
   const request = tokenRequest(host, classify(host), row.account, secret);

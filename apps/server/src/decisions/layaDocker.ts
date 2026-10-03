@@ -39,9 +39,10 @@ export interface LayaDockerOptions {
 }
 
 /**
- * Laya on PyTorch CPU in the `laya` compose service (SPEC 5.12), through laya-serve's
- * Jev-compatible `POST /v1/systemone`. The container is started on the first question and
- * stopped after 10 idle minutes; the model inside loads on first use too.
+ * Laya on PyTorch in the `laya` compose service (SPEC 5.12): on the CPU, or on CUDA when `make up`
+ * found an NVIDIA GPU. The server is not told which, so the status names neither. Calls go through
+ * laya-serve's Jev-compatible `POST /v1/systemone`. The container is started on the first question
+ * and stopped after 10 idle minutes; the model inside loads on first use too.
  */
 export class LayaDocker {
   private readonly fetch: typeof fetch;
@@ -57,21 +58,21 @@ export class LayaDocker {
     if (health !== undefined) {
       return {
         state: (health.loaded ?? []).length > 0 ? "loaded" : "ready",
-        detail: "Laya runs in Docker (PyTorch on CPU).",
+        detail: "Laya runs in Docker.",
       };
     }
     const container = await this.containerState();
     if (container === "missing") {
       return {
         state: "not-installed",
-        detail: "Laya's Docker image is not built. Run make up, which builds it on this machine.",
+        detail: "Laya's Docker image is not built. Run make up, which builds it on this computer.",
       };
     }
     if (container === "unknown")
       return { state: "error", detail: "majhi cannot reach Docker to start Laya." };
     return {
       state: "ready",
-      detail: "Laya runs in Docker (PyTorch on CPU). It starts on the first question.",
+      detail: "Laya runs in Docker. It starts on the first question.",
     };
   }
 

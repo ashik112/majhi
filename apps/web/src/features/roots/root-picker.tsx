@@ -12,6 +12,8 @@ import { SuggestionList } from "./suggestion-list";
 export interface RootPickerProps {
   formId: string;
   home: string;
+  /** An example root for the path field's placeholder, like `~/Work`. */
+  example: string;
   rows: readonly RootRow[];
   rowErrors: ReadonlyMap<number, string>;
   /** Shown under the chosen roots once the owner tried to save. */
@@ -29,6 +31,7 @@ export interface RootPickerProps {
 export function RootPicker({
   formId,
   home,
+  example,
   rows,
   rowErrors,
   formError,
@@ -183,7 +186,7 @@ export function RootPicker({
                     }}
                     onKeyDown={onTypedKeyDown}
                     autoFocus
-                    placeholder="~/code or /absolute/path"
+                    placeholder={`${example} or /absolute/path`}
                     aria-label="Folder path"
                     aria-invalid={typedError ? true : undefined}
                     aria-describedby={typedError ? typedErrorId : undefined}

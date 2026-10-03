@@ -82,14 +82,14 @@ describe("secrets key backup checks", () => {
   it("warns with a fix when there is no copy, a failed copy or another key", () => {
     expect(keychainCheck(KEY, mac({ checkedAt: "t" }))).toMatchObject({
       status: "warn",
-      fix: { label: "Save to Keychain" },
+      fix: { label: "Save to the Keychain" },
     });
     expect(
       keychainCheck(KEY, mac({ error: "The Keychain did not answer. Is it locked?", checkedAt: "t" })),
     ).toMatchObject({
       status: "warn",
       detail: "The Keychain did not answer. Is it locked?",
-      fix: { label: "Save to Keychain" },
+      fix: { label: "Save to the Keychain" },
     });
     expect(keychainCheck(KEY, mac({ saved: OLD, checkedAt: "t" }))).toMatchObject({
       status: "warn",
@@ -98,14 +98,36 @@ describe("secrets key backup checks", () => {
     expect(keychainCheck(KEY, mac()).status).toBe("warn");
   });
 
-  it("warns without a fix while the helper is away, and leaves hosts without a Keychain to the export", () => {
+  it("warns without a fix while the helper is away", () => {
     const away = keychainCheck(KEY, { status: { connected: false } });
     expect(away.status).toBe("warn");
     expect(away.fix).toBeUndefined();
-    const linux = keychainCheck(KEY, {
-      status: { connected: true, info: { version: "1", platform: "linux", canRemount: true } },
+  });
+
+  it("names the keyring on Linux, and warns with the reason and no fix when none answers", () => {
+    const linux = (info: Partial<NonNullable<HostStatus["info"]>>): { status: HostStatus } => ({
+      status: {
+        connected: true,
+        info: { version: "1", platform: "linux", os: "linux", canRemount: true, ...info },
+      },
     });
-    expect(linux.status).toBe("pass");
+    const kept = keychainCheck(
+      KEY,
+      linux({ keyring: { kind: "secret-service" }, secretsKey: { saved: KEY, checkedAt: "t" } }),
+    );
+    expect(kept).toMatchObject({ name: "Secrets key in the keyring", status: "pass" });
+    expect(kept.detail).toContain("in the keyring");
+    expect(keychainCheck(KEY, linux({ keyring: { kind: "secret-service" } }))).toMatchObject({
+      status: "warn",
+      fix: { label: "Save to the keyring" },
+    });
+    const locked = keychainCheck(KEY, linux({ keyring: { kind: "none", reason: "The keyring is locked." } }));
+    expect(locked).toMatchObject({
+      status: "warn",
+      detail: expect.stringMatching(/^The keyring is locked\. /),
+    });
+    expect(locked.detail).toContain("export");
+    expect(locked.fix).toBeUndefined();
   });
 
   it("warns until the current key is exported", () => {

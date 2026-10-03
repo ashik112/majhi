@@ -9,7 +9,10 @@ import {
   type ConnectionTestResult,
   collapseHome,
   dockerRuntimeName,
+  type HostOs,
   type HostStatus,
+  hostOsOf,
+  keyringName,
   type SshHostCheck,
   type SshStatus,
   sshUnlockCommand,
@@ -80,8 +83,8 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkGit().then((c) => [c]),
     checkRoots(state, home, ctx.host),
     [checkHostHelper(ctx.host)],
-    checkSshAgent(ctx.host.status?.info?.ssh, ctx.host).then((c) => [c]),
-    checkSshHosts(ctx.sshHosts, ctx.host),
+    checkSshAgent(ctx.host.status?.info?.ssh, ctx.host, ctx.env.sshAgentOff).then((c) => [c]),
+    checkSshHosts(ctx.sshHosts, ctx.host, ctx.env.sshAgentOff),
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
     checkSecrets(ctx.services),
@@ -276,10 +279,25 @@ export function checkHostHelper(host: HostSource): Check {
   return { ...base, status: "pass", detail: `Connected${version}, automatic remounts are on${runtime}` };
 }
 
-/** `ssh` is what the host helper last reported. It knows which keys need a passphrase. */
-export async function checkSshAgent(ssh: SshStatus | undefined, host?: HostSource): Promise<Check> {
+/**
+ * `ssh` is what the host helper last reported. It knows which keys need a passphrase. `agentOff`:
+ * the owner turned the agent off on purpose, which is no fault. The git host rows show what it breaks.
+ */
+export async function checkSshAgent(
+  ssh: SshStatus | undefined,
+  host?: HostSource,
+  agentOff = false,
+): Promise<Check> {
   const base = { id: "ssh-agent", group: "ssh", name: "SSH agent" } as const;
   const name = base.name;
+  if (agentOff) {
+    return {
+      ...base,
+      status: "pass",
+      detail:
+        "Turned off with MAJHI_SSH_AGENT=off, so git over SSH cannot use your keys. Run `make up` without that setting to turn it on.",
+    };
+  }
   const socket = process.env.SSH_AUTH_SOCK;
   const reload = host !== undefined && helperConnected(host) ? { fix: { label: "Reload SSH keys" } } : {};
   if (socket === undefined || socket === "") {
@@ -312,20 +330,22 @@ export async function checkSshAgent(ssh: SshStatus | undefined, host?: HostSourc
     }
     keys = 0;
   }
-  const verdict = sshVerdict(name, keys, ssh);
+  const verdict = sshVerdict(name, keys, ssh, hostOsOf(host?.status?.info));
   const needsPassphrase = (ssh?.needsPassphrase.length ?? 0) > 0;
   return { ...base, ...verdict, ...(verdict.status !== "pass" && !needsPassphrase ? reload : {}) };
 }
 
+/** `os` picks the unlock command: the helper's OS, undefined when no helper said. */
 export function sshVerdict(
   name: string,
   keys: number,
   ssh: SshStatus | undefined,
+  os?: HostOs,
 ): { name: string; status: CheckStatus; detail: string } {
   const held = `${keys} ${keys === 1 ? "key" : "keys"} loaded`;
   const needs = ssh?.needsPassphrase ?? [];
   if (needs.length > 0) {
-    const commands = needs.map(sshUnlockCommand).join(" ; ");
+    const commands = needs.map((key) => sshUnlockCommand(key, os)).join(" ; ");
     return {
       name,
       status: "warn",
@@ -339,8 +359,15 @@ export function sshVerdict(
   return { name, status: "pass", detail: `Reachable, ${held}` };
 }
 
-/** One row per git host the registered projects use. Prints states only, never key material. */
-async function checkSshHosts(probe: CheckContext["sshHosts"], host: HostSource): Promise<Check[]> {
+/**
+ * One row per git host the registered projects use. Prints states only, never key material. With the
+ * agent off, reloading keys cannot help, so it is not offered.
+ */
+async function checkSshHosts(
+  probe: CheckContext["sshHosts"],
+  host: HostSource,
+  agentOff: boolean,
+): Promise<Check[]> {
   const results = await probe().catch(() => []);
   return results.map((r): Check => {
     const check: Check = {
@@ -350,7 +377,8 @@ async function checkSshHosts(probe: CheckContext["sshHosts"], host: HostSource):
       status: r.state === "reachable" ? "pass" : "warn",
       detail: `${r.state}: ${r.detail}`,
     };
-    if (r.state === "auth-failed" && helperConnected(host)) check.fix = { label: "Reload SSH keys" };
+    const reload = r.state === "auth-failed" && !agentOff && helperConnected(host);
+    if (reload) check.fix = { label: "Reload SSH keys" };
     return check;
   });
 }
@@ -447,10 +475,10 @@ function secretsKeyCheck(state: SecretsKeyState): Check {
 }
 
 /**
- * The two backups of the secrets key: the copy the host helper keeps in the Keychain, and the
- * passphrase-protected export to keep off the Mac. Each warns until it holds the key majhi uses.
- * Nothing to back up while there is no key, or while it does not open secrets.age: the Secrets
- * key check says so, and saving that key would replace a Keychain copy that may be the right one.
+ * The two backups of the secrets key: the copy the host helper keeps in the Keychain or keyring, and
+ * the passphrase-protected export to keep off this computer. Each warns until it holds the key majhi
+ * uses. Nothing to back up while there is no key, or while it does not open secrets.age: the Secrets
+ * key check says so, and saving that key would replace a keyring copy that may be the right one.
  */
 async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
   if ((await ctx.services.secrets.keyState().catch(() => undefined)) !== "ok") return [];
@@ -460,24 +488,34 @@ async function checkKeyBackup(ctx: CheckContext): Promise<Check[]> {
   return [keychainCheck(fingerprint, ctx.host), exportCheck(fingerprint, last)];
 }
 
+/**
+ * The helper's copy in the macOS Keychain or a Linux and WSL2 keyring. The id keeps the Keychain's
+ * name: `health.fix` takes it back.
+ */
 export function keychainCheck(fingerprint: string, host: HostSource): Check {
-  const base = { id: "secrets-key-keychain", group: "majhi", name: "Secrets key in Keychain" } as const;
+  const info = host.status?.info;
+  const os = hostOsOf(info);
+  const where = keyringName(os);
+  const base = { id: "secrets-key-keychain", group: "majhi", name: `Secrets key in ${where}` } as const;
   if (!helperConnected(host)) {
     return { ...base, status: "warn", detail: "Not checked: the host helper is not connected." };
   }
-  const info = host.status?.info;
-  if (info !== undefined && info.platform !== "darwin") {
-    return { ...base, status: "pass", detail: "This host has no Keychain, so the export is the backup." };
+  if (info?.keyring?.kind === "none") {
+    // A locked keyring may still hold a copy from before, so "may".
+    return {
+      ...base,
+      status: "warn",
+      detail: `${info.keyring.reason} The export may be the only other copy of the key.`,
+    };
   }
   const saved = info?.secretsKey;
-  const save = { fix: { label: "Save to Keychain" } };
+  const save = { fix: { label: `Save to ${where}` } };
   if (saved?.error !== undefined) return { ...base, status: "warn", detail: saved.error, ...save };
   if (saved?.saved === undefined) {
     return {
       ...base,
       status: "warn",
-      detail:
-        "No copy in the Keychain yet. Without one, a lost key file makes every saved API key unreadable.",
+      detail: `No copy in ${where} yet. Without one, a lost key file makes every saved API key unreadable.`,
       ...save,
     };
   }
@@ -485,12 +523,12 @@ export function keychainCheck(fingerprint: string, host: HostSource): Check {
     return {
       ...base,
       status: "warn",
-      detail:
-        "The Keychain holds a different key, maybe from an earlier install. Replace it with the key majhi uses.",
+      detail: `A different key is in ${where}, maybe from an earlier install. Replace it with the key majhi uses.`,
       fix: { label: "Replace copy" },
     };
   }
-  return { ...base, status: "pass", detail: 'A copy is in the login Keychain as "majhi secrets key"' };
+  const place = os === "macos" ? "the login Keychain" : where;
+  return { ...base, status: "pass", detail: `A copy is in ${place} as "majhi secrets key"` };
 }
 
 export function exportCheck(fingerprint: string, last: KeyExportRecord | undefined): Check {
@@ -501,7 +539,7 @@ export function exportCheck(fingerprint: string, last: KeyExportRecord | undefin
       ...base,
       status: "warn",
       detail:
-        "No export yet. Export the key with a passphrase and keep the file off this Mac, in case the Mac is lost.",
+        "No export yet. Export the key with a passphrase and keep the file off this computer, in case the computer is lost.",
       ...exportFix,
     };
   }
@@ -516,7 +554,7 @@ export function exportCheck(fingerprint: string, last: KeyExportRecord | undefin
   return {
     ...base,
     status: "pass",
-    detail: `Exported on ${last.exportedAt.slice(0, 10)}. Keep the file off this Mac.`,
+    detail: `Exported on ${last.exportedAt.slice(0, 10)}. Keep the file off this computer.`,
   };
 }
 

@@ -47,13 +47,13 @@ export const RootSuggestionSchema = z.object({
 export type RootSuggestion = z.infer<typeof RootSuggestionSchema>;
 
 /**
- * What the helper knows about SSH keys in the Mac's agent. majhi's own git
- * (fetch now, push later) uses that agent through the forwarded socket.
+ * What the helper knows about SSH keys in the agent majhi's own git uses (fetch now, push later):
+ * the Mac's, through the forwarded socket, or on Linux and WSL2 the one behind `HOST_SSH_AGENT_SOCKET`.
  */
 export const SshStatusSchema = z.object({
   /** Keys the agent holds after the last check. */
   loaded: z.number().int().nonnegative(),
-  /** Private key files, with `~`, that have a passphrase the Keychain does not hold yet. */
+  /** Private key files, with `~`, whose passphrase the Keychain or keyring does not hold yet. */
   needsPassphrase: z.array(z.string()),
   error: z.string().optional(),
   checkedAt: z.string(),
@@ -63,8 +63,18 @@ export type SshStatus = z.infer<typeof SshStatusSchema>;
 /** Longest passphrase majhi accepts. It goes to the helper once and is never stored. */
 export const SSH_PASSPHRASE_MAX = 1024;
 
-/** The one-time command that gives a passphrase-protected key to the macOS Keychain. */
-export function sshUnlockCommand(key: string): string {
+/**
+ * The socket the helper serves on Linux and WSL2. It passes each connection to the agent the helper
+ * loads keys into, and majhi's server reaches it through the `~/.majhi` mount.
+ */
+export const HOST_SSH_AGENT_SOCKET = "~/.majhi/run/ssh-agent.sock";
+
+/**
+ * The terminal fallback that unlocks a passphrase-protected key. On macOS it also gives the
+ * passphrase to the Keychain. Elsewhere it loads the key into the agent majhi uses.
+ */
+export function sshUnlockCommand(key: string, os?: HostOs): string {
+  if (os === "linux" || os === "wsl") return `SSH_AUTH_SOCK=${HOST_SSH_AGENT_SOCKET} ssh-add ${key}`;
   return `ssh-add --apple-use-keychain ${key}`;
 }
 
@@ -74,9 +84,9 @@ export function sshUnlockCommand(key: string): string {
  */
 export const KeyFingerprintSchema = z.string().regex(/^[0-9a-f]{16}$/);
 
-/** The copy of the secrets key the helper keeps in the macOS Keychain. */
+/** The copy of the secrets key the helper keeps in the macOS Keychain, or a keyring on Linux and WSL2. */
 export const SecretsKeyBackupSchema = z.object({
-  /** The fingerprint of the key in the Keychain. Absent when the Keychain holds none. */
+  /** The fingerprint of the key in the Keychain or keyring. Absent when it holds none. */
   saved: KeyFingerprintSchema.optional(),
   /** Why the helper could not read or save the copy, in plain words. */
   error: z.string().optional(),
@@ -84,7 +94,7 @@ export const SecretsKeyBackupSchema = z.object({
 });
 export type SecretsKeyBackup = z.infer<typeof SecretsKeyBackupSchema>;
 
-/** Shortest passphrase for a secrets key export. The file leaves the Mac, so it must hold up offline. */
+/** Shortest secrets key export passphrase. The file leaves this computer, so it must hold up offline. */
 export const KEY_EXPORT_PASSPHRASE_MIN = 12;
 export const KEY_EXPORT_FILE_NAME = "majhi-secrets-key.age";
 /** Largest export majhi reads back. One is under 1 KB; the rest leaves room for comment lines. */
@@ -107,7 +117,7 @@ export const SecretsKeyRestoreSchema = z.object({
 });
 export type SecretsKeyRestore = z.infer<typeof SecretsKeyRestoreSchema>;
 
-/** Which Docker runtime the helper found on the Mac. It names the one that asks for folder access. */
+/** Which Docker runtime the helper found. It names the one that asks for folder access. */
 export const DockerRuntimeSchema = z.enum(["orbstack", "docker-desktop", "docker"]);
 export type DockerRuntime = z.infer<typeof DockerRuntimeSchema>;
 
@@ -115,6 +125,34 @@ export function dockerRuntimeName(runtime: DockerRuntime | undefined): string {
   if (runtime === "orbstack") return "OrbStack";
   if (runtime === "docker-desktop") return "Docker Desktop";
   return "Docker";
+}
+
+/** The operating system the host helper runs on. `wsl` is Linux inside Windows, through WSL2. */
+export const HostOsSchema = z.enum(["macos", "linux", "wsl"]);
+export type HostOs = z.infer<typeof HostOsSchema>;
+
+/**
+ * Where the helper keeps secrets: the copy of the secrets key, and on Linux and WSL2 the SSH key
+ * passphrases. `keychain` is the macOS login Keychain. `secret-service` is a keyring reached through
+ * libsecret's `secret-tool`: GNOME Keyring, KWallet or KeePassXC. `none` means no keyring answered,
+ * and `reason` says why in plain words. Then the passphrase-protected export is the only other copy
+ * of the secrets key, and an unlocked SSH key stays loaded only until its agent stops.
+ */
+export const KeyringStateSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("keychain") }),
+  z.object({ kind: z.literal("secret-service") }),
+  z.object({ kind: z.literal("none"), reason: z.string() }),
+]);
+export type KeyringState = z.infer<typeof KeyringStateSchema>;
+
+/** How copy names where secrets are kept: "the Keychain" on macOS, "the keyring" elsewhere. */
+export function keyringName(os: HostOs | undefined): string {
+  return os === "macos" ? "the Keychain" : "the keyring";
+}
+
+/** The example workspace root forms show: `~/Work` on macOS, `~/code` on Linux and WSL2. */
+export function rootExample(os: HostOs | undefined): string {
+  return os === "linux" || os === "wsl" ? "~/code" : "~/Work";
 }
 
 /** A git commit as `git rev-parse` prints it, or a prefix of one. */
@@ -165,7 +203,7 @@ export const LayaDecideResultSchema = z.object({
 });
 export type LayaDecideResult = z.infer<typeof LayaDecideResultSchema>;
 
-/** One way the Mac can act as an account on a git host. Never holds a token. */
+/** One way this computer can act as an account on a git host. Never holds a token. */
 export const GitLoginSchema = z.object({
   via: z.enum(["gh", "glab", "ssh"]),
   /** The `Host` alias of ~/.ssh/config for `ssh`. Absent for a key used with the host name itself. */
@@ -287,7 +325,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
   /** Regenerate the compose override from majhi.yaml and recreate the server container. */
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
-  /** Load the Mac's SSH keys into its agent again and report the result. */
+  /** Load this computer's SSH keys into the agent majhi uses again and report the result. */
   z.object({ id: z.string(), method: z.literal("ssh.reload"), params: z.object({}) }),
   /** The checkout's HEAD, and the subjects of the commits after `from`, newest first. */
   z.object({
@@ -322,7 +360,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   /**
    * Run the project's Playwright suite in the helper's own worktree at `commit`, at low priority, and
    * answer when it ends (the call waits up to `timeoutMs`). `repo` is the project's path, the same on
-   * the Mac and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
+   * this computer and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
    */
   z.object({
     id: z.string(),
@@ -452,7 +490,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ url: CleanRemoteUrlSchema, auth: GitAuthSchema }),
   }),
   /**
-   * Asks the Mac's git credential helper (`git credential fill`) for the saved https secret of one
+   * Asks this computer's git credential helper (`git credential fill`) for the saved https secret of one
    * host and account. Only the owner's click may send it; the result goes straight to an API check
    * and then one org's secrets: never logged, cached or echoed.
    */
@@ -462,8 +500,9 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255) }),
   }),
   /**
-   * Give a key its passphrase once so the macOS Keychain keeps it. `passphrase`
-   * must never be logged, stored or echoed in an error, on either side.
+   * Give a key its passphrase once: the helper loads the key, and the Keychain or keyring keeps the
+   * passphrase when there is one. `passphrase` must never be logged, stored or echoed in an error, on
+   * either side.
    */
   z.object({
     id: z.string(),
@@ -471,8 +510,9 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ key: z.string().min(1), passphrase: z.string().min(1).max(SSH_PASSPHRASE_MAX) }),
   }),
   /**
-   * Save the Mac's secrets key file to the Keychain, replacing any other key there. The helper refuses
-   * when the file's fingerprint is not `expected`, the key the server uses. The key never travels.
+   * Save this computer's secrets key file to the Keychain or keyring, replacing any other key there.
+   * The helper refuses when the file's fingerprint is not `expected`, the key the server uses. The key
+   * never travels.
    */
   z.object({
     id: z.string(),
@@ -481,7 +521,7 @@ export const HostJobSchema = z.discriminatedUnion("method", [
   }),
   /**
    * Put a secrets key the server decrypted from its export into the key file, restart majhi so Docker
-   * mounts the file again, then save the key to the Keychain. The helper writes only when the file is
+   * mounts the file again, then save the key to the keyring. The helper writes only when the file is
    * missing or does not decrypt secrets.age, refuses a key that does not decrypt secrets.age, and
    * keeps the old file aside. Answered before the restart. `key` must never be logged, stored
    * anywhere else or echoed in an error, on either side.
@@ -540,7 +580,12 @@ export type HostReply = z.infer<typeof HostReplySchema>;
 /** Sent by the helper in the `x-majhi-host` header on every poll. */
 export const HostInfoSchema = z.object({
   version: z.string(),
+  /** Node's `process.platform`. Read `hostOsOf` instead: it tells WSL2 from Linux. */
   platform: z.string(),
+  /** Absent from helpers that predate it. */
+  os: HostOsSchema.optional(),
+  /** Where the helper keeps secrets. Absent until its first look, and from older helpers. */
+  keyring: KeyringStateSchema.optional(),
   /** False when the helper cannot run Docker commands, so remounting is manual. */
   canRemount: z.boolean(),
   /** Absent until the helper's first key check ends, and from older helpers. */
@@ -550,22 +595,34 @@ export const HostInfoSchema = z.object({
   /** True when that checkout has uncommitted changes. */
   dirty: z.boolean().optional(),
   dockerRuntime: DockerRuntimeSchema.optional(),
-  /** Laya on this Mac. Absent from older helpers. */
+  /** Native Laya, on a Mac with Apple silicon only: `unsupported` elsewhere. Absent from older helpers. */
   laya: LayaStatusSchema.optional(),
-  /** The Keychain copy of the secrets key. Absent until the helper's first look, off macOS, and from older helpers. */
+  /**
+   * The Keychain or keyring copy of the secrets key. Absent until the helper's first look, while no
+   * keyring answers, and from older helpers.
+   */
   secretsKey: SecretsKeyBackupSchema.optional(),
   /**
    * When the helper last noticed a wake from sleep (clock gap). The server resumes turns that
-   * failed or stalled while the Mac slept each time this changes. Absent until the first wake.
+   * failed or stalled while the computer slept each time this changes. Absent until the first wake.
    */
   wokeAt: z.string().optional(),
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const HOST_INFO_HEADER = "x-majhi-host";
 
+/** The helper's OS: `os`, else `platform` from helpers that predate `os` (those ran on macOS only). */
+export function hostOsOf(info: Pick<HostInfo, "os" | "platform"> | undefined): HostOs | undefined {
+  if (info === undefined) return undefined;
+  if (info.os !== undefined) return info.os;
+  if (info.platform === "darwin") return "macos";
+  if (info.platform === "linux") return "linux";
+  return undefined;
+}
+
 /** What `ssh -T` said about one git host that a registered project's remote uses. */
 export const SshHostCheckSchema = z.object({
-  /** The alias or `user@host` the remote uses, like `gitlab-ashik112`. */
+  /** The alias or `user@host` the remote uses, like `gitlab-acme`. */
   host: z.string(),
   state: z.enum(["reachable", "auth-failed", "unreachable"]),
   /** A fixed sentence. Never ssh's own output. */

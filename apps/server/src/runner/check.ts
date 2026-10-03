@@ -50,6 +50,8 @@ export async function hiddenPaths(input: Omit<RunnerCheckInput, "runner" | "dock
     join(majhiHome, "secrets.age"),
     join(majhiHome, "agents"),
     join(majhiHome, ".git"),
+    // The SSH agent sockets on Linux and WSL2: the helper's forwarder and majhi's own agent.
+    join(majhiHome, "run"),
     ...accounts.filter((a) => a !== PROBE_ACCOUNT).map((a) => join(majhiHome, "accounts", a)),
     input.secretsKeyFile,
     "/run/secrets/majhi_key",

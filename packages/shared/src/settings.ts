@@ -232,9 +232,10 @@ export const BudgetsPatchSchema = z
   .partial();
 export type BudgetsPatch = z.infer<typeof BudgetsPatchSchema>;
 /**
- * Notifications when something needs the owner: a Mac banner through the host helper, and a browser
- * notification in an open tab. `muted` lists the kinds that stay quiet. Quiet hours hold every
- * notification between `quiet_from` and `quiet_to` (24 h clock, in `quiet_tz`).
+ * Notifications when something needs the owner: a desktop banner through the host helper, and a
+ * browser notification in an open tab. `mac` turns the desktop banner on or off on every OS; it keeps
+ * its first name because majhi.yaml files have it. `muted` lists the kinds that stay quiet. Quiet
+ * hours hold every notification between `quiet_from` and `quiet_to` (24 h clock, in `quiet_tz`).
  */
 const ClockSchema = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, "Use a time like 22:00");
 const notificationsFields = {

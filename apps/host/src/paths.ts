@@ -1,13 +1,15 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
+import type { HostOs } from "@majhi/shared";
+import { toolDirs } from "./platform/os.ts";
 
-/** Where Docker Desktop, OrbStack and Homebrew put `docker`. A LaunchAgent's PATH may lack them. */
-const TOOL_DIRS = ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
-
-/** The current PATH with the usual tool folders added, each folder once. */
-export function toolPath(current: string | undefined): string {
-  const dirs = [...(current ?? "").split(":"), ...TOOL_DIRS].filter((d) => d !== "");
+/**
+ * The current PATH with the OS's usual tool folders added, each folder once. A login service's PATH
+ * may lack them.
+ */
+export function toolPath(current: string | undefined, os: HostOs, home: string): string {
+  const dirs = [...(current ?? "").split(":"), ...toolDirs(os, home)].filter((d) => d !== "");
   return [...new Set(dirs)].join(":");
 }
 

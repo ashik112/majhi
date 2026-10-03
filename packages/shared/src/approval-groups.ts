@@ -239,7 +239,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "orgs.update": "Change an org's settings",
   "orgs.rename": "Rename an org",
   "orgs.setGitAccount": "Set an org's git account",
-  "orgs.useGitLogin": "Use this Mac's gh or glab login",
+  "orgs.useGitLogin": "Use this computer's gh or glab login",
   "orgs.useSavedLogin": "Use a saved git login",
   "accounts.create": "Add an account",
   "accounts.login.start": "Start an account login",

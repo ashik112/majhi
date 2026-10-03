@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MAX_SUGGESTIONS, suggestRoots } from "./suggestRoots.ts";
 
+/** Some of the folders macOS's `folders.skippedAtHome` names. */
+const SKIPPED = new Set(["Library", "Pictures", "OrbStack"]);
+
 describe("suggestRoots", () => {
   let home: string;
 
@@ -36,7 +39,7 @@ describe("suggestRoots", () => {
     await writeFile(join(home, "Work", "wt", ".git"), "gitdir: /elsewhere\n");
     await symlink(join(home, "Work"), join(home, "WorkLink"));
 
-    expect(await suggestRoots(home)).toEqual([
+    expect(await suggestRoots(home, SKIPPED)).toEqual([
       { path: join(home, "Work"), repoCount: 4 },
       { path: join(home, "Projects"), repoCount: 1 },
     ]);
@@ -44,12 +47,12 @@ describe("suggestRoots", () => {
 
   it("counts a first-level folder that is itself a repo", async () => {
     await repos("dotnet-app");
-    expect(await suggestRoots(home)).toEqual([{ path: join(home, "dotnet-app"), repoCount: 1 }]);
+    expect(await suggestRoots(home, SKIPPED)).toEqual([{ path: join(home, "dotnet-app"), repoCount: 1 }]);
   });
 
   it(`returns at most ${MAX_SUGGESTIONS}, breaking ties by path`, async () => {
     await repos(...["h", "g", "f", "e", "d", "c", "b"].map((n) => `${n}/repo`), "a/r1", "a/r2");
-    const suggestions = await suggestRoots(home);
+    const suggestions = await suggestRoots(home, SKIPPED);
     expect(suggestions.map((s) => [s.path.slice(home.length + 1), s.repoCount])).toEqual([
       ["a", 2],
       ["b", 1],
@@ -68,10 +71,10 @@ describe("suggestRoots", () => {
     await repos("Aaa/d0/deeper/late", "Work/api", "Work/web");
 
     // 2 candidates (level 0), then their 32 children (level 1), then the budget runs out.
-    const suggestions = await suggestRoots(home, { ms: 10_000, dirs: 34 });
+    const suggestions = await suggestRoots(home, SKIPPED, { ms: 10_000, dirs: 34 });
     expect(suggestions).toEqual([{ path: join(home, "Work"), repoCount: 2 }]);
 
-    expect(await suggestRoots(home)).toEqual([
+    expect(await suggestRoots(home, SKIPPED)).toEqual([
       { path: join(home, "Work"), repoCount: 2 },
       { path: join(home, "Aaa"), repoCount: 1 },
     ]);
@@ -80,7 +83,7 @@ describe("suggestRoots", () => {
   it("returns what it counted when the time budget runs out", async () => {
     await repos("Work/api");
     const started = Date.now();
-    const suggestions = await suggestRoots(home, { ms: 0, dirs: 20_000 });
+    const suggestions = await suggestRoots(home, SKIPPED, { ms: 0, dirs: 20_000 });
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(suggestions.every((s) => s.path === join(home, "Work") && s.repoCount <= 1)).toBe(true);
   });

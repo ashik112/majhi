@@ -5,7 +5,7 @@ import type { HostLink } from "../host/link.ts";
 /** Pushing takes longer than most host jobs. */
 const HOST_PUSH_TIMEOUT_MS = 130_000;
 
-/** Pushes https remotes from the owner's Mac, where the Keychain login lives. */
+/** Pushes https remotes from the owner's computer, where git's saved login lives. */
 export interface HostGit {
   connected(): boolean;
   /** Pushes `branch` of the repo at `path` to `url`. Throws a message safe to show. */

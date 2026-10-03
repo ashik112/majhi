@@ -207,7 +207,7 @@ export interface Services {
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   mrPoller: MrPoller;
-  /** One notification for each thing that needs the owner: a Mac banner and a browser notice. */
+  /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
   processes: ProcessManager;
@@ -672,7 +672,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.hostLink === undefined
       ? {}
       : {
-          mac: async (notice) => {
+          desktop: async (notice) => {
             await options.hostLink?.call("notify", notice);
           },
         }),

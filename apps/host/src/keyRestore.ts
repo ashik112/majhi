@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { SecretsKeyLineSchema, type SecretsKeyRestore } from "@majhi/shared";
 import { Decrypter, identityToRecipient } from "age-encryption";
 import { errorCode, errorMessage } from "./errors.ts";
-import { identityOf, keyFingerprint } from "./keychain.ts";
+import { identityOf, keyFingerprint } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
 
 export const NOT_A_KEY = "The restored key is not a secrets key, so the key file was left as it is.";
@@ -79,14 +79,14 @@ export async function writeRestoredKey(key: string, files: KeyFiles): Promise<Ke
 export interface KeyRestorerDeps extends KeyFiles {
   /** Recreates majhi's server so Docker mounts the key file again. Undefined when the helper cannot run Docker. */
   restart: (() => Promise<void>) | undefined;
-  /** Saves the key file to the Keychain when it holds the key with this fingerprint. Undefined off macOS. */
-  saveToKeychain: ((fingerprint: string) => Promise<unknown>) | undefined;
+  /** Saves the key file to the OS keyring when it holds the key with this fingerprint. Undefined to keep no copy. */
+  saveToKeyring: ((fingerprint: string) => Promise<unknown>) | undefined;
   log: Logger;
 }
 
 export interface KeyRestoreRun {
   result: SecretsKeyRestore;
-  /** Restarts majhi, then saves the key to the Keychain. Run after the reply. Never throws. */
+  /** Restarts majhi, then saves the key to the keyring. Run after the reply. Never throws. */
   after: () => Promise<void>;
 }
 
@@ -106,7 +106,7 @@ export function createKeyRestorer(
 }
 
 async function restore(key: string, deps: KeyRestorerDeps): Promise<KeyRestoreRun> {
-  const { restart, saveToKeychain, log } = deps;
+  const { restart, saveToKeyring, log } = deps;
   const write = await writeRestoredKey(key, deps);
   log(
     write.written
@@ -123,7 +123,7 @@ async function restore(key: string, deps: KeyRestorerDeps): Promise<KeyRestoreRu
           (err: unknown) => log(`secrets key: ${errorMessage(err)}`),
         );
       }
-      await saveToKeychain?.(fingerprint).catch((err: unknown) => log(`secrets key: ${errorMessage(err)}`));
+      await saveToKeyring?.(fingerprint).catch((err: unknown) => log(`secrets key: ${errorMessage(err)}`));
     },
   };
 }

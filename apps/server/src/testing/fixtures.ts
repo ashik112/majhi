@@ -65,6 +65,7 @@ export function testEnv(dir: string, overrides: Partial<ServerEnv> = {}): Server
     version: "1.2.3-test",
     commit: "dev",
     secretsKeyFile: join(dir, "config", "secrets.key"),
+    sshAgentOff: false,
     runtime: { base: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, adapters: {} },
     // Tests never reach the network; they inject a probe when they test offline.
     netProbe: "off",

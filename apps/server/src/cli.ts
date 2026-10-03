@@ -17,7 +17,7 @@ function publicKeysFromEnv(value: string | undefined): string[] {
 const USAGE = `Usage: majhi <command>
 
 Commands:
-  gen-override     Print docker-compose.override.yml with one mount per workspace root
+  gen-override     Print docker-compose.override.yml: workspace roots, SSH public keys, the SSH agent and Laya's GPU
   gen-key          Print a new age identity for secrets.age (make up saves it to ~/.config/majhi/secrets.key)
   doctor [--json]  Check that majhi can run here. Exits 1 when a check fails
 `;
@@ -58,7 +58,11 @@ async function main(argv: string[]): Promise<number> {
       const { state } = await loadConfig(env);
       try {
         process.stdout.write(
-          renderOverride(state, publicKeysFromEnv(process.env.MAJHI_SSH_PUBKEYS), dockerSocketGid()),
+          renderOverride(state, publicKeysFromEnv(process.env.MAJHI_SSH_PUBKEYS), dockerSocketGid(), {
+            sshAgent: process.env.MAJHI_SSH_AGENT,
+            majhiHome: env.majhiHome,
+            layaGpu: process.env.MAJHI_LAYA_GPU,
+          }),
         );
         return 0;
       } catch (err) {

@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventHub } from "../events/hub.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { inQuietHours } from "./attention.ts";
-import { COLLECT_MS, type MacNotice, Notifier, SETTLE_MS } from "./service.ts";
+import { COLLECT_MS, type DesktopNotice, Notifier, SETTLE_MS } from "./service.ts";
 
 let w: World;
 let notifier: Notifier;
 let sent: AttentionEvent[];
-let mac: MacNotice[];
+let desktop: DesktopNotice[];
 
 const SETTLED = SETTLE_MS + COLLECT_MS + 10;
 
@@ -21,7 +21,7 @@ async function setup(settings = NotificationsSettingsSchema.parse({})): Promise<
   const { store, room } = w.h.majhi.services;
   const hub = new EventHub();
   sent = [];
-  mac = [];
+  desktop = [];
   hub.subscribe((e: ServerEvent) => {
     if (e.type === "attention") sent.push(e);
   });
@@ -34,8 +34,8 @@ async function setup(settings = NotificationsSettingsSchema.parse({})): Promise<
     item: (task, id) => store.room.get(task, id),
     settings: async () => settings,
     events: hub,
-    mac: async (n) => {
-      mac.push(n);
+    desktop: async (n) => {
+      desktop.push(n);
     },
   });
   room.onWrite((task, item) => notifier.observe(task, item));
@@ -74,7 +74,7 @@ describe("an item that needs the owner", () => {
       text: "ACM-1 needs approval: run migrations",
       count: 1,
     });
-    expect(mac).toEqual([
+    expect(desktop).toEqual([
       { title: "majhi", message: "ACM-1 needs approval: run migrations", path: "/t/ACM-1", sound: false },
     ]);
     await vi.advanceTimersByTimeAsync(60_000);
@@ -88,7 +88,7 @@ describe("an item that needs the owner", () => {
     approval("a1", "applied");
     await vi.advanceTimersByTimeAsync(SETTLED);
     expect(sent).toEqual([]);
-    expect(mac).toEqual([]);
+    expect(desktop).toEqual([]);
   });
 
   it("never tells the owner about a pause the owner made, or one that resumes by itself", async () => {
@@ -119,7 +119,7 @@ describe("an item that needs the owner", () => {
     await vi.advanceTimersByTimeAsync(SETTLED);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ kind: "group", text: "4 things need you", count: 4, path: "/" });
-    expect(mac.map((m) => m.message)).toEqual(["4 things need you"]);
+    expect(desktop.map((m) => m.message)).toEqual(["4 things need you"]);
   });
 
   it("keeps three at the limit as three notifications", async () => {
@@ -142,7 +142,7 @@ describe("an item that needs the owner", () => {
     approval("a1");
     await vi.advanceTimersByTimeAsync(SETTLED);
     expect(sent).toHaveLength(1);
-    expect(mac).toEqual([]);
+    expect(desktop).toEqual([]);
   });
 });
 

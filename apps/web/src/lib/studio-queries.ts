@@ -252,7 +252,7 @@ export function useSaveSecret() {
   });
 }
 
-/** The accounts this Mac is logged in as per git host (gh, glab, SSH keys). Never holds a token. */
+/** The accounts this computer is logged in as per git host (gh, glab, SSH keys). Never holds a token. */
 export function useGitLogins() {
   return useQuery<CommandOutput<"git.logins">, ApiRequestError>({
     queryKey: ["git-logins"],
@@ -271,7 +271,7 @@ export function useUseGitLogin() {
   });
 }
 
-/** Uses the Mac's saved https login as an org account's token, when the host's API accepts it. */
+/** Uses this computer's saved https login as an org account's token, when the host's API accepts it. */
 export function useUseSavedLogin() {
   const client = useQueryClient();
   return useMutation<
@@ -304,7 +304,7 @@ export function useGitStatus(id: string) {
   });
 }
 
-/** Detects this Mac's logins again and rechecks the tokens, skipping every cache. */
+/** Detects this computer's logins again and rechecks the tokens, skipping every cache. */
 export function useDetectAgain(id: string) {
   const client = useQueryClient();
   return useMutation<CommandOutput<"orgs.gitStatus">, ApiRequestError, void>({

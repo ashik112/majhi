@@ -2,13 +2,13 @@ import { z } from "zod";
 import { MrHostSchema } from "./accounts.ts";
 import { GitHostSchema } from "./api.ts";
 
-/** How an org's account pushes: an SSH key, the Mac's saved https login, or nothing found yet. */
+/** How an org's account pushes: an SSH key, this computer's saved https login, or nothing found yet. */
 export const PushStatusSchema = z.discriminatedUnion("state", [
   /** An SSH key logs in as the account. No alias: the host's default key. */
   z.object({ state: z.literal("ssh"), alias: z.string().optional() }),
-  /** No SSH key fits; https pushes from the Mac with the login its credential helper saved. */
+  /** No SSH key fits; https pushes from this computer with the login its credential helper saved. */
   z.object({ state: z.literal("https") }),
-  /** The host helper is not connected, so this Mac's keys and logins are not known. */
+  /** The host helper is not connected, so this computer's keys and logins are not known. */
   z.object({ state: z.literal("unknown") }),
   z.object({
     state: z.literal("missing"),
@@ -30,7 +30,7 @@ export const TokenStatusSchema = z.discriminatedUnion("state", [
     state: z.literal("missing"),
     /** A `gh` or `glab` login for this host and account. */
     cli: z.enum(["gh", "glab"]).optional(),
-    /** The Mac saved a login for the account that the host's API accepts as a token. */
+    /** This computer saved a login for the account that the host's API accepts as a token. */
     savedLogin: z.boolean(),
   }),
 ]);
@@ -45,7 +45,7 @@ export const GitAccountStatusSchema = z.object({
 });
 export type GitAccountStatus = z.infer<typeof GitAccountStatusSchema>;
 
-/** A login found on this Mac for a host the org uses, offered as its account there. */
+/** A login found on this computer for a host the org uses, offered as its account there. */
 export const LoginOfferSchema = z.object({
   account: z.string(),
   /** `default` or an alias when an SSH key logs in as it. */
@@ -57,7 +57,7 @@ export type LoginOffer = z.infer<typeof LoginOfferSchema>;
 
 /** `orgs.gitStatus`: one row per host. Never holds a token. */
 export const GitStatusSchema = z.object({
-  /** When this Mac's logins were last detected. Absent when the host helper is not connected. */
+  /** When this computer's logins were last detected. Absent when the host helper is not connected. */
   checkedAt: z.string().optional(),
   accounts: z.array(GitAccountStatusSchema),
   /** Hosts the org's projects use that have no account yet, with the logins found for each. */

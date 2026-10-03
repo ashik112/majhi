@@ -1,4 +1,11 @@
-import { collapseHome, type HostStatus, type RootScan } from "@majhi/shared";
+import {
+  collapseHome,
+  type HostInfo,
+  type HostStatus,
+  hostOsOf,
+  keyringName,
+  type RootScan,
+} from "@majhi/shared";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/list-detail";
@@ -85,8 +92,8 @@ export function OverviewSection({
         note="The guided steps from the first start, with what is set now"
       >
         <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">
-          majhi reads config files and public keys only. Passphrases and API keys go to the macOS Keychain and
-          never to a file.
+          majhi reads config files and public keys only. API keys are stored encrypted, and passphrases never
+          go to a file.
         </p>
         <SetupJourneyList />
         <div>
@@ -191,10 +198,7 @@ export function SshSection({ host, state }: { host: HostStatus | undefined; stat
       >
         <p className="text-base text-fg-muted">{state.detail}</p>
         <SshNotice />
-        <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">
-          majhi reads public keys only. A passphrase goes to the macOS Keychain once and never to a file, and
-          no private key is copied into a container.
-        </p>
+        <p className="max-w-[72ch] text-sm text-fg-faint text-pretty">{keysNote(host?.info)}</p>
       </DetailSection>
       <DetailSection
         title="Git hosts"
@@ -229,6 +233,17 @@ export function SshSection({ host, state }: { host: HostStatus | undefined; stat
       </DetailSection>
     </>
   );
+}
+
+/** What majhi does with SSH keys, and where a passphrase goes: the Keychain or keyring, else nowhere. */
+function keysNote(info: HostInfo | undefined): string {
+  const start = "majhi reads public keys only, and no private key is copied into a container.";
+  if (info?.keyring?.kind !== "none") {
+    return `${start} A passphrase goes to ${keyringName(hostOsOf(info))} once and never to a file.`;
+  }
+  const nowhere =
+    "Until a keyring answers, a passphrase is kept nowhere, and its key locks again when the SSH agent stops.";
+  return `${start} ${info.keyring.reason} ${nowhere}`;
 }
 
 /** Links out of Hub setup, for the overview rows. */

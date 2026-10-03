@@ -286,7 +286,7 @@ export const DecisionRecordSchema = z.object({
 });
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;
 
-/** The native Laya runtime on the owner's Mac, run by the host helper. */
+/** The native Laya runtime on a Mac with Apple silicon, run by the host helper. */
 export const LayaStatusSchema = z.object({
   state: z.enum([
     /** Not an Apple silicon Mac, or no host helper. */

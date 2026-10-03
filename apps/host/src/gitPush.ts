@@ -1,7 +1,8 @@
 /**
- * Pushes and reads saved logins on the Mac, where the Keychain and `gh` live, because the server's
- * container cannot reach them. Nothing here prompts, forces or returns a credential in a message:
- * errors are fixed sentences, and git's own output is scrubbed of `https://user:pass@` forms.
+ * Pushes and reads saved logins on the owner's computer, where git's credential helper and `gh`
+ * live, because the server's container cannot reach them. Nothing here prompts, forces or returns a
+ * credential in a message: errors are fixed sentences, and git's own output is scrubbed of
+ * `https://user:pass@` forms.
  */
 import { isAbsolute } from "node:path";
 import type { GitAuth } from "@majhi/shared";
@@ -62,7 +63,7 @@ function isPlainHttps(url: string): boolean {
 
 /** The `git push` arguments, or a thrown refusal. Only an https URL and a plain branch are accepted. */
 export function pushArgs({ url, branch }: Pick<PushParams, "url" | "branch">): string[] {
-  if (!isPlainHttps(url)) throw new Error("Only https remotes can be pushed from the Mac.");
+  if (!isPlainHttps(url)) throw new Error("Only https remotes can be pushed from this computer.");
   if (
     !BRANCH.test(branch) ||
     branch.includes("..") ||
@@ -153,7 +154,7 @@ export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<vo
   if (isHttpsAuthFailure(text)) {
     const user = userOf(params.url);
     throw new Error(
-      `This Mac has no saved login for ${user === undefined ? "an account" : user} on ${hostOf(params.url)}. Paste a token for the org, or use an SSH key.`,
+      `This computer has no saved login for ${user === undefined ? "an account" : user} on ${hostOf(params.url)}. Paste a token for the org, or use an SSH key.`,
     );
   }
   const reason = text.trim().split("\n").slice(-3).join(" ").slice(0, 400);
@@ -194,7 +195,7 @@ export async function gitCredential(
   });
   const secret = /^password=(.+)$/m.exec(run.stdout)?.[1]?.trim();
   if (run.code !== 0 || secret === undefined || secret === "") {
-    throw new Error(`This Mac has no saved login for ${username} on ${host}.`);
+    throw new Error(`This computer has no saved login for ${username} on ${host}.`);
   }
   return secret;
 }

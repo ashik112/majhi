@@ -1,28 +1,22 @@
 import { stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import { EDITOR_LABEL, type EditorApp } from "@majhi/shared";
+import type { EditorPlatform } from "./platform/types.ts";
 import type { RunFn } from "./ssh.ts";
 
 const OPEN_TIMEOUT_MS = 15_000;
 
-/** The shell command each editor installs, and the macOS app it can fall back to. */
-const EDITORS: Record<EditorApp, { cli: string; bundle: string; appName: string }> = {
-  vscode: {
-    cli: "code",
-    bundle: "Visual Studio Code.app/Contents/Resources/app/bin/code",
-    appName: "Visual Studio Code",
-  },
-  cursor: { cli: "cursor", bundle: "Cursor.app/Contents/Resources/app/bin/cursor", appName: "Cursor" },
-};
+/** The shell command each editor installs. */
+const EDITOR_CLI: Record<EditorApp, string> = { vscode: "code", cursor: "cursor" };
 
 export interface EditorDeps {
   run: RunFn;
-  /** The helper's PATH, already extended with the usual tool folders. */
-  path: string;
-  home: string;
-  platform: string;
-  /** The absolute path of the first executable `name` on `path`, or undefined. */
-  find: (name: string, path: string) => Promise<string | undefined>;
+  /** Where the command may be when it is not on PATH, and the app to open where there is one. */
+  platform: EditorPlatform;
+  /** `desktopEnv()`: what the editor needs to show its window. */
+  env: () => Promise<Record<string, string>>;
+  /** The absolute path of the first executable `name` on the helper's PATH, or undefined. */
+  find: (name: string) => Promise<string | undefined>;
   /** The kind of thing at `path`, or undefined when there is nothing there. */
   kind: (path: string) => Promise<"file" | "directory" | undefined>;
   /** True when the executable exists. */
@@ -41,36 +35,31 @@ export type EditorOpen = (params: {
  * sentences: the editor's own output is not passed on.
  */
 export function createEditorOpener(deps: EditorDeps): EditorOpen {
-  const env = { PATH: deps.path, HOME: deps.home };
   return async ({ app, path, line }) => {
     const label = EDITOR_LABEL[app];
     if (!isAbsolute(path) || path.includes("\0")) throw new Error("The path must be absolute.");
     const kind = await deps.kind(path);
-    if (kind === undefined) throw new Error(`There is nothing at ${path} on this Mac.`);
-    const editor = EDITORS[app];
-    const cli = await findCli(deps, editor);
+    if (kind === undefined) throw new Error(`There is nothing at ${path} on this computer.`);
+    const cli = await findCli(deps, app);
     if (cli !== undefined) {
       const args = line !== undefined && kind === "file" ? ["--goto", `${path}:${line}`] : [path];
-      const result = await deps.run(cli, args, { env, timeoutMs: OPEN_TIMEOUT_MS });
+      const result = await deps.run(cli, args, { env: await deps.env(), timeoutMs: OPEN_TIMEOUT_MS });
       if (result.code === 0) return;
       throw new Error(`${label} did not open ${path}.`);
     }
-    if (deps.platform !== "darwin") {
-      throw new Error(`${label} is not installed, or its \`${editor.cli}\` command is not on the PATH.`);
+    if (deps.platform.openApp === undefined) {
+      throw new Error(`${label} is not installed, or its \`${EDITOR_CLI[app]}\` command is not on the PATH.`);
     }
-    const result = await deps.run("/usr/bin/open", ["-a", editor.appName, path], {
-      env,
-      timeoutMs: OPEN_TIMEOUT_MS,
-    });
-    if (result.code !== 0) throw new Error(`${label} is not installed, so ${path} was not opened.`);
+    if (!(await deps.platform.openApp(app, path))) {
+      throw new Error(`${label} is not installed, so ${path} was not opened.`);
+    }
   };
 }
 
-async function findCli(deps: EditorDeps, editor: (typeof EDITORS)[EditorApp]): Promise<string | undefined> {
-  const onPath = await deps.find(editor.cli, deps.path);
+async function findCli(deps: EditorDeps, app: EditorApp): Promise<string | undefined> {
+  const onPath = await deps.find(EDITOR_CLI[app]);
   if (onPath !== undefined) return onPath;
-  for (const apps of ["/Applications", join(deps.home, "Applications")]) {
-    const candidate = join(apps, editor.bundle);
+  for (const candidate of await deps.platform.cliCandidates(app)) {
     if (await deps.isExecutable(candidate)) return candidate;
   }
   return undefined;

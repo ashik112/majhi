@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
-import type { KeyBackup } from "./keychain.ts";
+import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
@@ -27,11 +27,11 @@ export interface UpdateOptions {
   /** The file this helper runs from. The helper only exits to be replaced when it is the bundle. */
   selfPath: string;
   secretsKeyFile: string;
-  /** The Keychain copy of the secrets key: put back when the file is gone, made after a new key. */
-  keychain?: Pick<KeyBackup, "read" | "ensure">;
+  /** The keyring copy of the secrets key: put back when the file is gone, made after a new key. */
+  keyBackup?: Pick<KeyBackup, "read" | "ensure" | "where">;
   log: Logger;
   now?: () => Date;
-  /** Ends the process so launchd starts the new helper. Tests pass a spy. */
+  /** Ends the process so the login service (launchd or systemd) starts the new helper. Tests pass a spy. */
   exit: () => void;
   /** Waits before exiting, so the last status write and log line reach disk. */
   sleep?: (ms: number) => Promise<void>;
@@ -40,7 +40,8 @@ export interface UpdateOptions {
 /**
  * Returns a function that rebuilds majhi from the checkout and restarts it, as `make up` does:
  * build with the same environment and the commit baked in, keep the secrets key, regenerate the
- * mounts, `up -d --wait`, then install the helper from the new image and let launchd restart it.
+ * mounts, `up -d --wait`, then install the helper from the new image and let the login service
+ * restart it.
  * It reports to `update.json` because the server that would relay progress is replaced part-way.
  * It never throws. Returns false when an update is already running.
  */
@@ -139,23 +140,23 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
 }
 
 /**
- * `make up` creates the key when it is missing. The helper does the same, so a fresh Mac needs no
- * terminal. A key the Keychain still holds comes back first: a new key could not read `secrets.age`.
+ * `make up` creates the key when it is missing. The helper does the same, so a fresh computer needs
+ * no terminal. A key the keyring still holds comes back first: a new key could not read `secrets.age`.
  */
 async function ensureSecretsKey(
   options: UpdateOptions,
   env: NodeJS.ProcessEnv,
   say: (text: string) => Promise<void>,
 ): Promise<void> {
-  const { remount, secretsKeyFile, keychain } = options;
+  const { remount, secretsKeyFile, keyBackup } = options;
   const present = await stat(secretsKeyFile).then(
     (s) => s.size > 0,
     () => false,
   );
   if (present) return;
-  const saved = await keychain?.read();
-  if (saved !== undefined) {
-    await say("Putting back the secrets key from the Keychain");
+  const saved = await keyBackup?.read();
+  if (saved !== undefined && keyBackup !== undefined) {
+    await say(`Putting back the secrets key from ${keyBackup.where}`);
     await writeKey(secretsKeyFile, `${saved}\n`);
     return;
   }
@@ -169,7 +170,7 @@ async function ensureSecretsKey(
   );
   if (key.trim() === "") throw new Error("create secrets key printed nothing");
   await writeKey(secretsKeyFile, key);
-  await keychain?.ensure();
+  await keyBackup?.ensure();
 }
 
 async function writeKey(file: string, key: string): Promise<void> {

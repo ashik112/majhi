@@ -1,5 +1,5 @@
 /**
- * Finds out which accounts this Mac is logged in as on git hosts: `gh` and `glab` logins, and the
+ * Finds out which accounts this computer is logged in as on git hosts: `gh` and `glab` logins, and the
  * SSH keys each host or `~/.ssh/config` alias accepts. Every probe is short and fails alone.
  * `detectGitLogins` never reads a token. `readGitToken` is the only code that does.
  */
@@ -60,7 +60,7 @@ export interface GitLoginsDeps {
   readText: (path: string) => Promise<string | undefined>;
   home: string;
   path: string;
-  /** The helper's own SSH_AUTH_SOCK, else what launchd holds. */
+  /** The SSH agent's socket, as `platform.sshAgent.socket()` finds it. */
   socket: () => Promise<string | undefined>;
   /** Absolute path of `gh` or `glab`, or undefined when not installed. */
   find: (name: "gh" | "glab") => Promise<string | undefined>;
@@ -142,7 +142,7 @@ export async function readGitToken(
 ): Promise<string> {
   if (!/^[a-z0-9.-]+$/i.test(host)) throw new Error("That is not a git host name.");
   const file = await deps.find(via);
-  if (file === undefined) throw new Error(`${via} is not installed on this Mac.`);
+  if (file === undefined) throw new Error(`${via} is not installed on this computer.`);
   const args =
     via === "gh" ? ["auth", "token", "--hostname", host] : ["config", "get", "token", "--host", host];
   try {
@@ -155,6 +155,6 @@ export async function readGitToken(
     return token;
   } catch {
     // The message never carries the command output.
-    throw new Error(`${via} has no login for ${host} on this Mac.`);
+    throw new Error(`${via} has no login for ${host} on this computer.`);
   }
 }

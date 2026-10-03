@@ -74,8 +74,7 @@ export function checkRoots(draft: RootsDraft, home: string): RootsCheck {
 
 /** Where tasks go when no tasks folder is set: `<first root>/.majhi`. */
 export function defaultTasksDir(firstRoot: string): string {
-  const root = firstRoot.trim().replace(/\/+$/, "");
-  return `${root === "" ? "~/Work" : root}/${DEFAULT_TASKS_DIR_NAME}`;
+  return `${firstRoot.trim().replace(/\/+$/, "")}/${DEFAULT_TASKS_DIR_NAME}`;
 }
 
 /**

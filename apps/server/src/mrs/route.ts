@@ -6,7 +6,7 @@ export type PushRoute =
   | { state: "picked"; alias: string }
   | { state: "auto"; account: string; alias?: string }
   | { state: "ambiguous"; choices: GitLogin[] }
-  /** No SSH key fits and the host helper is connected: push over https from the Mac, with its saved login. */
+  /** No SSH key fits and the host helper is connected: push over https with the computer's saved login. */
   | { state: "https"; account?: string }
   /** The project's org binds an account, and no detected SSH key logs in as it. */
   | { state: "org-missing"; account: string }
@@ -23,7 +23,7 @@ export interface RouteInput {
   owner: string;
   /** Logins of the remote's host. Only `ssh` ones can push. */
   logins: readonly GitLogin[];
-  /** True while the host helper is connected, so an https push from the Mac can work. */
+  /** True while the host helper is connected, so an https push from the computer can work. */
   httpsOk?: boolean | undefined;
 }
 
@@ -78,8 +78,9 @@ export function httpsToSsh(url: string, alias?: string): string {
 }
 
 /**
- * The https address to push from the Mac: any password in the remote is dropped, and the org's
- * account becomes the user, so the Keychain hands over that account's login. Non-https comes back as is.
+ * The https address to push from the computer: any password in the remote is dropped, and the org's
+ * account becomes the user, so the git credential helper hands over that account's login. Non-https
+ * comes back as is.
  */
 export function httpsPushUrl(url: string, account?: string): string {
   if (!/^https:\/\//i.test(url)) return url;

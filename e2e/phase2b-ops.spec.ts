@@ -144,6 +144,14 @@ test("the update banner lists the changes and the update reloads on the new comm
 });
 
 test("saving a root under Documents warns that macOS will ask", async ({ page }) => {
+  // Only macOS asks, so the warning shows only when the helper runs on macOS. The suite runs on Linux
+  // too: the helper's real status goes through, saying macOS.
+  await page.route("**/api/cmd/host.status", async (route) => {
+    const response = await route.fetch();
+    const status = (await response.json()) as { info?: Record<string, unknown> };
+    const json = status.info === undefined ? status : { ...status, info: { ...status.info, os: "macos" } };
+    return route.fulfill({ response, json });
+  });
   await page.goto("/settings/roots");
   await page.getByRole("button", { name: "Type a path" }).click();
   await expect(page.getByRole("note", { name: "macOS folder access" })).toHaveCount(0);

@@ -36,7 +36,7 @@ export interface ResilienceDeps {
 
 /**
  * Resume without the owner clicking anything (SPEC 5.7): turns cut by a restart or crash,
- * turns paused while offline, and turns that failed or stalled while the Mac slept. Orgs can
+ * turns paused while offline, and turns that failed or stalled while the computer slept. Orgs can
  * turn automatic resume off; then the task waits, paused, for the owner.
  */
 export class Resilience {
@@ -220,7 +220,7 @@ export class Resilience {
     if (online) await this.networkChanged(true);
   }
 
-  /** The host helper saw the Mac wake from sleep. */
+  /** The host helper saw the computer wake from sleep. */
   wake(): Promise<void> {
     return this.deps.runs.wake();
   }

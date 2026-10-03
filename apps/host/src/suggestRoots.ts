@@ -9,21 +9,6 @@ export const MAX_SUGGESTIONS = 6;
 export const DEFAULT_BUDGET: SuggestBudget = { ms: 2_000, dirs: 20_000 };
 const CONCURRENCY = 32;
 
-/**
- * Folders in home that hold apps, media, system data or virtual machines, never
- * projects. `OrbStack` is OrbStack's view into its containers and machines: slow
- * to read (about 50 s for a few thousand folders) and never a workspace root.
- */
-const SKIPPED_AT_HOME = new Set([
-  "Library",
-  "Applications",
-  "Movies",
-  "Music",
-  "Pictures",
-  "Public",
-  "OrbStack",
-]);
-
 export interface SuggestBudget {
   /** Stop counting after this long and return what was counted. */
   ms: number;
@@ -35,16 +20,18 @@ export interface SuggestBudget {
  * Suggests workspace roots: first-level folders of home that hold git repos,
  * with how many, most first. Counting follows the server scanner's rules (no
  * hidden folders, no `node_modules`, no symlinks, nothing inside a repo) and
- * stops at the budget.
+ * stops at the budget. `skippedAtHome` are the OS's folders that never hold
+ * projects (`folders.skippedAtHome`).
  */
 export async function suggestRoots(
   home: string,
+  skippedAtHome: ReadonlySet<string>,
   budget: SuggestBudget = DEFAULT_BUDGET,
 ): Promise<RootSuggestion[]> {
   const base = await realpath(home).catch(() => home);
   const top = await readdir(base, { withFileTypes: true });
   const candidates = top
-    .filter((e) => e.isDirectory() && !skipped(e) && !SKIPPED_AT_HOME.has(e.name))
+    .filter((e) => e.isDirectory() && !skipped(e) && !skippedAtHome.has(e.name))
     .map((e) => join(base, e.name));
 
   const counts = new Map(candidates.map((c) => [c, 0]));

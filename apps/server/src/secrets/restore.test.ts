@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { SecretsKeyRestore } from "@majhi/shared";
 import { armor, Encrypter, identityToRecipient } from "age-encryption";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-// The round trip runs the host helper's own write, as majhi does on the Mac.
+// The round trip runs the host helper's own write, as majhi does on the owner's computer.
 import { createKeyRestorer } from "../../../host/src/keyRestore.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { KeyExports } from "./backup.ts";
@@ -173,7 +173,7 @@ describe("restoreKey", () => {
   });
 
   it("round trips: an export restored into a new home reads secrets.age again", async () => {
-    // The old Mac: a key, a secret in secrets.age, and the export.
+    // The old computer: a key, a secret in secrets.age, and the export.
     const old = join(dir, "old");
     const key = await generateKey();
     await writeKeyFile(join(old, ".config", "majhi", "secrets.key"), key);
@@ -181,7 +181,7 @@ describe("restoreKey", () => {
     await oldStore.set("acme-api", "value-1");
     const { content } = await new KeyExports(join(old, ".majhi"), oldStore).export(PASSPHRASE);
 
-    // The new Mac: secrets.age copied over, and the new key `make up` made.
+    // The new computer: secrets.age copied over, and the new key `make up` made.
     const home = join(dir, "new");
     const newKeyFile = join(home, ".config", "majhi", "secrets.key");
     await mkdir(join(home, ".majhi"), { recursive: true });
@@ -199,8 +199,8 @@ describe("restoreKey", () => {
       restart: async () => {
         events.push("restart");
       },
-      saveToKeychain: async (fingerprint) => {
-        events.push(`keychain ${fingerprint}`);
+      saveToKeyring: async (fingerprint) => {
+        events.push(`keyring ${fingerprint}`);
       },
       log: (line) => logs.push(line),
     });
@@ -231,7 +231,7 @@ describe("restoreKey", () => {
       "secrets.key",
       "secrets.key.old-20261002T100000Z",
     ]);
-    expect(events).toEqual(["restart", `keychain ${keyFingerprint(key)}`]);
+    expect(events).toEqual(["restart", `keyring ${keyFingerprint(key)}`]);
     for (const text of [out.detail, ...logs]) {
       expect(text).not.toContain(key);
       expect(text).not.toContain(PASSPHRASE);

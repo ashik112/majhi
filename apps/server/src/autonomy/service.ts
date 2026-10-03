@@ -92,7 +92,7 @@ export interface AutonomyDeps {
   accounts: { list(): Promise<AccountView[]> };
   agents: AgentStore;
   events: EventHub;
-  /** The Mac's git logins, to tell whose a gh or glab login is. */
+  /** This computer's git logins, to tell whose a gh or glab login is. */
   gitLogins?: { list(refresh?: boolean): Promise<GitLoginsResult> };
   /** Tells the owner the daily summary is ready (notify kind `autonomy`). */
   notify?: (summary: AutonomySummary, line: string) => void;

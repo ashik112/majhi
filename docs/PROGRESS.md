@@ -1,5 +1,65 @@
 # Progress
 
+## PRV-97: Run majhi on Linux, and on Windows through WSL2 (built)
+
+**Status.** Built on `task/prv-97-run-majhi-and-through-wsl2`, from `main`. The brief is `docs/briefs/linux-and-wsl2.md`. DECISIONS has its rows (2026-10-03).
+
+### What works
+
+- **One platform interface.** The host helper finds macOS, Linux or WSL2 once at start and reaches the OS only through `Platform` (`apps/host/src/platform/`): start at login, the keyring, the SSH agent, notifications, opening URLs and the editor, Docker, Laya and folder suggestions. Older helpers send no `os`, so the server reads `hostOsOf(info)`.
+- **Start at login.** macOS keeps the LaunchAgent. Linux and WSL2 get two systemd user units: `majhi-host.service` and `majhi-ssh-agent.service`. The helper's environment is in `~/.config/systemd/user/majhi-host.env` (mode 600). On WSL2 `make up` turns on lingering, so when Docker Desktop boots the distro at Windows sign-in, the helper starts with no terminal open. `make down` removes both units and the file.
+- **`make up` checks first** (`scripts/check.sh`). It stops with one line and the step for: an OS it does not support, no Docker (on WSL2: WSL integration is off), Docker not running or not allowed, Compose older than v2, Docker Desktop for Linux, and rootless Docker. It warns and goes on when git, Node 20, a keyring or a systemd user manager is missing.
+- **Secrets key.** A copy goes to the Keychain on macOS, and to a Secret Service keyring through `secret-tool` on Linux and WSL2. A locked keyring is never touched, so nothing pops an unlock dialog at login. With no keyring, Health says why, and that the export is the only other copy. `make up` and an update put a missing key file back from the keyring. SSH passphrases are kept in the keyring, as on macOS.
+- **SSH agent.** On Linux and WSL2 the server always uses `~/.majhi/run/ssh-agent.sock`. That is the helper's forwarder: to the session's agent, else to majhi's own agent unit. Nothing is bind-mounted, so an agent restart or a missing agent cannot leave a root-owned folder. macOS keeps OrbStack's or Docker Desktop's socket, or an older `SSH_AGENT_SOCK`.
+- **Notifications, URLs and the editor.** Linux uses notify-send and xdg-open. WSL2 uses a Windows toast (a click opens the task), wslview or explorer.exe, and Windows VS Code or Cursor opened into the distro.
+- **Laya.** Native MLX on Apple silicon, as before. Elsewhere it runs in Docker: on an NVIDIA GPU (PyTorch for CUDA 13.0, device `cuda`) when `make up` finds the NVIDIA Container Toolkit or the WSL2 driver, else on the CPU. `make up LAYA_GPU=off` keeps the CPU.
+- **Folders.** Suggestions and examples follow the OS (`~/code`, `~/Work`), with no `/Users` assumption.
+- **Updates and rollback** go through the helper on all three. On Linux and WSL2 the helper installs its new bundle and exits, and systemd starts it again.
+- **Unlocking an SSH key from the UI.** ssh-add gets the passphrase through a one-time askpass in `XDG_RUNTIME_DIR` (else the temp folder). When ssh-add stops before it asks, or takes the passphrase and still fails (an agent that refuses the key), the unlock says so and gives the command for a terminal, instead of blaming the passphrase. The log says why, never the passphrase.
+- **Copy and docs.** The UI, the server's messages and the approval labels say "this computer" instead of "this Mac", and name the Keychain on macOS and the keyring elsewhere. Health's key copy check warns with the reason when no keyring answers, and its SSH check passes when `MAJHI_SSH_AGENT=off`. Notifications are desktop notifications (the config key `notifications.mac` stays). Examples and placeholders follow the OS. The warning for folders macOS guards and the native Laya install show only on macOS. The README's Install section covers macOS, Linux and Windows (WSL2). SPEC 4.2, 4.5 and 5.12 cover the three.
+
+### How to try it
+
+- Linux: Docker Engine with your user in the `docker` group, then `make up` from your own login session. `make host-logs` shows the helper.
+- WSL2: Docker Desktop with WSL integration on for the distro, then `make up` in the distro's terminal.
+- The README's Install section lists the rest (git, make, Node 20, systemd, the keyring, notify-send).
+
+### Verified
+
+On Linux (Debian 12, arm64, with no Docker and no systemd), on `2cf75320`:
+
+- Typecheck (shared, host, server, web), biome, and the touched tests.
+- `make up` and `make down` from the Makefile, the helper bundle on node 22, and updates through it. Fakes stood in for docker, systemctl, loginctl, secret-tool, busctl and the desktop programs. 15 passes:
+  - `make up` on Linux, on Linux with NVIDIA, and on WSL2
+  - 10 refusals, each before anything is built
+  - `make down`
+  - the key put back from the keyring, and a locked keyring left alone
+  - no systemd (WSL2) and no user manager (su)
+  - linger refused
+  - the forwarder on a session agent and on majhi's own, with a real ssh-agent: the key is listed and a signature verifies through it
+  - the desktop jobs on Linux and WSL2, including the escaping and the toast's XML
+  - an update; a rollback after an unhealthy start (the previous image and override come back); and an update that puts the key back first
+- The smoke e2e (4 of 4) and the Documents warning test, which now tells the web app the helper runs on macOS, since the warning shows only there.
+- `tsc -p e2e` reports one error only, an older one in `e2e/shots.onboarding.ts` that the branch's base has and `main` has fixed.
+
+### Owner-only checks
+
+- macOS after this update: the Keychain copy, SSH keys, the agent socket (a custom `SSH_AGENT_SOCK` too, through the first update by the old helper), notifications, start at login, and update and rollback, all as before.
+- A Linux desktop with Docker Engine: a real `make up`, the units starting at login, the Secret Service copy and a key restore through `secret-tool`, an SSH key unlocked from the UI and loaded again after a restart, notify-send, opening URLs and the editor, and update and rollback.
+- Windows 11 with WSL2 and Docker Desktop:
+  - `make up` in the distro
+  - majhi starting after a Windows sign-in with no terminal open (Docker Desktop booting the distro, linger, and Windows programs run from a systemd service)
+  - the server reaching `~/.majhi/run/ssh-agent.sock` through Docker Desktop's mount
+  - the toast and its click, the browser, and the editor through Windows VS Code
+- A machine with an NVIDIA GPU, on Linux and on WSL2: Laya on `cuda`.
+
+### Left and known issues
+
+- Docker Desktop for Linux and rootless Docker are refused (the brief's decision 6). Running the containers as uid 0, which both map to the owner, is a follow-up.
+- An update rebuilds the server and runner images, not Laya's (PRV-102). That was already true on Intel Macs.
+- `make up`, the host helper and compose can pick different secrets key files (PRV-101).
+- Without systemd (WSL2 with it off, or `make up` through su or sudo), the helper is off. majhi still runs, with typed paths and no SSH agent for git.
+
 ## Phase 13: The captain per workspace (built)
 
 **Status.** Built on `feat/captain-levels`, from `main` (`80002454`). SPEC 5.18 and section 7, Phase 13. Migration 116.

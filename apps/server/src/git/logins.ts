@@ -8,7 +8,7 @@ const CACHE_MS = 60_000;
 /** Each ssh probe waits up to nine seconds, in parallel. */
 const CALL_TIMEOUT_MS = 30_000;
 
-/** The accounts the owner's Mac is logged in as per git host, from the host helper. Holds no token. */
+/** The accounts this computer is logged in as per git host, from the host helper. Holds no token. */
 export class GitLoginService {
   private cached: { at: number; value: GitLoginsResult } | undefined;
   private running: Promise<GitLoginsResult> | undefined;
@@ -27,7 +27,7 @@ export class GitLoginService {
   async list(refresh = false): Promise<GitLoginsResult> {
     if (this.link === undefined || !this.link.isConnected()) {
       throw new UserError(
-        "The host helper is not connected, so majhi cannot look at this Mac's git logins.",
+        "The host helper is not connected, so majhi cannot look at this computer's git logins.",
         409,
       );
     }
