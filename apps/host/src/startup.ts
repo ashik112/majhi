@@ -1,6 +1,7 @@
 import type { Logger } from "./log.ts";
+import type { DockerPlatform } from "./platform/types.ts";
 
-/** How long the helper waits for Docker to come up after opening it. */
+/** How long the helper waits for Docker to come up after starting it. */
 export const DOCKER_WAIT_MS = 120_000;
 export const DOCKER_POLL_MS = 5_000;
 /** A failed start is tried again this much later, never sooner. */
@@ -14,13 +15,13 @@ export interface StartupDeps {
   log: Logger;
   /** True when `docker info` succeeds. */
   dockerUp(): Promise<boolean>;
-  /** Opens OrbStack or Docker Desktop. False when neither app is installed. */
-  openDocker(): Promise<boolean>;
+  /** Starts Docker where the helper can, and names the step the owner must take where it cannot. */
+  docker: Pick<DockerPlatform, "start" | "help">;
   /** True when majhi's server container is running. */
   majhiRunning(): Promise<boolean>;
   /** `docker compose up -d --wait` in the checkout. Throws with the reason on failure. */
   startMajhi(): Promise<void>;
-  /** A macOS notification with the one step the owner must take. */
+  /** A desktop notification with the one step the owner must take. */
   notify(message: string): Promise<void>;
   sleep(ms: number): Promise<void>;
   now(): number;
@@ -39,12 +40,8 @@ export async function ensureMajhiRunning(deps: StartupDeps): Promise<StartupOutc
 
   if (!(await deps.dockerUp())) {
     say("Docker is not running");
-    if (!(await deps.openDocker())) {
-      return {
-        ok: false,
-        step: "open Docker",
-        message: "Install OrbStack or Docker Desktop, open it once, and majhi starts by itself.",
-      };
+    if (!(await deps.docker.start())) {
+      return { ok: false, step: "open Docker", message: deps.docker.help("not-started") };
     }
     say("opened Docker, waiting for it");
     const deadline = deps.now() + DOCKER_WAIT_MS;
@@ -56,14 +53,7 @@ export async function ensureMajhiRunning(deps: StartupDeps): Promise<StartupOutc
         break;
       }
     }
-    if (!up) {
-      return {
-        ok: false,
-        step: "wait for Docker",
-        message:
-          "Docker did not start in 2 minutes. Open OrbStack or Docker Desktop, and majhi starts by itself.",
-      };
-    }
+    if (!up) return { ok: false, step: "wait for Docker", message: deps.docker.help("slow") };
     say("Docker is up");
   } else {
     say("Docker is up");
@@ -82,7 +72,7 @@ export async function ensureMajhiRunning(deps: StartupDeps): Promise<StartupOutc
     return {
       ok: false,
       step: "start majhi",
-      message: "majhi could not start. Open Terminal in the majhi folder and run make up.",
+      message: "majhi could not start. Open a terminal in the majhi folder and run make up.",
     };
   }
   say("majhi is running");
@@ -105,31 +95,4 @@ export async function startAtLogin(deps: StartupDeps): Promise<StartupOutcome> {
     await deps.notify(outcome.message).catch(() => undefined);
   }
   return outcome;
-}
-
-/** Text that is safe inside an AppleScript string: no control characters, one line, a bounded length. */
-export function plainLine(text: string, max = 300): string {
-  let flat = "";
-  for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0;
-    flat += code < 32 || code === 127 || code === 0x2028 || code === 0x2029 ? " " : ch;
-  }
-  flat = flat.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
-}
-
-function quoted(text: string): string {
-  return `"${plainLine(text).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/**
- * AppleScript text for a notification. Quotes and backslashes are escaped and line breaks removed, so
- * a message cannot end the string or add a command.
- */
-export function notificationScript(
-  message: string,
-  options: { title?: string; sound?: boolean } = {},
-): string {
-  const sound = options.sound === true ? ' sound name "Glass"' : "";
-  return `display notification ${quoted(message)} with title ${quoted(options.title ?? "majhi")}${sound}`;
 }

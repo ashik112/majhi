@@ -61,7 +61,8 @@ export function parseDockerRuntime(operatingSystem: string): DockerRuntime {
 /** Keeps the checkout state and Docker runtime fresh in memory, because the poll header needs them at once. */
 export function createHostFacts(options: {
   git: GitContext | undefined;
-  docker: string | undefined;
+  /** The docker CLI, read at each refresh: on WSL2 it can appear after the helper started. */
+  docker: () => string | undefined;
   env: NodeJS.ProcessEnv;
   exec: ExecFn;
 }): {
@@ -74,13 +75,14 @@ export function createHostFacts(options: {
   return {
     async refresh() {
       if (options.git !== undefined) repo = await readRepo(options.git);
-      if (options.docker !== undefined) {
+      const docker = options.docker();
+      if (docker !== undefined) {
         try {
-          const { stdout } = await options.exec(
-            options.docker,
-            ["info", "--format", "{{.OperatingSystem}}"],
-            { cwd: "/", env: options.env, timeout: GIT_TIMEOUT_MS },
-          );
+          const { stdout } = await options.exec(docker, ["info", "--format", "{{.OperatingSystem}}"], {
+            cwd: "/",
+            env: options.env,
+            timeout: GIT_TIMEOUT_MS,
+          });
           runtime = parseDockerRuntime(stdout);
         } catch {
           // Docker is not up. Keep the last answer.

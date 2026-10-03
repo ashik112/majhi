@@ -28,7 +28,7 @@ describe("update", () => {
     keyExists?: boolean;
     noImage?: boolean;
     /** The key the Keychain holds. */
-    keychainKey?: string;
+    savedKey?: string;
   }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
@@ -94,8 +94,9 @@ describe("update", () => {
         bundle,
         selfPath: options.selfIsBundle ? bundle : "/elsewhere/main.ts",
         secretsKeyFile: key,
-        keychain: {
-          read: async () => options.keychainKey,
+        keyBackup: {
+          where: "the Keychain",
+          read: async () => options.savedKey,
           ensure: async () => {
             ensured.push("ensure");
             return undefined;
@@ -151,7 +152,7 @@ describe("update", () => {
   });
 
   it("puts back the key the Keychain holds instead of making a new one", async () => {
-    const s = setup({ keychainKey: "AGE-SECRET-KEY-1SAVED" });
+    const s = setup({ savedKey: "AGE-SECRET-KEY-1SAVED" });
     const status = await s.run();
     expect(status.state).toBe("done");
     expect(s.calls.some((c) => c.args.startsWith("run --rm"))).toBe(false);
