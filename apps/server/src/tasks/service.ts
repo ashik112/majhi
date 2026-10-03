@@ -1104,7 +1104,7 @@ export class TaskService {
   }
 
   /**
-   * Puts `to` in `from`'s place at the same position, with a copy of `from`'s overrides, when
+   * Puts `to` in `from`'s place at the same position, with `from`'s repos override, when
    * `from`'s account hit its usage limit. It does not close `from`'s run: the run manager calls it
    * from inside that run's own loop and ends the run itself. False when the swap cannot be made.
    */
@@ -1124,8 +1124,10 @@ export class TaskService {
       task.team.map((a) => (a === from ? to : a)),
       at,
     );
+    // Only the repos carry over: a model or effort set for `from` may not exist on `to`'s account.
     const { [from]: theirs, [to]: _replaced, ...rest } = task.overrides;
-    this.deps.store.tasks.setOverrides(id, theirs === undefined ? rest : { ...rest, [to]: theirs }, at);
+    const repos = theirs?.repos;
+    this.deps.store.tasks.setOverrides(id, repos === undefined ? rest : { ...rest, [to]: { repos } }, at);
     await this.afterProcessesOf(id, held, await this.teamChanged(id));
     return true;
   }

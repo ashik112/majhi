@@ -6,6 +6,7 @@ import {
   isAuthFailure,
   type LimitFailure,
   limitFailure,
+  limitLine,
   type PermissionAsk,
   type PromptBlock,
   type RuntimeOptions,
@@ -1134,7 +1135,7 @@ export class RunManager {
       if (run.paused !== undefined) break;
       // A turn that ended with the CLI's limit line as its whole answer did not do its work.
       if (stopReason === "end_turn" && run.account !== undefined && run.accountKind !== undefined) {
-        const said = limitFailure(undefined, run.mapper?.finalText() ?? "", run.accountKind.tool, this.now());
+        const said = limitLine(run.mapper?.finalText() ?? "", run.accountKind.tool, this.now());
         if (said !== undefined) {
           const mark = await this.markAccountLimit(run.account, said);
           this.markTurn(run, false, false);
