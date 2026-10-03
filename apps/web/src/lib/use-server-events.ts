@@ -4,6 +4,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
 import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { bindTypingSender } from "./typing-signal";
 
 /**
  * Keeps one WebSocket to `/api/events` open and refetches the queries of every topic the server
@@ -33,6 +34,9 @@ export function useServerEvents(): void {
       socket.send(JSON.stringify(message));
     };
     const heartbeat = window.setInterval(report, BROWSER_TAB_REPORT_MS);
+    bindTypingSender((message) => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    });
 
     const invalidate = (topics: readonly (typeof ALL_TOPICS)[number][]) => {
       for (const topic of topics) {
@@ -71,6 +75,7 @@ export function useServerEvents(): void {
       stopped = true;
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);
+      bindTypingSender(null);
       socket?.close();
     };
   }, [client, router]);

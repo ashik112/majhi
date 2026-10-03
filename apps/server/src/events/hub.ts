@@ -1,5 +1,6 @@
 import type { EventTopic, ServerEvent } from "@majhi/shared";
 import { BrowserTabs } from "./tabs.ts";
+import { OwnerTyping } from "./typing.ts";
 
 type Listener = (event: ServerEvent) => void;
 
@@ -8,6 +9,8 @@ export class EventHub {
   private readonly listeners = new Set<Listener>();
   /** The open tabs that can pop browser notifications, as they report it. */
   readonly tabs = new BrowserTabs();
+  /** The tasks the owner types in right now. */
+  readonly typing = new OwnerTyping();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);

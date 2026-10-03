@@ -14,7 +14,7 @@ import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, PRESENCE_MS, RUN_CAPS, runActions } from "./rules.ts";
+import { DAILY_CAPS, RUN_CAPS, runActions } from "./rules.ts";
 import { CaptainService } from "./service.ts";
 
 /**
@@ -58,7 +58,8 @@ interface SimTask {
   status: "inbox" | "running" | "review" | "done" | "paused";
   heads: string;
   ready: boolean;
-  ownerAt?: string;
+  /** The owner types in it right now. */
+  typing?: boolean;
   quietSince?: string;
   due?: string;
   priority?: "high" | "normal" | "low";
@@ -115,8 +116,8 @@ class Sim {
     if (this.stopped) this.violations.push(`${port} ${key} while the captain was stopped`);
     if (org === "globex") this.violations.push(`${port} ${key} in Globex, which is set to Only when I ask`);
     const t = task === undefined ? undefined : this.tasks.get(task);
-    if (t?.ownerAt !== undefined && this.now.getTime() - Date.parse(t.ownerAt) < PRESENCE_MS) {
-      this.violations.push(`${port} ${key} while the owner was in ${t.id}`);
+    if (t?.typing === true) {
+      this.violations.push(`${port} ${key} while the owner was typing in ${t.id}`);
     }
     const fails = this.failing.get(`${port}:${org}`) ?? 0;
     if (fails > 0) {
@@ -281,7 +282,7 @@ class Sim {
         // The lead does not answer: the task stays held, and the captain must not wake it again.
         this.act("handBack", org, `${id}:${this.tasks.get(id)?.signedOut?.since}`, id);
       },
-      ownerAt: (task) => this.tasks.get(task)?.ownerAt,
+      typing: (task) => this.tasks.get(task)?.typing === true,
     };
   }
 }
@@ -357,13 +358,15 @@ describe("the captain's soak test", () => {
     for (let step = 0; step < 180; step++) {
       sim.now = new Date(sim.now.getTime() + 10 * 60_000);
       const iso = sim.now.toISOString();
+      // The owner sends or leaves some of what they typed.
+      for (const t of sim.tasks.values()) if (t.typing === true && rnd() < 0.5) t.typing = false;
 
       // A task reaches review in each workspace now and then; some fail their checks.
       if (rnd() < 0.5) {
         const org = pick(ORGS);
         const t = sim.task(org, "review", { ready: rnd() < 0.7 });
-        // The owner is in some of them right now.
-        if (rnd() < 0.2) t.ownerAt = iso;
+        // The owner types in some of them right now.
+        if (rnd() < 0.2) t.typing = true;
         captain.reviewReached(t.id);
       }
       // A burst of approval cards in one task.

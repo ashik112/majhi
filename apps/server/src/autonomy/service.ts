@@ -48,7 +48,7 @@ import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
-import { presenceWhy, restWhy } from "../captain/rules.ts";
+import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -125,8 +125,8 @@ export interface AutonomyDeps {
   rateSize?: SizeRater;
   /** The captain's lanes (5.18): autonomous mode wakes the captain in each workspace's own. */
   lanes: Lanes;
-  /** When the owner last acted in a task: the captain keeps out for 10 minutes. */
-  ownerAt?: (task: string) => string | undefined;
+  /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
+  typing?: (task: string) => boolean;
   now?: () => Date;
 }
 
@@ -1949,8 +1949,10 @@ export class AutonomyService {
       const names = orgNames(await this.deps.config.sections());
       return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
     }
-    const present = presenceWhy(this.deps.ownerAt?.(input.task), this.now());
-    if (present !== undefined) return fail(`The owner is in ${input.task}: ${present}. Leave it to them.`);
+    const waiting = typingWhy(input.task, this.deps.typing?.(input.task) === true);
+    if (waiting !== undefined) {
+      return fail(`${waiting}. The captain tries again when you send or leave.`);
+    }
     const option = input.option;
     let answered: RoomItem;
     try {

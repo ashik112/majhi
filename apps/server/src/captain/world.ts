@@ -57,6 +57,8 @@ export interface WorldDeps {
   runs: { working(task: string): string[]; notify(task: string, agent: string, text: string): void };
   lanes: Lanes;
   repo: CaptainRepo;
+  /** Whether the owner is typing in a task now. */
+  typing: (task: string) => boolean;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
@@ -641,8 +643,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       );
     },
 
-    ownerAt(task) {
-      return deps.repo.ownerAt(task);
+    typing(task) {
+      return deps.typing(task);
     },
   };
 }

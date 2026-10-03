@@ -1,6 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
-import { branchAllowed, presenceWhy } from "./rules.ts";
+import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 
 /**
@@ -26,8 +26,8 @@ export function createChores(
   ports: CaptainPorts,
   now: () => Date,
 ): Record<CaptainChore, (run: ChoreRun) => Promise<void>> {
-  /** Why presence keeps the captain out of this task now. */
-  const away = (task: string) => presenceWhy(ports.ownerAt(task), now());
+  /** Why the owner typing keeps the captain out of this task now (SPEC 5.18, Presence). */
+  const away = (task: string) => typingWhy(task, ports.typing(task));
 
   /** Keeps, merges or drops one waiting memory, or leaves it for the owner. */
   const curateOne = async (run: ChoreRun, fact: PendingFact) => {
@@ -61,7 +61,7 @@ export function createChores(
         run.check();
         const present = away(t.id);
         if (present !== undefined) {
-          run.note(`ship:${t.id}:presence`, `Left ${t.id} for now`, present, t.id);
+          run.note(`ship:${t.id}:presence`, `Waiting on ${t.id}`, present, t.id);
           continue;
         }
         const check = await ports.shipCheck(org, t.id);
@@ -123,7 +123,7 @@ export function createChores(
         if (present !== undefined) {
           run.note(
             `card:${card.task}:${card.item}:presence`,
-            `Left a card in ${card.task} for now`,
+            `Waiting on a card in ${card.task}`,
             present,
             card.task,
           );
@@ -172,7 +172,7 @@ export function createChores(
         if (present !== undefined) {
           run.note(
             `question:${card.task}:${card.item}:presence`,
-            `Left a question in ${card.task} for now`,
+            `Waiting on a question in ${card.task}`,
             present,
             card.task,
           );

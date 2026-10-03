@@ -148,8 +148,8 @@ export interface CaptainPorts {
   pauseForOwner(org: string, task: string, text: string): Promise<void>;
 
   // Always
-  /** When the owner last acted in the task. */
-  ownerAt(task: string): string | undefined;
+  /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */
+  typing(task: string): boolean;
 }
 
 /** A task an account that needs a new sign-in holds up. */

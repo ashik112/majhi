@@ -327,26 +327,15 @@ export class CaptainService {
     });
   }
 
-  /** The owner acted in a task: the captain keeps out of it for 10 minutes. */
-  ownerActed(command: string, input: unknown, meta: CommandMeta, output?: unknown): void {
-    if (meta.actor.kind !== "owner") return;
-    // Reading a room is not acting in it.
-    if (command.startsWith("captain.") || !Object.hasOwn(commands, command)) return;
-    if (commands[command as CommandName].risk === "read") return;
-    const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-    // A task the owner just made is one they act in too.
-    const made =
-      command === "tasks.create" && typeof output === "object" && output !== null
-        ? (output as { id?: unknown }).id
-        : undefined;
-    const task = [fields.task, fields.id, made].find(
-      (v): v is string => typeof v === "string" && /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/.test(v),
-    );
-    if (task === undefined) return;
-    try {
-      this.repo.ownerActed(task, this.now().toISOString());
-    } catch {
-      // The database closed under a shutdown.
+  /**
+   * The owner stopped typing in a task (sent, left or went quiet) that the captain waited on: the
+   * chores that wait on typing look again, now (SPEC 5.18, Presence).
+   */
+  ownerIdle(task: string): void {
+    const org = this.orgOfTask(task);
+    if (org === undefined) return;
+    for (const chore of ["ship", "cards", "questions"] as const) {
+      this.trigger(org, chore, `You stopped typing in ${task}`, "majhi", task);
     }
   }
 

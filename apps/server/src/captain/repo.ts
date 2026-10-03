@@ -460,24 +460,6 @@ export class CaptainRepo {
   }
 
   // ---------------------------------------------------------------------------
-  // Presence
-
-  ownerActed(task: string, at: string): void {
-    this.db
-      .prepare(
-        "INSERT INTO captain_presence (task, at) VALUES (?, ?) ON CONFLICT (task) DO UPDATE SET at = excluded.at",
-      )
-      .run(task, at);
-  }
-
-  ownerAt(task: string): string | undefined {
-    const row = this.db.prepare("SELECT at FROM captain_presence WHERE task = ?").get(task) as
-      | { at: string }
-      | undefined;
-    return row?.at;
-  }
-
-  // ---------------------------------------------------------------------------
   // Spend
 
   /** Tokens and dollars the lane spent from `from` (inclusive). */

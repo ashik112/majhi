@@ -891,8 +891,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const autonomy = new AutonomyService({
     lanes,
-    // Bound below: the captain holds the owner's presence.
-    ownerAt: (task) => captainRepo.ownerAt(task),
+    typing: (task) => events.typing.holds(task),
     store,
     config,
     tasks,
@@ -970,6 +969,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       runs,
       lanes,
       repo: captainRepo,
+      typing: (task) => events.typing.holds(task),
       dispatch: () => captainDispatch,
     }),
     tell: (key, text) => notifier.captain(key, text),
@@ -986,6 +986,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
+  events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   background.run(
     () => captain.boot(),

@@ -813,6 +813,13 @@ CREATE TABLE decision_recommendations (
 );
 `,
   },
+  {
+    // The captain waits while the owner types in a task (SPEC 5.18), kept in memory: the 10-minute
+    // "owner acted" table is not used any more.
+    id: 123,
+    name: "drop captain presence",
+    sql: "DROP TABLE captain_presence;",
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
