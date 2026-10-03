@@ -1,6 +1,17 @@
 # Progress
 
-## One Captain page (built)
+## Captain page redesign: one screen (built)
+
+The Captain page is one screen with no tabs. Header: the Autonomous switch and state, one true sentence, spend per workspace (over budget in red), a Delegation button and a one-line summary chip. Left: the Conversation (chips All and one per workspace; the captain's steps fold into "N steps it took"). Right: Needs you (Decisions rows, compact, answered in place), Running, Next, Did recently. Delegation, the full log and the daily summary open in sheets.
+
+- **Autonomous Off still does upkeep.** Off stops starting, shipping, answering and anything that spends on workers. Memory review and cleanup of done tasks keep running in each workspace whose Upkeep row is "Captain decides", under the same caps. `effectiveAuthority` keeps the Upkeep row; `choresNow` limits the chores to memory and cleanup; `CaptainService.stopped()` is only "closing" now.
+- **Pause lines name who paused.** The log says "Paused 'Phase 7' because Autonomous was turned off", "by Captain" or "by you", never "(owner)" for the other two. Chat threads no longer write task events.
+- **Log lines** are plain sentences with task titles ("Shipped 'X' to main"); no ids, no "Decision: applied". Old stored lines are rewritten on the page.
+- **Try it:** open Captain; toggle Autonomous; open Delegation, change a cell and a budget; "See all" for the log; `/autonomous?tab=rules` and `/captain?tab=log` open the matching sheet; Cmd J shows the same Conversation.
+- **Checked:** typecheck, `pnpm exec tsc -p e2e`, vitest for the captain and autonomy files touched, and `e2e/shots.captain.ts` (stubs at the volume of a real day: 4 workspaces, 30 shipped, 9 notes, 5 decisions, 120 events, a 40-call turn, one workspace over budget; a second set with 6 workspaces and a very long name) at 1440 and 1100, dark and light.
+- **Left:** the All chip sends to the owner's own chat, whose composer has no "Keep as standing instruction" switch (the workspace threads do). The summary chip hides once opened; "Summary" in Did recently reopens it.
+
+## One Captain page (built, replaced above)
 
 The Captain and Autonomous pages became one. Sidebar: Captain, with the Autonomous switch and today's spend as a sub-row. `/captain` has the tabs Today, Chat, Log and Rules (`?tab=`); `/autonomous` redirects to the matching tab.
 
