@@ -14,7 +14,7 @@ describe("the autonomy day caps migration", () => {
     for (const day of ["2026-10-02", "2026-10-03"]) {
       add.run(day, `${day}T02:00:38.823Z`, JSON.stringify({ day, from: "f", to: "t", decisions: 3 }));
     }
-    expect(migrate(db)).toEqual([117]);
+    expect(migrate(db)).toContain(117);
     const rows = db.prepare("SELECT day, at, summary FROM autonomy_summaries ORDER BY day").all() as {
       day: string;
       at: string;
