@@ -1,4 +1,4 @@
-import type { AutonomyStatus, Task } from "@majhi/shared";
+import type { AutonomyStatus, RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession, Turn } from "../testing/fakeSession.ts";
@@ -89,6 +89,10 @@ describe("the day cap of autonomous mode", () => {
     await h.majhi.services.autonomy.refreshHolds();
     expect(task()?.pausedReason).toBe("limit");
     expect(h.majhi.services.autonomy.repo.task(id)?.held).toBe("limit");
+    // The paused card names the cap that stopped it, not a generic budget.
+    const items = (await h.cmd("room.items", { task: id, limit: 500 })).body.items as RoomItem[];
+    const card = items.find((i) => i.type === "paused" && i.state === "pending");
+    expect(card?.type === "paused" && card.why).toContain("cap for today");
 
     const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
     const used = status.spend.total.used.cost;

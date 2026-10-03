@@ -879,13 +879,14 @@ export class RunManager {
   private async pauseIfLimited(run: AgentRun): Promise<boolean> {
     const why = await this.deps.limited?.(run.task, run.agent);
     if (run.closing) return false;
+    // The paused card carries the cause (a daily cap, a budget, an account limit), not a side line.
     if (why !== undefined) {
-      this.pause(run, "limit", why);
+      this.pause(run, "limit", why, true);
       return true;
     }
     const held = await this.deps.held?.(run.task, run.agent);
     if (held === undefined || run.closing) return false;
-    this.pause(run, held.reason, held.why);
+    this.pause(run, held.reason, held.why, true);
     return true;
   }
 
@@ -1241,7 +1242,7 @@ export class RunManager {
       if (why === undefined || !run.prompting || run.paused !== undefined || run.closing) return;
       run.queue.unshift({ kind: "continue" });
       this.live.refreshQueued(run);
-      this.pause(run, "limit", why);
+      this.pause(run, "limit", why, true);
       await this.cancelRun(run);
     } catch {
       // A check that fails leaves the turn alone; the gate between turns still holds.
