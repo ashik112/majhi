@@ -20,7 +20,7 @@ export function createFileLogger(file: string, maxBytes = LOG_MAX_BYTES): Logger
       if (size > 0 && size + Buffer.byteLength(line) > maxBytes) renameSync(file, `${file}.1`);
       appendFileSync(file, line);
     } catch (err) {
-      // Logging must never stop the helper. stderr goes to the LaunchAgent's host.out.
+      // Logging must never stop the helper. The login service appends stderr to host.out.
       process.stderr.write(`majhi-host: cannot write ${file}: ${String(err)}\n${line}`);
     }
   };

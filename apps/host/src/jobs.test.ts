@@ -46,7 +46,7 @@ describe("host jobs", () => {
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
     e2eRun: async () => {
-      throw new Error("An e2e run is already in progress on this Mac.");
+      throw new Error("An e2e run is already in progress on this computer.");
     },
     secretsKeySave: async () => {
       throw new Error(
@@ -54,7 +54,7 @@ describe("host jobs", () => {
       );
     },
     editorOpen: async ({ path }) => {
-      if (path === "/gone") throw new Error("There is nothing at /gone on this Mac.");
+      if (path === "/gone") throw new Error("There is nothing at /gone on this computer.");
     },
     versionChanges: async () => ({ head: "abc1234", dirty: false, changes: [] }),
     update: undefined,
@@ -183,7 +183,7 @@ describe("host jobs", () => {
 
     expect(replies).toEqual([
       { id: "e1", ok: true, result: { opened: true } },
-      { id: "e2", ok: false, error: "There is nothing at /gone on this Mac." },
+      { id: "e2", ok: false, error: "There is nothing at /gone on this computer." },
     ]);
   });
 

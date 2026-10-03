@@ -106,7 +106,7 @@ describe("readGitToken", () => {
     await expect(readGitToken({ ...base, run: ok }, "gh", "github.com")).resolves.toBe("tok-sample");
     const bad: RunFn = async () => ({ code: 1, stdout: "", stderr: "secret-looking stderr" });
     await expect(readGitToken({ ...base, run: bad }, "gh", "github.com")).rejects.toThrow(
-      "gh has no login for github.com on this Mac.",
+      "gh has no login for github.com on this computer.",
     );
     await expect(readGitToken({ ...base, run: ok }, "gh", "x; rm -rf")).rejects.toThrow("not a git host");
   });

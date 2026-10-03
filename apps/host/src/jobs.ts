@@ -22,9 +22,9 @@ export interface JobHandlers {
   sshReload(): Promise<SshStatus>;
   /** HEAD of the checkout and the subjects after `from`. Throws when there is no checkout. */
   versionChanges(params: { from: string }): Promise<{ head: string; dirty: boolean; changes: string[] }>;
-  /** Starts the update and returns false when one is already running. Undefined without a checkout or Docker. */
+  /** Starts the update and returns false when one is already running. Undefined without a checkout or docker. */
   update: (() => boolean) | undefined;
-  /** Ends the helper so launchd starts it again. */
+  /** Ends the helper so its login service (launchd or systemd) starts it again. */
   restart(): void;
   /** Throws an error whose message is safe to show. It never holds the passphrase. */
   sshUnlock(params: { key: string; passphrase: string }): Promise<SshStatus>;
@@ -45,12 +45,9 @@ export interface JobHandlers {
   /** Resolves when the suite ended, passed or not. Throws an error whose message is safe to show when it cannot start. */
   e2eRun(params: Extract<HostJob, { method: "e2e.run" }>["params"]): Promise<E2eRunResult>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
-  /** Throws an error whose message is safe to show when macOS shows nothing. */
+  /** Throws an error whose message is safe to show when the computer shows nothing. */
   notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
-  /**
-   * Opens an http(s) page in the default browser: `open` on macOS, `xdg-open` on Linux, `wslview`
-   * (else `explorer.exe`) on WSL. False when nothing could open it.
-   */
+  /** Opens an http(s) page in the owner's browser (`Platform.openUrl`). False when nothing could open it. */
   openUrl?: (params: Extract<HostJob, { method: "openUrl" }>["params"]) => Promise<boolean>;
   /**
    * Clones with the job's credential through majhi's own askpass, into a temporary sibling that is

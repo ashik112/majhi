@@ -136,7 +136,7 @@ export function createE2eRunner(deps: E2eDeps): E2eRunner {
   let busy = false;
 
   return async ({ runId, repo, commit, timeoutMs }) => {
-    if (busy) throw new Error("An e2e run is already in progress on this Mac.");
+    if (busy) throw new Error("An e2e run is already in progress on this computer.");
     if (!isAbsolute(repo) || repo.includes("\0")) throw new Error("The repo path must be absolute.");
     busy = true;
     const started = now();
@@ -153,8 +153,8 @@ export function createE2eRunner(deps: E2eDeps): E2eRunner {
     try {
       const git = await deps.find("git", deps.path);
       const pnpm = await deps.find("pnpm", deps.path);
-      if (git === undefined) return errored("git is not on this Mac's PATH.");
-      if (pnpm === undefined) return errored("pnpm is not on this Mac's PATH.");
+      if (git === undefined) return errored("git is not on this computer's PATH.");
+      if (pnpm === undefined) return errored("pnpm is not on this computer's PATH.");
       const env: Record<string, string> = {
         PATH: deps.path,
         HOME: deps.home,
@@ -176,7 +176,7 @@ export function createE2eRunner(deps: E2eDeps): E2eRunner {
           cwd,
         });
       const has = await gitRun(repo, ["cat-file", "-e", `${commit}^{commit}`]);
-      if (has.code !== 0) return errored("The commit is not in the project's repository on this Mac.");
+      if (has.code !== 0) return errored("The commit is not in the project's repository on this computer.");
       await mkdir(root, { recursive: true });
       await gitRun(repo, ["worktree", "prune"]);
       const existing = await stat(join(worktree, ".git")).then(
