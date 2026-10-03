@@ -5,9 +5,7 @@ import {
   commands,
   detectSecrets,
   type Fact,
-  orgScope,
   PRIVATE,
-  projectScope,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -28,6 +26,7 @@ import type { Store } from "../store/index.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
+import { laneScopes } from "./memory-scopes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 
@@ -59,6 +58,9 @@ export interface WorldDeps {
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
+
+/** The most waiting memories one look reads. */
+const PENDING_LIMIT = 1_000;
 
 /** Commands that ship or start work: "Keeps things tidy" leaves them to the owner. */
 const SHIPS: ReadonlySet<string> = new Set([
@@ -413,16 +415,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Memory
 
     async pendingFacts(org) {
-      // The workspace's own scope and its projects'. Never the global one: that is the owner's.
+      // The workspace's own scope and its projects'; Private's also the global one. Never another
+      // workspace's.
       const { projects } = await deps.config.sections();
-      const scopes = [
-        orgScope(org),
-        ...Object.entries(projects)
-          .filter(([, p]) => p.org === org)
-          .map(([id]) => projectScope(id)),
-      ];
       return deps.memory
-        .list({ status: "pending", scopes, limit: 100 })
+        .list({ status: "pending", scopes: laneScopes(org, projects), limit: PENDING_LIMIT })
         .map((f) => ({ id: f.id, text: f.text }));
     },
 

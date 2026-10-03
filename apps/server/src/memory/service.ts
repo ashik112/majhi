@@ -74,6 +74,7 @@ export class MemoryService {
   private filling = false;
   private curate: Curate | undefined;
   private listener: (() => void) | undefined;
+  private waitingListener: ((fact: Fact) => void) | undefined;
   /** Task records, project briefs and open threads, in the same database. */
   readonly project: ProjectMemory;
 
@@ -92,6 +93,20 @@ export class MemoryService {
   /** Called when memory changed outside a command (the Housekeeper, curation), so the UI refreshes. */
   onChange(listener: () => void): void {
     this.listener = listener;
+  }
+
+  /** Called with each fact that curation left waiting for review, so the captain can count the backlog. */
+  onWaiting(listener: (fact: Fact) => void): void {
+    this.waitingListener = listener;
+  }
+
+  /** A fact was left waiting for review after curation. */
+  waiting(fact: Fact): void {
+    try {
+      this.waitingListener?.(fact);
+    } catch {
+      // Nothing to do: the fact waits either way.
+    }
   }
 
   /** Tells the UI that memory changed. */
@@ -147,7 +162,9 @@ export class MemoryService {
     } catch {
       // Curation is extra: the fact stays pending for the owner.
     }
-    return this.mustGet(fact.id);
+    const after = this.mustGet(fact.id);
+    if (after.status === "pending") this.waiting(after);
+    return after;
   }
 
   /**

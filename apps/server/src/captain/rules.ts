@@ -13,14 +13,28 @@ export const PRESENCE_MS = 10 * 60_000;
 export const RUN_CAPS = { actions: 20, tokens: 60_000, minutes: 10 } as const;
 
 /**
+ * A chore whose run may take more actions than `RUN_CAPS.actions`: one memory run looks at every
+ * waiting memory of its workspace, in chunks, without a model turn of the lane per memory.
+ */
+const RUN_ACTIONS: Partial<Record<CaptainChore, number>> = { memory: 100 };
+
+/** The cap on actions in one run of the chore. */
+export function runActions(chore: CaptainChore): number {
+  return RUN_ACTIONS[chore] ?? RUN_CAPS.actions;
+}
+
+/** A workspace with this many memories its memory chore has not looked at runs the chore, not only daily. */
+export const MEMORY_WAITING = 10;
+
+/**
  * The daily caps per chore and workspace: `actions` counts what it did or handed to the owner,
- * `runs` counts runs. "Five ships, one memory run."
+ * `runs` counts runs. "Five ships, four memory runs": the daily one and up to three when memories pile up.
  */
 export const DAILY_CAPS: Record<CaptainChore, { actions?: number; runs?: number }> = {
   ship: { actions: 5 },
   cards: { actions: 40 },
   questions: { actions: 20 },
-  memory: { runs: 1 },
+  memory: { runs: 4 },
   projects: { runs: 3, actions: 10 },
   triage: { runs: 1, actions: 20 },
   cleanup: { runs: 1, actions: 20 },

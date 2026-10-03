@@ -90,7 +90,7 @@ On Linux (Debian 12, arm64, with no Docker and no systemd), on `2cf75320`:
 
 **Guards** (`captain/runner.ts`, `rules.ts`)
 - One run per chore and workspace; a trigger during a run joins it for one more pass.
-- Per run: 20 actions, 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, one memory run, and so on). A run that stops at a cap writes a line.
+- Per run: 20 actions (100 for memory), 60,000 lane tokens, 10 minutes. Daily caps per chore and workspace (five ships, four memory runs, and so on). A run that stops at a cap writes a line.
 - Every action has a key: doing it twice changes nothing. Two failures in a row turn the chore off for the workspace and tell the owner; Turn on brings it back.
 - Events carry their cause: the captain's own ships, cards and lane writes start nothing.
 - Right before a push, merge, card answer or post, the workspace's choice, its hours and freezes, the stop switch and presence are read again.

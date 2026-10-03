@@ -149,11 +149,25 @@ describe("curation of a proposal", () => {
     expect(t.calls).toHaveLength(0);
   });
 
-  it("always waits for the owner on a global fact", async () => {
+  it("waits for the owner on a global fact, until the captain's upkeep in Private decides it", async () => {
     const t = setup();
     t.box.answers = KEEP;
-    expect((await t.propose("Everyone signs commits with a hardware key", "global")).status).toBe("pending");
+    const fact = await t.propose("Everyone signs commits with a hardware key", "global");
+    expect(fact.status).toBe("pending");
     expect(t.calls).toHaveLength(0);
+    // The waiting fact told whoever counts the backlog.
+    const waited: number[] = [];
+    t.memory.onWaiting((f) => waited.push(f.id));
+    const other = await t.propose("Everyone writes plain commit messages", "global");
+    expect(waited).toEqual([other.id]);
+    // review_all still holds for the upkeep.
+    t.box.settings = { ...t.box.settings, review_all: true };
+    await t.curator.curate(fact, { upkeep: true });
+    expect(t.memory.get(fact.id)?.status).toBe("pending");
+    t.box.settings = { ...t.box.settings, review_all: false };
+    await t.curator.curate(fact, { upkeep: true });
+    expect(t.memory.get(fact.id)?.status).toBe("active");
+    expect(t.calls).toHaveLength(1);
   });
 
   it("drops a fact a model suspects of a secret, sure or not", async () => {

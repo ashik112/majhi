@@ -852,7 +852,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy,
       decisions,
       memory,
-      curate: (fact) => curator.curate(fact),
+      curate: (fact) => curator.curate(fact, { upkeep: true }),
       scanner: new RepoScanner(),
       cleanup,
       idle: idleWatch,
@@ -874,6 +874,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
+  memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   background.run(
     () => captain.boot(),
     (err) => console.error(`Could not pick up the captain: ${errorMessage(err)}`),

@@ -9,6 +9,7 @@ import {
   type CommandMeta,
   type CommandName,
   commands,
+  type Fact,
   PRIVATE,
   type RoomItem,
   type Spend,
@@ -19,12 +20,13 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
-import { createChores } from "./chores.ts";
+import { createChores, memoryKey } from "./chores.ts";
 import type { Lanes } from "./lanes.ts";
 import { choresOf, effectiveLevel, levelOf, migratePickOrgs, workspaceIds } from "./levels.ts";
+import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { DAILY_CAPS, DAILY_CHORES, restWhy } from "./rules.ts";
+import { DAILY_CAPS, DAILY_CHORES, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -215,6 +217,8 @@ export class CaptainService {
     why: string,
     cause: "owner" | "agent" | "captain" | "majhi",
     subject?: string,
+    /** Read once the burst is over: why the chore should run now, or undefined to start nothing. */
+    gate?: () => Promise<string | undefined>,
   ): void {
     if (cause === "captain") {
       this.runner.selfDropped += 1;
@@ -224,8 +228,19 @@ export class CaptainService {
     const key = `${org}:${chore}`;
     if (this.pending.has(key)) return;
     const timer = setTimeout(() => {
-      this.pending.delete(key);
-      void this.runner.trigger({ org, chore, cause, why, subject }).catch(() => undefined);
+      const fire = async () => {
+        let reason: string | undefined = why;
+        try {
+          if (gate !== undefined) reason = await gate();
+        } catch {
+          reason = undefined;
+        }
+        // Held in `pending` until the gate is read, so `settled` waits for it. The runner marks the
+        // run as starting before its first await, so a trigger after this joins it.
+        this.pending.delete(key);
+        if (reason !== undefined) await this.runner.trigger({ org, chore, cause, why: reason, subject });
+      };
+      void fire().catch(() => undefined);
     }, this.deps.triggerMs ?? TRIGGER_MS);
     timer.unref();
     this.pending.set(key, { timer, why, ...(subject === undefined ? {} : { subject }) });
@@ -283,6 +298,26 @@ export class CaptainService {
   /** The repo scan found repos: a new one wakes the projects chore of the workspace whose folder holds it. */
   reposSeen(orgs: readonly string[]): void {
     for (const org of new Set(orgs)) this.trigger(org, "projects", "A new repo appeared", "majhi");
+  }
+
+  /**
+   * Curation left a memory waiting for review. Once the workspace that reviews it has
+   * `MEMORY_WAITING` memories its chore has not looked at, the memory chore runs, not only daily.
+   * A memory from the captain's own lane, or from a task it just acted in, starts nothing.
+   */
+  async memoryWaiting(fact: Pick<Fact, "scope" | "task">): Promise<void> {
+    // Not by agent: the Housekeeper is the captain's agent unless the owner picked another.
+    const task = fact.task;
+    const own =
+      task !== undefined && (this.causedByCaptain(task) || this.deps.lanes.orgOf(task) !== undefined);
+    const org = laneOfScope(fact.scope, (await this.deps.config.sections()).projects);
+    if (org === undefined) return;
+    this.trigger(org, "memory", "Memories wait", own ? "captain" : "agent", undefined, async () => {
+      const waiting = (await this.deps.ports.pendingFacts(org)).filter(
+        (f) => !this.repo.hasAction(memoryKey(f.id)),
+      ).length;
+      return waiting >= MEMORY_WAITING ? `${waiting} memories wait for review` : undefined;
+    });
   }
 
   /** The owner acted in a task: the captain keeps out of it for 10 minutes. */
