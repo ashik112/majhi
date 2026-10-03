@@ -125,7 +125,10 @@ function OpenChat({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-      <header className={cn("flex shrink-0 items-center gap-3 rounded-2xl px-4 py-2.5", GLASS)}>
+      <header
+        title={`Chat ${task.id}`}
+        className={cn("flex shrink-0 items-center gap-3 rounded-2xl px-4 py-2.5", GLASS)}
+      >
         {agent && <AgentAvatar id={agent} size={32} />}
         <div className="flex min-w-0 flex-1 flex-col">
           <Title task={task} renaming={renaming} onDone={onRenamed} onRename={onRename} />

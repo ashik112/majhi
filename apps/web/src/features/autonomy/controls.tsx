@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
@@ -105,8 +104,8 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
         {noWorkspace && (
           <p className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber text-pretty">
             Nothing would happen yet. On the{" "}
-            <PageLink page="captain" onClick={onClose} className="underline">
-              Captain page
+            <PageLink page="captain" search={{ tab: "rules" }} onClick={onClose} className="underline">
+              Rules tab of the Captain page
             </PageLink>
             , choose "Captain decides" for something in one workspace, then come back.
           </p>
@@ -213,21 +212,5 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
         </div>
       </div>
     </Modal>
-  );
-}
-
-/** The header's switch on a page: Autonomous On or Off, with the two dialogs. */
-export function ModeControls({ status }: { status: AutonomyStatus }) {
-  const [open, setOpen] = useState<"on" | "off">();
-  return (
-    <div className="flex shrink-0 items-center gap-2">
-      <Switch
-        label="Autonomous"
-        checked={status.mode !== "off"}
-        onChange={(next) => setOpen(next ? "on" : "off")}
-      />
-      {open === "on" && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
-      {open === "off" && <OffDialog status={status} onClose={() => setOpen(undefined)} />}
-    </div>
   );
 }

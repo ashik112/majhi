@@ -14,7 +14,6 @@ export const PAGE_PATH = {
   projects: "/projects",
   orgs: "/orgs",
   automations: "/automations",
-  autonomous: "/autonomous",
   captain: "/captain",
   limits: "/limits",
 } as const;

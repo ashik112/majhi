@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
@@ -9,7 +9,6 @@ import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Switch } from "@/components/ui/switch";
 import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
 import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
@@ -19,7 +18,6 @@ import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/feature
 import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
-import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -214,7 +212,7 @@ function NavRow({
 }
 
 /**
- * The captain: the row opens the Captain page (how much it does per workspace and its log). The chat button beside it opens the captain chat drawer,
+ * The captain: the row opens the Captain page (today, chat, log and rules). The chat button beside it opens the captain chat drawer,
  * like Cmd+J.
  */
 function CaptainRow() {
@@ -255,26 +253,19 @@ function CaptainRow() {
 }
 
 /**
- * Autonomous: the row opens its page, with today's spend under the name; the switch turns it on
- * (after a short dialog) or off (pause its tasks, or let them finish their step).
+ * Autonomous, a sub-row of Captain: its lamp, state and the switch, with today's spend under the
+ * name. It is not a page: the switch turns it on (after a short dialog) or off (pause its tasks, or
+ * let them finish their step).
  */
 function AutonomyRow() {
   const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const active = pathname.startsWith(PAGE_PATH.autonomous);
   const lamp = MODE_LAMP[mode];
   return (
-    <div title={unavailable} className="mb-1 flex shrink-0 items-center gap-1">
-      <Link
-        to={PAGE_PATH.autonomous}
-        search={{}}
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          ITEM,
-          "min-h-8 min-w-0 flex-1 flex-col items-stretch justify-center px-2.5 py-1 text-body font-medium",
-          active ? ROW_SELECTED : "text-fg-muted",
-        )}
-      >
+    <div
+      title={unavailable}
+      className="mb-1 ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
+    >
+      <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
         <span className="flex min-w-0 items-center gap-2">
           <Lamp state={lamp} size={7} />
           <span className="truncate">Autonomous</span>
@@ -283,7 +274,7 @@ function AutonomyRow() {
           </span>
         </span>
         {status && <SpendToday status={status} className="pl-[15px] text-xs font-normal" />}
-      </Link>
+      </div>
       {toggle}
       {dialogs}
     </div>

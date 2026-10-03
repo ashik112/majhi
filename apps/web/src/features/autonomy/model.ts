@@ -97,7 +97,7 @@ export function capTone(use: Pick<CapUse, "percent" | "reached">): "calm" | "amb
 // The feed ------------------------------------------------------------------
 
 export const EVENT_WORD: Record<AutonomyEventKind, string> = {
-  mode: "Mode",
+  mode: "Autonomous",
   tick: "Woke",
   decision: "Decision",
   approval: "Approval",

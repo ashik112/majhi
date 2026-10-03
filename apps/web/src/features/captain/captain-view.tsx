@@ -1,160 +1,107 @@
-import { type CaptainStatus, PRIVATE } from "@majhi/shared";
-import { useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { AutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
-import { BudgetAskCard } from "@/features/limits/budget-ask";
-import { useAutonomyStatus } from "@/lib/autonomy-queries";
-import { useCaptainAsks, useCaptainStatus } from "@/lib/captain-queries";
-import { cn } from "@/lib/cn";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
-import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
-import { useAccounts, useOrgs } from "@/lib/studio-queries";
-import { useMedia } from "@/lib/use-media";
+import { PAGE_PATH } from "@/lib/pages";
 import { useNow } from "@/lib/use-now";
+import type { AppSearch } from "@/router";
 import { CaptainLog } from "./log";
 import { CaptainPanel } from "./panel";
 import { wsTab } from "./panel-model";
-import { WorkspaceCard } from "./workspace-card";
+import { RulesTab } from "./rules-tab";
+import { TodayTab } from "./today";
 
 const SUBTITLE =
-  "Choose what the captain decides in each workspace. It acts on its own only while Autonomous is on.";
+  "Your chief of staff. It works in each workspace within the rules you set, while Autonomous is on.";
+
+const TABS = ["today", "chat", "log", "rules"] as const;
+export type CaptainTab = (typeof TABS)[number];
+
+/** The tab an address asks for: `?tab=`, else Chat for an old link to a thread, else Today. */
+export function captainTab(search: Pick<AppSearch, "tab" | "thread">): CaptainTab {
+  const asked = TABS.find((t) => t === search.tab);
+  if (asked !== undefined) return asked;
+  return search.thread === undefined ? "today" : "chat";
+}
 
 /**
- * The Captain page: one card per workspace with how much the captain does there, its budget and
- * "More rules" and the day's line, and beside them the Captain panel (its threads) or the captain's
- * log. Below 1280 px each is a view of its own. The Autonomous switch sits in the header. Only the
- * lists scroll, each inside its own panel.
+ * The Captain page, one place for the chief of staff: Today (summary, what runs, what is next,
+ * spend), Chat (talk to it, one thread per workspace), Log (what it did and why, with Undo) and
+ * Rules (who decides what per workspace). The tab is in the address. The Autonomous switch is in
+ * the sidebar under Captain. Only the lists scroll, each inside its own panel.
  */
 export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
-  const autonomy = useAutonomyStatus().data;
-  const asksData = useCaptainAsks().data;
-  const asks = asksData?.asks ?? [];
-  const budgetAsks = asksData?.budgets ?? [];
-  const orgs = useOrgs().data ?? [];
-  const accounts = useAccounts().data ?? [];
   const now = useNow(30_000);
-  const wide = useMedia("(min-width: 1280px)");
-  const { thread } = useSearch({ strict: false }) as { thread?: string };
+  const search: AppSearch = useSearch({ strict: false });
+  const navigate = useNavigate();
   const { setTab } = useBoss();
-  const [picked, setView] = useState<"workspaces" | "threads" | "log">(
-    thread === undefined ? "workspaces" : "threads",
-  );
-  // Wide, the workspaces stay on the left and this picks what sits beside them.
-  const [side, setSide] = useState<"threads" | "log">("threads");
-  // A link to a thread (an old address of a lane chat) opens its tab.
+  const tab = captainTab(search);
+  const thread = search.thread;
+  // A link to a thread (an old address of a lane chat) opens its tab in the panel.
   useEffect(() => {
-    if (thread === undefined) return;
-    setTab(wsTab(thread));
-    setView("threads");
-    setSide("threads");
+    if (thread !== undefined) setTab(wsTab(thread));
   }, [thread, setTab]);
-  const view = wide ? "workspaces" : picked;
-  const zone = autonomy?.settings.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const pick = (next: CaptainTab) =>
+    void navigate({
+      to: PAGE_PATH.captain,
+      search: (prev: AppSearch) => {
+        const { thread: _thread, ...rest } = prev;
+        return { ...rest, tab: next };
+      },
+      replace: true,
+    } as never);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader title="Captain" subtitle={SUBTITLE}>
-        {status && !wide && (
-          <Segmented
-            label="View"
-            value={view}
-            segments={[
-              { value: "workspaces", label: "Workspaces" },
-              { value: "threads", label: "Threads" },
-              { value: "log", label: "Log" },
-            ]}
-            onChange={setView}
-          />
-        )}
-        {status && wide && (
-          <Segmented
-            label="Beside the workspaces"
-            value={side}
-            segments={[
-              { value: "threads", label: "Threads" },
-              { value: "log", label: "Log" },
-            ]}
-            onChange={setSide}
-          />
-        )}
         <Button asChild size="lg" variant="secondary">
           <PageLink page="limits">Limits</PageLink>
         </Button>
-        <AutonomousSwitch />
       </PageHeader>
       {query.isError ? (
         <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
       ) : !status ? (
         <RowsSkeleton rows={3} height={180} />
       ) : (
-        <div className="flex min-h-0 min-w-0 flex-1 gap-3">
-          {view === "workspaces" && (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade">
-              {status.captain === undefined && (
-                <p className="rounded-xl border border-amber-line bg-amber-wash px-4 py-2.5 text-sm text-amber text-pretty">
-                  There is no captain yet. Choose one on the Agents page; until then nothing here runs.
-                </p>
-              )}
-              {budgetAsks
-                .filter((a) => a.scope === "day")
-                .map((ask) => (
-                  <BudgetAskCard key={ask.scope} ask={ask} />
-                ))}
-              {status.orgs.map((org) => {
-                const view = orgs.find((o) => o.id === org.org);
-                return (
-                  <WorkspaceCard
-                    key={org.org}
-                    org={org}
-                    badge={
-                      view === undefined
-                        ? org.org === PRIVATE
-                          ? "PR"
-                          : badgeLetters(org.name)
-                        : badgeLetters(view.key)
-                    }
-                    color={view?.color}
-                    accounts={accounts}
-                    autonomyOn={status.autonomy === "on"}
-                    dayCap={autonomy?.settings.day.cost}
-                    zone={zone}
-                    asks={asks.filter((a) => a.org === org.org)}
-                    budgetAsks={budgetAsks.filter((a) => a.scope === org.org)}
-                  />
-                );
-              })}
-            </div>
-          )}
-          {(wide ? side === "threads" : view === "threads") && (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <Segmented
+            label="Captain"
+            value={tab}
+            segments={[
+              { value: "today", label: "Today" },
+              { value: "chat", label: "Chat" },
+              { value: "log", label: "Log" },
+              { value: "rules", label: "Rules" },
+            ]}
+            onChange={pick}
+            className="self-start"
+          />
+          {tab === "today" && <TodayTab captain={status} now={now} onRules={() => pick("rules")} />}
+          {tab === "chat" && (
             <section
-              aria-label="Captain threads"
-              className={cn(
-                "flex min-h-0 flex-col rounded-2xl p-4",
-                GLASS,
-                wide ? "w-[380px] shrink-0 min-[1440px]:w-[420px]" : "min-w-0 flex-1",
-              )}
+              aria-label="Captain chat"
+              className={`flex min-h-0 min-w-0 max-w-[980px] flex-1 flex-col rounded-2xl p-4 ${GLASS}`}
             >
               <CaptainPanel />
             </section>
           )}
-          {(wide ? side === "log" : view === "log") && (
-            <CaptainLog
-              status={status}
-              now={now}
-              className={wide ? "w-[380px] shrink-0 min-[1440px]:w-[420px]" : "flex-1"}
-            />
+          {tab === "log" && (
+            <div className="flex min-h-0 min-w-0 max-w-[980px] flex-1 flex-col">
+              <CaptainLog status={status} now={now} />
+            </div>
           )}
+          {tab === "rules" && <RulesTab captain={status} now={now} />}
         </div>
       )}
     </div>

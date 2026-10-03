@@ -24,7 +24,7 @@ const LIT = {
 export function AutonomyStrip() {
   const status = useAutonomyStatus().data;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  if (!status || status.mode === "off" || pathname === PAGE_PATH.autonomous) return null;
+  if (!status || status.mode === "off" || pathname === PAGE_PATH.captain) return null;
   const hold = status.holds[0]?.text;
   const summary = status.summary;
   const fresh = summary !== undefined && seenSummary() !== summary.day;
@@ -47,7 +47,9 @@ export function AutonomyStrip() {
         {hold ?? "A new daily summary is ready."}
       </span>
       <Button size="sm" asChild>
-        <PageLink page="autonomous">{hold === undefined ? "Read summary" : "Open"}</PageLink>
+        <PageLink page="captain" search={{ tab: "today" }}>
+          {hold === undefined ? "Read summary" : "Open"}
+        </PageLink>
       </Button>
     </section>
   );

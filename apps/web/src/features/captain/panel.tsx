@@ -315,10 +315,10 @@ function AllTab({
         title="No workspace threads yet"
         body={
           <>
-            A thread opens when Autonomous is on and the captain decides when work starts in a workspace. Set
-            that on the{" "}
-            <PageLink page="captain" className="text-blue hover:underline">
-              Captain page
+            A thread opens when the captain decides when work starts in a workspace. Set that under Pick and
+            start work in the{" "}
+            <PageLink page="captain" search={{ tab: "rules" }} className="text-blue hover:underline">
+              rules
             </PageLink>
             .
           </>
