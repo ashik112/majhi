@@ -43,39 +43,37 @@ a{color:inherit}
 
 /* hero */
 .hero{position:relative;overflow:hidden;display:flex;flex-direction:column;
-  background:#2a5fe0}
+  min-height:calc(100svh - 28px);background:#2a5fe0}
 nav{position:relative;z-index:5;display:flex;align-items:center;gap:14px;padding:22px clamp(18px,4vw,48px)}
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 26px/1 "Baloo Da 2";color:var(--white);-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:3px 3px 0 var(--ink)}
 .tile{width:44px;height:44px;border-radius:11px;background:var(--yellow);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);display:grid;place-items:center}
 .tile svg{width:27px}
 nav .grow{flex:1}
 nav .sign{padding:11px 18px 9px;font-size:16px}
-.copy{position:relative;z-index:5;max-width:760px;padding:clamp(8px,3vh,36px) clamp(18px,4vw,48px) clamp(36px,6vh,64px)}
-.copy h1{margin:0;font-size:clamp(46px,6vw,86px);color:var(--yellow)}
+.copy{position:relative;z-index:5;max-width:760px;margin:auto 0;padding:clamp(4px,2vh,28px) clamp(18px,4vw,48px) clamp(20px,4vh,44px)}
+.copy h1{margin:0;font-size:clamp(46px,min(6vw,9vh),86px);color:var(--yellow)}
 .copy h1 span{color:var(--white);display:block;white-space:nowrap}
-.copy p{margin:20px 0 28px;font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
+.copy p{margin:clamp(12px,2vh,20px) 0 clamp(18px,3vh,28px);font-size:21px;max-width:560px;font-weight:500;text-shadow:0 2px 0 rgba(18,14,11,.4)}
 .actions{display:flex;gap:14px;flex-wrap:wrap}
-.sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,19vw,290px);animation:sway 9s ease-in-out infinite alternate}
+.sun{position:absolute;z-index:3;right:clamp(10px,7vw,120px);top:clamp(70px,9vh,110px);width:clamp(150px,min(19vw,32vh),290px);animation:sway 9s ease-in-out infinite alternate}
 @keyframes sway{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
 .cloud{position:absolute;z-index:0;animation:drift 60s ease-in-out infinite alternate}
-.cloud.c2{animation-duration:80s;animation-delay:-30s}
 @keyframes drift{from{transform:translateX(-30px)}to{transform:translateX(60px)}}
-.birds{position:absolute;z-index:1;top:22%;left:0;width:clamp(150px,15vw,230px);animation:fly 22s linear infinite}
-@keyframes fly{0%{transform:translate(48vw,10px)}30%{transform:translate(62vw,-14px)}60%{transform:translate(78vw,8px)}100%{transform:translate(104vw,-10px)}}
-.land{position:relative;margin-top:auto}
-.landscape{display:block;width:100%;height:auto;aspect-ratio:1440/410;min-height:260px}
-.boat{position:absolute;z-index:4;bottom:5%;width:max(22vw,200px);animation:sail 34s linear infinite}
-@keyframes sail{from{left:-42vw}to{left:104vw}}
+/* The scene is 3440x440 units and always scales by its height, so nothing is
+   cut top or bottom; wider screens just see more of the bank. 1cqh = 4.4 units. */
+.land{position:relative;z-index:4;flex:1 1 0;min-height:max(200px,13vw);max-height:520px;container-type:size;overflow:hidden}
+.landscape{position:absolute;inset:0;width:100%;height:100%}
+.birds{position:absolute;left:0;top:2cqh;height:10cqh;animation:fly 26s linear infinite}
+@keyframes fly{0%{transform:translate(-100%,0)}50%{transform:translate(50cqw,-1.5cqh)}100%{transform:translate(100cqw,0)}}
+/* hull centre sits at 79.5% of the boat box; river centre is 66% down the scene */
+.boat{--bh:min(58cqh,38cqw);position:absolute;z-index:1;left:0;height:var(--bh);aspect-ratio:720/440;top:calc(66cqh - var(--bh) * .795);animation:sail 36s linear infinite;animation-delay:-14s}
+@keyframes sail{from{transform:translateX(-100%)}to{transform:translateX(100cqw)}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
 @keyframes bob{from{transform:translateY(2px) rotate(-.8deg)}to{transform:translateY(-6px) rotate(.7deg)}}
 @keyframes row{from{transform:translate(10px,-4px)}to{transform:translate(-14px,6px)}}
 .wave{animation:lap 5s ease-in-out infinite alternate}
 @keyframes lap{from{transform:translateX(-8px)}to{transform:translateX(10px)}}
-.down{position:absolute;z-index:6;left:50%;bottom:22px;transform:translateX(-50%);width:58px;height:58px;display:grid;place-items:center;
-  background:var(--red);border:3px solid var(--ink);border-radius:50%;box-shadow:3px 4px 0 var(--ink);animation:nudge 2.4s ease-in-out infinite}
-.down svg{width:26px}
-@keyframes nudge{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,6px)}}
 
 /* one sentence */
 .crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
@@ -144,21 +142,17 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 
 @media (max-width:860px){
   .copy p{font-size:19px}
-  .boat{width:58vw;bottom:5%}
-  .down{bottom:12px;width:48px;height:48px}
-  .sun{top:auto;bottom:calc(max(260px,28.5vw) + 10px);right:-30px;width:120px;opacity:.95}
   .cloud{display:none}
+  .land{max-height:none}
   .sun{display:none}
   .row{grid-template-columns:1fr;gap:6px}
   .fleet{gap:12px}
   .points{grid-template-columns:1fr;gap:24px}
   .fleet figcaption{font-size:19px}
   nav .hide{display:none}
-  .birds{display:none}
-  .boat{display:block}
   .frame{width:84vw}
 }
-@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{left:40vw}.birds{transform:translateX(60vw)}.strip{overflow-x:auto}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{transform:translateX(calc(50cqw - 50%))}.birds{transform:translateX(60cqw)}.strip{overflow-x:auto}}
 </style>
 </head>
 <body>
@@ -177,10 +171,8 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
 </defs></svg>
 
 <header class="hero" id="top">
-  <svg class="cloud c1" style="left:62%;top:300px;width:160px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
-  <svg class="cloud c2" style="left:36%;top:46px;width:140px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
+  <svg class="cloud" style="left:38%;top:42px;width:140px" viewBox="0 0 220 96" aria-hidden="true"><path d="M30 80 C8 80 6 54 26 50 C22 26 52 16 66 32 C74 6 116 4 126 28 C138 12 170 16 172 40 C198 36 214 60 198 74 C206 82 198 88 186 88 L40 88 C30 88 26 84 30 80 Z" fill="#fffdf6" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/><path d="M60 62 q12 -12 24 0 M104 54 q14 -14 28 0 M148 64 q10 -10 20 0" fill="none" stroke="#7fb3ff" stroke-width="4" stroke-linecap="round"/><g fill="#7fb3ff"><circle cx="46" cy="70" r="3"/><circle cx="178" cy="72" r="3"/></g></svg>
   <img class="sun" src="/assets/h-sun.webp" alt="" aria-hidden="true">
-  <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
   <nav>
     <a class="brand" href="#top"><span class="tile"><svg viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</a>
     <span class="grow"></span>
@@ -197,41 +189,31 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   </div>
 
   <div class="land">
-    <svg class="landscape" viewBox="0 0 1440 410" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <defs><pattern id="tufts" width="46" height="26" patternUnits="userSpaceOnUse"><path d="M8 22 l5 -12 l5 12 M28 24 l4 -9 l4 9" fill="none" stroke="#0b6236" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></pattern><pattern id="tufts2" width="52" height="30" patternUnits="userSpaceOnUse"><path d="M14 26 l6 -14 l6 14 M36 28 l4 -10 l4 10" fill="none" stroke="#14874a" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></pattern></defs>
-      <rect width="1440" height="410" fill="#2a5fe0"/>
-      <image href="/assets/h-treeline.webp" x="-60" y="0" width="380" height="84"/>
-      <image href="/assets/h-treeline.webp" x="290" y="6" width="380" height="84"/>
-      <image href="/assets/h-treeline.webp" x="640" y="0" width="380" height="84"/>
-      <image href="/assets/h-treeline.webp" x="990" y="6" width="380" height="84"/>
-      <image href="/assets/h-treeline.webp" x="1330" y="0" width="380" height="84"/>
-      <!-- paddy rows, painted in bands -->
-      <path d="M-20 80 H1460 V112 H-20 Z" fill="#0b6236"/>
-      <path d="M-20 112 H1460 V146 H-20 Z" fill="#14874a"/>
-      <path d="M-20 146 H1460 V186 H-20 Z" fill="#28a65c"/>
-      <path d="M-20 80 H1460" stroke="#120e0b" stroke-width="4"/>
-      <rect x="-20" y="84" width="1480" height="28" fill="url(#tufts)"/><rect x="-20" y="114" width="1480" height="32" fill="url(#tufts)"/><rect x="-20" y="148" width="1480" height="38" fill="url(#tufts2)"/>
+    <svg class="landscape" viewBox="-1000 0 3440 440" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <image href="/assets/h-treeline.webp" x="-1000" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="-655" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="-310" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="35" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="380" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="725" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1070" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1415" y="46" width="380" height="84"/><image href="/assets/h-treeline.webp" x="1760" y="40" width="380" height="84"/><image href="/assets/h-treeline.webp" x="2105" y="46" width="380" height="84"/>
+      <image href="/assets/h-bank-far.svg" x="-1000" y="97" width="3440" height="113"/>
       <!-- the village, grouped on the far bank -->
-      <image href="/assets/h-palm.webp" x="1056" y="-58" width="170" height="223"/>
-      <image href="/assets/h-hut.webp" x="1120" y="40" width="168" height="150"/>
-      <image href="/assets/h-hut.webp" x="930" y="72" width="118" height="105"/>
-      <image href="/assets/h-banana.webp" x="1300" y="44" width="150" height="145"/>
-      <image href="/assets/h-haystack.webp" x="790" y="104" width="104" height="82"/>
-      <image href="/assets/h-palm.webp" x="120" y="-10" width="120" height="157"/>
+      <image href="/assets/h-palm.webp" x="-330" y="14" width="142" height="190"/>
+      <image href="/assets/h-hut.webp" x="-220" y="96" width="114" height="106"/>
+      <image href="/assets/h-palm.webp" x="110" y="20" width="134" height="180"/>
+      <image href="/assets/h-haystack.webp" x="770" y="122" width="101" height="80"/>
+      <image href="/assets/h-hut.webp" x="890" y="98" width="112" height="104"/>
+      <image href="/assets/h-palm.webp" x="1020" y="8" width="149" height="200"/>
+      <image href="/assets/h-hut.webp" x="1150" y="64" width="151" height="140"/>
+      <image href="/assets/h-banana.webp" x="1300" y="72" width="135" height="130"/>
+      <image href="/assets/h-haystack.webp" x="1700" y="124" width="96" height="76"/>
+      <image href="/assets/h-palm.webp" x="1820" y="16" width="140" height="188"/>
       <!-- the river -->
-      <path d="M-20 186 H1460 V400 H-20 Z" fill="#132f8f"/>
-      <path d="M-20 186 H1460" stroke="#120e0b" stroke-width="5"/>
-      <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round">
-        <path d="M80 240 q30 -18 60 0"/><path d="M330 290 q34 -20 68 0"/><path d="M560 236 q26 -16 52 0"/><path d="M820 300 q34 -20 68 0"/><path d="M1110 250 q30 -18 60 0"/><path d="M1330 300 q30 -18 60 0"/>
-        <path d="M190 330 q36 -22 72 0"/><path d="M470 345 q30 -18 60 0"/><path d="M750 325 q36 -22 72 0"/><path d="M1010 348 q30 -18 60 0"/><path d="M1230 330 q36 -22 72 0"/>
-      </g>
-      <!-- near bank with reeds -->
-      <path d="M-20 388 q120 -26 240 0 t240 0 t240 0 t240 0 t240 0 t240 0 t240 0 V540 H-20 Z" fill="#14874a" stroke="#120e0b" stroke-width="5" stroke-linejoin="round"/>
-      <use href="#lotus" x="10" y="318" width="120" height="90"/>
-      <use href="#lotus" x="112" y="344" width="80" height="60"/>
-      <use href="#lotus" x="1290" y="318" width="120" height="90"/>
-      <use href="#lotus" x="1220" y="346" width="78" height="58"/>
+      <rect x="-1000" y="208" width="3440" height="180" fill="#132f8f"/>
+      <path d="M-1000 208 H2440" stroke="#120e0b" stroke-width="5"/>
+      <g class="wave" fill="none" stroke="#fffdf6" stroke-width="5" stroke-linecap="round"><path d="M-970 247 q28 -18 56 0"/><path d="M-701 240 q28 -18 56 0"/><path d="M-454 247 q28 -18 56 0"/><path d="M-194 248 q28 -18 56 0"/><path d="M80 239 q28 -18 56 0"/><path d="M357 238 q28 -18 56 0"/><path d="M617 242 q28 -18 56 0"/><path d="M887 241 q28 -18 56 0"/><path d="M1111 249 q28 -18 56 0"/><path d="M1371 246 q28 -18 56 0"/><path d="M1641 245 q28 -18 56 0"/><path d="M1891 248 q28 -18 56 0"/><path d="M2110 241 q28 -18 56 0"/><path d="M2391 240 q28 -18 56 0"/><path d="M-951 295 q33 -22 66 0"/><path d="M-750 294 q33 -22 66 0"/><path d="M-451 285 q33 -22 66 0"/><path d="M-231 296 q33 -22 66 0"/><path d="M44 284 q33 -22 66 0"/><path d="M282 296 q33 -22 66 0"/><path d="M485 288 q33 -22 66 0"/><path d="M745 293 q33 -22 66 0"/><path d="M1037 290 q33 -22 66 0"/><path d="M1328 296 q33 -22 66 0"/><path d="M1582 290 q33 -22 66 0"/><path d="M1875 296 q33 -22 66 0"/><path d="M2148 291 q33 -22 66 0"/><path d="M2365 289 q33 -22 66 0"/><path d="M-996 332 q36 -24 72 0"/><path d="M-733 333 q36 -24 72 0"/><path d="M-500 340 q36 -24 72 0"/><path d="M-245 342 q36 -24 72 0"/><path d="M35 334 q36 -24 72 0"/><path d="M288 338 q36 -24 72 0"/><path d="M537 339 q36 -24 72 0"/><path d="M781 338 q36 -24 72 0"/><path d="M1055 336 q36 -24 72 0"/><path d="M1329 333 q36 -24 72 0"/><path d="M1572 340 q36 -24 72 0"/><path d="M1775 334 q36 -24 72 0"/><path d="M2052 340 q36 -24 72 0"/><path d="M2341 332 q36 -24 72 0"/></g>
+      <image href="/assets/h-lotus.webp" x="-520" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="20" y="258" width="160" height="128"/>
+      <image href="/assets/h-lotus.webp" x="1270" y="262" width="150" height="120"/>
+      <image href="/assets/h-lotus.webp" x="1880" y="260" width="150" height="120"/>
+      <image href="/assets/h-bank-near.svg" x="-1000" y="322" width="3440" height="124"/>
     </svg>
+    <img class="birds" src="/assets/h-birds.webp" alt="" aria-hidden="true">
   <svg class="boat" viewBox="-360 -400 720 440" role="img" aria-label="The majhi steering a rickshaw-painted boat while three robot agents row">
     <g class="bob">
       <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
@@ -243,9 +225,7 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
       </g>
     </g>
   </svg>
-
   </div>
-  <a class="down" href="#crew" aria-label="Scroll to how majhi works"><svg viewBox="0 0 24 24" fill="none" stroke="#fffdf6" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15M5 12l7 7 7-7"/></svg></a>
 </header>
 
 <div class="trim" style="--below:var(--green)"></div>
