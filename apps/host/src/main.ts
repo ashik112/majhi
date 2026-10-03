@@ -1,15 +1,16 @@
 /**
- * majhi host helper: runs on the owner's machine, outside Docker, and does
+ * majhi host helper: runs on the owner's computer, outside Docker, and does
  * the few jobs the container cannot: list host folders, suggest workspace
  * roots, and remount roots by recreating the server container. It opens no
- * port; it polls the server (SPEC 4.2).
+ * port; it polls the server (SPEC 4.2). Everything that differs per OS goes
+ * through the `Platform` built here for the OS found at start (platform/).
  */
 import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { release } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
-import type { HostInfo, LayaQuestion } from "@majhi/shared";
+import { type HostInfo, keyringName, type LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts";
 import { parseHostConfig } from "./config.ts";
 import { createE2eRunner } from "./e2e.ts";
@@ -20,19 +21,18 @@ import { type GitCloneDeps, gitClone, gitLsRemote } from "./gitClone.ts";
 import { detectGitLogins, type GitLoginsDeps, readGitToken } from "./gitLogins.ts";
 import { type GitPushDeps, gitCredential, gitPush } from "./gitPush.ts";
 import { runJob } from "./jobs.ts";
-import { createKeyBackup } from "./keychain.ts";
+import { createKeyBackup } from "./keyBackup.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
-import { createFileLogger } from "./log.ts";
-import { showNotification } from "./notify.ts";
-import { openUrl } from "./openUrl.ts";
-import { findExecutable, toolPath } from "./paths.ts";
-import { isWsl } from "./platform/os.ts";
+import { createFileLogger, type Logger } from "./log.ts";
+import { plainLine, showNotification } from "./notify.ts";
+import { findExecutable } from "./paths.ts";
+import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
+import type { Platform } from "./platform/types.ts";
 import { composeEnv, createRemounter, dockerStep, type ExecFn, type RemountOptions } from "./remount.ts";
 import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
-import { runCommand } from "./runCommand.ts";
 import { createSsh, discoverPublicKeys } from "./ssh.ts";
-import { notificationScript, type StartupDeps, startAtLogin } from "./startup.ts";
+import { type StartupDeps, startAtLogin } from "./startup.ts";
 import { suggestRoots } from "./suggestRoots.ts";
 import { ensureToken } from "./token.ts";
 import { createUpdater } from "./update.ts";
@@ -41,6 +41,7 @@ const exec: ExecFn = promisify(execFile);
 
 const FACTS_REFRESH_MS = 30_000;
 const KEY_BACKUP_REFRESH_MS = 10 * 60_000;
+const DOCKER_LOOK_MS = 60_000;
 
 const files = {
   readText: (file: string) => readFile(file, "utf8").catch(() => undefined),
@@ -53,6 +54,11 @@ const files = {
 
 async function main(): Promise<void> {
   const config = parseHostConfig();
+  const os = currentOs();
+  if (os === undefined) {
+    process.stderr.write("majhi's host helper runs on macOS, Linux and WSL2.\n");
+    process.exit(1);
+  }
   const publicKeys = () => discoverPublicKeys({ ...files, home: config.home });
   if (process.argv.includes("--ssh-pubkeys")) {
     // For `make up`: the .pub files to mount, one per line. Nothing else is printed.
@@ -62,81 +68,117 @@ async function main(): Promise<void> {
   const log = createFileLogger(join(config.majhiHome, "logs", "host.log"));
   await ensureToken(config.majhiHome);
 
-  const path = toolPath(process.env.PATH);
-  const docker = config.repo === undefined ? undefined : await findExecutable("docker", path);
-  const remountOptions =
-    config.repo === undefined || docker === undefined
-      ? undefined
-      : {
-          repo: config.repo,
-          docker,
-          env: composeEnv(process.env, {
-            home: config.home,
-            uid: process.getuid?.() ?? 0,
-            gid: process.getgid?.() ?? 0,
-            path,
-          }),
-          exec,
-          log,
-          sshPublicKeys: publicKeys,
-        };
-  const remount = remountOptions === undefined ? undefined : createRemounter(remountOptions);
-  const gitBin = await findExecutable("git", path);
+  const deps = processDeps(os, { home: config.home, majhiHome: config.majhiHome, log });
+  const platform = createPlatform(os, deps);
+  const path = deps.path;
+  const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =
     config.repo === undefined || gitBin === undefined
       ? undefined
       : { git: gitBin, repo: config.repo, env: { ...process.env, PATH: path }, exec };
-  const facts = createHostFacts({ git: gitContext, docker, env: { ...process.env, PATH: path }, exec });
-  await facts.refresh();
-  const factsTimer = setInterval(() => void facts.refresh(), FACTS_REFRESH_MS);
-  factsTimer.unref();
   const bundle = join(config.majhiHome, "bin", "majhi-host.mjs");
   const secretsKeyFile =
     process.env.MAJHI_SECRETS_KEY ?? join(config.home, ".config", "majhi", "secrets.key");
   const keyBackup = createKeyBackup({
-    run: runCommand,
+    keyring: platform.keyring,
+    where: keyringName(os),
     readText: files.readText,
     keyFile: secretsKeyFile,
-    platform: process.platform,
     log,
   });
-  const update =
-    remountOptions === undefined || gitContext === undefined
+
+  // How `docker compose` runs once docker is found. MAJHI_SSH_AGENT is the agent socket the server
+  // container gets (decision 1), unless the helper's own environment names one.
+  const compose =
+    config.repo === undefined
       ? undefined
-      : createUpdater({
-          remount: remountOptions,
-          git: gitContext,
-          majhiHome: config.majhiHome,
-          bundle,
-          selfPath: process.argv[1] ?? "",
-          secretsKeyFile,
-          keychain: keyBackup,
+      : {
+          repo: config.repo,
+          env: composeEnv(
+            {
+              ...process.env,
+              MAJHI_SSH_AGENT: process.env.MAJHI_SSH_AGENT?.trim() || platform.sshAgent.composeSocket,
+            },
+            { home: config.home, uid: process.getuid?.() ?? 0, gid: process.getgid?.() ?? 0, path },
+          ),
+          exec,
           log,
-          exit: () => process.exit(0),
-        });
+          sshPublicKeys: publicKeys,
+        };
+  let remountOptions: RemountOptions | undefined;
+  let remount: ReturnType<typeof createRemounter> | undefined;
+  let update: ReturnType<typeof createUpdater> | undefined;
+  let dockerTimer: NodeJS.Timeout | undefined;
+  let started = false;
+  /**
+   * Looks for docker until it is there, then turns on remount, update and the Docker facts. On WSL2,
+   * Docker Desktop puts the CLI into the distro only while it runs, so at login `docker` can be
+   * missing or a dangling link (decision 7). Asked at start, while startup waits for Docker, and
+   * every minute.
+   */
+  const findDocker = async (): Promise<RemountOptions | undefined> => {
+    if (remountOptions !== undefined || compose === undefined) return remountOptions;
+    const docker = await deps.find("docker");
+    if (docker === undefined || remountOptions !== undefined) return remountOptions;
+    remountOptions = { ...compose, docker };
+    remount = createRemounter(remountOptions);
+    update =
+      gitContext === undefined
+        ? undefined
+        : createUpdater({
+            remount: remountOptions,
+            git: gitContext,
+            majhiHome: config.majhiHome,
+            bundle,
+            selfPath: process.argv[1] ?? "",
+            secretsKeyFile,
+            keyBackup,
+            log,
+            exit: () => process.exit(0),
+          });
+    clearInterval(dockerTimer);
+    if (started) log(`remounts on: found ${docker}`);
+    return remountOptions;
+  };
+  await findDocker();
+  if (compose !== undefined && remountOptions === undefined) {
+    dockerTimer = setInterval(() => void findDocker(), DOCKER_LOOK_MS);
+    dockerTimer.unref();
+  }
+  const facts = createHostFacts({
+    git: gitContext,
+    docker: () => remountOptions?.docker,
+    env: { ...process.env, PATH: path },
+    exec,
+  });
+  await facts.refresh();
+  const factsTimer = setInterval(() => void facts.refresh(), FACTS_REFRESH_MS);
+  factsTimer.unref();
 
   const ssh = createSsh({
-    run: runCommand,
+    run: deps.run,
     ...files,
     home: config.home,
-    env: { ...process.env, PATH: path },
+    path,
+    find: deps.find,
+    agent: platform.sshAgent,
+    keyring: platform.keyring,
     log,
   });
   const editorOpen = createEditorOpener({
-    run: runCommand,
-    path,
-    home: config.home,
-    platform: process.platform,
-    find: findExecutable,
+    run: deps.run,
+    platform: platform.editor,
+    env: () => platform.desktopEnv(),
+    find: deps.find,
     kind: pathKind,
     isExecutable: async (file) => (await findExecutable(basename(file), dirname(file))) !== undefined,
   });
   const e2eRun = createE2eRunner({
-    run: runCommand,
+    run: deps.run,
     majhiHome: config.majhiHome,
     home: config.home,
     path,
-    platform: process.platform,
+    platform: nodePlatform,
     find: findExecutable,
     log,
   });
@@ -145,47 +187,41 @@ async function main(): Promise<void> {
     home: config.home,
     path,
     osRelease: release(),
-    run: runCommand,
+    run: deps.run,
     log,
   });
   const gitDeps: GitLoginsDeps = {
-    run: runCommand,
+    run: deps.run,
     readText: files.readText,
     home: config.home,
     path,
-    socket: async () => {
-      const own = process.env.SSH_AUTH_SOCK?.trim();
-      if (own) return own;
-      const got = await runCommand("/bin/launchctl", ["getenv", "SSH_AUTH_SOCK"], {
-        env: { PATH: path },
-        timeoutMs: 5_000,
-      });
-      return got.code === 0 ? got.stdout.trim() || undefined : undefined;
-    },
-    find: (name) => findExecutable(name, path),
+    socket: () => platform.sshAgent.socket(),
+    find: deps.find,
   };
   // majhi's own askpass for clones and pushes with a workspace's token (see gitAuth.ts).
   const askpass = await ensureAskpass(config.majhiHome);
   const authDeps = { majhiHome: config.majhiHome, askpass, path, home: config.home };
   const gitPushDeps: GitPushDeps = {
-    run: runCommand,
+    run: deps.run,
     home: config.home,
     path,
     kind: pathKind,
     authEnv: (auth) => gitAuthEnv(authDeps, auth),
   };
-  const gitCloneDeps: GitCloneDeps = { ...authDeps, run: runCommand, socket: gitDeps.socket };
-  const wsl = process.platform === "linux" && isWsl(release(), process.env);
-  // The server resumes turns that stalled while the Mac slept when it sees this change.
+  const gitCloneDeps: GitCloneDeps = { ...authDeps, run: deps.run, socket: gitDeps.socket };
+  // The server resumes turns that stalled while the computer slept when it sees this change.
   let wokeAt: string | undefined;
   const info = (): HostInfo => {
     const status = ssh.status();
     const repo = facts.repo();
     const runtime = facts.runtime();
+    const keyring = keyBackup.keyring();
     const secretsKey = keyBackup.status();
     return {
       version: config.version,
-      platform: process.platform,
+      platform: nodePlatform,
+      os,
+      ...(keyring === undefined ? {} : { keyring }),
       canRemount: remount !== undefined,
       ...(status === undefined ? {} : { ssh: status }),
       ...(repo === undefined ? {} : { commit: repo.commit, dirty: repo.dirty }),
@@ -201,16 +237,19 @@ async function main(): Promise<void> {
       ? `on, in ${config.repo}`
       : config.repo === undefined
         ? "off, MAJHI_REPO is not set"
-        : "off, docker was not found";
+        : "off until docker is found";
   log(
-    `majhi host helper ${config.version} started (pid ${process.pid}, ${config.url}, remounts ${remounts})`,
+    `majhi host helper ${config.version} started on ${os} (pid ${process.pid}, ${config.url}, remounts ${remounts})`,
   );
+  started = true;
 
-  // A copy of the secrets key in the Keychain, made when there is none. Looked at again now and then,
-  // so a copy deleted in Keychain Access shows on Health. It never blocks the poll loop.
+  // A copy of the secrets key in the keyring, made when there is none. Looked at again now and then,
+  // so a deleted copy or a keyring that went away shows on Health. It never blocks the poll loop.
   void keyBackup.ensure();
   const keyTimer = setInterval(() => void keyBackup.ensure(), KEY_BACKUP_REFRESH_MS);
   keyTimer.unref();
+  // Linux and WSL2: the fixed agent socket the server container uses (decision 2). macOS: nothing.
+  const stopForwarder = platform.sshAgent.serve();
   const stopSsh = ssh.start({
     onWake: (at) => {
       wokeAt = at.toISOString();
@@ -220,6 +259,7 @@ async function main(): Promise<void> {
   const stop = (signal: string): void => {
     log(`stopping (${signal})`);
     stopSsh();
+    stopForwarder();
     laya.stop();
     controller.abort();
   };
@@ -228,8 +268,11 @@ async function main(): Promise<void> {
 
   const handlers = {
     listDirs: (params: { path: string; showHidden: boolean }) => listDirs(params, config.home),
-    suggestRoots: () => suggestRoots(config.home),
-    remount,
+    suggestRoots: () => suggestRoots(config.home, platform.folders.skippedAtHome),
+    // Read at each job: remount and update turn on once docker is found.
+    get remount() {
+      return remount;
+    },
     sshReload: () => ssh.reload(),
     editorOpen,
     e2eRun,
@@ -239,7 +282,9 @@ async function main(): Promise<void> {
       if (repo === undefined) throw new Error("The majhi folder is not a git checkout.");
       return { head: repo.commit, dirty: repo.dirty, changes: await commitSubjects(gitContext, params.from) };
     },
-    update,
+    get update() {
+      return update;
+    },
     restart: () => {
       log("restarting on request");
       setTimeout(() => process.exit(0), 300);
@@ -252,39 +297,20 @@ async function main(): Promise<void> {
     gitToken: (params: { via: "gh" | "glab"; host: string }) =>
       readGitToken(gitDeps, params.via, params.host),
     gitPush: (params: Parameters<typeof gitPush>[1]) => gitPush(gitPushDeps, params),
-    openUrl: (params: { url: string }) =>
-      openUrl(
-        {
-          run: runCommand,
-          platform: process.platform,
-          wsl,
-          path,
-          env: process.env,
-          find: (name) => findExecutable(name, path),
-        },
-        params.url,
-      ),
+    openUrl: (params: { url: string }) => platform.openUrl(params.url),
     gitClone: (params: Parameters<typeof gitClone>[1], progress: Parameters<typeof gitClone>[2]) =>
       gitClone(gitCloneDeps, params, progress),
     gitLsRemote: (params: Parameters<typeof gitLsRemote>[1]) => gitLsRemote(gitCloneDeps, params),
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
-    notify: async (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
-      showNotification(
-        {
-          run: runCommand,
-          env: { PATH: path },
-          terminalNotifier: await findExecutable("terminal-notifier", path),
-          baseUrl: config.url,
-        },
-        params,
-      ),
+    notify: (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
+      showNotification(platform.notifier, config.url, params),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),
   };
-  if (remountOptions !== undefined) {
+  if (compose !== undefined) {
     // Start Docker and majhi if a login or a restart found them down. It never blocks the poll loop.
-    void startAtLogin(startupDeps(remountOptions, config.home, log)).catch((err: unknown) =>
+    void startAtLogin(startupDeps(findDocker, platform, log)).catch((err: unknown) =>
       log(`startup: ${errorMessage(err)}`),
     );
   }
@@ -303,33 +329,35 @@ async function main(): Promise<void> {
   });
 }
 
-const DOCKER_APPS = ["OrbStack", "Docker"] as const;
 const DOCKER_CALL_MS = 15_000;
 const COMPOSE_UP_MS = 300_000;
 
-/** The real commands behind the start-at-login flow. Only this file runs them. */
-function startupDeps(options: RemountOptions, home: string, log: (message: string) => void): StartupDeps {
-  const { docker, repo, env } = options;
-  const compose = (args: string[], timeout: number) => exec(docker, args, { cwd: repo, env, timeout });
+/**
+ * The real commands behind the start-at-login flow. Only this file runs them. Docker is looked for
+ * at each step, so a CLI that appears once Docker started is used.
+ */
+function startupDeps(
+  findDocker: () => Promise<RemountOptions | undefined>,
+  platform: Pick<Platform, "docker" | "notifier">,
+  log: Logger,
+): StartupDeps {
+  const found = async (): Promise<RemountOptions> => {
+    const options = await findDocker();
+    if (options === undefined) throw new Error("docker was not found");
+    return options;
+  };
+  const compose = async (args: string[], timeout: number) => {
+    const { docker, repo, env } = await found();
+    return exec(docker, args, { cwd: repo, env, timeout });
+  };
   return {
     log,
     dockerUp: () =>
-      exec(docker, ["info", "--format", "{{.ID}}"], { cwd: repo, env, timeout: DOCKER_CALL_MS }).then(
+      compose(["info", "--format", "{{.ID}}"], DOCKER_CALL_MS).then(
         () => true,
         () => false,
       ),
-    openDocker: async () => {
-      for (const app of DOCKER_APPS) {
-        for (const dir of ["/Applications", join(home, "Applications")]) {
-          if (await files.exists(join(dir, `${app}.app`))) {
-            await exec("/usr/bin/open", ["-a", app], { cwd: "/", env, timeout: DOCKER_CALL_MS });
-            log(`startup: opened ${app}`);
-            return true;
-          }
-        }
-      }
-      return false;
-    },
+    docker: platform.docker,
     majhiRunning: async () => {
       try {
         const { stdout } = await compose(
@@ -342,13 +370,18 @@ function startupDeps(options: RemountOptions, home: string, log: (message: strin
       }
     },
     startMajhi: async () => {
-      await dockerStep(options, "startup")("start majhi", ["compose", "up", "-d", "--wait"], COMPOSE_UP_MS);
+      await dockerStep(await found(), "startup")(
+        "start majhi",
+        ["compose", "up", "-d", "--wait"],
+        COMPOSE_UP_MS,
+      );
     },
     notify: async (message) => {
-      await exec("/usr/bin/osascript", ["-e", notificationScript(message)], {
-        cwd: "/",
-        env,
-        timeout: DOCKER_CALL_MS,
+      await platform.notifier.show({
+        title: "majhi",
+        message: plainLine(message),
+        url: undefined,
+        sound: false,
       });
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -357,7 +390,8 @@ function startupDeps(options: RemountOptions, home: string, log: (message: strin
 }
 
 main().catch((err: unknown) => {
-  // Goes to stderr, which the LaunchAgent writes to ~/.majhi/logs/host.out. launchd restarts the helper.
+  // Goes to stderr, which the login service (the LaunchAgent on macOS, the systemd user unit on
+  // Linux and WSL2) appends to ~/.majhi/logs/host.out, and the service restarts the helper.
   process.stderr.write(`majhi host helper failed: ${errorMessage(err)}\n`);
   process.exit(1);
 });
