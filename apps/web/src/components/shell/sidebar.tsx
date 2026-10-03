@@ -80,7 +80,12 @@ function Brand() {
         aria-label="majhi, go to the board"
         className="flex items-center gap-2.5 rounded-md"
       >
-        <MajhiMark className="h-6 w-7 text-brand" />
+        <span
+          aria-hidden="true"
+          className="flex size-7 items-center justify-center rounded-[7px] bg-brand text-brand-ink shadow-[0_4px_14px_-4px_var(--c-brand)]"
+        >
+          <MajhiMark className="w-[19px]" />
+        </span>
         <span className="text-[16px] font-semibold tracking-[-0.01em]">majhi</span>
       </Link>
       <span

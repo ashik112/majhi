@@ -99,7 +99,12 @@ export function OnboardingFlow({
           onPick={(i) => !locked && goTo(i)}
         />
         <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2.5">
-          <MajhiMark className="h-6 w-7 text-brand [filter:drop-shadow(0_0_6px_var(--rv-label-halo))]" />
+          <span
+            aria-hidden="true"
+            className="flex size-7 items-center justify-center rounded-[7px] bg-brand text-brand-ink shadow-[0_4px_14px_-4px_var(--c-brand)]"
+          >
+            <MajhiMark className="w-[19px]" />
+          </span>
           <span className="text-[16px] font-semibold tracking-[-0.01em] text-fg [text-shadow:0_0_8px_var(--rv-label-halo)]">
             majhi
           </span>
