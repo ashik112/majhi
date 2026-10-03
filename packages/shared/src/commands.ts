@@ -51,12 +51,15 @@ import {
 import { BackupListSchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
+  CaptainAsksSchema,
+  CaptainCapAnswerInputSchema,
   CaptainChoreInputSchema,
   CaptainLogInputSchema,
   CaptainLogResultSchema,
   CaptainStatusSchema,
   CaptainUndoInputSchema,
   CaptainUndoResultSchema,
+  SlotCapacitySchema,
 } from "./captain.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -1073,6 +1076,13 @@ export const commands = {
     summary: "Create the worktrees if needed and start the task's agent",
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
+  },
+  "tasks.slots": {
+    risk: "read",
+    summary:
+      "Free agent slots right now: overall under agents_max and per account under per_account, each with how many are in use and how many starts wait in line. Read it before starting work: a start with no free slot only waits",
+    input: z.object({}),
+    output: SlotCapacitySchema,
   },
   "tasks.stop": {
     risk: "change",
@@ -2680,6 +2690,20 @@ export const commands = {
       "Turn an upkeep chore back on in a workspace after two failures in a row turned it off. Owner only",
     input: CaptainChoreInputSchema,
     output: CaptainStatusSchema,
+  },
+  "captain.asks": {
+    risk: "read",
+    summary:
+      "What the captain asks the owner about its daily caps today: each chore that reached its cap in a workspace, with the cap a raise would give",
+    input: Empty,
+    output: CaptainAsksSchema,
+  },
+  "captain.answerCap": {
+    risk: "change",
+    summary:
+      "Answer the captain's question about a chore that reached its daily cap in a workspace: raise doubles that chore's caps for today only, leave keeps them. Owner only",
+    input: CaptainCapAnswerInputSchema,
+    output: CaptainAsksSchema,
   },
   "autonomy.plan": {
     risk: "change",

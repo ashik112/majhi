@@ -40,6 +40,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.resume",
   "captain.undo",
   "captain.choreOn",
+  "captain.answerCap",
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",

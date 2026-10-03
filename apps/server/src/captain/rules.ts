@@ -41,6 +41,48 @@ export const DAILY_CAPS: Record<CaptainChore, { actions?: number; runs?: number 
   stuck: { actions: 10 },
 };
 
+/** A raise the owner gave for one day multiplies that day's caps of the chore. */
+export const RAISE_FACTOR = 2;
+
+/** A chore's daily caps on one day: `raised` when the owner raised them for that day. */
+export function dailyCaps(chore: CaptainChore, raised: boolean): { actions?: number; runs?: number } {
+  const base = DAILY_CAPS[chore];
+  if (!raised) return base;
+  return {
+    ...(base.actions === undefined ? {} : { actions: base.actions * RAISE_FACTOR }),
+    ...(base.runs === undefined ? {} : { runs: base.runs * RAISE_FACTOR }),
+  };
+}
+
+/** What reaching a cap means, per chore and cap: "answered its 20 questions". */
+const REACHED: Record<CaptainChore, { actions?: (n: number) => string; runs?: (n: number) => string }> = {
+  ship: { actions: (n) => `shipped its ${n} tasks` },
+  cards: { actions: (n) => `answered its ${n} approval cards` },
+  questions: { actions: (n) => `answered its ${n} questions` },
+  memory: { runs: (n) => `did its ${n} memory runs` },
+  projects: { runs: (n) => `did its ${n} project checks`, actions: (n) => `made its ${n} project changes` },
+  triage: {
+    runs: (n) => (n === 1 ? "did its triage run" : `did its ${n} triage runs`),
+    actions: (n) => `triaged its ${n} tasks`,
+  },
+  cleanup: {
+    runs: (n) => (n === 1 ? "did its cleanup run" : `did its ${n} cleanup runs`),
+    actions: (n) => `cleaned up its ${n} items`,
+  },
+  stuck: { actions: (n) => `looked at its ${n} stuck tasks` },
+};
+
+/** The question to the owner when a chore reached a daily cap in a workspace. */
+export function capAskText(
+  workspace: string,
+  chore: CaptainChore,
+  kind: "actions" | "runs",
+  cap: number,
+): string {
+  const reached = REACHED[chore][kind]?.(cap) ?? `reached its daily cap of ${cap}`;
+  return `${workspace}: the captain ${reached} for today. Raise the limit for today?`;
+}
+
 /** Two failures in a row turn a chore off for the workspace. */
 export const FAILURES_OFF = 2;
 

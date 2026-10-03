@@ -9,7 +9,7 @@ import {
   type RuntimeOptions,
   type SessionEvent,
 } from "@majhi/acp";
-import type { Attachment, HandoffVia, ProcessInfo, RoomItem, Task } from "@majhi/shared";
+import type { Attachment, HandoffVia, ProcessInfo, RoomItem, SlotCapacity, Task } from "@majhi/shared";
 import { durationMs, isAutonomyChat } from "@majhi/shared";
 import { accountHome } from "../accounts/homes.ts";
 import { readModelCatalog } from "../accounts/model-catalog.ts";
@@ -52,7 +52,7 @@ import { checkpointRepos, checkpointTurn } from "./durable.ts";
 import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
-import { Slots } from "./limits.ts";
+import { capacityOf, Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
@@ -249,6 +249,32 @@ export class RunManager {
   /** True when the agent is queued, starting, working or waiting in any task. */
   isWorking(agent: string): boolean {
     return [...this.runs.values()].some((r) => r.agent === agent && WORKING.has(r.live.status));
+  }
+
+  /**
+   * Free slots now, overall and per account (`accounts` are listed even when nothing uses them). The
+   * captain's own slot is outside the limits and not counted.
+   */
+  async capacity(accounts: readonly string[] = []): Promise<SlotCapacity> {
+    const { limits } = await this.deps.config.settings();
+    return capacityOf(this.slots.state(), limits, accounts);
+  }
+
+  /**
+   * True while something of the task's agents is on its way: one queued for a slot, starting,
+   * working or waiting, a loop about to send, or a run a gate holds (a cap, a lost connection) that
+   * goes on by itself. A task is stuck only when this is false.
+   */
+  busy(task: string): boolean {
+    return [...this.runs.values()].some(
+      (r) =>
+        r.task === task &&
+        !r.closing &&
+        (WORKING.has(r.live.status) ||
+          r.turning ||
+          r.paused !== undefined ||
+          this.slots.position(this.key(r.task, r.agent)) !== undefined),
+    );
   }
 
   /** Agents of the task that are queued, starting, working or waiting, or whose loop is about to send. */
@@ -1011,10 +1037,7 @@ export class RunManager {
       const raw = await this.withFacts(
         run,
         brief,
-        this.withNotes(
-          run,
-          this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry))),
-        ),
+        this.withNotes(run, this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry)))),
       );
       if (raw === undefined) continue;
 

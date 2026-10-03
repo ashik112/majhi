@@ -91,6 +91,7 @@ describe("store", () => {
       "budget_alerts",
       "budget_resumes",
       "captain_actions",
+      "captain_cap_asks",
       "captain_chores",
       "captain_lanes",
       "captain_presence",
