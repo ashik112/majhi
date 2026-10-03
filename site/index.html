@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>majhi: you steer, the agents row</title>
-<meta name="description" content="A desk for running crews of AI coding agents, one crew per client, from a single screen. Runs on your machine.">
-<meta property="og:title" content="majhi: you steer, the agents row">
-<meta property="og:description" content="Run crews of AI coding agents for every client from one desk. Claude Code and Codex, on your machine.">
+<title>majhi</title>
+<meta name="description" content="You steer. The agents row. Run crews of AI coding agents for every client, from one desk, on your own machine.">
+<meta property="og:title" content="majhi">
+<meta property="og:description" content="You steer. The agents row. Crews of AI coding agents for every client, on your machine.">
 <meta property="og:image" content="https://majhi.dev/assets/onboarding.webp">
 <meta property="og:url" content="https://majhi.dev">
 <meta name="twitter:card" content="summary_large_image">
@@ -14,286 +14,220 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#070b16; --bg2:#0b1122; --panel:rgba(18,26,48,.66); --line:rgba(150,175,215,.14);
-  --fg:#eef2f8; --soft:#c3cbda; --muted:#8a95ab; --faint:#5f6a80;
-  --brand:#f2a83a; --brand-ink:#1a1204; --river:url("/assets/river-night.webp");
-  --grid:rgba(120,150,200,.05);
-}
-@media (prefers-color-scheme: light){
-  :root{
-    --bg:#f6f3ec; --bg2:#efeadf; --panel:rgba(255,255,255,.72); --line:rgba(40,50,70,.12);
-    --fg:#17130f; --soft:#3c3a36; --muted:#6b6760; --faint:#9a958c;
-    --river:url("/assets/river-day.webp"); --grid:rgba(40,60,90,.05);
-  }
-}
+:root{--saffron:#f2a83a;--ink:#1c1712;--cream:#f4efe4;--night:#0a0f22;--line:#1c1712}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 "IBM Plex Sans",system-ui,sans-serif;
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:56px 56px}
+body{margin:0;font:18px/1.5 "Inter Tight",system-ui,sans-serif;color:var(--ink);background:var(--cream);-webkit-font-smoothing:antialiased}
 a{color:inherit}
-.wrap{max-width:1160px;margin:0 auto;padding:0 24px}
-h1,h2,h3,.display{font-family:"Baloo Da 2","IBM Plex Sans",sans-serif;letter-spacing:-.01em;line-height:1.05;margin:0}
-code,pre,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.mono{font:500 12px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase}
 
-/* nav */
-nav{position:sticky;top:0;z-index:10;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line)}
-nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
-.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:600;font-size:18px}
-.tile{width:30px;height:30px;border-radius:8px;background:var(--brand);display:grid;place-items:center;box-shadow:0 4px 16px -4px var(--brand)}
-.tile img{width:20px}
-nav .links{display:flex;gap:22px;margin-left:auto;font-size:15px;color:var(--soft)}
-nav .links a{text-decoration:none}nav .links a:hover{color:var(--fg)}
-.btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 18px;font-weight:600;font-size:15px;text-decoration:none;border:1px solid var(--line);transition:transform .2s,box-shadow .2s}
-.btn:hover{transform:translateY(-1px)}
-.btn.primary{background:var(--brand);color:var(--brand-ink);border-color:transparent;box-shadow:0 10px 30px -10px var(--brand)}
-.btn.ghost{background:var(--panel)}
-nav .btn{padding:8px 14px;font-size:14px}
+nav{position:fixed;inset:0 0 auto;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:22px 28px;pointer-events:none}
+nav>*{pointer-events:auto}
+.tilemark{width:44px;height:44px;border-radius:11px;background:var(--saffron);display:grid;place-items:center;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink)}
+.tilemark svg{width:28px}
+.mark{display:block}
+.navr{display:flex;gap:10px;align-items:center}
+.circle{width:40px;height:40px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
+.circle svg{width:18px;fill:var(--saffron)}
+.pill{background:var(--ink);color:var(--saffron);border-radius:999px;padding:11px 20px;font-weight:600;font-size:16px;text-decoration:none}
 
-/* hero */
-.hero{padding:72px 0 40px}
-.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
-.kicker{display:inline-flex;align-items:center;gap:10px;color:var(--brand);font-weight:600;font-size:14px;letter-spacing:.04em;text-transform:uppercase}
-.kicker .bn{font-family:"Baloo Da 2";font-size:18px;text-transform:none;letter-spacing:0}
-.hero h1{font-size:clamp(40px,5.6vw,76px);font-weight:800;margin:18px 0 20px}
-.hero h1 .ln{display:block;white-space:nowrap}
-.hero .wrap>*{min-width:0}
-.hero h1 em{font-style:normal;color:var(--brand)}
-.lede{font-size:19px;color:var(--soft);max-width:540px;margin:0 0 28px}
-.cta{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:26px}
-.install{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;max-width:560px}
-.install code{flex:1;font-size:14px;color:var(--soft);white-space:nowrap;overflow:auto}
-.install code b{color:var(--brand);font-weight:500}
-.copy{background:transparent;border:1px solid var(--line);color:var(--soft);border-radius:8px;padding:6px 10px;font:500 13px "IBM Plex Sans";cursor:pointer}
-.copy:hover{color:var(--fg)}
-.note{font-size:13px;color:var(--faint);margin-top:10px}
+.block{display:inline-flex;align-items:center;gap:10px;background:var(--saffron);color:var(--ink);border:2px solid var(--line);padding:14px 22px;font:600 15px/1 "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;box-shadow:6px 6px 0 var(--line);transition:transform .15s,box-shadow .15s;cursor:pointer}
+.block:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--line)}
+.block:active{transform:translate(4px,4px);box-shadow:2px 2px 0 var(--line)}
+.block.light{background:var(--cream)}
 
-/* river scene */
-.scene{position:relative;aspect-ratio:2/3;max-height:640px;border-radius:22px;overflow:hidden;border:1px solid var(--line);
-  background:var(--river) center bottom/cover no-repeat;box-shadow:0 40px 80px -30px rgba(0,0,0,.6)}
-.scene svg{position:absolute;inset:0;width:100%;height:100%}
+.hero{position:relative;min-height:100vh;background:var(--saffron);overflow:hidden;display:flex;align-items:center;
+  background-image:radial-gradient(rgba(28,23,18,.22) 1.2px,transparent 1.2px);background-size:38px 38px}
+.word{position:relative;z-index:2;margin:0;padding-left:2vw;font:800 clamp(140px,27vw,440px)/.8 "Baloo Da 2",sans-serif;letter-spacing:-.04em;color:var(--ink);filter:url(#grain)}
+.heroText{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:28px;padding:0 5vw 0 2vw}
+.heroText h2{margin:0;font:500 clamp(30px,3.1vw,46px)/1.08 "Inter Tight";letter-spacing:-.025em}
+.heroText p{margin:0;font-size:19px;max-width:440px}
+.tag{position:absolute;z-index:2;left:30px;bottom:28px}
+.down{position:absolute;z-index:2;left:50%;bottom:24px;transform:translateX(-50%);width:28px;opacity:.8}
+.swarm{position:absolute;inset:0;z-index:1;pointer-events:none}
+.swarm svg{position:absolute;color:var(--cream);opacity:.85;animation:drift var(--d,18s) ease-in-out var(--o,0s) infinite alternate}
+.swarm svg.ink{color:var(--ink);opacity:.18}
+@keyframes drift{from{transform:translate(0,0) rotate(-14deg)}to{transform:translate(var(--x,40px),var(--y,-30px)) rotate(16deg)}}
+
+.river{position:relative;height:120vh;background:var(--night) url("/assets/river-night.webp") center 70%/cover no-repeat;overflow:hidden;color:var(--cream)}
+.river::after{content:"";position:absolute;inset:0;background:linear-gradient(var(--night),transparent 30%,transparent 70%,var(--night))}
+.riverText{position:relative;z-index:3;text-align:center;padding:22vh 6vw 0}
+.riverText::before{content:"";position:absolute;z-index:-1;left:50%;top:18vh;width:min(1100px,96vw);height:440px;transform:translateX(-50%);background:radial-gradient(closest-side,rgba(6,10,28,.82),rgba(6,10,28,.55) 60%,transparent)}
+.riverText h2{margin:0 auto;max-width:1000px;font:800 clamp(44px,6vw,96px)/.95 "Baloo Da 2";letter-spacing:-.02em}
+.riverText h2 em{font-style:normal;color:var(--saffron)}
+.riverText p{max-width:620px;margin:26px auto 0;font-size:20px;opacity:.9}
+.boatlane{position:absolute;z-index:2;left:0;right:0;bottom:16vh;height:260px}
+.boatlane svg{position:absolute;bottom:0;width:min(46vw,560px);animation:sail 38s linear infinite}
+@keyframes sail{from{left:-50vw}to{left:105vw}}
 .bob{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite alternate}
 .stroke{animation:row 1.2s cubic-bezier(.45,0,.55,1) infinite alternate}
 @keyframes bob{from{transform:translateY(2px) rotate(-.8deg)}to{transform:translateY(-6px) rotate(.7deg)}}
 @keyframes row{from{transform:translate(10px,-4px)}to{transform:translate(-14px,6px)}}
-.ripple{transform-box:fill-box;transform-origin:center;animation:ripple 3.6s cubic-bezier(.2,.6,.35,1) infinite}
-@keyframes ripple{0%{opacity:0;transform:scale(.55)}20%{opacity:.6}100%{opacity:0;transform:scale(1.4)}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-/* sections */
-section{padding:84px 0}
-.eyebrow{color:var(--brand);font-weight:600;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
-h2{font-size:clamp(34px,4.2vw,52px);font-weight:800;margin-bottom:16px}
-.sub{color:var(--soft);font-size:18px;max-width:680px;margin:0 0 44px}
-.story{font-size:20px;color:var(--soft);max-width:760px;line-height:1.7}
-.story p{margin:0 0 18px}
+.steps{padding:18vh 6vw 14vh;max-width:1400px;margin:0 auto}
+.step{display:grid;grid-template-columns:120px 1fr minmax(260px,380px);gap:32px;align-items:baseline;padding:44px 0;border-top:2px solid var(--ink)}
+.step:last-child{border-bottom:2px solid var(--ink)}
+.step .n{font:500 14px "IBM Plex Mono"}
+.step h3{margin:0;font:600 clamp(36px,5vw,76px)/.98 "Inter Tight";letter-spacing:-.035em}
+.step p{margin:0;font-size:18px;color:#4b443b}
 
-.crew{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;backdrop-filter:blur(10px)}
-.crew .emoji{font-size:34px;line-height:1}
-.crew h3{font-size:22px;margin:14px 0 6px}
-.crew p{margin:0;color:var(--muted);font-size:15px}
+.product{background:var(--cream);padding:4vh 6vw 18vh}
+.frame{max-width:1240px;margin:0 auto;border:2px solid var(--ink);box-shadow:14px 14px 0 var(--ink);background:#0b1020}
+.frame .bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:2px solid var(--ink);background:var(--cream)}
+.frame .bar i{width:12px;height:12px;border:2px solid var(--ink);border-radius:50%}
+.frame .bar span{margin-left:auto}
+.frame img{display:block;width:100%;height:auto}
+.caption{max-width:1240px;margin:34px auto 0;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.caption h2{margin:0;font:600 clamp(30px,3.4vw,52px)/1 "Inter Tight";letter-spacing:-.03em;max-width:680px}
+.caption p{margin:0;max-width:420px;color:#4b443b}
 
-.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.features .card h3{font-size:21px;margin:10px 0 8px;display:flex;align-items:center;gap:10px}
-.features .card h3 span{font-size:24px}
-.features .card p{margin:0;color:var(--muted);font-size:15px}
-.features .wide{grid-column:span 2}
-.tag{display:inline-block;font:500 12px "IBM Plex Mono";color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);border-radius:999px;padding:2px 8px}
+.boats{background:var(--saffron);padding:18vh 6vw;position:relative;overflow:hidden;
+  background-image:radial-gradient(rgba(28,23,18,.22) 1.2px,transparent 1.2px);background-size:38px 38px}
+.boats h2{margin:0;font:800 clamp(52px,8vw,132px)/.9 "Baloo Da 2";letter-spacing:-.03em;max-width:1100px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);margin-top:9vh;border-top:2px solid var(--ink)}
+.facts div{padding:26px 26px 0 0}
+.facts div+div{padding-left:26px;border-left:2px solid var(--ink)}
+.facts b{display:block;font:600 24px/1.15 "Inter Tight";letter-spacing:-.02em;margin:14px 0 8px}
+.facts p{margin:0;font-size:16px}
 
-.shot{border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:0 30px 60px -30px rgba(0,0,0,.55)}
-.shot img{display:block;width:100%;height:auto}
-.gallery{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
-.gallery figure{margin:0}
-.gallery figcaption{font-size:14px;color:var(--muted);margin-top:10px}
-.gallery figcaption b{color:var(--fg)}
+.install{background:var(--ink);color:var(--cream);padding:18vh 6vw 14vh;text-align:center}
+.install h2{margin:0;font:800 clamp(56px,9vw,150px)/.9 "Baloo Da 2";letter-spacing:-.03em}
+.install h2 em{font-style:normal;color:var(--saffron)}
+.cmd{display:inline-flex;align-items:center;gap:18px;margin-top:7vh;border:2px solid var(--cream);padding:18px 18px 18px 24px;max-width:92vw;box-shadow:8px 8px 0 var(--saffron)}
+.cmd code{font:400 clamp(13px,1.4vw,18px) "IBM Plex Mono";white-space:nowrap;overflow:auto;text-align:left}
+.cmd code b{color:var(--saffron);font-weight:500}
+.install .small{margin-top:28px;opacity:.6}
 
-.laya{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
-.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.stat .card{text-align:center;padding:18px 12px}
-.stat b{display:block;font-family:"Baloo Da 2";font-size:30px;color:var(--brand);line-height:1.1}
-.stat span{font-size:13px;color:var(--muted)}
-
-.flow{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px}
-.node{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-weight:600}
-.node small{display:block;font-weight:400;color:var(--muted);font-size:13px}
-.arrow{color:var(--faint);font-size:22px}
-.lanes{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
-.lane{border:1px dashed var(--line);border-radius:16px;padding:18px}
-.lane .tt{font-size:13px;color:var(--muted);margin-bottom:10px}
-.lane .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.lane .node{padding:9px 12px;font-size:14px}
-.lane .arrow{font-size:18px}
-
-pre{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;font-size:15px;overflow:auto;color:var(--soft);margin:0}
-pre .c{color:var(--faint)}
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}
-.steps .card b{font-family:"Baloo Da 2";font-size:20px;display:block;margin-bottom:6px}
-.steps .card p{margin:0;color:var(--muted);font-size:15px}
-
-footer{border-top:1px solid var(--line);padding:36px 0 50px;color:var(--muted);font-size:14px}
-footer .wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-footer .right{margin-left:auto;display:flex;gap:18px}
+footer{background:var(--ink);color:var(--cream);padding:28px;display:flex;align-items:center;gap:18px;border-top:1px solid rgba(244,239,228,.15);flex-wrap:wrap}
+footer .mark{color:var(--saffron);width:34px}
+footer .r{margin-left:auto;display:flex;gap:22px}
+footer a{text-decoration:none;opacity:.8}footer a:hover{opacity:1}
 
 @media (max-width:900px){
-  .hero .wrap,.laya{grid-template-columns:1fr}
-  .scene{max-height:520px;max-width:420px;margin:0 auto;width:100%}
-  .crew{grid-template-columns:1fr 1fr}
-  .features,.steps{grid-template-columns:1fr}
-  .features .wide{grid-column:auto}
-  .gallery,.lanes{grid-template-columns:1fr}
-  nav .links a.hide{display:none}
-  section{padding:64px 0}
+  .hero{flex-direction:column;justify-content:center;align-items:flex-start;padding-top:90px}
+  .word{font-size:33vw;padding-left:4vw}
+  .heroText{padding:24px 6vw 90px}
+  .step{grid-template-columns:1fr;gap:12px}
+  .facts{grid-template-columns:1fr}
+  .facts div+div{border-left:0;padding-left:0;border-top:2px solid var(--ink);margin-top:20px}
+  .boatlane svg{width:80vw}
+  .river{height:110vh}
+  .down{display:none}
+  .tag{right:24px}
 }
-@media (max-width:520px){ .crew{grid-template-columns:1fr} .stat{grid-template-columns:1fr} nav .links{display:none} nav .btn{margin-left:auto} .hero h1 .ln{white-space:normal} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.boatlane svg{left:20vw}}
 </style>
 </head>
 <body>
 
-<nav><div class="wrap">
-  <a class="brand" href="#top"><span class="tile"><img src="/assets/majhi-mark-ink.svg" alt=""></span>majhi</a>
-  <div class="links">
-    <a class="hide" href="#crew">The crew</a>
-    <a class="hide" href="#features">Features</a>
-    <a class="hide" href="#how">How it works</a>
-    <a href="#install">Install</a>
-  </div>
-  <a class="btn ghost" href="https://github.com/ashik112/majhi">GitHub</a>
-</div></nav>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="grain" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="2" seed="4" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.25" result="speck"/>
+      <feComposite in="SourceGraphic" in2="speck" operator="in" result="grained"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="soft"/>
+      <feMerge><feMergeNode in="soft"/><feMergeNode in="grained"/></feMerge>
+    </filter>
+  </defs>
+</svg>
 
-<header class="hero" id="top"><div class="wrap">
-  <div>
-    <div class="kicker"><span class="bn">মাঝি</span> the boatman who steers</div>
-    <h1><span class="ln">You steer.</span> <span class="ln"><em>The agents row.</em></span></h1>
-    <p class="lede">A desk for running crews of AI coding agents, one crew per client, from a single screen. Say what you want in one sentence. A lead plans it, builders write it, a reviewer checks it, and you get one card to ship.</p>
-    <div class="cta">
-      <a class="btn primary" href="#install">Get started</a>
-      <a class="btn ghost" href="https://github.com/ashik112/majhi">View on GitHub</a>
-    </div>
-    <div class="install"><code><b>git clone</b> https://github.com/ashik112/majhi.git && cd majhi && <b>make up</b></code><button class="copy" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
-    <div class="note">Runs on your machine with Docker. Claude Code and Codex, with the accounts you already have.</div>
+<nav>
+  <a href="#top" aria-label="majhi" class="tilemark"><svg viewBox="28 54 200 172" fill="#1c1712"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></a>
+  <div class="navr">
+    <a class="circle" href="https://github.com/ashik112/majhi" aria-label="majhi on GitHub"><svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+    <a class="pill" href="#install">Get majhi</a>
   </div>
+</nav>
 
-  <div class="scene" aria-label="A rickshaw-art river with the captain steering a boat while robot agents row">
-    <svg viewBox="0 0 1024 1536" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <g transform="translate(500 1250) scale(0.82)">
-        <ellipse class="ripple" cx="0" cy="10" rx="380" ry="26" fill="none" stroke="rgba(240,245,255,.7)" stroke-width="5"/>
-        <ellipse class="ripple" style="animation-delay:-1.8s" cx="0" cy="10" rx="380" ry="26" fill="none" stroke="rgba(240,245,255,.7)" stroke-width="5"/>
-        <ellipse cx="0" cy="12" rx="330" ry="20" fill="rgba(4,10,40,.3)"/>
-        <g class="bob">
-          <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
-          <g class="stroke">
-            <g transform="translate(-72 -158) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-            <g transform="translate(40 -156) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-            <g transform="translate(154 -150) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
-            <image href="/assets/fists.webp" x="-360" y="-380" width="720" height="411"/>
-          </g>
+<header class="hero" id="top">
+  <div class="swarm" id="swarm"></div>
+  <h1 class="word">majhi</h1>
+  <div class="heroText">
+    <h2>You steer.<br>The agents row.</h2>
+    <p>Crews of AI coding agents for every client, run from one desk, on your own machine.</p>
+    <a class="block light" href="#install">Get on board</a>
+  </div>
+  <div class="tag mono">Early access · মাঝি, the boatman who steers</div>
+  <svg class="down" viewBox="0 0 24 24" fill="none" stroke="#1c1712" stroke-width="2.4"><path d="M5 9l7 7 7-7"/></svg>
+</header>
+
+<section class="river" aria-label="The river">
+  <div class="riverText">
+    <h2>A captain and a crew<br>of agents, <em>in one boat.</em></h2>
+    <p>The majhi stands at the back with the long oar. He does not row. He reads the water and keeps everyone pointed at the ghat. That is your job now.</p>
+  </div>
+  <div class="boatlane" aria-hidden="true">
+    <svg viewBox="-360 -400 720 440">
+      <g class="bob">
+        <image href="/assets/boat.webp" x="-360" y="-380" width="720" height="411"/>
+        <g class="stroke">
+          <g transform="translate(-72 -158) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+          <g transform="translate(40 -156) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+          <g transform="translate(154 -150) rotate(32)"><image href="/assets/paddle.webp" x="-25" y="-34" width="50" height="254"/></g>
+          <image href="/assets/fists.webp" x="-360" y="-380" width="720" height="411"/>
         </g>
       </g>
     </svg>
   </div>
-</div></header>
+</section>
 
-<section><div class="wrap">
-  <div class="story">
-    <p>On the rivers of Bengal, the <i>majhi</i> stands at the back of the boat with the long oar. He does not row. He reads the water, picks the line, and keeps everyone pointed at the ghat.</p>
-    <p>That is the job majhi gives you. AI agents can write real code now, but running them for real work is chaos: a subscription per client, a different git login for each, keys everywhere, and the quiet fear that one client's code ends up in another's repo. majhi turns that into a calm desk.</p>
-  </div>
-</div></section>
+<section class="steps" aria-label="How it works">
+  <div class="step"><span class="n">01</span><h3>Say it in one sentence.</h3><p>"Fix the export timeout in the API, from develop." That is a whole task.</p></div>
+  <div class="step"><span class="n">02</span><h3>The crew plans, builds and reviews.</h3><p>A lead splits the work, builders write it in their own containers, a reviewer sends back what is not good enough.</p></div>
+  <div class="step"><span class="n">03</span><h3>You ship from one card.</h3><p>Merge, push or open the pull request on GitHub, GitLab or Bitbucket. Nothing leaves without your click.</p></div>
+</section>
 
-<section id="crew" style="padding-top:20px"><div class="wrap">
-  <div class="eyebrow">Meet the crew</div>
-  <h2>One captain. A whole crew.</h2>
-  <p class="sub">Every agent gets its own emoji, model and account. Mix Claude Code and Codex in one team.</p>
-  <div class="crew">
-    <div class="card"><div class="emoji">🧑‍✈️</div><h3>The captain</h3><p>Sets up clients, accounts and repos when you describe them, answers the crew, and with autonomous mode on, runs the desk while you sleep.</p></div>
-    <div class="card"><div class="emoji">👑</div><h3>The lead</h3><p>Reads your one sentence, writes the plan, and hands each piece to the right agent.</p></div>
-    <div class="card"><div class="emoji">🛠️</div><h3>Builders</h3><p>Write the code in their own worktree and container, test it, and commit.</p></div>
-    <div class="card"><div class="emoji">🔍</div><h3>The reviewer</h3><p>Reads every change before it reaches you, and sends it back when it is not good enough.</p></div>
+<section class="product" aria-label="The desk">
+  <div class="frame">
+    <div class="bar"><i></i><i></i><i></i><span class="mono">majhi · the desk</span></div>
+    <img src="/assets/board.webp" alt="The majhi board with tasks from several clients and every agent's status" loading="lazy">
   </div>
-</div></section>
+  <div class="caption">
+    <h2>Every client's work on one board. Every agent's state at a glance.</h2>
+    <p>Watch each step and file change live, stop a turn, queue a message, open a preview. Turn on autonomous mode and the captain works the backlog through the night, inside your budget.</p>
+  </div>
+</section>
 
-<section id="features"><div class="wrap">
-  <div class="eyebrow">What it does</div>
-  <h2>Everything a crew needs.<br>Nothing it shouldn't touch.</h2>
-  <p class="sub">Built for people who run several clients at once and want the work to keep moving without babysitting.</p>
-  <div class="features">
-    <div class="card wide"><h3><span>⛵</span>Hand it off in one sentence</h3><p>"Fix the export timeout in the API, from develop." That is a whole task. The lead plans, the crew builds and reviews, and you get a report and a branch. Big work splits into subtasks across as many repos as it needs.</p></div>
-    <div class="card"><h3><span>🌙</span>Sail through the night</h3><p>Turn on autonomous mode per workspace. The captain picks work by priority, ships it within your budget, and leaves a summary for the morning.</p></div>
-    <div class="card"><h3><span>🧳</span>Every client in its own boat</h3><p>Accounts, agents, repos, git identity, tokens, costs and memory stay sealed per workspace. Agents never see your SSH keys.</p></div>
-    <div class="card"><h3><span>🚢</span>Ship from one card</h3><p>Merge, squash or rebase, push, or open pull and merge requests on GitHub, GitLab and Bitbucket. Conflicts are one click.</p></div>
-    <div class="card"><h3><span>👀</span>Watch the water</h3><p>See the plan and every file change live. Stop a turn, queue a message, open VS Code or Cursor, and get a live preview per task.</p></div>
-    <div class="card"><h3><span>🔔</span>Only calls you when it matters</h3><p>One bell for approvals, questions and blocked work. You choose what needs your click, from careful to hands-off.</p></div>
-    <div class="card"><h3><span>🛟</span>It does not sink</h3><p>Sleep, Wi-Fi drops, usage limits, a refused request: agents pause and resume on their own, and stuck tasks wake the lead.</p></div>
-    <div class="card"><h3><span>🧠</span>It remembers your codebase</h3><p>Lasting facts from each task are kept per repo and brought back next time, so agents stop relearning the same quirks.</p></div>
+<section class="boats" aria-label="Clients stay apart">
+  <h2>Every client in its own boat.</h2>
+  <div class="facts">
+    <div><span class="mono">Sealed</span><b>Accounts, repos, keys and memory stay per workspace.</b><p>One client's code never reaches another's crew. Agents never see your SSH keys.</p></div>
+    <div><span class="mono">Cheap</span><b>Small decisions run free on your machine.</b><p>Laya, a local open model, makes the hundreds of small calls. Big models only get the real work.</p></div>
+    <div><span class="mono">Unsinkable</span><b>Sleep, Wi-Fi drops, usage limits.</b><p>Agents pause and resume on their own. Stuck work wakes the lead, not you.</p></div>
   </div>
-</div></section>
+</section>
 
-<section style="padding-top:20px"><div class="wrap">
-  <div class="eyebrow">A look inside</div>
-  <h2>The desk.</h2>
-  <p class="sub">Every client's work on one board, every agent's status at a glance.</p>
-  <div class="shot"><img src="/assets/board.webp" alt="The majhi board with tasks from several clients" loading="lazy"></div>
-  <div class="gallery">
-    <figure><div class="shot"><img src="/assets/task-room.webp" alt="A task room" loading="lazy"></div><figcaption><b>Every task is a room.</b> Plan, crew, progress and branch, live.</figcaption></figure>
-    <figure><div class="shot"><img src="/assets/health.webp" alt="Usage and limits per account" loading="lazy"></div><figcaption><b>Limits per account.</b> See them before an agent hits them.</figcaption></figure>
-    <figure><div class="shot"><img src="/assets/orgs.webp" alt="Workspaces" loading="lazy"></div><figcaption><b>One workspace per client.</b> Accounts, agents, repos and rules.</figcaption></figure>
-    <figure><div class="shot"><img src="/assets/onboarding.webp" alt="The first-run river journey" loading="lazy"></div><figcaption><b>A first run worth remembering.</b> Painted in Dhaka rickshaw art.</figcaption></figure>
-  </div>
-</div></section>
+<section class="install" id="install">
+  <h2>Get on <em>board.</em></h2>
+  <div class="cmd"><code><b>git clone</b> https://github.com/ashik112/majhi.git && cd majhi && <b>make up</b></code><button class="block" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up" style="box-shadow:4px 4px 0 var(--cream);border-color:var(--cream);padding:10px 14px">Copy</button></div>
+  <div class="small mono">Docker on a Mac · Linux and WSL2 soon · Claude Code and Codex</div>
+</section>
 
-<section><div class="wrap laya">
-  <div>
-    <div class="eyebrow">Smart where it counts</div>
-    <h2>Cheap everywhere else.</h2>
-    <p class="sub" style="margin-bottom:0">An agent desk makes hundreds of small calls a day: is this task big, which model fits, did the reviewer approve, is this text trying to give orders. majhi hands them to <a href="https://github.com/NandhaKishorM/laya">Laya</a>, a small open model running free on your own machine. The big models only get the work that needs them.</p>
-  </div>
-  <div class="stat">
-    <div class="card"><b>$0</b><span>for the small calls Laya makes</span></div>
-    <div class="card"><b>Local</b><span>your code stays on your machine</span></div>
-    <div class="card"><b>Every</b><span>account's limits and cost, live</span></div>
-  </div>
-</div></section>
-
-<section id="how"><div class="wrap">
-  <div class="eyebrow">How it works</div>
-  <h2>You, the captain, and sealed crews.</h2>
-  <p class="sub">Everything runs on your machine. Each workspace's agents run in their own containers, with only their own task, account and credentials.</p>
-  <div class="flow">
-    <div class="node">You<small>one sentence</small></div><div class="arrow">→</div>
-    <div class="node">🧑‍✈️ Captain<small>routes and runs</small></div><div class="arrow">→</div>
-    <div class="node">Workspaces<small>one per client</small></div>
-  </div>
-  <div class="lanes">
-    <div class="lane"><div class="tt">Workspace: Acme</div><div class="row"><div class="node">👑 Lead</div><div class="arrow">→</div><div class="node">🛠️ Builders</div><div class="arrow">→</div><div class="node">🔍 Reviewer</div><div class="arrow">→</div><div class="node">Ship</div></div></div>
-    <div class="lane"><div class="tt">Workspace: Globex</div><div class="row"><div class="node">👑 Lead</div><div class="arrow">→</div><div class="node">🛠️ Builder</div><div class="arrow">→</div><div class="node">Ship</div></div></div>
-  </div>
-</div></section>
-
-<section id="install"><div class="wrap">
-  <div class="eyebrow">Get on board</div>
-  <h2>Two commands.</h2>
-  <p class="sub">You need Docker (Docker Desktop or OrbStack) on a Mac. Linux and Windows through WSL2 are on the way.</p>
-  <pre><span class="c"># clone and start</span>
-git clone https://github.com/ashik112/majhi.git && cd majhi
-make up    <span class="c"># opens on http://127.0.0.1:7070</span></pre>
-  <div class="steps">
-    <div class="card"><b>1. Take the river journey</b><p>Pick your project folder, sign in your AI account, add your clients.</p></div>
-    <div class="card"><b>2. Connect git</b><p>Sign each workspace in to GitHub, GitLab or Bitbucket, then clone or start projects.</p></div>
-    <div class="card"><b>3. Hand off the first task</b><p>One sentence. The crew takes it from there. Updates after that are one click.</p></div>
-  </div>
-</div></section>
-
-<footer><div class="wrap">
-  <a class="brand" href="#top"><span class="tile"><img src="/assets/majhi-mark-ink.svg" alt=""></span>majhi</a>
-  <span>Free for personal and noncommercial use (PolyForm Noncommercial 1.0.0).</span>
-  <div class="right"><a href="https://github.com/ashik112/majhi">GitHub</a><a href="https://github.com/ashik112">Commercial license</a></div>
-</div></footer>
+<footer>
+  <svg class="mark" viewBox="28 54 200 172" fill="currentColor"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg>
+  <span class="mono" style="opacity:.6">Free for noncommercial use</span>
+  <div class="r"><a href="https://github.com/ashik112/majhi">GitHub</a><a href="https://github.com/ashik112">Commercial license</a></div>
+</footer>
 
 <script>
-document.querySelectorAll(".copy").forEach(b=>b.addEventListener("click",async()=>{
+// Little majhi marks drifting over the hero, like a crew on the water.
+const swarm=document.getElementById("swarm");
+let seed=7; const r=()=>((seed=(seed*16807)%2147483647)/2147483647);
+for(let i=0;i<34;i++){
+  const s=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  s.setAttribute("viewBox","28 54 200 172");
+  s.innerHTML='<circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/>'; s.setAttribute('fill','currentColor');
+  if(r()<.35) s.classList.add("ink");
+  s.style.left=(r()*96)+"%"; s.style.top=(r()*92)+"%";
+  s.style.width=(22+r()*26)+"px";
+  s.style.setProperty("--d",(14+r()*16)+"s"); s.style.setProperty("--o",(-r()*20)+"s");
+  s.style.setProperty("--x",((r()-.5)*120)+"px"); s.style.setProperty("--y",((r()-.5)*90)+"px");
+  swarm.appendChild(s);
+}
+document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
   try{await navigator.clipboard.writeText(b.dataset.copy);b.textContent="Copied";setTimeout(()=>b.textContent="Copy",1600)}catch{}
 }));
 </script>
