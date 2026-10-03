@@ -158,7 +158,12 @@ function view(
       ...(org.context.cap === undefined ? {} : { cap: org.context.cap }),
     };
   }
-  if (org.resume?.auto !== undefined) out.resume = { auto: org.resume.auto };
+  if (org.resume?.auto !== undefined || org.resume?.handoff !== undefined) {
+    out.resume = {
+      ...(org.resume.auto === undefined ? {} : { auto: org.resume.auto }),
+      ...(org.resume.handoff === undefined ? {} : { handoff: org.resume.handoff }),
+    };
+  }
   if (org.commits?.attribution !== undefined) out.commits = { attribution: org.commits.attribution };
   if (org.rooms?.max_agent_turns !== undefined) out.rooms = { max_agent_turns: org.rooms.max_agent_turns };
   if (org.turns !== undefined && Object.keys(org.turns).length > 0) out.turns = org.turns;
