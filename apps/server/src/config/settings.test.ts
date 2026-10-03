@@ -10,7 +10,7 @@ describe("mergeSettings", () => {
   it("fills every default", () => {
     expect(mergeSettings({})).toEqual({
       context: { cap: 200_000, compact_at: 0.8, compact_target: 0.4, max_turns: 40 },
-      limits: { agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "10m" },
+      limits: { agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "3m" },
       turns: { max_length: "2h", idle: "25m", max_tool_calls: 0 },
       resume: { auto: true },
       commits: { attribution: true },
@@ -26,10 +26,10 @@ describe("mergeSettings", () => {
       },
       memory: { auto_threshold: 0.4, review_all: false, chat_idle_minutes: 30 },
       editor: { app: "vscode" },
-      e2e: { projects: {} },
+      e2e: { daily_at: "03:00", projects: {} },
       cleanup: { after_days: 30 },
       notifications: { mac: true, browser: true, sound: false, muted: [] },
-      containers: { images: [], cpus: 1, memory: "2g", per_task: 3, build_cpus: 2, build_memory: "4g" },
+      containers: { images: [], cpus: 1, memory: "512m", per_task: 3, build_cpus: 2, build_memory: "4g" },
       budgets: { orgs: {}, accounts: {} },
       autonomy: {
         day: { cost: 20 },
@@ -44,9 +44,15 @@ describe("mergeSettings", () => {
 
   it("keeps what the file sets and defaults the rest", () => {
     const merged = mergeSettings({ limits: { agents_max: 3 }, policy: { change: "confirm" } });
-    expect(merged.limits).toEqual({ agents_max: 3, per_account: 2, per_task: 3, idle_timeout: "10m" });
+    expect(merged.limits).toEqual({ agents_max: 3, per_account: 2, per_task: 3, idle_timeout: "3m" });
     expect(merged.policy.change).toBe("confirm");
     expect(merged.policy.read).toBe("auto");
+  });
+
+  it("keeps an owner's own idle timeout and container memory over the smaller defaults", () => {
+    const merged = mergeSettings({ limits: { idle_timeout: "10m" }, containers: { memory: "2g" } });
+    expect(merged.limits.idle_timeout).toBe("10m");
+    expect(merged.containers.memory).toBe("2g");
   });
 });
 

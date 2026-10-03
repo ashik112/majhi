@@ -224,6 +224,114 @@ describe("ContainerService", () => {
     });
   });
 
+  describe("the builder", () => {
+    it("stops when the build ends, and keeps running while a build runs", async () => {
+      const build = await service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" });
+      expect(docker.stoppedBuilders).toEqual([]);
+      await until(() => processes.get("ACM-1", build.id)?.status === "exited");
+      await until(() => docker.stoppedBuilders.length > 0);
+      expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
+      // Still there, with its cache: the next build starts it again.
+      expect(docker.builders.has("majhi-preview-acm-1")).toBe(true);
+    });
+  });
+
+  describe("a task that stops running and runs again", () => {
+    const withVolume = { ...db, volumes: [{ name: "pgdata", path: "/var/lib/postgresql/data" }] };
+
+    async function upWithPreview(): Promise<void> {
+      await service.serviceStart("ACM-1", "acme-builder", withVolume);
+      await service.serviceStart("ACM-1", "acme-builder", { name: "cache", image: "redis:7-alpine" });
+      docker.images.add("majhi-preview-acm-1");
+      await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
+      expect([...docker.containers.keys()].sort()).toEqual([
+        "majhi-acm-1-cache",
+        "majhi-acm-1-db",
+        "majhi-preview-acm-1",
+      ]);
+    }
+
+    it("stops its services and preview on review or pause, keeps the volumes, and starts them again on resume", async () => {
+      await upWithPreview();
+      await service.taskPaused("ACM-1");
+      expect(docker.containers.size).toBe(0);
+      expect(docker.networks.size).toBe(0);
+      expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
+      // Paused again (review, then stop): nothing is forgotten.
+      await service.taskPaused("ACM-1");
+
+      const again = await service.taskRunning("ACM-1");
+      expect(again).toEqual({ started: ["db", "cache", "preview"], failed: [] });
+      expect([...docker.containers.keys()].sort()).toEqual([
+        "majhi-acm-1-cache",
+        "majhi-acm-1-db",
+        "majhi-preview-acm-1",
+      ]);
+      // The same volume, with its data, and the task network made again.
+      expect(docker.calls.filter((c) => c === "volume create")).toHaveLength(1);
+      expect(service.taskNetworks("ACM-1")).toEqual(["majhi-acm-1"]);
+      expect(service.list("ACM-1").filter((c) => c.status === "running")).toHaveLength(3);
+      // Once: a second resume starts nothing.
+      expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+    });
+
+    it("keeps everything running while the task only waits, when a service's data has no named volume", async () => {
+      await upWithPreview();
+      // "cache" has no volume: stopping would lose its data.
+      expect(await service.taskPaused("ACM-1", { keepUnsaved: true })).toEqual({ kept: ["cache"] });
+      expect(docker.containers.size).toBe(3);
+      expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+      // The owner's Stop still ends them all.
+      expect(await service.taskPaused("ACM-1")).toEqual({ kept: [] });
+      expect(docker.containers.size).toBe(0);
+    });
+
+    it("leaves out what an agent stopped itself, and reports what cannot start", async () => {
+      await upWithPreview();
+      await service.stop("ACM-1", "cache", "agent");
+      await service.taskPaused("ACM-1");
+      docker.images.delete("majhi-preview-acm-1");
+      const again = await service.taskRunning("ACM-1");
+      expect(again.started).toEqual(["db"]);
+      expect(again.failed).toEqual([expect.stringMatching(/^preview: There is no preview image yet/)]);
+      expect([...docker.containers.keys()]).toEqual(["majhi-acm-1-db"]);
+    });
+
+    it("starts the others again when an agent starts a service while the task is stopped", async () => {
+      await upWithPreview();
+      await service.taskPaused("ACM-1");
+      await service.serviceStart("ACM-1", "acme-builder", { name: "cache", image: "redis:7-alpine" });
+      expect([...docker.containers.keys()].sort()).toEqual([
+        "majhi-acm-1-cache",
+        "majhi-acm-1-db",
+        "majhi-preview-acm-1",
+      ]);
+    });
+
+    it("forgets them when the task ends", async () => {
+      await upWithPreview();
+      await service.taskPaused("ACM-1");
+      await service.taskEnded("ACM-1");
+      expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+      expect(docker.containers.size).toBe(0);
+    });
+  });
+
+  describe("the weekly prune", () => {
+    it("prunes the build cache of open tasks' builders only, stops them again, and waits a week", async () => {
+      for (const b of ["majhi-preview-acm-1", "majhi-preview-acm-2", "other-builder"]) docker.builders.add(b);
+      const now = new Date("2026-10-04T08:00:00Z");
+      const first = await service.pruneIfDue(now);
+      expect(first).toEqual({ images: 0, builders: 1 });
+      expect(docker.prunedBuilders).toEqual(["majhi-preview-acm-1"]);
+      expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
+      expect(docker.calls.some((c) => c.startsWith("volume"))).toBe(false);
+      // Six days later it is not due; eight days later it is.
+      expect(await service.pruneIfDue(new Date("2026-10-10T08:00:00Z"))).toBeUndefined();
+      expect(await service.pruneIfDue(new Date("2026-10-12T08:00:00Z"))).toEqual({ images: 0, builders: 1 });
+    });
+  });
+
   describe("a start right after a restart", () => {
     it("waits for the startup cleanup, so the cleanup does not sweep the new container away", async () => {
       docker.psDelayMs = 60;
@@ -249,6 +357,7 @@ describe("ContainerService", () => {
     it("tasks.stop removes the containers and the network but keeps the volumes, and stops the builder", async () => {
       await populate();
       await processes.stopTask("ACM-1");
+      docker.stoppedBuilders = [];
       await service.taskStopped("ACM-1");
       expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
       expect(docker.containers.size).toBe(0);

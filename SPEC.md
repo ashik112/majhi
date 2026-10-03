@@ -302,7 +302,7 @@ tasks_dir: ~/Work/.majhi             # default: <first root>/.majhi
 decisions: { provider: laya, fallback: acp, acp_agent: dispatcher }   # laya | jev | acp | rules
 context: { cap: 200000, compact_at: 0.8, compact_target: 0.4, max_turns: 40 }   # default for every org (5.13)
 boss: majhi-boss                  # which root agent is the captain (5.16)
-limits: { agents_max: 6, idle_timeout: 10m, per_account: 2 }   # see 5.17
+limits: { agents_max: 6, idle_timeout: 3m, per_account: 2 }   # see 5.17
 turns: { max_length: 2h, idle: 25m, max_tool_calls: 0 }   # per turn, off or 0 turns one off (5.13)
 accounts:
   claude-globex-2: { tool: claude, org: globex, auth: login }
@@ -583,9 +583,9 @@ Agents run without Docker on purpose (the socket is root on the host). When they
 - **Preview.** `preview_build` builds a repo's Dockerfile as `majhi-preview-<task>` on the task's own BuildKit builder, as a process that wakes the agent when it ends. `preview_run` runs it with a throwaway folder and nothing of the host, on the runner network, with one port on `127.0.0.1` for the owner's link.
 - **Services.** `service_start` runs an allowed image (postgres, redis) on a per-task internal network that only that task's runners join, with only named volumes majhi creates for the task. A port is never published.
 - **Images.** A new image asks the owner once through an approval card (`containers.images.allow`), and PRV-49's always-allow rules apply. `settings.get` lists the allowed images.
-- **Limits.** `containers` in `majhi.yaml`: `cpus`, `memory`, `per_task`, `build_cpus`, `build_memory`.
+- **Limits.** `containers` in `majhi.yaml`: `cpus`, `memory` (default 512m per service or preview), `per_task`, `build_cpus`, `build_memory`.
 - **Processes.** Each container is a majhi process: the Processes card, `majhi-processes output`, Stop and waking the agent work as for any process.
-- **Cleanup.** Stopping a task removes its containers and network and keeps its volumes. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start.
+- **Cleanup.** A task that leaves running (review, paused, stopped) stops its services and preview, removes its network and keeps its volumes; when it runs again they start again the same way. The builder stops when a build ends. Done or removed also removes the volumes, the builder and the preview image. majhi removes leftovers at start, and once a week removes its own preview images that no container uses and builder cache older than 7 days (never volumes, never anything it did not label or name).
 
 ### 5.16 The captain and the control plane
 
@@ -679,7 +679,7 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 
 ### 5.17 Performance and resource use
 
-- **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 10 minutes). Sessions come back with ACP `session/resume` or `session/load`.
+- **Agents on demand.** Agent processes start when a run needs them and stop after `idle_timeout` (default 3 minutes; the runner container goes with the process). Sessions come back with ACP `session/resume` or `session/load`.
 - **Concurrency limits.** A global maximum of running agent processes (`agents_max`, default 6), a maximum per account, and a maximum per task. Extra runs wait in the jobs table and show as queued, with their place in line.
 - **Budgets.** Optional token or cost budgets per account, org and task, per day. At the budget, runs pause with reason `limit`. The owner or the captain can raise them.
 - **Models load lazily.** Laya and the embedding model load on first use and unload after idle. Docker memory limits cap each service.

@@ -71,7 +71,7 @@ export const LimitsSettingsSchema = z.strictObject({
   agents_max: limitsFields.agents_max.default(6),
   per_account: limitsFields.per_account.default(2),
   per_task: limitsFields.per_task.default(3),
-  idle_timeout: limitsFields.idle_timeout.default("10m"),
+  idle_timeout: limitsFields.idle_timeout.default("3m"),
 });
 export type LimitsSettings = z.infer<typeof LimitsSettingsSchema>;
 export const LimitsPatchSchema = z.strictObject(limitsFields).partial();
@@ -289,7 +289,7 @@ const containersFields = {
 export const ContainersSettingsSchema = z.strictObject({
   images: containersFields.images.default([]),
   cpus: containersFields.cpus.default(1),
-  memory: containersFields.memory.default("2g"),
+  memory: containersFields.memory.default("512m"),
   per_task: containersFields.per_task.default(3),
   build_cpus: containersFields.build_cpus.default(2),
   build_memory: containersFields.build_memory.default("4g"),

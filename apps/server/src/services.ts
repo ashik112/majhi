@@ -133,6 +133,8 @@ import { UsageService } from "./usage/service.ts";
 const CHAT_SWEEP_MS = 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+/** How often majhi looks whether the weekly prune of its old images is due. */
+const PRUNE_SWEEP_MS = 86_400_000;
 
 export interface ServiceOptions {
   /** Replaces `@majhi/acp`, so tests never start a real CLI. */
@@ -508,6 +510,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
   );
   const skillStore = new SkillStore(env.majhiHome);
+  // The weekly prune of majhi's old images and build cache: looked at on start and once a day.
+  const pruneContainers = () =>
+    background.run(
+      () => containers.pruneIfDue(),
+      (err) => console.error(`Could not prune old images: ${errorMessage(err)}`),
+    );
+  pruneContainers();
+  const pruneSweep = setInterval(pruneContainers, PRUNE_SWEEP_MS);
+  pruneSweep.unref();
   const runs = new RunManager({
     store,
     limited: limitedRun,
@@ -1126,6 +1137,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);
+      clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();
       notifier.close();
