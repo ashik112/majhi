@@ -47,14 +47,6 @@ export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Au
   },
 ];
 
-/** "$20" or "20.50" as dollars, or undefined when it is not a positive amount. */
-export function parseDollars(text: string): number | undefined {
-  const plain = text.trim().replace(/^\$/, "").replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(plain)) return undefined;
-  const n = Number(plain);
-  return n > 0 && n <= 10_000 ? n : undefined;
-}
-
 /** What "More rules" edits, as the form holds it. */
 export interface RulesDraft {
   hoursOn: boolean;

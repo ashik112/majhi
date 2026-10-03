@@ -5,7 +5,6 @@ export const PAGE_LABEL: Record<PageName, string> = {
   board: "Board",
   chats: "Chats",
   captain: "Captain",
-  autonomous: "Autonomous",
   limits: "Limits",
   decisions: "Decisions",
   agents: "Agents",
@@ -25,8 +24,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 export const PAGE_KEYWORDS: Record<PageName, string> = {
   board: "tasks home columns",
   chats: "conversations talk",
-  captain: "boss upkeep workspaces levels budget lanes stop",
-  autonomous: "autonomy autopilot away",
+  captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
@@ -43,7 +41,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 };
 
 /**
- * The sidebar under the daily rows (Board, Chats, Captain, Autonomous): the pages the owner sets up
+ * The sidebar under the daily rows (Board, Chats, Captain): the pages the owner sets up
  * once and tunes, then the ones opened rarely. Workspaces open from the switcher at the top.
  */
 export const NAV_GROUPS: readonly { label: string; pages: readonly PageName[] }[] = [

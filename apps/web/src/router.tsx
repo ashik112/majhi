@@ -181,10 +181,16 @@ const automationsRoute = createRoute({
   path: PAGE_PATH.automations,
   component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
 });
+// The Autonomous page is part of the Captain page now: /autonomous and its old views land on a tab.
 const autonomousRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.autonomous,
-  component: lazyRouteComponent(() => import("@/pages/autonomous-page"), "AutonomousPage"),
+  path: "/autonomous",
+  beforeLoad: ({ search }) => {
+    throw redirect({
+      to: PAGE_PATH.captain,
+      search: { tab: search.tab === "rules" || search.tab === "log" ? search.tab : "today" },
+    });
+  },
 });
 const limitsRoute = createRoute({
   getParentRoute: () => rootRoute,

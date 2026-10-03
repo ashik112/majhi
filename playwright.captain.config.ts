@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 7199;
+const PORT = Number(process.env.MAJHI_E2E_PORT ?? 7201);
 export default defineConfig({
   testDir: "e2e",
   testMatch: /shots\.captain\.ts$/,

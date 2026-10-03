@@ -1,24 +1,32 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {
   Authority,
+  AutonomyEvent,
   AutonomyStatus,
+  BudgetAsk,
   CaptainAction,
   CaptainOrg,
-  CaptainRun,
   CaptainStatus,
+  RoomItem,
+  RoomServerMessage,
+  Task,
 } from "../packages/shared/src/index.ts";
 
 /**
- * The Captain page (SPEC 5.18): a card per workspace with who decides what there, the
- * budget, "More rules", today's line and the log with Undo; and the Autonomous page
- * with a lane per workspace where the captain starts work. The server is the seeded one (`ui`); the captain's status, its
- * log and autonomous mode are stubbed in the browser.
+ * The Captain page (SPEC 5.16, 5.18): one place with Today, Chat, Log and Rules, the Autonomous
+ * switch under Captain in the sidebar, the old /autonomous address landing on Today, and the Chats
+ * list without ids. The server is the seeded one (`ui`); the captain's status, autonomous mode, its
+ * log and its threads are stubbed in the browser.
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.captain.config.ts`.
  */
 const SHOTS = process.env.SHOTS ?? "/private/tmp/claude-501/captain-shots";
 const NOW = Date.now();
 const iso = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
+const DAY = "2026-10-04";
+const LONG = "Northwind Traders International Holdings and Logistics Group";
+const LONG_TASK =
+  "Move every caller of the old synchronous export to the queued worker, with retries, progress events and a signed download link that expires after a day";
 
 const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as const;
 
@@ -61,25 +69,28 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
     stopped: false,
     autonomy: "on",
     captain: "setup",
-    day: "2026-10-03",
+    day: DAY,
     orgs: [
       org({
         org: "private",
         name: "Private",
-        authority: ROWS(true, true, true, true, false),
-        effective: ROWS(true, true, true, true, false),
-        rules: { authority: ROWS(true, true, true, true, false), cap: { cost: 20 } },
+        authority: RUNS_ROWS,
         budget: { cost: 20 },
+        rules: { authority: RUNS_ROWS, cap: { cost: 20 } },
         used: { tokens: 812_000, cost: 6.4 },
         summary: "shipped 2, tidied 8 memories, 1 thing for you",
         forYou: 1,
+        thread: "working",
         lane: "LOCAL-31",
       }),
       org({
         org: "globex",
         name: "Globex",
         authority: TIDY_ROWS,
+        budget: { cost: 10 },
+        used: { tokens: 3_000_000, cost: 8.9 },
         summary: "answered 5 cards, cleaned up 3 old tasks",
+        thread: "waiting",
         lane: "GLX-512",
         chores: CHORES.map((chore) =>
           chore === "cleanup"
@@ -89,32 +100,19 @@ function captain(extra: Partial<CaptainStatus> = {}): CaptainStatus {
                 cap: 1,
                 off: "2 failures in a row, the last: the worktree of GLX-498 could not be removed",
               }
-            : { chore, today: chore === "cards" ? 5 : 0, cap: chore === "cards" ? 40 : 1 },
+            : { chore, today: chore === "cards" ? 40 : 0, cap: chore === "cards" ? 40 : 1 },
         ),
       }),
       org({
         org: "acme",
         name: "Acme",
         authority: ROWS(true, true, true, true, true),
-        effective: ROWS(true, true, true, true, true),
-        rules: {
-          authority: ROWS(true, true, true, true, true),
-          cap: { cost: 8 },
-          hours: { from: "09:00", to: "18:00" },
-          freeze: [{ from: "2026-12-24", to: "2026-12-26" }],
-          branches: ["develop"],
-          providers: ["claude"],
-          tz: "Europe/Berlin",
-        },
         budget: { cost: 8 },
         used: { tokens: 120_000, cost: 1.15 },
         resting: "outside working hours (09:00 to 18:00)",
+        lane: "ACM-120",
       }),
-      org({
-        org: "northwind",
-        name: "Northwind Traders International Holdings and Logistics Group",
-        authority: ASK_ROWS,
-      }),
+      org({ org: "northwind", name: LONG, authority: ASK_ROWS }),
     ],
     ...extra,
   };
@@ -140,7 +138,6 @@ const ACTIONS: CaptainAction[] = [
     chore: "ship",
     text: "Asked you to ship GLX-505: Rate limits for the public search endpoint",
     reason: "In Globex you decide when work is merged, so the captain asks before shipping",
-    evidence: "committed, merges cleanly into develop, no card waits, no secret in the diff",
     task: "GLX-505",
     outcome: "asked",
     undo: "no",
@@ -175,20 +172,10 @@ const ACTIONS: CaptainAction[] = [
     chore: "ship",
     text: "Shipped PRV-11 to main and pushed: Tidy the sync script",
     reason: "In Private the captain decides when work is merged and pushed",
-    evidence: "committed, merges cleanly into main, no card waits, no secret in the diff",
     task: "PRV-11",
     outcome: "done",
     undo: "no",
-    undoNote: "It was pushed, and a push cannot be undone. The captain pushes only after the checks pass",
-  },
-  {
-    id: 36,
-    at: iso(130),
-    org: "globex",
-    chore: "cleanup",
-    text: "Cleanup stopped: turned off after 2 failures in a row",
-    reason: "turned off after 2 failures in a row",
-    outcome: "skipped",
+    undoNote: "It was pushed, and a push cannot be undone",
   },
   {
     id: 35,
@@ -204,18 +191,55 @@ const ACTIONS: CaptainAction[] = [
   },
 ];
 
-const RUNS: CaptainRun[] = [
+const EVENTS: AutonomyEvent[] = [
   {
-    id: 9,
-    org: "private",
-    chore: "ship",
-    startedAt: iso(12),
-    endedAt: iso(12),
-    status: "done",
-    trigger: "PRV-14 reached review",
-    actions: 1,
-    tokens: 0,
+    seq: 90,
+    at: iso(5),
+    kind: "decision",
+    org: "globex",
+    text: `Start a task GLX-430: ${LONG_TASK}`,
+    reason: "High priority and due tomorrow; the export times out for three customers",
+    task: "GLX-430",
+    outcome: "applied",
   },
+  { seq: 89, at: iso(8), kind: "tick", text: "Woke the captain: GLX-429 is done" },
+  {
+    seq: 88,
+    at: iso(20),
+    kind: "task",
+    org: "acme",
+    text: "ACM-88 is ready for review: Add rate limits",
+    task: "ACM-88",
+    status: "review",
+  },
+  {
+    seq: 87,
+    at: iso(33),
+    kind: "approval",
+    org: "acme",
+    text: "Left for the owner: Push task/ACM-88-rate-limits. Acme does not let the captain push",
+    task: "ACM-88",
+    outcome: "left",
+  },
+  {
+    seq: 86,
+    at: iso(50),
+    kind: "cap",
+    org: "globex",
+    text: "Globex used its $10 for today. 3 tasks wait",
+    reason: "The workspace budget is used up",
+  },
+  {
+    seq: 85,
+    at: iso(60),
+    kind: "task",
+    org: "private",
+    text: "PRV-15 started: Signed download links for finished exports",
+    task: "PRV-15",
+    status: "running",
+    reason: "Small and nothing else touches the repo",
+  },
+  { seq: 84, at: iso(95), kind: "mode", text: "Autonomous turned on" },
 ];
 
 function autonomy(): AutonomyStatus {
@@ -236,119 +260,247 @@ function autonomy(): AutonomyStatus {
     by: "owner",
     boss: { id: "setup", chat: "LOCAL-31", working: true, nowDoing: "Reading the Private backlog" },
     lanes: [
-      lane("private", "Private", {
-        chat: "LOCAL-31",
-        working: true,
-        nowDoing: "Reading the Private backlog to plan the next start",
-        spend: { used: { tokens: 812_000, cost: 6.4 }, cap: { cost: 20 }, percent: 32, reached: false },
-        tasks: 2,
-        backlog: 5,
-      }),
-      lane("acme", "Acme", {
-        chat: "ACM-120",
-        spend: { used: { tokens: 120_000, cost: 1.15 }, cap: { cost: 8 }, percent: 14, reached: false },
-        tasks: 1,
-        backlog: 3,
-        resting: "outside working hours (09:00 to 18:00)",
-      }),
+      lane("private", "Private", { chat: "LOCAL-31", working: true, tasks: 2, backlog: 5 }),
+      lane("globex", "Globex", { chat: "GLX-512", tasks: 1, backlog: 3 }),
+      lane("acme", "Acme", { chat: "ACM-120", tasks: 1, backlog: 1 }),
     ],
     now: [
       {
-        task: "PRV-15",
-        title: "Signed download links for finished exports",
+        task: "GLX-430",
+        title: LONG_TASK,
+        org: "globex",
         status: "running",
-        agents: [{ id: "private-builder", nowDoing: "Editing src/export/links.ts" }],
-        why: "High priority and due tomorrow",
+        agents: [
+          { id: "globex-builder", nowDoing: "Editing src/export/worker.ts and its tests" },
+          { id: "globex-reviewer" },
+        ],
+        why: "High priority and due tomorrow; the export times out for three customers",
+      },
+      {
+        task: "ACM-88",
+        title: "Add rate limits to the public search endpoint",
+        org: "acme",
+        status: "review",
+        agents: [{ id: "acme-builder" }],
+        why: "Small and blocks the Acme release",
       },
     ],
     queue: [
-      { title: "Document the export API", task: "PRV-16", org: "private", why: "Next in the backlog, small" },
+      {
+        title: "Signed download links for finished exports",
+        task: "GLX-432",
+        org: "globex",
+        why: "Next child of the export work; it waits on nothing and the Globex account has 60% of its window left",
+      },
+      {
+        title: "Document the export API for partners",
+        task: "GLX-437",
+        org: "globex",
+        why: "Low priority filler for when the builders are idle",
+      },
+      {
+        title: "Tidy the Acme README and the setup script",
+        task: "ACM-91",
+        org: "acme",
+        why: "Small, cheap model, can run while Acme has room",
+      },
     ],
     queuedAt: iso(4),
-    backlog: [],
+    backlog: [
+      {
+        task: "GLX-432",
+        title: "Signed download links for finished exports",
+        org: "globex",
+        status: "ready",
+        priority: "high",
+        size: "small",
+        sizeNote: "Laya rated it small (0.81)",
+        noAutonomy: false,
+      },
+      {
+        task: "GLX-431",
+        title: LONG_TASK,
+        org: "globex",
+        status: "inbox",
+        size: "large",
+        sizeNote: "Laya rated it large (0.37)",
+        noAutonomy: false,
+      },
+      {
+        task: "ACM-95",
+        title: "Migrate the billing tables to the new schema",
+        org: "acme",
+        status: "inbox",
+        size: "large",
+        sizeNote: "Laya rated it large (0.64)",
+        noAutonomy: true,
+        leftOut: "Marked as one to leave alone",
+      },
+      {
+        task: "PRV-20",
+        title: "Rotate the staging certificates",
+        status: "ready",
+        size: "small",
+        sizeNote: "Laya rated it small (0.9)",
+        noAutonomy: false,
+      },
+    ],
     holds: [],
     spend: {
-      day: "2026-10-03",
+      day: DAY,
       tz: "Europe/Berlin",
       resetsAt: new Date(NOW + 6 * 3600_000).toISOString(),
-      total: { used: { tokens: 932_000, cost: 7.55 }, cap: { cost: 20 }, percent: 38, reached: false },
+      total: { used: { tokens: 4_200_000, cost: 16.45 }, cap: { cost: 40 }, percent: 41, reached: false },
       orgs: [],
     },
     accounts: [],
     waiting: [],
     settings: {
-      day: { cost: 20 },
-      orgs: {},
+      day: { cost: 40 },
+      orgs: { private: { cap: { cost: 20 } }, globex: { cap: { cost: 10 } }, acme: { cap: { cost: 8 } } },
       floors: { window: 10, weekly: 5 },
       summary_at: "08:00",
       tz: "Europe/Berlin",
-      instructions: [],
-      pick: { size: "any" },
+      instructions: [
+        {
+          id: "abcd1234",
+          text: "Be careful in the Globex billing code; no product-specific fixes.",
+          at: iso(3000),
+        },
+      ],
+      pick: { size: "medium" },
+    },
+    summary: {
+      day: "2026-10-03",
+      from: iso(1500),
+      to: iso(60),
+      at: iso(55),
+      shipped: [
+        { task: "GLX-420", title: "Cache the board thumbnails", org: "globex", how: "mr-open" },
+        { task: "ACM-80", title: "Fix the login redirect loop", org: "acme", how: "merged" },
+      ],
+      spent: {
+        total: { used: { tokens: 9_000_000, cost: 14.1 }, cap: { cost: 40 }, percent: 35, reached: false },
+        orgs: [],
+      },
+      unsure: [{ text: "Skipped NW-14: the certificates need the owner's VPN", task: "NW-14" }],
+      waiting: [],
+      decisions: 23,
     },
     lastTick: iso(4),
   };
 }
 
-interface Scene {
-  status: CaptainStatus;
+const ASK: BudgetAsk = {
+  scope: "globex",
+  name: "Globex",
+  day: DAY,
+  cap: { cost: 10 },
+  raiseTo: { cost: 20 },
+  waiting: 3,
+  text: "Globex used its $10 for today. 3 tasks are waiting. Raise it to $20 for today?",
+  at: iso(10),
+};
+
+const thread: Task = {
+  id: "LOCAL-31",
+  title: "Private",
+  brief: "Captain lane",
+  kind: "chat",
+  status: "running",
+  folder: "/Users/owner/.majhi/tasks/LOCAL-31",
+  repos: [],
+  team: ["setup"],
+  mode: "lead",
+  overrides: {},
+  links: [],
+  attachments: [],
+  createdAt: iso(5000),
+  updatedAt: iso(1),
+};
+
+function conversation(chat: string): RoomItem[] {
+  const out: RoomItem[] = [];
+  for (let n = 1; n <= 6; n++) {
+    out.push({
+      id: `i${n}a`,
+      task: chat,
+      seq: n * 2,
+      at: iso(200 - n * 20),
+      type: "agent",
+      agent: "setup",
+      text: `Plan ${n}: GLX-430 runs with the builder. Next is **GLX-432**, then the docs. ACM-88 waits for your push approval, so I left it.`,
+    } as RoomItem);
+    if (n % 3 === 0)
+      out.push({
+        id: `i${n}b`,
+        task: chat,
+        seq: n * 2 + 1,
+        at: iso(190 - n * 20),
+        type: "owner",
+        text: "Why only small tasks yesterday? Take the export rework too.",
+        attachments: [],
+        queued: false,
+      } as RoomItem);
+  }
+  return out;
 }
 
-async function stub(page: Page, scene: Scene): Promise<{ calls: { name: string; body: unknown }[] }> {
-  const calls: { name: string; body: unknown }[] = [];
+async function stub(page: Page, state: { asks: BudgetAsk[] }) {
   const answer = (name: string, json: () => unknown) =>
-    page.route(`**/api/cmd/${name}`, (r) => {
-      calls.push({ name, body: r.request().postDataJSON() });
-      return r.fulfill({ json: json() });
-    });
-  await answer("captain.status", () => scene.status);
-  await answer("captain.log", () => ({ actions: ACTIONS, runs: RUNS }));
+    page.route(`**/api/cmd/${name}`, (r) => r.fulfill({ json: json() }));
+  await answer("captain.status", () => captain());
+  await answer("captain.log", () => ({ actions: ACTIONS, runs: [] }));
+  await answer("captain.asks", () => ({ asks: [], budgets: state.asks }));
   await answer("autonomy.status", () => autonomy());
-  await answer("autonomy.events", () => ({ events: [] }));
-  await page.route("**/api/cmd/autonomy.configure", (r) => {
-    const body = r.request().postDataJSON() as { orgs?: Record<string, Record<string, unknown>> };
-    calls.push({ name: "autonomy.configure", body });
-    for (const [id, change] of Object.entries(body.orgs ?? {})) {
-      scene.status = {
-        ...scene.status,
-        orgs: scene.status.orgs.map((o) => {
-          if (o.org !== id) return o;
-          const authority = { ...o.authority, ...(change.authority as Partial<Authority> | undefined) };
-          const cap =
-            change.cap === undefined ? o.budget : ((change.cap as CaptainOrg["budget"] | null) ?? undefined);
-          return {
-            ...o,
-            authority,
-            effective: scene.status.autonomy === "on" ? authority : ASK_ROWS,
-            ...(cap === undefined ? { budget: undefined } : { budget: cap }),
-            rules: { ...o.rules, authority },
-          };
-        }),
-      };
-    }
-    return r.fulfill({ json: autonomy() });
+  await answer("autonomy.events", () => ({ events: EVENTS }));
+  await answer("boss.chat", () => ({ ...thread, id: "LOCAL-40", title: "Captain chat", team: ["setup"] }));
+  await answer("tasks.get", () => thread);
+  await answer("room.items", () => ({ items: conversation("LOCAL-31").reverse(), more: false }));
+  await page.routeWebSocket(/\/api\/tasks\/([^/]+)\/room$/, (ws) => {
+    const snapshot = {
+      type: "snapshot",
+      more: false,
+      processes: [],
+      agents: [{ agent: "setup", status: "idle", queued: 0, commands: [] }],
+      items: conversation("LOCAL-31"),
+    } as unknown as RoomServerMessage;
+    ws.send(JSON.stringify(snapshot));
   });
-  await page.route("**/api/cmd/captain.stop", (r) => {
-    calls.push({ name: "captain.stop", body: null });
-    scene.status = { ...scene.status, stopped: true, stoppedAt: new Date().toISOString(), autonomy: "off" };
-    return r.fulfill({ json: scene.status });
-  });
-  await page.route("**/api/cmd/captain.resume", (r) => {
-    calls.push({ name: "captain.resume", body: null });
-    scene.status = { ...scene.status, stopped: false };
-    return r.fulfill({ json: scene.status });
-  });
-  return { calls };
 }
 
-async function open(page: Page, path: string, w: number, h: number, theme: string, scene: Scene) {
+const chat = (id: string, title: string, agent: string, minutesAgo: number, org?: string) => ({
+  id,
+  title,
+  kind: "chat",
+  status: "running",
+  team: [agent],
+  mode: "lead",
+  updatedAt: iso(minutesAgo),
+  repos: [],
+  working: [],
+  links: [],
+  waitingOn: [],
+  chat: true,
+  ...(org === undefined ? {} : { org }),
+});
+const CHATS = [
+  chat("LOCAL-12", "Chat", "setup", 3),
+  chat("LOCAL-14", "Set up the MCP skills for the Globex repo", "setup", 90),
+  chat("GLX-501", "Why does the export time out for large accounts?", "globex-lead", 25, "globex"),
+  chat("GLX-509", "Chat", "globex-lead", 600, "globex"),
+  chat("ACM-77", "Plan the rate limit rollout", "acme-lead", 2000, "acme"),
+];
+
+async function open(page: Page, path: string, w: number, h: number, theme: string) {
   await page.setViewportSize({ width: w, height: h });
-  const stubbed = await stub(page, scene);
+  await stub(page, { asks: [ASK] });
+  if (path === "/chats") await page.route("**/api/cmd/tasks.list", (r) => r.fulfill({ json: CHATS }));
   await page.goto(path);
   await page.evaluate((t) => {
     document.documentElement.dataset.theme = t;
   }, theme);
-  await page.waitForTimeout(700);
-  return stubbed;
+  await page.waitForTimeout(800);
 }
 
 async function noPageScroll(page: Page) {
@@ -361,136 +513,99 @@ async function noPageScroll(page: Page) {
 
 for (const [w, h] of [
   [1440, 900],
-  [1100, 700],
+  [1100, 760],
 ] as const) {
   for (const theme of ["dark", "light"]) {
-    test(`captain ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain", w, h, theme, { status: captain() });
-      await expect(page.getByRole("region", { name: "Private", exact: true })).toBeVisible();
-      await page.screenshot({ path: `${SHOTS}/captain-${w}-${theme}.png` });
+    test(`today ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=today", w, h, theme);
+      await expect(page.getByRole("region", { name: "Running now" })).toBeVisible();
+      await expect(page.getByText("1 thing needs you")).toBeVisible();
+      await page.screenshot({ path: `${SHOTS}/today-${w}-${theme}.png` });
       await noPageScroll(page);
     });
-    test(`captain more rules ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/captain", w, h, theme, { status: captain() });
-      const acme = page.getByRole("region", { name: "Acme", exact: true });
-      await acme.getByRole("button", { name: "More rules" }).click();
-      await expect(acme.getByRole("region", { name: "More rules for Acme" })).toBeVisible();
-      await acme.scrollIntoViewIfNeeded();
+    test(`chat ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=chat", w, h, theme);
+      await expect(page.getByRole("region", { name: "Captain chat" })).toBeVisible();
+      await page.getByRole("tab", { name: "Private" }).click();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `${SHOTS}/chat-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`log ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=log", w, h, theme);
+      await expect(page.getByRole("region", { name: "Log" })).toBeVisible();
+      await page.screenshot({ path: `${SHOTS}/log-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`rules ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=rules", w, h, theme);
+      await expect(page.getByRole("region", { name: "Acme", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${SHOTS}/rules-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`rules with the leave-alone list open ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=rules", w, h, theme);
+      const globex = page.getByRole("region", { name: "Globex", exact: true });
+      await globex.getByRole("button", { name: /^Leave tasks alone/ }).click();
+      await globex.scrollIntoViewIfNeeded();
       await page.waitForTimeout(300);
-      await page.screenshot({ path: `${SHOTS}/captain-rules-${w}-${theme}.png` });
+      await page.screenshot({ path: `${SHOTS}/rules-leave-alone-${w}-${theme}.png` });
       await noPageScroll(page);
     });
-    test(`autonomous lanes ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/autonomous", w, h, theme, { status: captain() });
-      await expect(page.getByRole("button", { name: /Acme/ }).first()).toBeVisible();
-      await page.screenshot({ path: `${SHOTS}/autonomous-lanes-${w}-${theme}.png` });
+    test(`the long-named workspace in Rules ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/captain?tab=rules", w, h, theme);
+      const long = page.getByRole("region", { name: /^Northwind Traders International/ });
+      await long.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${SHOTS}/rules-long-${w}-${theme}.png` });
       await noPageScroll(page);
+    });
+    test(`chats list ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/chats", w, h, theme);
+      await page.screenshot({ path: `${SHOTS}/chats-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
+    test(`autonomous address lands on Today ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/autonomous", w, h, theme);
+      await expect(page).toHaveURL(/\/captain\?tab=today$/);
+      await page.screenshot({ path: `${SHOTS}/autonomous-redirect-${w}-${theme}.png` });
     });
   }
 }
 
-for (const [w, h, theme] of [
-  [1440, 900, "dark"],
-  [1100, 760, "light"],
-  [1100, 760, "dark"],
-  [1440, 900, "light"],
-] as const) {
-  test(`the long-named workspace card ${w} ${theme}`, async ({ page }) => {
-    await open(page, "/captain", w, h, theme, { status: captain() });
-    const long = page.getByRole("region", { name: /^Northwind Traders International/ });
-    await long.scrollIntoViewIfNeeded();
-    await expect(long.getByRole("group", { name: /^Push in/ })).toBeVisible();
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `${SHOTS}/captain-long-${w}-${theme}.png` });
-    await noPageScroll(page);
-  });
-}
-
-test("captain log at 1100", async ({ page }) => {
-  await open(page, "/captain", 1100, 700, "dark", { status: captain() });
-  await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Log" }).click();
-  await expect(page.getByRole("region", { name: "The captain's log" })).toBeVisible();
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOTS}/captain-log-1100-dark.png` });
-  await noPageScroll(page);
+test("the old Autonomous views land on the matching tab", async ({ page }) => {
+  await open(page, "/autonomous?tab=rules", 1440, 900, "dark");
+  await expect(page).toHaveURL(/\/captain\?tab=rules$/);
+  await page.goto("/autonomous?tab=log");
+  await expect(page).toHaveURL(/\/captain\?tab=log$/);
+  await page.goto("/autonomous?tab=summary");
+  await expect(page).toHaveURL(/\/captain\?tab=today$/);
 });
 
-test("changing a row, a preset and the budget saves them", async ({ page }) => {
-  const { calls } = await open(page, "/captain", 1440, 900, "dark", { status: captain() });
-  const globex = page.getByRole("region", { name: "Globex", exact: true });
-  const start = globex.getByRole("group", { name: "Start work in Globex" });
-  await start.getByRole("button", { name: "Captain decides" }).click();
-  await expect
-    .poll(() => calls.find((c) => c.name === "autonomy.configure")?.body)
-    .toEqual({ orgs: { globex: { authority: { start: "decide" } } } });
-  await expect(start.getByRole("button", { name: "Captain decides" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  // The budget field shows once the captain decides something here.
-  const budget = globex.getByRole("textbox", { name: "Daily budget" });
-  await expect(budget).toBeVisible();
-  await budget.fill("12.50");
-  await globex.getByRole("button", { name: "Save" }).click();
-  await expect
-    .poll(() => calls.filter((c) => c.name === "autonomy.configure").at(-1)?.body)
-    .toEqual({ orgs: { globex: { cap: { cost: 12.5 } } } });
-  await expect(globex.getByRole("button", { name: "Save" })).toBeHidden();
-  await expect(budget).toHaveValue("12.5");
-  // The presets set every row.
-  await globex.getByRole("button", { name: "Hands off" }).click();
-  await expect
-    .poll(() => calls.filter((c) => c.name === "autonomy.configure").at(-1)?.body)
-    .toEqual({
-      orgs: {
-        globex: {
-          authority: {
-            start: "decide",
-            questions: "decide",
-            approvals: "decide",
-            upkeep: "decide",
-            merge: "decide",
-            push: "ask",
-          },
-        },
-      },
-    });
-  await expect(
-    globex.getByRole("group", { name: "Push in Globex" }).getByRole("button", { name: "Ask me" }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await page.screenshot({ path: `${SHOTS}/captain-globex-hands-off.png` });
-  await globex.getByRole("button", { name: "Ask me first" }).click();
-  await expect(start.getByRole("button", { name: "Ask me" })).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    globex.getByRole("group", { name: "Upkeep in Globex" }).getByRole("button", { name: "Captain decides" }),
-  ).toHaveAttribute("aria-pressed", "true");
-});
-
-test("with Autonomous off the card says the captain asks about everything", async ({ page }) => {
-  await open(page, "/captain", 1440, 900, "dark", { status: captain({ autonomy: "off" }) });
-  const acme = page.getByRole("region", { name: "Acme", exact: true });
-  await expect(acme.getByText("Autonomous is off, so the captain asks you about everything.")).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/captain-autonomous-off.png` });
-});
-
-test("the Autonomous switch asks before turning off", async ({ page }) => {
-  const { calls } = await open(page, "/captain", 1440, 900, "dark", { status: captain() });
-  await page.getByRole("switch", { name: "Autonomous" }).first().click();
-  await expect(page.getByRole("heading", { name: "Turn Autonomous off?" })).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/captain-off-dialog.png` });
-  await page.getByRole("button", { name: "Turn off and pause its tasks" }).click();
-  await expect.poll(() => calls.find((c) => c.name === "autonomy.stop")?.body).toEqual({ how: "now" });
-});
-
-test("the sidebar Captain row opens the page, and its chat button still opens the captain chat", async ({
+test("the tab is in the address and the sidebar has one Captain entry with the switch under it", async ({
   page,
 }) => {
-  await open(page, "/", 1440, 900, "dark", { status: captain() });
-  await page.getByRole("link", { name: "Captain", exact: true }).click();
+  await open(page, "/", 1440, 900, "dark");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav.getByRole("link", { name: "Autonomous" })).toHaveCount(0);
+  await expect(nav.getByRole("switch", { name: "Autonomous" })).toBeVisible();
+  await nav.getByRole("link", { name: "Captain", exact: true }).click();
   await expect(page).toHaveURL(/\/captain$/);
-  await page.getByRole("button", { name: "Open the captain chat" }).click();
-  await expect(page.getByRole("button", { name: "Open the captain chat" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page).toHaveURL(/\/captain\?tab=log$/);
+  await page.screenshot({
+    path: `${SHOTS}/sidebar-1440-dark.png`,
+    clip: { x: 0, y: 0, width: 320, height: 520 },
+  });
+});
+
+test("the log filters by kind and workspace", async ({ page }) => {
+  await open(page, "/captain?tab=log", 1440, 900, "dark");
+  await page.getByRole("button", { name: "Holds", exact: true }).click();
+  await expect(page.getByText("Globex used its $10 for today. 3 tasks wait")).toBeVisible();
+  await expect(page.getByText("Woke the captain")).toBeHidden();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByRole("combobox", { name: "Workspace" }).selectOption("acme");
+  await expect(page.getByText("ACM-88 is ready for review")).toBeVisible();
+  await expect(page.getByText("Approved: Add the reviewer")).toBeHidden();
 });

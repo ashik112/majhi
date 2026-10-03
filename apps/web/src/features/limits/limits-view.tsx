@@ -344,7 +344,7 @@ function LimitsForm({
             </Card>
             <p className="text-xs text-fg-faint text-pretty">
               Days and the summary time follow {BROWSER_ZONE}, this browser's zone. Who decides merging and
-              pushing is set per workspace on the Captain page.
+              pushing is set per workspace under Rules on the Captain page.
             </p>
           </div>
         </div>
