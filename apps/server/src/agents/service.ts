@@ -27,6 +27,8 @@ export interface AgentRenameLinks {
   renameInTasks(agent: string, newId: string): void;
   /** Moves the remembered slash commands. */
   renameCommands(agent: string, newId: string): void;
+  /** The agent's skills or connections changed: sessions it has open must restart to see them. */
+  toolsChanged?(agent: string): void;
 }
 
 export class AgentService {
@@ -202,7 +204,19 @@ export class AgentService {
     summary: string,
   ): Promise<unknown> {
     const agent: Agent = { frontmatter: { ...draft.frontmatter, id }, instructions: draft.instructions };
-    return this.config.change({ command, meta, summary }, () => this.store.write(agent));
+    return this.config.change({ command, meta, summary }, async () => {
+      const stored = await this.store.get(id);
+      const before = stored?.ok ? stored.agent.frontmatter : undefined;
+      await this.store.write(agent);
+      const after = agent.frontmatter;
+      if (
+        before !== undefined &&
+        (before.skills.join("\n") !== after.skills.join("\n") ||
+          before.connections.join("\n") !== after.connections.join("\n"))
+      ) {
+        this.links?.toolsChanged?.(id);
+      }
+    });
   }
 
   private async require(id: string): Promise<StoredAgent> {

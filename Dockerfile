@@ -97,6 +97,13 @@ RUN npm install -g @playwright/mcp@0.0.83 chrome-devtools-mcp@1.10.1 \
   && chmod -R a+rX /opt/ms-playwright \
   && npm cache clean --force \
   && rm -rf /root/.npm /root/.cache
+# Vercel `skills` CLI (SPEC 5.2, Phase 6): majhi installs skills by running `skills add <source> -y --copy
+# --agent claude-code codex` here, in a throwaway folder, and moves the result into its own store.
+# Pinned: raise it here and SKILLS_CLI_VERSION in apps/server/src/skills/cli.ts together.
+RUN npm install -g skills@1.7.0 \
+  && skills --help > /dev/null \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /root/.cache
 # Serena (SPEC 5.9 item 6): symbol-level code tools, started over stdio by the agent CLI inside its
 # runner, one per task worktree (`apps/server/src/runs/serena.ts`). Installed with uv, which is
 # mounted for this step only and not left in the image. Python 3.13 and the package live under

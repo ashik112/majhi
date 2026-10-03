@@ -37,11 +37,13 @@ import type { RoomAccess, ToolServer } from "../rooms/access.ts";
 import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
+import type { SkillStore } from "../skills/store.ts";
 import type { Store } from "../store/index.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../tasks/read-mounts.ts";
 import { gitAttribution } from "./attribution.ts";
 import type { ContextBudget } from "./context.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
+import { prepareRunSkills } from "./skills.ts";
 
 /** An agent file and the account it runs on, checked. */
 export interface ResolvedAgent {
@@ -118,6 +120,8 @@ export interface LaunchDeps {
   serena?: SerenaLaunch | undefined;
   /** Where connections keep their files (5.14). Undefined: runs get no connections. */
   connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath"> | undefined;
+  /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */
+  skills?: Pick<SkillStore, "get" | "pathOf"> | undefined;
 }
 
 export interface Launched {
@@ -139,6 +143,8 @@ export interface Launched {
   effort?: string | undefined;
   /** What the run holds of its connections, with its own folder of their files. */
   connections?: RunConnections | undefined;
+  /** The run's folder of its agent's skills, removed when the session ends, and the prompt text naming them. */
+  skills?: { dir: string; note: string } | undefined;
 }
 
 /**
@@ -166,6 +172,15 @@ export async function launch(
   const worktrees = task.repos.map((r) => r.worktree ?? join(task.folder, r.project));
   // Written before gating: a run that holds a connection gets majhi-connections.
   const held = await heldConnections(deps, task, fm, "session");
+  const skills =
+    deps.skills === undefined
+      ? undefined
+      : await prepareRunSkills({ store: deps.skills, majhiHome: deps.majhiHome }, fm.skills).catch(
+          async (err) => {
+            if (held !== undefined) await removeRunFiles(held.dir);
+            throw err;
+          },
+        );
   const gated = gateTools(fm, {
     boss,
     teamSize: task.team.length,
@@ -202,6 +217,11 @@ export async function launch(
     mcpServers.push(...held.servers);
     notices.push(...held.problems);
   }
+  for (const name of skills?.missing ?? []) {
+    notices.push(
+      `Skill ${name} is turned on for @${run.agent} but not installed, so this run does not have it.`,
+    );
+  }
   let session: AgentSession;
   try {
     session = await deps.runtime.startSession({
@@ -220,6 +240,7 @@ export async function launch(
         })),
         ...hooksMount(attribution.hooks),
         ...(held?.mounts ?? []),
+        ...(skills?.mounts ?? []),
       ],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
@@ -232,6 +253,7 @@ export async function launch(
     });
   } catch (err) {
     if (held !== undefined) await removeRunFiles(held.dir);
+    if (skills !== undefined && skills.dir !== "") await removeRunFiles(skills.dir);
     if (admin !== undefined) deps.admin?.revoke(admin.token);
     if (decide !== undefined) deps.decisions?.revoke(decide.token);
     if (rooms !== undefined) deps.rooms?.revoke(rooms.tokens);
@@ -252,6 +274,7 @@ export async function launch(
     ...(held === undefined
       ? {}
       : { connections: { dir: held.dir, gate: held.gate, secrets: held.secrets, uses: held.uses } }),
+    ...(skills === undefined || skills.dir === "" ? {} : { skills: { dir: skills.dir, note: skills.note } }),
   };
 }
 

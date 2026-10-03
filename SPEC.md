@@ -257,9 +257,8 @@ v1 can merge `server` and `runner` into one container if that is simpler. Keep t
 ~/.majhi/
 ├── majhi.yaml                 workspace roots, orgs, accounts, projects, aliases, links, policies, defaults
 ├── agents/<id>.md           one agent per file: YAML frontmatter + instructions body
-├── skills/<name>/SKILL.md   installed skills (Agent Skills format)
-├── accounts/<id>/           each account's own CLI config home (login credentials live here)
-├── agent-homes/<id>/        per-agent config home (see 5.2)
+├── skills/<name>/SKILL.md   installed skills (Agent Skills format), with skills-lock.json beside them (5.2)
+├── accounts/<id>/           each account's own CLI config home, shared by its agents (login credentials live here)
 ├── memory/memory.db         memory store
 ├── majhi.db                   tasks, rooms, runs, usage, index of the files above
 ├── secrets.age              tracker tokens and API keys, encrypted with age
@@ -361,8 +360,14 @@ projects:
 ### 5.2 Accounts, per-agent homes and skills
 
 - A login account has one config home holding its credentials. Login runs the tool's own login inside the runner, shown in an embedded terminal (device-code or browser flow). An API-key account needs no login: its key is stored in `secrets.age` and injected only into runs on that account.
-- Several agents can share an account but need different skills. So each agent gets its own config home in `~/.majhi/agent-homes/<id>/` that links to the account's credential file and contains only that agent's enabled skills.
-- **Verify early (Phase 1):** that each CLI works with a linked credential file, and that token refresh does not break when two agents on the same account run at once. If it breaks, fall back to one shared home per account and give per-agent skills through the prompt instead. Log the result.
+- Several agents can share an account but need different skills. Agents on one account share its config home (checked in Phase 1: a linked credential file breaks Claude's token refresh, see DECISIONS 2026-09-29), so per-agent skills reach a run through the run itself, never through a shared `.claude/skills`.
+- **Skills** use the open Agent Skills format: a folder with a `SKILL.md` whose YAML frontmatter has `name` and `description`.
+  - **Store.** Installed once into `~/.majhi/skills/<name>/`, with `skills-lock.json` beside them recording source, ref or commit, content hash and install time.
+  - **Install.** The Vercel `skills` CLI, pinned in the runner image, runs non-interactively in a runner with a throwaway home: `skills add <source> -y --copy --agent claude-code codex [--skill <name>]`, telemetry off. Sources: `owner/repo`, repo or `tree/.../skills/<name>` URLs, other git URLs, a SKILL.md or archive URL, a folder inside a workspace root or the tasks folder, or an uploaded zip (extracted with path containment). Private repos use the org's git login. Installing is two steps: a preview (name, description, files, source) and a confirm of exactly what was previewed. Installing never enables.
+  - **Per agent.** The agent file's `skills` list. Each run gets read-only copies of only its agent's enabled skills in a folder of its own, removed when the session ends, and the session's first prompt names each skill with its SKILL.md path. Changing an agent's skills restarts its open sessions when their turn ends, so the next turn has them.
+  - **Browse** searches the skills.sh directory and shows each result's source repo. Update previews the change first; remove takes the skill off every agent that lists it. Every install, update, enable, disable and remove gets an audit row.
+- **MCP servers** are `mcp` connections (5.14), installed from the same page: the official MCP Registry (`/v0.1/servers`, falling back to `/v0`), a remote URL (Streamable HTTP or SSE, with headers), a local command, or a pasted `mcpServers` snippet. A registry package is always pinned to a version. Fields marked secret are set through the write-only secret flow, required ones must be filled before saving, and Test runs right after and shows the tool list. Per agent, a server is turned on in the agent's `connections`, inside its own org only.
+- **By message.** In a room, the owner's "@agent install this skill <link>" or "@agent add this MCP server <name or link>" gets one approval card (what, source, which agent). Approving installs it and turns it on for that agent; secrets an MCP server needs are asked for with secret requests, never in chat. The same `skills.*` and `mcp.*` commands serve the page, the room and the captain.
 
 ### 5.3 Rooms and coordination
 
@@ -775,9 +780,10 @@ Delivered in two parts, each usable and reviewed on its own.
 - **Done when:** a fact learned in one task is approved and then recalled in a later task in the same repo.
 
 
-### Phase 6: Skills
-- Install from link, registry name, zip or folder via the skills CLI. Per-agent enablement. Installing by message in a room ("@agent install this skill <link>").
-- **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run.
+### Phase 6: Skills and MCP servers
+- Install skills from a link, registry name, zip or folder via the skills CLI. Per-agent enablement. Installing by message in a room ("@agent install this skill <link>", "@agent add this MCP server <name>").
+- MCP servers on the same Skills & MCP page, installed as Phase 10 `mcp` connections from the MCP Registry, a URL, a command or a pasted snippet (5.2).
+- **Done when:** a skill sent in a room is installed, enabled for that agent, and used in its next run. An MCP server picked from the registry or pasted as a URL is installed as a connection, passes Test, is enabled for one agent, and its tools are available in that agent's next run.
 
 
 ### Phase 7: Resilience and health

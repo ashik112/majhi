@@ -84,7 +84,13 @@ describe("ConnectionConfigSchema", () => {
 
 describe("which fields count", () => {
   it("follows the transport of an MCP server, remote by default", () => {
-    expect(activeFields("mcp").map((f) => f.key)).toEqual(["transport", "url", "read_tools", "write_tools"]);
+    expect(activeFields("mcp").map((f) => f.key)).toEqual([
+      "transport",
+      "url",
+      "protocol",
+      "read_tools",
+      "write_tools",
+    ]);
     expect(activeFields("mcp", { transport: "local" }).map((f) => f.key)).toEqual([
       "transport",
       "command",

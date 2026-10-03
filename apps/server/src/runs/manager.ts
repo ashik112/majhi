@@ -107,6 +107,8 @@ export interface RunDeps {
   serena?: SerenaLaunch;
   /** Where connections keep their files (5.14). Absent: runs get no connections. */
   connectionFiles?: LaunchDeps["connectionFiles"];
+  /** The skills store: runs get their agent's enabled skills (5.2). */
+  skills?: LaunchDeps["skills"];
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
@@ -645,6 +647,14 @@ export class RunManager {
     else this.evict(this.key(task, agent));
   }
 
+  /**
+   * The agent's skills or connections changed. Every session it has open, in any task, restarts the
+   * way `remount` does, so its next turn has the new skills and MCP tools.
+   */
+  remountAgent(agent: string): void {
+    for (const run of [...this.runs.values()]) if (run.agent === agent) this.remount(run.task, agent);
+  }
+
   /** What the agent's open session holds of its connections (5.14), or undefined. */
   connectionsOf(task: string, agent: string): RunConnections | undefined {
     return this.runs.get(this.key(task, agent))?.connections;
@@ -1001,7 +1011,10 @@ export class RunManager {
       const raw = await this.withFacts(
         run,
         brief,
-        this.withNotes(run, this.withProcesses(run, await this.blocksFor(run, entry))),
+        this.withNotes(
+          run,
+          this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry))),
+        ),
       );
       if (raw === undefined) continue;
 
@@ -1458,6 +1471,18 @@ export class RunManager {
     return line === undefined ? blocks : [...blocks, { type: "text", text: line }];
   }
 
+  /**
+   * Names the agent's enabled skills in the first prompt of each session, with the path of each
+   * SKILL.md in the run's own copy. Not to slash commands: the note waits for the next prompt.
+   */
+  private withSkills(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
+    const first = blocks?.[0];
+    if (blocks === undefined || run.skills === undefined || !run.skills.due) return blocks;
+    if (first?.type === "text" && first.text.startsWith("/")) return blocks;
+    run.skills.due = false;
+    return [...blocks, { type: "text", text: run.skills.note }];
+  }
+
   /** Adds the notes `note` left after the prompt, once. Not to slash commands, which keep them waiting. */
   private withNotes(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
     const first = blocks?.[0];
@@ -1602,6 +1627,7 @@ export class RunManager {
       run.decideToken = opened.decideToken;
       run.roomTokens = opened.roomTokens;
       run.connections = opened.connections;
+      run.skills = opened.skills === undefined ? undefined : { ...opened.skills, due: true };
       this.rememberSecrets(run.task, opened.connections?.secrets ?? []);
       run.turns = 0;
       run.usage = undefined;
@@ -1871,6 +1897,8 @@ export class RunManager {
     run.roomTokens = undefined;
     if (run.connections !== undefined) void removeRunFiles(run.connections.dir).catch(() => undefined);
     run.connections = undefined;
+    if (run.skills !== undefined) void removeRunFiles(run.skills.dir).catch(() => undefined);
+    run.skills = undefined;
     if (run.idleTimer !== undefined) clearTimeout(run.idleTimer);
     run.idleTimer = undefined;
     this.permissions.cancelAll(run);

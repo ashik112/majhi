@@ -32,6 +32,7 @@ import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
+import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import {
   checkSavedLogin,
@@ -52,6 +53,7 @@ import type { RepoScanner } from "../scan/scanner.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
+import { skillHandlers } from "../skills/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
@@ -158,6 +160,8 @@ export function createHandlers({
     ...captainHandlers(services.captain),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
+    ...skillHandlers(services.skills),
+    ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
 
     "config.get": async () => (await config.load()).state,
@@ -602,6 +606,18 @@ export function createHandlers({
       services.tasks.get(input.task);
       // Secrets are saved and swapped for references before the text reaches an agent or the room.
       const captured = await services.secretService.capture(input.text);
+      // The owner asking for a skill or an MCP server gets one approval card, not a turn of the agent.
+      if (ctx.meta.actor.kind === "owner") {
+        const asked = await services.installRequests.offer({
+          task: input.task,
+          text: captured.text,
+          agent: input.agent,
+        });
+        if (asked !== undefined) {
+          noteSecrets(services, input.task, captured.saved);
+          return { item: asked };
+        }
+      }
       const item = await services.tasks.send({ ...input, text: captured.text, from: ctx.meta.task });
       noteSecrets(services, input.task, captured.saved);
       return { item };

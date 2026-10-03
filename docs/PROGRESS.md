@@ -1,5 +1,61 @@
 # Progress
 
+## Phase 6: Skills and MCP servers (PRV-21, built)
+
+**Status.** Built on `task/prv-21-phase-6-skills`, from `main`. SPEC 5.2 and section 7, Phase 6. DECISIONS has a row per part (2026-10-03).
+
+### What works
+
+- **Skills backend** (`apps/server/src/skills/`, `packages/shared/src/skills.ts`).
+  - `skills.search|install|list|enable|disable|remove|update`.
+  - Installs run the pinned `skills@1.7.0` in a runner with a throwaway home, then move the result into `~/.majhi/skills/<name>/` with `skills-lock.json`.
+  - Install and update are a preview and then a confirm of exactly what was previewed (hash checked). Installing never enables.
+  - Sources: `owner/repo`, URLs, a folder inside a workspace root or the tasks folder, or an uploaded zip (zip-slip and symlinks refused). Private repos use the org's git token as an env header.
+  - Every install, update, enable, disable and remove writes an audit row.
+- **Skills in runs** (`apps/server/src/runs/skills.ts`).
+  - Each session gets read-only copies of only its agent's enabled skills, and its first prompt names each SKILL.md.
+  - Changing an agent's `skills` or `connections` restarts its open sessions at the end of the turn (`RunManager.remountAgent`).
+- **MCP servers** (`apps/server/src/mcp-servers/`).
+  - `mcp.search|install|enable|disable` create and switch Phase 10 `mcp` connections. There is no second store.
+  - Sources: the MCP Registry (`/v0.1`, then `/v0`), a URL (Streamable HTTP or SSE), a command, or a pasted `mcpServers` snippet.
+  - Registry packages are always pinned. Secrets are never taken at install: they come back as `needs` for the write-only secret flow. Required fields block confirm.
+  - Test runs after install and returns the full tool list. Enabling stays inside the agent's org.
+- **Skills & MCP page** (`/skills`, `apps/web/src/features/skills/`).
+  - Skills and MCP servers tabs (`?tab=`), each with Install and a review card, Browse, and the installed list with per-agent toggles.
+  - The agent editor has Skills and MCP servers sections.
+- **Install by message** (`apps/server/src/installs/`).
+  - The owner's "@agent install this skill <link>" or "@agent add this MCP server <name, URL, command or snippet>" gets one approval card instead of a turn.
+  - Approving installs the item and turns it on for that agent.
+  - Secrets come as secret requests bound to the connection, then Test runs.
+  - Root agents get the server in the task's org, not enabled for them.
+
+### How to try it
+
+1. Open Skills & MCP. Paste `owner/repo` or a folder path, Review, then Install. Turn it on for one agent. That agent's next turn names the skill in its prompt.
+2. On MCP servers, search the registry or paste a URL, Review, then Install. Set any secret it asks for, check that Test lists its tools, and turn it on for one agent.
+3. In a task room, write "@agent install this skill acme/agent-skills" and approve the card.
+
+### Verified
+
+- Typecheck clean. 190 tests pass in the touched areas:
+  - skills: fake skills CLI, zip-slip, containment, preview and confirm, the next session has the skill
+  - MCP servers: fake registry with the `/v0` fallback, fake stdio MCP server, pinning, secrets, org scoping, the next session has the tools
+  - install by message: the card, reject, the skill in the next session, a root agent
+  - connections, agents and admin
+- Screenshots of both tabs and the agent editor against a real server, the real skills CLI 1.7.0 and a fake stdio MCP server.
+
+### Owner-only checks
+
+- Build the runner image with `skills@1.7.0`.
+- Install a private skill repo with an org login.
+- Install a real registry server with an API key.
+
+### Left and known issues
+
+- The sidebar link still reads "Skills", because e2e tests match that label.
+- An optional secret a registry server lists is not created: it is added on the Connections page.
+- A skill from a URL that needed a query token cannot be updated, because tokens are dropped from recorded sources. Use the org login instead.
+
 ## PRV-97: Run majhi on Linux, and on Windows through WSL2 (built)
 
 **Status.** Built on `task/prv-97-run-majhi-and-through-wsl2`, from `main`. The brief is `docs/briefs/linux-and-wsl2.md`. DECISIONS has its rows (2026-10-03).

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { dockerTty, localSpawner } from "@majhi/acp";
+import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -64,6 +64,9 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { InstallRequests } from "./installs/service.ts";
+import { McpRegistry } from "./mcp-servers/registry.ts";
+import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
@@ -104,6 +107,11 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import { SkillsCli } from "./skills/cli.ts";
+import { skillGitEnv } from "./skills/git-env.ts";
+import { SkillRegistry } from "./skills/registry.ts";
+import { SkillService } from "./skills/service.ts";
+import { SkillStore } from "./skills/store.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
@@ -155,6 +163,12 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
+  skillsCommand?: Command;
+  /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
+  skillsFetch?: ConstructorParameters<typeof SkillRegistry>[0];
+  /** Replaces `fetch` for the MCP Registry, so tests never reach it. */
+  mcpFetch?: ConstructorParameters<typeof McpRegistry>[0];
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
@@ -169,6 +183,14 @@ export interface Services {
   connections: ConnectionService;
   /** The Test of each connection, for connections.test and the Health page. */
   connectionTests: ConnectionTester;
+  /** Installed skills and the per-agent switches (5.2). */
+  skills: SkillService;
+  /** The skills store, for runs to copy from. */
+  skillStore: SkillStore;
+  /** MCP servers: install as connections and the per-agent switches (5.2). */
+  mcpServers: McpService;
+  /** "@agent install this skill <link>" in a room (Phase 6): one approval card, then install and enable. */
+  installRequests: InstallRequests;
   /** Bearer tokens of the majhi-admin MCP server, and the URL agents reach it at. */
   adminTokens: AdminTokens;
   /** The captain's tool calls, approvals and secret requests. */
@@ -326,6 +348,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       events.emit(["tasks"]);
     },
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
+    toolsChanged: (agent) => runs.remountAgent(agent),
   });
   const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
   const sessionOptions = runner.sessionOptions;
@@ -475,6 +498,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => containers.startup(),
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),
   );
+  const skillStore = new SkillStore(env.majhiHome);
   const runs = new RunManager({
     store,
     limited: limitedRun,
@@ -496,6 +520,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     admin: new AdminAccess(adminTokens),
     decisions,
     connectionFiles,
+    skills: skillStore,
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: () => events.emit(["tasks"]),
     // Bound below: the task service and the resume coordinator are built after the run manager.
@@ -924,6 +949,95 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     uploads,
     agents: agentStore,
     majhiHome: env.majhiHome,
+    agentsChanged: (list) => {
+      for (const agent of list) runs.remountAgent(agent);
+    },
+  });
+  const skills = new SkillService({
+    store: skillStore,
+    cli: new SkillsCli({
+      spawner: sessionOptions.spawner ?? localSpawner,
+      base: sessionOptions.base,
+      // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
+      scratchRoot: async () => {
+        const loaded = await config.load();
+        if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+        return join(loaded.state.config.tasksDir, ".skills");
+      },
+      ...(options.skillsCommand === undefined ? {} : { command: options.skillsCommand }),
+      gitEnv: async (org, source) => skillGitEnv(gitTokens, (await config.sections()).orgs, org, source),
+    }),
+    registry: new SkillRegistry(options.skillsFetch ?? fetch),
+    agents: {
+      skillLists: async () =>
+        (await agents.list()).flatMap((e) =>
+          e.status === "ok" ? [{ id: e.agent.frontmatter.id, skills: e.agent.frontmatter.skills }] : [],
+        ),
+      setSkills: async (agent, list, command, meta) => {
+        await agents.edit(agent, { set: { skills: list } }, command, meta);
+      },
+    },
+    uploads,
+    audit: (row) => store.permissions.log(row),
+    roots: async () => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") return [];
+      return [...loaded.state.config.workspaces, loaded.state.config.tasksDir];
+    },
+    hostHome: env.hostHome,
+  });
+  const connectionTests = new ConnectionTester({
+    connections,
+    secrets,
+    spawner: sessionOptions.spawner ?? localSpawner,
+    base: sessionOptions.base,
+    // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
+    scratchRoot: async () => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+      return join(loaded.state.config.tasksDir, ".connections");
+    },
+    hostHome: env.hostHome,
+    // The runner image has the browser servers, so a Test there downloads nothing.
+    ...(env.runner.mode === "container"
+      ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
+      : {}),
+  });
+  const mcpServers = new McpService({
+    connections,
+    tester: connectionTests,
+    registry: new McpRegistry(options.mcpFetch ?? fetch),
+    agents: {
+      connectionLists: async () =>
+        (await agents.list()).flatMap((e) =>
+          e.status === "ok"
+            ? [
+                {
+                  id: e.agent.frontmatter.id,
+                  scope: e.agent.frontmatter.scope,
+                  connections: e.agent.frontmatter.connections,
+                },
+              ]
+            : [],
+        ),
+      setConnections: async (agent, list, command, meta) => {
+        await agents.edit(agent, { set: { connections: list } }, command, meta);
+      },
+    },
+    orgs: async () => Object.keys((await config.sections()).orgs),
+    audit: (row) => store.permissions.log(row),
+  });
+  const installRequests = new InstallRequests({
+    tasks,
+    room,
+    runs,
+    admin,
+    mcp: mcpServers,
+    skills,
+    scopeOf: async (agent) => {
+      const found = (await agents.list()).find((e) => e.status === "ok" && e.agent.frontmatter.id === agent);
+      return found?.status === "ok" ? found.agent.frontmatter.scope : undefined;
+    },
   });
   return {
     config,
@@ -932,23 +1046,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
     connections,
-    connectionTests: new ConnectionTester({
-      connections,
-      secrets,
-      spawner: sessionOptions.spawner ?? localSpawner,
-      base: sessionOptions.base,
-      // In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
-      scratchRoot: async () => {
-        const loaded = await config.load();
-        if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
-        return join(loaded.state.config.tasksDir, ".connections");
-      },
-      hostHome: env.hostHome,
-      // The runner image has the browser servers, so a Test there downloads nothing.
-      ...(env.runner.mode === "container"
-        ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
-        : {}),
-    }),
+    skills: skills,
+    skillStore,
+    mcpServers,
+    installRequests,
+    connectionTests,
     adminTokens,
     admin,
     agents,

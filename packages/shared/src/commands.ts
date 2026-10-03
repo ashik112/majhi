@@ -112,6 +112,12 @@ import {
   UpdateStatusSchema,
 } from "./host.ts";
 import {
+  McpAgentInputSchema,
+  McpInstallInputSchema,
+  McpInstallResultSchema,
+  McpSearchResultSchema,
+} from "./mcp-servers.ts";
+import {
   FactHitSchema,
   FactSchema,
   MemoryAddInputSchema,
@@ -189,6 +195,15 @@ import {
   SettingsSchema,
   TurnsPatchSchema,
 } from "./settings.ts";
+import {
+  SkillAgentInputSchema,
+  SkillInstallInputSchema,
+  SkillInstallResultSchema,
+  SkillNameSchema,
+  SkillSchema,
+  SkillSearchResultSchema,
+  SkillUpdateInputSchema,
+} from "./skills.ts";
 import {
   AttachmentSchema,
   CardActionSchema,
@@ -1782,6 +1797,90 @@ export const commands = {
       "Test a connection the way a run would reach it: kubectl auth can-i --list, an MCP server's tool list, an SSH login, the env test command, an IMAP login and the SMTP greeting, or the browser MCP server starting. Warns when a kubectl identity can change things. Never shows a secret",
     input: ById,
     output: ConnectionTestResultSchema,
+  },
+
+  // Skills (5.2) --------------------------------------------------------------
+  "skills.search": {
+    risk: "read",
+    summary:
+      "Search the skills.sh directory. Each result names the source repo to review and what to pass to skills.install",
+    input: z.object({
+      query: z.string().trim().min(2).max(200),
+      limit: z.number().int().min(1).max(50).default(20),
+    }),
+    output: z.array(SkillSearchResultSchema),
+  },
+  "skills.install": {
+    risk: "change",
+    summary:
+      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. An installed skill is not enabled for any agent: use skills.enable",
+    input: SkillInstallInputSchema,
+    output: SkillInstallResultSchema,
+  },
+  "skills.list": {
+    risk: "read",
+    summary:
+      "List installed skills with name, description, files, source, version and the agents that use each. With agent, only the ones that agent has enabled",
+    input: z.object({ agent: IdSchema.optional() }),
+    output: z.array(SkillSchema),
+  },
+  "skills.enable": {
+    risk: "change",
+    summary:
+      "Turn an installed skill on for one agent: adds it to the agent file's skills list. Its next run gets the skill",
+    input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.disable": {
+    risk: "change",
+    summary: "Turn a skill off for one agent: takes it off the agent file's skills list",
+    input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.remove": {
+    risk: "destructive",
+    summary: "Uninstall a skill and take it off every agent that lists it",
+    input: z.object({ name: SkillNameSchema }),
+    output: z.object({ removed: SkillNameSchema, agents: z.array(IdSchema) }),
+  },
+  "skills.update": {
+    risk: "change",
+    summary:
+      "Fetch the newest copy of an installed skill from its source. Like install, the first call returns a preview and installs nothing; confirm with the previewId. Answers unchanged when the source has not changed",
+    input: SkillUpdateInputSchema,
+    output: SkillInstallResultSchema,
+  },
+
+  // MCP servers (5.2) ---------------------------------------------------------
+  "mcp.search": {
+    risk: "read",
+    summary:
+      "Search the official MCP Registry. Each result names the publisher, the source repo, the transports and what to pass to mcp.install",
+    input: z.object({
+      query: z.string().trim().min(2).max(200),
+      limit: z.number().int().min(1).max(50).default(20),
+    }),
+    output: z.array(McpSearchResultSchema),
+  },
+  "mcp.install": {
+    risk: "change",
+    summary:
+      "Install an MCP server as an mcp connection of an org, from a registry name, a remote URL, a local command or a pasted mcpServers snippet. The first call only returns a preview (publisher, source repo, transport, the command or URL, the headers and variables) with a previewId; nothing is created. Show the owner the preview, and after they agree call again with confirm set to the previewId: it creates the connection and runs Test with the tool list. Secret entries are created empty: never pass a secret value, ask the owner with a secret request and set it with connections.setSecret. Installing does not enable the server for any agent: use mcp.enable",
+    input: McpInstallInputSchema,
+    output: McpInstallResultSchema,
+  },
+  "mcp.enable": {
+    risk: "change",
+    summary:
+      "Turn an installed MCP server (an mcp connection) on for one agent of its org: adds it to the agent file's connections list. Its next run gets the server",
+    input: McpAgentInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "mcp.disable": {
+    risk: "change",
+    summary: "Turn an MCP server off for one agent: takes it off the agent file's connections list",
+    input: McpAgentInputSchema,
+    output: ConnectionViewSchema,
   },
 
   // Config history and undo (5.16) --------------------------------------------
