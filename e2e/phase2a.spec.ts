@@ -182,9 +182,9 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   const branch = git(worktree, "rev-parse", "--abbrev-ref", "HEAD");
   expect(branch).toMatch(new RegExp(`^task/${apiTaskId.toLowerCase()}-`));
   expect(branch).toContain("health-endpoint");
-  // Created from develop, which is one commit ahead of main.
-  expect(git(worktree, "rev-parse", "HEAD")).toBe(git(API_SOURCE, "rev-parse", "develop"));
-  expect(git(worktree, "rev-parse", "HEAD")).not.toBe(git(API_SOURCE, "rev-parse", "main"));
+  // Created from the project's own branch, not from the develop named in the words (one commit ahead of main).
+  expect(git(worktree, "rev-parse", "HEAD")).toBe(git(API_SOURCE, "rev-parse", "main"));
+  expect(git(worktree, "rev-parse", "HEAD")).not.toBe(git(API_SOURCE, "rev-parse", "develop"));
   expect(git(API_SOURCE, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
 
   const taskMd = readFileSync(join(apiTask.folder, "TASK.md"), "utf8");
@@ -230,7 +230,7 @@ test("asking for a file in the repo writes it to the worktree and lists it under
 
   const changes = panel(page);
   await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
-  await expect(changes.getByRole("region", { name: "Branch and worktree" })).toContainText("develop");
+  await expect(changes.getByRole("region", { name: "Branch and worktree" })).toContainText("main");
   const section = changes.getByRole("region", { name: "Changes in api" });
   await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
   await expect(section.getByRole("list", { name: "Commits" })).toContainText("@acme-lead");
@@ -321,7 +321,7 @@ test("agent attribution in commits can be turned off for majhi, an org and a pro
   expect(await fromProject()).toBeUndefined();
 });
 
-test("removing a task with uncommitted changes is refused, and Remove anyway removes it", async ({
+test("removing a task with uncommitted changes is refused, and typing its id removes it", async ({
   page,
   request,
 }) => {
@@ -336,11 +336,15 @@ test("removing a task with uncommitted changes is refused, and Remove anyway rem
   await page.getByRole("menuitem", { name: "Remove task" }).click();
   const dialog = page.getByRole("dialog", { name: `Remove ${apiTaskId}` });
   await dialog.getByRole("button", { name: "Remove task" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Uncommitted changes");
-  await expect(dialog.getByRole("alert")).toContainText("HEALTH.md");
+  await expect(dialog.getByText("These changes are in no commit")).toBeVisible();
+  await expect(dialog.getByRole("listitem")).toContainText("HEALTH.md");
   expect(existsSync(worktree)).toBe(true);
 
-  await dialog.getByRole("button", { name: "Remove anyway" }).click();
+  // Removing over uncommitted work takes the task id typed by the owner.
+  const removeWithChanges = dialog.getByRole("button", { name: "Remove with changes" });
+  await expect(removeWithChanges).toBeDisabled();
+  await dialog.getByRole("textbox").fill(apiTaskId);
+  await removeWithChanges.click();
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/\/$/);
   await expect.poll(() => existsSync(apiTask.folder)).toBe(false);

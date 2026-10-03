@@ -60,7 +60,7 @@ test("a compaction shows in the room as one quiet line, and Fresh session carrie
     .getByRole("button", { name: /@acme-lead(?! in this task)/, expanded: false })
     .click();
   const meter = panel(page).getByRole("meter", { name: "Context of @acme-lead" });
-  await expect(meter).toHaveAttribute("aria-valuetext", "4k of 200k tokens");
+  await expect(meter).toHaveAttribute("aria-valuetext", "4k of 200k");
   await shot(page, "runs-compacted");
 
   await cmd(request, "settings.set", { context: { compact_at: 0.8, compact_target: 0.4 } });
