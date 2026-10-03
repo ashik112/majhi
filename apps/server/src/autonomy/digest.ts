@@ -13,6 +13,7 @@ import type {
   UsageWindow,
 } from "@majhi/shared";
 import { capText } from "./spend.ts";
+import { meets, stateWords } from "./waits.ts";
 
 /**
  * The tick message (PRV-74, rule 8): what the captain reads each time majhi wakes it in the autonomy
@@ -66,6 +67,8 @@ export interface DigestInput {
   queue: readonly QueueItem[];
   /** One line per project of the workspace: stack, readiness, when its card was read. */
   projects?: readonly string[] | undefined;
+  /** Every account's health right now, by id, for the waits in the queue. */
+  accountStatus?: Readonly<Record<string, AutonomyAccount["status"]>> | undefined;
 }
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
@@ -127,7 +130,7 @@ function build(input: DigestInput, scale: number): string {
       "Accounts",
       input.accounts.map(
         (a) =>
-          `${a.id} (${a.org}, ${a.tool}): 5-hour ${left(a.window, input.tz)}, weekly ${left(a.weekly, input.tz)}${a.blocked === undefined ? "" : `. Held: ${a.blocked.why}`}`,
+          `${a.id} (${a.org}, ${a.tool}, ${stateWords(a.status)} now): 5-hour ${left(a.window, input.tz)}, weekly ${left(a.weekly, input.tz)}${a.blocked === undefined ? "" : `. Held: ${a.blocked.why}`}`,
       ),
       max(BASE.accounts),
       "none",
@@ -146,7 +149,13 @@ function build(input: DigestInput, scale: number): string {
       "Your tasks",
       input.tasks.map((t) => {
         const doing = t.agents.flatMap((a) => (a.nowDoing === undefined ? [] : [`@${a.id}: ${a.nowDoing}`]));
-        return `${t.task} [${t.status}] ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
+        const pause =
+          t.pause === undefined
+            ? ""
+            : t.pause.mayResume
+              ? ` (${t.pause.label}: you may resume it with majhi_tasks_start)`
+              : ` (${t.pause.label}: ${t.pause.stays ?? "leave it paused"})`;
+        return `${t.task} [${t.status}]${pause} ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
       }),
       max(BASE.tasks),
       "none yet",
@@ -182,7 +191,7 @@ function build(input: DigestInput, scale: number): string {
       "Your queue",
       input.queue.map(
         (q, i) =>
-          `${i + 1}. ${q.title}${q.task === undefined ? "" : ` (${q.task})`}: ${q.why}${q.after === undefined ? "" : `, not before ${time(q.after)}`}`,
+          `${i + 1}. ${q.title}${q.task === undefined ? "" : ` (${q.task})`}: ${q.why}${q.after === undefined ? "" : `, not before ${time(q.after)}`}${waitText(q, input.accountStatus)}`,
       ),
       max(BASE.queue),
       "empty",
@@ -199,6 +208,18 @@ function build(input: DigestInput, scale: number): string {
     "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
   ];
   return lines.join("\n");
+}
+
+/** What a queue item waits for and where that stands now, read live: the item's own words can be old. */
+function waitText(q: QueueItem, status: DigestInput["accountStatus"]): string {
+  const wait = q.waitFor;
+  if (wait === undefined) return "";
+  const now = status?.[wait.account];
+  const need = wait.state === "signed-in" ? "to be signed in" : "to be available";
+  if (meets(wait, now)) {
+    return `. READY: ${wait.account} is ${stateWords(now)} now, so this no longer waits. Start or resume it`;
+  }
+  return `. Waits for ${wait.account} ${need}; it is ${stateWords(now)} now`;
 }
 
 /** A titled list: at most `n` lines, then a count of the rest. */

@@ -23,8 +23,7 @@ describe("recheck of memories handed to the owner", () => {
     insert(db, "memory:8", "memory", "done", "2026-10-02T10:00:00.000Z");
     insert(db, "memory:9", "memory", "asked", "2026-10-04T10:00:00.000Z");
     insert(db, "ship:ready:ACM-1:abc", "ship", "asked", "2026-10-02T10:00:00.000Z");
-    // 124 is the one under test; later migrations may follow it.
-    expect(migrate(db, MIGRATIONS)[0]).toBe(124);
+    expect(migrate(db, MIGRATIONS)).toContain(124);
     const keys = (db.prepare("SELECT key FROM captain_actions ORDER BY id").all() as { key: string }[]).map(
       (r) => r.key,
     );

@@ -838,10 +838,33 @@ WHERE chore = 'memory'
 `,
   },
   {
+    // Tasks paused when Autonomous was turned off, before `paused_by` existed, read as paused by the
+    // owner and the captain never resumed them. A task of the captain or Autonomous (`autonomy_tasks`)
+    // paused for the owner, with nobody recorded, within two minutes of a mode event that turned
+    // Autonomous off (Stop now writes "Turned off" just after pausing; a graceful stop writes
+    // "Stopping after the current turns" just before), was paused by that switch. A task the owner
+    // paused by hand at another time keeps no `paused_by`.
+    id: 125,
+    name: "paused by autonomy off",
+    sql: `
+UPDATE tasks SET paused_by = 'autonomy-off'
+WHERE status = 'paused'
+  AND paused_reason = 'owner'
+  AND paused_by IS NULL
+  AND id IN (SELECT task FROM autonomy_tasks)
+  AND EXISTS (
+    SELECT 1 FROM autonomy_events e
+    WHERE e.kind = 'mode'
+      AND (e.text LIKE 'Turned off%' OR e.text LIKE 'Stopping after%')
+      AND ABS(julianday(e.at) - julianday(tasks.updated_at)) <= 2.0 / 1440
+  );
+`,
+  },
+  {
     // The project knowledge card (SPEC 5.18, captain v2): one JSON card per project, rewritten when
     // the base branch moves. facts_hash tells whether the facts changed, so the model's paragraph is
     // only rewritten when they did.
-    id: 125,
+    id: 126,
     name: "project cards",
     sql: `
 CREATE TABLE project_cards (

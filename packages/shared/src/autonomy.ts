@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolIdSchema, UsageWindowSchema } from "./accounts.ts";
+import { AccountStatusSchema, ToolIdSchema, UsageWindowSchema } from "./accounts.ts";
 import { IdSchema } from "./ids.ts";
 import { AutonomyInstructionSchema, AutonomySettingsSchema, BudgetSchema } from "./settings.ts";
 import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } from "./tasks.ts";
@@ -55,6 +55,8 @@ export const AutonomyAccountSchema = z.object({
   id: IdSchema,
   org: IdSchema,
   tool: ToolIdSchema,
+  /** The account's health right now: signed in, signed out (`needs-login`), at its limit, unreachable. */
+  status: AccountStatusSchema.optional(),
   window: UsageWindowSchema.optional(),
   weekly: UsageWindowSchema.optional(),
   /** Under a floor: no new autonomous work starts on it until `until` (the window's reset). */
@@ -83,6 +85,8 @@ export const AutonomyNowSchema = z.object({
   agents: z.array(z.object({ id: IdSchema, nowDoing: z.string().optional() })),
   /** The captain's one-line reason for taking it on, when the call that started or created it gave one. */
   why: z.string().optional(),
+  /** For a paused task: who paused it, in words, and whether the captain may resume it now. */
+  pause: z.object({ label: z.string(), mayResume: z.boolean(), stays: z.string().optional() }).optional(),
 });
 export type AutonomyNow = z.infer<typeof AutonomyNowSchema>;
 
@@ -97,6 +101,14 @@ export const QueueItemSchema = z.object({
   why: z.string().trim().min(1).max(240),
   /** Not before this time, UTC ISO: an account's reset, a deadline's day. */
   after: z.string().optional(),
+  /**
+   * It waits for an account: `signed-in` once the account is signed in (any state but signed out or
+   * unreachable), `available` once it is also under its limit. majhi reads the account each minute,
+   * sets `readyAt` when the wait lifts and wakes the captain with one line.
+   */
+  waitFor: z.object({ account: IdSchema, state: z.enum(["signed-in", "available"]) }).optional(),
+  /** Set by majhi: when the account condition of `waitFor` came true. Cleared when it stops holding. */
+  readyAt: z.string().optional(),
 });
 export type QueueItem = z.infer<typeof QueueItemSchema>;
 
