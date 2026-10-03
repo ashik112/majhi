@@ -27,10 +27,10 @@ export function levelProblem(
 ): string | undefined {
   if (effectiveLevel(level, mode) === "runs") return undefined;
   const name = orgName(org, names);
-  // Paused or stopping: the mode's own refusal says why nothing new starts.
+  // Turning off: the mode's own refusal says why nothing new starts.
   if (level === "runs" && mode !== "off") return undefined;
   if (level === "runs")
-    return `autonomous mode is off, so the captain does not start or change work in ${name}`;
+    return `Autonomous is off, so the captain does not start or change work in ${name}. It acts only when you ask`;
   return `${name} is set to ${LEVEL_LABEL[level]}, so the captain does not start or change work there`;
 }
 

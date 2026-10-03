@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@majhi/shared";
+import type { PausedBy, TaskStatus } from "@majhi/shared";
 import { statusInfo } from "@/features/tasks/model";
 import { cn } from "@/lib/cn";
 import { LAMP_TEXT, Lamp } from "./lamp";
@@ -7,16 +7,18 @@ import { LAMP_TEXT, Lamp } from "./lamp";
 export function StatusBadge({
   status,
   pausedReason,
+  pausedBy,
   yourTurn = false,
   className,
 }: {
   status: TaskStatus;
   pausedReason?: string | undefined;
+  pausedBy?: PausedBy | undefined;
   /** Running, but no agent is working: the task waits for the owner. */
   yourTurn?: boolean;
   className?: string;
 }) {
-  const info = statusInfo(status, pausedReason, yourTurn);
+  const info = statusInfo(status, pausedReason, yourTurn, pausedBy);
   return (
     <span
       className={cn(

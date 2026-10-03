@@ -621,7 +621,8 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 - **Off:** it acts only when the owner talks to it. It starts nothing, ships nothing and answers no cards by itself.
 - **Turning off** pauses the tasks it started, right away (default); the owner can choose "Let them finish their current step" instead. Nothing it started is lost.
 - **Turning on** lists the tasks it paused and resumes them, with a checkbox to leave them paused.
-- The captain itself is never stopped: the owner can always talk to it.
+- The captain itself is never stopped: the owner can always talk to it. While Off, no upkeep run starts and a run in progress ends at its next step.
+- A task the captain or this switch paused says so: "Paused by Captain", or "Paused when Autonomous was turned off", never "stopped by you".
 
 **Authority per workspace,** a table read as a delegation policy, each row "Captain decides" or "Ask me": pick and start work from the backlog, answer agents' questions, answer routine approval cards, upkeep, merge into the base branch, push and open merge requests. New client workspaces start with every row on "Ask me" except upkeep. While Autonomous is Off every row behaves as "Ask me". The never list below is not a row and always holds.
 
@@ -652,7 +653,7 @@ The captain works like a chief of staff: the owner gives it a budget and authori
 | Cleanup | Daily | Removes worktrees and containers of done tasks. Never removes uncommitted work. |
 | Stuck tasks | Nobody works and nothing is pending | Wakes the lead once, then tells the owner (5.3). |
 
-**One captain, one conversation per workspace.** There is only the owner's captain. It keeps a separate session per workspace ("lane"), so one client's code and details are never in its context while it decides for another. Lanes share only the owner's global instructions and counts, never content.
+**One captain, one conversation per workspace.** There is only the owner's captain. It keeps a separate session per workspace ("lane"), so one client's code and details are never in its context while it decides for another. Lanes share only the owner's global instructions and counts, never content. The threads are not tasks: they appear only in the Captain panel (Cmd J and the Captain page), never in Chats, on the Board or in task search, and they cannot be closed or deleted. "Start fresh" ends a thread's session and starts a new one carrying a summary (the same handoff as "Fresh session" in a room); the messages stay. An old address of a thread (`/t/<id>`) opens the Captain page on that workspace's tab.
 
 **Rules that always hold** (never shown as settings):
 

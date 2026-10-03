@@ -10,8 +10,8 @@ import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
-import { OffDialog, TurnOnDialog } from "@/features/autonomy/controls";
 import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
+import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
@@ -20,7 +20,6 @@ import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
-import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -215,14 +214,12 @@ function NavRow({
 }
 
 /**
- * The captain: the row opens the Captain page (how much it does per workspace, its log and the stop
- * switch), with a lamp when it is stopped. The chat button beside it opens the captain chat drawer,
+ * The captain: the row opens the Captain page (how much it does per workspace and its log). The chat button beside it opens the captain chat drawer,
  * like Cmd+J.
  */
 function CaptainRow() {
   const { open, toggle } = useBoss();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const stopped = useCaptainStatus().data?.stopped === true;
   const active = pathname.startsWith(PAGE_PATH.captain);
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
@@ -237,12 +234,6 @@ function CaptainRow() {
         )}
       >
         <span className="truncate">Captain</span>
-        {stopped && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-lamp-paused">
-            <Lamp state="paused" size={6} />
-            Stopped
-          </span>
-        )}
       </Link>
       <button
         type="button"
@@ -264,48 +255,37 @@ function CaptainRow() {
 }
 
 /**
- * Autonomous mode: the row opens its page, the switch turns it on (after a confirm that shows the
- * caps and the push and merge permissions) or offers Pause, Stop gracefully and Stop now.
+ * Autonomous: the row opens its page, with today's spend under the name; the switch turns it on
+ * (after a short dialog) or off (pause its tasks, or let them finish their step).
  */
 function AutonomyRow() {
-  const query = useAutonomyStatus();
-  const status = query.data;
+  const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const [open, setOpen] = useState<"on" | "off">();
   const active = pathname.startsWith(PAGE_PATH.autonomous);
-  const mode = status?.mode ?? "off";
   const lamp = MODE_LAMP[mode];
-  const unavailable = query.isError
-    ? autonomyMissing(query.error)
-      ? "Autonomous mode is not ready on this server yet"
-      : "Could not read autonomous mode"
-    : undefined;
   return (
-    <div title={unavailable} className="flex h-8 shrink-0 items-center gap-1">
+    <div title={unavailable} className="mb-1 flex shrink-0 items-center gap-1">
       <Link
         to={PAGE_PATH.autonomous}
         search={{}}
         aria-current={active ? "page" : undefined}
         className={cn(
           ITEM,
-          "h-8 min-w-0 flex-1 gap-2 px-2.5 text-body font-medium",
+          "min-h-8 min-w-0 flex-1 flex-col items-stretch justify-center px-2.5 py-1 text-body font-medium",
           active ? ROW_SELECTED : "text-fg-muted",
         )}
       >
-        <Lamp state={lamp} size={7} />
-        <span className="truncate">Autonomous</span>
-        <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <Lamp state={lamp} size={7} />
+          <span className="truncate">Autonomous</span>
+          <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>
+            {MODE_WORD[mode]}
+          </span>
+        </span>
+        {status && <SpendToday status={status} className="pl-[15px] text-xs font-normal" />}
       </Link>
-      <Switch
-        label="Autonomous mode"
-        hideLabel
-        checked={mode !== "off"}
-        disabled={status === undefined}
-        title={unavailable ?? (mode === "off" ? "Turn autonomous mode on" : "Pause or stop autonomous mode")}
-        onChange={(next) => setOpen(next ? "on" : "off")}
-      />
-      {open === "on" && status && <TurnOnDialog status={status} onClose={() => setOpen(undefined)} />}
-      {open === "off" && status && <OffDialog mode={status.mode} onClose={() => setOpen(undefined)} />}
+      {toggle}
+      {dialogs}
     </div>
   );
 }

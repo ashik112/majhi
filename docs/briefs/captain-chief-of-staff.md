@@ -1,6 +1,6 @@
 # Proposal: the captain as chief of staff
 
-Status: approved by the owner on 2026-10-04. It changes SPEC 5.16 and 5.18 and replaces how autonomous mode (PRV-74) is shown and switched. Nothing here is built yet.
+Status: approved by the owner on 2026-10-04. It changes SPEC 5.16 and 5.18 and replaces how autonomous mode (PRV-74) is shown and switched. Built so far: steps 1, 2 and 7.
 
 ## Why
 

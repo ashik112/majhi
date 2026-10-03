@@ -16,6 +16,8 @@ import { RoomItemSchema, TaskIdSchema, TaskPrioritySchema, TaskStatusSchema } fr
  * gracefully was pressed; current turns finish, nothing new starts, then majhi turns it `off`.
  */
 export const AutonomyModeSchema = z.enum(["off", "on", "paused", "stopping"]);
+// `paused` is no state any more: a database that holds it reads as `on`. `stopping` is the moment
+// between "let them finish this step" and Off.
 export type AutonomyMode = z.infer<typeof AutonomyModeSchema>;
 
 /** Tokens (input + output + cache write, as budgets count them) and dollars. */

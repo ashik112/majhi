@@ -136,6 +136,15 @@ function present<K extends string, V>(key: K, value: V | null): { [P in K]?: V }
   return (value === null ? {} : { [key]: value }) as { [P in K]?: V };
 }
 
+/**
+ * The mode as stored. `paused` is gone from the owner's switch (On or Off): a database that still
+ * holds it reads as On, so the tasks it held restart when the owner next turns it on or off.
+ */
+export function modeOf(stored: string): AutonomyMode {
+  const mode = AutonomyModeSchema.catch("off").parse(stored);
+  return mode === "paused" ? "on" : mode;
+}
+
 /** The autonomy tables in `majhi.db`: state, tasks, the feed and the daily summaries. */
 export class AutonomyRepo {
   constructor(private readonly db: Database.Database) {}
@@ -146,7 +155,7 @@ export class AutonomyRepo {
     const by: "owner" | "majhi" | null =
       row.changed_by === "owner" || row.changed_by === "majhi" ? row.changed_by : null;
     return {
-      mode: AutonomyModeSchema.catch("off").parse(row.mode),
+      mode: modeOf(row.mode),
       ...present("since", row.since),
       ...present("by", by),
       ...present("why", row.why),

@@ -154,18 +154,20 @@ export const CaptainOrgSchema = z.object({
   forYou: z.number().int().nonnegative(),
   /** Why it does not act right now (outside hours, a freeze, budget reached). */
   resting: z.string().optional(),
-  /** The captain's chat for this workspace. */
+  /** The captain's thread for this workspace (a chat that is not a task to the owner). */
   lane: TaskIdSchema.optional(),
+  /** What the thread is doing: the captain is in a turn, something waits on the owner, or neither. */
+  thread: z.enum(["working", "waiting", "idle"]).default("idle"),
   chores: z.array(CaptainChoreStateSchema),
 });
 export type CaptainOrg = z.infer<typeof CaptainOrgSchema>;
 
 /** `captain.status`. */
 export const CaptainStatusSchema = z.object({
-  /** "Stop the captain" is on: no lane, run or chore acts until the owner resumes it. */
+  /** Always false: the captain is never stopped, Autonomous is the switch. Kept for older clients. */
   stopped: z.boolean(),
   stoppedAt: z.string().optional(),
-  /** Autonomous mode, the master switch for "Runs it". */
+  /** Autonomous, the master switch for everything the captain does by itself. */
   autonomy: AutonomyModeSchema,
   /** The captain agent. Absent: none chosen yet, and nothing runs. */
   captain: IdSchema.optional(),

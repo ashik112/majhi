@@ -23,11 +23,11 @@ export function defaultLevel(org: string): CaptainLevel {
 }
 
 /**
- * What the captain does now. Autonomous mode is the master switch: "Runs it" acts as "Keeps things
- * tidy" unless the mode is on. "Only when I ask" never acts, whatever the switch says.
+ * What the captain does now. Autonomous is the master switch: while it is not On, the captain acts
+ * only when the owner talks to it, whatever a workspace is set to. "Only when I ask" never acts.
  */
 export function effectiveLevel(level: CaptainLevel, mode: AutonomyMode): CaptainLevel {
-  return level === "runs" && mode !== "on" ? "tidy" : level;
+  return mode === "on" ? level : "ask";
 }
 
 /** The upkeep chores a level runs. "Only when I ask" runs none. */

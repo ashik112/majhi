@@ -84,7 +84,7 @@ function setup() {
     store,
     config,
     events: { emit: () => {} } as unknown as EventHub,
-    autonomy: { mode: () => "off" } as unknown as AutonomyLink,
+    autonomy: { mode: () => "on" } as unknown as AutonomyLink,
     lanes: {
       orgOf: (task: string) => (task === LANE ? "private" : undefined),
       chat: () => undefined,

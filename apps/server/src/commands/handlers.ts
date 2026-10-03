@@ -466,7 +466,9 @@ export function createHandlers({
       return { removed: input.id };
     },
 
-    "tasks.list": async (input) => services.tasks.list(input.includeDone === true),
+    // The captain's workspace threads are not tasks to the owner: they never show in a list.
+    "tasks.list": async (input) =>
+      services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
     "tasks.get": async (input) => services.tasks.get(input.id),
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.

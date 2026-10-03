@@ -14,6 +14,7 @@ import { briefBody, relations } from "@/features/task/model";
 import { statusInfo } from "@/features/tasks/model";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
+import { useLaneRedirect } from "@/lib/lane-link";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTask, useTasks } from "@/lib/task-queries";
@@ -47,6 +48,7 @@ export function TaskDrawer({ id }: { id: string }) {
 
 function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const task = useTask(id);
+  useLaneRedirect(task.data);
   const list = useTasks().data ?? [];
   const summary = list.find((t) => t.id === id);
   const { org: filter } = useOrgFilter();
@@ -99,7 +101,14 @@ function Details({ id, onClose }: { id: string; onClose: () => void }) {
 function Status({ task, summary }: { task: Task; summary: TaskSummary | undefined }) {
   // Running with no agent at work means the task waits for the owner, as on the board.
   const yourTurn = task.status === "running" && summary !== undefined && summary.working.length === 0;
-  return <StatusBadge status={task.status} pausedReason={task.pausedReason} yourTurn={yourTurn} />;
+  return (
+    <StatusBadge
+      status={task.status}
+      pausedReason={task.pausedReason}
+      pausedBy={task.pausedBy}
+      yourTurn={yourTurn}
+    />
+  );
 }
 
 function Org({ task }: { task: Task }) {

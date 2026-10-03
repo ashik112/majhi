@@ -13,10 +13,13 @@ describe("the choice per workspace", () => {
     expect(levelOf(s, "globex")).toBe("runs");
   });
 
-  it("lets Runs it act only while autonomous mode is on, and never wakes Only when I ask", () => {
+  it("acts only while Autonomous is on, and never wakes Only when I ask", () => {
     expect(effectiveLevel("runs", "on")).toBe("runs");
-    for (const mode of ["off", "paused", "stopping"] as const)
-      expect(effectiveLevel("runs", mode)).toBe("tidy");
+    expect(effectiveLevel("tidy", "on")).toBe("tidy");
+    for (const mode of ["off", "paused", "stopping"] as const) {
+      expect(effectiveLevel("runs", mode)).toBe("ask");
+      expect(effectiveLevel("tidy", mode)).toBe("ask");
+    }
     for (const mode of ["off", "on"] as const) expect(effectiveLevel("ask", mode)).toBe("ask");
   });
 

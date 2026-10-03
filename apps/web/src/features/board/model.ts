@@ -88,6 +88,10 @@ export function cardLine(task: TaskSummary): CardLine | null {
         ? { text: "Your turn: reply in the room", lamp: "needs" }
         : { text: workingText(task.working), lamp: "working" };
     case "paused":
+      if (task.pausedReason === "owner" && task.pausedBy === "captain")
+        return { text: "Paused by Captain", lamp: "paused" };
+      if (task.pausedReason === "owner" && task.pausedBy === "autonomy-off")
+        return { text: "Paused when Autonomous was turned off", lamp: "paused" };
       return { text: PAUSE_TEXT[task.pausedReason ?? ""] ?? "Paused", lamp: "paused" };
     case "review":
       return { text: "Finished: reply or mark done", lamp: "needs" };

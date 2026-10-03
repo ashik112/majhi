@@ -82,8 +82,11 @@ import {
 } from "./spend.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 
-const STOP_NOW_WHY =
-  "Autonomous mode was stopped with Stop now. Resume this task, or turn autonomous mode on and resume its tasks.";
+/** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
+const OFF_BY = "autonomy-off";
+
+const OFF_WHY =
+  "Autonomous was turned off, so this task paused. Resume it, or turn Autonomous on and resume the tasks it paused.";
 
 /** How often holds, a graceful stop and the driver's clock are checked. */
 export const SWEEP_MS = 60_000;
@@ -107,8 +110,6 @@ export interface AutonomyDeps {
   rateSize?: SizeRater;
   /** The captain's lanes (5.18): autonomous mode wakes the captain in each "Runs it" workspace's own. */
   lanes: Lanes;
-  /** "Stop the captain" is on: autonomous mode does not turn on. */
-  captainStopped?: () => boolean;
   /** When the owner last acted in a task: the captain keeps out for 10 minutes. */
   ownerAt?: (task: string) => string | undefined;
   now?: () => Date;
@@ -253,18 +254,16 @@ export class AutonomyService {
    * because autonomous mode wakes the captain there. Off, it may go; the next tick makes a new one.
    */
   guardChat(task: Pick<Task, "id" | "kind" | "brief">, action: "close" | "remove"): void {
-    let mode: AutonomyMode;
     let lane: string | undefined;
     try {
-      mode = this.repo.state().mode;
       lane = this.deps.lanes.orgOf(task.id);
     } catch {
       // The database closed under a shutdown.
       return;
     }
-    if (mode === "off" || lane === undefined || !isCaptainLane(task)) return;
+    if (lane === undefined || !isCaptainLane(task)) return;
     throw new UserError(
-      `${task.id} is the captain's lane autonomous mode works in, so it cannot be ${action === "close" ? "closed" : "removed"} while autonomous mode is ${mode}. Stop autonomous mode first; the next start makes a new lane.`,
+      `${task.id} is a captain thread, not a task, so it cannot be ${action === "close" ? "closed" : "removed"}. Use Start fresh in the Captain panel to clear it.`,
       409,
     );
   }
@@ -343,12 +342,9 @@ export class AutonomyService {
   async start(resumeStopped = false): Promise<AutonomyStatus> {
     const { mode } = this.repo.state();
     if (mode === "on") return this.status();
-    if (this.deps.captainStopped?.() === true) {
-      throw new UserError("The captain is stopped. Resume it on the Captain page first.", 409);
-    }
     if ((await this.bossId()) === undefined) {
       throw new UserError(
-        "There is no captain yet. Make a root agent the captain first, then turn autonomous mode on.",
+        "There is no captain yet. Make a root agent the captain first, then turn Autonomous on.",
         409,
       );
     }
@@ -382,19 +378,12 @@ export class AutonomyService {
     return this.status();
   }
 
-  /** Autonomous tasks pause after their current turn; the captain gets no ticks. */
+  /**
+   * Pause was a state of its own. It is gone from the owner's switch (On or Off): the old command
+   * turns Autonomous off and pauses its tasks, the nearest thing to what it did.
+   */
   async pause(): Promise<AutonomyStatus> {
-    const { mode } = this.repo.state();
-    if (mode === "paused") return this.status();
-    if (mode !== "on") throw new UserError(`Autonomous mode is ${mode}, so there is nothing to pause.`, 409);
-    this.setMode(
-      "paused",
-      "owner",
-      "Paused",
-      "Autonomous mode is paused. Its tasks pause after their current turn.",
-    );
-    await this.deps.runs.pauseLimited();
-    return this.status();
+    return this.stop("now");
   }
 
   async stop(how: "now" | "graceful"): Promise<AutonomyStatus> {
@@ -418,7 +407,7 @@ export class AutonomyService {
   }
 
   /** Stop now: every autonomous task with a live run stops, and the captain's turn ends. */
-  private async stopNow(why = STOP_NOW_WHY): Promise<void> {
+  private async stopNow(why = OFF_WHY): Promise<void> {
     this.stoppingNow = true;
     try {
       await this.stopEachNow(why);
@@ -436,13 +425,13 @@ export class AutonomyService {
     for (const task of this.openTasks()) {
       // A task in review can still have a turn in flight.
       if (!this.stoppable(task) && !this.deps.runs.inTurn(task.id)) continue;
-      const done = await this.deps.tasks.stop(task.id, "owner", why).catch(() => undefined);
+      const done = await this.deps.tasks.stop(task.id, "owner", why, OFF_BY).catch(() => undefined);
       if (done?.status === "paused") stopped.push(task.id);
     }
     this.repo.releaseAll();
     // Remembered, so turning on again can resume exactly these.
     for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
-    this.setMode("off", "owner", "Stopped now", "Autonomous mode stopped. Its tasks are paused for you.");
+    this.setMode("off", "owner", "Turned off", "Autonomous is off. The tasks it started are paused.");
   }
 
   /** Stop gracefully: once no autonomous run is in a turn, majhi turns the mode off. */
@@ -454,18 +443,22 @@ export class AutonomyService {
     this.finishing = true;
     try {
       // Nothing is in a turn: tasks that would wake again (a process, a handoff) stop for the owner.
+      const stopped: string[] = [];
       for (const task of this.openTasks()) {
-        if (this.stoppable(task))
-          await this.deps.tasks.stop(task.id, "owner", undefined, "autonomy").catch(() => undefined);
+        if (!this.stoppable(task)) continue;
+        const done = await this.deps.tasks.stop(task.id, "owner", OFF_WHY, OFF_BY).catch(() => undefined);
+        if (done?.status === "paused") stopped.push(task.id);
       }
       this.repo.releaseAll();
       if (this.repo.state().mode !== "stopping") return;
-      const why = "stopped after the current turns";
+      // Remembered like a stop at once, so turning on again can resume exactly these.
+      for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
+      const why = "turned off after the current turns";
       this.setMode(
         "off",
         "majhi",
-        "Stopped after the current turns",
-        "Autonomous mode stopped after the current turns.",
+        "Turned off after the current turns",
+        "Autonomous is off. The tasks it started finished their step and are paused.",
         why,
       );
     } finally {
@@ -551,13 +544,7 @@ export class AutonomyService {
     if (row === undefined) return undefined;
     // The owner resumed it by hand during this pause or stop: it runs, until the mode changes again.
     const resumed = row.resumedAt !== undefined && since !== undefined && row.resumedAt >= since;
-    if ((mode === "paused" || mode === "stopping") && resumed) return undefined;
-    if (mode === "paused") {
-      return {
-        reason: "owner",
-        why: "Autonomous mode is paused, so this agent waits. It continues when the owner resumes autonomous mode.",
-      };
-    }
+    if (mode === "stopping" && resumed) return undefined;
     if (mode === "stopping") {
       return { reason: "owner", why: "Autonomous mode is stopping, so this agent starts nothing new." };
     }
@@ -919,13 +906,11 @@ export class AutonomyService {
     return undefined;
   }
 
-  /** While paused or stopping, calls that start work are refused. */
+  /** While Autonomous is turning off, calls that start work are refused. */
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
-    if ((mode !== "paused" && mode !== "stopping") || !startsWork(command, input)) return undefined;
-    return mode === "paused"
-      ? "Autonomous mode is paused: nothing new starts until the owner resumes it."
-      : "Autonomous mode is stopping: nothing new starts.";
+    if (mode !== "stopping" || !startsWork(command, input)) return undefined;
+    return "Autonomous is turning off: nothing new starts.";
   }
 
   /**
@@ -1519,16 +1504,15 @@ export class AutonomyService {
     if ((await this.callerKind(caller)) !== "boss") {
       return fail(`${command} is a tool of the captain in its lanes.`);
     }
-    if (this.deps.captainStopped?.() === true) return fail("The captain is stopped.");
     const { mode } = this.repo.state();
     const lane = this.laneOrg(caller.task);
     const level =
       lane === undefined ? undefined : levelOf((await this.deps.config.settings()).autonomy, lane);
     const upkeep = level === "tidy" || level === "runs";
-    // The plan is autonomous mode's own; notes and answers are also the upkeep's.
-    if (mode === "off" && (!upkeep || command === "autonomy.plan")) return fail("Autonomous mode is off.");
+    // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.
+    if (mode === "off") return fail("Autonomous is off, so the captain acts only when you ask.");
     if (command === "autonomy.answer" && mode !== "on" && !upkeep) {
-      return fail(`Autonomous mode is ${mode}, so nothing is answered until it is on.`);
+      return fail(`Autonomous is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
     }
     const refused = await this.refusal(caller, command, input, reason);
     if (refused !== undefined) return fail(refused);
@@ -1949,12 +1933,15 @@ export class AutonomyService {
     return held === undefined ? undefined : `${account} is ${lowerFirst(held.why)}`;
   }
 
-  /** "Stop the captain": autonomous mode stops now, as Stop now does. */
+  /** The old "Stop the captain": the same as turning Autonomous off and pausing its tasks. */
   async stopNowForCaptain(): Promise<void> {
     if (this.repo.state().mode === "off") return;
-    await this.stopNow(
-      "You stopped the captain, which stopped autonomous mode now. Resume this task, or turn autonomous mode on and resume its tasks.",
-    );
+    await this.stopNow();
+  }
+
+  /** The old "Resume the captain": the same as turning Autonomous on, resuming the tasks it paused. */
+  async startForCaptain(): Promise<void> {
+    await this.start(true);
   }
 }
 

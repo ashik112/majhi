@@ -771,6 +771,12 @@ CREATE TABLE captain_cap_asks (
 );
 `,
   },
+  {
+    // Who paused a task when it was not the owner by hand: the captain, or Autonomous turned off.
+    id: 120,
+    name: "paused by",
+    sql: `ALTER TABLE tasks ADD COLUMN paused_by TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

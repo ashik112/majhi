@@ -1,45 +1,55 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ExternalLink, History, SquarePen, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { Menu } from "@/components/ui/menu";
-import { chatTitle } from "@/features/chats/model";
-import { useBossChat, useNewBossChat } from "@/lib/boss-queries";
+import { CaptainPanel } from "@/features/captain/panel";
 import { cn } from "@/lib/cn";
-import { formatAgo, MOD_KEY } from "@/lib/format";
+import { MOD_KEY } from "@/lib/format";
 import { GLASS_STRONG } from "@/lib/glass";
-import { useChats } from "@/lib/task-queries";
 import { useBoss } from "./boss-context";
-import { BossConversation } from "./boss-conversation";
 
-/** The captain chat as a right-side drawer over any page. Cmd+J or the sidebar opens it. */
+/**
+ * The Captain panel as a right-side drawer over any page. Cmd+J or the sidebar opens it. Esc closes
+ * it, and focus goes back to where it was.
+ */
 export function BossDrawer() {
-  const { open, hide } = useBoss();
-  const chat = useBossChat(open);
-  const fresh = useNewBossChat();
-  const chats = useChats(open);
-  const navigate = useNavigate();
+  const { open, hide, tab } = useBoss();
   const panel = useRef<HTMLElement>(null);
 
-  // Focus moves into the drawer when it opens, and again when the chat loads (its field appears then).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the field exists only after the chat loaded
+  // Focus moves into the drawer when it opens (the message box of the tab, else the tab itself), and
+  // back to what had it when it closes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the field exists only after the tab loaded
   useEffect(() => {
-    if (open) panel.current?.querySelector<HTMLElement>("textarea")?.focus();
-  }, [open, chat.data?.id]);
+    if (!open) return;
+    const before = document.activeElement;
+    const timer = window.setTimeout(() => {
+      const field = panel.current?.querySelector<HTMLElement>("textarea");
+      (field ?? panel.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'))?.focus();
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (before instanceof HTMLElement && before.isConnected) before.focus();
+    };
+  }, [open]);
+
+  // A tab change keeps the focus in the drawer: the message box of the new tab when it has one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on the tab only
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.getAttribute("role") === "tab") return;
+    const timer = window.setTimeout(
+      () => panel.current?.querySelector<HTMLElement>("textarea")?.focus(),
+      150,
+    );
+    return () => window.clearTimeout(timer);
+  }, [open, tab]);
 
   if (!open) return null;
-  const boss = chat.data?.team[0];
-  // Earlier chats with this captain, newest first: the same ones the Chats page lists.
-  const past = (chats.data ?? [])
-    .filter((t) => t.id !== chat.data?.id && t.team[0] === boss && t.org === undefined)
-    .slice(0, 15);
-  const now = Date.now();
   return (
     <aside
       ref={panel}
-      aria-label="Captain chat"
+      aria-label="Captain"
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) hide();
       }}
@@ -49,64 +59,14 @@ export function BossDrawer() {
       )}
     >
       <header className="flex items-center gap-2.5">
-        {boss && <AgentAvatar id={boss} size={28} />}
-        <div className="flex min-w-0 flex-col">
-          <h2 className="text-md font-semibold">Captain</h2>
-          {boss && <span className="truncate font-mono text-xs text-fg-faint">@{boss}</span>}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={fresh.isPending || !chat.data}
-            onClick={() => fresh.mutate()}
-            title="Start a new conversation. This one stays in Chats"
-          >
-            <SquarePen aria-hidden="true" />
-            New chat
-          </Button>
-          {past.length > 0 && (
-            <Menu
-              label="Past chats"
-              icon={<History aria-hidden="true" />}
-              items={[
-                ...past.map((t) => ({
-                  label: `${chatTitle(t)} · ${formatAgo(t.updatedAt, now)}`,
-                  onSelect: () => {
-                    hide();
-                    void navigate({ to: "/chats/$taskId", params: { taskId: t.id } });
-                  },
-                })),
-                {
-                  label: "All chats",
-                  onSelect: () => {
-                    hide();
-                    void navigate({ to: "/chats" });
-                  },
-                },
-              ]}
-            />
-          )}
-          {chat.data && (
-            <Button asChild variant="ghost" size="icon-sm" title="Open in Chats">
-              <Link
-                to="/chats/$taskId"
-                params={{ taskId: chat.data.id }}
-                onClick={hide}
-                aria-label="Open the captain chat in Chats"
-              >
-                <ExternalLink aria-hidden="true" />
-              </Link>
-            </Button>
-          )}
-          <Button variant="ghost" size="icon-sm" aria-label="Close the captain chat" onClick={hide}>
-            <X aria-hidden="true" />
-          </Button>
-        </div>
+        <h2 className="min-w-0 flex-1 truncate text-md font-semibold">Captain</h2>
+        <Button variant="ghost" size="icon-sm" aria-label="Close the captain panel" onClick={hide}>
+          <X aria-hidden="true" />
+        </Button>
       </header>
-      <BossConversation />
-      <p className="text-xs text-fg-faint">
-        <Kbd>{MOD_KEY} J</Kbd> opens and closes this. Changes wait for your approval.
+      <CaptainPanel />
+      <p className="shrink-0 text-xs text-fg-faint">
+        <Kbd>{MOD_KEY} J</Kbd> opens and closes this. Arrow keys switch tabs. Changes wait for your approval.
       </p>
     </aside>
   );

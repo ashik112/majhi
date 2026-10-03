@@ -209,11 +209,7 @@ export function AgentSettings({
         onChange={(patch) => change("connections", patch)}
         {...sectionProps("connections")}
       />
-      <McpSection
-        draft={view("mcp")}
-        onChange={(patch) => change("mcp", patch)}
-        {...sectionProps("mcp")}
-      />
+      <McpSection draft={view("mcp")} onChange={(patch) => change("mcp", patch)} {...sectionProps("mcp")} />
       <SkillsSection
         draft={view("skills")}
         onChange={(patch) => change("skills", patch)}

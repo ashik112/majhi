@@ -4,7 +4,9 @@ import {
   CoordinationModeSchema,
   DaySchema,
   IdSchema,
+  isCaptainLane,
   isOwnerChat,
+  type PausedBy,
   type PausedReason,
   type PendingShip,
   PendingShipSchema,
@@ -100,6 +102,7 @@ export class TaskRepo {
           org: task.org ?? null,
           status: task.status,
           pausedReason: task.pausedReason ?? null,
+          pausedBy: task.pausedBy ?? null,
           folder: task.folder,
           team: JSON.stringify(task.team),
           mode: task.mode,
@@ -178,6 +181,7 @@ export class TaskRepo {
       ...(row.org === null ? {} : { org: row.org }),
       status: row.status,
       ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
+      ...(row.pausedBy === null ? {} : { pausedBy: row.pausedBy }),
       ...priorityAndDue(row),
       ...(row.noAutonomy ? { noAutonomy: true } : {}),
       folder: row.folder,
@@ -284,8 +288,10 @@ export class TaskRepo {
         summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
       if (row.org !== null) summary.org = row.org;
       if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
+      if (isCaptainLane({ kind: summary.kind, brief: row.brief })) summary.lane = true;
       if (row.pausedReason !== null)
         summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
+      if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
       Object.assign(summary, priorityAndDue(row));
       if (row.noAutonomy) summary.noAutonomy = true;
       if (autonomous.has(row.id)) summary.autonomous = true;
@@ -423,10 +429,22 @@ export class TaskRepo {
     this.db.update(tasks).set({ startWhenReady: value }).where(eq(tasks.id, id)).run();
   }
 
-  setStatus(id: string, status: TaskStatus, pausedReason: PausedReason | undefined, at: string): void {
+  /** `pausedBy` is kept only while the task is paused; any other change clears it. */
+  setStatus(
+    id: string,
+    status: TaskStatus,
+    pausedReason: PausedReason | undefined,
+    at: string,
+    pausedBy?: PausedBy,
+  ): void {
     this.db
       .update(tasks)
-      .set({ status, pausedReason: pausedReason ?? null, updatedAt: at })
+      .set({
+        status,
+        pausedReason: pausedReason ?? null,
+        pausedBy: status === "paused" ? (pausedBy ?? null) : null,
+        updatedAt: at,
+      })
       .where(eq(tasks.id, id))
       .run();
   }

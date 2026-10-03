@@ -87,7 +87,7 @@ export function ChatPane({
 }
 
 /** The autonomy chat's messages, the room's own timeline, without its composer. */
-function ChatLog({ chat }: { chat: string }) {
+export function ChatLog({ chat }: { chat: string }) {
   const room = useRoom(chat);
   const task = useTask(chat).data;
   const toast = useToast();
@@ -120,7 +120,7 @@ function ChatLog({ chat }: { chat: string }) {
 }
 
 /** Writes to the captain. Sent with "Keep as standing instruction", it is also kept as one. */
-function ChatBox({ status, lane }: { status: AutonomyStatus; lane: string | undefined }) {
+export function ChatBox({ status, lane }: { status: AutonomyStatus; lane: string | undefined }) {
   const toast = useToast();
   const guide = useGuideAutonomy();
   const [text, setText] = useState("");

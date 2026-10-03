@@ -123,6 +123,13 @@ export const PausedReasonSchema = z.enum([
 ]);
 export type PausedReason = z.infer<typeof PausedReasonSchema>;
 
+/**
+ * Who paused a task, when it was not the owner by hand: the captain, or Autonomous being turned off.
+ * Absent on older rows and on pauses by majhi itself (limits, going offline).
+ */
+export const PausedBySchema = z.enum(["captain", "autonomy-off"]);
+export type PausedBy = z.infer<typeof PausedBySchema>;
+
 /** Paused until the owner continues it: never resumed by majhi on its own. */
 export function waitsForOwner(reason: PausedReason | undefined): boolean {
   return reason === "owner" || reason === "loop" || reason === "blocked";
@@ -251,6 +258,7 @@ export const TaskSchema = z.object({
   org: IdSchema.optional(),
   status: TaskStatusSchema,
   pausedReason: PausedReasonSchema.optional(),
+  pausedBy: PausedBySchema.optional(),
   /** The owner's priority. Absent: normal. */
   priority: TaskPrioritySchema.optional(),
   /** The owner's deadline, `YYYY-MM-DD`. Within a priority, autonomous mode takes the nearest first. */
@@ -409,6 +417,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   org: true,
   status: true,
   pausedReason: true,
+  pausedBy: true,
   priority: true,
   due: true,
   noAutonomy: true,
@@ -430,6 +439,8 @@ export const TaskSummarySchema = TaskSchema.pick({
   waitingOn: z.array(TaskIdSchema),
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
+  /** A workspace thread of the captain (5.18): not a task to the owner, never listed by `tasks.list`. */
+  lane: z.boolean().optional(),
   /**
    * The task or chat waits for the owner on an item: an approval, a permission, a secret, a question.
    * It counts under Needs you even while an agent still works. A quiet chat is shown on the board only then.

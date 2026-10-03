@@ -170,11 +170,11 @@ describe("the workspace's choice and the lane", () => {
     });
     expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { providers: null } } })).status).toBe(200);
     expect((await t.call("majhi_tasks_start", { id: acme })).isError).toBe(false);
-    // With autonomous mode off, Runs it acts as Keeps things tidy.
+    // With Autonomous off, the captain starts nothing.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
     const other = await t.ownerTask("Add a status page\n\nsmall");
     expect((await t.call("majhi_tasks_start", { id: other })).text).toBe(
-      "Refused: autonomous mode is off, so the captain does not start or change work in Acme.",
+      "Refused: Autonomous is off, so the captain does not start or change work in Acme. It acts only when you ask.",
     );
     // A workspace that does not exist is refused.
     expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { level: "runs" } } })).status).toBe(404);
@@ -244,37 +244,26 @@ describe("what the captain reads", () => {
 });
 
 describe("the captain's lane", () => {
-  it("cannot be closed or removed while the mode is not off; off, it can, and the next tick makes a new one", async () => {
+  it("cannot be closed or removed, on or off, and is not listed as a task", async () => {
     const t = await on();
     const remove = await t.h.cmd("tasks.remove", { id: t.chat });
     expect(remove.status).toBe(409);
-    expect(JSON.stringify(remove.body)).toContain(
-      `${t.chat} is the captain's lane autonomous mode works in, so it cannot be removed while autonomous mode is on.`,
-    );
+    expect(JSON.stringify(remove.body)).toContain(`${t.chat} is a captain thread, not a task`);
     const close = await t.h.cmd("tasks.close", { id: t.chat });
     expect(close.status).toBe(409);
-    expect(JSON.stringify(close.body)).toContain("cannot be closed while autonomous mode is on");
-    // Paused counts as not off.
-    expect((await t.h.cmd("autonomy.pause")).status).toBe(200);
-    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
-    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeDefined();
-
+    expect(JSON.stringify(close.body)).toContain("cannot be closed");
+    // Off changes nothing: the thread is never the owner's to delete.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(200);
-    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeUndefined();
-    expect((await t.status()).lanes[0]?.chat).toBeUndefined();
-
-    expect((await t.h.cmd("autonomy.start")).status).toBe(200);
-    const next = await t.autonomy.laneChat("acme");
-    expect(next).toBeDefined();
-    expect(next).not.toBe(t.chat);
-    expect(t.h.majhi.services.store.tasks.get(next ?? "")).toMatchObject({
-      brief: "Captain lane",
-      org: "acme",
-    });
-    expect((await t.status()).lanes).toEqual([
-      expect.objectContaining({ org: "acme", name: "Acme", chat: next }),
-    ]);
+    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
+    expect((await t.h.cmd("tasks.close", { id: t.chat })).status).toBe(409);
+    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeDefined();
+    // It can still be read by id (the panel and old links open it), but no list shows it.
+    expect((await t.h.cmd("tasks.get", { id: t.chat })).status).toBe(200);
+    const listed = (await t.h.cmd("tasks.list", { includeDone: true })).body as TaskSummary[];
+    expect(listed.find((x) => x.id === t.chat)).toBeUndefined();
+    expect((await t.status()).lanes[0]?.chat).toBe(t.chat);
+    // The summary of the store marks it, for the panel.
+    expect(t.h.majhi.services.store.tasks.list(true).find((x) => x.id === t.chat)?.lane).toBe(true);
   });
 
   it("is made again before a tick when it is gone while the mode is on, so the captain is never woken into nothing", async () => {
@@ -298,8 +287,8 @@ describe("the captain's lane", () => {
   });
 });
 
-describe("Stop now and turning on again", () => {
-  it("names Stop now on the paused card, and resumes those tasks on turn-on only when asked", async () => {
+describe("turning Off and On again", () => {
+  it("names Autonomous on the paused card, and resumes those tasks on turn-on only when asked", async () => {
     const t = await on();
     const id = await t.ownerTask("Fix the typo on the login page\n\nsmall");
     expect((await t.call("majhi_tasks_start", { id })).isError).toBe(false);
@@ -311,7 +300,8 @@ describe("Stop now and turning on again", () => {
     expect((await t.status()).stopped).toEqual([id]);
     const items = (await t.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("Stop now");
+    expect(card?.type === "paused" && card.why).toContain("Autonomous was turned off");
+    expect(task()?.pausedBy).toBe("autonomy-off");
 
     // Turned on without resuming: the task stays paused, and is no longer offered.
     expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).status).toBe(200);

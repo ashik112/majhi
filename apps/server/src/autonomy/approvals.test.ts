@@ -218,7 +218,7 @@ describe("autonomous mode's reach", () => {
 });
 
 describe("the captain's own tools", () => {
-  it("are the captain's in its autonomy chat only, and need the mode on or paused", async () => {
+  it("are the captain's in its lanes only, and need Autonomous on", async () => {
     const t = await on();
     const id = await t.acmeTask();
     const plan = { items: [{ title: "Ship the api fix", task: id, why: "It is the top task" }] };
@@ -254,13 +254,15 @@ describe("the captain's own tools", () => {
     // No card for any of them.
     expect((await t.cards()).filter((c) => c.command.startsWith("autonomy."))).toEqual([]);
 
-    expect((await t.h.cmd("autonomy.pause")).body.mode).toBe("paused");
-    expect((await t.call("majhi_autonomy_note", { text: "Paused, waiting" })).isError).toBe(false);
-    // Paused, Runs it acts as Keeps things tidy: the upkeep still answers questions in Acme.
+    // On, the captain answers; a card that is not there says so.
     const answer = await t.call("majhi_autonomy_answer", { task: id, item: "ask:1", option: "a" });
     expect(answer.text).toBe(`There is no card ask:1 in ${id}.`);
+    // Off, the captain acts only when asked: every tool refuses with the same line.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
-    expect((await t.call("majhi_autonomy_plan", plan)).text).toBe("Autonomous mode is off.");
+    const off = { isError: true, text: "Autonomous is off, so the captain acts only when you ask." };
+    expect(await t.call("majhi_autonomy_plan", plan)).toEqual(off);
+    expect(await t.call("majhi_autonomy_note", { text: "Off, waiting" })).toEqual(off);
+    expect(await t.call("majhi_autonomy_answer", { task: id, item: "ask:1", option: "a" })).toEqual(off);
   });
 
   it("answers an agent's card in an autonomous task through the owner's path, and never secrets or approvals", async () => {

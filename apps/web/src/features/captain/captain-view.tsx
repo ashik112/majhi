@@ -1,91 +1,35 @@
 import { type CaptainStatus, PRIVATE } from "@majhi/shared";
+import { useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Lamp } from "@/components/ui/lamp";
 import { PageHeader } from "@/components/ui/page-header";
 import { Segmented } from "@/components/ui/segmented";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
-import { clockTime } from "@/features/autonomy/model";
+import { AutonomousSwitch } from "@/features/autonomy/switch";
+import { useBoss } from "@/features/boss/boss-context";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
-import { useCaptainAsks, useCaptainCommand, useCaptainStatus } from "@/lib/captain-queries";
+import { useCaptainAsks, useCaptainStatus } from "@/lib/captain-queries";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { badgeLetters } from "@/lib/format";
+import { GLASS } from "@/lib/glass";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import { CaptainLog } from "./log";
+import { CaptainPanel } from "./panel";
+import { wsTab } from "./panel-model";
 import { WorkspaceCard } from "./workspace-card";
 
 const SUBTITLE =
-  'How much the captain does, per workspace. It never acts on its own in a workspace set to "Only when I ask".';
-
-/** Stop the captain, or resume it: the one switch for every lane and run. */
-function StopSwitch({ status }: { status: CaptainStatus }) {
-  const toast = useToast();
-  const stop = useCaptainCommand("captain.stop");
-  const resume = useCaptainCommand("captain.resume");
-  const [asking, setAsking] = useState(false);
-  if (status.stopped) {
-    return (
-      <Button
-        variant="primary"
-        disabled={resume.isPending}
-        onClick={() =>
-          resume.mutate(
-            { input: {}, reason: "Owner resumed the captain" },
-            { onSuccess: () => toast("The captain acts again, by each workspace's choice") },
-          )
-        }
-      >
-        Resume the captain
-      </Button>
-    );
-  }
-  return (
-    <>
-      <Button
-        variant="secondary"
-        className="border-red-line text-red hover:border-red hover:bg-red-wash"
-        onClick={() => setAsking(true)}
-      >
-        Stop the captain
-      </Button>
-      {asking && (
-        <ConfirmDialog
-          title="Stop the captain?"
-          body="Every lane's turn and every upkeep run stop now, and autonomous mode turns off. Nothing of the captain acts on its own until you resume it. It still answers when you talk to it."
-          confirmLabel="Stop the captain"
-          busy={stop.isPending}
-          error={stop.error ? describeError(stop.error) : undefined}
-          onConfirm={() =>
-            stop.mutate(
-              { input: {}, reason: "Owner stopped the captain" },
-              {
-                onSuccess: () => {
-                  setAsking(false);
-                  toast("The captain is stopped");
-                },
-              },
-            )
-          }
-          onCancel={() => {
-            stop.reset();
-            setAsking(false);
-          }}
-        />
-      )}
-    </>
-  );
-}
+  "How much the captain does in each workspace. It acts on its own only while Autonomous is on.";
 
 /**
  * The Captain page: one card per workspace with how much the captain does there, its budget and
- * "More rules", the day's line, and the captain's log beside it (a view of its own below 1280 px).
- * The stop switch sits in the header. Only the lists scroll, each inside its own panel.
+ * "More rules" and the day's line, and beside them the Captain panel (its threads) or the captain's
+ * log. Below 1280 px each is a view of its own. The Autonomous switch sits in the header. Only the
+ * lists scroll, each inside its own panel.
  */
 export function CaptainView() {
   const query = useCaptainStatus();
@@ -96,43 +40,50 @@ export function CaptainView() {
   const accounts = useAccounts().data ?? [];
   const now = useNow(30_000);
   const wide = useMedia("(min-width: 1280px)");
-  const [picked, setView] = useState<"workspaces" | "log">("workspaces");
+  const { thread } = useSearch({ strict: false }) as { thread?: string };
+  const { setTab } = useBoss();
+  const [picked, setView] = useState<"workspaces" | "threads" | "log">(
+    thread === undefined ? "workspaces" : "threads",
+  );
+  // Wide, the workspaces stay on the left and this picks what sits beside them.
+  const [side, setSide] = useState<"threads" | "log">("threads");
+  // A link to a thread (an old address of a lane chat) opens its tab.
+  useEffect(() => {
+    if (thread === undefined) return;
+    setTab(wsTab(thread));
+    setView("threads");
+    setSide("threads");
+  }, [thread, setTab]);
   const view = wide ? "workspaces" : picked;
   const zone = autonomy?.settings.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader
-        title="Captain"
-        subtitle={
-          status?.stopped ? (
-            <span className="flex min-w-0 items-center gap-2">
-              <Lamp state="paused" size={7} />
-              <span className="shrink-0 text-lamp-paused">Stopped</span>
-              {status.stoppedAt && (
-                <span className="tnum shrink-0 text-fg-muted">since {clockTime(status.stoppedAt, now)}</span>
-              )}
-              <span className="min-w-0 truncate text-fg-faint">
-                Nothing acts on its own until you resume it.
-              </span>
-            </span>
-          ) : (
-            SUBTITLE
-          )
-        }
-      >
+      <PageHeader title="Captain" subtitle={SUBTITLE}>
         {status && !wide && (
           <Segmented
             label="View"
             value={view}
             segments={[
               { value: "workspaces", label: "Workspaces" },
+              { value: "threads", label: "Threads" },
               { value: "log", label: "Log" },
             ]}
             onChange={setView}
           />
         )}
-        {status && <StopSwitch status={status} />}
+        {status && wide && (
+          <Segmented
+            label="Beside the workspaces"
+            value={side}
+            segments={[
+              { value: "threads", label: "Threads" },
+              { value: "log", label: "Log" },
+            ]}
+            onChange={setSide}
+          />
+        )}
+        <AutonomousSwitch />
       </PageHeader>
       {query.isError ? (
         <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
@@ -171,11 +122,23 @@ export function CaptainView() {
               })}
             </div>
           )}
-          {(wide || view === "log") && (
+          {(wide ? side === "threads" : view === "threads") && (
+            <section
+              aria-label="Captain threads"
+              className={cn(
+                "flex min-h-0 flex-col rounded-2xl p-4",
+                GLASS,
+                wide ? "w-[380px] shrink-0 min-[1440px]:w-[420px]" : "min-w-0 flex-1",
+              )}
+            >
+              <CaptainPanel />
+            </section>
+          )}
+          {(wide ? side === "log" : view === "log") && (
             <CaptainLog
               status={status}
               now={now}
-              className={wide ? "w-[360px] shrink-0 min-[1440px]:w-[400px]" : "flex-1"}
+              className={wide ? "w-[380px] shrink-0 min-[1440px]:w-[420px]" : "flex-1"}
             />
           )}
         </div>

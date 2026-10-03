@@ -1,5 +1,5 @@
 import type { CaptainStatus, CommandInput, CommandOutput } from "@majhi/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -102,5 +102,32 @@ export function useCaptainRules() {
         client.invalidateQueries({ queryKey: queryKeys.captain }),
         client.invalidateQueries({ queryKey: queryKeys.autonomy }),
       ]),
+  });
+}
+
+/**
+ * The newest items of each workspace thread, for the merged "All" view. The `captain` topic
+ * refetches it, and it is read every 20 s while the view is open, since a room item has no event of
+ * its own here.
+ */
+export function useThreadItems(threads: readonly { org: string; chat: string }[], enabled: boolean) {
+  return useQueries({
+    queries: threads.map((t) => ({
+      queryKey: [...queryKeys.captain, "thread-items", t.chat],
+      queryFn: () => cmd("room.items", { task: t.chat, limit: 30 }),
+      enabled,
+      refetchInterval: 20_000,
+      refetchIntervalInBackground: false,
+    })),
+  });
+}
+
+/** "Start fresh" in a workspace's thread. */
+export function useStartFresh() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"captain.startFresh">, ApiRequestError, { org: string; name: string }>({
+    mutationFn: ({ org, name }) =>
+      cmd("captain.startFresh", { org }, { reason: `Owner started fresh in the captain's ${name} thread` }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.captain }),
   });
 }

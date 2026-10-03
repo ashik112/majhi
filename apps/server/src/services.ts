@@ -831,14 +831,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const autonomy = new AutonomyService({
     lanes,
-    // Bound below: the captain holds the stop switch and the owner's presence.
-    captainStopped: () => {
-      try {
-        return captainRepo.state().stopped;
-      } catch {
-        return false;
-      }
-    },
+    // Bound below: the captain holds the owner's presence.
     ownerAt: (task) => captainRepo.ownerAt(task),
     store,
     config,
@@ -887,6 +880,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
+    threadState: (chat) =>
+      store.room.tasksWaitingOnOwner().has(chat)
+        ? "waiting"
+        : runs.working(chat).length > 0
+          ? "working"
+          : "idle",
+    fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
       store,
       accounts,

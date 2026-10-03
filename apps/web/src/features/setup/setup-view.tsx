@@ -188,7 +188,7 @@ export function SetupView() {
         title="Hub setup"
         subtitle="What majhi needs to run, and how it behaves. Every change is a commit you can undo."
       >
-        <Button onClick={boss.show} aria-pressed={boss.open}>
+        <Button onClick={() => boss.show("talk")} aria-pressed={boss.open}>
           <MessageSquare aria-hidden="true" />
           Ask the captain
           <Kbd className="ml-1">{MOD_KEY} J</Kbd>
