@@ -1,5 +1,14 @@
-import type { CaptainAction, CaptainChore, CaptainRun, RoomItem } from "@majhi/shared";
+import {
+  AGENT_BLOCKED_COMMANDS,
+  type CaptainAction,
+  type CaptainChore,
+  type CaptainRun,
+  type CommandName,
+  commands,
+  type RoomItem,
+} from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { toolName } from "../admin/tools.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
@@ -555,6 +564,31 @@ describe("the captain's soak test", () => {
     // The lane rested once Private's small budget was used; Laya's answers went on.
     expect(actions.some((a) => a.org === "private" && a.reason.startsWith("The lane rests"))).toBe(true);
     expect(sim.calls.filter((c) => c.org === "private" && c.port === "answer").length).toBeGreaterThan(0);
+
+    // Each lane reads its own workspace only: every read command an agent may call, from the command table.
+    const reads = (Object.keys(commands) as CommandName[]).filter(
+      (c) =>
+        commands[c].risk === "read" &&
+        !AGENT_BLOCKED_COMMANDS.has(c) &&
+        commands[c].input.safeParse({}).success,
+    );
+    const foreign: Record<string, RegExp[]> = {
+      acme: [/globex/i, /\bLOCAL-\d/, /\bPRV-\d/],
+      private: [/globex/i, /\bACM-\d/],
+    };
+    for (const { org, chat } of lanes.all()) {
+      const leaks: string[] = [];
+      for (const command of reads) {
+        const res = await services.admin.call({ task: chat, agent: "boss" }, toolName(command), {
+          reason: "reading",
+        });
+        if (res.isError) continue;
+        const hit = (foreign[org] ?? [/globex/i]).find((re) => re.test(res.text));
+        if (hit !== undefined) leaks.push(`${org} ${command}: ${res.text.match(hit)?.[0]}`);
+      }
+      expect(leaks, `${org} lane`).toEqual([]);
+    }
+    expect(lanes.all().length).toBeGreaterThanOrEqual(2);
 
     // The day's summary line is there for each workspace that did something.
     const status = await captain.status();

@@ -25,7 +25,7 @@
 
 **Lanes** (`captain/lanes.ts`, `autonomy/driver.ts`)
 - One chat of the captain per workspace (brief "Captain lane", the workspace's org). Autonomous mode ticks the lane of each Runs it workspace with a digest of that workspace only: its tasks, cards, backlog, holds, spend and accounts; the owner's standing instructions are shared. The old autonomy chat stays readable and is never woken.
-- A lane refuses a call about another workspace's task or project, reads included. A lane runs on the captain's account only when it belongs to the workspace or to Private, else on the account "More rules" names; another workspace's account is refused at run start.
+- A lane reads one workspace only, for every read command, found from the command table (`captain/lane-scope.ts`): a read that asks about another workspace is refused; an `org` filter the command takes (also `filters.org`) is set to the lane's; and every row of another workspace is taken out of the answer at any depth: by its `org`, memory or agent `scope`, the task, project, account or agent it names, its own `id` or `key`, a record key, or a name of another workspace in its text. The majhi-tasks list goes through the same filter. A lane also refuses a change in another workspace. A lane runs on the captain's account only when it belongs to the workspace or to Private, else on the account "More rules" names; another workspace's account is refused at run start.
 - A lane rests at the day budget, the workspace's budget or its account's floor; rules and Laya go on, judgment calls wait.
 
 **Guards** (`captain/runner.ts`, `rules.ts`)
@@ -61,17 +61,17 @@
 - **Typecheck:** all packages and `e2e`.
 - **Tests** (fake ACP agent, no tokens): `captain/rules.test.ts` (defaults, master switch, the pick move, hours over midnight and freezes in a zone, presence, branches, providers), `captain/runner.test.ts` (re-check before an irreversible step, joining, repeats, run cap, circuit breaker, stop, rest, tokens), `captain/undo.test.ts` (revert commit on a checked-out and a free branch, later work kept, conflicts and dirty checkouts change nothing), `captain/migrate.test.ts` (one config commit by majhi, once), `captain/done-when.test.ts` (Phase 13's Done when with real services and git: Private ships, Acme is untouched, Undo reverts, tidy asks), `runs/lane-account.test.ts`, and the autonomy tests moved to lanes (`pick.test.ts`, `approvals.test.ts`, `service.test.ts`, `driver.test.ts`, `summary.test.ts`).
 - **Soak test** (`captain/soak.test.ts`, about 3 s): 30 simulated hours in Private (Runs it), Acme (Keeps things tidy) and Globex (Only when I ask) with bursts of 25 cards, questions, memories, repos, quiet tasks, two failures in a row, a crash that leaves a run open, restarts, a Stop and Resume, and every ship and card of the captain echoed back as an event. Real lane turns run the fake agent. It checks: no run past its caps and none left open, no daily cap passed, every self event dropped (none started or joined a run), no action repeated, nothing in Globex, nothing while stopped or in a task the owner was in, each lane told only its own workspace's tasks, the lane resting at Private's budget while Laya's answers went on. `e2e/captain-soak.spec.ts` runs it in every Playwright run, so the background e2e after each merge (PRV-72) runs it too.
-- **Migration:** 116 applied to a copy of a real `majhi.db` (115 before, 116 after, a second run applies nothing, integrity ok).
+- **Lane reads:** `captain/lane-reads.test.ts` fills Globex with a task, project, account, agent, memory, audit row, spend and settings, then calls every read command an agent may call from Acme's lane: none names Globex or a Private task, Acme's own rows are there, and filters for Globex are refused. The soak test makes the same sweep from each lane at its end.
+- **Migration:** main merged (its last migration is still 115). 116 applied to a fresh copy of a real `majhi.db` (115 before, 116 after, a second run applies nothing, integrity ok).
 - **Browser:** `e2e/shots.captain.ts` (`playwright.captain.config.ts`, port 7199): the Captain page at 1440 and 1100 in both themes, More rules open, the log view, Stop and Resume, the Autonomous page with lanes; click tests of a level, the budget, the stop switch and the sidebar row. `pnpm e2e:smoke` passes.
 
 ### Left and known issues
 
-- A lane refuses calls that name another workspace's task or project, but a list without a workspace filter (`tasks.list`, a memory search) still returns every workspace's rows to it. Narrowing those reads per lane is the follow-up.
 - The lane's budget is checked before each ask; turns already queued can pass it by a few cents, bounded by the run and daily caps.
 - Triage marks duplicates and stale tasks in the log and the bell; it adds no task link.
 - An ask card with several questions, or free text only, is left for the owner.
 - Ship needs "Merge into the branch". With push alone the captain asks; it opens no merge requests itself.
-- Migration 116 follows 115 on main; the git sign-in branch built in parallel may take 116 too. Whichever merges second renumbers.
+- In Private's lane the `org` filter is not forced (Private tasks have no org to filter by), so a total such as `usage.summary` counts every workspace; its rows are still narrowed. Counts are what 5.18 lets lanes share.
 
 Only the owner can check a real captain account running lanes overnight with real spend.
 

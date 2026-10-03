@@ -34,9 +34,11 @@ import {
 } from "@majhi/shared";
 import type { z } from "zod";
 import { redact, redactText } from "../admin/policy.ts";
+import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { levelOf, workspaceIds } from "../captain/levels.ts";
 import { presenceWhy, restWhy } from "../captain/rules.ts";
@@ -673,6 +675,38 @@ export class AutonomyService {
       ...(world === undefined ? this.orgOfTask(caller.task) : { org: world.org }),
     });
     return why;
+  }
+
+  /**
+   * What a captain lane may read (5.18): reads that ask about another workspace are refused, `org`
+   * filters are set to the lane's, and rows of other workspaces are taken out of every output.
+   * Undefined when the task is no lane.
+   */
+  async laneScope(task: string): Promise<LaneReads | undefined> {
+    const lane = this.laneOrg(task);
+    if (lane === undefined) return undefined;
+    const sections = await this.deps.config.sections();
+    const agents = new Map<string, string>();
+    for (const a of await this.deps.agents.list()) {
+      if (a.ok && a.agent.frontmatter.scope !== "root") agents.set(a.id, a.agent.frontmatter.scope);
+    }
+    const world: ScopeWorld = {
+      orgs: new Set(workspaceIds(sections.orgs)),
+      task: (id) => {
+        const t = this.deps.store.tasks.get(id);
+        return t === undefined ? undefined : (t.org ?? PRIVATE);
+      },
+      project: (id) => sections.projects[id]?.org,
+      account: (id) => sections.accounts[id]?.org,
+      agent: (id) => agents.get(id),
+      names: new Map(Object.entries(sections.orgs).map(([id, o]) => [id, o.name])),
+    };
+    const name = (org: string) => (org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org));
+    return {
+      refusal: (input) => readRefusal(lane, input, world, name),
+      input: (command, input) => forceOrg(command, input, lane),
+      output: (value) => narrow(value, lane, world, name),
+    };
   }
 
   /**

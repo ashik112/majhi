@@ -217,6 +217,8 @@ export interface Services {
   autonomy: AutonomyService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
+  /** The captain's chat per workspace (5.18). */
+  lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
   bindCaptain(dispatch: Dispatch): void;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
@@ -948,6 +950,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containers,
     autonomy,
     captain,
+    lanes,
     bindCaptain: (dispatch) => {
       captainDispatch = dispatch;
     },

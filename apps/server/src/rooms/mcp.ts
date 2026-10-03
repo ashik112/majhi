@@ -471,7 +471,8 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
             team: t.team,
             waitingOn: t.waitingOn,
           }));
-        return ok(JSON.stringify(rows, null, 2));
+        // In a captain lane, only the lane's workspace (5.18).
+        return ok(JSON.stringify(await deps.admin.narrowForLane(caller.task, rows), null, 2));
       }
       // A fix task never starts without the owner: no lead_start, no `auto` mode, no saved rule.
       let confirm = false;

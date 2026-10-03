@@ -106,6 +106,15 @@ export interface AutonomyGate {
     input: Record<string, unknown>,
     reason: string,
   ): Promise<ToolResult>;
+  /** What a captain lane may read (5.18): undefined when the task is no lane. */
+  laneScope(task: string): Promise<LaneReads | undefined>;
+}
+
+/** One lane's reads: refused when they ask about another workspace, narrowed to its own rows. */
+export interface LaneReads {
+  refusal(input: Record<string, unknown>): string | undefined;
+  input(command: CommandName, input: Record<string, unknown>): Record<string, unknown>;
+  output(value: unknown): { value: unknown; refused?: string };
 }
 
 type Outcome = { ok: boolean; error?: string | undefined };
@@ -480,6 +489,14 @@ export class AdminService {
     }
   }
 
+  /** Rows an agent read outside the command layer, narrowed to its lane's workspace when it is in one. */
+  async narrowForLane<T>(task: string, rows: T[]): Promise<T[]> {
+    const lane = await this.autonomy?.laneScope(task);
+    if (lane === undefined) return rows;
+    const out = lane.output(rows).value;
+    return Array.isArray(out) ? (out as T[]) : [];
+  }
+
   /** A pending card's call, unredacted while majhi holds it, for the captain's approval rules. */
   cardCall(
     taskId: string,
@@ -677,14 +694,32 @@ export class AdminService {
   ): Promise<{ ok: true; output: unknown; commit?: string } | { ok: false; error: string; commit?: never }> {
     const dispatch = this.dispatch;
     if (dispatch === undefined) throw new Error("The admin service is not connected to the commands");
+    // A captain lane reads its own workspace only, whatever the command (5.18).
+    const lane =
+      commands[command].risk === "read" && meta.task !== undefined
+        ? await this.autonomy?.laneScope(meta.task)
+        : undefined;
+    let sent = input;
+    if (lane !== undefined) {
+      const fields = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+      const refused = lane.refusal(fields);
+      if (refused !== undefined) return { ok: false, error: refused };
+      sent = lane.input(command, fields);
+    }
     const history = this.deps.config.history;
     const before = await history.head();
-    const result = await dispatch(command, input, JSON.stringify(meta));
+    const result = await dispatch(command, sent, JSON.stringify(meta));
     if (!result.ok) {
       const parts = [result.error.error, ...(result.error.details ?? [])];
       return { ok: false, error: redactText(parts.join(". ")) };
     }
-    if (commands[command].risk === "read") return { ok: true, output: result.output };
+    if (commands[command].risk === "read") {
+      if (lane === undefined) return { ok: true, output: result.output };
+      const narrowed = lane.output(result.output);
+      return narrowed.refused === undefined
+        ? { ok: true, output: narrowed.value }
+        : { ok: false, error: narrowed.refused };
+    }
     const made = (await history.since(before)).filter(
       (c) => c.subject.startsWith(`${command}:`) || c.subject.startsWith("undo:"),
     );
