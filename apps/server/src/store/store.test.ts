@@ -100,6 +100,7 @@ describe("store", () => {
       "captain_state",
       "chat_state",
       "clone_jobs",
+      "decision_recommendations",
       "decisions",
       "e2e_breaks",
       "e2e_runs",
