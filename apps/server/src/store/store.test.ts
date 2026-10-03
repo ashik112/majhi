@@ -113,6 +113,7 @@ describe("store", () => {
       "task_plans",
       "task_repos",
       "tasks",
+      "tracker_links",
       "triggers",
       "turns",
       "usage_events",
