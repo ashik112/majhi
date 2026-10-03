@@ -171,6 +171,7 @@ describe("the runner isolation check", () => {
     // Everything that must stay hidden is asked about.
     for (const hidden of [
       join(env.majhiHome, "majhi.yaml"),
+      join(env.majhiHome, "run"),
       join(env.majhiHome, "accounts", "claude-acme"),
       join(env.majhiHome, "accounts", "codex-globex"),
       env.secretsKeyFile,
