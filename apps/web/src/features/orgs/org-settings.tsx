@@ -193,6 +193,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
             )}
           </Field>
           <Field
+            label="Hand off to the fallback at a limit"
+            hint="When an agent's account is out, its fallback agent takes over from the checkpoint."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.handoff}
+                onChange={(e) => set({ handoff: e.target.value as OrgDraft["handoff"] })}
+              >
+                <option value="default">majhi's setting</option>
+                <option value="on">Hand off</option>
+                <option value="off">Pause until the reset</option>
+              </Select>
+            )}
+          </Field>
+          <Field
             label="Context cap (k tokens)"
             error={errors.contextCap}
             hint="Blank uses majhi's setting. 0 is no cap: the model's full window."

@@ -97,6 +97,7 @@ export interface SettingsForm {
   perTask: string;
   idleTimeout: string;
   resumeAuto: boolean;
+  resumeHandoff: boolean;
   commitsAttribution: boolean;
   maxAgentTurns: string;
   reviewRounds: string;
@@ -112,6 +113,7 @@ export interface SettingsForm {
 /** The fields of the form that are switches. */
 export type SettingsSwitch =
   | "resumeAuto"
+  | "resumeHandoff"
   | "commitsAttribution"
   | "turnLengthOn"
   | "turnIdleOn"
@@ -133,6 +135,7 @@ export function formFromSettings(s: Settings): SettingsForm {
     perTask: String(s.limits.per_task),
     idleTimeout: s.limits.idle_timeout,
     resumeAuto: s.resume.auto,
+    resumeHandoff: s.resume.handoff,
     commitsAttribution: s.commits.attribution,
     maxAgentTurns: String(s.rooms.max_agent_turns),
     reviewRounds: String(s.rooms.review_rounds),
@@ -148,7 +151,7 @@ export function formFromSettings(s: Settings): SettingsForm {
 export type SettingsPatch = {
   context?: { cap?: number; compact_at?: number; compact_target?: number; max_turns?: number };
   limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
-  resume?: { auto?: boolean };
+  resume?: { auto?: boolean; handoff?: boolean };
   commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };
   turns?: { max_length?: string; idle?: string; max_tool_calls?: number };
@@ -226,7 +229,10 @@ export function patchFromForm(
   if (!errors.idleTimeout && idle !== current.limits.idle_timeout) limits.idle_timeout = idle;
   if (Object.keys(context).length > 0) patch.context = context;
   if (Object.keys(limits).length > 0) patch.limits = limits;
-  if (form.resumeAuto !== current.resume.auto) patch.resume = { auto: form.resumeAuto };
+  const resume: NonNullable<SettingsPatch["resume"]> = {};
+  if (form.resumeAuto !== current.resume.auto) resume.auto = form.resumeAuto;
+  if (form.resumeHandoff !== current.resume.handoff) resume.handoff = form.resumeHandoff;
+  if (Object.keys(resume).length > 0) patch.resume = resume;
   if (form.commitsAttribution !== current.commits.attribution)
     patch.commits = { attribution: form.commitsAttribution };
   const rooms: NonNullable<SettingsPatch["rooms"]> = {};

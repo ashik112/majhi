@@ -23,6 +23,8 @@ export interface OrgDraft {
   identityEmail: string;
   /** Resume interrupted work on its own: majhi's setting, or this org's own. */
   resume: "default" | "on" | "off";
+  /** Hand over to the agent's fallback when its account hits a usage limit: majhi's setting, or this org's own. */
+  handoff: "default" | "on" | "off";
   /** This org's context cap in thousands of tokens, `0` for no cap, `""` for majhi's setting. */
   contextCap: string;
   /** Agent attribution in commits: majhi's setting, or this org's own. */
@@ -44,6 +46,7 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     identityName: org.identity?.name ?? "",
     identityEmail: org.identity?.email ?? "",
     resume: org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off",
+    handoff: org.resume?.handoff === undefined ? "default" : org.resume.handoff ? "on" : "off",
     contextCap: capToField(org.context?.cap),
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     merge: org.merge,
@@ -105,8 +108,15 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   }
 
   const resume = org.resume?.auto === undefined ? "default" : org.resume.auto ? "on" : "off";
-  if (draft.resume !== resume)
-    input.resume = draft.resume === "default" ? null : { auto: draft.resume === "on" };
+  const handoff = org.resume?.handoff === undefined ? "default" : org.resume.handoff ? "on" : "off";
+  if (draft.resume !== resume || draft.handoff !== handoff) {
+    // The org's `resume` is replaced as a whole, so both keys go together.
+    const next = {
+      ...(draft.resume === "default" ? {} : { auto: draft.resume === "on" }),
+      ...(draft.handoff === "default" ? {} : { handoff: draft.handoff === "on" }),
+    };
+    input.resume = Object.keys(next).length > 0 ? next : null;
+  }
 
   const cap = draft.contextCap.trim();
   if (cap !== capToField(org.context?.cap)) {
