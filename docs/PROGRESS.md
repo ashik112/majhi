@@ -19,6 +19,16 @@ Built on `task/prv-22-phase-7-resilience-and-health`, with `main` merged (Phases
 - Integration with the fake agent (a new `limit:<message>` prompt): hand off to a fallback, pause without one, fallback also at limit, policy off, resume at reset with a fake clock, auto-resume off, a second agent on the account pausing.
 - E2E: a simulated limit hands off to the fallback; network drop and return (`phase2b-runs.spec.ts`) still pass.
 
+### Server half of steps 1 to 4 (built, web not yet)
+
+- **Where:** detection in `packages/acp/src/limit-failure.ts`; the account mark in `accounts/` (`markLimit`, `limitOf`, `expireLimits`); the handoff and pause in `runs/manager.ts` (`handOffOrPause`, `takeOverFor`, `pauseForAccount`), with the words in `runs/limit.ts`; the swap in `tasks/service.ts` (`takeOver`); the lift at the reset in `budgets/limit-action.ts` (`liftLimits`). `resume.handoff` is in the org view and patch.
+- **Tests:** `limit-failure.test.ts`, `accounts/limit.test.ts`, `runs/limit.test.ts` (fake agent `limit:` and `limit-text:` directives, fake clock), `budgets/limit.test.ts`.
+- **Known limits:**
+  - The fallback gets the agent's overrides (model, effort), which may not suit its account.
+  - Only queued owner and handoff items follow the handoff. The fallback's queue is in memory, so a restart before its first prompt can drop other entries.
+  - After a restart, a paused task with no run in memory is lifted whether a budget or an account limit paused it, and `resume.auto` does not gate that lift.
+  - `resetKnown` is false when the reset comes from the usage window or the 15 minute guess.
+
 ## Captain step 6b: staffing and lead handover (built)
 
 - **Staffing:** `staffTask` (`tasks/staffing.ts`) picks a lead and a team from slots, usage left, floors, budgets, cost, model tier against size, skills and past results, and gives one reason line. The captain's create or start without a team uses it and the room says why; `tasks.staff` (`majhi_tasks_staff`) shows the proposal.
