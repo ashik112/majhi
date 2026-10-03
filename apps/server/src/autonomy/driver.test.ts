@@ -4,7 +4,7 @@ import { EventHub } from "../events/hub.ts";
 import { estimateText } from "../runs/context.ts";
 import type { Store } from "../store/index.ts";
 import { backlogOrder, DIGEST_MAX_CHARS, type DigestInput, digest } from "./digest.ts";
-import { AutonomyDriver, DEBOUNCE_MS } from "./driver.ts";
+import { AutonomyDriver, changeOf, DEBOUNCE_MS } from "./driver.ts";
 import type { AutonomyService } from "./service.ts";
 
 const CHAT = "LOCAL-1";
@@ -346,5 +346,20 @@ describe("the digest", () => {
       { id: "F", title: "f", createdAt: "2026-08-15" },
     ]).map((t) => t.id);
     expect(order).toEqual(["D", "C", "E", "F", "A", "B"]);
+  });
+});
+
+describe("what the log says about a paused task", () => {
+  const task = { id: "ACM-9", title: "Move the notes export" } as const;
+  it("never blames the owner for a pause Autonomous or the captain made", () => {
+    expect(
+      changeOf({ ...task, status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" })?.text,
+    ).toBe("Paused 'Move the notes export' because Autonomous was turned off");
+    expect(changeOf({ ...task, status: "paused", pausedReason: "owner", pausedBy: "captain" })?.text).toBe(
+      "Paused 'Move the notes export' by Captain",
+    );
+    expect(changeOf({ ...task, status: "paused", pausedReason: "owner" })?.text).toBe(
+      "Paused 'Move the notes export' by you",
+    );
   });
 });

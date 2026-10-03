@@ -96,7 +96,7 @@ describe("decideAutonomously: the table", () => {
   });
 
   it("leaves work a cap or a floor holds, with the hold's line", () => {
-    const day: AutonomyHold = { kind: "day-cap", text: "Autonomous mode reached its $20.00 cap for today" };
+    const day: AutonomyHold = { kind: "day-cap", text: "Autonomous reached its $20.00 cap for today" };
     const acme: AutonomyHold = { kind: "org-cap", id: "acme", text: "Acme reached its $5.00 cap for today" };
     const account: AutonomyHold = {
       kind: "account",

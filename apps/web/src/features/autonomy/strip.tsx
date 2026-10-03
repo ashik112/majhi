@@ -47,9 +47,7 @@ export function AutonomyStrip() {
         {hold ?? "A new daily summary is ready."}
       </span>
       <Button size="sm" asChild>
-        <PageLink page="captain" search={{ tab: "today" }}>
-          {hold === undefined ? "Read summary" : "Open"}
-        </PageLink>
+        <PageLink page="captain">{hold === undefined ? "Read summary" : "Open"}</PageLink>
       </Button>
     </section>
   );

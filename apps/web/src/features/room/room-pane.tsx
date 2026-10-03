@@ -20,7 +20,10 @@ export function RoomPane({
   onShowChanges,
   focusItem,
   onFocused,
+  foldSteps,
 }: {
+  /** Reads as a conversation: steps between messages fold into one line. */
+  foldSteps?: boolean | undefined;
   task: Task;
   state: RoomState;
   dispatch: (action: RoomAction) => void;
@@ -127,6 +130,7 @@ export function RoomPane({
         owner={owner}
         focusItem={focusItem}
         onFocused={onFocused}
+        foldSteps={foldSteps}
       />
       <Composer
         taskId={task.id}

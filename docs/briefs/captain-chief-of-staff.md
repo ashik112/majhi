@@ -43,7 +43,7 @@ One table per workspace, read as a delegation policy. Each row is "Captain decid
 | Push and open merge requests | | ✓ |
 
 - New client workspaces start with every row on "Ask me" except upkeep. Private starts as today's "Keeps things tidy".
-- The table applies only while Autonomous is On. While Off, every row behaves as "Ask me".
+- The table applies only while Autonomous is On. While Off, every row but Upkeep behaves as "Ask me", and Upkeep runs only memory review and cleanup of done tasks (2026-10-04).
 - The never list (SPEC 5.18) still applies and is not shown as rows.
 
 This replaces "Only when I ask", "Keeps things tidy" and "Runs it", and the separate push and merge switches.
@@ -117,8 +117,12 @@ One summary per day, at 08:00 by default and changeable on the Captain page: wha
 The owner found two pages for one idea confusing (Captain and Autonomous both had rules and limits, and two chats for the same thing). They are now one:
 
 - **Sidebar:** one Captain row with its Cmd J chat button, and the Autonomous switch with today's spend as a sub-row under it. Autonomous is no longer a page.
-- **Captain page, four tabs** kept in the address (`?tab=today|chat|log|rules`): Today (summary, questions, what needs you, running now, next with why, spend per workspace), Chat (the panel), Log (the captain's record and autonomous events merged, filtered by workspace and kind) and Rules (what holds everywhere, then a card per workspace; money only as a one-line budget linking to Limits).
-- `/autonomous` and its old views redirect to the matching tab. The separate Autonomous chat went away: its messages were already the workspace threads (`autonomy.guide` posts into the lane chat), so nothing moved.
+- **Captain page, one screen, no tabs** (revised 2026-10-04). The owner called the four tabs "utter garbage" and asked not to switch views to get things done.
+  - Header: the Autonomous switch, one sentence that is true now, spend per workspace and a one-line chip for the daily summary.
+  - Left: the Conversation. Chips pick All or a workspace. The captain's steps fold into "N steps it took".
+  - Right: Needs you (the Decisions rows, answered in place), Running, Next and Did recently.
+  - Sheets: Delegation (who decides what per workspace, the daily budget, the largest task size, standing instructions, tasks left alone), the full log, and the daily summary.
+- `/autonomous` and its old views land on the page; `?tab=rules` opens Delegation and `?tab=log` opens the log. The separate Autonomous chat went away: its messages were already the workspace threads (`autonomy.guide` posts into the lane chat), so nothing moved.
 - Chats show title, agent, workspace and last activity, never the task id.
 
 ## Build order

@@ -6,13 +6,15 @@ type SystemItem = Extract<RoomItem, { type: "system" }>;
 /** What the log draws: one item, or plain system notes from one moment as a single line. */
 export type Row =
   | { kind: "item"; key: string; item: RoomItem }
-  | { kind: "notes"; key: string; items: SystemItem[]; quiet: Quiet };
+  | { kind: "notes"; key: string; items: SystemItem[]; quiet: Quiet }
+  | { kind: "steps"; key: string; items: RoomItem[]; count: number };
 
 /** How a row sits in the rhythm of the log: messages breathe, activity and notes stack tight. */
 export type Beat = "message" | "activity" | "line";
 
 export function beatOf(row: Row): Beat {
   if (row.kind === "notes") return "line";
+  if (row.kind === "steps") return "activity";
   switch (row.item.type) {
     case "owner":
       return ownerNotice(row.item) === undefined ? "message" : "line";
@@ -47,6 +49,46 @@ export function gapAbove(before: Beat | undefined, beat: Beat): string {
   if (before === "line" && beat === "line") return "mt-1";
   if (before !== "message" && beat !== "message") return "mt-2";
   return "mt-4";
+}
+
+/** Tool calls, thoughts and settled approvals: what an agent did between its messages. */
+function isStep(item: RoomItem): boolean {
+  switch (item.type) {
+    case "tool":
+    case "thought":
+      return true;
+    case "permission":
+    case "approval":
+      return item.state !== "pending";
+    default:
+      return false;
+  }
+}
+
+/**
+ * Folds the steps between messages into one row per run ("12 steps it took"), for rooms read as a
+ * conversation. Notes inside a run fold with it. `count` is the tool calls, else the items.
+ */
+export function foldSteps(rows: readonly Row[]): Row[] {
+  const out: Row[] = [];
+  let run: RoomItem[] = [];
+  const flush = () => {
+    const [first] = run;
+    if (first === undefined) return;
+    const tools = run.filter((i) => i.type === "tool").length;
+    out.push({ kind: "steps", key: `steps:${first.id}`, items: run, count: tools > 0 ? tools : run.length });
+    run = [];
+  };
+  for (const row of rows) {
+    if (row.kind === "item" && isStep(row.item)) run.push(row.item);
+    else if (row.kind === "notes" && run.length > 0) run.push(...row.items);
+    else {
+      flush();
+      out.push(row);
+    }
+  }
+  flush();
+  return out;
 }
 
 /** The log's rows: plain system notes posted together fold into one line. */

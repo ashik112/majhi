@@ -1,108 +1,130 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/ui/page-header";
-import { PageLink } from "@/components/ui/page-link";
-import { Segmented } from "@/components/ui/segmented";
+import { Sheet } from "@/components/ui/sheet";
 import { RowsSkeleton } from "@/components/ui/skeleton";
+import { markSummarySeen } from "@/features/autonomy/model";
 import { useBoss } from "@/features/boss/boss-context";
+import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { PAGE_PATH } from "@/lib/pages";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
-import { CaptainLog } from "./log";
-import { CaptainPanel } from "./panel";
+import { Conversation } from "./conversation";
+import { DelegationSheet } from "./delegation";
+import { CaptainHeader } from "./header";
+import { FullLog } from "./log";
+import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
-import { RulesTab } from "./rules-tab";
-import { TodayTab } from "./today";
+import { dayLabel, SummaryView } from "./summary";
 
-const SUBTITLE =
-  "Your chief of staff. It works in each workspace within the rules you set, while Autonomous is on.";
+type Open = "delegation" | "log" | "summary";
 
-const TABS = ["today", "chat", "log", "rules"] as const;
-export type CaptainTab = (typeof TABS)[number];
-
-/** The tab an address asks for: `?tab=`, else Chat for an old link to a thread, else Today. */
-export function captainTab(search: Pick<AppSearch, "tab" | "thread">): CaptainTab {
-  const asked = TABS.find((t) => t === search.tab);
-  if (asked !== undefined) return asked;
-  return search.thread === undefined ? "today" : "chat";
+/** The sheet an old `?tab=` link asked for: Rules is the delegation grid, Log is the log. */
+function sheetOf(tab: string | undefined): Open | undefined {
+  if (tab === "rules") return "delegation";
+  if (tab === "log") return "log";
+  return undefined;
 }
 
 /**
- * The Captain page, one place for the chief of staff: Today (summary, what runs, what is next,
- * spend), Chat (talk to it, one thread per workspace), Log (what it did and why, with Undo) and
- * Rules (who decides what per workspace). The tab is in the address. The Autonomous switch is in
- * the sidebar under Captain. Only the lists scroll, each inside its own panel.
+ * The Captain page, one screen and no tabs: the header with the Autonomous switch and one status
+ * sentence, the conversation on the left, and what needs you, what runs, what is next and what the
+ * captain did on the right. Delegation, the full log and yesterday's summary open in sheets. Old
+ * links with `?tab=` land here and open the sheet they meant.
  */
 export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
+  const autonomy = useAutonomyStatus().data;
   const now = useNow(30_000);
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();
   const { setTab } = useBoss();
-  const tab = captainTab(search);
+  const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
+  const [seen, setSeen] = useState<string>();
   const thread = search.thread;
-  // A link to a thread (an old address of a lane chat) opens its tab in the panel.
+  const tab = search.tab;
+  // A link to a thread (an old address of a lane chat) selects it in the conversation.
   useEffect(() => {
     if (thread !== undefined) setTab(wsTab(thread));
   }, [thread, setTab]);
-  const pick = (next: CaptainTab) =>
-    void navigate({
-      to: PAGE_PATH.captain,
-      search: (prev: AppSearch) => {
-        const { thread: _thread, ...rest } = prev;
-        return { ...rest, tab: next };
-      },
-      replace: true,
-    } as never);
+  // A link to an old tab opens its sheet, and the chat tab selects the conversation.
+  useEffect(() => {
+    const asked = sheetOf(tab);
+    if (asked !== undefined) setOpen(asked);
+  }, [tab]);
 
+  const close = () => {
+    setOpen(undefined);
+    if (tab !== undefined || thread !== undefined)
+      void navigate({
+        to: PAGE_PATH.captain,
+        search: (prev: AppSearch) => {
+          const { tab: _tab, thread: _thread, ...rest } = prev;
+          return rest;
+        },
+        replace: true,
+      } as never);
+  };
+  const summary = autonomy?.summary;
+  const openSummary = () => {
+    if (summary === undefined) return;
+    markSummarySeen(summary.day);
+    setSeen(summary.day);
+    setOpen("summary");
+  };
+
+  if (query.isError)
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
+      </div>
+    );
+  if (!status)
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <RowsSkeleton rows={3} height={180} />
+      </div>
+    );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Captain" subtitle={SUBTITLE}>
-        <Button asChild size="lg" variant="secondary">
-          <PageLink page="limits">Limits</PageLink>
-        </Button>
-      </PageHeader>
-      {query.isError ? (
-        <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
-      ) : !status ? (
-        <RowsSkeleton rows={3} height={180} />
-      ) : (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <Segmented
-            label="Captain"
-            value={tab}
-            segments={[
-              { value: "today", label: "Today" },
-              { value: "chat", label: "Chat" },
-              { value: "log", label: "Log" },
-              { value: "rules", label: "Rules" },
-            ]}
-            onChange={pick}
-            className="self-start"
-          />
-          {tab === "today" && <TodayTab captain={status} now={now} onRules={() => pick("rules")} />}
-          {tab === "chat" && (
-            <section
-              aria-label="Captain chat"
-              className={`flex min-h-0 min-w-0 max-w-[980px] flex-1 flex-col rounded-2xl p-4 ${GLASS}`}
-            >
-              <CaptainPanel />
-            </section>
-          )}
-          {tab === "log" && (
-            <div className="flex min-h-0 min-w-0 max-w-[980px] flex-1 flex-col">
-              <CaptainLog status={status} now={now} />
-            </div>
-          )}
-          {tab === "rules" && <RulesTab captain={status} now={now} />}
-        </div>
+      <CaptainHeader
+        captain={status}
+        autonomy={autonomy}
+        now={now}
+        summarySeen={seen}
+        onDelegation={() => setOpen("delegation")}
+        onSummary={openSummary}
+      />
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+        <section
+          aria-label="Conversation"
+          className={`flex min-h-0 min-w-0 flex-col rounded-2xl p-4 max-[999px]:min-h-[520px] ${GLASS}`}
+        >
+          <Conversation />
+        </section>
+        <NowColumn
+          captain={status}
+          autonomy={autonomy}
+          now={now}
+          onLog={() => setOpen("log")}
+          onSummary={summary === undefined ? undefined : openSummary}
+        />
+      </div>
+      {open === "delegation" && <DelegationSheet captain={status} now={now} onClose={close} />}
+      {open === "log" && (
+        <Sheet title="Log" subtitle="What the captain did, and why" onClose={close}>
+          <FullLog orgs={status.orgs} now={now} />
+        </Sheet>
+      )}
+      {open === "summary" && summary && (
+        <Sheet title="Daily summary" subtitle={dayLabel(summary.day)} onClose={close}>
+          <SummaryView summary={summary} />
+        </Sheet>
       )}
     </div>
   );

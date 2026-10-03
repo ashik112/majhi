@@ -59,13 +59,13 @@ export function WorkspaceChip({ id, className }: { id: string; className?: strin
 }
 
 /** "Captain recommends Rebuild: keeps a backup branch" or "The agent suggests Rebuild". */
-function Suggestion({ decision }: { decision: OwnerDecision }) {
+function Suggestion({ decision, dense }: { decision: OwnerDecision; dense: boolean }) {
   const suggestion = decision.suggestion;
   if (suggestion === undefined) return null;
   const label = decision.options.find((o) => o.id === suggestion.option)?.label ?? suggestion.option;
   const captain = suggestion.by === "captain";
   return (
-    <p className="text-sm text-fg-muted text-pretty break-words">
+    <p className={`text-sm text-fg-muted text-pretty break-words ${dense ? "line-clamp-2" : ""}`}>
       {captain ? "Captain recommends " : "The agent suggests "}
       <span className="font-semibold text-fg">{label}</span>
       {captain && suggestion.reason !== "" && <>: {suggestion.reason}</>}
@@ -81,11 +81,14 @@ function Suggestion({ decision }: { decision: OwnerDecision }) {
 export function DecisionRow({
   decision,
   compact = false,
+  dense = false,
   showWorkspace = true,
   onOpen,
 }: {
   decision: OwnerDecision;
   compact?: boolean;
+  /** Tighter rows for a column that shares its height: less padding, no repeated task title. */
+  dense?: boolean;
   showWorkspace?: boolean;
   /** Runs before navigating, to close the popover. */
   onOpen?: () => void;
@@ -122,17 +125,19 @@ export function DecisionRow({
   return (
     <div
       data-decision={decision.id}
-      className="flex min-w-0 flex-col gap-1.5 border-b border-line px-3 py-3 last:border-b-0"
+      className={`flex min-w-0 flex-col border-b border-line px-3 last:border-b-0 ${dense ? "gap-1 py-2" : "gap-1.5 py-3"}`}
     >
       <div className="flex min-w-0 items-center gap-2">
         <Lamp state={decision.kind === "paused" ? "paused" : "needs"} size={7} />
-        {showWorkspace && workspace !== undefined && <WorkspaceChip id={workspace} className="max-w-[45%]" />}
+        {showWorkspace && workspace !== undefined && (
+          <WorkspaceChip id={workspace} className="max-w-[45%] shrink-0" />
+        )}
         {decision.task !== undefined && (
           <span className="flex min-w-0 items-baseline gap-1.5 text-xs text-fg-faint">
             {decision.chat !== true && (
               <span className="shrink-0 font-mono text-fg-muted">{decision.task}</span>
             )}
-            {decision.taskTitle !== undefined && (
+            {decision.taskTitle !== undefined && !(dense && decision.title.includes(decision.taskTitle)) && (
               <span className="min-w-0 truncate">{decision.taskTitle}</span>
             )}
           </span>
@@ -152,7 +157,7 @@ export function DecisionRow({
       <p className={`text-base text-fg break-words text-pretty ${compact ? "line-clamp-3" : ""}`}>
         {decision.title}
       </p>
-      <Suggestion decision={decision} />
+      <Suggestion decision={decision} dense={dense} />
       <div className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5">
         {decision.options.map((option) => (
           <Button

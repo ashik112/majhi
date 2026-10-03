@@ -1,4 +1,10 @@
-import { ALL_ASK, type Authority, type CaptainCapAsk, type CaptainChore } from "@majhi/shared";
+import {
+  ALL_ASK,
+  type Authority,
+  type AutonomyMode,
+  type CaptainCapAsk,
+  type CaptainChore,
+} from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -20,6 +26,7 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
       push: "decide",
     } as Authority,
     rest: undefined as string | undefined,
+    mode: "on" as AutonomyMode,
     stopped: false,
     tokens: 0,
     day: DAY,
@@ -30,6 +37,7 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",
+    mode: state.mode,
     authority: state.authority,
     rules: undefined,
     tz: "UTC",
@@ -151,6 +159,22 @@ describe("the chore runner", () => {
     ]);
     // Off: the next day's run does not start.
     expect(await t.runner.start("acme", "cleanup", "daily")).toBeUndefined();
+  });
+
+  it("runs only memory and cleanup while Autonomous is off, and only where upkeep is the captain's", async () => {
+    const t = setup(async () => {});
+    t.state.mode = "off";
+    for (const chore of ["ship", "cards", "questions", "projects", "triage", "stuck"] as const) {
+      expect(await t.runner.start("acme", chore, "test")).toBeUndefined();
+    }
+    expect(await t.runner.start("acme", "memory", "test")).toBe("done");
+    expect(await t.runner.start("acme", "cleanup", "test")).toBe("done");
+    // Upkeep on "You decide": even those two stay put.
+    t.state.authority = { ...ALL_ASK, merge: "decide" };
+    expect(await t.runner.start("acme", "memory", "test")).toBeUndefined();
+    t.state.mode = "on";
+    t.state.authority = { ...ALL_ASK, upkeep: "decide" };
+    expect(await t.runner.start("acme", "ship", "test")).toBe("done");
   });
 
   it("starts nothing while stopped, resting or in Only when I ask, and stops a run at the next step", async () => {

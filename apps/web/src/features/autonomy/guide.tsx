@@ -1,9 +1,7 @@
 import type { AutonomyStatus, RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
@@ -12,12 +10,10 @@ import type { OwnerContext } from "@/features/room/owner-cards";
 import { Timeline } from "@/features/room/timeline";
 import { useRoom } from "@/features/room/use-room";
 import { type ApiRequestError, cmd } from "@/lib/api";
-import { useAutonomyCommand, useGuideAutonomy } from "@/lib/autonomy-queries";
+import { useGuideAutonomy } from "@/lib/autonomy-queries";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
 import { useTask } from "@/lib/task-queries";
-import { clockTime } from "./model";
-import { CardHead } from "./sections";
 
 /** A standing instruction holds at most this many characters. */
 const INSTRUCTION_MAX = 500;
@@ -50,6 +46,7 @@ export function ChatLog({ chat }: { chat: string }) {
         answering={answer.isPending ? answer.variables?.item : undefined}
         task={{ id: chat, folder: task?.folder ?? "" }}
         owner={owner}
+        foldSteps
       />
     </div>
   );
@@ -122,57 +119,5 @@ export function ChatBox({ status, lane }: { status: AutonomyStatus; lane: string
         </Button>
       </div>
     </div>
-  );
-}
-
-/** The owner's standing instructions, which every wake-up lists for the captain, each with remove. */
-export function InstructionsCard({ status, now }: { status: AutonomyStatus; now: number }) {
-  const toast = useToast();
-  const forget = useAutonomyCommand("autonomy.forget");
-  const list = status.settings.instructions;
-  return (
-    <Card aria-label="Standing instructions">
-      <CardHead title="Standing instructions" count={list.length} />
-      {list.length === 0 ? (
-        <p className="text-sm text-fg-faint text-pretty">
-          None yet. Turn on Keep as standing instruction when you write to the captain on the Chat tab to add
-          one.
-        </p>
-      ) : (
-        <ul className="flex flex-col">
-          {list.map((i) => (
-            <li
-              key={i.id}
-              className="flex min-w-0 items-start gap-2 border-t border-line py-2 first:border-t-0"
-            >
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-base text-fg-soft text-pretty">{i.text}</span>
-                <time dateTime={i.at} className="tnum text-xs text-fg-faint">
-                  {clockTime(i.at, now)}
-                </time>
-              </span>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Remove this instruction"
-                title="Remove"
-                disabled={forget.isPending}
-                onClick={() =>
-                  forget.mutate(
-                    { input: { id: i.id }, reason: "Owner removed a standing instruction" },
-                    {
-                      onError: (error) =>
-                        toast("Could not remove it", { detail: describeError(error), tone: "error" }),
-                    },
-                  )
-                }
-              >
-                <X aria-hidden="true" />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
   );
 }

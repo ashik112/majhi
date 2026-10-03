@@ -11,7 +11,8 @@ import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView,
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
 import type { OwnerContext } from "./owner-cards";
-import { beatOf, gapAbove, rowsOf } from "./rows";
+import { beatOf, foldSteps, gapAbove, rowsOf } from "./rows";
+import { StepsRow } from "./steps-row";
 
 /** Rows drawn on the first paint of a long room. */
 const FIRST_PAINT_ROWS = 40;
@@ -33,7 +34,10 @@ export function Timeline({
   onLoadNewer,
   onJumpToLatest,
   jumpSignal = 0,
+  foldSteps: fold = false,
 }: {
+  /** Reads as a conversation: the steps between messages fold into one line per run. */
+  foldSteps?: boolean | undefined;
   state: RoomState;
   onLoadOlder: () => Promise<void>;
   /** Loads the page around a search match in place of the newest one; false when the room has no such item. */
@@ -76,8 +80,9 @@ export function Timeline({
   // Pinned plans are drawn above the log, not in it.
   const rows = useMemo(() => {
     const pinnedIds = new Set(plans.map((p) => p.id));
-    return rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
-  }, [state.items, plans]);
+    const all = rowsOf(state.items.filter((item) => !waitsForOwner(item) && !pinnedIds.has(item.id)));
+    return fold ? foldSteps(all) : all;
+  }, [state.items, plans, fold]);
   const beats = useMemo(() => rows.map(beatOf), [rows]);
 
   // Opening a long room draws the newest rows first and the rest a moment later, so the room is
@@ -293,6 +298,20 @@ export function Timeline({
           {rows.slice(from).map((row, j) => {
             const i = from + j;
             const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
+            if (row.kind === "steps")
+              return (
+                <StepsRow key={row.key} count={row.count} className={gap}>
+                  {row.items.map((item) => (
+                    <RoomItemView
+                      key={item.id}
+                      item={item}
+                      ctx={ctx}
+                      {...rowProps(item)}
+                      className="mt-0.5"
+                    />
+                  ))}
+                </StepsRow>
+              );
             return row.kind === "notes" ? (
               <NotesRow
                 key={row.key}

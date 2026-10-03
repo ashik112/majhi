@@ -290,7 +290,8 @@ export class AutonomyDriver {
       return;
     }
     for (const t of all) {
-      if (!ids.has(t.id)) continue;
+      // A lane chat is not work the owner asked for: it has no line in the log.
+      if (!ids.has(t.id) || t.kind === "chat") continue;
       const key = `${t.status}:${t.pausedReason ?? ""}`;
       const before = this.statuses.get(t.id);
       this.statuses.set(t.id, key);
@@ -304,7 +305,7 @@ export class AutonomyDriver {
         ...(t.org === undefined ? {} : { org: t.org }),
         status: t.status,
       });
-      if (change.wake) this.wake(change.text, t.org ?? PRIVATE);
+      if (change.wake) this.wake(change.wakeText, t.org ?? PRIVATE);
     }
   }
 
@@ -325,23 +326,61 @@ export class AutonomyDriver {
   }
 }
 
-/** What a status change says, and whether the captain should look now. */
-function changeOf(
-  t: Pick<Task, "id" | "title" | "status" | "pausedReason">,
-): { text: string; wake: boolean } | undefined {
+/** Why a task paused, in words for the log. The owner is named only when the owner did it. */
+function pauseWhy(t: Pick<Task, "pausedReason" | "pausedBy">): string {
+  if (t.pausedBy === "autonomy-off") return "because Autonomous was turned off";
+  if (t.pausedBy === "captain") return "by Captain";
+  switch (t.pausedReason ?? "owner") {
+    case "owner":
+      return "by you";
+    case "error":
+      return "because the agent hit an error";
+    case "loop":
+      return "because the agent was going in circles";
+    case "blocked":
+      return "because it is blocked";
+    case "limit":
+      return "because an account limit was reached";
+    case "offline":
+      return "because the agent went offline";
+    default:
+      return "because the agent signed out";
+  }
+}
+
+/**
+ * What a status change says, and whether the captain should look now. `text` is for the log, in
+ * plain words with the title; `wakeText` is for the lane agent and names the task by id.
+ */
+export function changeOf(
+  t: Pick<Task, "id" | "title" | "status" | "pausedReason" | "pausedBy">,
+): { text: string; wakeText: string; wake: boolean } | undefined {
+  const title = `'${t.title}'`;
   switch (t.status) {
     case "review":
-      return { text: `${t.id} is ready for review: ${t.title}`, wake: true };
+      return {
+        text: `${title} is ready for review`,
+        wakeText: `${t.id} is ready for review: ${t.title}`,
+        wake: true,
+      };
     case "mr":
-      return { text: `${t.id} has a merge request open: ${t.title}`, wake: true };
+      return {
+        text: `${title} has a merge request open`,
+        wakeText: `${t.id} has a merge request open: ${t.title}`,
+        wake: true,
+      };
     case "done":
-      return { text: `${t.id} is done: ${t.title}`, wake: true };
+      return { text: `${title} is done`, wakeText: `${t.id} is done: ${t.title}`, wake: true };
     case "running":
-      return { text: `${t.id} is running: ${t.title}`, wake: false };
+      return { text: `Started ${title}`, wakeText: `${t.id} is running: ${t.title}`, wake: false };
     case "paused": {
       const reason = t.pausedReason ?? "owner";
       const stuck = reason === "error" || reason === "loop" || reason === "blocked";
-      return { text: `${t.id} paused (${reason}): ${t.title}`, wake: stuck };
+      return {
+        text: `Paused ${title} ${pauseWhy(t)}`,
+        wakeText: `${t.id} paused (${t.pausedBy === undefined ? reason : "by the system"}): ${t.title}`,
+        wake: stuck,
+      };
     }
     default:
       return undefined;
