@@ -14,6 +14,7 @@ import { BudgetAskCard } from "@/features/limits/budget-ask";
 import { autonomyMissing, useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainAsks } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatMoney, plural } from "@/lib/format";
 import { useTasks } from "@/lib/task-queries";
@@ -42,8 +43,8 @@ function NeedsYou({ count }: { count: number }) {
           <span className="font-medium text-fg">
             {plural(count, "thing")} {count === 1 ? "needs" : "need"} you
           </span>
-          <PageLink page="board" className="text-sm text-blue hover:underline">
-            Open the board
+          <PageLink page="decisions" className="text-sm text-blue hover:underline">
+            Open Decisions
           </PageLink>
         </>
       ) : (
@@ -104,6 +105,7 @@ export function TodayTab({
   const autonomy = query.data;
   const asks = useCaptainAsks().data;
   const tasks = useTasks().data;
+  const decisions = useDecisions().data;
   const names = useMemo(() => new Map(captain.orgs.map((o) => [o.org, o.name])), [captain.orgs]);
   const summaryDay = autonomy?.summary?.day;
   // The sidebar and the strip point at a new summary until the owner has seen it here.
@@ -125,7 +127,10 @@ export function TodayTab({
 
   const capAsks = asks?.asks ?? [];
   const budgetAsks = asks?.budgets ?? [];
-  const waiting = (tasks ?? []).filter(needsOwner).length + capAsks.length + budgetAsks.length;
+  // The same count as the bell: everything in the Decisions inbox.
+  const waiting =
+    decisions?.decisions.length ??
+    (tasks ?? []).filter(needsOwner).length + capAsks.length + budgetAsks.length;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade">
       {autonomy.summary && <SummaryCard summary={autonomy.summary} now={now} />}
