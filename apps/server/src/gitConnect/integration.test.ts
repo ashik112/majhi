@@ -25,6 +25,20 @@ const exists = (p: string) =>
   );
 
 /**
+ * Polls `read` until it returns a value. Waits for the state, not a fixed number of tries: the
+ * device flow alone sleeps GitHub's 1 s interval, and a loaded test run stretches every step.
+ */
+async function until<T>(what: string, read: () => Promise<T | undefined>, ms = 15_000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value !== undefined) return value;
+    if (Date.now() > end) throw new Error(`${what} did not end in ${ms} ms`);
+    await new Promise((r) => setTimeout(r, 30));
+  }
+}
+
+/**
  * Plays the host helper on this machine: clones, pushes and ls-remotes against local bare repos,
  * mapping each https URL to its bare repo. Records every job.
  */
@@ -128,12 +142,10 @@ async function signIn(h: World["h"], hosts: FakeGitHosts, account = "octo-acme")
   );
   const start = await h.cmd("git.signIn.start", { org: "acme", kind: "github" });
   expect(start.body).toMatchObject({ state: "device", opened: true });
-  for (let i = 0; i < 100; i++) {
+  return until("sign-in", async () => {
     const poll = await h.cmd("git.signIn.poll", { signIn: start.body.signIn });
-    if (poll.body.state !== "pending") return poll.body;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  throw new Error("sign-in did not end");
+    return poll.body.state === "pending" ? undefined : poll.body;
+  });
 }
 
 describe("OAuth apps", () => {
@@ -192,12 +204,10 @@ describe("sign-in through the commands", () => {
       org: "acme",
       host: "github.com",
     });
-    let done: { state: string } | undefined;
-    for (let i = 0; i < 100 && done === undefined; i++) {
+    const done = await until("gh sign-in", async () => {
       const poll = await h.cmd("git.signIn.poll", { signIn: start.body.signIn });
-      if (poll.body.state !== "pending") done = poll.body;
-      else await new Promise((r) => setTimeout(r, 30));
-    }
+      return poll.body.state === "pending" ? undefined : poll.body;
+    });
     expect(done).toMatchObject({ state: "done", account: "octo-acme" });
     const orgs = (await h.majhi.services.config.sections()).orgs;
     expect(
@@ -241,13 +251,11 @@ describe("clone", () => {
     return remote;
   }
 
-  async function waitJob(h: World["h"], clone: string) {
-    for (let i = 0; i < 200; i++) {
+  function waitJob(h: World["h"], clone: string) {
+    return until("clone", async () => {
       const job = (await h.cmd("projects.cloneStatus", { clone })).body.jobs[0];
-      if (job.state === "done" || job.state === "failed") return job;
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    throw new Error("clone did not end");
+      return job.state === "done" || job.state === "failed" ? job : undefined;
+    });
   }
 
   it("clones into <root>/<workspace>/<repo> with the workspace token through the helper and registers it", async () => {
