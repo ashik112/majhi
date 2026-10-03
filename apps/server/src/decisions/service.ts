@@ -25,7 +25,7 @@ import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
-import { runChain } from "./chain.ts";
+import { CircuitBreaker, runChain } from "./chain.ts";
 import { JevProvider } from "./jev.ts";
 import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
@@ -67,6 +67,8 @@ interface Use {
 export class DecisionService implements Decisions {
   private readonly now: () => Date;
   private readonly jev: JevProvider;
+  /** Skips a provider that keeps failing, for a while, so a down Laya costs one slow call and not many. */
+  readonly breaker = new CircuitBreaker();
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -89,7 +91,9 @@ export class DecisionService implements Decisions {
     const request = DecideRequestSchema.parse(input);
     const started = performance.now();
     const settings = await this.settings();
-    const chain = await runChain(settings.order, this.providers(), request);
+    // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
+    const order = settings.order.includes("rules") ? settings.order : [...settings.order, "rules" as const];
+    const chain = await runChain(order, this.providers(), request, { breaker: this.breaker });
     const answers = Object.fromEntries(
       Object.entries(chain.answers).map(([key, a]) => {
         const q = request.questions[key];
@@ -159,7 +163,8 @@ export class DecisionService implements Decisions {
     const ids = [...new Set<ProviderId>([...settings.order, "laya", "jev", "acp", "rules"])];
     const providers = await Promise.all(
       ids.map(async (id) => {
-        const reason = id === "laya" ? layaReason(laya) : await all[id].unavailable();
+        const cooling = this.breaker.skipReason(id);
+        const reason = cooling ?? (id === "laya" ? layaReason(laya) : await all[id].unavailable());
         return { id, available: reason === undefined, detail: reason ?? "Ready" };
       }),
     );
