@@ -89,6 +89,10 @@ describe("the authority table per workspace", () => {
       "cleanup",
       "stuck",
       "followups",
+      "discover",
+      "tidy",
+      "health",
+      "checklist",
     ]);
   });
 

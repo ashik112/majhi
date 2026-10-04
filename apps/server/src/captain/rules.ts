@@ -78,6 +78,10 @@ const REACHED: Record<CaptainChore, { actions?: (n: number) => string; runs?: (n
     runs: (n) => (n === 1 ? "did its follow-ups run" : `did its ${n} follow-ups runs`),
     actions: (n) => `went through its ${n} follow-ups`,
   },
+  discover: { runs: () => "did its tool search", actions: (n) => `proposed its ${n} tools` },
+  tidy: { runs: () => "did its tidy run", actions: (n) => `tidied its ${n} items` },
+  health: { runs: (n) => `did its ${n} health sweeps`, actions: (n) => `handled its ${n} health items` },
+  checklist: { runs: () => "did its checklist", actions: (n) => `went through its ${n} checklist items` },
 };
 
 /** The question to the owner when a chore reached a daily cap in a workspace. */
@@ -95,7 +99,17 @@ export function capAskText(
 export const FAILURES_OFF = 2;
 
 /** Chores that run at a fixed time each day; the rest run when something happens. */
-export const DAILY_CHORES: readonly CaptainChore[] = ["memory", "projects", "triage", "cleanup", "followups"];
+export const DAILY_CHORES: readonly CaptainChore[] = [
+  "memory",
+  "projects",
+  "triage",
+  "cleanup",
+  "followups",
+  "discover",
+  "tidy",
+  "health",
+  "checklist",
+];
 
 /**
  * Why the captain rests in this workspace right now: outside its working hours or on a freeze date,

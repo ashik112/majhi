@@ -36,6 +36,10 @@ const CHORE_KIND: Record<CaptainAction["chore"], LogKind> = {
   cleanup: "upkeep",
   stuck: "upkeep",
   followups: "upkeep",
+  discover: "upkeep",
+  tidy: "upkeep",
+  health: "upkeep",
+  checklist: "upkeep",
 };
 
 /** Which kind an autonomous event is. A task event is a ship once the task reached review, an MR or done. */

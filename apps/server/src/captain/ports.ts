@@ -3,6 +3,7 @@ import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { OwnWorkScope } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
+import type { UpkeepPorts } from "./upkeep-ports.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -196,6 +197,9 @@ export interface CaptainPorts {
   // Follow-ups and findings
   followUps: FollowUpPorts;
   findings: FindingsService;
+
+  /** The self-upkeep chores: discover, tidy, health and the checklist. Absent: they do nothing. */
+  upkeep?: UpkeepPorts;
 
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */

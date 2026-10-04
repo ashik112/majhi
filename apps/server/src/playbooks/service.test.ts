@@ -681,13 +681,17 @@ describe("the upkeep chores as playbooks", () => {
     expect(chores.toSorted()).toEqual(
       [
         "cards",
+        "checklist",
         "cleanup",
+        "discover",
         "followups",
+        "health",
         "memory",
         "projects",
         "questions",
         "ship",
         "stuck",
+        "tidy",
         "triage",
       ].toSorted(),
     );
