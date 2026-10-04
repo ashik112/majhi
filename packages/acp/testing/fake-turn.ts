@@ -886,6 +886,7 @@ export function serveAcp(o: ServeOptions): void {
               content: { type: "text", text: agentText },
             });
           }
+          stopReason = "end_turn";
         } else if (text.startsWith("limit-text:")) {
           // The same limit as the turn's own answer, ending normally: the other way the CLIs say it.
           agentText = text.slice("limit-text:".length).trim();
