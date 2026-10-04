@@ -970,6 +970,113 @@ CREATE TABLE decision_calibration (
 );
 `,
   },
+  {
+    // Business memory (SPEC 5.19): a knowledge base with versions and a full-text index, voice profiles,
+    // a light CRM and deadlines. org NULL is the whole business; a workspace id is that workspace.
+    id: 132,
+    name: "business memory",
+    sql: `
+CREATE TABLE kb_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  sources TEXT NOT NULL DEFAULT '[]',
+  files TEXT NOT NULL DEFAULT '[]',
+  verified INTEGER NOT NULL DEFAULT 0,
+  verified_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  by TEXT NOT NULL,
+  embedding BLOB,
+  removed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX kb_entries_org ON kb_entries (org, kind);
+CREATE TABLE kb_versions (
+  entry INTEGER NOT NULL REFERENCES kb_entries (id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  sources TEXT NOT NULL,
+  verified INTEGER NOT NULL,
+  change TEXT NOT NULL,
+  by TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (entry, version)
+);
+CREATE VIRTUAL TABLE kb_fts USING fts5 (title, body, tags, tokenize = 'porter unicode61');
+CREATE TABLE voice_profiles (
+  scope TEXT PRIMARY KEY,
+  profile TEXT NOT NULL,
+  proposal TEXT
+);
+CREATE TABLE crm_contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  name TEXT NOT NULL,
+  company TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  links TEXT NOT NULL DEFAULT '[]',
+  emails TEXT NOT NULL DEFAULT '[]',
+  notes TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  owner_only INTEGER NOT NULL DEFAULT 0,
+  stage TEXT,
+  next_step TEXT NOT NULL DEFAULT '',
+  next_due TEXT,
+  last_touch TEXT,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX crm_contacts_org ON crm_contacts (org, relation);
+CREATE INDEX crm_contacts_due ON crm_contacts (next_due);
+CREATE TABLE crm_keys (
+  contact INTEGER NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  PRIMARY KEY (contact, key)
+);
+CREATE INDEX crm_keys_lookup ON crm_keys (org, key);
+CREATE TABLE crm_interactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact INTEGER NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  link TEXT,
+  by TEXT NOT NULL
+);
+CREATE INDEX crm_interactions_contact ON crm_interactions (contact, at);
+CREATE TABLE deadlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  due TEXT NOT NULL,
+  tz TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  lead_days TEXT NOT NULL DEFAULT '[]',
+  goal TEXT,
+  finding INTEGER,
+  contact INTEGER,
+  status TEXT NOT NULL DEFAULT 'open',
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX deadlines_due ON deadlines (status, due_at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
