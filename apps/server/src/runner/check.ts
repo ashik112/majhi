@@ -117,7 +117,11 @@ async function isolationOnce(input: RunnerCheckInput): Promise<RunnerVerdict & {
         detail: "Agent runs are isolated: they cannot see ~/.majhi, the secrets key or other accounts.",
       };
     }
-    return { ok: false, detail: out || "The runner check gave no answer.", retry: !out.startsWith("a run can see") };
+    return {
+      ok: false,
+      detail: out || "The runner check gave no answer.",
+      retry: !out.startsWith("a run can see"),
+    };
   } catch (err) {
     const { timedOut, ...said } = explain(err, cfg.image);
     return {
@@ -236,7 +240,9 @@ function explain(err: unknown, image: string): { detail: string; rebuild?: boole
   const last = dockerSaid(text);
   if (last) return { detail: last };
   const code = exitCode(err);
-  return { detail: code === undefined ? "docker failed without saying why." : `docker exited with code ${code}.` };
+  return {
+    detail: code === undefined ? "docker failed without saying why." : `docker exited with code ${code}.`,
+  };
 }
 
 /** Docker's last meaningful stderr line, without its "docker:" prefixes and help hints. */

@@ -271,7 +271,7 @@ describe("the runner isolation check", () => {
     const mount = await failingCheck((args) =>
       dockerFailed(
         args,
-        "docker: Error response from daemon: invalid mount config for type \"bind\": bind source path does not exist: /Users/owner/.majhi/accounts/_runner-check.\n",
+        'docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist: /Users/owner/.majhi/accounts/_runner-check.\n',
       ),
     );
     expect(mount.verdict.detail).toBe(
