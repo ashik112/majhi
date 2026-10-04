@@ -270,7 +270,12 @@ export async function runCodeFix(
 ): Promise<string> {
   const fix = def.fire.fix;
   const spec = def.spec;
-  if (id === "kill_queries" && spec.kind === "database") {
+  if (
+    id === "kill_queries" &&
+    spec.kind === "database" &&
+    spec.engine !== "mongodb" &&
+    spec.engine !== "image"
+  ) {
     const conn = await ports.connection(spec.connection);
     if (conn === undefined || conn.org !== org) throw new Unavailable("the database connection is gone");
     const url = await urlOf(spec.engine);

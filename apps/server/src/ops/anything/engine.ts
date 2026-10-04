@@ -3,6 +3,7 @@ import { isAbsolute, normalize } from "node:path";
 import {
   type AutomationAction,
   type AutomationRun,
+  databaseQueryProblem,
   type OpsIncident,
   PRIVATE,
   readOnlySqlProblem,
@@ -24,6 +25,7 @@ import { urlProblem } from "../probes.ts";
 import type { OpsWatch, Subject } from "../watch.ts";
 import {
   accountAllowed,
+  DB_NAMES,
   fmt,
   forgetCommand,
   Pending,
@@ -247,7 +249,7 @@ export class WatchEngine {
       }
     }
     if (spec.kind === "database") {
-      const bad = readOnlySqlProblem(spec.query);
+      const bad = databaseQueryProblem(spec.engine, spec.query);
       if (bad !== undefined) return bad;
     }
     if (spec.kind === "queue") {
@@ -1175,7 +1177,7 @@ export class WatchEngine {
         what = `${spec.url.replace(/^https?:\/\//, "")}${spec.jsonPath === undefined ? "" : ` at ${spec.jsonPath}`}`;
         break;
       case "database":
-        what = `${spec.engine === "postgres" ? "Postgres" : "MySQL"} read-only query${on}`;
+        what = `${DB_NAMES[spec.engine]} read-only query${on}`;
         break;
       case "redis":
         what = `Redis ${spec.metric === "memory_ratio" ? "memory" : spec.metric}${on}`;
@@ -1321,7 +1323,7 @@ function kindWord(def: WatchDef): string {
     case "redis":
       return "Redis";
     case "database":
-      return def.spec.engine === "postgres" ? "Postgres" : "MySQL";
+      return DB_NAMES[def.spec.engine];
     case "server":
       return "server";
     case "queue":

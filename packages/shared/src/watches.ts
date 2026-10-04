@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AutomationActionSchema, AutomationRunSchema, OverlapPolicySchema } from "./automation.ts";
+import { ImageRefSchema } from "./containers.ts";
 import { IdSchema } from "./ids.ts";
 import { OpsIncidentSchema } from "./ops.ts";
 import { TaskIdSchema } from "./tasks.ts";
@@ -96,8 +97,8 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     kind: z.literal("database"),
     /** An env connection that holds the database URL. */
     connection: Conn,
-    engine: z.enum(["postgres", "mysql"]),
-    /** One read-only statement (SELECT, SHOW or EXPLAIN) whose first value is a number. */
+    engine: z.enum(["postgres", "mysql", "mongodb", "image"]),
+    /** One read-only statement (SELECT, SHOW or EXPLAIN) whose first value is a number. For MongoDB, a JSON read command (see `parseMongoCommand`). */
     query: z.string().trim().min(1).max(1000),
     /** What the number is, for the screen: "p95". */
     label: z.string().trim().max(40).optional(),
@@ -464,4 +465,212 @@ export function readOnlySqlProblem(query: string): string | undefined {
   const fn = SQL_FUNCTIONS.exec(body);
   if (fn !== null) return `${fn[1]} is not allowed in a read-only query.`;
   return undefined;
+}
+
+/** The MongoDB read commands a watch may run. */
+export const MONGO_COMMANDS = ["count", "dbStats", "collStats", "serverStatus"] as const;
+export type MongoCommandName = (typeof MONGO_COMMANDS)[number];
+
+export type MongoCommand = {
+  command: MongoCommandName;
+  /** `count` and `collStats`. */
+  collection?: string;
+  /** `count`: the filter of documents to count. */
+  query?: Record<string, unknown>;
+  /** The dotted path to the number in the answer of dbStats, collStats and serverStatus, like `connections.current`. */
+  path?: string;
+};
+
+// Operators that run code on the server or write; refused anywhere inside a filter.
+const MONGO_BLOCKED_OPERATORS = new Set([
+  "$where",
+  "$function",
+  "$accumulator",
+  "$out",
+  "$merge",
+  "$expr",
+  "$jsonSchema",
+]);
+const MONGO_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
+const MONGO_PATH = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+){0,6}$/;
+
+function blockedOperator(value: unknown, depth: number): string | undefined {
+  if (depth > 8) return "a filter this deep";
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const bad = blockedOperator(v, depth + 1);
+      if (bad !== undefined) return bad;
+    }
+  } else if (typeof value === "object" && value !== null) {
+    for (const [k, v] of Object.entries(value)) {
+      if (MONGO_BLOCKED_OPERATORS.has(k)) return k;
+      const bad = blockedOperator(v, depth + 1);
+      if (bad !== undefined) return bad;
+    }
+  }
+  return undefined;
+}
+
+/** Parses a MongoDB watch command, or says why it is not allowed. Only the allow list of read commands passes. */
+export function parseMongoCommand(
+  text: string,
+): { ok: true; command: MongoCommand } | { ok: false; problem: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, problem: 'Write a JSON command like {"command":"count","collection":"orders"}.' };
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, problem: "The command must be one JSON object." };
+  }
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) {
+    if (!["command", "collection", "query", "path"].includes(k)) {
+      return { ok: false, problem: `"${k}" is not a field of a MongoDB check.` };
+    }
+  }
+  const name = o.command;
+  if (typeof name !== "string" || !(MONGO_COMMANDS as readonly string[]).includes(name)) {
+    return { ok: false, problem: `Only ${MONGO_COMMANDS.join(", ")} may run on MongoDB.` };
+  }
+  const command = name as MongoCommandName;
+  const collection = o.collection;
+  if (collection !== undefined && (typeof collection !== "string" || !MONGO_NAME.test(collection))) {
+    return { ok: false, problem: "The collection name is not valid." };
+  }
+  if ((command === "count" || command === "collStats") && collection === undefined) {
+    return { ok: false, problem: `${command} needs a collection.` };
+  }
+  const query = o.query;
+  if (query !== undefined) {
+    if (command !== "count") return { ok: false, problem: "Only count takes a query." };
+    if (typeof query !== "object" || query === null || Array.isArray(query)) {
+      return { ok: false, problem: "The query must be a JSON object." };
+    }
+    const bad = blockedOperator(query, 0);
+    if (bad !== undefined) return { ok: false, problem: `${bad} is not allowed. Only reads run.` };
+  }
+  const path = o.path;
+  if (path !== undefined && (typeof path !== "string" || !MONGO_PATH.test(path))) {
+    return { ok: false, problem: "The path must be dotted names like connections.current." };
+  }
+  if (command !== "count" && path === undefined) {
+    return { ok: false, problem: `${command} needs a path to the number, like objects.` };
+  }
+  return {
+    ok: true,
+    command: {
+      command,
+      ...(collection === undefined ? {} : { collection }),
+      ...(query === undefined ? {} : { query: query as Record<string, unknown> }),
+      ...(path === undefined ? {} : { path }),
+    },
+  };
+}
+
+/** Why a MongoDB command is not allowed, or undefined. */
+export function mongoCommandProblem(text: string): string | undefined {
+  const r = parseMongoCommand(text);
+  return r.ok ? undefined : r.problem;
+}
+
+/** The number at a dotted path of a MongoDB answer. The driver's Int32, Long and Double values all convert. */
+export function numberAtPath(doc: unknown, path: string): number | undefined {
+  let cur: unknown = doc;
+  for (const part of path.split(".")) {
+    if (typeof cur !== "object" || cur === null) return undefined;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  const n =
+    typeof cur === "object" && cur !== null && "valueOf" in cur
+      ? Number((cur as { valueOf(): unknown }).valueOf())
+      : cur;
+  return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+}
+
+/** A database reached through its official image's own client. */
+export type ImageCommand = {
+  image: string;
+  /** The client and its arguments, one word each. Run with no shell. */
+  command: string[];
+  /** A dotted path to the number when the client prints JSON. Absent: the first number printed. */
+  path?: string;
+};
+
+const IMAGE_WRITE_WORDS =
+  /\b(drop|delete|insert|update|truncate|alter|create|grant|revoke|replace|merge|rename|attach|detach|optimize|kill|system)\b/i;
+const IMAGE_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ash", "ksh", "env", "eval", "exec", "xargs"]);
+
+/**
+ * Parses the JSON of an `image` database check, or says why it is not allowed. The only read-only
+ * guarantee here is the owner's connection being a read-only login; the command must also hold none of
+ * the obvious write words. A shell as the program is refused, so a word cannot start a second command.
+ */
+export function parseImageCommand(
+  text: string,
+): { ok: true; value: ImageCommand } | { ok: false; problem: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      problem: 'Write JSON like {"image":"clickhouse/clickhouse-server:24","command":[...]}.',
+    };
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, problem: "The check must be one JSON object." };
+  }
+  const o = raw as Record<string, unknown>;
+  for (const k of Object.keys(o)) {
+    if (!["image", "command", "path"].includes(k)) {
+      return { ok: false, problem: `"${k}" is not a field of an image check.` };
+    }
+  }
+  const image = ImageRefSchema.safeParse(o.image);
+  if (!image.success) return { ok: false, problem: "Name the image, like clickhouse/clickhouse-server:24." };
+  const command = o.command;
+  if (
+    !Array.isArray(command) ||
+    command.length < 1 ||
+    command.length > 32 ||
+    command.some((a) => typeof a !== "string" || a === "" || a.length > 1000 || a.includes("\u0000"))
+  ) {
+    return { ok: false, problem: "The command is a list of words: the client, then its arguments." };
+  }
+  const words = command as string[];
+  const program = (words[0] ?? "").split("/").pop() ?? "";
+  if (IMAGE_SHELLS.has(program) || words[0]?.startsWith("-")) {
+    return { ok: false, problem: "Run the database's own client, not a shell." };
+  }
+  const bad = IMAGE_WRITE_WORDS.exec(words.slice(1).join(" "));
+  if (bad !== null) return { ok: false, problem: `"${bad[1]}" is not allowed. Only reads run.` };
+  const path = o.path;
+  if (
+    path !== undefined &&
+    (typeof path !== "string" || !/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+){0,6}$/.test(path))
+  ) {
+    return { ok: false, problem: "The path must be dotted names like data.count." };
+  }
+  return {
+    ok: true,
+    value: { image: image.data, command: words, ...(path === undefined ? {} : { path }) },
+  };
+}
+
+/** Why an image check is not allowed, or undefined. */
+export function imageCommandProblem(text: string): string | undefined {
+  const r = parseImageCommand(text);
+  return r.ok ? undefined : r.problem;
+}
+
+/** Why a database check's query is not allowed for its engine, or undefined. */
+export function databaseQueryProblem(
+  engine: "postgres" | "mysql" | "mongodb" | "image",
+  query: string,
+): string | undefined {
+  if (engine === "mongodb") return mongoCommandProblem(query);
+  if (engine === "image") return imageCommandProblem(query);
+  return readOnlySqlProblem(query);
 }

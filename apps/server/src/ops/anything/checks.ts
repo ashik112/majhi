@@ -1,4 +1,13 @@
-import { type RepoMr, readOnlySqlProblem, reviewLine, taskGroup, type WatchCheck } from "@majhi/shared";
+import {
+  databaseQueryProblem,
+  numberAtPath,
+  parseImageCommand,
+  type RepoMr,
+  readOnlySqlProblem,
+  reviewLine,
+  taskGroup,
+  type WatchCheck,
+} from "@majhi/shared";
 import { describeFailure, HTTP_TIMEOUT_MS, numberAt, urlProblem } from "../probes.ts";
 import type { LimitUse, WatchHost, WatchTask } from "./host.ts";
 import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf } from "./html.ts";
@@ -12,6 +21,17 @@ import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf 
 
 /** The look could not tell. The message is a fixed phrase the owner can read. */
 export class Unavailable extends Error {}
+const MAJHI_DOCKER =
+  "majhi problem: Docker is not available to the server, so this check cannot run its client image.";
+
+/** The databases a watch can read. */
+export type DbEngine = "postgres" | "mysql" | "mongodb" | "image";
+export const DB_NAMES: Record<DbEngine, string> = {
+  postgres: "Postgres",
+  mysql: "MySQL",
+  mongodb: "MongoDB",
+  image: "Database",
+};
 
 /** A command watch started its command and waits for it to end. The next look asks again. */
 export class Pending extends Error {}
@@ -55,7 +75,12 @@ export interface WatchPorts {
   now(): Date;
   connection(id: string): Promise<ConnInfo | undefined>;
   /** Runs one read-only statement and returns its first value as text. */
-  sql(engine: "postgres" | "mysql", url: string, query: string, timeoutMs: number): Promise<string>;
+  sql(engine: DbEngine, url: string, query: string, timeoutMs: number): Promise<string>;
+  /** Runs a database's client in a throwaway container of its official image, with the connection's values as environment, and returns what it printed. Absent without Docker. */
+  image?(
+    input: { image: string; command: readonly string[]; env: Record<string, string> },
+    timeoutMs: number,
+  ): Promise<string>;
   /** Runs Redis commands and returns each reply as text. */
   redis(url: string, commands: readonly string[][], timeoutMs: number): Promise<string[]>;
   ssh(alias: string, command: string): Promise<RemoteResult>;
@@ -72,9 +97,10 @@ export interface WatchPorts {
   host?: WatchHost;
 }
 
-const URL_VARS: Record<"postgres" | "mysql" | "redis", string[]> = {
+const URL_VARS: Record<Exclude<DbEngine, "image"> | "redis", string[]> = {
   postgres: ["DATABASE_URL", "POSTGRES_URL", "POSTGRESQL_URL", "PG_URL", "DB_URL"],
   mysql: ["MYSQL_URL", "DATABASE_URL", "DB_URL"],
+  mongodb: ["MONGODB_URI", "MONGODB_URL", "MONGO_URL", "MONGO_URI", "DATABASE_URL"],
   redis: ["REDIS_URL", "REDIS_TLS_URL", "KV_URL"],
 };
 const SQL_MS = 15_000;
@@ -98,7 +124,7 @@ async function connectionOf(
   return found;
 }
 
-function urlFrom(conn: ConnInfo, kind: "postgres" | "mysql" | "redis"): string {
+function urlFrom(conn: ConnInfo, kind: Exclude<DbEngine, "image"> | "redis"): string {
   for (const name of URL_VARS[kind]) {
     const v = conn.vars[name];
     if (v !== undefined && v !== "") return v;
@@ -269,17 +295,40 @@ async function website(spec: Extract<WatchCheck, { kind: "website" }>, ports: Wa
   return { number: ms, display: `${res.status} · ${ms} ms`, healthy };
 }
 
+/** The number a database check reads, through the driver of its engine or the client of its image. */
+async function databaseNumber(
+  engine: DbEngine,
+  query: string,
+  conn: ConnInfo,
+  ports: WatchPorts,
+): Promise<number | undefined> {
+  if (engine !== "image") {
+    const url = urlFrom(conn, engine);
+    return numberOfText(await guarded(() => ports.sql(engine, url, query, SQL_MS)));
+  }
+  const parsed = parseImageCommand(query);
+  if (!parsed.ok) throw new Unavailable(parsed.problem);
+  const { image, command, path } = parsed.value;
+  const run = ports.image;
+  if (run === undefined) throw new Unavailable(MAJHI_DOCKER);
+  const text = await guarded(() => run({ image, command, env: conn.vars }, SQL_MS));
+  if (path === undefined) return numberOfText(text);
+  try {
+    return numberAtPath(JSON.parse(text), path);
+  } catch {
+    return undefined;
+  }
+}
+
 async function database(
   spec: Extract<WatchCheck, { kind: "database" }>,
   org: string,
   ports: WatchPorts,
 ): Promise<Reading> {
-  const bad = readOnlySqlProblem(spec.query);
+  const bad = databaseQueryProblem(spec.engine, spec.query);
   if (bad !== undefined) throw new Unavailable(bad);
   const conn = await connectionOf(ports, org, spec.connection, ["env"]);
-  const url = urlFrom(conn, spec.engine);
-  const text = await guarded(() => ports.sql(spec.engine, url, spec.query, SQL_MS));
-  const n = numberOfText(text);
+  const n = await databaseNumber(spec.engine, spec.query, conn, ports);
   if (n === undefined) throw new Unavailable("the query did not return a number");
   const unit =
     spec.unit === undefined || spec.unit === ""

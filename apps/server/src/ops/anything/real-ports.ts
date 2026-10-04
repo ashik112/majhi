@@ -1,58 +1,21 @@
-import { execFile } from "node:child_process";
 import { connect as netConnect } from "node:net";
-import { tmpdir } from "node:os";
 import { connect as tlsConnect } from "node:tls";
 import { readOnlySqlProblem } from "@majhi/shared";
 import { runRemote } from "../../connections/remote.ts";
-import { Unavailable, type WatchPorts } from "./checks.ts";
+import { type DbEngine, Unavailable, type WatchPorts } from "./checks.ts";
+import { refused, runMongo, runMysql, runPostgres } from "./db-drivers.ts";
 import { isFixStatement } from "./fixes.ts";
 
 /**
- * The real network behind the watch checks. A database is reached through psql or mysql started with an
- * environment built from scratch (PATH, LANG, a throwaway HOME and the connection's own values, never
- * majhi's), in a read-only session, so the secret is never on a command line. Redis is spoken to
+ * The real network behind the watch checks. A database is reached with a Node driver bundled with the
+ * server (pg, mysql2, mongodb), in a read-only session, with only the connection's own URL (never majhi's
+ * environment); nothing is ever put on a command line. Redis is spoken to
  * directly, with the few commands a watch needs. A server is reached through majhi's own SSH, with
  * only the fixed commands of checks.ts.
  */
 
-const MAX_OUT = 64 * 1024;
-
-function runProgram(
-  program: string,
-  args: string[],
-  env: Record<string, string>,
-  timeoutMs: number,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      program,
-      args,
-      { env, timeout: timeoutMs, maxBuffer: MAX_OUT, encoding: "utf8" },
-      (err, stdout) => {
-        if (err === null) return resolve(stdout.trim());
-        const code = (err as { code?: unknown }).code;
-        if (code === "ENOENT") return reject(new Unavailable(`${program} is not installed on this machine`));
-        reject(new Unavailable("the database refused or did not answer"));
-      },
-    );
-    child.stdin?.end();
-  });
-}
-
-function baseEnv(): Record<string, string> {
-  return {
-    PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-    LANG: "C.UTF-8",
-    HOME: tmpdir(),
-  };
-}
-
-async function runSql(
-  engine: "postgres" | "mysql",
-  url: string,
-  query: string,
-  timeoutMs: number,
-): Promise<string> {
+async function runSql(engine: DbEngine, url: string, query: string, timeoutMs: number): Promise<string> {
+  if (engine === "mongodb") return runMongo(url, query, timeoutMs);
   // The statement is checked again here: a read, or exactly one of the fixed fix statements.
   if (readOnlySqlProblem(query) !== undefined && !isFixStatement(query)) {
     throw new Unavailable("only reads and the fixed fixes run");
@@ -63,43 +26,16 @@ async function runSql(
   } catch {
     throw new Unavailable("the database URL is not valid");
   }
-  const user = decodeURIComponent(u.username);
-  const pass = decodeURIComponent(u.password);
-  const db = decodeURIComponent(u.pathname.replace(/^\//, ""));
-  if (engine === "postgres") {
-    if (!/^postgres(ql)?:$/.test(u.protocol)) throw new Unavailable("the URL is not a Postgres address");
-    const env: Record<string, string> = {
-      ...baseEnv(),
-      PGHOST: u.hostname,
-      PGPORT: u.port === "" ? "5432" : u.port,
-      PGCONNECT_TIMEOUT: "10",
-      PGOPTIONS: `-c default_transaction_read_only=on -c statement_timeout=${Math.min(timeoutMs, 30_000)}`,
-      PGAPPNAME: "majhi-watch",
-    };
-    if (user !== "") env.PGUSER = user;
-    if (pass !== "") env.PGPASSWORD = pass;
-    if (db !== "") env.PGDATABASE = db;
-    const mode = u.searchParams.get("sslmode");
-    if (mode !== null && /^[a-z-]{1,20}$/.test(mode)) env.PGSSLMODE = mode;
-    return runProgram("psql", ["-X", "-A", "-t", "-q", "-c", query], env, timeoutMs);
+  try {
+    if (engine === "postgres") {
+      if (!/^postgres(ql)?:$/.test(u.protocol)) throw new Unavailable("the URL is not a Postgres address");
+      return await runPostgres(u, query, timeoutMs);
+    }
+    if (u.protocol !== "mysql:") throw new Unavailable("the URL is not a MySQL address");
+    return await runMysql(u, query, timeoutMs);
+  } catch (err) {
+    throw refused(err);
   }
-  if (u.protocol !== "mysql:") throw new Unavailable("the URL is not a MySQL address");
-  const env: Record<string, string> = { ...baseEnv() };
-  if (pass !== "") env.MYSQL_PWD = pass;
-  const args = [
-    "-h",
-    u.hostname,
-    "-P",
-    u.port === "" ? "3306" : u.port,
-    "--batch",
-    "--skip-column-names",
-    "--connect-timeout=10",
-    "--init-command=SET SESSION TRANSACTION READ ONLY",
-  ];
-  if (user !== "") args.push("-u", user);
-  args.push("-e", query);
-  if (db !== "") args.push(db);
-  return runProgram("mysql", args, env, timeoutMs);
 }
 
 // Redis ---------------------------------------------------------------------------------

@@ -68,6 +68,7 @@ import { sweepRunFiles } from "./connections/run-files.ts";
 import { ConnectionService, connectionDir } from "./connections/service.ts";
 import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
+import { ImageCheckFailed, runImageCheck } from "./containers/image-check.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
 import { builtinRegistry } from "./decisions/builtinSlots.ts";
@@ -129,6 +130,7 @@ import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
+import { Unavailable } from "./ops/anything/checks.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
 import { createWatchHost } from "./ops/anything/host.ts";
 import type { ProbePorts } from "./ops/probes.ts";
@@ -1882,6 +1884,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     host: watchHost,
+    imageRun: async (input, timeoutMs) => {
+      try {
+        return await runImageCheck(
+          containerDocker,
+          { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
+          input,
+          timeoutMs,
+        );
+      } catch (err) {
+        throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
+      }
+    },
     tester: connectionTests,
     orgs: async () => Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
     askModel: async (task, prompt, parse) => {
