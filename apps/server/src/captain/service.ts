@@ -326,6 +326,12 @@ export class CaptainService {
     this.trigger(org, "ship", `${task} reached review`, cause, task);
   }
 
+  /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
+  turnEnded(turn: { task: string; agent: string; text: string }): void {
+    if (this.rollup === undefined || turn.agent !== this.boss) return;
+    void this.rollup.relay(turn.task, turn.text).catch(() => undefined);
+  }
+
   /** A room item was written: a new card or question wakes the chore that answers it. */
   roomWrote(task: string, item: RoomItem, captain: string | undefined = this.boss): void {
     let org: string | undefined;

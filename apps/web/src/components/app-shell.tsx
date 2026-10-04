@@ -5,6 +5,7 @@ import * as m from "motion/react-m";
 import { useEffect, useMemo } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
+import { CaptainTicker } from "@/components/shell/captain-ticker";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -119,6 +120,7 @@ function Frame() {
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
+        <CaptainTicker />
         <m.div
           key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}

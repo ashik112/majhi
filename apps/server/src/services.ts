@@ -704,6 +704,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   pruneContainers();
   const pruneSweep = setInterval(pruneContainers, PRUNE_SWEEP_MS);
   pruneSweep.unref();
+  // The captain is built after the runs; a finished turn reaches it through this.
+  const captainRef: { current: CaptainService | undefined } = { current: undefined };
   const runs = new RunManager({
     store,
     limited: limitedRun,
@@ -780,6 +782,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
+      captainRef.current?.turnEnded(turn);
       return coordinator.turnEnded(turn);
     },
     onCheckpoint: (task) => background.run(() => tasks.restackOnto(task)),
@@ -1612,6 +1615,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  captainRef.current = captain;
+
   // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
   const sensors = createSensorPorts({
     store,
