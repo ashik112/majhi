@@ -162,6 +162,11 @@ class Sim {
         this.echo.review(id);
         return { text: `Shipped ${id}`, undoNote: "simulated" };
       },
+      mrReady: async () => ({ ok: false as const, why: "simulated: no remote" }),
+      openMrs: async () => ({ urls: [], host: "GitHub" }),
+      answerTasks: async () => [],
+      closeAnswer: async () => undefined,
+      askChanges: async () => undefined,
       resolveShip: async (org, id) => {
         this.act("resolveShip", org, id, id);
       },

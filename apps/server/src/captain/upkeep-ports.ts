@@ -1,3 +1,5 @@
+import { SKILL_NAME } from "@majhi/shared";
+
 /**
  * What the self-upkeep chores (discover, tidy, health, checklist) read and do in majhi. The real ports
  * are built in `upkeep-world.ts` from majhi's own commands; tests play them.
@@ -14,6 +16,19 @@ export interface Candidate {
   source?: string | undefined;
   installs?: number | undefined;
   installed: boolean;
+  /** For a skill: what skills.search says to pass to skills.install. */
+  install?: { source: string; skill?: string | undefined } | undefined;
+}
+
+/**
+ * What skills.install takes for a searched skill: the search's own install pair, when its skill name
+ * is a valid local name (a registry id like `react:components` is not one). Undefined otherwise, so the
+ * captain proposes the skill instead of failing to install it.
+ */
+export function skillInstallInput(c: Candidate): { source: string; skill: string } | undefined {
+  const pair = c.install;
+  if (pair?.skill === undefined || !SKILL_NAME.test(pair.skill)) return undefined;
+  return { source: pair.source, skill: pair.skill };
 }
 
 export type Severity = "info" | "low" | "medium" | "high";

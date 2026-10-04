@@ -79,8 +79,9 @@ describe("the authority table per workspace", () => {
     const only = (row: keyof Authority): Authority => ({ ...ALL_ASK, [row]: "decide" });
     expect(choresOf(ALL_ASK)).toEqual([]);
     expect(choresOf(only("approvals"))).toEqual(["cards"]);
-    expect(choresOf(only("questions"))).toEqual(["questions"]);
+    expect(choresOf(only("questions"))).toEqual(["ship", "questions"]);
     expect(choresOf(only("merge"))).toEqual(["ship"]);
+    expect(choresOf(only("push"))).toEqual(["ship"]);
     expect(choresOf(only("upkeep"))).toEqual([
       "ship",
       "memory",

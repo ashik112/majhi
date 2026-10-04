@@ -198,6 +198,11 @@ export class ChoreRun {
     return this.deps.repo.hasAction(key);
   }
 
+  /** How many times a key starting with `prefix` was acted on, in any run. */
+  times(prefix: string): number {
+    return this.deps.repo.countActions(prefix);
+  }
+
   /** What the captain answered to `agent` in `task` in the last ten minutes, oldest first. */
   answeredRecently(task: string, agent: string): PastAnswer[] {
     const since = new Date(this.deps.now().getTime() - NEAR_SAME_MS).toISOString();

@@ -322,6 +322,14 @@ export class CaptainRepo {
   hasAction(key: string): boolean {
     return this.db.prepare("SELECT 1 FROM captain_actions WHERE key = ?").get(key) !== undefined;
   }
+  /** How many actions have a key starting with `prefix`, in any run. */
+  countActions(prefix: string): number {
+    const row = this.db
+      .prepare("SELECT count(*) AS n FROM captain_actions WHERE substr(key, 1, length(?)) = ?")
+      .get(prefix, prefix) as { n: number };
+    return row.n;
+  }
+
 
   /** The answers the questions chore gave to one agent in one task since `since`, oldest first. */
   answersSince(

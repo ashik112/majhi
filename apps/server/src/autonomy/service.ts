@@ -69,6 +69,7 @@ import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { busyReason, machineLine, upperFirst } from "../machine/busy.ts";
+import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -820,13 +821,13 @@ export class AutonomyService {
     return this.deps.machine === undefined ? undefined : machineLine(reading);
   }
 
-  private wasBusy = false;
+  private readonly calmWake = new CalmWake();
 
   /** The sensor read again: wakes the captain once when a busy machine has calmed down. */
   machineRead(): void {
-    const busy = this.machineBusy() !== undefined;
-    if (this.wasBusy && !busy) this.wake("The machine is no longer busy", undefined, "news");
-    this.wasBusy = busy;
+    if (this.calmWake.read(this.machineBusy() !== undefined, this.now().getTime())) {
+      this.wake("The machine is no longer busy", undefined, "news");
+    }
   }
 
   /** True while the mode is On: agent slots are shared evenly across workspaces (5.18). */

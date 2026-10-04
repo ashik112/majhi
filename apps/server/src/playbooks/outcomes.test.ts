@@ -21,6 +21,7 @@ function ship(merge: "decide" | "ask", off: string[]) {
   // Only the ports the ship chore reads; the rest is never called by it.
   const ports = {
     typing: () => false,
+    answerTasks: async () => [],
     reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: "abc" }],
     shipCheck: async () => ({
       ready: true,
@@ -98,7 +99,12 @@ async function choreRun(
   const store = new Store(":memory:");
   const repo = new CaptainRepo(store.raw);
   const now = () => new Date("2026-10-04T10:00:00.000Z");
-  const all = { typing: () => false, signInStalls: async () => [], ...ports } as unknown as CaptainPorts;
+  const all = {
+    typing: () => false,
+    signInStalls: async () => [],
+    answerTasks: async () => [],
+    ...ports,
+  } as unknown as CaptainPorts;
   const runner = new ChoreRunner({
     repo,
     now,

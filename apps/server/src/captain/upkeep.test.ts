@@ -37,6 +37,7 @@ const skill = (id: string, installs: number): Candidate => ({
   source: `acme/${id}`,
   installs,
   installed: false,
+  install: { source: `acme/${id}`, skill: id.split("/").pop() as string },
 });
 
 function setup(opts: {
@@ -112,6 +113,25 @@ describe("discover", () => {
     expect(installSkill).toHaveBeenCalledTimes(1);
     expect(full.repo.allActions().map((a) => a.text)).toContain("Installed the skill acme/lint");
     expect(full.findings.filed.has("discover:mcp:io.acme/postgres")).toBe(true);
+  });
+
+  it("proposes a skill whose registry id is not a valid local name, and never installs it", async () => {
+    const installSkill = vi.fn(async () => {});
+    const odd = {
+      ...skill("acme/react:components", 900),
+      install: { source: "acme/ui", skill: "react:components" },
+    };
+    const full = setup({
+      upkeep: {
+        profile: async () => ["x"],
+        search: async (kind) => (kind === "skill" ? [odd] : []),
+        installSkill,
+      },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    await full.runner.start("acme", "discover", "daily");
+    expect(installSkill).not.toHaveBeenCalled();
+    expect(full.findings.filed.size).toBe(1);
   });
 });
 

@@ -17,13 +17,14 @@ import {
 } from "@majhi/shared";
 import { z } from "zod";
 import type { Store } from "../store/index.ts";
-import type {
-  AccountSlots,
-  Candidate,
-  HealthCheckView,
-  Signal,
-  StaleSecret,
-  UpkeepPorts,
+import {
+  type AccountSlots,
+  type Candidate,
+  type HealthCheckView,
+  type Signal,
+  type StaleSecret,
+  skillInstallInput,
+  type UpkeepPorts,
 } from "./upkeep-ports.ts";
 
 /**
@@ -163,11 +164,13 @@ export function upkeepWorld(deps: {
         source: s.source,
         installs: s.installs,
         installed: s.installed,
+        install: s.install,
       }));
     },
 
     async installSkill(_org, skill) {
-      const input = { source: skill.source ?? skill.id, skill: skill.title };
+      const input = skillInstallInput(skill);
+      if (input === undefined) throw new Error(`${skill.title} has no valid local skill name`);
       const preview = SkillInstallResultSchema.parse(
         (await deps.run("skills.install", input, `Upkeep: preview ${skill.title}`)).output,
       );

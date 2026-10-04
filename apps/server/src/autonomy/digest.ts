@@ -279,15 +279,11 @@ function build(input: DigestInput, scale: number): string {
       max(BASE.incidents),
     ),
     ...optional(
-      "In review in this workspace (ship what passes where Merge is Captain; otherwise prepare it)",
+      "In review in this workspace (code: merge it where Merge is Captain, else open the merge request where Push is Captain; no code change: close it if the report answers the brief)",
       input.review,
       max(BASE.review),
     ),
-    ...optional(
-      "Paused tasks of this workspace (not in your list above)",
-      input.paused,
-      max(BASE.paused),
-    ),
+    ...optional("Paused tasks of this workspace (not in your list above)", input.paused, max(BASE.paused)),
     ...((input.findings ?? []).length === 0
       ? []
       : list(
