@@ -12,7 +12,7 @@ export function SkillsView() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Skills"
-        subtitle="Instructions agents can follow, kept in ~/.majhi/skills. Install here, or send a link to an agent in a room. MCP servers are on the Connections page."
+        subtitle="Instructions agents follow. MCP servers are under Connections."
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8">
         <div className="mx-auto flex max-w-[960px] flex-col gap-4 pt-2">
