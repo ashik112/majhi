@@ -324,9 +324,18 @@ export class RunManager {
   recover(): void {
     const { store, room } = this.deps;
     store.runs.endAllLive("server-restart", this.now().toISOString());
+    const told = new Set<string>();
     for (const item of store.room.pendingPermissions()) {
-      if (item.type === "permission")
-        room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      if (item.type !== "permission") continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      // One line per task: why the request vanished.
+      if (told.has(item.task)) continue;
+      told.add(item.task);
+      room.post(item.task, `restart:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "majhi restarted, so the open permission request ended. The agent asks again if it still needs it.",
+      });
     }
   }
 

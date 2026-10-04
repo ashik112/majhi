@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { cmd } from "@/lib/api";
-import { reconnectDelay, wsUrl } from "@/lib/events-model";
+import { closeSocket, reconnectDelay, wsUrl } from "@/lib/events-model";
 import { setTaskInCache } from "@/lib/task-queries";
 import {
   emptyRoom,
@@ -80,7 +80,7 @@ export function useRoom(taskId: string) {
     return () => {
       stopped = true;
       window.clearTimeout(timer);
-      socket?.close();
+      if (socket) closeSocket(socket);
     };
   }, [taskId, client]);
 

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
-import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { ALL_TOPICS, closeSocket, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
 import { queryKeys } from "./queries";
 import { throttledInvalidator } from "./throttled-invalidate";
 import { bindTypingSender } from "./typing-signal";
@@ -84,7 +84,7 @@ export function useServerEvents(): void {
       window.clearInterval(heartbeat);
       throttled.stop();
       bindTypingSender(null);
-      socket?.close();
+      if (socket) closeSocket(socket);
     };
   }, [client, router]);
 }
