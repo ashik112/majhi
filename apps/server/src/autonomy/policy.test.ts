@@ -32,7 +32,7 @@ describe("decideAutonomously: the table", () => {
       decision: "left",
       why: "Only the owner removes things",
     });
-    expect(decide(call("team.remove", { task: "ACM-1", agent: "acme-builder" }))).toBe("left");
+    expect(decide(call("team.remove", { task: "ACM-1", agent: "acme-builder" }))).toBe("approved");
     expect(decide(call("memory.forget", { id: "f1" }))).toBe("left");
     // Where agents reach, and the owner's settings.
     for (const command of [

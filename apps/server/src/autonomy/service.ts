@@ -1304,7 +1304,11 @@ export class AutonomyService {
     if (group === "tasks" || group === "team" || starts) {
       // Starting work needs the start row. Any other change to a task needs the captain to start work or do upkeep there.
       const rows: readonly AuthorityRow[] = starts ? ["start"] : ["upkeep", "start"];
-      const outside = authorityProblem(authorityOf(settings, org), state.mode, rows, org, names);
+      // Full access: the owner lets the captain act here even while Auto-pilot is off.
+      const outside =
+        settings.orgs[org]?.fullAccess === true
+          ? undefined
+          : authorityProblem(authorityOf(settings, org), state.mode, rows, org, names);
       if (outside !== undefined) return `Refused: ${outside}.`;
     }
     // "More rules": the AI tools the work it starts here may run on.

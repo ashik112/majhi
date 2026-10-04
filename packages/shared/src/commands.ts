@@ -3702,19 +3702,15 @@ export const commands = {
 
 export type CommandName = keyof typeof commands;
 
-/** Verbs after the dot that remove something, whatever the command's risk class says. */
-const DESTRUCTIVE_VERB = /^(remove|delete|forget)/i;
-
 /**
- * True for a command that removes or forgets something: its risk is `destructive`, or the word after
- * the last dot starts with remove, delete or forget. That also catches `team.remove`,
- * `tasks.removeAgent` and `projects.remove`, which are `change`. These always wait for the owner's
- * click: no approval mode or auto-allow rule covers them.
+ * True for a command whose risk is `destructive`: it deletes data or access that cannot be had back
+ * from majhi's config history, like secrets, memory, tasks, connections or a backup restore. These
+ * always wait for the owner's click: no approval mode, rule or full access covers them. Removing a
+ * setting (a watch, a playbook, a goal) is a plain change.
  */
 export function isDestructiveCommand(name: string): boolean {
   const def = Object.hasOwn(commands, name) ? commands[name as CommandName] : undefined;
-  if (def?.risk === "destructive") return true;
-  return DESTRUCTIVE_VERB.test(name.slice(name.lastIndexOf(".") + 1));
+  return def?.risk === "destructive";
 }
 export type CommandInput<N extends CommandName> = z.input<(typeof commands)[N]["input"]>;
 export type CommandOutput<N extends CommandName> = z.infer<(typeof commands)[N]["output"]>;

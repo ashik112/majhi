@@ -26,7 +26,8 @@ describe("approval decision table", () => {
       commands: { "agents.remove": "auto", "team.remove": "auto" },
     });
     expect(effectiveMode(policy, "agents.remove", "destructive")).toBe("confirm");
-    expect(effectiveMode(policy, "team.remove", "change")).toBe("confirm");
+    // Removing a setting is a plain change: the policy decides it.
+    expect(effectiveMode(policy, "team.remove", "change")).toBe("auto");
   });
 
   it.each([
@@ -84,11 +85,14 @@ describe("isDestructiveCommand", () => {
   it.each([
     ["agents.remove", true],
     ["policy.set", true],
-    ["team.remove", true],
-    ["tasks.removeAgent", true],
-    ["projects.remove", true],
+    ["team.remove", false],
+    ["tasks.removeAgent", false],
+    ["projects.remove", false],
+    ["watch.remove", false],
+    ["secrets.remove", true],
+    ["connections.remove", true],
     ["memory.forget", true],
-    ["things.deleteAll", true],
+    ["things.deleteAll", false],
     ["orgs.create", false],
     ["tasks.merge", false],
     ["tasks.terminal.open", false],
@@ -127,8 +131,8 @@ describe("matchRule", () => {
     const remove = { ...call, command: "agents.remove" };
     expect(matchRule(policy([rule]), remove)).toBeUndefined();
     expect(matchRule(policy([rule], true), remove)).toBeUndefined();
-    const soft = { agent: "acme-builder", command: "team.remove", task: "ACM-1" };
-    expect(matchRule(policy([soft], true), { ...call, command: "team.remove" })).toBeUndefined();
+    const soft = { agent: "acme-builder", command: "tasks.remove", task: "ACM-1" };
+    expect(matchRule(policy([soft], true), { ...call, command: "tasks.remove" })).toBeUndefined();
   });
 
   it("accepts a rule with exactly one scope", () => {
