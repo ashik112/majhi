@@ -213,10 +213,8 @@ describe("a failing self-check is an incident in Private", () => {
       await gone.ops.watch.watchSelf([disk("fail")]);
       gone.advance(5 * MIN);
     }
-    for (let i = 0; i < 4; i++) {
-      await gone.ops.watch.watchSelf([]);
-      gone.advance(5 * MIN);
-    }
+    // One pass without the check closes it: nothing could ever turn it green.
+    await gone.ops.watch.watchSelf([]);
     expect(gone.ops.repo.open()).toEqual([]);
   });
 

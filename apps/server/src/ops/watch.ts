@@ -828,7 +828,7 @@ export class OpsWatch {
 
   /**
    * One pass over majhi's own checks, as incidents in the Private workspace. Failing twice in a row opens
-   * one, green for the resolve time closes it. A check that is gone counts as passing.
+   * one, green for the resolve time closes it. An incident whose check is gone closes at once.
    */
   async watchSelf(
     checks: readonly {
@@ -876,8 +876,9 @@ export class OpsWatch {
     }
     for (const inc of this.deps.repo.open()) {
       if (!inc.key.startsWith("self:") || seen.has(inc.key)) continue;
-      await this.record(inc.key, "url", { ok: true, detail: "no longer checked" });
-      changes += await this.evaluate({ id: inc.key, org: inc.org, name: inc.title, impact: inc.severity });
+      // The thing it checked is gone (a removed connection): nothing can turn it green, so it closes now.
+      await this.resolve(inc, "No longer checked: what it watched was removed");
+      changes += 1;
     }
     return changes;
   }
