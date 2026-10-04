@@ -6,9 +6,12 @@ import { join } from "node:path";
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
 // better-sqlite3 belongs to the server package; the throwaway database is opened through it.
-const Database = createRequire(join(process.cwd(), "apps/server/package.json"))(
-  "better-sqlite3",
-) as typeof import("better-sqlite3");
+const Database = createRequire(join(process.cwd(), "apps/server/package.json"))("better-sqlite3") as new (
+  path: string,
+) => {
+  prepare(sql: string): { run(...args: unknown[]): unknown };
+  close(): void;
+};
 
 /**
  * The Watch page (SPEC 5.18, Ops watch): services by workspace with their lamps, the open incident with its
