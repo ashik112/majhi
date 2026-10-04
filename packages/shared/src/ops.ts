@@ -109,7 +109,8 @@ export const OpsTimelineEntrySchema = z.object({
   at: z.string(),
   /** opened, alerted, escalated, acked, action (what the captain did), reopened, resolved. */
   kind: z.enum(["opened", "alerted", "escalated", "acked", "action", "reopened", "resolved", "note"]),
-  text: z.string().max(300),
+  /** Kept whole up to 8000 characters: an error's cause often comes after a long command line. */
+  text: z.string().max(8000),
 });
 export type OpsTimelineEntry = z.infer<typeof OpsTimelineEntrySchema>;
 

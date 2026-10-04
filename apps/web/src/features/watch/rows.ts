@@ -34,6 +34,8 @@ export interface Row {
   status: WatchStatus;
   /** One word beside the lamp. */
   word: string;
+  /** Its open incident was acknowledged: still not fine, but nothing for the owner to do now. */
+  acked?: boolean;
   watch?: WatchView;
   service?: OpsServiceView;
   incident?: OpsIncident;
