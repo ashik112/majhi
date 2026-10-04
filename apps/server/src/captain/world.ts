@@ -47,6 +47,8 @@ import { upkeepWorld } from "./upkeep-world.ts";
  */
 
 export interface WorldDeps {
+  /** Why the machine cannot take more work now, or undefined. */
+  machineBusy?: () => string | undefined;
   store: Store;
   accounts: AccountService;
   config: ConfigService;
@@ -410,7 +412,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Follow-ups and findings
 
     findings: deps.findings,
-    upkeep: upkeepWorld({ run, store, now: () => new Date() }),
+    upkeep: upkeepWorld({ run, store, now: () => new Date(), machineBusy: deps.machineBusy }),
     followUps: {
       openThreads: (org) =>
         deps.memory.project

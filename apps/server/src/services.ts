@@ -108,6 +108,7 @@ import { clientUpdate } from "./growth/update.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { busyReason } from "./machine/busy.ts";
 import { MachineSensor } from "./machine/sensor.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
@@ -1514,6 +1515,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
+      machineBusy: () => busyReason(machine.get()?.host),
       store,
       accounts,
       config,

@@ -171,6 +171,17 @@ describe("agent slots", () => {
     expect(t.findings.filed.has("slots:main:4")).toBe(true);
   });
 
+  it("never raises while the machine is busy", async () => {
+    const setAccountSlots = vi.fn(async () => {});
+    const t = setup({
+      upkeep: { ...slots(2), setAccountSlots, machineBusy: () => "the machine is busy: load 30.0 on 10 cores" },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    await t.runner.start("acme", "checklist", "daily");
+    expect(setAccountSlots).not.toHaveBeenCalled();
+    expect(t.findings.filed.has("slots:main:2")).toBe(true);
+  });
+
   it("asks the owner without full access", async () => {
     const setAccountSlots = vi.fn(async () => {});
     const t = setup({ upkeep: { ...slots(2), setAccountSlots } });

@@ -100,7 +100,12 @@ export async function projectTerms(path: string): Promise<string[]> {
   return terms;
 }
 
-export function upkeepWorld(deps: { run: Run; store: Store; now: () => Date }): UpkeepPorts {
+export function upkeepWorld(deps: {
+  run: Run;
+  store: Store;
+  now: () => Date;
+  machineBusy?: (() => string | undefined) | undefined;
+}): UpkeepPorts {
   const daysSince = (at: string) => (deps.now().getTime() - Date.parse(at)) / DAY_MS;
 
   const connections = async (org: string) =>
@@ -314,6 +319,7 @@ export function upkeepWorld(deps: { run: Run; store: Store; now: () => Date }): 
       return out;
     },
 
+    machineBusy: () => deps.machineBusy?.(),
     async slots(): Promise<AccountSlots[]> {
       const cap = SlotCapacitySchema.parse((await deps.run("tasks.slots", {}, "Upkeep: slots")).output);
       const budgets = BudgetStatusSchema.parse((await deps.run("budgets.status", {}, "Upkeep: budgets")).output);

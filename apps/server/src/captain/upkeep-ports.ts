@@ -68,6 +68,8 @@ export interface UpkeepPorts {
   /** Backups, disk, budgets and the like, as findings. */
   checklist(org: string): Promise<Signal[]>;
   slots(): Promise<AccountSlots[]>;
+  /** Why the machine cannot take more agents at once now, or undefined. */
+  machineBusy?(): string | undefined;
   /** Sets the limit of agents at once on one account. */
   setAccountSlots(limit: number): Promise<void>;
 }

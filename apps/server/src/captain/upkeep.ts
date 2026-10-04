@@ -2,6 +2,7 @@ import type { CaptainChore } from "@majhi/shared";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal } from "./upkeep-ports.ts";
+import { upperFirst } from "../machine/busy.ts";
 
 /**
  * The self-upkeep chores: the captain keeps majhi itself in shape. Each run is cheap, one pass over
@@ -270,11 +271,14 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
         const to = s.limit + 1;
         const base = `${s.account} has ${s.inUse} of ${s.limit} slots in use and ${s.waiting} ${s.waiting === 1 ? "start" : "starts"} waiting`;
         const key = `slots:${s.account}:${s.limit}`;
-        if (s.limit >= MAX_ACCOUNT_SLOTS || !s.headroom) {
+        const busy = u.machineBusy?.();
+        if (s.limit >= MAX_ACCOUNT_SLOTS || !s.headroom || busy !== undefined) {
           const why =
             s.limit >= MAX_ACCOUNT_SLOTS
               ? `The captain does not raise it past ${MAX_ACCOUNT_SLOTS}`
-              : "Its weekly use is high";
+              : busy !== undefined
+                ? upperFirst(busy)
+                : "Its weekly use is high";
           const f: Signal = {
             key,
             title: `Agents wait for a slot on ${s.account}`,
