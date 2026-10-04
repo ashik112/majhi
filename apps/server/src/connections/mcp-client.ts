@@ -5,6 +5,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+
+const ToolNamesSchema = z.object({
+  tools: z.array(z.looseObject({ name: z.string() })),
+  nextCursor: z.string().optional(),
+});
 
 /** Pages of `tools/list` read at most. */
 const MAX_PAGES = 10;
@@ -85,9 +91,13 @@ export async function listTools(transport: Transport, timeoutMs: number): Promis
     const names: string[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const result = await client.listTools(cursor === undefined ? undefined : { cursor }, {
-        timeout: timeoutMs,
-      });
+      // Only the names: a strict read of every tool's schemas fails the whole list on one tool a
+      // server describes loosely (DigitalOcean's Networking and Functions do).
+      const result = await client.request(
+        { method: "tools/list", ...(cursor === undefined ? {} : { params: { cursor } }) },
+        ToolNamesSchema,
+        { timeout: timeoutMs },
+      );
       names.push(...result.tools.map((t) => t.name));
       cursor = result.nextCursor;
       if (cursor === undefined) break;
