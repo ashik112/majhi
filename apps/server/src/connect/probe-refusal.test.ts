@@ -22,7 +22,11 @@ describe("probeToken", () => {
       "t",
       answer(302, "", { location: "https://gitlab.example/users/sign_in" }),
     );
-    expect(probe).toEqual({ kind: "other", status: 302, reason: "it sent majhi to gitlab.example/users/sign_in" });
+    expect(probe).toEqual({
+      kind: "other",
+      status: 302,
+      reason: "it sent majhi to gitlab.example/users/sign_in",
+    });
   });
 
   it("no answer in time is slow, not unreachable", async () => {

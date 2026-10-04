@@ -459,7 +459,9 @@ export async function probeToken(
       reason: refusalReason(res.headers.get("www-authenticate"), body),
     };
   } catch (err) {
-    return err instanceof DOMException && err.name === "TimeoutError" ? { kind: "slow" } : { kind: "unreachable" };
+    return err instanceof DOMException && err.name === "TimeoutError"
+      ? { kind: "slow" }
+      : { kind: "unreachable" };
   }
 }
 
