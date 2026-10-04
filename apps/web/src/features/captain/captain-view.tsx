@@ -3,7 +3,6 @@ import { Ship } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Sheet } from "@/components/ui/sheet";
-import { RowsSkeleton } from "@/components/ui/skeleton";
 import { markSeen } from "@/features/autonomy/summary-seen";
 import { useBoss } from "@/features/boss/boss-context";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
