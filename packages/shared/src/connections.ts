@@ -15,7 +15,7 @@ import { IdSchema, SecretRefSchema } from "./ids.ts";
  * description, never a value.
  */
 
-export const ConnectionTypeSchema = z.enum(["kubectl", "mcp", "ssh", "env", "mail", "browser"]);
+export const ConnectionTypeSchema = z.enum(["kubectl", "mcp", "ssh", "env", "mail", "browser", "api", "cli"]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 
 /** Where a value is kept: secrets.age, majhi.yaml, or a file of the connection. */
@@ -262,6 +262,30 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     summary: "Named values for CLIs and APIs, like aws, psql or an API key",
     fields: [
       {
+        key: "service",
+        label: "Service",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "The catalog entry a guided app setup made this for.",
+      },
+      {
+        key: "access",
+        label: "Access",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "What the owner turned on when it was set up.",
+      },
+      {
+        key: "account",
+        label: "Signed in as",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "Who the service says the token belongs to.",
+      },
+      {
         key: "clis",
         label: "For",
         kind: "text",
@@ -392,7 +416,67 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     ],
     lists: [],
   },
+  {
+    type: "api",
+    label: "Signed-in service",
+    summary: "A service majhi signed in to for you. Runs get a short-lived token in a variable",
+    fields: [
+      {
+        key: "service",
+        label: "Service",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The catalog entry this sign-in is for.",
+      },
+      {
+        key: "auth",
+        label: "Sign-in",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "majhi renews the token. The refresh token never leaves majhi.",
+        choices: [{ value: "oauth", label: "Sign in with the service" }],
+      },
+      {
+        key: "token_var",
+        label: "Variable",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The variable a run gets the access token in.",
+      },
+    ],
+    lists: [],
+  },
+  {
+    type: "cli",
+    label: "Command-line tool",
+    summary: "A tool's own login, kept in a folder of this workspace. Only its runs see it",
+    fields: [
+      {
+        key: "tool",
+        label: "Tool",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The command-line tool this sign-in is for.",
+      },
+      {
+        key: "account",
+        label: "Signed in as",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "Who the tool says is signed in.",
+      },
+    ],
+    lists: [],
+  },
 ];
+
+/** Types only Connect makes (5.14): the new-connection form does not offer them. */
+export const CONNECT_ONLY_TYPES: readonly ConnectionType[] = ["api", "cli"];
 
 const BY_TYPE = new Map(CONNECTION_TYPES.map((def) => [def.type, def]));
 

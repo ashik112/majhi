@@ -115,8 +115,10 @@ export class ConnectionTester {
     if (found === undefined) throw new UserError(`There is no connection ${id}.`, 404);
     if (
       this.deps.oauth !== undefined &&
-      found.connection.type === "mcp" &&
-      textValue(found.connection, "auth") === "oauth"
+      ((found.connection.type === "mcp" && textValue(found.connection, "auth") === "oauth") ||
+        found.connection.type === "api" ||
+        found.connection.type === "cli" ||
+        (found.connection.type === "env" && found.connection.fields?.service !== undefined))
     ) {
       // Signed in through Connect: the token is majhi's to renew and send, not a header of the form.
       const result = await this.deps.oauth.test(id);
@@ -190,6 +192,9 @@ export class ConnectionTester {
         return values.fields.mode === "mcp" ? this.mcp(values) : this.mail(values);
       case "browser":
         return this.browser(values);
+      case "api":
+      case "cli":
+        return Promise.resolve(fail("This connection is checked through Connect."));
     }
   }
 

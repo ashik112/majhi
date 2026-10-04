@@ -411,7 +411,7 @@ function readCommand(
     readKubectl(args, text, intoFile, kubectl, held, result);
     return;
   }
-  const env = held.find((c) => c.type === "env" && c.clis?.includes(name));
+  const env = held.find((c) => (c.type === "env" || c.type === "cli") && c.clis?.includes(name));
   if (env !== undefined) {
     const verb = cliVerb(args);
     if (verb === "read" && !intoFile) result.read(env.id);

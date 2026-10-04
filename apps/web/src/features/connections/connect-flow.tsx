@@ -73,7 +73,9 @@ export function ConnectFlowCard({
   const lampState = LAMP[view.state];
   const title =
     view.state === "waiting"
-      ? "Waiting for you in the browser"
+      ? view.code !== undefined
+        ? "Waiting for the code"
+        : "Waiting for you in the browser"
       : view.state === "checking"
         ? "Checking the sign-in"
         : view.state === "confirm-account"
@@ -98,10 +100,18 @@ export function ConnectFlowCard({
       {view.state !== "connected" && view.state !== "waiting" && (
         <p className="text-base text-fg-muted text-pretty">{view.message}</p>
       )}
+      {view.state === "waiting" && view.code !== undefined && (
+        <div className="flex flex-col gap-1 rounded-lg border border-line bg-sunken p-3">
+          <p className="text-sm text-fg-muted">Type this code on the page.</p>
+          <p className="font-mono text-xl tracking-[0.2em] text-fg">{view.code}</p>
+        </div>
+      )}
       {view.state === "waiting" && view.url !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-sunken p-3">
           <p className="text-sm text-fg-muted">
-            majhi could not open your browser. Open this page yourself, sign in and approve.
+            {view.opened
+              ? "Opened in your browser. If it did not show, use this link."
+              : "majhi could not open your browser. Open this page yourself, sign in and approve."}
           </p>
           <p className="min-w-0 truncate font-mono text-xs text-fg-faint" title={view.url}>
             {view.url}
@@ -126,9 +136,11 @@ export function ConnectFlowCard({
           </div>
         </div>
       )}
-      {view.state === "waiting" && view.url === undefined && (
+      {view.state === "waiting" && view.url === undefined && view.code === undefined && (
         <p className="text-sm text-fg-faint">
-          The page is open in your browser. This waits up to ten minutes.
+          {view.message.startsWith("Starting")
+            ? view.message
+            : "The page is open in your browser. This waits up to ten minutes."}
         </p>
       )}
       {view.state === "connected" && (

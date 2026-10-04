@@ -11,7 +11,7 @@ import {
   stat,
   statfs,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   BACKUP_KEEP_DAILY,
   BACKUP_KEEP_SAFETY,
@@ -121,6 +121,21 @@ export function fileSources(home: string): DbSource[] {
 }
 
 /**
+ * The default folder is made by the first backup, so on a fresh install it may not exist yet: that is
+ * fine while its nearest existing parent is writable. A folder the owner picked must exist.
+ */
+async function writableOrCreatable(path: string, custom: boolean): Promise<void> {
+  try {
+    await access(path, constants.W_OK);
+  } catch (err) {
+    if (custom || (err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    let parent = dirname(path);
+    while (!existsSync(parent) && dirname(parent) !== parent) parent = dirname(parent);
+    await access(parent, constants.W_OK);
+  }
+}
+
+/**
  * Backs up everything majhi cannot rebuild into one encrypted archive: the databases (online copies,
  * so majhi keeps working), the config history and its agent and skill files, and the encrypted
  * secrets file. Daily, plus before an update or a migration; weekly it restores the newest one into
@@ -183,7 +198,7 @@ export class BackupService {
       readState(this.home),
       this.files(),
     ]);
-    const unreachable = await access(dest.path, constants.W_OK).then(
+    const unreachable = await writableOrCreatable(dest.path, dest.custom).then(
       () => undefined,
       () => `majhi cannot write to ${dest.path} right now.`,
     );

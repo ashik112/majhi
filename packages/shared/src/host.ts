@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CliToolIdSchema } from "./cli-tools.ts";
 import { LayaStatusSchema } from "./decisions.ts";
 import { E2eRunResultSchema } from "./e2e.ts";
 import { GitHostNameSchema, SignInIdSchema } from "./git-signin.ts";
@@ -275,7 +276,7 @@ export const HostLoginProgressSchema = z.object({
     url: z.url({ protocol: /^https?$/ }).max(4096),
     code: z
       .string()
-      .regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+      .regex(/^[A-Z0-9]{3,8}(-[A-Z0-9]{3,8})?$/)
       .optional(),
   }),
 });
@@ -312,6 +313,29 @@ export const GitCliLoginResultSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("cancelled") }),
 ]);
 export type GitCliLoginResult = z.infer<typeof GitCliLoginResultSchema>;
+
+/**
+ * What a `cli.login` ended with.
+ * - `done`: the tool signed in and its own check command worked. `identity` is who, as the check
+ *   printed it (an email or a name), never a token.
+ * - `other-account`: it signed in as someone else than `expected`. The old sign-in was kept.
+ */
+export const CliLoginResultSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("missing") }),
+  z.object({ state: z.literal("done"), identity: z.string().max(200).optional() }),
+  z.object({ state: z.literal("other-account"), identity: z.string().max(200).optional() }),
+  z.object({ state: z.literal("cancelled") }),
+]);
+export type CliLoginResult = z.infer<typeof CliLoginResultSchema>;
+
+export const CliCheckResultSchema = z.object({
+  /** False when the tool is missing, signed out or did not answer. */
+  ok: z.boolean(),
+  identity: z.string().max(200).optional(),
+  /** One safe sentence, never the tool's own output. */
+  detail: z.string().max(300),
+});
+export type CliCheckResult = z.infer<typeof CliCheckResultSchema>;
 
 /** Longest path the editor jobs take. */
 export const EDITOR_PATH_MAX = 4096;
@@ -459,6 +483,40 @@ export const HostJobSchema = z.discriminatedUnion("method", [
       host: GitHostNameSchema,
     }),
   }),
+  /**
+   * Sign a workspace in to a command-line tool with the tool's own login, in the folder of one
+   * connection (`<MAJHI_HOME>/connections/<connection>/profile`), with an environment built here.
+   * The login runs in a staging folder that replaces the profile only when the tool's check
+   * command works (and, with `expected`, names the same account). Failure, cancel and timeout
+   * remove the staging folder and keep the old profile. Posts `HostLoginProgress`.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("cli.login"),
+    params: z.object({
+      signIn: SignInIdSchema,
+      tool: CliToolIdSchema,
+      connection: IdSchema,
+      expected: z.string().max(200).optional(),
+    }),
+  }),
+  z.object({
+    id: z.string(),
+    method: z.literal("cli.loginCancel"),
+    params: z.object({ signIn: SignInIdSchema }),
+  }),
+  /** Runs the tool's check command in the connection's profile. */
+  z.object({
+    id: z.string(),
+    method: z.literal("cli.check"),
+    params: z.object({ tool: CliToolIdSchema, connection: IdSchema }),
+  }),
+  /** Runs the tool's logout in the connection's profile, then removes the profile. */
+  z.object({
+    id: z.string(),
+    method: z.literal("cli.logout"),
+    params: z.object({ tool: CliToolIdSchema, connection: IdSchema }),
+  }),
   /** Stops the `git.cliLogin` of this sign-in: kills the CLI. `cancelled` is false when none ran. */
   z.object({
     id: z.string(),
@@ -563,6 +621,10 @@ export const HostResultSchemas = {
   "git.lsRemote": z.object({ empty: z.boolean(), defaultBranch: z.string().optional() }),
   "git.cliLogin": GitCliLoginResultSchema,
   "git.cliLoginCancel": z.object({ cancelled: z.boolean() }),
+  "cli.login": CliLoginResultSchema,
+  "cli.loginCancel": z.object({ cancelled: z.boolean() }),
+  "cli.check": CliCheckResultSchema,
+  "cli.logout": z.object({ revoked: z.boolean() }),
   "git.credential": z.object({ secret: z.string().min(1) }),
   update: z.object({ accepted: z.literal(true) }),
   restart: z.object({ accepted: z.literal(true) }),

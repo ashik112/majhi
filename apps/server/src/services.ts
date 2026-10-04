@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
+  BUILT_IN_CONNECT_APPS,
   type CaptainChore,
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -53,6 +54,8 @@ import { captainWorld } from "./captain/world.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
+import { AppClientStore } from "./connect/app-client.ts";
+import { hostCli } from "./connect/cli-connect.ts";
 import { GrantStore } from "./connect/grant.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
@@ -1545,7 +1548,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const connect = new ConnectService({
     grants: new GrantStore(secrets),
-    connections: connections,
+    apps: new AppClientStore(secrets),
+    builtInApps: BUILT_IN_CONNECT_APPS,
+    githubClientId: async () => (await gitConnect.apps()).github?.clientId,
+    ...(options.hostLink === undefined ? {} : { cli: hostCli(options.hostLink) }),
+    orgName: async (org) => (await config.sections()).orgs[org]?.name,
+    secretOf: async (connection, name) => {
+      const orgs = (await config.sections()).orgs;
+      for (const entry of Object.values(orgs)) {
+        const ref = entry.connections?.[connection]?.vars?.[name]?.value;
+        if (ref !== undefined && ref.startsWith("secret:")) return secrets.get(ref.slice("secret:".length));
+      }
+      return undefined;
+    },
+    connections: {
+      create: (input, command, meta) => connections.create(input, command, meta),
+      remove: (id, command, meta) => connections.remove(id, command, meta),
+      find: (id) => connections.find(id),
+      setSecret: (input, command, meta) => connections.setSecret(input, command, meta),
+    },
     connectionIds: async () =>
       Object.entries((await config.sections()).orgs).flatMap(([org, entry]) =>
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),

@@ -8,9 +8,9 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.setItem("majhi.setup.skipped", "1"));
 });
 
-test("Hub setup: the Decisions section shows the providers and answers a question", async ({ page }) => {
+test("Hub setup: the Laya section shows the providers and answers a question", async ({ page }) => {
   await page.goto("/setup?section=decisions");
-  const section = page.getByRole("region", { name: "Decisions" });
+  const section = page.getByRole("region", { name: "Laya" });
   await expect(section).toBeVisible();
   const order = section.getByRole("list", { name: "Provider order" });
   await expect(order.getByRole("listitem")).toHaveCount(3);
