@@ -170,7 +170,12 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
-    ...agendaHandlers(services.agenda),
+    ...agendaHandlers({
+      agenda: services.agenda,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+    }),
     ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
@@ -186,6 +191,10 @@ export function createHandlers({
       engine: services.ops.engine,
       phone: services.ops.phone,
       playbooks: services.playbooks,
+      repo: services.ops.repo,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
     }),
     ...outcomesHandlers({
       findings: services.findings,
@@ -305,7 +314,10 @@ export function createHandlers({
 
     "orgs.useSavedLogin": async (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
-        throw new UserError("Only the owner can use this computer's saved login. Ask them to click it.", 409);
+        throw new UserError(
+          "Only the owner can use this computer's saved login, under Git accounts on the Workspaces page.",
+          409,
+        );
       }
       return useSavedLogin(
         {
@@ -510,7 +522,10 @@ export function createHandlers({
       if (input.protected === false && ctx.meta.actor.kind === "agent") {
         const current = (await services.projects.infos()).find((p) => p.id === input.id);
         if (current?.protected === true) {
-          throw new UserError(`Only the owner can turn protection off for ${input.id}.`, 409);
+          throw new UserError(
+            `Only the owner can turn protection off for ${input.id}, on the Projects and links page.`,
+            409,
+          );
         }
       }
       return services.projects.update(input, ctx.command, ctx.meta);
@@ -575,7 +590,7 @@ export function createHandlers({
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
       if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
-        throw new UserError("Only the owner can ship a protected repo.", 409);
+        throw new UserError("Only the owner can ship a protected repo, from Ship in the task.", 409);
       }
       if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
         throw new UserError(
@@ -592,15 +607,9 @@ export function createHandlers({
           })
         : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) });
     },
-    "tasks.updateTarget": (input, ctx) => {
-      if (ctx.meta.actor.kind === "agent") {
-        throw new UserError(
-          "Only the owner can update a branch in their checkout. Ask them to click Update in Ship.",
-          409,
-        );
-      }
-      return services.mrs.updateTarget({ ...input, by: "owner" });
-    },
+    // A fast-forward only, never forced: an agent asks through the owner's approval policy.
+    "tasks.updateTarget": (input, ctx) =>
+      services.mrs.updateTarget({ ...input, by: actorName(ctx.meta.actor) }),
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({

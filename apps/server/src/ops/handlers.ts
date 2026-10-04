@@ -1,9 +1,11 @@
 import type { WatchDef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
+import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { PlaybookService } from "../playbooks/service.ts";
 import type { WatchEngine } from "./anything/engine.ts";
 import type { PhoneChannel } from "./phone.ts";
+import type { OpsRepo } from "./repo.ts";
 import type { OpsWatch } from "./watch.ts";
 
 type OpsCommand =
@@ -27,27 +29,31 @@ type OpsCommand =
   | "watch.snooze"
   | "watch.report";
 
-export interface OpsHandlerDeps {
+export interface OpsHandlerDeps extends FindingsHandlerDeps {
   watch: OpsWatch;
   engine: WatchEngine;
   phone: PhoneChannel;
   playbooks: PlaybookService;
+  repo: Pick<OpsRepo, "service" | "incident">;
 }
 
 /** The watch playbook that carries the owner's services. */
 export const WATCH_PLAYBOOK = "ops-uptime";
 
 /**
- * The `ops.*` commands are the owner's: an agent never changes the uptime services, who is told, or
- * who may answer from a phone. Watches an agent may add and change, through the owner's approval
- * policy like any change, as long as they only tell: no fix, no action, no phone page. Those stay
- * the owner's, also on a watch the owner made.
+ * Uptime services and incidents an agent reads, adds, changes and acknowledges through the owner's
+ * approval policy like any change. Who is paged and when (the phone push and the escalation
+ * settings) stays the owner's. Watches an agent may add and change the same way, as long as they
+ * only tell: no fix, no action, no phone page. Those stay the owner's, also on a watch the owner made.
  */
 export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsCommand> {
   const { watch, phone, playbooks, engine } = deps;
   const owner = (ctx: CommandContext): void => {
     if (ctx.meta.actor.kind === "agent") {
-      throw new UserError(`${ctx.command} is the owner's. The captain reads incidents as findings.`, 409);
+      throw new UserError(
+        `${ctx.command} is the owner's: who is paged and when. The owner sets it in Alerts and phone on the Watch page.`,
+        409,
+      );
     }
   };
   /** Why an agent may not save this watch, or undefined when it only tells. */
@@ -72,13 +78,23 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       );
     }
   };
+  /**
+   * The workspace an agent works in: a lane or a task its own, the captain outside a lane any. A
+   * service or incident of another workspace is refused; one that does not exist is the call's to say.
+   */
+  const scope = async (ctx: CommandContext, asked: string | undefined): Promise<string | undefined> => {
+    const actor = await findingActor(deps, ctx);
+    if (actor.kind === "owner" || actor.org === undefined) return asked;
+    if (asked !== undefined && asked !== actor.org) {
+      throw new UserError("You work in your own workspace only.", 409);
+    }
+    return actor.org;
+  };
   return {
-    "ops.overview": async (input, ctx) => {
-      owner(ctx);
-      return watch.overview(input.org);
-    },
+    "ops.overview": async (input, ctx) => watch.overview(await scope(ctx, input.org)),
     "ops.serviceSave": async (input, ctx) => {
-      owner(ctx);
+      await scope(ctx, input.org);
+      if (input.id !== undefined) await scope(ctx, deps.repo.service(input.id)?.org);
       const view = await watch.saveService(input);
       // Watching a service means the watch runs for its workspace.
       const list = await playbooks.list(input.org).catch(() => undefined);
@@ -89,16 +105,16 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       return view;
     },
     "ops.serviceRemove": async (input, ctx) => {
-      owner(ctx);
+      await scope(ctx, deps.repo.service(input.id)?.org);
       await watch.removeService(input.id);
       return { id: input.id };
     },
     "ops.checkNow": async (input, ctx) => {
-      owner(ctx);
+      await scope(ctx, deps.repo.service(input.id)?.org);
       return watch.checkNow(input.id);
     },
     "ops.ack": async (input, ctx) => {
-      owner(ctx);
+      await scope(ctx, deps.repo.incident(input.id)?.org);
       return watch.ack(input.id);
     },
     "ops.settings": async (input, ctx) => {

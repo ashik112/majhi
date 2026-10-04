@@ -43,7 +43,9 @@ export interface GitConnectHandlerDeps {
 
 /** Sign-in and the OAuth apps are the owner's: an agent never gets them, even past the agent-blocked set. */
 function ownerOnly(ctx: CommandContext, what: string): void {
-  if (ctx.meta.actor.kind === "agent") throw new UserError(`Only the owner can ${what}.`, 409);
+  if (ctx.meta.actor.kind === "agent") {
+    throw new UserError(`Only the owner can ${what}, under Git accounts on the Workspaces page.`, 409);
+  }
 }
 
 const change = (ctx: CommandContext) => ({ command: ctx.command, meta: ctx.meta });

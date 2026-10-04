@@ -23,8 +23,13 @@ export interface OutcomesHandlerDeps extends FindingsHandlerDeps {
 /** The ceiling, the rates, the minutes and the ladder's undo are the owner's: the captain never changes its own. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
+    const where: Record<string, string> = {
+      "money.set": " The owner sets it on the Health & usage page.",
+      "scorecard.setMinutes": " The owner sets it on the Captain page.",
+      "trust.unmute": " The owner does it on the Captain page.",
+    };
     throw new UserError(
-      `${ctx.command} is the owner's. The captain never changes its own trust or ceiling.`,
+      `${ctx.command} is the owner's: the captain never changes its own trust or ceiling.${where[ctx.command] ?? ""}`,
       409,
     );
   }

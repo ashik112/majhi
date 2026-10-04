@@ -900,26 +900,28 @@ export const commands = {
   "playbooks.update": {
     risk: "change",
     summary:
-      "Turn a playbook on or off in a workspace, change its cadence or quiet hours, link it to a goal, or fill its settings (the URLs of an uptime check). The owner's: the captain never changes its own playbooks",
+      "Turn a playbook on or off in a workspace, change its cadence or quiet hours, link it to a goal, or fill its settings (the URLs of an uptime check). Agents change their own workspace's playbooks through the owner's approval; a chore's daily limit, turning an outcome rule on and a playbook that resumes tasks a limit paused are the owner's",
     input: PlaybookUpdateInputSchema,
     output: PlaybookViewSchema,
   },
   "playbooks.plan": {
     risk: "change",
     summary:
-      "Turn one sentence into a playbook of the owner's: the cheapest model drafts its name, schedule, steps, outputs and token budget, and it is saved off. The owner turns it on. The owner's: the captain never writes its own playbooks",
+      "Turn one sentence into a playbook: the cheapest model drafts its name, schedule, steps, outputs and token budget, and it is saved off until it is turned on. Agents plan in their own workspace through the owner's approval",
     input: PlaybookPlanInputSchema,
     output: PlaybookPlanResultSchema,
   },
   "playbooks.create": {
     risk: "change",
-    summary: "Add a playbook of the owner's from its fields. It is saved off. The owner's",
+    summary:
+      "Add a playbook from its fields. It is saved off. Agents add one in their own workspace through the owner's approval; a playbook that resumes tasks a limit paused is the owner's",
     input: PlaybookCreateInputSchema,
     output: PlaybookViewSchema,
   },
   "playbooks.remove": {
     risk: "change",
-    summary: "Delete a playbook the owner made. Shipped playbooks cannot be deleted. The owner's",
+    summary:
+      "Delete a playbook someone made. Shipped playbooks cannot be deleted. Agents delete one of their own workspace through the owner's approval",
     input: PlaybookRemoveInputSchema,
     output: z.object({ id: z.string() }),
   },
@@ -973,7 +975,8 @@ export const commands = {
   },
   "goals.remove": {
     risk: "change",
-    summary: "Delete a goal. The owner's. Playbooks and findings that pointed at it lose the link",
+    summary:
+      "Delete a goal. The owner, or the captain through the owner's approval. Playbooks and findings that pointed at it lose the link",
     input: GoalRemoveInputSchema,
     output: z.object({ id: z.string() }),
   },
@@ -1014,33 +1017,33 @@ export const commands = {
   "ops.overview": {
     risk: "read",
     summary:
-      "The watched services of every workspace with their check state and 24 hour latency, the open and recent incidents with their timelines, the phone push status and the escalation settings. The owner's",
+      "The watched services of every workspace with their check state and 24 hour latency, the open and recent incidents with their timelines, the phone push status and the escalation settings. An agent reads its own workspace",
     input: OpsOverviewInputSchema,
     output: OpsOverviewSchema,
   },
   "ops.serviceSave": {
     risk: "change",
     summary:
-      "Add or change a watched service in a workspace: an address with the status, keyword or latency that counts as up, optional certificate and DNS checks, how bad an outage is, the project a fix opens in, and an optional monitoring read through an MCP connection. The owner's",
+      "Add or change a watched service in a workspace: an address with the status, keyword or latency that counts as up, optional certificate and DNS checks, how bad an outage is, the project a fix opens in, and an optional monitoring read through an MCP connection. Agents change their own workspace's services through the owner's approval",
     input: OpsServiceSaveInputSchema,
     output: OpsServiceViewSchema,
   },
   "ops.serviceRemove": {
     risk: "change",
-    summary: "Stop watching a service. Its open incident is resolved. The owner's",
+    summary: "Stop watching a service. Its open incident is resolved",
     input: OpsServiceIdInputSchema,
     output: z.object({ id: z.string() }),
   },
   "ops.checkNow": {
     risk: "change",
-    summary: "Run every check of one watched service now. The owner's",
+    summary: "Run every check of one watched service now",
     input: OpsServiceIdInputSchema,
     output: OpsServiceViewSchema,
   },
   "ops.ack": {
     risk: "change",
     summary:
-      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. The owner's",
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. Agents acknowledge their own workspace's incidents through the owner's approval",
     input: OpsAckInputSchema,
     output: OpsIncidentSchema,
   },
@@ -1107,7 +1110,8 @@ export const commands = {
   },
   "watch.remove": {
     risk: "change",
-    summary: "Stop watching something. Its open incident is resolved. A watch with a fix, an action, steps or a phone page is the owner's",
+    summary:
+      "Stop watching something. Its open incident is resolved. A watch with a fix, an action, steps or a phone page is the owner's",
     input: WatchIdInputSchema,
     output: z.object({ id: z.string() }),
   },
@@ -1211,14 +1215,14 @@ export const commands = {
   "findings.proposal": {
     risk: "change",
     summary:
-      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. The owner's",
+      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. Agents ask for one of their own workspace through the owner's approval",
     input: FindingProposalInputSchema,
     output: FindingProposalResultSchema,
   },
   "findings.deadline": {
     risk: "change",
     summary:
-      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. The owner's confirmation of what a feed proposed",
+      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. Agents add one of their own workspace through the owner's approval",
     input: FindingDeadlineInputSchema,
     output: FindingDeadlineResultSchema,
   },
@@ -1367,27 +1371,28 @@ export const commands = {
   "agenda.today": {
     risk: "read",
     summary:
-      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner only",
+      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner and the captain; a captain lane reads its own workspace",
     input: AgendaTodayInputSchema,
     output: AgendaTodaySchema,
   },
   "agenda.configure": {
     risk: "change",
     summary:
-      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner, or the captain through the owner's approval",
     input: AgendaConfigureInputSchema,
     output: AgendaTodaySchema,
   },
   "agenda.brief": {
     risk: "change",
     summary:
-      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner only",
+      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner, or the captain through the owner's approval",
     input: AgendaBriefInputSchema,
     output: AgendaTodaySchema,
   },
   "agenda.dismissBrief": {
     risk: "change",
-    summary: "Dismiss the morning brief of a day on Today. The owner only",
+    summary:
+      "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
   },
@@ -2078,7 +2083,7 @@ export const commands = {
   "tasks.updateTarget": {
     risk: "change",
     summary:
-      "Owner only. Fetch the MR remote's copy of a target branch and fast-forward the owner's local branch of the same name to it, in the project's checkout. Only when the local branch has no commit the remote lacks; where the branch is checked out, only when no incoming file has uncommitted changes and no untracked path is in the way. Never forced, never a reset, no other branch moves. Refused with the reason otherwise",
+      "Fetch the MR remote's copy of a target branch and fast-forward the owner's local branch of the same name to it, in the project's checkout. Only when the local branch has no commit the remote lacks; where the branch is checked out, only when no incoming file has uncommitted changes and no untracked path is in the way. Never forced, never a reset, no other branch moves. Refused with the reason otherwise. Agents ask through the owner's approval",
     input: z.object({
       id: TaskIdSchema,
       /** The branch to update. Default: each repo's base branch. */

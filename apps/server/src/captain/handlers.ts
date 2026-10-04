@@ -19,7 +19,10 @@ type CaptainCommand =
 /** The stop switch, Undo and the chores' switches are the owner's: the captain never reaches them. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(`${ctx.command} is the owner's. The captain never changes its own switch.`, 409);
+    throw new UserError(
+      `${ctx.command} is the owner's: the captain never changes its own switch. The owner does it on the Captain page.`,
+      409,
+    );
   }
 }
 

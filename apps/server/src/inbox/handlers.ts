@@ -13,7 +13,7 @@ type DecisionCommand =
 export function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. Agents recommend with majhi_decisions_recommend and the owner answers.`,
+      `${ctx.command} is the owner's. Agents recommend with majhi_decisions_recommend and the owner answers on the Decisions page.`,
       409,
     );
   }

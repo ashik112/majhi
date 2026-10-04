@@ -122,13 +122,11 @@ describe("tasks.updateTarget", () => {
     expect((await stat(join(w.repo("api"), ".git"))).isDirectory()).toBe(true);
   });
 
-  it("is refused for an agent caller", async () => {
+  it("runs for an agent caller once its approval let it through", async () => {
     await reviewed();
-    await pushFromElsewhere("other.txt");
-    const before = await tip(w.repo("api"), "main");
+    const theirs = await pushFromElsewhere("other.txt");
     const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" }, ID);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain("Only the owner");
-    expect(await tip(w.repo("api"), "main")).toBe(before);
+    expect(res.status).toBe(200);
+    expect(await tip(w.repo("api"), "main")).toBe(theirs);
   });
 });

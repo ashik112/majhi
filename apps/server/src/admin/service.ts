@@ -24,7 +24,7 @@ import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
 import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
-import { PLAYBOOK_TOOL_COMMANDS } from "../playbooks/handlers.ts";
+import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
@@ -1048,7 +1048,8 @@ const SENSITIVE_ORG_FIELDS = [
 /**
  * Why an agent may not make this call at all, or undefined. Agents never push: the owner pushes from
  * Ship, or an org policy does. Nor do they throw away uncommitted work: removing a task with
- * uncommitted changes takes the owner's typed confirmation.
+ * uncommitted changes takes the owner's typed confirmation. Nor do they raise a playbook's limits:
+ * no card is posted that would only fail once approved.
  */
 export function refuseForAgents(command: CommandName, input: Record<string, unknown>): string | undefined {
   if (command === "tasks.merge" && input.push !== undefined && input.push !== false) {
@@ -1057,7 +1058,7 @@ export function refuseForAgents(command: CommandName, input: Record<string, unkn
   if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
     return "Agents cannot remove a task with force. Say in the room what should go; the owner removes it.";
   }
-  return undefined;
+  return playbookLimitRefusal(command, input);
 }
 
 function error(text: string): ToolResult {
