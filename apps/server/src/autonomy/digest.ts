@@ -72,6 +72,12 @@ export interface DigestInput {
   accountStatus?: Readonly<Record<string, AutonomyAccount["status"]>> | undefined;
   /** Open findings of the workspace, one line each, worst first. */
   findings?: readonly string[] | undefined;
+  /** Open incidents and failing watches of the workspace (and majhi's own, in Private), unacknowledged first. */
+  incidents?: readonly string[] | undefined;
+  /** Tasks of the workspace in review, ready to ship or needing a look. */
+  review?: readonly string[] | undefined;
+  /** Paused tasks of the workspace with why, and whether the captain may resume them. */
+  paused?: readonly string[] | undefined;
   /**
    * Whether the captain decides when work starts here. False (Start is You): the lane files
    * proposals and does upkeep; it starts nothing.
@@ -116,6 +122,9 @@ export function factsOf(input: DigestInput): Facts {
     queue: input.queue.map((q) => [q.title, q.task, q.after, q.waitFor, q.readyAt !== undefined]),
     projects: input.projects,
     findings: input.findings,
+    incidents: input.incidents,
+    review: input.review,
+    paused: input.paused,
   };
 }
 
@@ -145,6 +154,9 @@ const BASE = {
   queue: 10,
   projects: 8,
   findings: 6,
+  incidents: 6,
+  review: 6,
+  paused: 6,
 };
 
 export function digest(input: DigestInput): string {
@@ -245,6 +257,21 @@ function build(input: DigestInput, scale: number): string {
       max(BASE.queue),
       "empty",
     ),
+    ...optional(
+      "Open incidents and failing watches (majhi_ops_ack when handled; unacknowledged first)",
+      input.incidents,
+      max(BASE.incidents),
+    ),
+    ...optional(
+      "In review in this workspace (ship what passes where Merge is Captain; otherwise prepare it)",
+      input.review,
+      max(BASE.review),
+    ),
+    ...optional(
+      "Paused tasks of this workspace (not in your list above)",
+      input.paused,
+      max(BASE.paused),
+    ),
     ...((input.findings ?? []).length === 0
       ? []
       : list(
@@ -282,6 +309,11 @@ function waitText(q: QueueItem, status: DigestInput["accountStatus"]): string {
     return `. READY: ${wait.account} is ${stateWords(now)} now, so this no longer waits. Start or resume it`;
   }
   return `. Waits for ${wait.account} ${need}; it is ${stateWords(now)} now`;
+}
+
+/** A list shown only when it has lines: a quiet workspace adds nothing to the digest. */
+function optional(title: string, lines: readonly string[] | undefined, n: number): string[] {
+  return lines === undefined || lines.length === 0 ? [] : list(title, lines, n, "none");
 }
 
 /** A titled list: at most `n` lines, then a count of the rest. */

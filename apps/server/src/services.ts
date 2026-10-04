@@ -137,6 +137,7 @@ import type { WatchEngine } from "./ops/anything/engine.ts";
 import { createWatchHost } from "./ops/anything/host.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
+import { incidentLines } from "./ops/digest-lines.ts";
 import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
@@ -1324,6 +1325,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       explained: (task) => autonomy.stallExplained(task),
       pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
+      incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),
       // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
       wakeGate: new WakeGate(decisions),
