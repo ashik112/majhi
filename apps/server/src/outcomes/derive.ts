@@ -202,28 +202,35 @@ function fromDrafts(db: Database.Database, since: string, o: DeriveOptions): Der
   return out;
 }
 
+/** The reason majhi gives a finding it folded into a grouped one (sensors, migrations 136 and 137). */
+export const FOLDED = "Folded into";
+
 /** Findings the owner took (a task, a decision, fixed) or dismissed. */
 function fromFindings(db: Database.Database, since: string): Derived[] {
   const rows = db
     .prepare(
-      "SELECT id, org, playbook, status, task, created_at, updated_at FROM findings WHERE created_at >= ?",
+      "SELECT id, org, playbook, status, dismissed_reason, task, created_at, updated_at FROM findings WHERE created_at >= ?",
     )
     .all(since) as {
     id: number;
     org: string;
     playbook: string | null;
     status: string;
+    dismissed_reason: string | null;
     task: string | null;
     created_at: string;
     updated_at: string;
   }[];
   return rows.map((r) => {
     const result: OutcomeResult | undefined =
-      r.status === "dismissed"
-        ? "dismissed"
-        : r.status === "task" || r.status === "decision" || r.status === "fixed"
-          ? "accepted"
-          : undefined;
+      r.status === "dismissed" && (r.dismissed_reason ?? "").startsWith(FOLDED)
+        ? // majhi folded it into a grouped finding: nobody judged it, so it counts for nothing.
+          "void"
+        : r.status === "dismissed"
+          ? "dismissed"
+          : r.status === "task" || r.status === "decision" || r.status === "fixed"
+            ? "accepted"
+            : undefined;
     return {
       subject: `finding:${r.id}`,
       kind: "finding" as const,

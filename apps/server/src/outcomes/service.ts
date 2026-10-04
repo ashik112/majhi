@@ -342,6 +342,15 @@ export class OutcomesService {
 
   private async mutes(now: Date): Promise<void> {
     const n = this.window;
+    // A mute nobody answered yet whose record no longer holds (its dismissals turned out to be majhi's
+    // own folds, not judgments) is lifted by majhi itself.
+    for (const notice of this.repo.openNotices()) {
+      if (notice.kind !== "muted") continue;
+      const playbook = String(notice.data.playbook ?? "");
+      const before = this.repo.judgedFindings(notice.org, playbook, undefined, n);
+      if (shouldMute(before, n)) continue;
+      await this.unmute(notice.org, playbook, notice).catch(() => undefined);
+    }
     for (const { org, playbook } of this.repo.playbooks()) {
       const key = `playbook:${playbook}`;
       const t = this.repo.trust(org, key);

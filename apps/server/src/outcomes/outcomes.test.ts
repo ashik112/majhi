@@ -647,6 +647,32 @@ describe("auto-mute", () => {
     expect(off.cadenceCalls).toEqual([]);
   });
 
+  it("never counts majhi's own folds as dismissals, and lifts a mute they caused by itself", async () => {
+    const d = desk({ window: 10 });
+    for (let i = 0; i < 10; i++) d.finding(i, "deps", "dismissed", T0 - HOUR + i);
+    await d.svc.sweep();
+    expect(d.cadence.value.kind).toBe("weekly");
+    // The dismissals turn out to be folds into a grouped finding, as migrations 136 and 137 made them.
+    d.db
+      .prepare(
+        "UPDATE findings SET dismissed_reason = 'Folded into one finding per project' WHERE playbook = 'deps'",
+      )
+      .run();
+    await d.svc.sweep();
+    expect(d.cadence.value).toEqual({ kind: "daily", at: "00:00" });
+    expect(d.svc.decisions()).toEqual([]);
+    // Folded findings alone never mute.
+    const fresh = desk({ window: 10 });
+    for (let i = 0; i < 10; i++) fresh.finding(i, "deps", "dismissed", T0 - HOUR + i);
+    fresh.db
+      .prepare(
+        "UPDATE findings SET dismissed_reason = 'Folded into one finding per project' WHERE playbook = 'deps'",
+      )
+      .run();
+    await fresh.svc.sweep();
+    expect(fresh.cadenceCalls).toEqual([]);
+  });
+
   it("can be undone from the command too, and only while muted", async () => {
     const d = desk({ window: 10 });
     for (let i = 0; i < 10; i++) d.finding(i, "deps", "dismissed", T0 - HOUR + i);

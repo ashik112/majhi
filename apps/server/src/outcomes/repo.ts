@@ -201,7 +201,7 @@ export class OutcomesRepo {
       this.db
         .prepare(
           `SELECT * FROM outcomes WHERE org = ? AND playbook = ? AND kind = 'finding' AND result IS NOT NULL
-             AND at > ? ORDER BY at DESC, id DESC LIMIT ?`,
+             AND result != 'void' AND at > ? ORDER BY at DESC, id DESC LIMIT ?`,
         )
         .all(org, playbook, since ?? "", limit) as Raw[]
     ).map(rowOf);
