@@ -232,7 +232,7 @@ export interface TaskDeps {
   containers?: {
     taskPaused(id: string, options?: { keepUnsaved?: boolean }): Promise<{ kept: string[] }>;
     taskRunning(id: string): Promise<{ started: string[]; failed: string[] }>;
-    taskEnded(id: string): Promise<void>;
+    taskEnded(id: string, keepVolumes?: boolean): Promise<void>;
   };
   /** The task's terminal (5.15) is killed when the task is stopped, closed or removed. */
   terminals?: TerminalManager;
@@ -3825,7 +3825,7 @@ export class TaskService {
         return;
       case "containers":
         if (effect.op === "runAgain") await this.containersRunAgain(id);
-        else if (ctx.ending === true) await this.deps.containers?.taskEnded(id);
+        else if (ctx.ending === true) await this.deps.containers?.taskEnded(id, true);
         else await this.deps.containers?.taskPaused(id);
         return;
       case "processes.stop":

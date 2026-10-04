@@ -192,6 +192,8 @@ export interface AutonomyDeps {
   machine?: () => MachineReading | undefined;
   /** Who does each step of shipping a task, by the one ship decision (the rows and the ship rules). */
   shipPlan?: (task: string) => Promise<ShipPlan>;
+  /** What majhi holds on the disk: task folders and Docker, in bytes. Undefined until measured. */
+  diskUsage?: () => { tasksBytes: number; dockerBytes: number | undefined } | undefined;
   now?: () => Date;
 }
 
@@ -3024,7 +3026,7 @@ export class AutonomyService {
         })),
         waiting: this.waiting(),
       }),
-      ...machineOf(this.deps.machine?.()),
+      ...machineOf(this.deps.machine?.(), this.deps.diskUsage?.()),
     };
   }
 

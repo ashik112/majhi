@@ -46,6 +46,12 @@ export function parseDfFree(out: string): number | undefined {
   return m?.[3] === undefined ? undefined : Number(m[3]) * 1024;
 }
 
+/** Size of the volume in bytes from `df -Pk <path>`. */
+export function parseDfTotal(out: string): number | undefined {
+  const m = /\s(\d+)\s+(\d+)\s+(\d+)\s+\d+%\s+\//.exec(out);
+  return m?.[1] === undefined ? undefined : Number(m[1]) * 1024;
+}
+
 /** MemAvailable and MemTotal in bytes from /proc/meminfo. */
 export function parseMeminfo(out: string): { total: number; available: number } | undefined {
   const kb = (key: string): number | undefined => {
@@ -71,7 +77,9 @@ export async function readMachine({ os, exec, home, env }: MachineDeps): Promise
     (await exec(file, args, { cwd: home, env, timeout: TOOL_TIMEOUT_MS })).stdout;
   const quiet = (p: Promise<string>): Promise<string> => p.catch(() => "");
   const [load1 = 0, load5 = 0, load15 = 0] = loadavg();
-  const disk = parseDfFree(await quiet(run("df", ["-Pk", home])));
+  const df = await quiet(run("df", ["-Pk", home]));
+  const disk = parseDfFree(df);
+  const diskTotal = parseDfTotal(df);
   let memTotal = totalmem();
   let available: number | undefined;
   let pressure: MachineHost["pressure"];
@@ -102,5 +110,6 @@ export async function readMachine({ os, exec, home, env }: MachineDeps): Promise
     ...(pressure === undefined ? {} : { pressure }),
     ...(idle === undefined ? {} : { idleCpuPct: Math.min(100, idle) }),
     ...(disk === undefined ? {} : { diskFreeBytes: disk }),
+    ...(diskTotal === undefined ? {} : { diskTotalBytes: diskTotal }),
   };
 }

@@ -76,6 +76,7 @@ const READ_VERBS = new Set([
   "network ls",
   "buildx inspect",
   "buildx ls",
+  "system df",
 ]);
 /** Calls that remove what majhi made: only `majhi-` names and container ids, and these flags. */
 const REMOVE_VERBS = new Set([
@@ -140,7 +141,7 @@ export function assertReadOrRemove(args: readonly string[]): void {
  * (`cliEnv`) plus a config folder in `<majhiHome>/cache/docker`, where buildx keeps the metadata of the
  * task builders across restarts. Every argument of every call is scanned for host paths that no
  * container may see. Three doors, so no caller can send a call nobody checked:
- * - `exec`: reads and removals of `majhi-` things only, and the old cache of a `majhi-` builder.
+ * - `exec`: reads and removals of `majhi-` things and container or image ids, and the old cache of a `majhi-` builder.
  * - `connect`: a container to a task's own network.
  * - `create` and `attached`: take `DockerParts` and run `assertSafe` themselves.
  */

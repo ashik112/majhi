@@ -42,6 +42,8 @@ const task = (id: string): Task =>
     folder: join(dir, "tasks", id),
     team: ["acme-builder"],
     repos: [{ project: "api", worktree: join(dir, "tasks", id, "api") }],
+    // ACM-3 was done just now; every other task a month ago.
+    updatedAt: id === "ACM-3" ? new Date().toISOString() : "2026-01-01T00:00:00.000Z",
   }) as unknown as Task;
 
 beforeEach(async () => {
@@ -330,7 +332,7 @@ describe("ContainerService", () => {
         child: undefined,
       });
       docker.networks.set("majhi-acm-1", new Set(["majhi-run-aaa"]));
-      for (const t of ["ACM-1", "ACM-2", "ACM-9"]) {
+      for (const t of ["ACM-1", "ACM-2", "ACM-3", "ACM-9"]) {
         docker.volumes.set(`majhi-${t.toLowerCase()}-data-x`, {
           labels: { "majhi.container": "volume", "majhi.task": t },
           options: {},
@@ -343,8 +345,8 @@ describe("ContainerService", () => {
       expect(docker.networks.size).toBe(0);
       // The builder of the open task stops, and starts again on its next build; the others are gone.
       expect(docker.stoppedBuilders).toEqual(["majhi-preview-acm-1"]);
-      // ACM-1 is open; ACM-2 is done and ACM-9 is gone.
-      expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x"]);
+      // ACM-1 is open and ACM-3 was done just now, so their volumes stay; ACM-2 is done for a month and ACM-9 is gone.
+      expect([...docker.volumes.keys()]).toEqual(["majhi-acm-1-data-x", "majhi-acm-3-data-x"]);
       expect([...docker.builders]).toEqual(["majhi-preview-acm-1"]);
       expect([...docker.images]).toEqual(["majhi-preview-acm-1"]);
     });

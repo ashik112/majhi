@@ -72,7 +72,7 @@ import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
 import { type ConnectionToolRules, PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
-import { briefBlocks, OWNER_EARLIER, OWNER_LATEST, ownerBlocks } from "./prompt.ts";
+import { briefBlocks, OWNER_EARLIER, OWNER_LATEST, ownerBlocks, takeDepsNote } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
@@ -1378,7 +1378,13 @@ export class RunManager {
       const raw = await this.withFacts(
         run,
         brief,
-        this.withNotes(run, this.withSkills(run, this.withProcesses(run, await this.blocksFor(run, entry)))),
+        this.withNotes(
+          run,
+          this.withSkills(
+            run,
+            this.withProcesses(run, await this.withDepsNote(run, await this.blocksFor(run, entry))),
+          ),
+        ),
       );
       if (raw === undefined) continue;
       if (lock.bypassed !== undefined) raw.push({ type: "text", text: bypassText(lock.bypassed) });
@@ -2041,6 +2047,18 @@ export class RunManager {
         return blocks;
       }
     }
+  }
+
+  /** Tells the agent once that majhi removed the task's dependency folders to free disk. Not to slash commands. */
+  private async withDepsNote(
+    run: AgentRun,
+    blocks: PromptBlock[] | undefined,
+  ): Promise<PromptBlock[] | undefined> {
+    const first = blocks?.[0];
+    if (blocks === undefined || (first?.type === "text" && first.text.startsWith("/"))) return blocks;
+    const task = this.deps.store.tasks.get(run.task);
+    const note = task === undefined ? undefined : await takeDepsNote(task.folder);
+    return note === undefined ? blocks : [...blocks, { type: "text", text: note }];
   }
 
   /** Adds a line about the task's running processes, so the agent does not start a second copy. Not to slash commands. */

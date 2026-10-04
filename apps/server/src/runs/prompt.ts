@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { PromptBlock } from "@majhi/acp";
 import type { Attachment } from "@majhi/shared";
 import { BRIEF_PROMPT, CONTEXT_PROMPT } from "../tasks/brief.ts";
+import { DEPS_DROPPED_FILE } from "../tasks/folder-sweep.ts";
 
 /** Images bigger than this are left out of the prompt. They stay in the task's attachments. */
 export const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -66,4 +67,24 @@ async function imageBlocks(input: PromptInput): Promise<PromptBlock[]> {
     }
   }
   return blocks;
+}
+
+/**
+ * The line an agent gets once after majhi removed the task's dependency folders to free disk (the
+ * sweep leaves a marker). Reading it deletes the marker. Undefined when nothing was removed.
+ */
+export async function takeDepsNote(folder: string): Promise<string | undefined> {
+  const marker = join(folder, DEPS_DROPPED_FILE);
+  let removed: string;
+  try {
+    removed = await readFile(marker, "utf8");
+  } catch {
+    return undefined;
+  }
+  await rm(marker, { force: true });
+  const list = removed
+    .split("\n")
+    .filter((l) => l !== "")
+    .join(", ");
+  return `majhi removed dependency folders to free disk (${list}). Run the project's install command before you build or test.`;
 }

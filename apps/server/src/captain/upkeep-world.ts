@@ -119,6 +119,7 @@ export function upkeepWorld(deps: {
   now: () => Date;
   machineBusy?: (() => string | undefined) | undefined;
   wake?: ((org: string, line: string) => void) | undefined;
+  disk?: UpkeepPorts["disk"] | undefined;
 }): UpkeepPorts {
   const daysSince = (at: string) => (deps.now().getTime() - Date.parse(at)) / DAY_MS;
 
@@ -160,6 +161,7 @@ export function upkeepWorld(deps: {
       };
     },
 
+    ...(deps.disk === undefined ? {} : { disk: deps.disk }),
     async profile(org) {
       const terms: string[] = [];
       const projects = z

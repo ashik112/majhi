@@ -44,6 +44,7 @@ import { scopeOfTask } from "./own-work.ts";
 import { answerFor, widenedNote } from "./permission-rules.ts";
 import type { ApprovalCard, CaptainPorts, DeployPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
+import type { UpkeepPorts } from "./upkeep-ports.ts";
 import { upkeepWorld } from "./upkeep-world.ts";
 
 /**
@@ -74,6 +75,7 @@ export interface WorldDeps {
   scanner: RepoScanner;
   cleanup: CleanupService;
   folders?: TaskFolderSweep;
+  disk?: UpkeepPorts["disk"];
   idle: IdleWatch;
   runs: { working(task: string): string[]; notify(task: string, agent: string, text: string): void };
   lanes: Lanes;
@@ -102,7 +104,12 @@ const DONE_TASKS_READ = 15;
 export function captainWorld(deps: WorldDeps): CaptainPorts {
   const sweepOptions = async (org: string) => {
     const { cleanup } = await deps.config.settings();
-    return { hours: cleanup.free_after_hours, worktreeDays: cleanup.worktree_after_days, org };
+    return {
+      hours: cleanup.free_after_hours,
+      worktreeDays: cleanup.worktree_after_days,
+      idleDays: cleanup.idle_deps_days,
+      org,
+    };
   };
   const { store } = deps;
   const orgOfTask = (id: string) => store.tasks.get(id)?.org ?? PRIVATE;
@@ -551,6 +558,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       now: () => new Date(),
       machineBusy: deps.machineBusy,
       wake: (org, line) => deps.autonomy.routine(line, org),
+      disk: deps.disk,
     }),
     followUps: {
       openThreads: (org) =>

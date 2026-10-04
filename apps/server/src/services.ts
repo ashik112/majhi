@@ -109,6 +109,7 @@ import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import { waitingDeployDecisions } from "./deploy/decisions.ts";
 import { createNothingDeploys } from "./deploy/nothing.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
+import { DiskGuard } from "./disk/guard.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -408,6 +409,7 @@ export interface Services {
   cleanup: CleanupService;
   /** Frees dependency folders and build output of done tasks (5.18 Cleanup). */
   folderSweep: TaskFolderSweep;
+  diskGuard: DiskGuard;
   /** The owner's computer and majhi's containers, polled every 45 s. */
   machine: MachineSensor;
   mrPoller: MrPoller;
@@ -1875,6 +1877,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     if (removed.length > 0)
       console.warn(`Removed ${removed.length} run container(s) no run held: ${removed.join(", ")}`);
   };
+  /** Set once the captain exists: a low disk wakes its tidy chore. */
+  let onDiskPoll: () => void = () => undefined;
   const machine = new MachineSensor({
     host: async () =>
       options.hostLink?.isConnected() === true
@@ -1883,6 +1887,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     docker: machineDocker,
     onChange: () => {
       autonomy.machineRead();
+      onDiskPoll();
       void noteHotMemory().catch(() => undefined);
       void sweepOrphans().catch(() => undefined);
     },
@@ -1891,6 +1896,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     halted: () => captainRepo.isStopped(),
     skills: skillStore,
     machine: () => machine.get(),
+    diskUsage: () => diskGuard.usage(),
     lanes,
     processWaiting: (task) => processes.waiting(task).length > 0,
     typing: (task) => events.typing.holds(task),
@@ -2050,6 +2056,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return loaded.state.config.tasksDir;
     },
   });
+  const diskGuard = new DiskGuard({ machine: () => machine.get(), sweep: folderSweep, containers });
   const findings = new FindingsService({
     repo: new FindingsRepo(store.raw),
     projectOrg: async (id) => (await config.sections()).projects[id]?.org ?? PRIVATE,
@@ -2349,6 +2356,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       scanner: new RepoScanner(),
       cleanup,
       folders: folderSweep,
+      disk: diskGuard,
       idle: idleWatch,
       runs,
       lanes,
@@ -2507,6 +2515,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
+  onDiskPoll = () => {
+    if (diskGuard.reading()?.low !== true) return;
+    void config.sections().then(
+      (sections) => captain.diskLow([PRIVATE, ...Object.keys(sections.orgs)]),
+      () => undefined,
+    );
+  };
   if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
@@ -3313,6 +3328,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     queuedMerges,
     cleanup,
     folderSweep,
+    diskGuard,
     machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),

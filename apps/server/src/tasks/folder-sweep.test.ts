@@ -246,3 +246,76 @@ describe("removing whole worktrees of old done tasks", () => {
     expect(await exists(join(worktree, "draft.md"))).toBe(true);
   });
 });
+
+describe("dropping node_modules of idle tasks in review or paused", () => {
+  const idle = { hours: 24, worktreeDays: 0, idleDays: 3 };
+
+  it("removes dependencies only, keeps the branch and the commits, and leaves a note for the agent", async () => {
+    const { folder, worktree } = await seed({ id: "ACM-1", status: "review" });
+    await writeFile(join(worktree, "src/work.ts"), "export const w = 1;\n");
+    await git(worktree, "add", ".");
+    await git(worktree, "commit", "--quiet", "-m", "work");
+    const head = await git(worktree, "rev-parse", "HEAD");
+
+    const report = await sweep.run(idle);
+
+    expect(await exists(join(worktree, "node_modules"))).toBe(false);
+    expect(await exists(join(folder, ".pnpm-store"))).toBe(false);
+    expect(await exists(join(worktree, "dist"))).toBe(true);
+    expect(await exists(join(worktree, "packages/web/.next"))).toBe(true);
+    expect(await git(worktree, "rev-parse", "HEAD")).toBe(head);
+    expect(await git(source, "branch", "--list", "task/acm-1")).toContain("task/acm-1");
+    expect(report.tasks[0]?.mode).toBe("idle");
+    expect(report.freedBytes).toBeGreaterThan(0);
+    expect(await readFile(join(folder, ".majhi-deps-dropped"), "utf8")).toContain("api/node_modules");
+  });
+
+  it("skips a task whose repo has an uncommitted change to a tracked file", async () => {
+    const { worktree } = await seed({ id: "ACM-1", status: "review" });
+    await writeFile(join(worktree, "src/index.ts"), "export const edited = 1;\n");
+    const report = await sweep.run(idle);
+    expect(report.freedBytes).toBe(0);
+    expect(await exists(join(worktree, "node_modules"))).toBe(true);
+    expect(await readFile(join(worktree, "src/index.ts"), "utf8")).toBe("export const edited = 1;\n");
+  });
+
+  it("drops a paused task too, and frees nothing on a second run", async () => {
+    const { worktree } = await seed({ id: "ACM-1", status: "paused" });
+    await sweep.run(idle);
+    expect(await exists(join(worktree, "node_modules"))).toBe(false);
+    expect((await sweep.run(idle)).freedBytes).toBe(0);
+  });
+
+  it("never touches a running task, or one that changed within the idle days", async () => {
+    const running = await seed({ id: "ACM-1", status: "running" });
+    const fresh = await seed({ id: "ACM-2", status: "review", updatedAt: "2026-10-02T12:00:00.000Z" });
+    expect((await sweep.run(idle)).freedBytes).toBe(0);
+    expect(await exists(join(running.worktree, "node_modules"))).toBe(true);
+    expect(await exists(join(fresh.worktree, "node_modules"))).toBe(true);
+  });
+
+  it("keeps a node_modules that holds a tracked file", async () => {
+    const { worktree } = await seed({ id: "ACM-1", status: "review" });
+    await git(worktree, "add", "-f", "node_modules/pkg/file.js");
+    await sweep.run(idle);
+    expect(await exists(join(worktree, "node_modules"))).toBe(true);
+  });
+
+  it("is off with idleDays 0", async () => {
+    const { worktree } = await seed({ id: "ACM-1", status: "review" });
+    expect((await sweep.run({ hours: 24, worktreeDays: 0, idleDays: 0 })).freedBytes).toBe(0);
+    expect(await exists(join(worktree, "node_modules"))).toBe(true);
+  });
+});
+
+describe("a done task keeps its branch and commits when its dependencies go", () => {
+  it("removes node_modules and leaves the branch tip as it was", async () => {
+    const { worktree } = await seed({ id: "ACM-1" });
+    const head = await git(worktree, "rev-parse", "HEAD");
+    await sweep.run(opts);
+    expect(await exists(join(worktree, "node_modules"))).toBe(false);
+    expect(await git(worktree, "rev-parse", "HEAD")).toBe(head);
+    expect(await git(source, "branch", "--list", "task/acm-1")).toContain("task/acm-1");
+    expect(await git(worktree, "status", "--porcelain")).toBe("");
+  });
+});

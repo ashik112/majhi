@@ -1,95 +1,147 @@
 import { describe, expect, it } from "vitest";
 import { DockerCli } from "./docker.ts";
-import { type InspectedImage, pruneImages, selectOldImages } from "./prune.ts";
+import {
+  findUnusedImages,
+  type ImageRow,
+  parseDockerSize,
+  removeImages,
+  selectOldVolumes,
+  selectUnusedImages,
+} from "./prune.ts";
 
 const NOW = new Date("2026-10-04T08:00:00Z");
 const OLD = "2026-09-20T08:00:00Z";
 const NEW = "2026-10-01T08:00:00Z";
 const hex = (c: string) => `sha256:${c.repeat(64)}`;
 
-describe("selectOldImages", () => {
-  it("takes majhi's images older than seven days that no container uses, and nothing else", () => {
-    const images: InspectedImage[] = [
-      { id: hex("a"), created: OLD, label: "image" },
-      { id: hex("b"), created: NEW, label: "image" },
-      { id: hex("c"), created: OLD, label: "image" },
-      { id: hex("d"), created: OLD, label: "" },
-      { id: hex("e"), created: OLD, label: "volume" },
-      { id: hex("f"), created: "not a date", label: "image" },
-    ];
-    expect(selectOldImages(images, new Set([hex("c")]), NOW)).toEqual([hex("a")]);
+const image = (c: string, at: string, refs: string[], label = "image", task = ""): ImageRow => ({
+  id: hex(c),
+  at,
+  bytes: 1000,
+  refs,
+  label,
+  task,
+});
+
+describe("selectUnusedImages", () => {
+  const images = [
+    image("a", OLD, ["majhi-preview-acm-1:latest"], "image", "ACM-1"),
+    image("b", NEW, ["majhi-preview-acm-2:latest"]),
+    image("c", OLD, ["majhi-preview-acm-3:latest"]),
+    image("d", OLD, ["acme/api:1"], ""),
+    image("e", OLD, ["postgres:16-alpine"], ""),
+    image("f", OLD, ["majhi-server:dev"], ""),
+    image("g", "not a date", ["majhi-preview-acm-4:latest"]),
+  ];
+
+  it("takes only majhi's own old preview images that no container uses, never another image", () => {
+    const picked = selectUnusedImages(images, new Set([hex("c")]), NOW);
+    expect(picked.map((i) => i.id)).toEqual([hex("a")]);
+  });
+
+  it("leaves the images of the skipped (open) tasks at any age", () => {
+    expect(selectUnusedImages(images, new Set(), NOW, 0, new Set(["ACM-1"])).map((i) => i.id)).toEqual([
+      hex("b"),
+      hex("c"),
+    ]);
   });
 });
 
-/** Plays the docker daemon for the prune: images with labels and dates, and containers using some. */
-class PruneDocker {
+describe("selectOldVolumes", () => {
+  const volumes = [
+    { task: "ACM-1", name: "majhi-acm-1-db" },
+    { task: "ACM-2", name: "majhi-acm-2-db" },
+    { task: "ACM-3", name: "majhi-acm-3-db" },
+    { task: "ACM-4", name: "majhi-acm-4-db" },
+  ];
+  const age = (task: string) =>
+    task === "ACM-1"
+      ? ("open" as const)
+      : task === "ACM-2"
+        ? { doneAt: OLD }
+        : task === "ACM-3"
+          ? { doneAt: NEW }
+          : ("gone" as const);
+
+  it("removes volumes of tasks done for a week or gone, never of open or recently done tasks", () => {
+    expect(selectOldVolumes(volumes, age, NOW).map((v) => v.name)).toEqual([
+      "majhi-acm-2-db",
+      "majhi-acm-4-db",
+    ]);
+  });
+});
+
+describe("parseDockerSize", () => {
+  it("reads docker's units", () => {
+    expect(parseDockerSize("21.6GB")).toBe(21_600_000_000);
+    expect(parseDockerSize("340MB")).toBe(340_000_000);
+    expect(parseDockerSize("0B")).toBe(0);
+    expect(parseDockerSize("nonsense")).toBeUndefined();
+  });
+});
+
+/** Plays the docker daemon: images with dates and tags, and containers using some. */
+class FakeDocker {
   calls: string[][] = [];
-  images = new Map<string, { created: string; labels: Record<string, string> }>([
-    [hex("a"), { created: OLD, labels: { "majhi.container": "image", "majhi.task": "ACM-1" } }],
-    [hex("b"), { created: NEW, labels: { "majhi.container": "image", "majhi.task": "ACM-1" } }],
-    [hex("c"), { created: OLD, labels: { "majhi.container": "image", "majhi.task": "ACM-2" } }],
-    // Another project's old images: one unlabelled, one with a label that only looks alike.
-    [hex("d"), { created: OLD, labels: {} }],
-    [hex("e"), { created: OLD, labels: { "com.example.container": "image" } }],
+  images = new Map<string, { created: string; refs: string[]; label: string }>([
+    [hex("a"), { created: OLD, refs: ["majhi-preview-acm-1:latest"], label: "image" }],
+    [hex("b"), { created: NEW, refs: ["majhi-preview-acm-2:latest"], label: "image" }],
+    [hex("c"), { created: OLD, refs: ["majhi-preview-acm-3:latest"], label: "image" }],
+    [hex("d"), { created: OLD, refs: ["majhi-server:dev"], label: "" }],
+    [hex("f"), { created: OLD, refs: ["postgres:16-alpine"], label: "" }],
   ]);
-  /** Container id to the image it runs. */
-  containers = new Map([
-    ["1".repeat(64), hex("c")],
-    ["2".repeat(64), hex("d")],
-  ]);
+  containers = new Map([["1".repeat(64), hex("c")]]);
 
   async exec(args: readonly string[]): Promise<{ stdout: string; stderr: string }> {
     this.calls.push([...args]);
     const out = (stdout: string) => ({ stdout, stderr: "" });
     const key = args.slice(0, 2).join(" ");
     if (key === "image ls") {
-      const filter = args[args.indexOf("--filter") + 1] ?? "";
-      const [k = "", v = ""] = filter.replace(/^label=/, "").split("=");
+      const labelled = args.includes("label=majhi.container=image");
       return out(
         [...this.images]
-          .filter(([, i]) => i.labels[k] === v)
+          .filter(([, i]) => !labelled || i.label === "image")
           .map(([id]) => id)
           .join("\n"),
       );
     }
     if (key === "image inspect") {
-      const ids = args.slice(4);
       return out(
-        ids
+        args
+          .slice(4)
           .map((id) => {
             const i = this.images.get(id);
             if (i === undefined) throw new Error(`No such image: ${id}`);
-            return `${id} ${i.created} ${i.labels["majhi.container"] ?? ""}`;
+            return `${id} ${i.created} 0001-01-01T00:00:00Z 1000 ${i.label === "" ? "-" : i.label} - ${i.refs.join(",")}`;
           })
           .join("\n"),
       );
     }
     if (args[0] === "ps") return out([...this.containers.keys()].join("\n"));
-    if (args[0] === "inspect")
+    if (args[0] === "inspect") {
       return out(
         args
           .slice(3)
           .map((c) => this.containers.get(c))
           .join("\n"),
       );
+    }
     if (key === "image rm") {
-      const id = `sha256:${args[2]}`;
-      if ([...this.containers.values()].includes(id)) throw new Error("image is being used");
-      this.images.delete(id);
+      this.images.delete(`sha256:${args[2]}`);
       return out("");
     }
     throw new Error(`The fake docker does not know ${args.join(" ")}`);
   }
 }
 
-describe("pruneImages", () => {
-  it("removes only majhi-labelled images older than seven days that no container uses, and never touches volumes", async () => {
-    const docker = new PruneDocker();
-    expect(await pruneImages(docker, NOW)).toBe(1);
-    expect([...docker.images.keys()]).toEqual([hex("b"), hex("c"), hex("d"), hex("e")]);
-    const removals = docker.calls.filter((c) => c[1] === "rm");
-    expect(removals).toEqual([["image", "rm", "a".repeat(64)]]);
-    expect(docker.calls.some((c) => c[0] === "volume" || c.includes("--force") || c.includes("-f"))).toBe(
+describe("image prune against docker", () => {
+  it("removes only majhi's old unused preview images, never another project's image, and issues no prune command", async () => {
+    const docker = new FakeDocker();
+    const found = await findUnusedImages(docker, NOW);
+    expect(await removeImages(docker, found)).toEqual({ removed: 1, bytes: 1000 });
+    expect([...docker.images.keys()]).toEqual([hex("b"), hex("c"), hex("d"), hex("f")]);
+    expect(docker.calls.filter((c) => c[1] === "rm")).toEqual([["image", "rm", "a".repeat(64)]]);
+    expect(docker.calls.some((c) => c.includes("prune") || c.includes("--force") || c.includes("-f"))).toBe(
       false,
     );
   });

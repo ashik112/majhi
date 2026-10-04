@@ -176,12 +176,15 @@ const cleanupFields = {
   free_after_hours: z.number().int().min(1).max(8760),
   /** The whole worktree of a clean, merged or pushed task done this many days is removed. 0 is off. */
   worktree_after_days: z.number().int().min(0).max(3650),
+  /** node_modules of tasks in review or paused with no change for this many days are removed. 0 is off. */
+  idle_deps_days: z.number().int().min(0).max(3650),
 };
 export const CleanupSettingsSchema = z.strictObject({
   after_days: cleanupFields.after_days.default(30),
   caches_after_days: cleanupFields.caches_after_days.default(1),
   free_after_hours: cleanupFields.free_after_hours.default(24),
   worktree_after_days: cleanupFields.worktree_after_days.default(7),
+  idle_deps_days: cleanupFields.idle_deps_days.default(3),
 });
 export type CleanupSettings = z.infer<typeof CleanupSettingsSchema>;
 export const CleanupPatchSchema = z.strictObject(cleanupFields).partial();

@@ -700,6 +700,16 @@ export class TaskRepo {
       .all();
   }
 
+  /** Tasks in review or paused that nobody changed since `before` (an ISO time), oldest first. Never a running task. */
+  idleBefore(before: string): { id: string; at: string }[] {
+    return this.db
+      .select({ id: tasks.id, at: tasks.updatedAt })
+      .from(tasks)
+      .where(and(inArray(tasks.status, ["review", "paused"]), lt(tasks.updatedAt, before)))
+      .orderBy(asc(tasks.updatedAt))
+      .all();
+  }
+
   /** The ids of a parent's children, in the order they were linked. */
   children(parent: string): string[] {
     return this.allLinks()

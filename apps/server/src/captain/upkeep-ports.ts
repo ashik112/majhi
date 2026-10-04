@@ -1,4 +1,5 @@
 import { SKILL_NAME } from "@majhi/shared";
+import type { DiskGuard } from "../disk/guard.ts";
 
 /**
  * What the self-upkeep chores (discover, tidy, health, checklist) read and do in majhi. The real ports
@@ -122,6 +123,9 @@ export interface UpkeepPorts {
   machineBusy?(): string | undefined;
   /** Sets the limit of agents at once on one account. */
   setAccountSlots(limit: number): Promise<void>;
+
+  /** The machine's disk, and the Docker leftovers Tidy removes. Never the build cache. */
+  disk?: Pick<DiskGuard, "reading" | "docker" | "freeDocker" | "plan" | "consumers">;
 }
 
 /** The project wiki as the wiki chore sees it. The real port is the wiki service. */

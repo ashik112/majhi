@@ -47,7 +47,23 @@ import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { dockerfileImages } from "./dockerfile-images.ts";
 import { prefetchEnvFiles } from "./env-file.ts";
 import { containerNames } from "./names.ts";
-import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
+import {
+  type DockerUsage,
+  dockerUsage,
+  findUnusedImages,
+  type ImageRow,
+  lastPrune,
+  listTaskVolumes,
+  PRUNE_AGE_DAYS,
+  PRUNE_EVERY_MS,
+  pruneBuilderCache,
+  removeImages,
+  removeVolumes,
+  savePrune,
+  selectOldVolumes,
+  type TaskAge,
+  type VolumeRow,
+} from "./prune.ts";
 import { readTaskFile } from "./safe-file.ts";
 import {
   flagValues,
@@ -1490,8 +1506,12 @@ export class ContainerService {
     this.deps.changed?.();
   }
 
-  /** The task is done or removed: everything of it goes, volumes, builder and preview image too. */
-  async taskEnded(task: string): Promise<void> {
+  /**
+   * The task is done or removed: everything of it goes, builder and preview image too. Its volumes go
+   * with it when it is removed; when it is only done they stay for a week (`pruneVolumes`), in case it
+   * is reopened.
+   */
+  async taskEnded(task: string, keepVolumes = false): Promise<void> {
     // One step under the task's lock: a start that waits behind it finds the task closed and refuses.
     await this.locked(task, async () => {
       this.parked.delete(task);
@@ -1500,27 +1520,29 @@ export class ContainerService {
       this.parkedStacks.delete(task);
       this.guardedBuilders.delete(task);
       await this.removeTaskContainers(task);
-      await this.removeTaskState(task);
+      await this.removeTaskState(task, keepVolumes);
     });
   }
 
   /** What stays of an ended task after its containers: volumes, builder, preview image and built images. */
-  private async removeTaskState(task: string): Promise<void> {
+  private async removeTaskState(task: string, keepVolumes = false): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
     const names = containerNames(task);
-    await this.quietly(async () => {
-      const volumes = await this.lines(docker, [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        "label=majhi.container=volume",
-        "--filter",
-        `label=majhi.task=${task}`,
-      ]);
-      if (volumes.length > 0) await docker.exec(["volume", "rm", "-f", ...volumes]);
-    });
+    if (!keepVolumes) {
+      await this.quietly(async () => {
+        const volumes = await this.lines(docker, [
+          "volume",
+          "ls",
+          "-q",
+          "--filter",
+          "label=majhi.container=volume",
+          "--filter",
+          `label=majhi.task=${task}`,
+        ]);
+        if (volumes.length > 0) await docker.exec(["volume", "rm", "-f", ...volumes]);
+      });
+    }
     await this.quietly(() => docker.exec(["buildx", "rm", "--force", names.builder]));
     await this.quietly(() => docker.exec(["image", "rm", "-f", names.previewImage]));
     // What the task's scripts built: found by label, removed by id.
@@ -1569,19 +1591,7 @@ export class ContainerService {
       for (const network of networks) await this.quietly(() => this.removeNetwork(docker, network));
     });
     await this.quietly(async () => {
-      const rows = await this.lines(docker, [
-        "volume",
-        "ls",
-        "--filter",
-        "label=majhi.container=volume",
-        "--format",
-        '{{.Label "majhi.task"}} {{.Name}}',
-      ]);
-      const gone = rows.flatMap((row) => {
-        const [task, name] = row.split(" ");
-        return task !== undefined && name !== undefined && !open.has(task) ? [name] : [];
-      });
-      if (gone.length > 0) await docker.exec(["volume", "rm", "-f", ...gone]);
+      await this.pruneVolumes(new Date());
     });
     const openKeys = new Set([...open].map((id) => id.toLowerCase()));
     const leftover = (name: string) =>
@@ -1614,12 +1624,58 @@ export class ContainerService {
     this.deps.changed?.();
   }
 
+  /** What a task is to the volume prune. */
+  private taskAge(id: string): TaskAge {
+    if (this.deps.openTasks().includes(id)) return "open";
+    const task = this.deps.task(id);
+    return task === undefined ? "gone" : { doneAt: task.updatedAt };
+  }
+
+  /** The volumes of tasks gone, or done for `days`. Open tasks keep theirs. */
+  async staleVolumes(now: Date, days = PRUNE_AGE_DAYS): Promise<VolumeRow[]> {
+    const docker = this.docker;
+    if (docker === undefined) return [];
+    return selectOldVolumes(await listTaskVolumes(docker), (id) => this.taskAge(id), now, days);
+  }
+
+  async pruneVolumes(now: Date, days = PRUNE_AGE_DAYS): Promise<number> {
+    const docker = this.docker;
+    if (docker === undefined) return 0;
+    return removeVolumes(docker, await this.staleVolumes(now, days));
+  }
+
   /**
-   * The weekly prune (`prune.ts`): majhi's preview images that no container uses and the build
-   * cache of the open tasks' builders, each older than a week. Runs when a week passed since the
-   * last one. Never volumes, and nothing majhi did not label or name. Undefined when it was not due.
+   * majhi's own preview images (label `majhi.container=image`) that no container uses and nobody built
+   * or tagged for `days`. Under a week the images of open tasks stay too.
    */
-  async pruneIfDue(now = new Date()): Promise<{ images: number; builders: number } | undefined> {
+  async unusedImages(now: Date, days = PRUNE_AGE_DAYS): Promise<ImageRow[]> {
+    const docker = this.docker;
+    if (docker === undefined) return [];
+    const skip = days < PRUNE_AGE_DAYS ? new Set(this.deps.openTasks()) : new Set<string>();
+    return findUnusedImages(docker, now, days, skip);
+  }
+
+  async removeUnusedImages(images: readonly ImageRow[]): Promise<{ removed: number; bytes: number }> {
+    const docker = this.docker;
+    if (docker === undefined) return { removed: 0, bytes: 0 };
+    return removeImages(docker, images);
+  }
+
+  /** What Docker holds on disk, or undefined when majhi is not in Docker or Docker does not answer. */
+  async usage(): Promise<DockerUsage | undefined> {
+    const docker = this.docker;
+    if (docker === undefined) return undefined;
+    return dockerUsage(docker).catch(() => undefined);
+  }
+
+  /**
+   * The prune (`prune.ts`): old unused images, the volumes of tasks done for a week, and the week-old
+   * build cache of open tasks' builders. Never the whole build cache. Runs when a week passed since the
+   * last one; the captain's tidy chore runs the image and volume part daily. Undefined when it was not due.
+   */
+  async pruneIfDue(
+    now = new Date(),
+  ): Promise<{ images: number; volumes: number; builders: number } | undefined> {
     const docker = this.docker;
     if (docker === undefined) return undefined;
     const home = this.deps.paths.majhiHome;
@@ -1627,8 +1683,12 @@ export class ContainerService {
     if (last !== undefined && now.getTime() - last.getTime() < PRUNE_EVERY_MS) return undefined;
     await this.starting;
     let images = 0;
+    let volumes = 0;
     await this.quietly(async () => {
-      images = await pruneImages(docker, now);
+      images = (await this.removeUnusedImages(await this.unusedImages(now))).removed;
+    });
+    await this.quietly(async () => {
+      volumes = await this.pruneVolumes(now);
     });
     let builders = 0;
     const existing = new Set<string>();
@@ -1650,7 +1710,7 @@ export class ContainerService {
       });
     }
     await savePrune(home, now);
-    return { images, builders };
+    return { images, volumes, builders };
   }
 
   // ---------------------------------------------------------------------------

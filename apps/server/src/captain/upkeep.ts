@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import type { CaptainChore } from "@majhi/shared";
+import { type CaptainChore, PRIVATE } from "@majhi/shared";
+import { isDiskLow } from "../disk/guard.ts";
 import { errorMessage } from "../errors.ts";
 import { upperFirst } from "../machine/busy.ts";
+import { sizeText } from "../tasks/folder-sweep.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal, skillInstallInput } from "./upkeep-ports.ts";
@@ -298,6 +300,69 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
           severity: "low",
         };
         if (await file(run, s, false)) left += 1;
+      }
+      // The disk: Docker leftovers go on every run. When the disk is low, the folders of done and idle tasks
+      // go now too, and when it stays low the owner gets one card with the biggest consumers.
+      const disk = u.disk;
+      if (disk !== undefined && !off(run, "tidy-disk")) {
+        let freed = 0;
+        const docker = await disk.docker().catch(() => undefined);
+        if (docker !== undefined && (docker.images > 0 || docker.volumes > 0)) {
+          run.check();
+          const outcome = await run.act({
+            key: `tidy:docker:${org}:${run.startedAt}`,
+            text: `Removed ${docker.images} unused majhi images and ${docker.volumes} volumes of old tasks`,
+            reason:
+              "Nothing uses these images for a week, and the volumes belong to tasks done for a week. The build cache is never touched",
+            do: async () => {
+              const r = await disk.freeDocker();
+              freed += r.bytes;
+              return {
+                text: `Removed ${r.images} unused Docker ${r.images === 1 ? "image" : "images"} (${sizeText(r.bytes)}) and ${r.volumes} ${r.volumes === 1 ? "volume" : "volumes"} of old tasks`,
+                undoNote: "Docker images are pulled or built again when something needs them",
+              };
+            },
+          });
+          if (outcome === "done") fixed += 1;
+        }
+        const reading = disk.reading();
+        if (reading?.low === true) {
+          run.check();
+          const gb = (reading.freeBytes / 1e9).toFixed(0);
+          const outcome = await run.act({
+            key: `tidy:disk:${org}:${run.startedAt}`,
+            text: `The disk is low (${gb} GB free): freeing the folders of finished and idle tasks`,
+            reason: "Under 15% or under 30 GB is free",
+            do: async () => {
+              const r = await ports.freeFolders?.(org);
+              freed += r?.bytes ?? 0;
+              return {
+                text: `The disk was low (${gb} GB free). Freed ${sizeText(freed)} in all: ${sizeText(r?.bytes ?? 0)} in task folders`,
+                undoNote: "Dependencies and build output come back with the next install or build",
+              };
+            },
+          });
+          if (outcome === "done") fixed += 1;
+          const still = isDiskLow(reading.freeBytes + freed, reading.totalBytes);
+          if (still && org === PRIVATE) {
+            const plan = await disk.plan();
+            const consumers = await disk.consumers();
+            const free =
+              plan.bytes > 0 ? ` Press Free ${sizeText(plan.bytes)} in Health to remove exactly this.` : "";
+            const s: Signal = {
+              key: `disk:low:${run.ws.day}`,
+              title: `The disk is low: ${gb} GB free`,
+              detail: [
+                `Biggest: ${consumers.join(", ")}.`,
+                plan.lines.length === 0
+                  ? "Nothing more is safe to remove on its own."
+                  : `One click would remove: ${plan.lines.join("; ")}.${free}`,
+              ].join(" "),
+              severity: "high",
+            };
+            if (await file(run, s, false)) left += 1;
+          }
+        }
       }
       if (!off(run, "tidy-propose")) {
         let filed = 0;

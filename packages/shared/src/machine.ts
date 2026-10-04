@@ -14,6 +14,7 @@ export const MachineHostSchema = z.object({
   /** Percent of CPU time idle over the last moment. Absent where it is not cheap to read. */
   idleCpuPct: z.number().min(0).max(100).optional(),
   diskFreeBytes: z.number().nonnegative().optional(),
+  diskTotalBytes: z.number().nonnegative().optional(),
 });
 export type MachineHost = z.infer<typeof MachineHostSchema>;
 

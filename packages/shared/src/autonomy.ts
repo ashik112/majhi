@@ -392,6 +392,8 @@ export const AutonomyMachineSchema = z.object({
   idleCpuPct: z.number().optional(),
   memFreePct: z.number().optional(),
   diskFreeGb: z.number().optional(),
+  /** What majhi itself holds on the disk, when measured: the task folders and Docker (images, volumes, containers). */
+  usage: z.object({ tasksGb: z.number(), dockerGb: z.number().optional() }).optional(),
   containers: z.number().int().nonnegative(),
   /** Why new work does not start: the machine is busy. */
   busy: z.string().optional(),
