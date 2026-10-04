@@ -115,13 +115,10 @@ export function ListShell({
           box.current?.focus();
         }
       }}
-      className={cn(
-        "flex w-[296px] shrink-0 flex-col overflow-hidden rounded-2xl min-[1320px]:w-[340px]",
-        GLASS,
-      )}
+      className={cn("flex min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded-2xl", GLASS)}
     >
-      <div className="flex shrink-0 flex-col gap-2 border-b border-line p-2">
-        <div className="relative">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line p-2">
+        <div className="relative min-w-[160px] flex-1">
           <Search
             aria-hidden="true"
             className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-faint"
@@ -142,7 +139,7 @@ export function ListShell({
           />
           <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
         </div>
-        {filters && <div className="flex min-w-0 items-center gap-2">{filters}</div>}
+        {filters && <div className="flex min-w-0 items-center gap-2 max-[1299px]:w-full">{filters}</div>}
       </div>
       {children}
       {footer && <div className="shrink-0 border-t border-line p-2">{footer}</div>}

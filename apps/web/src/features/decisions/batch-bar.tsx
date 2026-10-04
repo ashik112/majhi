@@ -1,7 +1,6 @@
 import { batchPlan, batchSummary, type DecisionBatchResult, type OwnerDecision } from "@majhi/shared";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import type { Hold } from "./use-batch";
 
 /** Seconds until a held batch is sent, counting down. */
@@ -136,40 +135,38 @@ export function BatchBar({
   }
 
   if (picked.length > 0) {
+    const verb = picked.every((d) => d.kind === "ship") ? "Merge" : "Approve";
     return (
-      <div className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() =>
-              onStart(
-                "approve",
-                picked.map((d) => d.id),
-              )
-            }
-          >
-            Approve {picked.length}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() =>
-              onStart(
-                "leave",
-                picked.map((d) => d.id),
-              )
-            }
-          >
-            Leave {picked.length}
-          </Button>
-          <Button size="sm" variant="ghost" className="px-2" onClick={onClear}>
-            Clear
-          </Button>
-        </div>
-        <p className="m-0 text-xs text-fg-muted text-pretty">
-          <span className="text-fg-soft">Approve:</span> {batchSummary(picked, "approve")}{" "}
-          <span className="text-fg-soft">Leave:</span> {batchSummary(picked, "leave")}
-        </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-fg">{picked.length} picked</span>
+        <Button
+          size="sm"
+          variant="primary"
+          title={batchSummary(picked, "approve")}
+          onClick={() =>
+            onStart(
+              "approve",
+              picked.map((d) => d.id),
+            )
+          }
+        >
+          {verb} {picked.length}
+        </Button>
+        <Button
+          size="sm"
+          title={batchSummary(picked, "leave")}
+          onClick={() =>
+            onStart(
+              "leave",
+              picked.map((d) => d.id),
+            )
+          }
+        >
+          Leave {picked.length}
+        </Button>
+        <Button size="sm" variant="ghost" className="px-2" onClick={onClear}>
+          Clear
+        </Button>
       </div>
     );
   }
@@ -195,13 +192,6 @@ export function BatchBar({
         </div>
       )}
       <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-faint">
-        <span>
-          <Kbd>x</Kbd> select
-        </span>
-        <span>
-          <Kbd>Shift</Kbd>
-          <Kbd>x</Kbd> to here
-        </span>
         <button
           type="button"
           onClick={onSelectAll}
