@@ -40,9 +40,10 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     ...(state.rest === undefined ? {} : { rest: state.rest }),
   });
   const chores = Object.fromEntries(
-    (
-      ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as CaptainChore[]
-    ).map((c) => [c, chore]),
+    (["ship", "cards", "questions", "memory", "projects", "triage", "cleanup"] as CaptainChore[]).map((c) => [
+      c,
+      chore,
+    ]),
   ) as RunnerDeps["chores"];
   const runner = new ChoreRunner({
     repo,
@@ -199,7 +200,7 @@ describe("the chore runner", () => {
   it("runs only memory and cleanup while Autonomous is off, and only where upkeep is the captain's", async () => {
     const t = setup(async () => {});
     t.state.mode = "off";
-    for (const chore of ["ship", "cards", "questions", "projects", "triage", "stuck"] as const) {
+    for (const chore of ["ship", "cards", "questions", "projects", "triage"] as const) {
       expect(await t.runner.start("acme", chore, "test")).toBeUndefined();
     }
     expect(await t.runner.start("acme", "memory", "test")).toBe("done");

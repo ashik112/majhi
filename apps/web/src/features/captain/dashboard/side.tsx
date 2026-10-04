@@ -12,15 +12,11 @@ import { Panel } from "./panel";
 
 const KIND_WORD: Record<StuckKind, string> = {
   idle: "No progress",
-  loop: "Loop",
-  failures: "Failing",
   waiting: "Waiting",
 };
 
 const KIND_TONE: Record<StuckKind, string> = {
   idle: "text-lamp-needs",
-  loop: "text-red",
-  failures: "text-red",
   waiting: "text-lamp-needs",
 };
 
@@ -46,18 +42,17 @@ export function Stuck({
         <ul className="m-0 max-h-52 min-h-0 flex-1 list-none overflow-y-auto overscroll-contain p-0">
           {stuck.map((s) => (
             <li
-              key={`${s.task}|${s.kind}|${s.item ?? ""}`}
+              key={`${s.task}|${s.kind}`}
               className="flex min-w-0 flex-col border-t border-line py-1.5 first:border-t-0"
             >
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className={cn("shrink-0 text-xs font-medium", KIND_TONE[s.kind])}>
                   {KIND_WORD[s.kind]}
                 </span>
-                <TaskRef task={s.task} item={s.item} />
+                <TaskRef task={s.task} />
                 <Link
                   to="/t/$taskId"
                   params={{ taskId: s.task }}
-                  search={s.item === undefined ? {} : { item: s.item }}
                   title={s.title}
                   className="min-w-0 truncate text-sm text-fg-soft hover:underline"
                 >

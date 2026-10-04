@@ -160,24 +160,6 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     runner: { kind: "chore", chore: "cleanup" },
   }),
   upkeep({
-    id: "upkeep-stuck",
-    name: "Stuck tasks",
-    purpose: "Wake a lead once when nobody works and nothing is pending, then tell you.",
-    trigger: { cadence: HOURLY, events: ["A running task goes quiet"] },
-    inputs: ["Running tasks with no agent working"],
-    steps:
-      "Move a step off an account that needs a sign-in to a teammate. Wake the lead of a quiet task once. If it stays quiet, pause the task and tell the owner.",
-    outputs: ["log"],
-    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
-    turnOn: "Watches running tasks that go quiet where Upkeep is Captain.",
-    outcomes: [
-      { id: "stuck-signin", text: "An account needs a sign-in: move the step to a teammate" },
-      { id: "stuck-wake", text: "A stuck run: wake the lead once" },
-      { id: "stuck-tell", text: "Still stuck: pause it and tell me" },
-    ],
-    runner: { kind: "chore", chore: "stuck" },
-  }),
-  upkeep({
     id: "upkeep-followups",
     name: "Follow-ups",
     purpose: "Close follow-ups that are done and report the rest as findings.",

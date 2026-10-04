@@ -2629,10 +2629,6 @@ export class AutonomyService {
           status: t.status,
           updatedAt: t.updatedAt,
         })),
-        events: this.repo.eventsBetween(
-          new Date(now.getTime() - 24 * 3_600_000).toISOString(),
-          now.toISOString(),
-        ),
         waiting: this.waiting(),
       }),
       ...machineOf(this.deps.machine?.()),

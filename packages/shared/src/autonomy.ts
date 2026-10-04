@@ -359,8 +359,8 @@ export const AutonomyEventsInputSchema = z.object({
 /** `autonomy.report`: the charts of the Auto-pilot dashboard. `days` is how far back finished tasks go. */
 export const AutonomyReportInputSchema = z.object({ days: z.number().int().min(1).max(30).default(14) });
 
-/** Why a task shows in the dashboard's Stuck list. */
-export const StuckKindSchema = z.enum(["idle", "waiting", "failures", "loop"]);
+/** Why a task shows in the dashboard's Stuck list: a running task or one in review that has gone quiet. */
+export const StuckKindSchema = z.enum(["idle", "waiting"]);
 export type StuckKind = z.infer<typeof StuckKindSchema>;
 
 export const StuckTaskSchema = z.object({
@@ -370,10 +370,8 @@ export const StuckTaskSchema = z.object({
   kind: StuckKindSchema,
   /** Since when it has not moved (UTC ISO). */
   since: z.string(),
-  /** One line: what is repeating, or what it waits for. */
+  /** One line: what it is quiet about. */
   text: z.string(),
-  /** The room item it waits on, to open it. */
-  item: z.string().optional(),
 });
 export type StuckTask = z.infer<typeof StuckTaskSchema>;
 

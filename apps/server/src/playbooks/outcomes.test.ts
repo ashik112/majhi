@@ -90,7 +90,7 @@ describe("outcome rules of Ship finished work", () => {
 
 /** One chore run with the given ports and switches off, and the lines it wrote to the captain's log. */
 async function choreRun(
-  chore: "ship" | "cards" | "stuck" | "triage" | "cleanup" | "questions" | "projects",
+  chore: "ship" | "cards" | "triage" | "cleanup" | "questions" | "projects",
   ports: Record<string, unknown>,
   off: string[],
   authority: Authority = RUNS,
@@ -100,7 +100,6 @@ async function choreRun(
   const now = () => new Date("2026-10-04T10:00:00.000Z");
   const all = {
     typing: () => false,
-    signInStalls: async () => [],
     answerTasks: async () => [],
     ...ports,
   } as unknown as CaptainPorts;
@@ -177,23 +176,6 @@ describe("outcome rules of the other chores", () => {
     expect(decided).toHaveLength(2);
     await choreRun("cards", ports(false), ["cards-left"]);
     expect(decided).toHaveLength(2);
-  });
-
-  it("restarts a stuck run once, then tells the owner, each by its own switch", async () => {
-    const calls: string[] = [];
-    const ports = {
-      stalled: () => [{ id: "ACM-1", lead: "dev", quietSince: "2026-10-04T08:00:00.000Z" }],
-      wakeLead: () => void calls.push("wake"),
-      pauseForOwner: async () => void calls.push("pause"),
-    };
-    await choreRun("stuck", ports, []);
-    expect(calls).toEqual(["wake"]);
-    calls.length = 0;
-    await choreRun("stuck", ports, ["stuck-wake"]);
-    expect(calls).toEqual(["pause"]);
-    calls.length = 0;
-    await choreRun("stuck", ports, ["stuck-wake", "stuck-tell"]);
-    expect(calls).toEqual([]);
   });
 
   it("proposes splitting a big task, not when its rule is off", async () => {

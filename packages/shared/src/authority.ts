@@ -18,7 +18,7 @@ export const AuthoritySchema = z.strictObject({
   questions: AuthorityChoiceSchema,
   /** Answer routine approval cards. */
   approvals: AuthorityChoiceSchema,
-  /** Memory, projects, triage, cleanup, stuck tasks. */
+  /** Memory, projects, triage, cleanup, follow-ups. */
   upkeep: AuthorityChoiceSchema,
   /** Merge into the base branch (shipping). */
   merge: AuthorityChoiceSchema,

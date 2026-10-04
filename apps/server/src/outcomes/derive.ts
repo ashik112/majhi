@@ -27,7 +27,6 @@ export const CHORE_ROW: Record<CaptainChore, string> = {
   projects: "upkeep",
   triage: "upkeep",
   cleanup: "upkeep",
-  stuck: "upkeep",
   followups: "upkeep",
   discover: "upkeep",
   tidy: "upkeep",

@@ -23,7 +23,6 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   projects: "Projects",
   triage: "Task triage",
   cleanup: "Cleanup",
-  stuck: "Stuck tasks",
   followups: "Follow-ups",
   discover: "Discover tools",
   tidy: "Tidy up",

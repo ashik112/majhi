@@ -223,21 +223,6 @@ export interface CaptainPorts {
     org: string,
   ): Promise<{ bytes: number; tasks: { id: string; bytes: number; worktrees: number; folders: number }[] }>;
 
-  // Stuck tasks
-  /** Running tasks where nobody works and nothing is pending, with when the last turn ended. */
-  stalled(org: string): { id: string; lead: string; quietSince: string }[];
-  /**
-   * Tasks held up by an account that needs a new sign-in: the lead cannot run (the task runs quiet,
-   * or paused as signed-out), or a teammate's step failed on its sign-in and nobody works.
-   */
-  signInStalls(org: string): Promise<SignInStall[]>;
-  /** Gives the lead's place to `to`, a teammate whose account works, and starts the task again. */
-  moveLead(org: string, task: string, to: string, reason: string): Promise<void>;
-  /** Wakes the lead to give the step of `agent`, whose account needs a sign-in, to a teammate. */
-  handBack(org: string, task: string, agent: string, account: string): void;
-  wakeLead(org: string, task: string): void;
-  pauseForOwner(org: string, task: string, text: string): Promise<void>;
-
   // Follow-ups and findings
   followUps: FollowUpPorts;
   findings: FindingsService;
@@ -248,17 +233,4 @@ export interface CaptainPorts {
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */
   typing(task: string): boolean;
-}
-
-/** A task an account that needs a new sign-in holds up. */
-export interface SignInStall {
-  id: string;
-  lead: string;
-  /** The agent that cannot run: the lead, or the teammate whose step failed. */
-  agent: string;
-  account: string;
-  /** The first teammate, in team order, whose account works. Undefined when none does. */
-  to?: string | undefined;
-  /** When the account was found signed out, so a later sign-out is a new matter. */
-  since: string;
 }
