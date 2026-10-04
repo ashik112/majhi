@@ -1788,7 +1788,9 @@ export const commands = {
        * The type its new branch starts with (feat, fix, chore, docs, refactor, test, perf, ci, build).
        * Default: read from the title.
        */
-      branchType: BranchTypeSchema.optional(),
+      branchType: BranchTypeSchema.optional().describe(
+        "The kind of change, for the branch name and commit style: feat, fix, chore, docs, refactor, test, perf, ci or build. Left out, majhi reads it from the title.",
+      ),
       /**
        * An investigation: the repos listed in repos are mounted read-only. No branch, no worktree, no
        * Changes and no Ship. `kind: "ops"` does the same.
