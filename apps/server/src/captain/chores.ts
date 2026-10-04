@@ -13,6 +13,8 @@ import { createUpkeepChores } from "./upkeep.ts";
 
 /** How many times the captain sends an answer task back before it leaves it for the owner. */
 const MAX_ANSWER_NUDGES = 2;
+/** How many times the captain asks a lead to commit or discard what it left, before it leaves the task. */
+const MAX_UNCOMMITTED_NUDGES = 2;
 
 /**
  * The upkeep chores (the table in SPEC 5.18). Each reads the workspace's state through the ports and
@@ -289,6 +291,30 @@ export function createChores(
               },
             });
             continue;
+          }
+          // Uncommitted work: the lead is told once per state of it, twice at most, then it is left for the owner.
+          if (check.uncommitted !== undefined && !ruleOff(run, "ship-checks")) {
+            const { project, files } = check.uncommitted;
+            const listed = `${files.slice(0, 8).join(", ")}${files.length > 8 ? " and more" : ""}`;
+            const key = `ship:uncommitted:${t.id}:`;
+            if (run.times(key) < MAX_UNCOMMITTED_NUDGES) {
+              await run.act({
+                key: `${key}${t.heads}:${files.join(",")}`,
+                text: `Asked the lead of ${t.id} to commit or discard the uncommitted changes in ${project}: ${t.title}`,
+                reason: check.why,
+                task: t.id,
+                recheck: async () => away(t.id),
+                do: async () => {
+                  await ports.askChanges(
+                    org,
+                    t.id,
+                    `Captain: Commit or discard the uncommitted changes in ${project}: ${listed}`,
+                  );
+                  return { undoNote: "A message to the lead: nothing to undo" };
+                },
+              });
+              continue;
+            }
           }
           if (!ruleOff(run, "ship-notready")) {
             run.note(`ship:${t.id}:${t.heads}:check`, `${t.id} is not ready to ship`, check.why, t.id);

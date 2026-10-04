@@ -19,6 +19,10 @@ export interface DeepRow {
   ms: number;
   steps: HandoffStep[];
   review: HandoffReview;
+  /** What the check ran in (majhi's commit and the runner image). Empty: not recorded. */
+  env: string;
+  /** How many times this head's checks ran because a failure was retried, counting the first. */
+  attempts: number;
 }
 
 interface RawDeep {
@@ -28,6 +32,8 @@ interface RawDeep {
   ms: number;
   steps: string;
   review: string;
+  env: string;
+  attempts: number;
 }
 
 const StepsSchema = z.array(HandoffStepSchema);
@@ -45,7 +51,16 @@ export class HandoffRepo {
       const steps = StepsSchema.safeParse(JSON.parse(row.steps));
       const review = HandoffReviewSchema.safeParse(JSON.parse(row.review));
       if (!steps.success || !review.success) return undefined;
-      return { task, head, at: row.at, ms: row.ms, steps: steps.data, review: review.data };
+      return {
+        task,
+        head,
+        at: row.at,
+        ms: row.ms,
+        steps: steps.data,
+        review: review.data,
+        env: row.env,
+        attempts: row.attempts,
+      };
     } catch {
       return undefined;
     }
@@ -54,9 +69,18 @@ export class HandoffRepo {
   putDeep(row: DeepRow): void {
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO handoff_deep (task, head, at, ms, steps, review) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO handoff_deep (task, head, at, ms, steps, review, env, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(row.task, row.head, row.at, row.ms, JSON.stringify(row.steps), JSON.stringify(row.review));
+      .run(
+        row.task,
+        row.head,
+        row.at,
+        row.ms,
+        JSON.stringify(row.steps),
+        JSON.stringify(row.review),
+        row.env,
+        row.attempts,
+      );
   }
 
   dropDeep(task: string, head: string): void {

@@ -139,7 +139,12 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
       for (const p of protectedPaths) {
         if (inside(p, path)) throw new MountRefused(`A run cannot mount ${path}: it holds ${p}.`);
         const allowed =
-          isOwnHome(path) || isHooks(path, m) || isRunFolder(path, m) || isProfile(path) || isCache(path, m) || isTools(path, m);
+          isOwnHome(path) ||
+          isHooks(path, m) ||
+          isRunFolder(path, m) ||
+          isProfile(path) ||
+          isCache(path, m) ||
+          isTools(path, m);
         if (inside(path, p) && !(majhiHomes.includes(p) && allowed)) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }
@@ -195,9 +200,9 @@ export function dockerRunArgs(
     "--pids-limit",
     String(cfg.pidsLimit ?? 2048),
     "--memory",
-    cfg.memory ?? "4g",
+    req.limits?.memory ?? cfg.memory ?? "4g",
     "--cpus",
-    cfg.cpus ?? "1",
+    req.limits?.cpus ?? cfg.cpus ?? "1",
   ];
   if (cfg.user) args.push("--user", cfg.user);
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);

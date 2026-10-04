@@ -12,18 +12,24 @@ import { ChoreRunner, type Workspace } from "./runner.ts";
 
 const NOW = () => new Date("2026-10-04T10:00:00.000Z");
 
-function setup(authority: Authority, answers: AnswerTask[] = [], mr: { ok: boolean } = { ok: true }) {
+function setup(
+  authority: Authority,
+  answers: AnswerTask[] = [],
+  mr: { ok: boolean } = { ok: true },
+  over: { check?: () => unknown; heads?: () => string } = {},
+) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const calls = { merged: 0, opened: 0, asked: 0, closed: [] as string[], changes: [] as string[] };
   const ports = {
     typing: () => false,
     answerTasks: async () => answers,
-    reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: "abc" }],
-    shipCheck: async () => ({
-      ready: true,
-      evidence: "checks pass",
-      targets: [{ project: "api", into: "main", base: "main" }],
-    }),
+    reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: over.heads?.() ?? "abc" }],
+    shipCheck: async () =>
+      over.check?.() ?? {
+        ready: true,
+        evidence: "checks pass",
+        targets: [{ project: "api", into: "main", base: "main" }],
+      },
     ship: async () => {
       calls.merged += 1;
       return { text: "Shipped ACM-1" };
@@ -99,6 +105,42 @@ describe("ship with Merge on the owner", () => {
     await t.run();
     expect(t.calls).toMatchObject({ merged: 0, opened: 0, asked: 1 });
     expect(t.repo.allActions().some((a) => a.reason.includes("No remote"))).toBe(true);
+  });
+});
+
+describe("a task with uncommitted changes", () => {
+  const dirty = (files: string[]) => ({
+    ready: false,
+    why: `oryza has uncommitted changes: ${files.join(", ")}`,
+    uncommitted: { project: "oryza", files },
+  });
+
+  it("sends the lead one line naming the files, and not again for the same state", async () => {
+    const t = setup(
+      { ...RUNS, merge: "ask", push: "decide" },
+      [],
+      { ok: true },
+      { check: () => dirty(["a.ts", "b.ts"]) },
+    );
+    await t.run();
+    await t.run();
+    expect(t.calls.changes).toEqual([
+      "Captain: Commit or discard the uncommitted changes in oryza: a.ts, b.ts",
+    ]);
+    expect(t.calls.opened).toBe(0);
+  });
+
+  it("asks twice at most, then leaves it for the owner", async () => {
+    let n = 0;
+    const t = setup(
+      { ...RUNS, merge: "ask", push: "decide" },
+      [],
+      { ok: true },
+      { check: () => dirty([`f${n}.ts`]), heads: () => `head${n}` },
+    );
+    for (n = 1; n <= 4; n++) await t.run();
+    expect(t.calls.changes).toHaveLength(2);
+    expect(t.repo.allActions().some((a) => a.text.includes("is not ready to ship"))).toBe(true);
   });
 });
 

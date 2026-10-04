@@ -1,10 +1,11 @@
-import { detectSecrets } from "@majhi/shared";
 import type { ShipCheck } from "../captain/ports.ts";
+import { git } from "../git/git.ts";
 import { mergeConflicts } from "../git/merge.ts";
+import { changeBase } from "../git/since-start.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import type { TaskService } from "../tasks/service.ts";
+import { scanForSecrets } from "./secret-scan.ts";
 
 /**
  * The cheap checks of a task in review, read live each time: it is in review and no agent works in
@@ -21,7 +22,6 @@ export interface ReadyDeps {
   room: Pick<RoomService, "flush">;
   runs: { working(task: string): string[] };
   mrs: Pick<MrService, "shipOptions">;
-  tasks: Pick<TaskService, "diff">;
 }
 
 const WAITING = ["approval", "ask", "choice", "owner-question", "secret-request", "permission"] as const;
@@ -54,20 +54,39 @@ export async function shipReadiness(deps: ReadyDeps, id: string): Promise<ShipCh
       return { ready: false, why: `it conflicts with ${c.base} in ${listed}`, conflict: true };
     }
   }
-  const diffs = await deps.tasks.diff(id);
-  for (const d of diffs) {
-    if (d.error !== undefined)
-      return { ready: false, why: `the diff of ${d.project} could not be read`, owner: true };
-    if (d.uncommitted) return { ready: false, why: `${d.project} has uncommitted changes` };
-    if (d.omitted > 0 || d.files.some((f) => f.truncated)) {
-      return { ready: false, why: `the diff of ${d.project} is too large to check for secrets`, owner: true };
+  for (const repo of task.repos) {
+    const files = repo.worktree === undefined ? [] : await uncommittedFiles(repo.worktree);
+    if (files === undefined)
+      return { ready: false, why: `the changes of ${repo.project} could not be read`, owner: true };
+    if (files.length > 0) {
+      const listed = `${files.slice(0, 8).join(", ")}${files.length > 8 ? " and more" : ""}`;
+      return {
+        ready: false,
+        why: `${repo.project} has uncommitted changes: ${listed}`,
+        uncommitted: { project: repo.project, files: files.slice(0, 20) },
+      };
     }
-    const added = d.files
-      .flatMap((f) => f.patch.split("\n"))
-      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-      .join("\n");
-    if (detectSecrets(added).length > 0)
-      return { ready: false, why: `the diff of ${d.project} holds what looks like a secret` };
+    // A merge request carries what the branch adds over its base now. The start commit is not that
+    // once main moved or was merged in, so the scan measures from the merge base.
+    const cwd = repo.worktree ?? repo.source;
+    const tip = `refs/heads/${repo.branch}`;
+    const scan = await changeBase(cwd, repo, tip, { mergeBase: true })
+      .then((from) => scanForSecrets(cwd, from.commit, tip))
+      .catch(() => undefined);
+    if (scan === undefined)
+      return { ready: false, why: `the diff of ${repo.project} could not be read`, owner: true };
+    if (scan.kind === "secret")
+      return {
+        ready: false,
+        why: `the diff of ${repo.project} holds what looks like a secret in ${scan.path}`,
+      };
+    if (scan.kind === "too-large") {
+      return {
+        ready: false,
+        why: `the diff of ${repo.project} is too large to check for secrets: ${scan.why}`,
+        owner: true,
+      };
+    }
   }
   const into = [...new Set(changed.map((c) => c.base))].join(", ");
   return {
@@ -75,4 +94,23 @@ export async function shipReadiness(deps: ReadyDeps, id: string): Promise<ShipCh
     evidence: `committed, merges cleanly into ${into}, no card waits, no secret in the diff`,
     targets: changed.map((c) => ({ project: c.project, into: c.base, base: c.base })),
   };
+}
+
+/** The files a worktree changed and did not commit, new ones included. Undefined when git cannot say. */
+async function uncommittedFiles(worktree: string): Promise<string[] | undefined> {
+  try {
+    const out = await git(worktree, ["-c", "core.quotePath=false", "status", "--porcelain", "-z"]);
+    const entries = out.split("\0");
+    const files: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i] ?? "";
+      if (entry.length <= 3) continue;
+      files.push(entry.slice(3));
+      // A rename lists its old path as the next entry.
+      if (entry[0] === "R" || entry[0] === "C") i++;
+    }
+    return files;
+  } catch {
+    return undefined;
+  }
 }
