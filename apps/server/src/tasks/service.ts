@@ -1154,7 +1154,10 @@ export class TaskService {
   async takeOver(id: string, from: string, to: string): Promise<boolean> {
     const task = this.deps.store.tasks.get(id);
     if (task === undefined || task.status === "done") return false;
-    if (!task.team.includes(from) || task.team.includes(to)) return false;
+    if (!task.team.includes(from)) return false;
+    // A teammate takes the lead's place: it leads, and `from` leaves the team.
+    const mate = task.team.includes(to);
+    if (mate && task.team[0] !== from) return false;
     try {
       await this.checkMember(task, to);
     } catch {
@@ -1164,7 +1167,9 @@ export class TaskService {
     const at = this.now().toISOString();
     this.deps.store.tasks.setTeam(
       id,
-      task.team.map((a) => (a === from ? to : a)),
+      mate
+        ? [to, ...task.team.filter((a) => a !== from && a !== to)]
+        : task.team.map((a) => (a === from ? to : a)),
       at,
     );
     // Only the repos carry over: a model or effort set for `from` may not exist on `to`'s account.
