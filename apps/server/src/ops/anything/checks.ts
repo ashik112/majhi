@@ -8,7 +8,7 @@ import {
   taskGroup,
   type WatchCheck,
 } from "@majhi/shared";
-import { describeFailure, HTTP_TIMEOUT_MS, numberAt, urlProblem } from "../probes.ts";
+import { describeFailure, HTTP_TIMEOUT_MS, numberAt, pathsOf, urlProblem, valueAt } from "../probes.ts";
 import type { LimitUse, WatchHost, WatchTask } from "./host.ts";
 import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf } from "./html.ts";
 
@@ -508,12 +508,24 @@ async function metric(
   } catch {
     throw new Unavailable("the tool's arguments are not a JSON object");
   }
-  const answer = await guarded(() => ports.monitor(spec.connection, spec.tool, args));
+  const raw = await guarded(() => ports.monitor(spec.connection, spec.tool, args));
+  // Many tools wrap their answer in one key (`{ account: {...} }`): the path is tried inside it too.
+  const keys = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw) : [];
+  const inner = keys.length === 1 ? (raw as Record<string, unknown>)[keys[0] ?? ""] : undefined;
+  const answer =
+    valueAt(raw, spec.path) === undefined && inner !== undefined && valueAt(inner, spec.path) !== undefined
+      ? inner
+      : raw;
   const n = numberAt(answer, spec.path);
   if (n === undefined) {
     // A word, like a droplet's `active` or a database's `online`: a change of it is what alerts.
     const text = textAt(answer, spec.path);
-    if (text === undefined) throw new Unavailable("no number or text at that path in the answer");
+    if (text === undefined) {
+      const there = pathsOf(raw);
+      throw new Unavailable(
+        `no number or text at ${spec.path}${there.length === 0 ? "" : `. The answer has: ${there.join(", ")}`}`,
+      );
+    }
     const label = spec.label === undefined || spec.label === "" ? "" : `${spec.label} `;
     return { display: `${label}${text}`, healthy: true, signature: text };
   }
@@ -940,11 +952,7 @@ export async function readWatch(
 
 /** A short text value at a dotted path of a tool's answer, or undefined. */
 function textAt(value: unknown, path: string): string | undefined {
-  let cur: unknown = value;
-  for (const part of path.split(".")) {
-    if (cur === null || typeof cur !== "object" || !Object.hasOwn(cur, part)) return undefined;
-    cur = (cur as Record<string, unknown>)[part];
-  }
+  const cur = valueAt(value, path);
   if (typeof cur === "boolean") return String(cur);
   return typeof cur === "string" && cur.trim() !== "" ? cur.trim().slice(0, 80) : undefined;
 }

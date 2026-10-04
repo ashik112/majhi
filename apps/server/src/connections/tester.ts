@@ -10,6 +10,7 @@ import {
   type ConnectionType,
   connectionType,
   type FieldKind,
+  serviceByUrl,
   textValue,
 } from "@majhi/shared";
 import { errorCode, errorMessage, UserError } from "../errors.ts";
@@ -194,6 +195,8 @@ export class ConnectionTester {
     if (textValue(found.connection, "auth") === "oauth") {
       const bearer = await this.deps.oauth?.bearer?.(id);
       if (bearer === undefined || "problem" in bearer) throw new Error("the connection is not signed in");
+      if (tool.startsWith("GET "))
+        return readApi(found.connection, tool.slice(4).trim(), args, bearer.token, timeoutMs);
       headers.Authorization = `Bearer ${bearer.token}`;
       const protocol = textValue(found.connection, "protocol") === "sse" ? "sse" : "http";
       const url =
@@ -649,4 +652,51 @@ async function sweep(root: string): Promise<void> {
     const info = await stat(path).catch(() => undefined);
     if (info !== undefined && info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
   }
+}
+
+/**
+ * A watch's read of the service's own REST API with the connection's sign-in: `GET <url>`, the arguments
+ * as query values. `{{now}}` and `{{minutesAgo:N}}` become Unix seconds at each look, so a window moves
+ * with the clock. The token goes only to the service's own API hosts.
+ */
+export async function readApi(
+  connection: ConnectionConfig,
+  address: string,
+  args: Record<string, unknown>,
+  token: string,
+  timeoutMs: number,
+  now: () => number = Date.now,
+  fetchFn: typeof fetch = fetch,
+): Promise<unknown> {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    throw new Error("that is not a web address");
+  }
+  const hosts = serviceByUrl(textValue(connection, "url") ?? "")?.apiHosts ?? [];
+  if (url.protocol !== "https:" || !hosts.includes(url.host)) {
+    throw new Error(
+      hosts.length === 0
+        ? `${connection.name}'s sign-in is not used for API reads`
+        : `${connection.name}'s sign-in only goes to ${hosts.join(", ")}`,
+    );
+  }
+  const seconds = Math.floor(now() / 1000);
+  for (const [name, raw] of Object.entries(args)) {
+    const value = String(raw)
+      .replace(/\{\{now\}\}/g, String(seconds))
+      .replace(/\{\{minutesAgo:(\d{1,5})\}\}/g, (_, m: string) => String(seconds - Number(m) * 60));
+    url.searchParams.set(name, value);
+  }
+  const res = await fetchFn(url, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`the API answered ${res.status}`);
+  }
+  return (await res.json()) as unknown;
 }

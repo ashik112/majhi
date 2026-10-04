@@ -209,14 +209,44 @@ export async function dnsProbe(def: OpsServiceDef, ports: ProbePorts): Promise<P
   }
 }
 
-/** A number at a path like `data.rows.0.rate`. Own properties only. */
-export function numberAt(value: unknown, path: string): number | undefined {
+/** The value at a path like `data.rows.0.rate`; `-1` is an array's last item. Own properties only. */
+export function valueAt(value: unknown, path: string): unknown {
   let cur: unknown = value;
   for (const part of path.split(".")) {
-    if (cur === null || typeof cur !== "object") return undefined;
+    if (Array.isArray(cur) && /^-?\d+$/.test(part)) {
+      const i = Number(part);
+      cur = cur[i < 0 ? cur.length + i : i];
+      continue;
+    }
+    if (cur === null || typeof cur !== "object" || Array.isArray(cur)) return undefined;
     if (!Object.hasOwn(cur, part)) return undefined;
     cur = (cur as Record<string, unknown>)[part];
   }
+  return cur;
+}
+
+/** The leaf paths of an answer, for a message that says what is there. At most `max`, never values. */
+export function pathsOf(value: unknown, max = 12): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown, at: string, depth: number) => {
+    if (out.length >= max || depth > 6) return;
+    if (Array.isArray(v)) {
+      if (v.length > 0) walk(v[v.length - 1], at === "" ? "-1" : `${at}.-1`, depth + 1);
+      return;
+    }
+    if (v !== null && typeof v === "object") {
+      for (const [k, child] of Object.entries(v)) walk(child, at === "" ? k : `${at}.${k}`, depth + 1);
+      return;
+    }
+    if (at !== "") out.push(at);
+  };
+  walk(value, "", 0);
+  return out;
+}
+
+/** A number at a path like `data.rows.0.rate`. Own properties only. */
+export function numberAt(value: unknown, path: string): number | undefined {
+  const cur = valueAt(value, path);
   if (typeof cur === "number" && Number.isFinite(cur)) return cur;
   if (typeof cur === "string" && cur.trim() !== "" && Number.isFinite(Number(cur))) return Number(cur);
   return undefined;

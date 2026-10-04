@@ -115,6 +115,8 @@ export const ServiceEntrySchema = z.object({
   mcpUrl: z.url().optional(),
   /** Servers the owner picks from, all reached with one sign-in. The first ones are picked by default. */
   products: z.array(ServiceProductSchema).max(30).optional(),
+  /** Hosts of the service's own API that a watch may read with this sign-in. The token goes nowhere else. */
+  apiHosts: z.array(z.string().min(1).max(100)).max(5).optional(),
   /** The provider's OAuth, for a service without one the SDK can discover. */
   provider: ServiceProviderSchema.optional(),
   /** The guided app setup (`app-setup.ts`) the owner does first, once per workspace. */
@@ -391,6 +393,7 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     kind: "mcp-oauth",
     summary: "Droplets, Kubernetes, databases, apps and more",
     mcpUrl: "https://accounts.mcp.digitalocean.com/mcp",
+    apiHosts: ["api.digitalocean.com"],
     products: [
       ["droplets", "Droplets"],
       ["doks", "Kubernetes"],
