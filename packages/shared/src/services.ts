@@ -383,7 +383,7 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     docs: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server",
     note: "Beta. A group Owner turns on MCP client access first. GitLab has one permission for all of it.",
     enableHint:
-      "In GitLab, open the top-level group, then Settings > General > Permissions and group features. Under MCP client access, select Allow connection to GitLab and save. This needs the group's Owner role.",
+      "A GitLab Owner of your top-level group turns it on: Settings > GitLab Duo > Change configuration > Turn on Model Context Protocol (MCP) support, or on newer GitLab Settings > General > Permissions and group features > MCP client access > Allow connection to GitLab.",
   },
   {
     id: "digitalocean",
