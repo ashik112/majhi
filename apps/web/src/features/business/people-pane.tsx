@@ -635,7 +635,9 @@ function ContactForm({
                     ? "Joined an existing person"
                     : "Person saved",
                 done.merged.length > 0
-                  ? { detail: `${done.merged.length} duplicate${done.merged.length === 1 ? "" : "s"} folded in.` }
+                  ? {
+                      detail: `${done.merged.length} duplicate${done.merged.length === 1 ? "" : "s"} folded in.`,
+                    }
                   : done.result === "merged"
                     ? { detail: "The same email or link was already here." }
                     : {},

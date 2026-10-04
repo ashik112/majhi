@@ -141,7 +141,11 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
                 label="Show entries"
                 value={view}
                 segments={[
-                  { value: "live", label: "Live", ...(view === "live" ? { count: list.data?.total ?? 0 } : {}) },
+                  {
+                    value: "live",
+                    label: "Live",
+                    ...(view === "live" ? { count: list.data?.total ?? 0 } : {}),
+                  },
                   { value: "removed", label: "Removed" },
                 ]}
                 onChange={(v) => {
