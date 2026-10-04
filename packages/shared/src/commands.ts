@@ -3655,6 +3655,16 @@ export const commands = {
     input: z.object({ org: z.string() }),
     output: z.object({ item: RoomItemSchema }),
   },
+  "captain.reportBug": {
+    risk: "change",
+    summary:
+      "File a fix task on majhi's own project in the Private workspace for a bug in majhi itself (an error that starts with 'majhi problem:', a check majhi runs wrong, a refusal that contradicts an approval). Works from any workspace's thread. Write the exact error, what you did and what you expected; nothing else of the workspace",
+    input: z.object({
+      title: z.string().trim().min(1).max(120),
+      details: z.string().trim().min(1).max(4000),
+    }),
+    output: z.object({ task: z.string() }),
+  },
   "captain.undo": {
     risk: "change",
     summary:

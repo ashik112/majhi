@@ -169,6 +169,17 @@ describe("a server watch runs only its fixed commands", () => {
     expect(w.backend.ssh).toEqual([]);
   });
 
+  it("a script watch can alert over a number", async () => {
+    const w = world();
+    const def = WatchDefSchema.parse({
+      name: "nbr-db CPU",
+      spec: { kind: "script", script: "echo 55", connections: [] },
+      condition: { type: "above", value: 80, forMin: 15 },
+      everyMin: 5,
+    });
+    expect(await w.ops.engine.problem("acme", def)).toBeUndefined();
+  });
+
   it("a disk watch asks the host for df and reads a percentage", async () => {
     const w = world();
     w.backend.sshAnswer = () => ({

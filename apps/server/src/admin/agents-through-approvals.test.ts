@@ -118,3 +118,19 @@ describe("full access for the captain", () => {
     expect(res.status).not.toBe(200);
   });
 });
+
+describe("a majhi bug from a workspace thread", () => {
+  it("reaches the report command from another workspace's thread, and asks for majhi's project", async () => {
+    w = await bossWorld({ real: false });
+    const { admin } = w.h.majhi.services;
+    await w.h.cmd("autonomy.configure", { orgs: { acme: { fullAccess: true } } });
+    const lane = await w.h.cmd("autonomy.guide", { text: "Report it.", keep: false, org: "acme" });
+    const caller = { task: String(lane.body.chat), agent: "boss" };
+    const sent = await admin.call(caller, "majhi_captain_reportBug", {
+      title: "script watch shows [redacted]",
+      details: "watch.test on echo 42 returned value [redacted]. Expected 42.",
+      ...plain,
+    });
+    expect(sent.text).toContain("No project in the Private workspace is majhi's own code");
+  });
+});
