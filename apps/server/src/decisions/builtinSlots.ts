@@ -254,6 +254,8 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     title: "Wake on a mention",
     use: "routing",
     question: /^acts_\d+$/,
+    // Shadow would wake every mentioned agent, which costs more; it keeps its own bar until it is calibrated.
+    startMode: "live",
     target: 0.95,
     fixtures: WAKES,
   },
@@ -287,6 +289,8 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     title: "Keep or drop a fact",
     use: "memory",
     question: /^(verdict|worth)$/,
+    // Shadow would leave every waiting fact to the owner; it keeps the old bar until it is calibrated.
+    startMode: "live",
     target: 0.98,
     classOf: groupKeep,
     fixtures: VERDICT_FACTS,
@@ -304,6 +308,8 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     title: "Fact against the nearest fact",
     use: "memory",
     question: /^relation$/,
+    // Merges and contradictions keep the old bar until calibrated, so duplicates still merge.
+    startMode: "live",
     target: 0.95,
   },
   {
