@@ -134,6 +134,7 @@ describe("store", () => {
       "outbound_channels",
       "outbound_drafts",
       "outcomes",
+      "playbook_custom",
       "playbook_runs",
       "playbook_state",
       "project_cards",
@@ -156,6 +157,8 @@ describe("store", () => {
       "turns",
       "usage_events",
       "voice_profiles",
+      "watch_samples",
+      "watches",
     ]);
   });
 
