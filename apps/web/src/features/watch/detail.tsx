@@ -12,6 +12,7 @@ import { useBoss } from "@/features/boss/boss-context";
 import { wsTab } from "@/features/captain/panel-model";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useFixCheck } from "@/lib/ops-queries";
@@ -28,6 +29,28 @@ import {
 import { Sparkline } from "./sparkline";
 
 const SEVERITY_TONE = { high: "red", medium: "amber", low: "neutral" } as const;
+
+/** A timeline line: a long one (an error after a command line) shows its start and opens whole. */
+function TimelineText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 240;
+  return (
+    <span className="min-w-0 flex-1 text-sm text-fg-soft text-pretty break-words">
+      <span className={cn(open && long && "font-mono text-xs whitespace-pre-wrap")}>
+        {long && !open ? `${text.slice(0, 240)}…` : text}
+      </span>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="ml-2 cursor-pointer text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+        >
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </span>
+  );
+}
 
 /** What happened, in order: when, what kind of line, and the words. */
 export function Timeline({ incident, now }: { incident: OpsIncident; now: number }) {
@@ -47,7 +70,7 @@ export function Timeline({ incident, now }: { incident: OpsIncident; now: number
             {new Date(t.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
           </span>
           <span className="w-[104px] shrink-0 text-xs text-fg-muted">{TIMELINE_LABEL[t.kind]}</span>
-          <span className="min-w-0 flex-1 text-sm text-fg-soft text-pretty break-words">{t.text}</span>
+          <TimelineText text={t.text} />
         </li>
       ))}
       <li className="border-t border-line pt-1.5 text-xs text-fg-faint">
