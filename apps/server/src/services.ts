@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
-  type CaptainChore,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -35,7 +34,6 @@ import { watchIdOf } from "./automation/migrate.ts";
 import { ScheduleRepo } from "./automation/schedules.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
-import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -1331,8 +1329,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),
-      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
-      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),

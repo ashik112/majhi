@@ -5,9 +5,8 @@ import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { answerableText, type DigestInput, digest, type Facts, factsKey, factsOf } from "./digest.ts";
+import { answerableText, type DigestInput, digest, factsKey } from "./digest.ts";
 import type { AutonomyService } from "./service.ts";
-import { diffFacts, type WakeGate } from "./wake-gate.ts";
 
 /**
  * The driver (PRV-74, rule 8; 5.18 lanes): wakes the captain with a tick in the lane of each
@@ -60,8 +59,6 @@ export interface DriverDeps {
   incidentLines?: (org: string) => string[];
   /** One line per project of a workspace for the digest: its knowledge card in brief. */
   projectLines?: (org: string) => string[];
-  /** Laya's say on whether a soft wake over changed facts is worth a captain turn. Absent: every one is. */
-  wakeGate?: Pick<WakeGate, "check" | "settle">;
   store: Store;
   events: EventHub;
   now?: () => Date;
@@ -78,10 +75,6 @@ interface Lane {
   news: Set<string>;
   /** The facts and the news lines of the last tick, or of the captain's last turn after it. */
   lastFacts: string | undefined;
-  /** The same facts as data, so a soft wake can be compared with them (the wake gate). */
-  lastFactsData: Facts | undefined;
-  /** The wake gate asked about the turn that is going: its outcome labels that decision. */
-  turnRef: string | undefined;
   lastNews: Set<string>;
   timer: NodeJS.Timeout | undefined;
   /** A tick waits for the captain's turn in this lane to end. */
@@ -122,8 +115,6 @@ export class AutonomyDriver {
         counts: new Map(),
         news: new Set(),
         lastFacts: undefined,
-        lastFactsData: undefined,
-        turnRef: undefined,
         lastNews: new Set(),
         timer: undefined,
         afterTurn: false,
@@ -365,13 +356,7 @@ export class AutonomyDriver {
     const built = await this.build(org, [], false);
     if (built === undefined) return;
     const after = factsKey(built.input);
-    // A turn the wake gate was asked about: whether the facts moved is whether it was worth taking.
-    if (lane.turnRef !== undefined) {
-      this.deps.wakeGate?.settle(lane.turnRef, after !== lane.lastFacts);
-      lane.turnRef = undefined;
-    }
     lane.lastFacts = after;
-    lane.lastFactsData = factsOf(built.input);
   }
 
   private async send(
@@ -395,21 +380,6 @@ export class AutonomyDriver {
       autonomy.skipped?.(reasons, org);
       return;
     }
-    // A soft wake over changed facts: Laya says whether the change is worth a turn. Any doubt takes it.
-    const data = factsOf(built.input);
-    let turnRef: string | undefined;
-    if (news.size === 0 && this.deps.wakeGate !== undefined && lane.lastFactsData !== undefined) {
-      const verdict = await this.deps.wakeGate.check({
-        org,
-        reasons,
-        diff: diffFacts(lane.lastFactsData, data),
-      });
-      if (verdict.skip) {
-        autonomy.skipped?.(reasons, org);
-        return;
-      }
-      turnRef = verdict.ref;
-    }
     const text = digest(built.input);
     await this.deps.tasks.tellAgent({
       task: chat,
@@ -420,8 +390,6 @@ export class AutonomyDriver {
     });
     lane.lastTickAt = this.now().getTime();
     lane.lastFacts = facts;
-    lane.lastFactsData = data;
-    lane.turnRef = turnRef;
     lane.lastNews = new Set(news);
     autonomy.ticked(reasons, org, chat);
   }

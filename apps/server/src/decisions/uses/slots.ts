@@ -1,4 +1,3 @@
-import { wakeRequest } from "../../autonomy/wake-gate.ts";
 import { ownWorkRequest } from "../../captain/own-work-second.ts";
 import { triageRequest } from "../../findings/triage.ts";
 import type { Fixture, SlotDef } from "../slots.ts";
@@ -260,63 +259,6 @@ const INJECTION = (): Fixture[] => [
   ),
 ];
 
-// Wake gate -------------------------------------------------------------------------------------------------------
-
-const wake = (reasons: string[], diff: string, label: "turn" | "skip"): Fixture => ({
-  request: wakeRequest("acme", reasons, { keys: [], text: diff }),
-  question: "worth_turn",
-  label,
-});
-
-const WAKE = (): Fixture[] => [
-  wake(
-    ["Hourly check: nothing autonomous is running here"],
-    'queue: +1 ["Add rate limits","ACM-14",null,null,false]',
-    "turn",
-  ),
-  wake(
-    ["ACM-7 is running, but no agent is working on it"],
-    'tasks: +1 ["ACM-7","running",null,null,["acme-builder"]]; -1 ["ACM-7","running",null,null,[]]',
-    "skip",
-  ),
-  wake(
-    ["ACM-9 is running, but no agent is working on it"],
-    'tasks: +1 ["ACM-9","running",null,null,["acme-builder","acme-reviewer"]]; -1 ["ACM-9","running",null,null,["acme-builder"]]',
-    "skip",
-  ),
-  wake(
-    ["Hourly check: nothing autonomous is running here"],
-    'backlog: +1 ["ACM-21","high","2026-10-05"]',
-    "turn",
-  ),
-  wake(
-    ["Hourly check: nothing autonomous is running here"],
-    'backlog: +1 ["ACM-22","normal",null]; -1 ["ACM-22","low",null]',
-    "skip",
-  ),
-  wake(
-    ["Restart: the captain was woken after a restart"],
-    'tasks: +1 ["ACM-3","paused","Waiting on an account",true,["acme-builder"]]; -1 ["ACM-3","running",null,null,["acme-builder"]]',
-    "turn",
-  ),
-  wake(
-    ["ACM-4 is running, but no agent is working on it"],
-    'projects: +1 "acme-web: 3 tasks, readiness 82"; -1 "acme-web: 3 tasks, readiness 81"',
-    "skip",
-  ),
-  wake(
-    ["Hourly check: nothing autonomous is running here"],
-    'tasks: +1 ["ACM-11","review",null,null,["acme-builder"]]; -1 ["ACM-11","running",null,null,["acme-builder"]]',
-    "turn",
-  ),
-  wake(
-    ["ACM-5 is running, but no agent is working on it"],
-    'queue: +1 ["Fix the footer","ACM-5",null,null,true]; -1 ["Fix the footer","ACM-5",null,null,false]',
-    "skip",
-  ),
-  wake(["Hourly check: nothing autonomous is running here"], "leftOut: 3 -> 5", "skip"),
-];
-
 export const LAYA_USE_SLOTS: readonly SlotDef[] = [
   {
     id: "own-work-second",
@@ -345,13 +287,5 @@ export const LAYA_USE_SLOTS: readonly SlotDef[] = [
     startMode: "live",
     target: 0.95,
     fixtures: INJECTION,
-  },
-  {
-    id: "wake-gate",
-    title: "Captain turn: worth taking",
-    use: "captain",
-    question: /^worth_turn$/,
-    target: 0.97,
-    fixtures: WAKE,
   },
 ];
