@@ -19,6 +19,16 @@ function fakeFindings(dismissed: string[] = []) {
       filed.set(input.dedupeKey ?? input.title, "open");
       return {};
     },
+    settle: (_org: string, _source: string, prefix: string, stillTrue: ReadonlySet<string>) => {
+      let n = 0;
+      for (const [k, v] of filed) {
+        if (v === "open" && k.startsWith(prefix) && !stillTrue.has(k)) {
+          filed.set(k, "fixed");
+          n += 1;
+        }
+      }
+      return n;
+    },
   };
 }
 
@@ -178,6 +188,20 @@ describe("tidy", () => {
     await t.runner.start("acme", "tidy", "daily");
     expect(clean).not.toHaveBeenCalled();
     expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("open");
+  });
+
+  it("resolves the dirty-worktree finding once the worktree is clean, and keeps one finding per task", async () => {
+    let dirty = ["src/a.ts has changes"];
+    const t = setup({
+      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
+      ports: { cleanable: async () => [{ id: "ACM-1", title: "Done", steps: [], dirty }] },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    await t.runner.start("acme", "tidy", "daily");
+    expect([...t.findings.filed.entries()]).toEqual([["tidy:dirty:ACM-1", "open"]]);
+    dirty = [];
+    await t.runner.start("acme", "tidy", "daily");
+    expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("fixed");
   });
 });
 

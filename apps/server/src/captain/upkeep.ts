@@ -221,7 +221,11 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
       }
       // Worktrees of done tasks: the cleanup chore removes the clean ones. Here the dirty ones are
       // named for the owner and never touched.
-      for (const t of await ports.cleanable(org)) {
+      const cleanable = await ports.cleanable(org);
+      // One finding per task under a stable key. When a worktree is clean again or gone, its finding is resolved.
+      const dirtyNow = new Set(cleanable.filter((t) => t.dirty.length > 0).map((t) => `tidy:dirty:${t.id}`));
+      findings.settle(org, "setup", "tidy:dirty:", dirtyNow);
+      for (const t of cleanable) {
         if (t.dirty.length === 0 || off(run, "tidy-dirty")) continue;
         run.check();
         const s: Signal = {

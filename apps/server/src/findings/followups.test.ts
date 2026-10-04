@@ -123,7 +123,17 @@ function setup(fixtures: {
   const nextDay = () => {
     state.day = "2026-10-05";
   };
-  return { findings, created, closed, calls, run, lines, repo, nextDay };
+  return {
+    findings,
+    created,
+    closed,
+    calls,
+    run,
+    lines,
+    repo,
+    nextDay,
+    dropThread: (id: number) => open.delete(id),
+  };
 }
 
 describe("the follow-ups playbook", () => {
@@ -170,6 +180,32 @@ describe("the follow-ups playbook", () => {
     );
     expect(all).toHaveLength(2);
     expect(w.calls.ask).toEqual([]);
+  });
+
+  it("resolves the finding of a thread that was closed, and leaves the others open", async () => {
+    const keep = thread("Should the cron move to a queue?");
+    const gone = thread("Should the logs go to the shared bucket?");
+    const w = setup({ threads: [keep, gone] });
+    await w.run();
+    const statuses = () =>
+      w.findings
+        .list({ limit: 10 }, { kind: "captain", org: "acme" })
+        .findings.map((f) => [f.dedupeKey, f.status]);
+    expect(statuses()).toEqual(
+      expect.arrayContaining([
+        [`followup:${keep.id}`, "open"],
+        [`followup:${gone.id}`, "open"],
+      ]),
+    );
+    w.dropThread(gone.id);
+    w.nextDay();
+    await w.run();
+    expect(statuses()).toEqual(
+      expect.arrayContaining([
+        [`followup:${keep.id}`, "open"],
+        [`followup:${gone.id}`, "fixed"],
+      ]),
+    );
   });
 
   it("does nothing the second time and spends nothing when there is nothing to read", async () => {
