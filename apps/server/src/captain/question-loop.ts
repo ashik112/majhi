@@ -3,6 +3,8 @@
  * same task, is stuck, and answering each time only feeds it. Pure.
  */
 
+import type { CallOutcome } from "./call-outcome.ts";
+
 /** An answer the captain gave to an agent in a task. */
 export interface PastAnswer {
   at: string;
@@ -10,6 +12,13 @@ export interface PastAnswer {
   question: string;
   /** What the captain answered, when known. */
   answer?: string | undefined;
+  /** The room card it answered, when known. */
+  item?: string | undefined;
+  /**
+   * How the call behind that card ended. A permission whose call went through is normal use: asking
+   * again for the same tool is not a loop. Unknown counts as it always did.
+   */
+  outcome?: CallOutcome | undefined;
 }
 
 /** The same question again within this long is a loop. */
@@ -59,7 +68,8 @@ export function nearSame(a: string, b: string): boolean {
  */
 export function questionLoop(past: readonly PastAnswer[], text: string, now: Date): QuestionLoop | undefined {
   const age = (p: PastAnswer) => now.getTime() - Date.parse(p.at);
-  const inLast = (ms: number) => past.filter((p) => age(p) <= ms).sort((a, b) => (a.at < b.at ? -1 : 1));
+  const inLast = (ms: number) =>
+    past.filter((p) => p.outcome?.state !== "ok" && age(p) <= ms).sort((a, b) => (a.at < b.at ? -1 : 1));
   const burst = inLast(BURST_MS);
   if (burst.length + 1 >= BURST_COUNT) return describe(burst, 5);
   const recent = inLast(NEAR_SAME_MS);
@@ -83,5 +93,10 @@ export function loopLine(agent: string, task: string, loop: Pick<QuestionLoop, "
 export function nudgeText(task: string, loop: Pick<QuestionLoop, "last">): string {
   const said =
     loop.last.answer === undefined ? "" : ` The captain answered: "${loop.last.answer.slice(0, 200)}".`;
+  const out = loop.last.outcome;
+  if (out?.state === "failed") {
+    const why = out.error === "" ? "with no error text" : `with: "${out.error}"`;
+    return `Your call in ${task} keeps failing.${said} The tool failed ${why}. Fix that, or change the input, before asking again. If it needs the owner, say what in the room, once.`;
+  }
   return `You asked the same thing in ${task} again and again.${said} Go on with that answer and do not ask it again. If something else blocks you, say what in the room, once.`;
 }

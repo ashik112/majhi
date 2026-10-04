@@ -31,11 +31,13 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { callOutcome, toolItemIdOf } from "./call-outcome.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
 import { ownWorkSecondOpinion } from "./own-work-second.ts";
+import { answerFor } from "./permission-rules.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { upkeepWorld } from "./upkeep-world.ts";
@@ -433,9 +435,13 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       const captain = (await deps.lanes.boss()) ?? "captain";
       let answered: RoomItem;
       switch (card.kind) {
-        case "permission":
-          answered = deps.tasks.answerPermission(card.task, card.item, option, captain);
+        case "permission": {
+          // A tool a rule covers is allowed for the task, so its next call does not ask again.
+          const item = deps.room.get(card.task, card.item);
+          const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
+          answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
           break;
+        }
         case "choice":
           answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
           break;
@@ -456,6 +462,12 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         level: "info",
         text: captainAnsweredLine(answered, reason),
       });
+    },
+
+    callOutcome(task, item) {
+      const perm = deps.room.get(task, item);
+      const toolId = perm === undefined ? undefined : toolItemIdOf(perm);
+      return callOutcome(perm, toolId === undefined ? undefined : deps.room.get(task, toolId));
     },
 
     async flagLoop(_org, card, line, nudge) {

@@ -210,6 +210,8 @@ export class ChoreRun {
     return this.deps.repo.answersSince(this.org, task, agent, since).map((a) => ({
       at: a.at,
       question: a.evidence ?? "",
+      // The action's key ends in the card's item id: `question:<task>:<item>` or `own:<task>:<item>`.
+      item: a.key.split(`:${task}:`)[1],
       answer: a.text.startsWith(prefix) ? a.text.slice(prefix.length) : undefined,
     }));
   }
