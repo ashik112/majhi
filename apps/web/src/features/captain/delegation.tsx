@@ -313,9 +313,15 @@ function Instructions({ status, now }: { status: AutonomyStatus; now: number }) 
         <li key={i.id} className="flex min-w-0 items-start gap-2 border-t border-line py-2 first:border-t-0">
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="text-base text-fg-soft text-pretty">{i.text}</span>
-            <time dateTime={i.at} className="tnum text-xs text-fg-faint">
-              {clockTime(i.at, now)}
-            </time>
+            <span className="text-xs text-fg-faint">
+              {i.org === undefined
+                ? "Every workspace"
+                : (status.lanes.find((l) => l.org === i.org)?.name ?? i.org)}
+              {" · "}
+              <time dateTime={i.at} className="tnum">
+                {clockTime(i.at, now)}
+              </time>
+            </span>
           </span>
           <Button
             size="icon-sm"

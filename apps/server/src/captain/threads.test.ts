@@ -68,6 +68,17 @@ describe("the captain's threads", () => {
     expect(services.autonomy.laneOrg(chat)).not.toBe("private");
   });
 
+  it("keeps a standing instruction for the workspace it was given in", async () => {
+    w = await bossWorld({ real: false });
+    const { h } = w;
+    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
+    const sent = await h.cmd("autonomy.guide", { text: "Ship kilby first.", keep: true, org: "acme" });
+    expect(sent.status).toBe(200);
+    expect(sent.body.instruction).toMatchObject({ text: "Ship kilby first.", org: "acme" });
+    const status = await h.cmd("autonomy.status", {});
+    expect(status.body.settings.instructions.map((i: { org?: string }) => i.org)).toEqual(["acme"]);
+  });
+
   it("refuses Start fresh in a workspace with no thread", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;

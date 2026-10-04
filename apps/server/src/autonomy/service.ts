@@ -1860,7 +1860,7 @@ export class AutonomyService {
   /**
    * The owner's message to the captain, in any mode: it goes to a workspace's lane as the owner's
    * message, which wakes the captain there (default: the first workspace where the captain starts work). With
-   * `keep` it is also a standing instruction for every lane, as a config commit.
+   * `keep` it is also a standing instruction for that workspace's lane, as a config commit.
    */
   async guide(
     input: { text: string; keep: boolean; org?: string | undefined },
@@ -1887,7 +1887,8 @@ export class AutonomyService {
     if (input.keep) {
       const { instructions } = (await this.deps.config.settings()).autonomy;
       if (instructions.length >= 50) throw new UserError("There are 50 instructions. Remove one first.", 409);
-      instruction = { id: instructionId(), text: input.text, at: this.now().toISOString() };
+      // Kept for the workspace it was said in: a shop or project name means nothing in another.
+      instruction = { id: instructionId(), text: input.text, at: this.now().toISOString(), org };
       await this.deps.config.setSettings(
         { autonomy: { instructions: [...instructions, instruction] } },
         {
