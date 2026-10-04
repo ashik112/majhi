@@ -2,7 +2,7 @@ import type { AccountStatus, QueueItem } from "@majhi/shared";
 
 /**
  * Queue items that wait for an account (SPEC 5.18). The captain states the condition once; majhi
- * reads the account each minute, so a belief like "ideeza is signed out" never outlives the fact.
+ * reads the account each minute, so a belief like "umbrella is signed out" never outlives the fact.
  * Pure.
  */
 

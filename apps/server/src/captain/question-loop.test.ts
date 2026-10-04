@@ -34,8 +34,8 @@ describe("recognising an agent that keeps asking", () => {
   });
 
   it("says it in one line", () => {
-    expect(loopLine("pyzasoft-claude", "PYZ-7", { times: 4, minutes: 5 })).toBe(
-      "@pyzasoft-claude keeps asking in PYZ-7 (4 times in 5 minutes); it may be stuck",
+    expect(loopLine("hooli-claude", "HOO-7", { times: 4, minutes: 5 })).toBe(
+      "@hooli-claude keeps asking in HOO-7 (4 times in 5 minutes); it may be stuck",
     );
     expect(nearSame("Yes or no?", "Completely different words here")).toBe(false);
   });
@@ -85,9 +85,9 @@ function desk() {
     laneTokens: () => 0,
     chores: createChores(ports, () => now),
   });
-  const permission = async (item: string, text: string, agent = "pyzasoft-claude") => {
+  const permission = async (item: string, text: string, agent = "hooli-claude") => {
     cards.push({
-      task: "PYZ-7",
+      task: "HOO-7",
       item,
       agent,
       kind: "permission",
@@ -101,9 +101,9 @@ function desk() {
   };
   const question = async (item: string, text: string) => {
     cards.push({
-      task: "PYZ-7",
+      task: "HOO-7",
       item,
-      agent: "pyzasoft-claude",
+      agent: "hooli-claude",
       kind: "choice",
       text,
       options: [
@@ -164,7 +164,7 @@ describe("the questions chore and permission prompts", () => {
     expect(d.answers).toHaveLength(1);
     expect(d.flags).toHaveLength(1);
     expect(d.flags[0]?.line).toBe(
-      "@pyzasoft-claude keeps asking in PYZ-7 (2 times in 10 minutes); it may be stuck",
+      "@hooli-claude keeps asking in HOO-7 (2 times in 10 minutes); it may be stuck",
     );
     expect(d.flags[0]?.nudge).toContain("do not ask it again");
   });

@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { PAGE_PATH } from "./pages";
 
 /**
- * A captain thread is not a task, so its old addresses (/t/PYZ-2, /chats/PYZ-2, a task link in a
+ * A captain thread is not a task, so its old addresses (/t/HOO-2, /chats/HOO-2, a task link in a
  * message) open the Captain page on that workspace's thread instead of a task screen. True while
  * the task is a thread, so the caller can show nothing meanwhile.
  */

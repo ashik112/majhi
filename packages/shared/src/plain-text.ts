@@ -1,7 +1,7 @@
 /**
  * Wording of what the captain stored about a decision, made plain for the owner. Pure.
  *
- * Reasons stored before the authority table speak of levels ("Ideeza is set to Keeps things tidy, so the
+ * Reasons stored before the authority table speak of levels ("Umbrella is set to Keeps things tidy, so the
  * captain asks before shipping"). The levels are gone; the rule is now "you decide when work is merged".
  * Those sentences are rewritten into that, so old text never shows a name that no screen has.
  */

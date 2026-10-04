@@ -969,7 +969,7 @@ export class AutonomyService {
     return measured;
   }
 
-  /** "Waiting for Pyzasoft's daily budget, $20 used": the budget that holds, by name, on a held task's card. */
+  /** "Waiting for Hooli's daily budget, $20 used": the budget that holds, by name, on a held task's card. */
   private waitLine(hold: AutonomyHold): string {
     const m = this.lastMeasure;
     const scope = capScope(hold);

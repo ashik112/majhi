@@ -46,7 +46,7 @@ const FINDING_SOURCES: FindingSource[] = ["follow-up", "ci", "dependency", "secu
 
 /** 140 findings over four workspaces: open, proposed, a task, dismissed and fixed. */
 function findings(): Finding[] {
-  const orgIds = ["private", "pyzasoft", "goama", "ideeza"];
+  const orgIds = ["private", "hooli", "initech", "umbrella"];
   const status = ["open", "open", "open", "proposed", "task", "dismissed", "fixed", "open"] as const;
   const severity = ["info", "low", "medium", "high"] as const;
   return Array.from({ length: 140 }, (_, i) => {
@@ -131,29 +131,29 @@ function orgs(set: Scenario["set"]): CaptainOrg[] {
       lane: "LOCAL-31",
     }),
     org({
-      org: "pyzasoft",
-      name: "Pyzasoft",
+      org: "hooli",
+      name: "Hooli",
       authority: ROWS(true, true, true, true, false),
       budget: { cost: 50 },
       rules: { authority: ROWS(true, true, true, true, false), cap: { cost: 50 } },
       used: { tokens: 19_000_000, cost: 80.56 },
       thread: "working",
-      lane: "PYZ-2",
+      lane: "HOO-2",
       resting: "its budget of $50 for today is used up",
     }),
     org({
-      org: "goama",
-      name: "Goama",
+      org: "initech",
+      name: "Initech",
       authority: TIDY_ROWS,
       used: { tokens: 6_000_000, cost: 29.1 },
-      lane: "GOA-9",
+      lane: "INI-9",
     }),
     org({
-      org: "ideeza",
-      name: "Ideeza",
+      org: "umbrella",
+      name: "Umbrella",
       authority: ASK_ROWS,
       used: { tokens: 900_000, cost: 4.2 },
-      lane: "IDZ-4",
+      lane: "UMB-4",
     }),
   ];
   if (set === "real") return real;
@@ -191,11 +191,11 @@ const ACTIONS: CaptainAction[] = [
   {
     id: 40,
     at: iso(30),
-    org: "pyzasoft",
+    org: "hooli",
     chore: "ship",
-    text: "Asked you to ship PYZ-505: Shop orders created twice",
-    reason: "In Pyzasoft you decide when work is pushed, so the captain asks before shipping",
-    task: "PYZ-505",
+    text: "Asked you to ship HOO-505: Shop orders created twice",
+    reason: "In Hooli you decide when work is pushed, so the captain asks before shipping",
+    task: "HOO-505",
     outcome: "asked",
     undo: "no",
     undoNote: "A card for you: nothing to undo",
@@ -203,12 +203,12 @@ const ACTIONS: CaptainAction[] = [
   {
     id: 39,
     at: iso(44),
-    org: "goama",
+    org: "initech",
     chore: "cards",
-    text: "Approved: Add the reviewer to GOA-501",
+    text: "Approved: Add the reviewer to INI-501",
     reason: "A change within the limits",
-    evidence: "@goama-builder asked to run team.add",
-    task: "GOA-501",
+    evidence: "@initech-builder asked to run team.add",
+    task: "INI-501",
     outcome: "done",
     undo: "yes",
   },
@@ -250,14 +250,14 @@ const ACTIONS: CaptainAction[] = [
 
 const TITLES: Record<string, string> = {
   "PRV-14": "Move the notes export to the queued worker",
-  "PYZ-505": "Shop orders created twice",
-  "PYZ-430": "Phase 7: Resilience",
-  "PYZ-432": "Resilience and health",
-  "GOA-501": "Add the reviewer to the Goama agents",
+  "HOO-505": "Shop orders created twice",
+  "HOO-430": "Phase 7: Resilience",
+  "HOO-432": "Resilience and health",
+  "INI-501": "Add the reviewer to the Initech agents",
   "PRV-11": "Tidy the sync script",
   "PRV-9": "Renew the domain",
-  "GOA-88": "Add rate limits to the public search endpoint",
-  "IDZ-12": LONG_TASK,
+  "INI-88": "Add rate limits to the public search endpoint",
+  "UMB-12": LONG_TASK,
 };
 
 function events(): AutonomyEvent[] {
@@ -266,9 +266,9 @@ function events(): AutonomyEvent[] {
       seq: 400,
       at: iso(3),
       kind: "task",
-      org: "pyzasoft",
-      text: "PYZ-430 paused (owner): Phase 7: Resilience",
-      task: "PYZ-430",
+      org: "hooli",
+      text: "HOO-430 paused (owner): Phase 7: Resilience",
+      task: "HOO-430",
       status: "paused",
     },
     {
@@ -284,37 +284,37 @@ function events(): AutonomyEvent[] {
       seq: 398,
       at: iso(6),
       kind: "task",
-      org: "pyzasoft",
-      text: "PYZ-2 is done: Pyzasoft",
-      task: "PYZ-2",
+      org: "hooli",
+      text: "HOO-2 is done: Hooli",
+      task: "HOO-2",
       status: "done",
     },
     {
       seq: 397,
       at: iso(8),
       kind: "decision",
-      org: "pyzasoft",
-      text: "Start a task PYZ-432: Resilience and health",
+      org: "hooli",
+      text: "Start a task HOO-432: Resilience and health",
       reason: "Top of the backlog",
-      task: "PYZ-432",
+      task: "HOO-432",
       outcome: "applied",
     },
-    { seq: 396, at: iso(9), kind: "tick", text: "Woke the captain: PYZ-429 is done" },
+    { seq: 396, at: iso(9), kind: "tick", text: "Woke the captain: HOO-429 is done" },
     {
       seq: 395,
       at: iso(14),
       kind: "approval",
-      org: "goama",
-      text: "Left for the owner: Push task/GOA-88-rate-limits. Goama does not let the captain push",
-      task: "GOA-88",
+      org: "initech",
+      text: "Left for the owner: Push task/INI-88-rate-limits. Initech does not let the captain push",
+      task: "INI-88",
       outcome: "left",
     },
     {
       seq: 394,
       at: iso(20),
       kind: "cap",
-      org: "pyzasoft",
-      text: "Pyzasoft used its $50 for today. 3 tasks wait",
+      org: "hooli",
+      text: "Hooli used its $50 for today. 3 tasks wait",
       reason: "The workspace budget is used up",
     },
     { seq: 393, at: iso(25), kind: "mode", text: "Autonomous turned off" },
@@ -324,10 +324,10 @@ function events(): AutonomyEvent[] {
       seq: 392 - i,
       at: iso(30 + i * 9),
       kind: i % 3 === 0 ? "decision" : i % 3 === 1 ? "approval" : "answer",
-      org: ["private", "pyzasoft", "goama", "ideeza"][i % 4] as string,
-      text: `Answered a question in IDZ-12: use the queued worker (${i})`,
+      org: ["private", "hooli", "initech", "umbrella"][i % 4] as string,
+      text: `Answered a question in UMB-12: use the queued worker (${i})`,
       reason: "The brief settles it",
-      task: "IDZ-12",
+      task: "UMB-12",
       outcome: "applied",
     });
   }
@@ -345,12 +345,12 @@ function autonomy(s: Scenario): AutonomyStatus {
     ...extra,
   });
   const shipped = Array.from({ length: 30 }, (_, i) => ({
-    task: `PYZ-${300 + i}`,
+    task: `HOO-${300 + i}`,
     title:
       i % 7 === 0
         ? LONG_TASK
         : `Ship the ${["export", "billing", "search", "notes", "sync"][i % 5]} change number ${i + 1}`,
-    org: ["private", "pyzasoft", "goama", "ideeza"][i % 4] as string,
+    org: ["private", "hooli", "initech", "umbrella"][i % 4] as string,
     how: (["merged", "pushed", "mr-open", "review"] as const)[i % 4] as "merged",
   }));
   return {
@@ -367,27 +367,27 @@ function autonomy(s: Scenario): AutonomyStatus {
     },
     lanes: [
       lane("private", "Private", { chat: "LOCAL-31", working: true, tasks: 2, backlog: 5 }),
-      lane("pyzasoft", "Pyzasoft", { chat: "PYZ-2", tasks: 1, backlog: 3 }),
+      lane("hooli", "Hooli", { chat: "HOO-2", tasks: 1, backlog: 3 }),
     ],
     now:
       s.mode === "off"
         ? []
         : [
             {
-              task: "PYZ-432",
+              task: "HOO-432",
               title: "Resilience and health",
-              org: "pyzasoft",
+              org: "hooli",
               status: "running",
-              agents: [{ id: "pyz-builder", nowDoing: "Editing src/export/worker.ts and its tests" }],
+              agents: [{ id: "hoo-builder", nowDoing: "Editing src/export/worker.ts and its tests" }],
               why: "Top of the backlog; the export times out for three customers",
             },
             {
-              task: "IDZ-12",
+              task: "UMB-12",
               title: LONG_TASK,
-              org: "ideeza",
+              org: "umbrella",
               status: "review",
               agents: [{ id: "idz-builder" }],
-              why: "Small and blocks the Ideeza release",
+              why: "Small and blocks the Umbrella release",
             },
           ],
     queue:
@@ -396,14 +396,14 @@ function autonomy(s: Scenario): AutonomyStatus {
         : [
             {
               title: "Signed download links for finished exports",
-              task: "GOA-432",
-              org: "goama",
-              why: "Next child of the export work; it waits on nothing and the Goama account has 60% of its window left",
+              task: "INI-432",
+              org: "initech",
+              why: "Next child of the export work; it waits on nothing and the Initech account has 60% of its window left",
             },
             {
               title: "Document the export API for partners",
-              task: "GOA-437",
-              org: "goama",
+              task: "INI-437",
+              org: "initech",
               why: "Low priority filler for when the builders are idle",
             },
             {
@@ -416,9 +416,9 @@ function autonomy(s: Scenario): AutonomyStatus {
     queuedAt: iso(4),
     backlog: [
       {
-        task: "GOA-432",
+        task: "INI-432",
         title: "Signed download links for finished exports",
-        org: "goama",
+        org: "initech",
         status: "ready",
         priority: "high",
         size: "small",
@@ -426,9 +426,9 @@ function autonomy(s: Scenario): AutonomyStatus {
         noAutonomy: false,
       },
       {
-        task: "PYZ-95",
+        task: "HOO-95",
         title: "Migrate the billing tables to the new schema",
-        org: "pyzasoft",
+        org: "hooli",
         status: "inbox",
         size: "large",
         sizeNote: "Laya rated it large (0.64)",
@@ -448,14 +448,14 @@ function autonomy(s: Scenario): AutonomyStatus {
     waiting: [],
     settings: {
       day: { cost: 200 },
-      orgs: { private: { cap: { cost: 100 } }, pyzasoft: { cap: { cost: 50 } } },
+      orgs: { private: { cap: { cost: 100 } }, hooli: { cap: { cost: 50 } } },
       floors: { window: 10, weekly: 5 },
       summary_at: "08:00",
       tz: "Europe/Berlin",
       instructions: [
         {
           id: "abcd1234",
-          text: "Be careful in the Pyzasoft billing code; no product-specific fixes.",
+          text: "Be careful in the Hooli billing code; no product-specific fixes.",
           at: iso(3000),
         },
       ],
@@ -467,11 +467,11 @@ function autonomy(s: Scenario): AutonomyStatus {
       to: iso(60),
       at: iso(55),
       shipped,
-      shipGroups: ["private", "pyzasoft", "goama", "ideeza"].map((org, n) => {
+      shipGroups: ["private", "hooli", "initech", "umbrella"].map((org, n) => {
         const mine = shipped.filter((s) => s.org === org);
         return {
           org,
-          name: ["Private", "Pyzasoft", "Goama", "Ideeza"][n] as string,
+          name: ["Private", "Hooli", "Initech", "Umbrella"][n] as string,
           count: mine.length,
           titles: mine.slice(0, 3).map((s) => s.title),
         };
@@ -488,16 +488,16 @@ function autonomy(s: Scenario): AutonomyStatus {
             reached: false,
           },
           {
-            org: "pyzasoft",
-            name: "Pyzasoft",
+            org: "hooli",
+            name: "Hooli",
             used: { tokens: 9_000_000, cost: 38.2 },
             cap: { cost: 30 },
             percent: 127,
             reached: true,
           },
-          { org: "goama", name: "Goama", used: { tokens: 3_000_000, cost: 8.4 }, percent: 0, reached: false },
+          { org: "initech", name: "Initech", used: { tokens: 3_000_000, cost: 8.4 }, percent: 0, reached: false },
           {
-            org: "ideeza",
+            org: "umbrella",
             name: LONG,
             used: { tokens: 1_000_000, cost: 2.86 },
             cap: { cost: 20 },
@@ -509,9 +509,9 @@ function autonomy(s: Scenario): AutonomyStatus {
       unsure: Array.from({ length: 9 }, (_, i) => ({
         text:
           i === 1
-            ? `Skipped PYZ-${50 + i}: the certificates need the owner's VPN and a second signing key that only the owner holds`
-            : `Skipped PYZ-${50 + i}: the certificates need the owner's VPN`,
-        task: `PYZ-${50 + i}`,
+            ? `Skipped HOO-${50 + i}: the certificates need the owner's VPN and a second signing key that only the owner holds`
+            : `Skipped HOO-${50 + i}: the certificates need the owner's VPN`,
+        task: `HOO-${50 + i}`,
       })),
       waiting: [],
       needs: {
@@ -522,21 +522,21 @@ function autonomy(s: Scenario): AutonomyStatus {
             title: "Ready to ship. Move the notes export to the queued worker",
             org: "private",
           },
-          { id: "room:PYZ-310:1", title: `Ready to ship. ${LONG_TASK}`, org: "pyzasoft" },
-          { id: "room:GOA-432:1", title: "Approve running the migration in Goama", org: "goama" },
+          { id: "room:HOO-310:1", title: `Ready to ship. ${LONG_TASK}`, org: "hooli" },
+          { id: "room:INI-432:1", title: "Approve running the migration in Initech", org: "initech" },
         ],
       },
       next: [
         {
           title: "Signed download links for finished exports",
-          task: "GOA-432",
-          org: "goama",
+          task: "INI-432",
+          org: "initech",
           why: "Next child of the export work and it waits on nothing",
         },
         {
           title: "Document the export API for partners",
-          task: "GOA-437",
-          org: "goama",
+          task: "INI-437",
+          org: "initech",
           why: "Low priority filler for when the builders are idle",
         },
         {
@@ -581,11 +581,11 @@ function decisions(): OwnerDecision[] {
     link: { kind: "task", id: task },
   });
   return [
-    ship("a", "PYZ-505", "pyzasoft", "Shop orders created twice", "Checks pass and the diff is small"),
+    ship("a", "HOO-505", "hooli", "Shop orders created twice", "Checks pass and the diff is small"),
     ship("b", "PRV-14", "private", "Move the notes export to the queued worker", "Merges cleanly into main"),
-    review("GOA-88", "goama", "Add rate limits to the public search endpoint"),
-    review("IDZ-12", "ideeza", LONG_TASK),
-    review("PYZ-430", "pyzasoft", "Phase 7: Resilience"),
+    review("INI-88", "initech", "Add rate limits to the public search endpoint"),
+    review("UMB-12", "umbrella", LONG_TASK),
+    review("HOO-430", "hooli", "Phase 7: Resilience"),
   ];
 }
 
@@ -650,12 +650,12 @@ function conversation(chat: string): RoomItem[] {
     ...base("a1", 60),
     type: "agent",
     agent: "setup",
-    text: "Yesterday the export rework was rated large, so I left it. **PYZ-432** is running now, and the export rework comes after it. Two ship questions wait for you in Decisions.",
+    text: "Yesterday the export rework was rated large, so I left it. **HOO-432** is running now, and the export rework comes after it. Two ship questions wait for you in Decisions.",
   } as RoomItem);
   out.push({
     ...base("o2", 40),
     type: "owner",
-    text: "Fine. Keep Pyzasoft under its budget today.",
+    text: "Fine. Keep Hooli under its budget today.",
     attachments: [],
     queued: false,
   } as RoomItem);
@@ -663,7 +663,7 @@ function conversation(chat: string): RoomItem[] {
     ...base("a2", 38),
     type: "agent",
     agent: "setup",
-    text: "Pyzasoft is over its $50 for today, so I stopped starting work there. I will pick it up tomorrow.",
+    text: "Hooli is over its $50 for today, so I stopped starting work there. I will pick it up tomorrow.",
   } as RoomItem);
   return out;
 }
@@ -700,7 +700,7 @@ const taskRow = (id: string, title: string, org?: string) => ({
 const CHATS = [
   chat("LOCAL-12", "Chat", "setup", 3),
   chat("LOCAL-16", "Private", "setup", 4),
-  chat("PYZ-2", "Pyzasoft", "setup", 6, "pyzasoft"),
+  chat("HOO-2", "Hooli", "setup", 6, "hooli"),
 ];
 
 async function stub(page: Page, s: Scenario, state: { decisions: OwnerDecision[] }) {
@@ -863,7 +863,7 @@ test("the header says what is true, and the summary is one line", async ({ page 
   ).toBeVisible();
   await expect(page.locator("#main").getByRole("switch", { name: "Autonomous" })).toBeChecked();
   const header = page.locator("header").first();
-  await expect(header.getByText("Pyzasoft")).toBeVisible();
+  await expect(header.getByText("Hooli")).toBeVisible();
 });
 
 test("the summary sheet is short: groups, three of each list, notes expand, the time changes there", async ({
@@ -958,12 +958,12 @@ test("the delegation grid toggles a cell and takes a budget", async ({ page }) =
   expect((await posted).postDataJSON()).toMatchObject({
     orgs: { private: { authority: { push: "decide" } } },
   });
-  const budget = sheet.getByRole("textbox", { name: "Daily budget of Goama in dollars" });
+  const budget = sheet.getByRole("textbox", { name: "Daily budget of Initech in dollars" });
   await expect(budget).toHaveAttribute("placeholder", "shared");
   const saved = page.waitForRequest("**/api/cmd/autonomy.configure");
   await budget.fill("25");
   await budget.blur();
-  expect((await saved).postDataJSON()).toMatchObject({ orgs: { goama: { cap: { cost: 25 } } } });
+  expect((await saved).postDataJSON()).toMatchObject({ orgs: { initech: { cap: { cost: 25 } } } });
 });
 
 test("the Now column scrolls as one panel down to Did recently", async ({ page }) => {
@@ -1006,7 +1006,7 @@ const UPDATE = {
 /** 14 tasks that stopped (in review or paused) next to the usual rows, so the Waiting column is long. */
 function boardRows() {
   const waiting = Array.from({ length: 14 }, (_, i) => ({
-    ...taskRow(`GOA-${100 + i}`, `Task number ${i + 1} that stopped and waits to be picked up`, "goama"),
+    ...taskRow(`INI-${100 + i}`, `Task number ${i + 1} that stopped and waits to be picked up`, "initech"),
     status: i % 3 === 0 ? "paused" : "review",
     ...(i % 3 === 0 ? { pausedReason: "limit" } : {}),
   }));

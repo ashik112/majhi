@@ -229,7 +229,7 @@ export const CaptainCapAskSchema = z.object({
   cap: z.number().int().positive(),
   /** The cap for the rest of the day after "Raise". */
   raiseTo: z.number().int().positive(),
-  /** "Pyzasoft: the captain answered its 20 questions for today. Raise the limit for today?" */
+  /** "Hooli: the captain answered its 20 questions for today. Raise the limit for today?" */
   text: z.string(),
   at: z.string(),
 });
@@ -252,7 +252,7 @@ export const BudgetAskSchema = z.object({
   raiseTo: BudgetSchema,
   /** Tasks waiting on it when it was asked. */
   waiting: z.number().int().nonnegative(),
-  /** "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
+  /** "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
   text: z.string(),
   at: z.string(),
 });

@@ -5,10 +5,10 @@ describe("plain wording of stored captain text", () => {
   it("rewrites a sentence about an old level into the authority sentence, once", () => {
     expect(
       plainAuthorityText(
-        "Checks pass. Ideeza is set to Keeps things tidy, so the captain asks before shipping. Acme is set to Runs it, so it merges.",
-        "Ideeza",
+        "Checks pass. Umbrella is set to Keeps things tidy, so the captain asks before shipping. Acme is set to Runs it, so it merges.",
+        "Umbrella",
       ),
-    ).toBe("Checks pass. In Ideeza you decide when work is merged.");
+    ).toBe("Checks pass. In Umbrella you decide when work is merged.");
   });
 
   it("drops an old-level sentence that is not about shipping and leaves clean text alone", () => {
