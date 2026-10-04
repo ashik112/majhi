@@ -307,7 +307,7 @@ function AccountReadout({
         <span className="font-mono text-sm text-fg">{text.head}</span>{" "}
         <span
           className={cn(
-            "font-mono text-md font-medium",
+            "ml-0.5 font-mono text-md font-medium",
             lit ? LAMP_TEXT.paused : high ? "text-amber" : "text-fg",
           )}
         >
