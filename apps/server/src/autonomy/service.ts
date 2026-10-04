@@ -966,11 +966,12 @@ export class AutonomyService {
   // ---------------------------------------------------------------------------
   // Spend and holds (rule 6)
 
-  private async measure(): Promise<Measure> {
+  /** `withAccounts` false skips reading every account (spend does not need them) and keeps the result out of `lastMeasure`. */
+  private async measure(withAccounts = true): Promise<Measure> {
     const [all, sections, views] = await Promise.all([
       this.deps.config.settings(),
       this.deps.config.sections(),
-      this.deps.accounts.list().catch(() => [] as AccountView[]),
+      withAccounts ? this.deps.accounts.list().catch(() => [] as AccountView[]) : ([] as AccountView[]),
     ]);
     const settings = all.autonomy;
     const tz = zoneOr(settings.tz);
@@ -987,7 +988,7 @@ export class AutonomyService {
       accounts: accountsOf(views, settings.floors, now),
       names: Object.fromEntries(Object.entries(sections.orgs).map(([id, o]) => [id, o.name])),
     };
-    this.lastMeasure = measured;
+    if (withAccounts) this.lastMeasure = measured;
     return measured;
   }
 
@@ -1327,11 +1328,18 @@ export class AutonomyService {
 
   /** The current state of the causes a pause can wait on: the team's accounts and the workspace's budget. */
   private async resumeEnv(task: Task): Promise<ResumeEnv> {
-    const ids = await this.teamAccountIds(task);
+    return this.resumeEnvFrom(task, await this.accountFacts());
+  }
+
+  /** The agents' accounts and the accounts' state, read once for as many tasks as need them. */
+  private async accountFacts(): Promise<{ accountOf: Map<string, string>; views: AccountView[] }> {
+    const accountOf = new Map(
+      (await this.deps.agents.list()).flatMap((s) =>
+        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
+      ),
+    );
     const views = await this.deps.accounts.list().catch(() => [] as AccountView[]);
-    const accounts = views.filter((v) => ids.includes(v.id)).map((v) => ({ id: v.id, status: v.status }));
-    const hold = capHoldFor(this.holds, task.org ?? PRIVATE);
-    return { accounts, ...(hold === undefined ? {} : { budgetHold: this.waitLine(hold) }) };
+    return { accountOf, views };
   }
 
   /** The accounts of a task's team. */
@@ -1342,6 +1350,18 @@ export class AutonomyService {
       ),
     );
     return [...new Set(task.team.flatMap((a) => accountOf.get(a) ?? []))];
+  }
+
+  private resumeEnvFrom(
+    task: Pick<Task, "team" | "org">,
+    facts: { accountOf: Map<string, string>; views: AccountView[] },
+  ): ResumeEnv {
+    const ids = [...new Set(task.team.flatMap((a) => facts.accountOf.get(a) ?? []))];
+    const accounts = facts.views
+      .filter((v) => ids.includes(v.id))
+      .map((v) => ({ id: v.id, status: v.status }));
+    const hold = capHoldFor(this.holds, task.org ?? PRIVATE);
+    return { accounts, ...(hold === undefined ? {} : { budgetHold: this.waitLine(hold) }) };
   }
 
   /** For a call that starts work: why the size rule keeps it from starting. */
@@ -1948,11 +1968,14 @@ export class AutonomyService {
   /** Inbox and ready tasks of one workspace, or all, chats left out, in the order the captain takes them. */
   backlog(org?: string): (BacklogTask & { task: Task })[] {
     const ages = this.repo.backlogAges();
+    const listed = this.deps.store.tasks.list(false).filter((t) => {
+      if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return false;
+      return org === undefined || (t.org ?? PRIVATE) === org;
+    });
+    const full = new Map(this.deps.store.tasks.getMany(listed.map((t) => t.id)).map((t) => [t.id, t]));
     return backlogOrder(
-      this.deps.store.tasks.list(false).flatMap((t) => {
-        if (t.chat === true || (t.status !== "inbox" && t.status !== "ready")) return [];
-        if (org !== undefined && (t.org ?? PRIVATE) !== org) return [];
-        const task = this.deps.store.tasks.get(t.id);
+      listed.flatMap((t) => {
+        const task = full.get(t.id);
         if (task === undefined) return [];
         return [
           {
@@ -1970,9 +1993,7 @@ export class AutonomyService {
   }
 
   /** The backlog with each task's size and why the pick rules leave it out, if they do. */
-  private async rated(
-    org?: string,
-  ): Promise<{ item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined }[]> {
+  private async rated(org?: string): Promise<Rated[]> {
     const [settings, sections] = await Promise.all([
       this.deps.config.settings(),
       this.deps.config.sections(),
@@ -2020,8 +2041,8 @@ export class AutonomyService {
   }
 
   /** The backlog as the page lists it: at most 100 tasks. */
-  private async backlogView(): Promise<AutonomyBacklogItem[]> {
-    return (await this.rated()).slice(0, 100).map(({ item, size, leftOut }) => ({
+  private backlogView(rows: Rated[]): AutonomyBacklogItem[] {
+    return rows.slice(0, 100).map(({ item, size, leftOut }) => ({
       task: item.id,
       title: item.title,
       ...(item.org === undefined ? {} : { org: item.org }),
@@ -2443,9 +2464,9 @@ export class AutonomyService {
     m: Measure,
     holds: readonly AutonomyHold[],
     boss: string | undefined,
+    rows: Rated[],
   ): Promise<AutonomyLane[]> {
     const settings = m.settings;
-    const rows = await this.rated();
     const now = this.nowList();
     const out: AutonomyLane[] = [];
     for (const org of await this.runsOrgs()) {
@@ -2483,7 +2504,8 @@ export class AutonomyService {
     const m = await this.measure();
     const holds = state.mode === "off" ? [] : await this.refreshHolds(m);
     const boss = await this.bossId();
-    const lanes = await this.lanesView(m, holds, boss);
+    const rated = await this.rated();
+    const lanes = await this.lanesView(m, holds, boss, rated);
     const chat = lanes.find((l) => l.chat !== undefined)?.chat ?? this.chat();
     const nowDoing =
       chat === undefined || boss === undefined ? undefined : this.deps.room.getLive(chat, boss)?.nowDoing;
@@ -2507,7 +2529,7 @@ export class AutonomyService {
       lanes,
       now: await this.withPauses(this.nowList()),
       queue: after.queue,
-      backlog: await this.backlogView(),
+      backlog: this.backlogView(rated),
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,
       spend: m.spend,
@@ -2538,9 +2560,8 @@ export class AutonomyService {
 
   /** Autonomous tasks that are not done, newest first. */
   openTasks(): Task[] {
-    return this.repo
-      .tasks()
-      .flatMap((r) => this.deps.store.tasks.get(r.task) ?? [])
+    return this.deps.store.tasks
+      .getMany(this.repo.tasks().map((r) => r.task))
       .filter((t) => t.status !== "done")
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
@@ -2569,13 +2590,19 @@ export class AutonomyService {
   /** Paused tasks say who paused them and whether the captain may resume them now. */
   private async withPauses(list: AutonomyNow[]): Promise<AutonomyNow[]> {
     const out: AutonomyNow[] = [];
+    const paused = new Map(
+      this.deps.store.tasks
+        .getMany(list.filter((n) => n.status === "paused").map((n) => n.task))
+        .map((t) => [t.id, t]),
+    );
+    const facts = paused.size === 0 ? undefined : await this.accountFacts();
     for (const n of list) {
-      const task = n.status === "paused" ? this.deps.store.tasks.get(n.task) : undefined;
-      if (task === undefined) {
+      const task = paused.get(n.task);
+      if (task === undefined || facts === undefined) {
         out.push(n);
         continue;
       }
-      const env = await this.resumeEnv(task);
+      const env = this.resumeEnvFrom(task, facts);
       const stays = resumeRefusal(task, env);
       out.push({
         ...n,
@@ -2593,10 +2620,12 @@ export class AutonomyService {
   waiting(): AutonomyWaiting[] {
     const ids = [...this.openTasks().map((t) => t.id), ...this.laneChats()];
     const out: AutonomyWaiting[] = [];
+    for (const task of ids) this.deps.room.flush(task);
+    const pending = this.deps.store.room.pendingOfTypes(ids, ["approval", "secret-request", "permission"]);
+    const pendingOfType = (task: string, type: RoomItem["type"]) =>
+      (pending.get(task) ?? []).filter((i) => i.type === type);
     for (const task of ids) {
-      this.deps.room.flush(task);
-      const rooms = this.deps.store.room;
-      for (const item of rooms.pendingOfType(task, "approval")) {
+      for (const item of pendingOfType(task, "approval")) {
         if (item.type !== "approval") continue;
         out.push({
           task,
@@ -2606,7 +2635,7 @@ export class AutonomyService {
           why: item.autonomy?.why ?? "It waits for the owner's approval",
         });
       }
-      for (const item of rooms.pendingOfType(task, "secret-request")) {
+      for (const item of pendingOfType(task, "secret-request")) {
         if (item.type !== "secret-request") continue;
         out.push({
           task,
@@ -2616,7 +2645,7 @@ export class AutonomyService {
           why: "Only the owner gives secrets",
         });
       }
-      for (const item of rooms.pendingOfType(task, "permission")) {
+      for (const item of pendingOfType(task, "permission")) {
         if (item.type !== "permission" || item.connection === undefined) continue;
         out.push({
           task,
@@ -2669,10 +2698,12 @@ export class AutonomyService {
   // What the captain per workspace (5.18) reads
 
   /** Today's spend in a workspace: the captain's lane there and its autonomous tasks. */
-  async orgSpend(org: string): Promise<{ used: Spend; tz: string }> {
-    const m = await this.measure();
-    const row = m.spend.orgs.find((o) => o.org === org);
-    return { used: row?.used ?? { tokens: 0, cost: 0 }, tz: m.spend.tz };
+  async orgSpends(): Promise<{ of: (org: string) => Spend; tz: string }> {
+    const m = await this.measure(false);
+    return {
+      of: (org) => m.spend.orgs.find((o) => o.org === org)?.used ?? { tokens: 0, cost: 0 },
+      tz: m.spend.tz,
+    };
   }
 
   /**
@@ -2809,6 +2840,9 @@ function withChanged(spend: AutonomySpend, changed: readonly string[]): Autonomy
 }
 
 /** The words an agent asked, without ids, so the same question compares equal. */
+/** A backlog task with its size and why the pick rules leave it out, if they do. */
+type Rated = { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined };
+
 function plainQuestion(item: RoomItem): string | undefined {
   switch (item.type) {
     case "choice":

@@ -903,7 +903,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   /** The task an item belongs to, as notifications and the Decisions inbox name it. */
   const subjectOf = (id: string): Subject | undefined => {
-    const task = store.tasks.get(id);
+    const task = store.tasks.subjectInfo(id);
     return task === undefined
       ? undefined
       : {
@@ -911,7 +911,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           title: task.title,
           chat: isOwnerChat(task),
           ...(task.org === undefined ? {} : { org: task.org }),
-          repos: task.repos.length,
+          repos: task.repos,
         };
   };
   const notifier = new Notifier({
@@ -1069,7 +1069,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
     subject: (id) => {
-      const task = store.tasks.get(id);
+      const task = store.tasks.subjectInfo(id);
       return task === undefined || task.status === "done" ? undefined : subjectOf(id);
     },
     caps: async () => (await captain.asks()).asks,
@@ -1329,13 +1329,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
-    threadState: (chat, org) =>
-      store.room.tasksWaitingOnOwner().has(chat) ||
-      [...store.room.tasksPausedOnOwner()].some((id) => (store.tasks.get(id)?.org ?? PRIVATE) === org)
-        ? "waiting"
-        : runs.working(chat).length > 0
-          ? "working"
-          : "idle",
+    threadState: () => {
+      const waiting = store.room.tasksWaitingOnOwner();
+      const pausedOrgs = new Set(
+        store.tasks.getMany([...store.room.tasksPausedOnOwner()]).map((t) => t.org ?? PRIVATE),
+      );
+      return (chat, org) =>
+        waiting.has(chat) || pausedOrgs.has(org)
+          ? "waiting"
+          : runs.working(chat).length > 0
+            ? "working"
+            : "idle";
+    },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
       store,
