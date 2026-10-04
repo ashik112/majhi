@@ -15,6 +15,7 @@ import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
+import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
@@ -50,6 +51,7 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
+import { outcomesHandlers } from "../outcomes/handlers.ts";
 import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
 import { commitBy } from "../runs/checkpoint.ts";
@@ -166,6 +168,7 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
+    ...agendaHandlers(services.agenda),
     ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
@@ -177,6 +180,12 @@ export function createHandlers({
       outbound: services.outbound,
     }),
     ...opsHandlers({ watch: services.ops.watch, phone: services.ops.phone, playbooks: services.playbooks }),
+    ...outcomesHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      outcomes: services.outcomes,
+    }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),

@@ -21,6 +21,8 @@ import { AdminAccess } from "./admin/access.ts";
 import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
+import { AgendaRepo } from "./agenda/repo.ts";
+import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -112,6 +114,7 @@ import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { OutcomesService } from "./outcomes/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
@@ -171,6 +174,7 @@ import { UsageService } from "./usage/service.ts";
 const CHAT_SWEEP_MS = 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+const AGENDA_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
 
@@ -322,8 +326,12 @@ export interface Services {
   ops: Ops;
   /** The outbound gate: everything that would leave the machine passes it (5.18). */
   outbound: OutboundGate;
+  /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
+  outcomes: OutcomesService;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
+  /** The owner's agenda and the morning brief (5.18). */
+  agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -1006,9 +1014,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["playbooks"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // Bound below, after the playbooks: the trust ladder decides which channels may be Auto.
+  let outcomesService: OutcomesService | undefined;
   const outbound = new OutboundGate({
     db: store.raw,
     knownOrg,
+    autoAllowed: (org, channel) => outcomesService?.autoAccepted(org, channel) ?? false,
     tz: async (org) => {
       const a = (await config.settings()).autonomy;
       return zoneOr(a.orgs[org]?.tz ?? a.tz);
@@ -1067,7 +1078,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ackIncident: async (id) => {
         await opsWatch?.ack(id);
       },
+      answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
+      answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
     },
+    extras: () => outcomesService?.decisions() ?? [],
+    answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({
     repo: captainRepo,
@@ -1100,6 +1115,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await inbox.recommend(input, lane);
       events.emit(["tasks"]);
     },
+    ceilingHeld: () => outcomesService?.ceilingHeld(),
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
@@ -1186,6 +1202,64 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...businessNow,
     }),
   };
+  const agendaOwner = { kind: "owner" } as const;
+  const agenda = new AgendaService({
+    repo: new AgendaRepo(store.raw),
+    clock: async () => {
+      const a = (await config.settings()).autonomy;
+      return { at: a.summary_at, tz: a.tz };
+    },
+    decisions: (org) => inbox.list(org),
+    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
+    findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    steps: () =>
+      crm
+        .nextSteps(
+          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
+          agendaOwner,
+        )
+        .steps.map((s) => ({
+          id: s.contact.id,
+          name: s.contact.name,
+          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
+          nextStep: s.contact.nextStep,
+          due: s.due,
+          overdue: s.overdue,
+        })),
+    goals: () => goals.list({}, agendaOwner),
+    running: () =>
+      store.tasks
+        .list(false)
+        .filter((t) => t.status === "running" && t.chat !== true && t.lane !== true)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          ...(t.org === undefined ? {} : { org: t.org }),
+          since: t.updatedAt,
+        })),
+    names: async () => {
+      const orgs = (await config.sections()).orgs;
+      return new Map<string, string>([
+        [PRIVATE, "Private"],
+        ...Object.entries(orgs).map(([id, o]) => [id, o.name] as [string, string]),
+      ]);
+    },
+    overnight: (from, to) => autonomy.overnight(from, to),
+    voice: () => business.voice.get(undefined, agendaOwner).effective,
+    write: async (prompt) =>
+      (
+        await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
+          reply.trim() === "" ? { ok: false, problem: "The reply was empty." } : { ok: true, value: reply },
+        )
+      ).value,
+    next: (max) => autonomy.queueTitles(max),
+    notify: (day, text) => notifier.brief(day, text),
+    changed: () => events.emit(["agenda"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
+  agendaSweep.unref();
+  background.run(() => agenda.sweep());
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1273,6 +1347,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   captain.usePlaybooks(playbooks, () => playbooks.sweep());
   playbooks.boot();
+  const outcomes = new OutcomesService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
+    playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
+    authority: async (org) => authorityOf((await config.settings()).autonomy, org),
+    setAuthority: async (org, row, choice, reason) => {
+      await autonomy.configure(
+        { orgs: { [org]: { authority: { [row]: choice } } } },
+        { command: "trust.ladder", meta: { actor: { kind: "owner" }, reason } },
+      );
+    },
+    outbound: {
+      mode: (org, channel) => outbound.mode(org, channel),
+      applyLadder: (org, channel, mode) => outbound.applyLadder(org, channel, mode),
+    },
+    playbooks: {
+      name: (id) => playbooks.catalog.get(id)?.name ?? id,
+      state: (org, id) => playbooks.stateOf(org, id),
+      setCadence: async (org, id, cadence) => {
+        await playbooks.update({ org, id, cadence });
+      },
+    },
+    changed: () => events.emit(["captain", "playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  outcomesService = outcomes;
+  void outcomes.sweep().catch(() => undefined);
+  const outcomeSweep = setInterval(() => void outcomes.sweep().catch(() => undefined), 5 * 60_000);
+  outcomeSweep.unref();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -1552,7 +1658,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     goals,
     ops,
     outbound,
+    outcomes,
     business,
+    agenda,
     captainTell: new CaptainTell({
       tasks,
       lanes,
@@ -1585,8 +1693,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       playbooks.close();
       ops.close();
       idleWatch.stop();
+      clearInterval(outcomeSweep);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
+      clearInterval(agendaSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

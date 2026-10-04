@@ -1,4 +1,5 @@
 export * from "./accounts.ts";
+export * from "./agenda.ts";
 export * from "./agent-tools.ts";
 export * from "./api.ts";
 export * from "./approval-groups.ts";
@@ -43,6 +44,7 @@ export * from "./project-create.ts";
 export * from "./remote-repos.ts";
 export * from "./rooms.ts";
 export * from "./schedule-time.ts";
+export * from "./scorecard.ts";
 export * from "./secrets-detect.ts";
 export * from "./services.ts";
 export * from "./settings.ts";

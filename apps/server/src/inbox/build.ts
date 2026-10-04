@@ -44,6 +44,8 @@ export interface DecisionSources {
   incidents?: readonly { id: number; org: string; title: string; at: string; escalated: boolean }[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
+  /** Decisions another part of majhi builds itself: the trust ladder's notices, the monthly ceiling. */
+  extras?: readonly OwnerDecision[];
 }
 
 /** "$40", "$7.50", "2M tokens", or both. */
@@ -430,5 +432,6 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     });
   }
 
+  out.push(...(src.extras ?? []));
   return out.sort((a, b) => priority(a) - priority(b) || a.at.localeCompare(b.at));
 }

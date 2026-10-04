@@ -9,6 +9,7 @@ export const NotifyKindSchema = z.enum([
   "stopped",
   "update",
   "autonomy",
+  "brief",
 ]);
 export type NotifyKind = z.infer<typeof NotifyKindSchema>;
 
@@ -20,6 +21,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   stopped: "Stopped or stuck",
   update: "Update failed",
   autonomy: "The captain and autonomous mode",
+  brief: "The morning brief",
 };
 
 /**

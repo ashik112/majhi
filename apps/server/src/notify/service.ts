@@ -14,6 +14,8 @@ export const BURST_WINDOW_MS = 10_000;
 /** A card the captain is about to answer by itself waits this long before it alerts the owner. */
 export const CAPTAIN_GRACE_MS = 120_000;
 const SEEN_MAX = 2_000;
+/** Where a click on the morning brief's notification goes. */
+export const BRIEF_PATH = "/today";
 
 export interface DesktopNotice {
   title: string;
@@ -167,6 +169,36 @@ export class Notifier {
         .desktop({ title: "majhi", message: n.text, path: "/watch", sound: settings.sound })
         .catch(() => undefined);
     }
+  }
+
+  /**
+   * The morning brief is ready (SPEC 5.18): one desktop notification and one `attention` event per day, whose
+   * click opens Today. It is not a decision, so it never joins a burst; the owner's mute and quiet hours still
+   * apply. Told once per day, whatever calls it.
+   */
+  brief(day: string, text: string): void {
+    const key = `brief:${day}`;
+    if (this.seen.has(key)) return;
+    this.seen.add(key);
+    void this.deps
+      .settings()
+      .then(async (settings) => {
+        if (settings.muted.includes("brief")) return;
+        if (
+          inQuietHours(this.now(), {
+            from: settings.quiet_from,
+            to: settings.quiet_to,
+            tz: settings.quiet_tz,
+          })
+        ) {
+          return;
+        }
+        await this.deliver(
+          { id: key, kind: "brief", title: "Morning brief", text, path: BRIEF_PATH, count: 1 },
+          settings,
+        );
+      })
+      .catch(() => undefined);
   }
 
   /** The test button: goes to each channel that is on, with no waiting, muting or grouping. */

@@ -17,6 +17,13 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import {
+  AgendaBriefInputSchema,
+  AgendaConfigureInputSchema,
+  AgendaDismissInputSchema,
+  AgendaTodayInputSchema,
+  AgendaTodaySchema,
+} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -237,6 +244,22 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import {
+  OpsAckInputSchema,
+  OpsIncidentSchema,
+  OpsOverviewInputSchema,
+  OpsOverviewSchema,
+  OpsPhoneSetInputSchema,
+  OpsPhoneSetupInputSchema,
+  OpsPhoneSetupResultSchema,
+  OpsPhoneStatusSchema,
+  OpsPhoneTestResultSchema,
+  OpsServiceIdInputSchema,
+  OpsServiceSaveInputSchema,
+  OpsServiceViewSchema,
+  OpsSettingsInputSchema,
+  OpsSettingsSchema,
+} from "./ops.ts";
+import {
   GoalCreateInputSchema,
   GoalRemoveInputSchema,
   GoalSchema,
@@ -262,22 +285,6 @@ import {
   PlaybookUpdateInputSchema,
   PlaybookViewSchema,
 } from "./playbooks.ts";
-import {
-  OpsAckInputSchema,
-  OpsIncidentSchema,
-  OpsOverviewInputSchema,
-  OpsOverviewSchema,
-  OpsPhoneSetInputSchema,
-  OpsPhoneSetupInputSchema,
-  OpsPhoneSetupResultSchema,
-  OpsPhoneStatusSchema,
-  OpsPhoneTestResultSchema,
-  OpsServiceIdInputSchema,
-  OpsServiceSaveInputSchema,
-  OpsServiceViewSchema,
-  OpsSettingsInputSchema,
-  OpsSettingsSchema,
-} from "./ops.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -298,6 +305,15 @@ import {
   RemoteReposSchema,
 } from "./remote-repos.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
+import {
+  MoneySetInputSchema,
+  MoneyStatusSchema,
+  ScorecardGetInputSchema,
+  ScorecardSchema,
+  ScorecardSetMinutesInputSchema,
+  TrustListSchema,
+  TrustUnmuteInputSchema,
+} from "./scorecard.ts";
 import {
   AllowRuleSchema,
   AutonomyPatchSchema,
@@ -998,6 +1014,55 @@ export const commands = {
     input: z.object({}),
     output: OpsPhoneStatusSchema,
   },
+  // Scorecard, trust ladder and money (5.18) -------------------------------------
+  "scorecard.get": {
+    risk: "read",
+    summary:
+      "What the captain did and how it turned out, today or this week: per workspace, per authority row and outbound channel, and per playbook. Actions, kept and overruled percent, tokens and dollars, owner minutes saved, and findings that became fixes. A captain lane sees its own workspace only",
+    input: ScorecardGetInputSchema,
+    output: ScorecardSchema,
+  },
+  "scorecard.setMinutes": {
+    risk: "change",
+    summary:
+      "Set the owner minutes one kept action of a kind saves (start, questions, approvals, upkeep, merge, push, own, draft, finding); leave minutes out for the default. The owner's",
+    input: ScorecardSetMinutesInputSchema,
+    output: z.object({ minutes: z.record(z.string(), z.number()) }),
+  },
+  "trust.list": {
+    risk: "read",
+    summary:
+      "The trust ladder: each authority row and outbound channel of a workspace with its setting, the last judged actions it is read on, and the playbooks the captain muted. Below 80 percent kept it drops to You or Draft by itself; above 95 percent it only proposes a promotion",
+    input: z.object({ org: z.string().optional() }),
+    output: TrustListSchema,
+  },
+  "trust.unmute": {
+    risk: "change",
+    summary: "Put a playbook the captain muted back on its old schedule. The owner's",
+    input: TrustUnmuteInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "trust.setWindow": {
+    risk: "change",
+    summary:
+      "Set how many of the last judged actions the trust ladder reads for each authority row, channel and playbook (3 to 200; leave window out for the default of 20). The owner's",
+    input: z.object({ window: z.number().int().min(3).max(200).optional() }),
+    output: z.object({ window: z.number().int() }),
+  },
+  "money.get": {
+    risk: "read",
+    summary:
+      "This month's spend against the one monthly ceiling, with the pace and where the month ends, and the profit and loss per workspace: spend against the retainer and the value of the time saved, from rates the owner entered (none are guessed)",
+    input: z.object({}),
+    output: MoneyStatusSchema,
+  },
+  "money.set": {
+    risk: "change",
+    summary:
+      "Set the monthly ceiling (a hard stop on new starts when reached) and a workspace's retainer and hourly rate. The owner's: the captain never changes its own ceiling",
+    input: MoneySetInputSchema,
+    output: MoneyStatusSchema,
+  },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {
     risk: "read",
@@ -1138,6 +1203,34 @@ export const commands = {
     summary: "Delete a deadline. The owner only",
     input: DeadlineIdInputSchema,
     output: z.object({ id: z.number().int().positive() }),
+  },
+  // The agenda and the morning brief (5.18) -----------------------------------
+  "agenda.today": {
+    risk: "read",
+    summary:
+      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner only",
+    input: AgendaTodayInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.configure": {
+    risk: "change",
+    summary:
+      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+    input: AgendaConfigureInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.brief": {
+    risk: "change",
+    summary:
+      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner only",
+    input: AgendaBriefInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.dismissBrief": {
+    risk: "change",
+    summary: "Dismiss the morning brief of a day on Today. The owner only",
+    input: AgendaDismissInputSchema,
+    output: z.object({ day: z.string() }),
   },
   "notify.pending": {
     risk: "read",

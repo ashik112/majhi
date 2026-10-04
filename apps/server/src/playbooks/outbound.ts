@@ -43,6 +43,8 @@ export interface OutboundDeps {
   /** Whether a workspace exists. */
   knownOrg: (org: string) => Promise<boolean>;
   transports?: Partial<Record<OutboundChannel, OutboundTransport>>;
+  /** Whether the owner accepted a promotion to Auto for this channel (the trust ladder). Without it Auto is never selectable. */
+  autoAllowed?: (org: string, channel: OutboundChannel) => boolean;
   changed?: () => void;
 }
 
@@ -124,14 +126,24 @@ export class OutboundGate {
     return this.channels(org).find((c) => c.channel === channel)?.mode ?? "draft";
   }
 
-  setMode(input: OutboundSetModeInput): OutboundChannelState[] {
+  /**
+   * The trust ladder moves a channel: down to Draft by itself after mistakes, up to Batch or Auto
+   * when the owner accepted a promotion. `setMode` reaches Auto only through `autoAllowed`.
+   */
+  applyLadder(org: string, channel: OutboundChannel, mode: OutboundMode): void {
+    this.setMode({ org, channel, mode, explicit: true }, true);
+  }
+
+  setMode(input: OutboundSetModeInput, ladder = false): OutboundChannelState[] {
     const current = this.channels(input.org).find((c) => c.channel === input.channel);
     const mode = input.mode ?? current?.mode ?? "draft";
-    if (mode === "auto" && input.explicit !== true) {
-      throw new UserError(
-        "Auto stays off until the trust ladder is built. Set it only on purpose, for a channel you choose.",
-        409,
-      );
+    if (mode === "auto" && !ladder) {
+      if (input.explicit !== true || this.deps.autoAllowed?.(input.org, input.channel) !== true) {
+        throw new UserError(
+          "Auto is offered by the trust ladder after a track record: a channel whose drafts you approved as written is proposed for it in Decisions. Accept that proposal to turn Auto on.",
+          409,
+        );
+      }
     }
     const batchAt = input.batchAt ?? current?.batchAt ?? DEFAULT_BATCH_AT;
     this.deps.db

@@ -65,6 +65,8 @@ export const queryKeys = {
   /** Every `playbooks.*`, `goals.*` and `outbound.*` read. */
   playbooks: ["playbooks"],
   ops: ["ops"],
+  /** `agenda.today`: the brief, the agenda, Watch and Plan. */
+  agenda: ["agenda"],
   /** Every `kb.*`, `voice.*`, `crm.*` and `deadlines.*` read. */
   business: ["business"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */

@@ -211,6 +211,11 @@ const limitsRoute = createRoute({
   path: PAGE_PATH.limits,
   component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
 });
+const todayRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.today,
+  component: lazyRouteComponent(() => import("@/pages/today-page"), "TodayPage"),
+});
 const decisionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.decisions,
@@ -288,6 +293,7 @@ export const router = createRouter({
     playbooksRoute,
     watchRoute,
     limitsRoute,
+    todayRoute,
     decisionsRoute,
     businessRoute,
     setupRoute,

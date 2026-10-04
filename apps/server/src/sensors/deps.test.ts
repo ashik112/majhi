@@ -226,11 +226,10 @@ describe("the dependency sweep", () => {
       source: "security",
       project: "acme-api",
       severity: "high",
-      dedupeKey: "osv:acme-api:CVE-2026-0001:npm:left-pad",
+      dedupeKey: "osv-pkgs:acme-api:all",
+      title: "1 vulnerable package in acme-api (1 high)",
     });
-    expect(f?.detail).toContain("Fixed in 1.3.1");
-    expect(f?.evidence).toContain("package-lock.json: left-pad@1.3.0");
-    expect(f?.evidence).toContain("fixed in 1.3.1");
+    expect(f?.evidence).toEqual(["left-pad@1.3.0 -> 1.3.1 in package-lock.json (high; CVE-2026-0001)"]);
     // Nothing but the package, ecosystem and version went out.
     const batch = up.to("/osv/v1/querybatch");
     expect(JSON.parse(batch[0]?.body ?? "{}")).toEqual({
@@ -264,12 +263,9 @@ describe("the dependency sweep", () => {
     await t.run();
     const found = live(t.findings).filter((f) => f.source === "security");
     expect(found).toHaveLength(1);
-    expect(found[0]?.evidence).toEqual(
-      expect.arrayContaining([
-        "package-lock.json: left-pad@1.3.0",
-        "package-lock.json: left-pad@1.2.0",
-        "web/package-lock.json: left-pad@1.3.0",
-      ]),
+    expect(found[0]?.evidence).toHaveLength(1);
+    expect(found[0]?.evidence[0]).toMatch(
+      /^left-pad@1\.2\.0,1\.3\.0 .* in package-lock\.json, web\/package-lock\.json \(/,
     );
     await t.run();
     expect(live(t.findings).filter((f) => f.source === "security")).toHaveLength(1);
@@ -293,6 +289,31 @@ describe("the dependency sweep", () => {
     const t = sweep([fixture("globex-api", { "package-lock.json": lock("left-pad", "1.3.0") }, "globex")]);
     expect(await t.run()).toEqual({ findings: 0, note: "No project is registered" });
     expect(up.seen).toHaveLength(0);
+  });
+
+  it("folds the findings from before grouping into the project's one", async () => {
+    osv({ "left-pad@1.3.0": ["GHSA-aaaa-bbbb-cccc"] }, { "GHSA-aaaa-bbbb-cccc": GHSA });
+    const t = sweep([fixture("acme-api", { "package-lock.json": lock("left-pad", "1.3.0") })]);
+    const old = await t.findings.report(
+      {
+        org: "acme",
+        project: "acme-api",
+        source: "security",
+        title: "left-pad has a known vulnerability (CVE-2026-0001)",
+        detail: "",
+        evidence: [],
+        severity: "high",
+        dedupeKey: "osv:acme-api:CVE-2026-0001:npm:left-pad",
+      },
+      { kind: "captain", org: "acme" },
+    );
+    await t.run();
+    expect(t.findings.get(old.finding.id)).toMatchObject({
+      status: "dismissed",
+      dismissedReason: "Folded into one finding per project",
+    });
+    const open = live(t.findings).filter((f) => f.source === "security" && f.status === "open");
+    expect(open.map((f) => f.dedupeKey)).toEqual(["osv-pkgs:acme-api:all"]);
   });
 
   it("closes the finding when the advisory no longer applies", async () => {
@@ -354,7 +375,9 @@ describe("the dependency sweep", () => {
     const t = sweep([fixture("acme-api", { "package-lock.json": lock("left-pad", "1.3.0") })]);
     await t.run();
     expect(calls).toBe(2);
-    expect(live(t.findings).filter((f) => f.source === "security")).toHaveLength(2);
+    const found = live(t.findings).filter((f) => f.source === "security");
+    expect(found).toHaveLength(1);
+    expect(found[0]?.evidence[0]).toContain("GHSA-aaaa-bbbb-cccc, GHSA-dddd-eeee-ffff");
   });
 
   it("an advisory with hostile text stays data: it is cut, cleaned and labelled untrusted", async () => {

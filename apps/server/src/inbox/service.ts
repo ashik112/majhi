@@ -42,6 +42,10 @@ export interface DecisionActions {
   decideBatch(org: string, channel: OutboundChannel, decision: "send" | "discard"): Promise<unknown>;
   /** The ops watch: the owner has seen the incident. */
   ackIncident?(id: number): Promise<unknown>;
+  /** A trust ladder notice: demotion read or given back, a promotion taken or put off, a mute undone. */
+  answerTrust?(id: number, option: string): Promise<unknown>;
+  /** The monthly ceiling: raise it for the month or keep it. */
+  answerCeiling?(month: string, option: string): Promise<unknown>;
 }
 
 export interface RecommendationStore {
@@ -68,6 +72,10 @@ export interface InboxDeps {
     get(id: number): Draft | undefined;
   };
   actions: DecisionActions;
+  /** Decisions the trust ladder and the money ceiling build themselves. */
+  extras?: () => readonly OwnerDecision[];
+  /** The owner answered a decision: the scorecard learns whether the captain's opinion held. */
+  answered?: (decision: OwnerDecision, option: string) => void;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** The agent's last message in the task. */
@@ -114,6 +122,7 @@ export class InboxService {
       batches: (await deps.outbound?.batchesDue()) ?? [],
       incidents: deps.incidents?.() ?? [],
       orgName: (org) => names[org],
+      extras: deps.extras?.() ?? [],
     });
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
@@ -125,6 +134,7 @@ export class InboxService {
     const decision = (await this.list()).find((d) => d.id === input.id);
     if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
     await this.apply(decision, input, () => this.deps.items());
+    this.noteAnswer(decision, input.option);
     return this.list();
   }
 
@@ -172,6 +182,7 @@ export class InboxService {
       }
       try {
         await this.apply(decision, { id, option: pick.option.id }, () => cards);
+        this.noteAnswer(decision, pick.option.id);
         result.done.push(id);
       } catch (err) {
         result.failed.push({ id, error: err instanceof Error ? err.message : "It failed" });
@@ -179,6 +190,15 @@ export class InboxService {
     }
     result.decisions = await this.list();
     return result;
+  }
+
+  /** Tells the scorecard what the owner answered, when the captain had an opinion. Never fails an answer. */
+  private noteAnswer(decision: OwnerDecision, option: string): void {
+    try {
+      this.deps.answered?.(decision, option);
+    } catch {
+      // A scorecard problem must not undo an answer that went through.
+    }
   }
 
   /** Takes one option of a decision through the path its card has. */
@@ -201,6 +221,8 @@ export class InboxService {
     else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
     else if (parsed.kind === "incident") await actions.ackIncident?.(parsed.id);
+    else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
+    else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
     } else if (parsed.kind === "batch") {

@@ -506,6 +506,8 @@ export const EventTopicSchema = z.enum([
   "ops",
   /** Business memory (5.19): the knowledge base, voice, contacts and deadlines. */
   "business",
+  /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
+  "agenda",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */

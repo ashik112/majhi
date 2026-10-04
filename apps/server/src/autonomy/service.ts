@@ -102,6 +102,8 @@ import {
   holdsOf,
   spendOf,
 } from "./spend.ts";
+import { type Overnight, overnightOf } from "../agenda/overnight.ts";
+import { briefDue } from "../agenda/time.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
@@ -148,6 +150,11 @@ export interface AutonomyDeps {
   typing?: (task: string) => boolean;
   /** Projects the owner protects: Own work never approves a change in one of them. */
   protectedProjects?: () => Promise<ReadonlySet<string>>;
+  /**
+   * Why the one monthly ceiling holds new starts now, or undefined. Read where something would start;
+   * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
+   */
+  ceilingHeld?: () => string | undefined;
   now?: () => Date;
 }
 
@@ -1403,6 +1410,8 @@ export class AutonomyService {
     raw: Record<string, unknown>,
   ): Promise<string | undefined> {
     if (this.repo.state().mode !== "on" || !startsWork(command, input)) return undefined;
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined) return `Not started: ${ceiling}. It can start when the owner raises the ceiling or the month ends.`;
     const { world, sections } = await this.context(caller, command, raw);
     const hold = holdCovering(
       await this.refreshHolds(),
@@ -2378,6 +2387,31 @@ export class AutonomyService {
     return summary;
   }
 
+  /**
+   * What autonomous mode did in a span (UTC ISO, `to` excluded) and what it cost, as counts for the morning
+   * brief (SPEC 5.18). Read-only: it writes nothing and asks no model.
+   */
+  async overnight(from: string, to: string): Promise<Overnight & { spent: number; budget?: number }> {
+    const events = this.repo.eventsBetween(from, to);
+    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter((a) => a.outcome === "done");
+    const found = overnightOf({
+      events,
+      title: (task) => this.deps.store.tasks.get(task)?.title,
+      upkeep,
+    });
+    const spent = this.repo.spendRows(from, to, this.spendChats()).reduce((n, r) => n + r.cost, 0);
+    const cap = (await this.deps.config.settings()).autonomy.day.cost;
+    return { ...found, spent: Math.round(spent * 100) / 100, ...(cap === undefined ? {} : { budget: cap }) };
+  }
+
+  /** The titles of what the captain plans next, in its queue's order, for the brief and Today. */
+  queueTitles(max: number): string[] {
+    return this.repo
+      .state()
+      .queue.slice(0, max)
+      .map((q) => q.title);
+  }
+
   /** Notes today's caps, so the summary of today compares against what applied. Never throws. */
   private async noteCaps(): Promise<void> {
     try {
@@ -2645,6 +2679,8 @@ export class AutonomyService {
    * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.
    */
   async laneRest(org: string, account: string): Promise<string | undefined> {
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined) return ceiling;
     const m = await this.measure();
     if (m.spend.total.reached) return "the day budget is used up";
     const own = m.spend.orgs.find((o) => o.org === org);
@@ -2745,8 +2781,7 @@ export function zoneOr(tz: string | undefined): string {
 
 /** When the day's summary is due: `HH:MM` on that local day. */
 export function summaryDue(day: string, clock: string, tz: string): Date {
-  const [h = 0, m = 0] = clock.split(":").map(Number);
-  return new Date(dayStart(day, tz).getTime() + (h * 60 + m) * 60_000);
+  return briefDue(day, clock, tz);
 }
 
 function ok(output: unknown): ToolResult {

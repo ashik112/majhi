@@ -9,7 +9,7 @@ import {
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 
-/** The ops watch tables in `majhi.db` (migration 135). Everything the checks and incidents need survives a restart. */
+/** The ops watch tables in `majhi.db` (migration 139). Everything the checks and incidents need survives a restart. */
 
 export interface StoredService {
   id: string;
