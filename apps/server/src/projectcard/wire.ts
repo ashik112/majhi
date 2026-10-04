@@ -1,6 +1,7 @@
 import type { ReadinessItem } from "@majhi/shared";
 import { BRIEF_SECTIONS, type ProjectCard } from "@majhi/shared";
 import { z } from "zod";
+import { UserError } from "../errors.ts";
 import { git } from "../git/git.ts";
 import { parseBrief } from "../memory/brief-doc.ts";
 import { type Housekeeper, NoHousekeeper, type Parsed, parseJson } from "../memory/housekeeper.ts";
@@ -122,8 +123,8 @@ export function createCards(w: CardsWiring): ProjectCards {
               );
               return value;
             } catch (err) {
-              // No Housekeeper set: the README start stands in, quietly.
-              if (err instanceof NoHousekeeper) return undefined;
+              // No Housekeeper set, or none that may work for this workspace: the README start stands in, quietly.
+              if (err instanceof NoHousekeeper || err instanceof UserError) return undefined;
               throw err;
             }
           },

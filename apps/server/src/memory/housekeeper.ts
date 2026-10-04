@@ -12,6 +12,7 @@ import {
   FactTextSchema,
   type MemoryScope,
   MemoryScopeSchema,
+  PRIVATE,
   type RoomItem,
   type Task,
   type Thread,
@@ -478,6 +479,13 @@ export class Housekeeper {
     const { accounts } = await deps.config.sections();
     const account = accounts[fm.account];
     if (account === undefined) throw new Error(`Account "${fm.account}" is not in majhi.yaml.`);
+    // Nor on another org's account: a workspace's account only pays for that workspace's work.
+    if (account.org !== PRIVATE && account.org !== task.org) {
+      throw new UserError(
+        `The Housekeeper's account ${fm.account} belongs to another workspace, so it does not work for ${task.org ?? "this"}. Set memory.housekeeper to an agent on a private account or one of ${task.org ?? "this workspace"}.`,
+        409,
+      );
+    }
     let apiKey: string | undefined;
     if (account.auth === "api-key" && account.key !== undefined) {
       apiKey = await deps.secrets.get(secretName(account.key));
