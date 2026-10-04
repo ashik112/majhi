@@ -32,6 +32,16 @@ export function useFindingToTask() {
   });
 }
 
+/** Bring a dismissed finding back to open. For one Laya's triage dismissed: it labels that decision wrong. */
+export function useFindingReopen() {
+  const done = useRefetchAfter();
+  return useMutation<CommandOutput<"findings.update">, ApiRequestError, { id: number }>({
+    mutationFn: ({ id }) =>
+      cmd("findings.update", { id, status: "open" }, { reason: "Owner brought back a finding" }),
+    onSuccess: done,
+  });
+}
+
 /** Dismiss a finding with a reason. */
 export function useFindingDismiss() {
   const done = useRefetchAfter();

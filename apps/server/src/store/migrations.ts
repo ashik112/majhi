@@ -1385,6 +1385,12 @@ CREATE TABLE handoff_state (
 );
 `,
   },
+  {
+    // Laya's triage of a new finding (likely real or noise, with the reason) is kept on the finding, as JSON.
+    id: 141,
+    name: "finding triage",
+    sql: `ALTER TABLE findings ADD COLUMN triage TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

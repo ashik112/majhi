@@ -32,6 +32,7 @@ import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
+import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -44,6 +45,7 @@ import { KbService } from "./business/kb.ts";
 import { VoiceService } from "./business/voice.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
+import { labelOwnWork } from "./captain/own-work-second.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -73,6 +75,8 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
+import { classifyInjection } from "./decisions/uses/injection.ts";
+import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import type { E2eService } from "./e2e/service.ts";
 import { createE2e } from "./e2e/wire.ts";
 import { economicsRunner } from "./economics/playbook.ts";
@@ -83,6 +87,7 @@ import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
+import { triageFinding } from "./findings/triage.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
@@ -91,6 +96,8 @@ import { keywordLines } from "./growth/gather.ts";
 import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
 import type { GrowthDeps } from "./growth/ports.ts";
 import { clientUpdate } from "./growth/update.ts";
+import type { HandoffService } from "./handoff/service.ts";
+import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
@@ -101,9 +108,8 @@ import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
+import { ESCALATIONS_PER_DAY } from "./memory/escalate.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
-import type { HandoffService } from "./handoff/service.ts";
-import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import { Housekeeper, NoHousekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
@@ -737,6 +743,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     allowed: (t) => memoryScopes.writable(t.id),
     placer: new Placer({ decisions, registry: memoryRegistry }),
+    // Laya unsure about a waiting memory: the stand-in answers once, 40 a day at most, before the owner is left with it.
+    escalate: { perDay: ESCALATIONS_PER_DAY },
     inDocs: async (t, text) => {
       if (t === undefined) return undefined;
       const paths = (await projectList()).filter((p) => t.projects.includes(p.id)).map((p) => p.path);
@@ -818,6 +826,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
+    // The owner's answer to a prompt Laya was asked about labels that decision (Allow once: it was routine).
+    onOwnerPermission: (task, item) => labelOwnWork(decisions, task, item),
     store,
     config,
     projects,
@@ -1165,6 +1175,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       projectLines: (org) => cards.digestLines(org),
+      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
+      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1190,6 +1202,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
+    triage: (f) => triageFinding(decisions, f, options.runClock),
+    labelled: (f, label, note) => decisions.resolve("finding", String(f.id), label, note),
     // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
     appeared: (f) => {
       // An incident wakes the lane itself, with its evidence and what the captain may do (ops watch).
@@ -1366,6 +1381,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tokens: gitTokens,
     orgs: async () => (await config.sections()).orgs,
     housekeeper,
+    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
     ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
@@ -1406,6 +1422,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
     ...sensorRunners(sensors),
+    // The weekly check of Laya's decisions, and a few old findings read each run.
+    "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
     economics: economicsRunner(economics, orgLabel),
     "client-update": clientUpdate(growth),
     feeds: feedsRunner({

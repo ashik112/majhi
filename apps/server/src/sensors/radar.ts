@@ -1,5 +1,6 @@
 import { detectSecrets } from "@majhi/shared";
 import { z } from "zod";
+import { injectionHints, warnFence } from "../decisions/uses/injection.ts";
 import type { RulesContext, RulesResult } from "../playbooks/rules.ts";
 import { fresh } from "./cache.ts";
 import { isLockfile, type Pkg, parseLockfile } from "./lockfiles.ts";
@@ -83,8 +84,17 @@ export function githubRepo(repository: unknown): string | undefined {
 }
 
 /** The prompt for one release. Everything from outside sits in the data block. */
-export function radarPrompt(project: string, dep: string, installed: string, release: Release): string {
-  const notes = (release.body ?? "").replace(/<\/?release_notes>/gi, "").slice(0, NOTES_CHARS);
+export function radarPrompt(
+  project: string,
+  dep: string,
+  installed: string,
+  release: Release,
+  /** Why the notes were flagged as instructions to an agent: they get an extra warning fence. */
+  flagged?: string,
+): string {
+  const plain = (release.body ?? "").replace(/<\/?release_notes>/gi, "").slice(0, NOTES_CHARS);
+  const notes =
+    flagged === undefined ? plain : warnFence("release-notes", plain, { flagged: true, reason: flagged });
   return [
     "You are majhi's tech radar. Decide whether a new release of a dependency matters to a project.",
     'Reply with one JSON object and nothing else: {"relevant": true|false, "kind": "breaking"|"security"|"feature"|"none", "why": "one line, at most 160 characters, why it matters to this project"}.',
@@ -268,7 +278,20 @@ export function techRadar(ports: SensorPorts, weekTokens: number = WEEK_TOKENS) 
             if (newest === undefined) continue;
             // One question per dependency: the newest step stands for the releases before it.
             if (ports.summarize === undefined) continue;
-            const prompt = radarPrompt(project.id, dep.name, dep.installed, newest);
+            // Release notes that try to instruct an agent go to the model inside an extra warning fence.
+            const notes = newest.body ?? "";
+            const hint = injectionHints(notes);
+            const flagged = hint !== undefined || (await ports.injects?.(notes)) === true;
+            if (flagged) {
+              ports.log(`radar: the release notes of ${dep.name} ${newest.tag_name} look like instructions`);
+            }
+            const prompt = radarPrompt(
+              project.id,
+              dep.name,
+              dep.installed,
+              newest,
+              flagged ? (hint ?? "it looks like instructions to an AI agent") : undefined,
+            );
             const estimate = estimateTokens(prompt, "x".repeat(300));
             if (ports.cache.count(budgetKey) + estimate > weekTokens) {
               skippedForBudget += 1;

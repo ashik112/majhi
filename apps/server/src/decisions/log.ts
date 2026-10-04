@@ -85,6 +85,14 @@ export class DecisionLog {
     return info.changes > 0;
   }
 
+  /** How many decisions of a use one provider answered since `since`. */
+  countSince(use: string, provider: string, since: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM decisions WHERE use = ? AND provider = ? AND at >= ?")
+      .get(use, provider, since) as { n: number };
+    return row.n;
+  }
+
   get(id: string): DecisionRecord | undefined {
     const row = this.db.prepare("SELECT * FROM decisions WHERE id = ?").get(id) as Row | undefined;
     return row === undefined ? undefined : toRecord(row);

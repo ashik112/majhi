@@ -86,14 +86,13 @@ function mentions(text: string, lane: string, world: ScopeWorld): string | undef
 }
 
 /** A row with no workspace of its own that names another one in its text, like a history line. */
-function textWorkspace(value: unknown, lane: string, world: ScopeWorld): string | undefined {
+function textWorkspace(value: unknown, lane: string, world: ScopeWorld, depth = 0): string | undefined {
   if (typeof value === "string") return mentions(value, lane, world);
-  if (typeof value !== "object" || value === null) return undefined;
+  if (typeof value !== "object" || value === null || depth >= 4) return undefined;
+  // Nested text counts too: a decision's request holds the text it was asked about a level or two down.
   for (const v of Object.values(value)) {
-    if (typeof v === "string") {
-      const of = mentions(v, lane, world);
-      if (of !== undefined) return of;
-    }
+    const of = textWorkspace(v, lane, world, depth + 1);
+    if (of !== undefined) return of;
   }
   return undefined;
 }

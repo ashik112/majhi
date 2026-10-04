@@ -673,6 +673,19 @@ describe("auto-mute", () => {
     expect(fresh.cadenceCalls).toEqual([]);
   });
 
+  it("never counts Laya's triage dismissals against a playbook: nobody judged them", async () => {
+    const d = desk({ window: 10 });
+    for (let i = 0; i < 10; i++) d.finding(i, "deps", "dismissed", T0 - HOUR + i);
+    d.db
+      .prepare(
+        "UPDATE findings SET dismissed_reason = 'Triage by Laya (0.95): a hit in a test, sample or example file' WHERE playbook = 'deps'",
+      )
+      .run();
+    await d.svc.sweep();
+    expect(d.cadenceCalls).toEqual([]);
+    expect(d.cadence.value.kind).toBe("daily");
+  });
+
   it("can be undone from the command too, and only while muted", async () => {
     const d = desk({ window: 10 });
     for (let i = 0; i < 10; i++) d.finding(i, "deps", "dismissed", T0 - HOUR + i);

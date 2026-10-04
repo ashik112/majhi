@@ -141,4 +141,29 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     turnOn: "Reads the open follow-ups of memory once a day where Upkeep is Captain.",
     runner: { kind: "chore", chore: "followups" },
   }),
+  // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
+  {
+    id: "upkeep-laya-eval",
+    name: "Laya check",
+    pack: "upkeep",
+    purpose:
+      "Test each of Laya's decisions on your own corrections every week, and file a finding for any that got worse.",
+    trigger: { cadence: { kind: "weekly", day: 0, at: "03:00" }, events: [] },
+    scope: "business",
+    inputs: [
+      "Your corrections and outcomes stored for each decision",
+      "The built-in examples of each decision",
+    ],
+    steps:
+      "Run every decision slot on its stored labels and built-in examples, refit each threshold on the labels it has now, and compare with the run before. A slot that lost precision, or went back to shadow, becomes a finding. Also read the findings that were filed before triage existed, a few at a time.",
+    outputs: ["finding", "log"],
+    channels: [],
+    cost: { tier: "rules", tokens: 0 },
+    readOnly: true,
+    enabledByDefault: true,
+    turnOn:
+      "Checks Laya against your own corrections once a week and files a finding if a decision got worse. Nothing leaves your machine.",
+    runner: { kind: "rules", id: "laya-eval" },
+    settings: [],
+  },
 ];

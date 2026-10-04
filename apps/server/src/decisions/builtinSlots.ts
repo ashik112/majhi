@@ -6,6 +6,7 @@ import { difficultyQuestion } from "../runs/difficulty.ts";
 import { delegationQuestion } from "../runs/effort-check.ts";
 import { routeRequest } from "../trackers/route.ts";
 import { type Fixture, type SlotDef, SlotRegistry } from "./slots.ts";
+import { LAYA_USE_SLOTS } from "./uses/slots.ts";
 
 // Built-in labeled examples, in generic names. They report how a provider does on typical
 // cases; they never decide that a slot may act, only the owner's and the outcomes' labels do.
@@ -319,6 +320,7 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     question: /^(level|project)$/,
     target: 0.9,
   },
+  ...LAYA_USE_SLOTS,
 ];
 
 /** The registry the decision service uses. Add a slot with `add` and it is labeled, evaluated and gated like these. */

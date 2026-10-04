@@ -86,7 +86,16 @@ export interface DigestInput {
  * stay out.
  */
 export function factsKey(input: DigestInput): string {
-  const facts = {
+  return createHash("sha1")
+    .update(JSON.stringify(factsOf(input)))
+    .digest("hex");
+}
+
+/** The facts a wake is about, as plain data: what `factsKey` hashes, and what a diff compares. */
+export type Facts = Record<string, unknown>;
+
+export function factsOf(input: DigestInput): Facts {
+  return {
     workspace: input.workspace,
     starts: input.starts,
     holds: input.holds.map((h) => [h.kind, h.id, h.text, h.until]),
@@ -108,7 +117,6 @@ export function factsKey(input: DigestInput): string {
     projects: input.projects,
     findings: input.findings,
   };
-  return createHash("sha1").update(JSON.stringify(facts)).digest("hex");
 }
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };

@@ -14,9 +14,11 @@ import {
   PRIVATE,
   type TaskStatus,
 } from "@majhi/shared";
+import { warnFence } from "../decisions/uses/injection.ts";
 import { UserError } from "../errors.ts";
 import type { FindingsRepo } from "./repo.ts";
 import { opportunityKey, overlap, SAME_IDEA, titleWords } from "./similar.ts";
+import type { TriageResult } from "./triage.ts";
 
 /**
  * Findings (SPEC 5.18): the one deduplicated store for what playbooks and agents notice. Pure rules
@@ -50,6 +52,25 @@ export interface FindingsDeps {
   changed?: () => void;
   /** A finding is new, or came back after it was fixed: the workspace's captain lane hears of it. */
   appeared?: (finding: Finding) => void;
+  /**
+   * Laya's read of a new finding (SPEC 5.12): likely real or noise. It may dismiss an info or low
+   * finding when the slot is live and calibrated. Never throws; resolves undefined for no opinion.
+   */
+  triage?: (finding: Finding) => Promise<TriageResult | undefined>;
+  /** The owner kept or dismissed a finding Laya triaged: labels that decision. */
+  labelled?: (finding: Finding, label: "keep" | "dismiss", note: string) => void;
+}
+
+/** How long a new finding waits for its triage before it is filed without one. */
+const TRIAGE_WAIT_MS = 6_000;
+
+function within<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  work.catch(() => undefined);
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
 }
 
 const DAY_MS = 86_400_000;
@@ -183,9 +204,11 @@ export class FindingsService {
         by: actor.kind === "agent" ? actor.id : actor.kind,
         at,
       });
+      const triaged = await this.triage(added);
       this.deps.changed?.();
-      this.deps.appeared?.(added);
-      return { finding: added, result: "created" };
+      // A finding the triage dismissed is not news to the captain.
+      if (triaged.status === "open") this.deps.appeared?.(triaged);
+      return { finding: triaged, result: "created" };
     }
     // The same finding again: last seen moves, evidence joins, severity only rises. A dismissed one stays so.
     const evidence = [...new Set([...known.evidence, ...input.evidence])].slice(0, MAX_EVIDENCE);
@@ -204,6 +227,43 @@ export class FindingsService {
     return { finding: refreshed, result: reopen ? "reopened" : "refreshed" };
   }
 
+  /** Lays Laya's triage on a finding. A slow, failed or absent triage leaves the finding as filed. */
+  private async triage(finding: Finding): Promise<Finding> {
+    if (this.deps.triage === undefined) return finding;
+    try {
+      const result = await within(this.deps.triage(finding), TRIAGE_WAIT_MS);
+      if (result === undefined) return finding;
+      const at = this.at();
+      const triaged = this.repo.patch(finding.id, { at, triage: result.triage });
+      if (result.dismiss === undefined || triaged.status !== "open") return triaged;
+      return this.repo.patch(finding.id, { at, status: "dismissed", dismissedReason: result.dismiss });
+    } catch {
+      return finding;
+    }
+  }
+
+  /**
+   * Triages the open findings that have no triage yet, newest first, at most `limit`. For a backlog from
+   * before triage existed. Resolves how many it laid a triage on.
+   */
+  async triageBacklog(limit: number): Promise<number> {
+    let done = 0;
+    for (const f of this.repo.list({ statuses: ["open"], limit: 500 })) {
+      if (done >= limit) break;
+      if (f.triage !== undefined) continue;
+      const after = await this.triage(f);
+      if (after.triage !== undefined) done += 1;
+    }
+    if (done > 0) this.deps.changed?.();
+    return done;
+  }
+
+  /** The owner's own keep or dismiss of a finding Laya triaged labels that decision. */
+  private labelled(actor: FindingActor, finding: Finding, label: "keep" | "dismiss", note: string): void {
+    if (actor.kind !== "owner" || finding.triage?.decision === undefined) return;
+    this.deps.labelled?.(finding, label, note);
+  }
+
   /** The open findings of a workspace for the captain's digest: worst first, at most `max`. */
   digestLines(org: string, max = 6): string[] {
     const open = this.repo.list({ org, statuses: ["open"], limit: 200 });
@@ -211,7 +271,12 @@ export class FindingsService {
     return open
       .toSorted((a, b) => rank[b.severity] - rank[a.severity] || b.id - a.id)
       .slice(0, max)
-      .map((f) => `#${f.id} [${f.severity}] ${f.title}${f.project === undefined ? "" : ` (${f.project})`}`);
+      .map(
+        (f) =>
+          `#${f.id} [${f.severity}] ${f.title}${f.project === undefined ? "" : ` (${f.project})`}${
+            f.triage?.action === "dismiss" ? ` (Laya suggests dismissing: ${f.triage.reason})` : ""
+          }`,
+      );
   }
 
   /** How many findings of a workspace are open. */
@@ -263,7 +328,14 @@ export class FindingsService {
       ...(input.decision === undefined ? {} : { decision: input.decision }),
       // Back to open: the links and the dismissal reason no longer apply.
       ...(to === "open" ? { task: null, decision: null, dismissedReason: null } : {}),
+      ...(to === "open" && found.triage?.applied === true
+        ? { triage: { ...found.triage, applied: false } }
+        : {}),
     });
+    // The owner took it up or brought it back: Laya's "noise" was wrong.
+    if (to === "open" || to === "task" || to === "decision") {
+      this.labelled(actor, found, "keep", `the owner moved it to ${to}`);
+    }
     this.deps.changed?.();
     return out;
   }
@@ -275,6 +347,7 @@ export class FindingsService {
       throw new UserError(`A ${found.status} finding cannot be dismissed.`, 409);
     }
     const out = this.repo.patch(id, { at: this.at(), status: "dismissed", dismissedReason: reason });
+    this.labelled(actor, found, "dismiss", `the owner dismissed it: ${reason}`);
     this.deps.changed?.();
     return out;
   }
@@ -306,6 +379,7 @@ export class FindingsService {
       ...(found.source === "incident" ? { code: true } : {}),
     });
     const finding = this.repo.patch(id, { at: this.at(), status: to, task: task.id });
+    this.labelled(actor, found, "keep", "the owner made a task of it");
     this.deps.changed?.();
     return { finding, task: task.id };
   }
@@ -335,6 +409,11 @@ export class FindingsService {
 export function taskText(f: Finding): string {
   const lines = [f.detail === "" ? f.title : f.detail];
   if (f.evidence.length > 0) lines.push("", "Evidence:", ...f.evidence.map((e) => `- ${e}`));
+  // The finding's text tried to instruct an agent: it goes to the task inside a warning fence, as data.
+  if (f.triage?.injects !== undefined) {
+    const fenced = warnFence("finding", lines.join("\n"), { flagged: true, reason: f.triage.injects });
+    lines.splice(0, lines.length, fenced);
+  }
   lines.push("", `Found by the captain (${FINDING_SOURCE_LABEL[f.source].toLowerCase()}), finding ${f.id}.`);
   return lines.join("\n");
 }

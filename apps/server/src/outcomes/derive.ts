@@ -1,4 +1,4 @@
-import { type CaptainChore, type OutcomeResult, outboundKey, PRIVATE } from "@majhi/shared";
+import { type CaptainChore, type OutcomeResult, outboundKey, PRIVATE, TRIAGE_DISMISS } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import type { Derived } from "./repo.ts";
 
@@ -223,8 +223,9 @@ function fromFindings(db: Database.Database, since: string): Derived[] {
   }[];
   return rows.map((r) => {
     const result: OutcomeResult | undefined =
-      r.status === "dismissed" && (r.dismissed_reason ?? "").startsWith(FOLDED)
-        ? // majhi folded it into a grouped finding: nobody judged it, so it counts for nothing.
+      r.status === "dismissed" &&
+      ((r.dismissed_reason ?? "").startsWith(FOLDED) || (r.dismissed_reason ?? "").startsWith(TRIAGE_DISMISS))
+        ? // majhi folded it into a grouped finding, or Laya's triage dismissed it: nobody judged it, so it counts for nothing.
           "void"
         : r.status === "dismissed"
           ? "dismissed"

@@ -6,10 +6,12 @@ import {
   type MemoryScope,
   type MemorySettings,
   orgScope,
+  type ProviderId,
   parseScope,
 } from "@majhi/shared";
 import type { Decisions } from "../decisions/api.ts";
 import { errorMessage } from "../errors.ts";
+import { escalateReview, unsureQuestions } from "./escalate.ts";
 import type { Candidate } from "./housekeeper.ts";
 import type { Placement, Placer } from "./placement.ts";
 import { forbiddenReason } from "./rules.ts";
@@ -30,7 +32,12 @@ export interface CurationTask {
 
 export interface CuratorDeps {
   memory: MemoryService;
-  decisions: Pick<Decisions, "decide" | "outcome" | "link">;
+  decisions: Pick<Decisions, "decide" | "outcome" | "link" | "teach">;
+  /**
+   * Where a review that Laya is unsure about goes next: the smallest model that is set up answers once,
+   * `perDay` times a day at most. Absent: the fact waits for the owner, as before.
+   */
+  escalate?: { perDay: number } | undefined;
   /** The memory section of majhi.yaml, read at each use so changes apply at once. */
   settings: () => Promise<MemorySettings>;
   /** The task by id, or undefined when it is gone. */
@@ -195,11 +202,41 @@ export class Curator {
     // No answer: nothing is kept or dropped on a guess; the fact keeps waiting.
     if (result === undefined) return { reason: "no provider answered" };
     decisions.link?.("memory", String(fact.id), result.id, "verdict");
-    const { verdict, relation, private: secret } = result.answers;
+    let { verdict, relation, private: secret } = result.answers;
+    // Laya was not sure: the smallest model that is set up reads it once, within the day's budget, so the
+    // owner is left only with what still nobody can settle. Down or out of budget: it waits, as before.
+    const via = new Map<Answer, ProviderId>();
+    const unsure =
+      this.deps.escalate === undefined ? [] : unsureQuestions(result.answers, counts, related !== undefined);
+    if (this.deps.escalate !== undefined && unsure.length > 0) {
+      const up = await escalateReview(decisions, reviewRequest(fact, related?.fact), unsure, counts, {
+        perDay: this.deps.escalate.perDay,
+        task: fact.task,
+        agent: fact.agent,
+      });
+      if (up !== undefined) {
+        for (const a of Object.values(up.answers)) via.set(a, up.provider);
+        if (up.answers.verdict !== undefined) verdict = up.answers.verdict;
+        if (up.answers.relation !== undefined) relation = up.answers.relation;
+        if (up.answers.private !== undefined) secret = up.answers.private;
+        decisions.outcome(up.decision, { text: "Escalated from Laya, which was not sure.", fellBack: false });
+        // The stand-in's answer is a teacher's label on Laya's own decision.
+        for (const name of Object.keys(up.answers)) {
+          const a = up.answers[name as keyof typeof up.answers];
+          if (a !== undefined)
+            decisions.teach?.(
+              result.id,
+              name,
+              String(a.value),
+              `${up.provider} answered where Laya was unsure`,
+            );
+        }
+      }
+    }
     const note = (reason: string, a: Answer | undefined) => ({
       reason,
       ...(a === undefined ? {} : { confidence: a.confidence }),
-      provider: result.provider,
+      provider: (a === undefined ? undefined : via.get(a)) ?? result.provider,
     });
     const done = (text: string, reason: string, fellBack = false) => {
       decisions.outcome(result.id, { text, fellBack });

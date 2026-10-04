@@ -31,7 +31,7 @@ import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
+import type { DecideUse, Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { type CachedDecision, cacheKey, DecisionCache } from "./cache.ts";
 import { baseGate, fitSlot, liveGate, previewGate } from "./calibration.ts";
 import type { CalibrationStore } from "./calibrationStore.ts";
@@ -46,6 +46,7 @@ import type { DecisionProvider } from "./providers.ts";
 import { readDecisionSettings } from "./settings.ts";
 import { MIN_LABELS, type SlotDef, type SlotRegistry } from "./slots.ts";
 import type { DecideTokens } from "./tokens.ts";
+import { regressionOf } from "./uses/weekly-eval.ts";
 
 export const DECIDE_SERVER_NAME = "majhi-decide";
 export const DECIDE_PATH = "/mcp/decide";
@@ -78,11 +79,7 @@ export interface DecisionServiceDeps {
   now?: () => Date;
 }
 
-interface Use {
-  use: DecisionRecord["use"];
-  task?: string;
-  agent?: string;
-}
+type Use = DecideUse;
 
 /** The decision provider (SPEC 5.12): the chain, the log, model picking and the `majhi-decide` tool. */
 export class DecisionService implements Decisions {
@@ -143,7 +140,18 @@ export class DecisionService implements Decisions {
     const started = performance.now();
     const settings = await this.settings();
     // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
-    const order = settings.order.includes("rules") ? settings.order : [...settings.order, "rules" as const];
+    const wanted = use.order ?? settings.order;
+    const order = wanted.includes("rules") ? [...wanted] : [...wanted, "rules" as const];
+    const first = order[0];
+    if (use.perDay !== undefined && first !== undefined && first !== "rules") {
+      const dayStart = new Date(this.now());
+      dayStart.setUTCHours(0, 0, 0, 0);
+      if (this.deps.log.countSince(use.use, first, dayStart.toISOString()) >= use.perDay)
+        throw new UserError(
+          `The daily budget of ${use.perDay} ${first} answers for ${use.use} is spent.`,
+          409,
+        );
+    }
     const model = this.deps.laya.currentVersion();
     const key = cacheKey(request, {
       model: `${order.join(",")}|${model}`,
@@ -354,11 +362,19 @@ export class DecisionService implements Decisions {
       ).length;
       const labeled = this.deps.evals.latest(slot.id, "labels");
       const fixtures = this.deps.evals.latest(slot.id, "fixtures");
+      const mode = this.modeOf(slot.id, calibration);
+      // The weekly eval compares the last two runs on the owner's labels, else on the built-in examples.
+      const set = labeled === undefined ? "fixtures" : "labels";
+      const drift = regressionOf(
+        slot,
+        mode === "live",
+        this.deps.evals.history(slot.id, 8).filter((r) => r.set === set),
+      );
       return {
         slot: slot.id,
         title: slot.title,
         use: slot.use,
-        mode: this.modeOf(slot.id, calibration),
+        mode,
         labels,
         labelsNeeded: MIN_LABELS,
         target: slot.target,
@@ -366,6 +382,7 @@ export class DecisionService implements Decisions {
         ...(labeled === undefined ? {} : { labeled }),
         ...(fixtures === undefined ? {} : { fixtures }),
         hasFixtures: slot.fixtures !== undefined,
+        ...drift,
       };
     });
   }
@@ -381,6 +398,15 @@ export class DecisionService implements Decisions {
 
   link(kind: LinkKind, ref: string, decisionId: string, question: string): void {
     this.deps.labels.link(kind, ref, decisionId, question);
+  }
+
+  /** A stronger provider's answer labels the decision it was unsure about. The owner's own label still wins. */
+  teach(decisionId: string, question: string, label: string, note?: string): void {
+    const use = this.deps.labels.useOf(decisionId);
+    if (use === undefined) return;
+    // Labels are in the slot's classes ("not-keep" for every kind of drop), as its answers are compared.
+    const classed = this.deps.slots.of(use, question).classOf?.(label) ?? label;
+    this.deps.labels.add({ decisionId, question, label: classed, source: "teacher", note });
   }
 
   /** The outcome of `ref` is known. The links go: a fact kept once stays kept. */

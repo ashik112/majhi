@@ -41,6 +41,11 @@ export interface SensorPorts {
   ): Promise<TokenResult<T>>;
   /** One short question to the smallest model; undefined when none is set. Text is data, JSON comes back. */
   summarize?(org: string, project: string, prompt: string): Promise<string | undefined>;
+  /**
+   * Whether a text from a third party (release notes) tries to instruct an agent. A flagged text is
+   * never handed to a model. Absent: only the plain-pattern check runs.
+   */
+  injects?(text: string): Promise<boolean>;
   net: Net;
   cache: SensorCache;
   now(): Date;

@@ -40,6 +40,23 @@ export interface TaskRating {
   by: string;
 }
 
+/** What a call is for, and how far down the chain it may go. */
+export interface DecideUse {
+  use: DecisionRecord["use"];
+  task?: string;
+  agent?: string;
+  /**
+   * The providers to try, in order, instead of the owner's order (the rules always close it). A cheap
+   * frequent call names `["laya"]` so a down Laya never falls through to a paid model.
+   */
+  order?: readonly ProviderId[];
+  /**
+   * At most this many answers a day from the first provider of `order`, counted in the decision log
+   * (so a restart does not reset it). Over the cap the call resolves undefined: the caller's fallback runs.
+   */
+  perDay?: number;
+}
+
 export interface Decisions {
   /**
    * Asks how much work the task is for the agent's role. Resolves undefined when no provider
@@ -58,12 +75,11 @@ export interface Decisions {
    * for the default team of a new task and a review verdict. Resolves undefined when there is no
    * provider at all.
    */
-  decide(
-    request: DecideRequestInput,
-    use: { use: DecisionRecord["use"]; task?: string; agent?: string },
-  ): Promise<DecisionResult | undefined>;
+  decide(request: DecideRequestInput, use: DecideUse): Promise<DecisionResult | undefined>;
   /** Records what majhi did with a decision, for the log and the owner's "Wrong pick". */
   outcome(id: string, outcome: DecisionOutcome): void;
+  /** A stronger provider's answer as a teacher's label on `decisionId`'s question, where the first provider was unsure. */
+  teach?(decisionId: string, question: string, label: string, note?: string): void;
   /** Holds a decision until the outcome of `ref` is known, so the outcome can label it (5.12). */
   link?(kind: LinkKind, ref: string, decisionId: string, question: string): void;
   /** The outcome of `ref` is known: labels the decisions linked to it with `label`, once. */
