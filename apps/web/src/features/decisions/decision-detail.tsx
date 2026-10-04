@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Lamp } from "@/components/ui/lamp";
 import { Textarea } from "@/components/ui/select";
+import { HandoffBlock } from "@/features/handoff/handoff-block";
 import { Markdown } from "@/features/room/markdown";
 import { cn } from "@/lib/cn";
 import { formatAgo, MOD_KEY, plural } from "@/lib/format";
@@ -243,6 +244,11 @@ export function DecisionDetailPane({
         {detail?.diff !== undefined && (
           <Block title="What changed">
             <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />
+          </Block>
+        )}
+        {decision.kind === "ship" && decision.task !== undefined && detail?.diff !== undefined && (
+          <Block title="Checks">
+            <HandoffBlock task={decision.task} />
           </Block>
         )}
         {detail?.questions !== undefined && detail.questions.length > 1 && (

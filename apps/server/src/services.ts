@@ -102,6 +102,8 @@ import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
+import type { HandoffService } from "./handoff/service.ts";
+import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import { Housekeeper, NoHousekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
@@ -200,6 +202,8 @@ export interface ServiceOptions {
   probe?: Probe;
   /** The clock of agent runs and the network watch, so tests can let time pass. */
   runClock?: () => Date;
+  /** Replaces the hand-off's command runner and its timeouts, so tests never run a real project's commands. */
+  handoff?: Pick<HandoffWiring, "exec" | "options">;
   /** Replaces `docker network inspect` for the runner network. */
   runnerInspect?: Inspect;
   /** Replaces the `gh` and `glab` programs, the Bitbucket API and the process runner, so tests never reach a real host. */
@@ -336,6 +340,8 @@ export interface Services {
   outbound: OutboundGate;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
+  /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
+  handoff: HandoffService;
   /** Client economics and the growth playbooks' views (5.18, step 11). */
   economics: EconomicsService;
   growth: GrowthDeps;
@@ -805,6 +811,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let chatMemory: ChatMemory | undefined;
   // Bound below: background e2e is built after the task service, which it creates tasks with.
   let e2e: E2eService | undefined;
+  // Bound below, after the services it reads: the checked hand-off (5.18).
+  let handoffService: HandoffService | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -830,12 +838,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (!isBossChat(task)) extraction.afterClose(task);
       await promotion.release(task);
     },
-    onRemoving: (task) => promotion.release(task),
+    onRemoving: async (task) => {
+      handoffService?.forget(task.id);
+      await promotion.release(task);
+    },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
       void labelFinishedTask(id);
+      handoffService?.reviewReached(id);
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
@@ -1271,6 +1283,26 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
   agendaSweep.unref();
   background.run(() => agenda.sweep());
+  const handoff = createHandoff({
+    db: store.raw,
+    store,
+    tasks,
+    mrs,
+    room,
+    runs,
+    projectCards: cards,
+    housekeeper,
+    spawner: sessionOptions.spawner ?? localSpawner,
+    base: sessionOptions.base,
+    repoMounts: (task) => repoMounts(task),
+    mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
+    autonomous: () => autonomy.mode() === "on",
+    ceilingHeld: () => outcomesService?.ceilingHeld(),
+    changed: () => events.emit(["tasks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    ...(options.handoff === undefined ? {} : options.handoff),
+  });
+  handoffService = handoff;
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1311,6 +1343,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       protectedProjects: async () =>
         new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
       dispatch: () => captainDispatch,
+      handoff: () => handoffService,
     }),
     tell: (key, text) => notifier.captain(key, text),
     cancelTurn: async (chat) => {
@@ -1714,6 +1747,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ops,
     outbound,
     outcomes,
+    handoff,
     economics,
     growth,
     business,

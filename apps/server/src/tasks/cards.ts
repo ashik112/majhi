@@ -110,6 +110,28 @@ export class OwnerCards {
     return true;
   }
 
+  /**
+   * The checked hand-off's line on the pending review card (5.18): what failed and was not sent back
+   * to the lead, or that the owner now decides. `undefined` clears a line of its own, never the one
+   * majhi wrote when it could not ship the task itself. False when no review card waits.
+   */
+  checkHeld(task: string, line: string | undefined): boolean {
+    const card = this.pending(task, "review");
+    if (card?.type !== "review") return false;
+    const ours = card.why?.startsWith("Checks failed") === true;
+    if (line === undefined && !ours) return true;
+    if (line !== undefined && card.why !== undefined && !ours) return true;
+    if (line === card.why) return true;
+    this.deps.room.post(task as TaskId, card.id, {
+      type: "review",
+      ...(card.lead === undefined ? {} : { lead: card.lead }),
+      ...(line === undefined ? {} : { why: line }),
+      ...(card.ready === undefined ? {} : { ready: card.ready }),
+      state: "pending",
+    });
+    return true;
+  }
+
   /** Pending owner questions of a task stop waiting: the owner wrote back instead. */
   replied(task: string): void {
     this.deps.room.flush(task);

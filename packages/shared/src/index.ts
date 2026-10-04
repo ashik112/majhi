@@ -28,6 +28,7 @@ export * from "./findings.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
 export * from "./host.ts";
+export * from "./handoff.ts";
 export * from "./inbox.ts";
 export * from "./mcp-servers.ts";
 export * from "./media.ts";

@@ -29,3 +29,7 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
 | The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
 | The owner's review time per day | Review time | review budget, minutes cap |
+| Majhi's check of finished work before "Ready to ship" | Hand-off check; "Checked: tests 42 passed (31 s), build ok" | QA, validation, CI, gate |
+| A test that failed and then passed on a retry | flaky, so not green | unstable, intermittent |
+| A failed check sent back to the lead | "sent it to @lead" (once per commit) | rejected, bounced |
+| Three failed hand-offs in a row | "Checks failed 3 times in a row: you decide" | escalated |

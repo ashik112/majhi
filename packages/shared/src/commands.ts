@@ -185,6 +185,7 @@ import {
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
+import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -1070,6 +1071,21 @@ export const commands = {
       "Set the monthly ceiling (a hard stop on new starts when reached) and a workspace's retainer and hourly rate. The owner's: the captain never changes its own ceiling",
     input: MoneySetInputSchema,
     output: MoneyStatusSchema,
+  },
+  // Checked hand-off (5.18) -------------------------------------------------------
+  "handoff.get": {
+    risk: "read",
+    summary:
+      "What the checked hand-off found for a task in review: the tests, build and lint of its project card, committed, merges cleanly, no secret, the brief's acceptance lines and the review notes, for its head commit now, with the last checks, the failed hand-offs in a row and whether the owner now decides",
+    input: HandoffGetInputSchema,
+    output: HandoffStateSchema,
+  },
+  "handoff.check": {
+    risk: "change",
+    summary:
+      "Check a task in review again: run its project card's tests, build and lint in its worktree and read the diff against the brief. The same head is not run twice unless force is set. Failures go back to the lead once per head; after three failed hand-offs in a row the owner decides",
+    input: HandoffCheckInputSchema,
+    output: HandoffStateSchema,
   },
   "economics.get": {
     risk: "read",
