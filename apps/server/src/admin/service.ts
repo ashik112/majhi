@@ -13,6 +13,7 @@ import {
   McpInstallResultSchema,
   PERMISSION_COMMANDS,
   type RoomItem,
+  type ShipFix,
   type TaskId,
 } from "@majhi/shared";
 import { z } from "zod";
@@ -673,14 +674,19 @@ export class AdminService {
   async captainDecide(
     taskId: string,
     itemId: string,
-    verdict: { decision: "approved" | "left"; why: string },
+    verdict: { decision: "approved" | "left"; why: string; fix?: ShipFix | undefined },
     captain: string,
   ): Promise<{ ok: boolean; error?: string; commit?: string }> {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) {
       return { ok: false, error: "The card is no longer waiting" };
     }
-    const marker = { decision: verdict.decision, why: verdict.why, by: "captain" as const };
+    const marker = {
+      decision: verdict.decision,
+      why: verdict.why,
+      by: "captain" as const,
+      ...(verdict.fix === undefined ? {} : { fix: verdict.fix }),
+    };
     if (verdict.decision === "left") {
       this.update(item, { autonomy: marker });
       return { ok: true };
@@ -729,6 +735,31 @@ export class AdminService {
     } finally {
       this.deciding.delete(item.id);
     }
+  }
+
+  /**
+   * The captain answers a card with something that does what it was for (a merge card, answered by
+   * opening the merge request): the card settles with the line, and the lead is told.
+   */
+  async captainInstead(taskId: string, itemId: string, line: string, captain: string): Promise<void> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) return;
+    this.pending.delete(item.id);
+    this.update(item, {
+      state: "applied",
+      autonomy: { decision: "approved", why: line, by: "captain" },
+      result: line,
+    });
+    this.log(item.task, captain, item.command, item.summary, "allow", "captain", line);
+    await this.notify(
+      item.task,
+      item.agent,
+      {
+        text: `The captain did not run: ${item.summary}. ${line}. Do not push or ask to merge again: say when the work is done and the checks pass.`,
+        shown: `Captain: ${line}`,
+      },
+      captain,
+    );
   }
 
   /**

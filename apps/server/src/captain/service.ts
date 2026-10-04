@@ -351,6 +351,12 @@ export class CaptainService {
       this.trigger(org, "questions", `An agent asks in ${task}`, cause, `${task}:${item.id}`);
   }
 
+  /** An org's git accounts or MR tokens changed: cards left for a missing sign-in are looked at again. */
+  gitChanged(org: string): void {
+    this.trigger(org, "cards", "A git account changed", "majhi");
+    this.trigger(org, "ship", "A git account changed", "majhi");
+  }
+
   /** The repo scan found repos: a new one wakes the projects chore of the workspace whose folder holds it. */
   reposSeen(orgs: readonly string[]): void {
     for (const org of new Set(orgs)) this.trigger(org, "projects", "A new repo appeared", "majhi");

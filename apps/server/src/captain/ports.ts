@@ -1,4 +1,4 @@
-import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
+import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { OwnWorkScope } from "./own-work.ts";
@@ -104,7 +104,8 @@ export interface TriageTask {
 export interface CaptainPorts {
   // Ship finished work
   reviewTasks(org: string): Promise<ReviewTask[]>;
-  shipCheck(org: string, task: string): Promise<ShipCheck>;
+  /** `except`: the item id of a pending card that does not count as waiting (the lead's merge card). */
+  shipCheck(org: string, task: string, except?: string): Promise<ShipCheck>;
   /** Merges (and pushes when `push`) by the workspace's ship rule. Returns what Undo needs. */
   ship(
     org: string,
@@ -120,7 +121,10 @@ export interface CaptainPorts {
    * Whether a task that passed the ship checks can go to its host as a merge request, and where.
    * Not ok: no remote or no MR token, with the one line why.
    */
-  mrReady(org: string, task: string): Promise<{ ok: true; host: string } | { ok: false; why: string }>;
+  mrReady(
+    org: string,
+    task: string,
+  ): Promise<{ ok: true; host: string } | { ok: false; why: string; fix?: ShipFix | undefined }>;
   /** Pushes the task's branches and opens one merge request per repo (tasks.openMrs), as the captain. Never merges. */
   openMrs(
     org: string,
@@ -133,6 +137,8 @@ export interface CaptainPorts {
   closeAnswer(org: string, task: string, reason: string): Promise<void>;
   /** Sends the lead a line and puts the task back to work, as the owner's Ask for changes does. */
   askChanges(org: string, task: string, text: string): Promise<void>;
+  /** Settles a lead's merge card as answered by an opened merge request, and tells the lead (the owner merges on the host). */
+  settleMergeCard(org: string, card: ApprovalCard, line: string): Promise<void>;
 
   // Approval cards
   approvals(org: string): ApprovalCard[];
@@ -140,7 +146,12 @@ export interface CaptainPorts {
   decideCard(
     org: string,
     card: ApprovalCard,
-    verdict: { decision: "approved" | "left"; why: string; risky?: boolean | undefined },
+    verdict: {
+      decision: "approved" | "left";
+      why: string;
+      risky?: boolean | undefined;
+      fix?: ShipFix | undefined;
+    },
   ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
   /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(

@@ -380,6 +380,7 @@ import {
   RoomItemSchema,
   RoomSearchHitSchema,
   RoomSearchInputSchema,
+  ShipFixSchema,
   TaskIdSchema,
   TaskKindSchema,
   TaskPrioritySchema,
@@ -498,12 +499,6 @@ const MergeResultSchema = z.object({
   notPushed: z.boolean().optional(),
 });
 
-/** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
-export const ShipFixSchema = z.discriminatedUnion("page", [
-  z.object({ page: z.literal("projects"), project: IdSchema }),
-  z.object({ page: z.literal("orgs"), org: IdSchema }),
-]);
-export type ShipFix = z.infer<typeof ShipFixSchema>;
 
 /** One action: allowed now, or why not and where to fix it. */
 export const ShipOptionSchema = z.object({

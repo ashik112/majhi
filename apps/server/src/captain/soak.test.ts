@@ -167,6 +167,7 @@ class Sim {
       answerTasks: async () => [],
       closeAnswer: async () => undefined,
       askChanges: async () => undefined,
+      settleMergeCard: async () => undefined,
       resolveShip: async (org, id) => {
         this.act("resolveShip", org, id, id);
       },

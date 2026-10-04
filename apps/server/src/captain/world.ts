@@ -215,8 +215,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
-    async shipCheck(_org, id): Promise<ShipCheck> {
-      const base = await shipReadiness(deps, id);
+    async shipCheck(_org, id, except): Promise<ShipCheck> {
+      const base = await shipReadiness(deps, id, except);
       if (!base.ready) return base;
       // The checked hand-off (SPEC 5.18): tests, build, lint and the review of this head, run once.
       const handoff = deps.handoff?.();
@@ -275,7 +275,13 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
 
     async mrReady(_org, id) {
       const options = await deps.mrs.shipOptions(id);
-      if (!options.mr.ok) return { ok: false, why: options.mr.why ?? "it cannot open a merge request now" };
+      if (!options.mr.ok) {
+        return {
+          ok: false,
+          why: options.mr.why ?? "it cannot open a merge request now",
+          ...(options.mr.fix === undefined ? {} : { fix: options.mr.fix }),
+        };
+      }
       return { ok: true, host: options.host === undefined ? "its host" : HOST_LABEL[options.host] };
     },
 
@@ -338,6 +344,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       });
     },
 
+    async settleMergeCard(_org, card, line) {
+      const captain = (await deps.lanes.boss()) ?? "captain";
+      await deps.admin.captainInstead(card.task, card.item, line, captain);
+    },
+
     // -------------------------------------------------------------------------
     // Approval cards
 
@@ -347,7 +358,9 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         if (deps.lanes.orgOf(t.id) !== undefined) continue;
         deps.room.flush(t.id);
         for (const item of store.room.pendingOfType(t.id, "approval")) {
-          if (item.type !== "approval" || item.autonomy !== undefined) continue;
+          if (item.type !== "approval") continue;
+          // A card left for a missing sign-in is looked at again: the owner may have fixed it.
+          if (item.autonomy !== undefined && item.autonomy.fix === undefined) continue;
           // Autonomous mode decides the calls of autonomous tasks itself.
           if (deps.autonomy.isAutonomous(t.id)) continue;
           const call = deps.admin.cardCall(t.id, item.id);
