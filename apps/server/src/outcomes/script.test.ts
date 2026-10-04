@@ -123,9 +123,9 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     // The harness counts every call of the session: the first five were the tasks.
     const results = (await attempts.calls(9)).slice(5);
     expect(seen.slice(-4)).toEqual([
-      "money.set is the owner's: the captain never changes its own trust or ceiling. The owner sets it on the Health & usage page.",
-      "trust.setWindow is the owner's: the captain never changes its own trust or ceiling.",
-      "scorecard.setMinutes is the owner's: the captain never changes its own trust or ceiling. The owner sets it on the Captain page.",
+      "money.set is the owner's. The captain never changes its own trust or ceiling; the owner sets it on Health & usage (/usage).",
+      "trust.setWindow is the owner's. The captain never changes its own trust or ceiling; the owner sets it on Captain (/captain).",
+      "scorecard.setMinutes is the owner's. The captain never changes its own trust or ceiling; the owner sets it on Captain (/captain).",
       "Refused: this lane works in Acme only and cannot read globex. Each workspace has its own lane.",
     ]);
     expect(results.every((c) => c.isError)).toBe(true);

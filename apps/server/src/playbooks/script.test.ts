@@ -217,7 +217,7 @@ describe("a playbook through a captain turn", () => {
     expect(calls.map((c) => c.isError)).toEqual([true, true, true, true, false, false]);
     expect(seen.slice(1, 3)).toEqual([
       "A chore's daily limit is the owner's, on the Playbooks page.",
-      "outbound.setMode is the owner's. The owner sets a channel's mode and sends or discards drafts on the Playbooks page.",
+      "outbound.setMode is the owner's. The owner sets a channel's mode and sends or discards drafts on Playbooks (/playbooks).",
     ]);
 
     // The owner's switches did not move.

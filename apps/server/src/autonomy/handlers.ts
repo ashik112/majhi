@@ -1,3 +1,4 @@
+import { pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { AutonomyService } from "./service.ts";
@@ -20,7 +21,7 @@ type AutonomyCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's: autonomous mode never changes its own switch or limits. The owner sets it on the Captain page.`,
+      `${ctx.command} is the owner's. Autonomous mode never changes its own switch or limits; the owner does it on ${pageRef("captain")}${ctx.command === "autonomy.configure" ? ` or ${pageRef("limits")}` : ""}.`,
       409,
     );
   }

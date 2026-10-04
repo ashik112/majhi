@@ -1,4 +1,4 @@
-import { PRIVATE } from "@majhi/shared";
+import { PRIVATE, pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import type { EconomicsService } from "../economics/service.ts";
 import { UserError } from "../errors.ts";

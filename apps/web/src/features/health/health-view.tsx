@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";

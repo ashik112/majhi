@@ -1,3 +1,4 @@
+import { pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { InboxService } from "./service.ts";
@@ -13,7 +14,7 @@ type DecisionCommand =
 export function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. Agents recommend with majhi_decisions_recommend and the owner answers on the Decisions page.`,
+      `${ctx.command} is the owner's. Agents recommend with majhi_decisions_recommend and the owner answers on ${pageRef("decisions")}.`,
       409,
     );
   }

@@ -1,5 +1,6 @@
 import {
   DECISIONS_TASK,
+  PAGE_PATH,
   type UsageBreakdown,
   type UsageDimension,
   type UsageFilters,
@@ -20,7 +21,6 @@ import { describeError } from "@/lib/errors";
 import { badgeLetters, formatTokens, plural } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { orgSearch } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useOrgs } from "@/lib/studio-queries";
 import { useUsageBreakdown, useUsageSummary } from "@/lib/usage-queries";
 import { CostText, unpricedText } from "./cost";

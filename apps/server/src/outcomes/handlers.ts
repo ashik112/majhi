@@ -1,4 +1,4 @@
-import { PRIVATE } from "@majhi/shared";
+import { PRIVATE, pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -29,7 +29,7 @@ function ownerOnly(ctx: CommandContext): void {
       "trust.unmute": " The owner does it on the Captain page.",
     };
     throw new UserError(
-      `${ctx.command} is the owner's: the captain never changes its own trust or ceiling.${where[ctx.command] ?? ""}`,
+      `${ctx.command} is the owner's. The captain never changes its own trust or ceiling; the owner sets it on ${pageRef(ctx.command === "money.set" ? "usage" : "captain")}.`,
       409,
     );
   }

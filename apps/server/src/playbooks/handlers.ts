@@ -1,4 +1,4 @@
-import { PRIVATE } from "@majhi/shared";
+import { PRIVATE, pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -55,7 +55,7 @@ export interface PlaybookHandlerDeps extends FindingsHandlerDeps {
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. The owner sets a channel's mode and sends or discards drafts on the Playbooks page.`,
+      `${ctx.command} is the owner's. The owner sets a channel's mode and sends or discards drafts on ${pageRef("playbooks")}.`,
       409,
     );
   }

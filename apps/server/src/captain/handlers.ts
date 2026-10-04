@@ -1,3 +1,4 @@
+import { pageRef } from "@majhi/shared";
 import type { AutonomyService } from "../autonomy/service.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
@@ -20,7 +21,7 @@ type CaptainCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's: the captain never changes its own switch. The owner does it on the Captain page.`,
+      `${ctx.command} is the owner's. The captain never changes its own switch; the owner does it on ${pageRef("captain")}.`,
       409,
     );
   }

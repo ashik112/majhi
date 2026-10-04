@@ -1,4 +1,12 @@
-import { collapseHome, EDITOR_LABEL, type Settings } from "@majhi/shared";
+import {
+  collapseHome,
+  EDITOR_LABEL,
+  isSetupSection,
+  SECTION_TITLE,
+  SETUP_GROUPS,
+  type Settings,
+  type SetupSection,
+} from "@majhi/shared";
 import { MessageSquare } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { AppearanceControls } from "@/components/shell/appearance";
@@ -41,7 +49,7 @@ import { MemorySection } from "./memory-panel";
 import { accountsCard, agentsCard, bossCard, readyCount, rootsCard, sshCard } from "./model";
 import { NotificationsSection } from "./notifications-panel";
 import { RulesPanel } from "./rules-panel";
-import { isSetupSection, SECTION_ABOUT, SECTION_TITLE, SETUP_GROUPS, type SetupSection } from "./sections";
+import { SECTION_ABOUT } from "./sections";
 import { ContextSection, TeamsSection, TurnsSection } from "./settings-panel";
 import {
   OverviewSection,

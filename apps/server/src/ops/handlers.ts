@@ -1,4 +1,4 @@
-import type { WatchDef } from "@majhi/shared";
+import { pageRef, type WatchDef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -51,7 +51,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
   const owner = (ctx: CommandContext): void => {
     if (ctx.meta.actor.kind === "agent") {
       throw new UserError(
-        `${ctx.command} is the owner's: who is paged and when. The owner sets it in Alerts and phone on the Watch page.`,
+        `${ctx.command} is the owner's: who is paged and when. The owner sets it in Alerts and phone on ${pageRef("watch")}.`,
         409,
       );
     }
@@ -73,7 +73,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       (id === undefined ? undefined : actsOnItsOwn((await engine.show(id)).def));
     if (what !== undefined) {
       throw new UserError(
-        `A watch with ${what} is the owner's to set up. Save it to only alert, look into it or draft a status note, and tell the owner what it would do on top.`,
+        `A watch with ${what} is the owner's to set up, on ${pageRef("watch")}. Save it to only alert, look into it or draft a status note, and tell the owner what it would do on top.`,
         409,
       );
     }

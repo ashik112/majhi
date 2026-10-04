@@ -1,4 +1,4 @@
-import { TaskIdSchema } from "@majhi/shared";
+import { PAGE_PATH, TaskIdSchema } from "@majhi/shared";
 import {
   createRootRoute,
   createRoute,
@@ -15,7 +15,6 @@ import { BoardScreen } from "@/features/board/home-screen";
 import { ChatsScreen } from "@/features/chats/chats-screen";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
 import { TaskScreen } from "@/features/task/task-screen";
-import { PAGE_PATH } from "@/lib/pages";
 
 /** Search params every page may carry: the org filter, and the agent or account a link points at. */
 export interface AppSearch {

@@ -3708,8 +3708,8 @@ const DESTRUCTIVE_VERB = /^(remove|delete|forget)/i;
 /**
  * True for a command that removes or forgets something: its risk is `destructive`, or the word after
  * the last dot starts with remove, delete or forget. That also catches `team.remove`,
- * `tasks.removeAgent` and `projects.remove`, which are `change`. Auto-allow rules skip these unless
- * the owner turned on `allow_destructive_rules`.
+ * `tasks.removeAgent` and `projects.remove`, which are `change`. These always wait for the owner's
+ * click: no approval mode or auto-allow rule covers them.
  */
 export function isDestructiveCommand(name: string): boolean {
   const def = Object.hasOwn(commands, name) ? commands[name as CommandName] : undefined;

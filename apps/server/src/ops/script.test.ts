@@ -226,7 +226,7 @@ describe("the owner's commands", () => {
     ] as const) {
       const res = await world.h.cmd(name, body, agent);
       expect(res.status, name).toBe(409);
-      expect(res.body.error, name).toContain("Alerts and phone on the Watch page");
+      expect(res.body.error, name).toContain("Alerts and phone on Watch (/watch)");
     }
     expect(world.h.majhi.services.ops.watch.settings().escalateMin).not.toBe(1);
     expect(await world.h.majhi.services.ops.phone.status()).toMatchObject({ state: "off" });

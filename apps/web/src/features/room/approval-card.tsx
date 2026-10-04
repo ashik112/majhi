@@ -66,10 +66,8 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const [scope, setScope] = useState<Scope>("task");
   const settings = useSettings();
   const org = useTask(item.task).data?.org;
-  // No checkbox for a destructive command while Hub setup keeps it off. It waits for the settings.
-  const canAlways =
-    settings.data !== undefined &&
-    (!isDestructiveCommand(item.command) || settings.data.policy.allow_destructive_rules);
+  // No checkbox for a destructive command: only the owner's click approves it. It waits for the settings.
+  const canAlways = settings.data !== undefined && !isDestructiveCommand(item.command);
 
   if (outcome === undefined) {
     return (

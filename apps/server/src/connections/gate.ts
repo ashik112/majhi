@@ -5,7 +5,8 @@ import { parseLine, ShellParseError, type SimpleCommand } from "./shell.ts";
  * The connection gate (SPEC 5.14). Pure: it classifies a shell command line or an MCP tool call
  * against the connections a run holds. A line made only of connection reads runs without asking; a
  * connection write always asks the owner, unless the connection's `allow` holds that exact action.
- * What the gate cannot read counts as a write. The real guard stays the credential: a script that
+ * A destructive write (it deletes or destroys something) always waits for the owner's own click,
+ * whatever `allow` holds. What the gate cannot read counts as a write. The real guard stays the credential: a script that
  * calls kubectl inside it is not seen here.
  */
 
@@ -34,8 +35,71 @@ export interface GateWrite {
   action: string;
   /** Why it counts as a write, in a few words. */
   why: string;
-  /** The connection's `allow` holds this exact action. */
+  /** It deletes or destroys data or infrastructure: only the owner's own click approves it. */
+  destructive: boolean;
+  /** Runs without asking: the connection's `allow` holds this exact action and it is not destructive. */
   allowed: boolean;
+}
+
+/** Words of a command or tool name that delete or destroy what they act on. */
+const DESTROY_WORDS = new Set([
+  "delete",
+  "del",
+  "destroy",
+  "drop",
+  "dropdb",
+  "purge",
+  "terminate",
+  "truncate",
+  "rm",
+  "rmi",
+  "rmdir",
+  "remove",
+  "wipe",
+  "erase",
+  "prune",
+  "uninstall",
+  "shred",
+  "mkfs",
+  "flushall",
+  "flushdb",
+]);
+
+/**
+ * Whether a write deletes or destroys something, by its action text: a command line
+ * (`kubectl delete pod api`, `psql -c "DROP TABLE x"`, `rm -rf /srv`) or an MCP tool name
+ * (`droplet-delete`, `deleteCluster`). Paths, URLs and assignments are not read, so
+ * `s3://acme/remove-later.csv` does not count. A forced push and `reset --hard` count too. Errs toward true.
+ */
+export function destructive(action: string): boolean {
+  const tokens = action.split(/[\s"'`;|&()]+/).filter((t) => t !== "");
+  const words = tokens.filter((t) => !/[/=]/.test(t)).flatMap(toolWords);
+  if (words.some((w) => DESTROY_WORDS.has(w))) return true;
+  const has = (t: string) => tokens.includes(t);
+  const forced =
+    has("push") &&
+    tokens.some(
+      (t) =>
+        /^(?:-f|--force|--force-with-lease(?:=.*)?|--force-if-includes|--mirror)$/.test(t) || /^\+\S/.test(t),
+    );
+  return forced || (has("reset") && has("--hard"));
+}
+
+/** One write, with `allowed` and `destructive` worked out the one way every caller needs. */
+function gateWrite(
+  connection: string | undefined,
+  action: string,
+  why: string,
+  allow: readonly string[],
+): GateWrite {
+  const destroys = destructive(action);
+  return {
+    connection,
+    action,
+    why: destroys ? "it deletes or destroys something" : why,
+    destructive: destroys,
+    allowed: !destroys && allow.includes(action),
+  };
 }
 
 export type GateVerdict =
@@ -334,14 +398,7 @@ export function classifyTool(server: string, tool: string, held: readonly GateCo
   if (read) return { kind: "read", connections: [connection.id] };
   return {
     kind: "write",
-    writes: [
-      {
-        connection: connection.id,
-        action: tool,
-        why: "its name does not say it only reads",
-        allowed: connection.allow.includes(tool),
-      },
-    ],
+    writes: [gateWrite(connection.id, tool, "its name does not say it only reads", connection.allow)],
   };
 }
 
@@ -367,7 +424,7 @@ export function classifyRemote(command: string, connection: GateConnection): Gat
   const action = oneLine(command);
   const write = (why: string): GateVerdict => ({
     kind: "write",
-    writes: [{ connection: connection.id, action, why, allowed: connection.allow.includes(action) }],
+    writes: [gateWrite(connection.id, action, why, connection.allow)],
   });
   let parsed: ReturnType<typeof parseLine>;
   try {
@@ -404,7 +461,7 @@ class LineResult {
 
   write(connection: string | undefined, action: string, why: string, held: readonly GateConnection[]): void {
     const allow = connection === undefined ? [] : (held.find((c) => c.id === connection)?.allow ?? []);
-    this.writes.push({ connection, action, why, allowed: allow.includes(action) });
+    this.writes.push(gateWrite(connection, action, why, allow));
   }
 
   other(): void {

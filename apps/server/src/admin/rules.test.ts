@@ -77,7 +77,7 @@ describe("always-allow rules on approval cards", () => {
     expect((await cards(three.id)).at(-1)).toMatchObject({ state: "pending" });
   });
 
-  it("refuses always for a destructive command until the toggle is on, and leaves the card pending", async () => {
+  it("refuses always for a destructive command, leaves the card pending, and a plain approve runs it", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;
     const { admin } = h.majhi.services;
@@ -107,21 +107,11 @@ describe("always-allow rules on approval cards", () => {
     expect((await cards())[0]).toMatchObject({ state: "pending" });
     expect((await h.cmd("settings.get")).body.policy.rules).toEqual([]);
 
-    // A plain approve still works; with the toggle on, always saves a rule that covers destructive commands.
-    expect((await h.cmd("policy.set", { allow_destructive_rules: true })).status).toBe(200);
-    const ok = await h.cmd("room.approve", {
-      task: task.id,
-      item: card?.id,
-      decision: "approve",
-      always: { scope: "task" },
-    });
+    // The old toggle is gone from policy.set, and a plain approve still works.
+    expect((await h.cmd("policy.set", { allow_destructive_rules: true })).status).toBe(400);
+    const ok = await h.cmd("room.approve", { task: task.id, item: card?.id, decision: "approve" });
     expect(ok.status).toBe(200);
-    expect((await remove("acme-temp2")).text).not.toContain("Waiting");
-
-    // With the toggle off again, the rule stays saved but no longer applies.
-    await h.cmd("agents.create", { id: "acme-temp3", ...draft });
-    expect((await h.cmd("policy.set", { allow_destructive_rules: false })).status).toBe(200);
-    expect((await remove("acme-temp3")).text).toContain("Waiting");
+    expect((await remove("acme-temp2")).text).toContain("Waiting");
   });
 
   it("moves an agent's rules on rename, drops them on remove, and lists and revokes CLI allowances", async () => {
