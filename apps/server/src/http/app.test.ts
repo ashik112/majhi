@@ -103,7 +103,22 @@ describe("HTTP API", () => {
     const js = await app.request("/assets/app.js");
     expect(js.headers.get("content-type")).toMatch(/javascript/);
     expect(await js.text()).toBe("console.log(1)");
+    expect(js.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect((await app.request("/")).headers.get("cache-control")).toBe("no-cache");
+    expect((await app.request("/settings/roots")).headers.get("cache-control")).toBe("no-cache");
     expect((await app.request("/assets/missing.js")).status).toBe(404);
     expect((await app.request("/health")).headers.get("content-type")).toMatch(/json/);
+  });
+
+  it("serves the precompressed copy of a file to a browser that accepts it", async () => {
+    await mkdir(join(env.webDist, "assets"), { recursive: true });
+    await writeFile(join(env.webDist, "index.html"), "<!doctype html>");
+    await writeFile(join(env.webDist, "assets", "app.js"), "plain");
+    await writeFile(join(env.webDist, "assets", "app.js.gz"), "zipped");
+    app = createMajhiApp(env);
+    const zipped = await app.request("/assets/app.js", { headers: { "accept-encoding": "gzip, br" } });
+    expect(zipped.headers.get("content-encoding")).toBe("gzip");
+    expect(await zipped.text()).toBe("zipped");
+    expect(await (await app.request("/assets/app.js")).text()).toBe("plain");
   });
 });

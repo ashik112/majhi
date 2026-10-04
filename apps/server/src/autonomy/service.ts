@@ -197,6 +197,9 @@ export interface ToolResult {
   isError: boolean;
 }
 
+/** How long one small `autonomy.status` answer serves every page that asks. */
+const LIGHT_STATUS_MS = 2000;
+
 /**
  * Autonomous mode (PRV-74): its state machine (off, on, paused, stopping), the tasks it runs, the
  * run gate, spend and holds, the self-approval of cards within limits, the hard limits, the feed and
@@ -208,6 +211,8 @@ export class AutonomyService {
   readonly sizes: TaskSizes;
   /** Sizes are being rated in the background for the page. */
   private filling = false;
+  /** The small status, kept for `LIGHT_STATUS_MS`; any feed event drops it. */
+  private light: { at: number; answer: Promise<AutonomyStatus> } | undefined;
   private holds: AutonomyHold[];
   private holdsQueue: Promise<unknown> = Promise.resolve();
   private finishing = false;
@@ -2076,8 +2081,10 @@ export class AutonomyService {
     ]);
     const { pick } = settings.autonomy;
     const names = orgNames(sections);
-    return this.backlog(org).map((item) => {
-      const size = this.sizes.known(item.task) ?? { note: "Not rated yet" };
+    const items = this.backlog(org);
+    const known = this.sizes.knownMany(items.map((i) => i.task));
+    return items.map((item) => {
+      const size = known.get(item.id) ?? { note: "Not rated yet" };
       const authority = authorityOf(settings.autonomy, item.org ?? PRIVATE);
       return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, authority) };
     });
@@ -2542,7 +2549,24 @@ export class AutonomyService {
     return out;
   }
 
-  async status(): Promise<AutonomyStatus> {
+  /**
+   * The page's state. `detail` false is the small one every page reads (mode, lanes, counts, spend,
+   * settings): the lists of tasks, the backlog and the waiting cards stay empty.
+   */
+  status(detail = true): Promise<AutonomyStatus> {
+    if (detail) return this.build(true);
+    // Every page asks at once on load and again on each event: one answer serves them for a moment.
+    const now = Date.now();
+    if (this.light !== undefined && now - this.light.at < LIGHT_STATUS_MS) return this.light.answer;
+    const answer = this.build(false);
+    this.light = { at: now, answer };
+    answer.catch(() => {
+      if (this.light?.answer === answer) this.light = undefined;
+    });
+    return answer;
+  }
+
+  private async build(detail: boolean): Promise<AutonomyStatus> {
     const state = this.repo.state();
     const m = await this.measure();
     const holds = state.mode === "off" ? [] : await this.refreshHolds(m);
@@ -2570,14 +2594,17 @@ export class AutonomyService {
             },
           }),
       lanes,
-      now: await this.withPauses(this.nowList()),
+      now: detail ? await this.withPauses(this.nowList()) : [],
+      running: this.nowList()
+        .filter((n) => n.status === "running")
+        .map((n) => n.task),
       queue: after.queue,
-      backlog: this.backlogView(rated),
+      backlog: detail ? this.backlogView(rated) : [],
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,
       spend: m.spend,
       accounts: m.accounts,
-      waiting: this.waiting(),
+      waiting: detail ? this.waiting() : [],
       settings: m.settings,
       raised: m.raised,
       ...(summary === undefined ? {} : { summary }),
@@ -2757,6 +2784,7 @@ export class AutonomyService {
       text: redactText(e.text),
       ...(e.reason === undefined ? {} : { reason: redactText(e.reason) }),
     });
+    this.light = undefined;
     this.deps.events.emit(["autonomy"]);
     return seq;
   }

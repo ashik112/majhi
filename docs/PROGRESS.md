@@ -1,5 +1,33 @@
 # Progress
 
+## Server hot paths (built, not merged)
+
+Branch `perf/hot-paths`. Measured on the audit's seeded rig (2,000 tasks, 750 done), base 72742a34 against this branch, same machine, run back to back. The machine is shared, so read the ratios.
+
+| Item | Before | After |
+|---|---|---|
+| Boot CPU, first 60 s (includes tsx compile) | 26.2 s | 5.5 to 7.4 s |
+| Slowest `config.get` after the first request | 275 to 547 ms every 10 s for 60 s | 8 to 27 ms |
+| `autonomy.status` as the shell reads it | 259 KB, 0.8 to 1.2 s | 2.4 KB, 0.2 to 0.7 s, one answer shared for 2 s |
+| `autonomy.status` with `detail` (Captain page only) | 259 KB | 259 KB, sizes in one query instead of one per task |
+| `roomWrote` task loads | 3 per room item | 0 for items that wake nothing |
+| 50 KB streamed reply on the room socket | quadratic (each flush re-sent the whole text) | about 1x text as deltas plus one whole item at the end |
+| Store writes for a 25 s streamed reply | one per 50 ms | about one per second |
+| Initial JS (index + shared + preloads), raw / gzip | 1819 / 545 kB | 1560 / 483 kB |
+| `index` chunk | 917 kB | 654 kB |
+| Markdown renderer (react-markdown, remark) | in the first load | loads with the first rendered message |
+| Task screen, chats, edit-roots | in `index` | own chunks (97, 13, 2 kB) |
+| Static files | no compression, no cache headers | brotli and gzip made at build, `/assets` immutable, pages `no-cache` |
+
+What changed
+- Boot: `Resilience.startup` no longer calls `statusChanged` for every done task. It reads links, merge requests and statuses once and hands only the done tasks something hangs on (a waiting task, a parent, an open merge request) to `TaskService.reconcileDone`, which runs the orchestrator once and emits `tasks` once. The restart reconcile for running tasks is unchanged and now skips non-running tasks before loading them.
+- `autonomy.status` takes `{detail}`. Without it, `now`, `backlog` and `waiting` are empty and `running` (ids) is sent; the Captain page and the delegation sheet ask with `detail: true`. Commands that return the status still return the full one.
+- Room socket: new `delta` message `{id, offset, append}`. The client appends only when its text is `offset` long. Stored text is saved at most once a second and whenever `flush` runs (snapshot, any other write), and then one whole item is sent so every client ends equal. A reconnecting client gets a snapshot that is flushed first, so it has the full text.
+
+How verified: typecheck clean; tests for streaming (`room/streaming.test.ts`: linear bytes, mid-message reconnect), static headers (`http/app.test.ts`), live-state, resume, autonomy suite, census guard. `autonomy/approvals.test.ts` "counts an agent of an autonomous task" fails the same way on the base (ENOTEMPTY on temp dir cleanup). Browser: isolated server on the `team` seed at 1440x900 and 1100x800, home, task room (lazy screen and markdown render, reply and link shown), captain, chats: no console errors or failed requests; assets arrive as br with immutable cache.
+
+Left: the shared-schemas chunk (386 kB, zod) stays in the first load because `cmd()` parses every answer with the command's schema; moving that out needs a decision on parsing. `e2e/phase2a-room.spec.ts` fails on the stale "Board" heading, unrelated.
+
 ## Server data layer performance (built, not merged)
 
 Branch `perf/db-layer`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k autonomy events, 20k turns and audit rows), same machine, old and new code run back to back. The machine is shared, so read the ratios, not the absolute times.

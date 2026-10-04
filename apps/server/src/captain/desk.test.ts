@@ -75,7 +75,7 @@ async function desk() {
   const make = async (text: string, project: string, team: string[]) =>
     (must(await h.cmd("tasks.create", { text, repos: [{ project }], team, start: false })) as Task).id;
   const task = (id: string) => store.tasks.get(id);
-  const status = async () => must(await h.cmd("autonomy.status")) as AutonomyStatus;
+  const status = async () => must(await h.cmd("autonomy.status", { detail: true })) as AutonomyStatus;
   const events = async () =>
     (must(await h.cmd("autonomy.events", { limit: 100 })) as { events: AutonomyEvent[] }).events.map(
       (e) => e.text,

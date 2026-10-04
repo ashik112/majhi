@@ -12,7 +12,8 @@ import { ResumeDrip, RESUME_GAP_MS } from "./resume-drip.ts";
 
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
-  statusChanged(id: string): Promise<void>;
+  /** Done tasks other work hangs on, handled in one pass. */
+  reconcileDone(ids: readonly string[]): Promise<void>;
   pausedByRuns(
     id: string,
     reason: "offline" | "error" | "limit" | "owner" | "signed-out",
@@ -143,9 +144,14 @@ export class Resilience {
    */
   async startup(): Promise<void> {
     const { store, runs, tasks } = this.deps;
-    for (const t of store.tasks.list(true)) {
-      if (t.status === "done") await tasks.statusChanged(t.id).catch(() => undefined);
-    }
+    // One pass, three queries: only done tasks that something waits on, parents or open merge requests need a look.
+    const links = store.tasks.allLinks();
+    const hung = new Set<string>([...links.map((l) => l.other), ...links.filter((l) => l.type === "parent").map((l) => l.task)]);
+    for (const id of store.tasks.unmergedMrs()) hung.add(id);
+    const done = store.tasks.statuses();
+    await tasks
+      .reconcileDone([...hung].filter((id) => done.get(id) === "done"))
+      .catch(() => undefined);
     const handled = new Set<string>();
     const comeBack: { task: TaskId; agent: string }[] = [];
     for (const { task: id, agent } of store.runs.interrupted()) {
@@ -197,7 +203,8 @@ export class Resilience {
    */
   private async wakeStranded(handled: Set<string>): Promise<void> {
     const { store, runs, tasks } = this.deps;
-    for (const { id } of store.tasks.list(false)) {
+    for (const { id, status } of store.tasks.list(false)) {
+      if (status !== "running" || handled.has(id)) continue;
       const task = store.tasks.get(id);
       if (task === undefined || handled.has(id)) continue;
       if (task.status !== "running" || isBossChat(task)) continue;

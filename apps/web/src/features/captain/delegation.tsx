@@ -550,7 +550,7 @@ export function DelegationSheet({
   now: number;
   onClose: () => void;
 }) {
-  const autonomy = useAutonomyStatus().data;
+  const autonomy = useAutonomyStatus(true).data;
   const accounts = useAccounts().data ?? [];
   const [more, setMore] = useState<string>();
   const moreOrg = captain.orgs.find((o) => o.org === more);

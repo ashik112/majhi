@@ -30,6 +30,7 @@ const STATUS: AutonomyStatus = {
     },
   ],
   now: [],
+  running: [],
   queue: [],
   backlog: [],
   holds: [],
