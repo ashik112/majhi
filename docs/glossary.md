@@ -13,3 +13,6 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | Money limits | Budget | cap, daily limit |
 | The row that lets the captain approve routine requests of work it started | Own work | self-approve, auto-approve |
 | Approving or rejecting many decisions at once | Batch: "Approve N", "Leave N", "Approve all like this" | bulk, mass approve |
+| The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
+| The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
+| The owner's review time per day | Review time | review budget, minutes cap |
