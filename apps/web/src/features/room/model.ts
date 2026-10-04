@@ -183,6 +183,15 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
           if (state.newer && !state.items.some((i) => i.id === item.id)) return state;
           return { ...state, items: withStored(state.items, [item]) };
         }
+        case "delta": {
+          const at = state.items.findIndex((i) => i.id === message.id);
+          const held = state.items[at];
+          if (held === undefined || (held.type !== "agent" && held.type !== "thought")) return state;
+          if (held.text.length !== message.offset) return state;
+          const items = state.items.slice();
+          items[at] = { ...held, text: held.text + message.append };
+          return { ...state, items };
+        }
         case "agent":
           return { ...state, agents: upsertAgent(state.agents, message.agent) };
         case "processes":

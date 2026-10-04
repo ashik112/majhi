@@ -51,7 +51,7 @@ async function on() {
     expect(res.status).toBe(200);
     return res.body as AutonomyStatus;
   };
-  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status")).body;
+  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status", { detail: true })).body;
   const refused = async (): Promise<AutonomyEvent[]> =>
     ((await h.cmd("autonomy.events", { limit: 100 })).body.events as AutonomyEvent[]).filter(
       (e) => e.kind === "refused",

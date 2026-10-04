@@ -63,6 +63,7 @@ import {
   AutonomyReportInputSchema,
   AutonomyReportSchema,
   AutonomyStartInputSchema,
+  AutonomyStatusInputSchema,
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
 } from "./autonomy.ts";
@@ -3298,8 +3299,8 @@ export const commands = {
   "autonomy.status": {
     risk: "read",
     summary:
-      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner, the settings and the newest daily summary",
-    input: Empty,
+      "Autonomous mode now: off, on, paused or stopping; the autonomous tasks and what their agents do, the planned queue, today's spend against the day and org caps, each account's 5-hour and weekly windows, what holds new work, cards waiting for the owner, the settings and the newest daily summary. Without detail the task list, backlog and cards are empty and only the counts, lanes, spend and settings come back",
+    input: AutonomyStatusInputSchema,
     output: AutonomyStatusSchema,
   },
   "autonomy.events": {

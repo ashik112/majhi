@@ -26,9 +26,9 @@ describe("the Captain page's reads on a busy home", () => {
     const { h } = w;
     seedPerfVolume(h.majhi.services.store.raw);
     // The first call fills the config and agent caches; the budget is for the calls after it.
-    await h.cmd("autonomy.status");
+    await h.cmd("autonomy.status", { detail: true });
     await h.cmd("captain.status");
-    const autonomy = await medianMs(() => h.cmd("autonomy.status"));
+    const autonomy = await medianMs(() => h.cmd("autonomy.status", { detail: true }));
     const captain = await medianMs(() => h.cmd("captain.status"));
     expect({ autonomy: autonomy < BUDGET_MS, captain: captain < BUDGET_MS }).toEqual({
       autonomy: true,
@@ -42,7 +42,7 @@ describe("the Captain page's reads on a busy home", () => {
     seedPerfVolume(h.majhi.services.store.raw, { ...smallVolume, tasksPerOrg: 5 });
     const raw = h.majhi.services.store.raw;
     const waiting = async () =>
-      ((await h.cmd("autonomy.status")).body.waiting as { task: string; item: string }[]).map(
+      ((await h.cmd("autonomy.status", { detail: true })).body.waiting as { task: string; item: string }[]).map(
         (x) => `${x.task}/${x.item}`,
       );
     // Every fourth seeded open task ends with a pending approval; ACM-4 is autonomous (not a multiple of 3), ACM-3 is not.

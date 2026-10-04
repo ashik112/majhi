@@ -245,7 +245,7 @@ export const AutonomySummarySchema = z.object({
   /** Decisions it marked unsure, and calls a hard limit refused. */
   unsure: z.array(z.object({ text: z.string(), task: TaskIdSchema.optional(), item: z.string().optional() })),
   /** Cards still waiting for the owner when it was made. */
-  waiting: z.array(AutonomyWaitingSchema),
+  waiting: z.array(AutonomyWaitingSchema).default([]),
   /** What waits in the owner's Decisions inbox when it was made: the count and the oldest three. */
   needs: z
     .object({
@@ -297,6 +297,9 @@ export const AutonomyLaneSchema = z.object({
 });
 export type AutonomyLane = z.infer<typeof AutonomyLaneSchema>;
 
+/** `autonomy.status` input: `detail` adds the task lists, the backlog and the waiting cards. */
+export const AutonomyStatusInputSchema = z.object({ detail: z.boolean().default(false) });
+
 /** `autonomy.status`. */
 export const AutonomyStatusSchema = z.object({
   mode: AutonomyModeSchema,
@@ -319,10 +322,12 @@ export const AutonomyStatusSchema = z.object({
   /** Each workspace where the captain starts work, in the order of the workspaces. */
   lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
-  now: z.array(AutonomyNowSchema),
+  now: z.array(AutonomyNowSchema).default([]),
+  /** Autonomous tasks that are running now, always sent. */
+  running: z.array(TaskIdSchema).default([]),
   queue: z.array(QueueItemSchema),
   /** Inbox and ready tasks in the order the captain reads them, each with its size and whether the rules leave it out. */
-  backlog: z.array(AutonomyBacklogItemSchema),
+  backlog: z.array(AutonomyBacklogItemSchema).default([]),
   /** When the captain last set the queue, UTC ISO. */
   queuedAt: z.string().optional(),
   holds: z.array(AutonomyHoldSchema),
