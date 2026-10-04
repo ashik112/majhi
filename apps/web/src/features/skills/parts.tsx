@@ -1,10 +1,9 @@
 import type { AgentEntry } from "@majhi/shared";
-import { type KeyboardEvent, type ReactNode, useRef } from "react";
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/cn";
 
 export interface AgentChoice {
   id: string;
@@ -19,61 +18,6 @@ export function agentChoices(entries: readonly AgentEntry[] | undefined): AgentC
       e.status === "ok" ? [{ id: e.agent.frontmatter.id, scope: e.agent.frontmatter.scope }] : [],
     )
     .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-export type PageTab = "skills" | "mcp";
-
-const TAB_LABEL: Record<PageTab, string> = { skills: "Skills", mcp: "MCP servers" };
-export const PANEL_ID = "skills-tab-panel";
-
-/** The tab bar on the header's bottom edge, like the task page's. Arrow keys move between tabs. */
-export function PageTabs({ value, onChange }: { value: PageTab; onChange: (tab: PageTab) => void }) {
-  const tabs: PageTab[] = ["skills", "mcp"];
-  const refs = useRef(new Map<PageTab, HTMLButtonElement>());
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = tabs[(tabs.indexOf(value) + step + tabs.length) % tabs.length];
-    if (next === undefined) return;
-    onChange(next);
-    refs.current.get(next)?.focus();
-  };
-  return (
-    <div
-      role="tablist"
-      aria-label="Skills and MCP servers"
-      onKeyDown={onKeyDown}
-      className="flex items-end gap-1"
-    >
-      {tabs.map((tab) => {
-        const on = tab === value;
-        return (
-          <button
-            key={tab}
-            ref={(el) => {
-              if (el) refs.current.set(tab, el);
-              else refs.current.delete(tab);
-            }}
-            id={`skills-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            aria-controls={PANEL_ID}
-            tabIndex={on ? 0 : -1}
-            onClick={() => onChange(tab)}
-            className={cn(
-              "relative h-9 cursor-pointer px-2.5 text-base transition-colors duration-150",
-              "after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors",
-              on ? "font-medium text-fg after:bg-accent" : "text-fg-muted after:bg-transparent hover:text-fg",
-            )}
-          >
-            {TAB_LABEL[tab]}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 /** One of the three parts of a tab: Install, Browse, Installed. */

@@ -15,7 +15,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   accounts: "Accounts",
   connections: "Connections",
   projects: "Projects and links",
-  skills: "Skills & MCP",
+  skills: "Skills",
   memory: "Memory",
   orgs: "Workspaces",
   setup: "Hub setup",
