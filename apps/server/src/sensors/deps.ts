@@ -138,45 +138,84 @@ async function advisories(
       }
     }
   }
-  const seen = new Set(groups.keys());
+  // One finding per project: the unit of work is "upgrade these packages", and one finding per
+  // advisory buries everything else under hundreds of rows.
+  const key = `osv-pkgs:${project.id}:all`;
+  const seen = new Set(groups.size === 0 ? [] : [key]);
   return {
     seen,
     report: async (r) => {
-      let news = 0;
-      for (const [key, g] of groups) {
+      if (groups.size === 0) return 0;
+      const pkgs = new Map<
+        string,
+        {
+          name: string;
+          versions: Set<string>;
+          fixes: Set<string>;
+          ids: Set<string>;
+          paths: Set<string>;
+          severity: Severity;
+          dev: boolean;
+        }
+      >();
+      let top: Advisory | undefined;
+      for (const g of groups.values()) {
         const best = g.items.map((i) => i.adv).filter((a): a is Advisory => a !== undefined);
-        const top = best.sort((a, b) => RANK[b.severity] - RANK[a.severity])[0];
-        let severity: Severity = top?.severity ?? "medium";
+        const worst = best.sort((a, b) => RANK[b.severity] - RANK[a.severity])[0];
+        const dev = g.items.every((i) => i.pkg.dev === true);
         // Only development dependencies: a vulnerable test tool does not reach production.
-        if (g.items.every((i) => i.pkg.dev === true)) severity = "low";
-        const versions = [...new Set(g.items.map((i) => i.pkg.version))].sort();
-        const fixes = [
-          ...new Set(g.items.map((i) => fixFor(i.adv, i.pkg)).filter((f): f is string => f !== undefined)),
-        ];
-        const paths = [...new Set(g.items.map((i) => i.path))];
-        const summary = top?.summary ?? "";
-        await file(r, {
-          project: project.id,
-          source: "security",
-          key,
-          title: `${g.name} has a known vulnerability (${g.canon})`,
-          detail: [
-            `${g.name} ${versions.join(", ")} in ${paths.join(", ")} is affected by ${g.canon}.`,
-            summary === "" ? "" : `Advisory summary (from OSV, untrusted text): ${summary}`,
-            fixes.length === 0 ? "No fixed version is listed yet." : `Fixed in ${fixes.join(" or ")}.`,
-          ]
-            .filter((l) => l !== "")
-            .join(" "),
-          evidence: [
-            ...g.items.slice(0, 6).map((i) => `${i.path}: ${i.pkg.name}@${i.pkg.version}`),
-            `https://osv.dev/${g.canon}`,
-            ...fixes.map((f) => `fixed in ${f}`),
-          ],
+        const severity: Severity = dev ? "low" : (worst?.severity ?? "medium");
+        if (!dev && worst !== undefined && (top === undefined || RANK[worst.severity] > RANK[top.severity]))
+          top = worst;
+        const p = pkgs.get(`${g.eco}:${g.name}`) ?? {
+          name: g.name,
+          versions: new Set<string>(),
+          fixes: new Set<string>(),
+          ids: new Set<string>(),
+          paths: new Set<string>(),
           severity,
-        });
-        news += 1;
+          dev,
+        };
+        for (const i of g.items) {
+          p.versions.add(i.pkg.version);
+          p.paths.add(i.path);
+          const fix = fixFor(i.adv, i.pkg);
+          if (fix !== undefined) p.fixes.add(fix);
+        }
+        p.ids.add(g.canon);
+        if (RANK[severity] > RANK[p.severity]) p.severity = severity;
+        p.dev = p.dev && dev;
+        pkgs.set(`${g.eco}:${g.name}`, p);
       }
-      return news;
+      const list = [...pkgs.values()].sort(
+        (a, b) =>
+          RANK[b.severity] - RANK[a.severity] || b.ids.size - a.ids.size || a.name.localeCompare(b.name),
+      );
+      const severity: Severity = list[0]?.severity ?? "medium";
+      const high = list.filter((p) => p.severity === "high").length;
+      const advisoriesCount = list.reduce((n, p) => n + p.ids.size, 0);
+      const summary = top?.summary ?? "";
+      await file(r, {
+        project: project.id,
+        source: "security",
+        key,
+        title: `${list.length} vulnerable ${list.length === 1 ? "package" : "packages"} in ${project.id}${high > 0 ? ` (${high} high)` : ""}`,
+        detail: [
+          `${advisoriesCount} known ${advisoriesCount === 1 ? "advisory" : "advisories"} across ${list.length} ${list.length === 1 ? "package" : "packages"}. Upgrade each to its fixed version; the evidence lists them, worst first.`,
+          list.length > 20 ? `${list.length - 20} more packages are not listed.` : "",
+          summary === "" ? "" : `Worst advisory (${top?.id ?? ""}, from OSV, untrusted text): ${summary}`,
+        ]
+          .filter((l) => l !== "")
+          .join(" "),
+        evidence: list
+          .slice(0, 20)
+          .map(
+            (p) =>
+              `${p.name}@${[...p.versions].sort().join(",")}${p.fixes.size > 0 ? ` -> ${[...p.fixes].join(" or ")}` : ", no fix yet"} in ${[...p.paths].sort().join(", ")} (${p.severity}${p.dev ? ", dev only" : ""}; ${[...p.ids].sort().slice(0, 3).join(", ")}${p.ids.size > 3 ? ` +${p.ids.size - 3}` : ""})`,
+          ),
+        severity,
+      });
+      return 1;
     },
   };
 }
@@ -334,7 +373,11 @@ export function dependencySweep(ports: SensorPorts, osvBase?: string) {
         const adv = await advisories(project, looks, osv, budget);
         filed += await adv.report(r);
         // A look that was cut short must not close what it could not see.
-        if (complete) filed += closeUnseen(r, project.id, "security", `osv:${project.id}:`, adv.seen);
+        if (complete) filed += closeUnseen(r, project.id, "security", `osv-pkgs:${project.id}:`, adv.seen);
+        // Findings from before grouping (one per advisory and package) fold into the project's one.
+        filed += closeUnseen(r, project.id, "security", `osv:${project.id}:`, new Set(), {
+          dismiss: "Folded into one finding per project",
+        });
         const m = await majors(ports, r, project, looks, registry);
         filed += m.news + m.closed;
       }

@@ -1201,6 +1201,21 @@ WHERE source = 'security'
   AND status IN ('open', 'proposed', 'task', 'decision');
 `,
   },
+  {
+    // The dependency sweep files one finding per project listing its vulnerable packages, not one per
+    // advisory and package. The old ones fold away at once.
+    id: 137,
+    name: "fold per-advisory dependency findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'osv:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
