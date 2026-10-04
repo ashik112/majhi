@@ -1,7 +1,6 @@
 import { batchPlan, batchSummary, type DecisionBatchResult, type OwnerDecision } from "@majhi/shared";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import type { Hold } from "./use-batch";
 
 /** Seconds until a held batch is sent, counting down. */
@@ -193,13 +192,6 @@ export function BatchBar({
         </div>
       )}
       <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-faint">
-        <span>
-          <Kbd>x</Kbd> select
-        </span>
-        <span>
-          <Kbd>Shift</Kbd>
-          <Kbd>x</Kbd> to here
-        </span>
         <button
           type="button"
           onClick={onSelectAll}

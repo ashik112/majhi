@@ -1,6 +1,6 @@
 import { KB_KIND_LABEL, KB_KINDS, type KbEntry, type KbKind, type KbRow } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Paperclip, Plus, X } from "lucide-react";
+import { Paperclip, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -128,10 +128,6 @@ export function KnowledgePane({ scopes, newSignal = 0 }: { scopes: readonly Scop
         }
         footer={
           <div className="flex items-center gap-2">
-            <Button variant="primary" size="sm" onClick={() => setMode({ kind: "new" })}>
-              <Plus aria-hidden="true" />
-              New fact
-            </Button>
             <button
               type="button"
               aria-pressed={view === "removed"}
