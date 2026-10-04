@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import {
+  BranchPatternSchema,
+  BranchTypeSchema,
+  IdSchema,
+  MrHostSchema,
+  OrgIdSchema,
+  SecretRefSchema,
+} from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
@@ -52,6 +59,8 @@ export const ProjectConfigSchema = z.looseObject({
   links: z.array(ProjectLinkSchema).optional(),
   /** Overrides the org's and majhi's `commits.attribution` for this project (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** How new task branches are named here. Overrides the org's, and what the repo's branches show. */
+  branch_pattern: BranchPatternSchema.optional(),
   /**
    * Infra or otherwise sensitive (gitops, terraform, deploy). majhi never adds it to a task by
    * itself, agents get it read-only unless the owner allows writes for a task, and it ships only

@@ -44,9 +44,9 @@ import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../t
 import { gitAttribution } from "./attribution.ts";
 import type { ContextBudget } from "./context.ts";
 import { packageCache } from "./package-cache.ts";
-import { toolsFolder } from "./tools-folder.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
 import { prepareRunSkills } from "./skills.ts";
+import { toolsFolder } from "./tools-folder.ts";
 
 /** An agent file and the account it runs on, checked. */
 export interface ResolvedAgent {
@@ -496,7 +496,8 @@ export async function repoMounts(
       { path: join(gitDir, "hooks"), readOnly: true },
     );
     mounts.push(...(await worktreeMounts(gitDir, repo.worktree, options.warn)));
-    if (options.guardRefs === true) mounts.push(...(await guardMounts(gitDir, repo.branch)));
+    if (options.guardRefs === true)
+      mounts.push(...(await guardMounts(gitDir, repo.branch, repo.createdBranch)));
   }
   return mounts;
 }
@@ -530,22 +531,29 @@ async function worktreeMounts(
 
 /**
  * The refs a run may not write in the shared git folder, read-only: `refs/heads`, `refs/remotes` and
- * `refs/tags`, but `refs/heads/task`, where majhi's task branches live. majhi's hooks refuse every
- * other ref change git makes in a transaction, but git writes the branch of a `git branch -C` (copy)
- * without one, so the hooks never see it; a read-only folder refuses it, and a hand-written ref file
- * too. A packed ref changes as a new loose file, so it is covered the same way. A repo whose working
- * branch the owner named outside `task/` keeps only the hooks for its refs: that branch must stay
- * writable.
+ * `refs/tags`, but the folder of the task's own branch (`refs/heads/feat` for `feat/acm-1-login`,
+ * `refs/heads/task` for an older `task/acm-1-login`). majhi's hooks refuse every other ref change git
+ * makes in a transaction, but git writes the branch of a `git branch -C` (copy) without one, so the
+ * hooks never see it; a read-only folder refuses it, and a hand-written ref file too. A packed ref
+ * changes as a new loose file, so it is covered the same way. A repo whose working branch the owner
+ * named keeps only the hooks for its refs: that branch must stay writable.
  */
-async function guardMounts(gitDir: string, branch: string): Promise<RunMount[]> {
-  if (!branch.startsWith("task/")) return [];
+export async function guardMounts(
+  gitDir: string,
+  branch: string,
+  createdBranch: boolean,
+): Promise<RunMount[]> {
+  if (!createdBranch && !branch.startsWith("task/")) return [];
+  const folder = dirname(branch);
+  if (folder === ".") return [];
   const refs = join(gitDir, "refs");
-  for (const dir of [join(refs, "heads", "task"), join(refs, "remotes"), join(refs, "tags")]) {
+  const own = join(refs, "heads", folder);
+  for (const dir of [own, join(refs, "remotes"), join(refs, "tags")]) {
     await mkdir(dir, { recursive: true });
   }
   return [
     { path: join(refs, "heads"), readOnly: true },
-    { path: join(refs, "heads", "task") },
+    { path: own },
     { path: join(refs, "remotes"), readOnly: true },
     { path: join(refs, "tags"), readOnly: true },
   ];

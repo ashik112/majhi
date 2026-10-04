@@ -171,10 +171,12 @@ export async function targetRefusal(
   repo: TaskRepo,
   into: string,
   tasksDir: string,
+  /** The branches of every task in this repo: a task's branch has no fixed prefix. */
+  taskBranches: ReadonlySet<string> = new Set(),
 ): Promise<string | undefined> {
   // A branch stacked on a dependency's task branch (5.4a) lands there: majhi chose that base itself.
   if (repo.stack !== undefined && into === repo.stack.branch && into === repo.base) return undefined;
-  if (into.startsWith("task/")) {
+  if (into.startsWith("task/") || taskBranches.has(into)) {
     return `${into} in ${repo.project} is a task branch. Ship into the repo's base or a branch you work on, never a task's branch.`;
   }
   const at = (await checkedOutAt(repo.source).catch(() => new Map<string, string>())).get(into);

@@ -6,6 +6,7 @@ import {
   type AgentFrontmatter,
   type Attachment,
   AUTO,
+  type BranchType,
   type CoordinationMode,
   canWorkIn,
   chatTitleFrom,
@@ -99,7 +100,21 @@ import {
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
 import { pickDefaultAgent } from "./agents.ts";
-import { type BriefAgent, type BriefConnection, branchName, renderPointer, renderTaskMd } from "./brief.ts";
+import {
+  branchName,
+  freeBranch,
+  inferBranchType,
+  readRepoStyle,
+  styleOptions,
+  typeOfBranch,
+} from "./branch-naming.ts";
+import {
+  type BriefAgent,
+  type BriefConnection,
+  type CommitGuide,
+  renderPointer,
+  renderTaskMd,
+} from "./brief.ts";
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { handoverNote } from "./handover.ts";
@@ -199,6 +214,8 @@ export interface CreateInput {
   /** A separate short title: it becomes the first line, and `text` the description. */
   title?: string | undefined;
   kind?: TaskKind | undefined;
+  /** The type its new branch starts with. Default: read from the title. */
+  branchType?: BranchType | undefined;
   /** An investigation: the named repos are mounted read-only, with no branch, worktree or Ship. */
   readOnly?: boolean | undefined;
   agent?: string | undefined;
@@ -446,7 +463,7 @@ export class TaskService {
           });
     const repoPlan = investigation
       ? { repos: [], warnings: [] }
-      : await this.planRepos(id, parsed, projects, picks.bases);
+      : await this.planRepos(id, parsed, projects, picks.bases, input.branchType);
     const repos = repoPlan.repos.map((r) => (picks.writes.has(r.project) ? { ...r, writes: true } : r));
     const at = this.now().toISOString();
 
@@ -695,11 +712,28 @@ export class TaskService {
     }
   }
 
+  private readonly taskBranchesIn = (source: string): ReadonlySet<string> =>
+    this.deps.store.tasks.branchesIn(source);
+
+  /** The commit style TASK.md asks for: none when every repo's recent commits follow another one. */
+  private async commitGuide(task: Task): Promise<CommitGuide | undefined> {
+    const first = task.repos[0];
+    if (first === undefined) return undefined;
+    const styles = await Promise.all(
+      task.repos.map(async (r) => [r.project, (await readRepoStyle(r.source)).commits] as const),
+    );
+    const asks = styles.filter(([, commits]) => commits !== "other").map(([project]) => project);
+    if (asks.length === 0) return undefined;
+    const type = typeOfBranch(first.branch) ?? inferBranchType(task.title);
+    return { type, ...(asks.length === task.repos.length ? {} : { only: asks }) };
+  }
+
   private async planRepos(
     id: string,
     parsed: ParsedTask,
     projects: readonly ProjectInfo[],
     bases: ReadonlyMap<string, string> = new Map(),
+    branchType?: BranchType,
   ): Promise<{ repos: TaskRepo[]; warnings: string[] }> {
     const repos: TaskRepo[] = [];
     const warnings: string[] = [];
@@ -721,13 +755,18 @@ export class TaskService {
       }
       if (base === undefined)
         throw new UserError(`Project "${project.id}" has no base branch. Set one on the project.`);
-      const branch = branchName(id, parsed.title);
-      if (await branchExists(project.path, branch)) {
-        throw new UserError(
-          `${project.id} already has a branch ${branch}. majhi only works on a new task branch: delete or rename that branch, then create the task again.`,
-          409,
-        );
-      }
+      // `<type>/<id>-<slug>`, in the owner's pattern or the one the repo's own branches show. A name
+      // that is taken gets a number: an agent never works on a branch that exists.
+      const style = project.branchPattern === undefined ? await readRepoStyle(project.path) : undefined;
+      const wanted = branchName({
+        id,
+        title: parsed.title,
+        type: branchType ?? inferBranchType(parsed.title),
+        ...(project.branchPattern === undefined
+          ? styleOptions(style?.branches ?? { kind: "default" })
+          : { pattern: project.branchPattern }),
+      });
+      const branch = await freeBranch(wanted, (name) => branchExists(project.path, name));
       // No worktree yet. It will be `<folder>/<project>`, which TASK.md names.
       repos.push({
         project: project.id,
@@ -767,6 +806,7 @@ export class TaskService {
       this.deps.memory?.recalledText(task.id),
       await this.readableProjects(task),
       await this.briefConnections(task, agents),
+      await this.commitGuide(task),
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -842,9 +882,9 @@ export class TaskService {
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) continue;
       // Agents only ever commit on a task branch, never on a branch the owner works on.
-      if (!repo.branch.startsWith("task/")) {
+      if (!repo.createdBranch && !repo.branch.startsWith("task/")) {
         throw new UserError(
-          `${repo.project}: ${repo.branch} is not a task branch. majhi only lets agents work on a new task/ branch. Create the task again.`,
+          `${repo.project}: ${repo.branch} is not a task branch. majhi only lets agents work on a new branch it made for the task. Create the task again.`,
           409,
         );
       }
@@ -1532,7 +1572,7 @@ export class TaskService {
       );
     }
     const when = opts.agent === true ? "refuse" : (opts.whenUnshipped ?? "refuse");
-    const unshipped = when === "keep" ? [] : await unshippedWork(task.repos);
+    const unshipped = when === "keep" ? [] : await unshippedWork(task.repos, this.taskBranchesIn);
     if (unshipped.length > 0) {
       const what = unshippedText(unshipped);
       if (when === "stay") {
@@ -1855,7 +1895,12 @@ export class TaskService {
     const guarded = new Set((await this.deps.projects.infos()).filter((p) => p.protected).map((p) => p.id));
     const plan = holdProtected(found, guarded, pick);
     for (const { repo, into } of plan.ship) {
-      const refusal = await targetRefusal(repo, into, dirname(task.folder));
+      const refusal = await targetRefusal(
+        repo,
+        into,
+        dirname(task.folder),
+        this.deps.store.tasks.branchesIn(repo.source),
+      );
       if (refusal !== undefined) throw new UserError(refusal, 409);
     }
     return plan;
@@ -2197,7 +2242,7 @@ export class TaskService {
     if (task.status === "done") return { ok: false, why: `${task.id} is done.` };
     const open = this.openSubtasks(task.id);
     if (open.length === 0) {
-      const unshipped = await unshippedWork(task.repos);
+      const unshipped = await unshippedWork(task.repos, this.taskBranchesIn);
       return unshipped.length === 0 ? { ok: true } : { ok: true, unshipped };
     }
     const list = `${open.slice(0, 5).join(", ")}${open.length > 5 ? ", ..." : ""}`;
@@ -2443,7 +2488,7 @@ export class TaskService {
     const { store } = this.deps;
     const task = store.tasks.get(parent);
     if (task === undefined || task.status === "done" || !store.tasks.childrenDone(parent)) return;
-    const unshipped = await unshippedWork(task.repos);
+    const unshipped = await unshippedWork(task.repos, this.taskBranchesIn);
     if (unshipped.length > 0) {
       const text = `Every subtask is done, but ${parent} stays open: ${unshippedText(unshipped)} Ship it, or close it from the review card.`;
       if (!this.waitNoted.has(`${parent} ${text}`)) {
@@ -2562,6 +2607,7 @@ export class TaskService {
         this.deps.memory?.recalledText(task.id),
         await this.readableProjects(task),
         await this.briefConnections(task, agents),
+        await this.commitGuide(task),
       );
       // The folder can be gone by hand; the links still stand.
       await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);

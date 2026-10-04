@@ -77,9 +77,9 @@ function duration(ms: number): string {
   return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-/** The task a merge commit came from, read from its subject: `Merge branch 'task/prv-72-...'`. */
+/** The task a merge commit came from, read from its subject: `Merge branch 'feat/prv-72-...'`. */
 export function taskOfSubject(subject: string): string | undefined {
-  const m = /task\/([a-z][a-z0-9]*-[1-9][0-9]*)/i.exec(subject);
+  const m = /^Merge branch '(?:[a-z][\w.-]*\/)?([a-z][a-z0-9]*-[1-9][0-9]*)/i.exec(subject);
   return m?.[1]?.toUpperCase();
 }
 
