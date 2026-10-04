@@ -1608,6 +1608,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agentsChanged: (list) => {
       for (const agent of list) runs.remountAgent(agent);
     },
+    fieldsChanged: (id) => runs.remountConnection(id),
   });
   const connect = new ConnectService({
     grants: new GrantStore(secrets),

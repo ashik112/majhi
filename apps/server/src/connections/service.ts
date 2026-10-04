@@ -60,8 +60,10 @@ export interface ConnectionDeps {
   uploads: UploadStore;
   agents: AgentStore;
   majhiHome: string;
-  /** Agents whose `connections` list lost an entry: their open sessions must restart. */
+  /** Agents that gained or lost a connection: their open sessions must restart. */
   agentsChanged?: (agents: string[]) => void;
+  /** A connection's fields changed: the sessions that hold it must restart. */
+  fieldsChanged?: (connection: string) => void;
 }
 
 interface Found {
@@ -188,8 +190,9 @@ export class ConnectionService {
       }
       await writeConnection(this.deps.config.file, found.org, found.entry, input.id, checked(next));
     });
-    // A session gains or loses the connection at its next turn end.
+    // A session gains or loses the connection, or its new fields, at its next turn end.
     if (switched.length > 0) this.deps.agentsChanged?.(switched);
+    if (input.fields !== undefined) this.deps.fieldsChanged?.(input.id);
     await this.release(input.id, released);
     return this.get(input.id);
   }
