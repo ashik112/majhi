@@ -29,6 +29,7 @@ function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authorit
     upkeep: "decide",
     merge: merge ? "decide" : "ask",
     push: push ? "decide" : "ask",
+    own: "ask",
   };
 }
 
@@ -85,7 +86,8 @@ export function choresOf(authority: Authority): readonly CaptainChore[] {
       case "cards":
         return authority.approvals === "decide";
       case "questions":
-        return authority.questions === "decide";
+        // Own work also settles permission prompts of tasks the captain started.
+        return authority.questions === "decide" || authority.own === "decide";
       case "ship":
         return authority.merge === "decide" || authority.upkeep === "decide";
       default:

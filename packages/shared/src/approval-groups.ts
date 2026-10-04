@@ -45,6 +45,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.answerBudget",
   // The decisions inbox answers for the owner: the owner's click only.
   "decisions.answer",
+  "decisions.answerBatch",
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",

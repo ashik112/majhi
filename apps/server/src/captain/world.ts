@@ -31,6 +31,7 @@ import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
+import { scopeOfTask } from "./own-work.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 
@@ -64,6 +65,8 @@ export interface WorldDeps {
   typing: (task: string) => boolean;
   /** Alias suggestions for a repo, from its folder and package names (the project card's scan). */
   aliasesOf: (path: string, id: string) => Promise<string[]>;
+  /** Projects the owner protects: Own work never approves a change in one of them. */
+  protectedProjects: () => Promise<ReadonlySet<string>>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
@@ -349,6 +352,15 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         }
       }
       return out;
+    },
+
+    async ownScope(org, task) {
+      const found = store.tasks.get(task);
+      if (found === undefined || (found.org ?? PRIVATE) !== org || found.noAutonomy === true)
+        return undefined;
+      // Only what the captain created or started: the tasks autonomous mode runs.
+      if (!deps.autonomy.isAutonomous(task)) return undefined;
+      return scopeOfTask(found, await deps.protectedProjects());
     },
 
     async answer(_org, card, option, reason) {

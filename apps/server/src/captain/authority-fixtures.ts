@@ -8,6 +8,7 @@ export const RUNS: Authority = {
   upkeep: "decide",
   merge: "ask",
   push: "ask",
+  own: "ask",
 };
 export const TIDY: Authority = { ...RUNS, start: "ask" };
 export const ASK: Authority = {
@@ -17,4 +18,5 @@ export const ASK: Authority = {
   upkeep: "ask",
   merge: "ask",
   push: "ask",
+  own: "ask",
 };

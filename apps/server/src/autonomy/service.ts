@@ -49,6 +49,7 @@ import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
+import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
 import { permissionVerdict } from "../captain/permission-rules.ts";
 import {
   loopLine,
@@ -145,6 +146,8 @@ export interface AutonomyDeps {
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
   typing?: (task: string) => boolean;
+  /** Projects the owner protects: Own work never approves a change in one of them. */
+  protectedProjects?: () => Promise<ReadonlySet<string>>;
   now?: () => Date;
 }
 
@@ -2153,7 +2156,15 @@ export class AutonomyService {
     if (item === undefined) return fail(`There is no card ${input.item} in ${input.task}.`);
     const row: AuthorityRow = item.type === "permission" ? "approvals" : "questions";
     const answerable = ["permission", "choice", "ask", "owner-question"].includes(item.type);
-    if (authority !== undefined && answerable && authority[row] !== "decide") {
+    // Own work lets the captain allow a routine request of a task it started, whatever the Approvals row says.
+    const viaOwn =
+      authority !== undefined &&
+      item.type === "permission" &&
+      authority[row] !== "decide" &&
+      authority.own === "decide" &&
+      inLane &&
+      this.repo.isAutonomous(input.task);
+    if (authority !== undefined && answerable && authority[row] !== "decide" && !viaOwn) {
       const names = orgNames(await this.deps.config.sections());
       return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
     }
@@ -2170,6 +2181,21 @@ export class AutonomyService {
       const rule = permissionVerdict(item.title);
       const kind = item.options.find((o) => o.id === option)?.kind;
       if (rule.decision === "unreadable") return fail(`Refused: ${rule.why}. Leave it to the owner.`);
+      if (viaOwn) {
+        const task = this.deps.store.tasks.get(input.task);
+        const scope =
+          task === undefined || task.noAutonomy === true
+            ? undefined
+            : scopeOfTask(task, (await this.deps.protectedProjects?.()) ?? new Set<string>());
+        const verdict = scope === undefined ? undefined : classifyOwnWork(item.title, scope);
+        if (kind !== "allow_once" || verdict?.decision !== "approve") {
+          const why =
+            verdict?.decision === "owner"
+              ? verdict.why
+              : "only an Allow once of a routine request is its to give";
+          return fail(`Refused: Own work does not cover it: ${why}. Leave it to the owner.`);
+        }
+      }
       if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
         return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
       }
