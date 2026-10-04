@@ -390,7 +390,8 @@ export type TokenProbe =
   | { kind: "invalid" }
   | { kind: "insufficient-scope"; scope: string[] }
   | { kind: "unreachable" }
-  | { kind: "other" };
+  /** The service answered, and refused or failed: its status and a short reason (never the token). */
+  | { kind: "other"; status: number; reason: string };
 
 /**
  * One unauthenticated-looking call to the MCP server with the token: tells a working token from a
@@ -419,8 +420,14 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
       redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
-    await res.body?.cancel().catch(() => undefined);
-    if (res.ok) return { kind: "ok" };
+    if (res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      return { kind: "ok" };
+    }
+    const body = await res.text().then(
+      (t) => t.slice(0, 2000),
+      () => "",
+    );
     if (res.status === 401) return { kind: "invalid" };
     if (res.status === 403) {
       const header = res.headers.get("www-authenticate") ?? "";
@@ -433,8 +440,38 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
         return { kind: "insufficient-scope", scope };
       }
     }
-    return { kind: "other" };
+    return {
+      kind: "other",
+      status: res.status,
+      reason: refusalReason(res.headers.get("www-authenticate"), body),
+    };
   } catch {
     return { kind: "unreachable" };
   }
+}
+
+/** A short, one-line reason from an error answer: a JSON error message, else the WWW-Authenticate text. Max 200 chars. */
+export function refusalReason(header: string | null, body: string): string {
+  let text = "";
+  try {
+    const json: unknown = JSON.parse(body);
+    if (json !== null && typeof json === "object") {
+      const o = json as Record<string, unknown>;
+      const err = o.error;
+      const pick = [o.error_description, o.message, typeof err === "string" ? err : undefined, o.detail];
+      const nested =
+        err !== null && typeof err === "object" ? (err as Record<string, unknown>).message : undefined;
+      text = [nested, ...pick].find((v): v is string => typeof v === "string" && v !== "") ?? "";
+    }
+  } catch {
+    // Not JSON: use the header.
+  }
+  if (text === "" && header !== null) {
+    text = /error_description="([^"]*)"/i.exec(header)?.[1] ?? /error="?([a-z_]+)"?/i.exec(header)?.[1] ?? "";
+  }
+  return text
+    .replace(/\bBearer\s+\S+/gi, "Bearer ***")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
 }

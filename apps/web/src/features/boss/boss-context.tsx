@@ -7,12 +7,15 @@ export type PanelTab = "talk" | "all" | `ws:${string}`;
 interface BossControls {
   open: boolean;
   /** Opens the panel, on a tab when one is given. */
-  show: (tab?: PanelTab) => void;
+  show: (tab?: PanelTab, draft?: string) => void;
   hide: () => void;
   toggle: () => void;
   /** The tab the panel shows, in the drawer and on the Captain page alike. */
   tab: PanelTab;
   setTab: (tab: PanelTab) => void;
+  /** Text waiting to be put in the message box (an incident to ask about), taken once. */
+  draft: string | undefined;
+  takeDraft: () => void;
 }
 
 const BossContext = createContext<BossControls | null>(null);
@@ -21,8 +24,11 @@ const BossContext = createContext<BossControls | null>(null);
 export function BossProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<PanelTab>("talk");
-  const show = useCallback((next?: PanelTab) => {
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const takeDraft = useCallback(() => setDraft(undefined), []);
+  const show = useCallback((next?: PanelTab, text?: string) => {
     if (next !== undefined) setTab(next);
+    if (text !== undefined) setDraft(text);
     setOpen(true);
   }, []);
   const hide = useCallback(() => setOpen(false), []);
@@ -39,7 +45,10 @@ export function BossProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const value = useMemo(() => ({ open, show, hide, toggle, tab, setTab }), [open, show, hide, toggle, tab]);
+  const value = useMemo(
+    () => ({ open, show, hide, toggle, tab, setTab, draft, takeDraft }),
+    [open, show, hide, toggle, tab, draft, takeDraft],
+  );
   return <BossContext.Provider value={value}>{children}</BossContext.Provider>;
 }
 

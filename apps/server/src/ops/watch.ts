@@ -121,6 +121,16 @@ export interface Subject {
 const RANK = { high: 3, medium: 2, low: 1 } as const;
 const KIND_ORDER: OpsCheckKind[] = ["url", "monitor", "dns", "tls", "watch"];
 
+const BLIP_READS = 3;
+const BLIP_MS = 15 * 60_000;
+
+/** A failure that is the network, not the service: could not reach, timed out, name lookup. */
+export function isNetworkBlip(detail: string): boolean {
+  return /could not reach|timed? ?out|timeout|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|network is unreachable/i.test(
+    detail,
+  );
+}
+
 export function incidentKey(subject: string): string {
   return subject.startsWith("self:")
     ? subject
@@ -147,6 +157,8 @@ function span(ms: number): string {
 export class OpsWatch {
   /** One look at a subject at a time. */
   private readonly looking = new Set<string>();
+  /** Network failures of majhi's own checks that have not lasted long enough to be an incident. */
+  private readonly blips = new Map<string, { since: number; reads: number }>();
 
   constructor(private readonly deps: OpsDeps) {}
 
@@ -826,6 +838,7 @@ export class OpsWatch {
       detail: string;
       fix?: { label: string } | undefined;
       severity: "high" | "medium";
+      org?: string | undefined;
     }[],
   ): Promise<number> {
     let changes = 0;
@@ -835,16 +848,30 @@ export class OpsWatch {
       seen.add(id);
       const subject: Subject = {
         id,
-        org: PRIVATE,
+        org: c.org ?? PRIVATE,
         name: c.name,
         impact: c.severity,
         ...(c.fix === undefined ? {} : { fix: { check: c.id, label: c.fix.label } }),
       };
-      if (c.status === "fail") {
+      if (c.status === "fail" && isNetworkBlip(c.detail)) {
+        // A network hiccup is not an incident until it has lasted: 3 reads over 15 minutes.
+        const now = this.now().getTime();
+        const run = this.blips.get(id) ?? { since: now, reads: 0 };
+        run.reads += 1;
+        this.blips.set(id, run);
+        if (run.reads < BLIP_READS || now - run.since < BLIP_MS) continue;
         await this.record(id, "url", { ok: false, detail: c.detail });
-      } else if (this.deps.repo.state(id, "url") !== undefined) {
+      } else if (c.status === "fail") {
+        this.blips.delete(id);
+        const failing = this.deps.repo.state(id, "url")?.lastOk === false;
+        await this.record(id, "url", { ok: false, detail: c.detail });
+        // A definite answer (a refusal, a revoked sign-in) is no blip: it opens at once.
+        if (!failing && c.org !== undefined) await this.record(id, "url", { ok: false, detail: c.detail });
+      } else {
+        this.blips.delete(id);
+        if (this.deps.repo.state(id, "url") === undefined) continue;
         await this.record(id, "url", { ok: true, detail: c.detail });
-      } else continue;
+      }
       changes += await this.evaluate(subject);
     }
     for (const inc of this.deps.repo.open()) {

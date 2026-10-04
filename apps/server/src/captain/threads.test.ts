@@ -47,6 +47,27 @@ describe("the captain's threads", () => {
     await w.until(() => sessions.length === 2, "a new session");
   });
 
+  it("an owner message opens a thread in a workspace where the captain does not think, bound to that workspace", async () => {
+    w = await bossWorld({ real: false });
+    const { h } = w;
+    const { services } = h.majhi;
+    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: ASK } } })).status).toBe(200);
+    expect(await services.autonomy.thinksIn()).not.toContain("acme");
+    expect(services.autonomy.laneChats()).toEqual([]);
+    const sent = await h.cmd("autonomy.guide", {
+      text: "What is going on in Acme?",
+      keep: false,
+      org: "acme",
+    });
+    expect(sent.status).toBe(200);
+    const chat = String(sent.body.chat);
+    // The thread exists and belongs to Acme only; the wake rule is unchanged.
+    expect(services.autonomy.laneOrg(chat)).toBe("acme");
+    expect(services.autonomy.laneChats()).toEqual([chat]);
+    expect(await services.autonomy.thinksIn()).not.toContain("acme");
+    expect(services.autonomy.laneOrg(chat)).not.toBe("private");
+  });
+
   it("refuses Start fresh in a workspace with no thread", async () => {
     w = await bossWorld({ real: false });
     const { h } = w;

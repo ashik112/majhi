@@ -232,3 +232,60 @@ describe("a failing self-check is an incident in Private", () => {
     expect(w.alerts.map((a) => a.repeat)).toEqual([false, true]);
   });
 });
+
+describe("a connection that fails belongs to its workspace, and a network blip waits", () => {
+  const gitlab = (detail: string, status: "pass" | "fail" = "fail") => ({
+    id: "connection:gitlab",
+    name: "GitLab (ideeza)",
+    status,
+    detail,
+    fix: { label: "Test again" },
+    severity: "medium" as const,
+    org: "ideeza",
+  });
+  const BLIP = "majhi could not reach gitlab.com just now. The sign-in is kept; try again.";
+
+  it("opens only after 3 reads over 15 minutes, then closes when it passes", async () => {
+    const w = opsWorld();
+    for (let i = 0; i < 3; i++) {
+      await w.ops.watch.watchSelf([gitlab(BLIP)]);
+      w.advance(5 * MIN);
+    }
+    expect(w.ops.repo.open()).toEqual([]);
+    await w.ops.watch.watchSelf([gitlab(BLIP)]);
+    w.advance(5 * MIN);
+    await w.ops.watch.watchSelf([gitlab(BLIP)]);
+    expect(w.ops.repo.open()).toHaveLength(1);
+    expect(w.ops.repo.open()[0]?.org).toBe("ideeza");
+    for (let i = 0; i < 4; i++) {
+      w.advance(5 * MIN);
+      await w.ops.watch.watchSelf([gitlab("ok", "pass")]);
+    }
+    expect(w.ops.repo.open()).toEqual([]);
+    expect(w.ops.repo.recent(1)[0]?.timeline.at(-1)?.text).toContain("Open for");
+  });
+
+  it("a blip that passes in between never opens one", async () => {
+    const w = opsWorld();
+    await w.ops.watch.watchSelf([gitlab(BLIP)]);
+    w.advance(5 * MIN);
+    await w.ops.watch.watchSelf([gitlab("ok", "pass")]);
+    for (let i = 0; i < 3; i++) {
+      w.advance(5 * MIN);
+      await w.ops.watch.watchSelf([gitlab(BLIP)]);
+    }
+    expect(w.ops.repo.open()).toEqual([]);
+  });
+
+  it("a refusal is no blip: it opens on the first read, in the connection's workspace", async () => {
+    const w = opsWorld();
+    await w.ops.watch.watchSelf([
+      gitlab(
+        "GitLab refused majhi's calls (403: forbidden). Your account may not have GitLab's MCP server enabled.",
+      ),
+    ]);
+    const [inc] = w.ops.repo.open();
+    expect(inc?.org).toBe("ideeza");
+    expect(inc?.fix?.check).toBe("connection:gitlab");
+  });
+});

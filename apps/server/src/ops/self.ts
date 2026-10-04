@@ -25,6 +25,8 @@ export interface SelfCheck {
   detail: string;
   fix?: { label: string } | undefined;
   severity: "high" | "medium";
+  /** The workspace the thing belongs to; Private when absent. */
+  org?: string | undefined;
 }
 
 /** The Health checks whose failure is urgent. The rest are medium. */
@@ -60,6 +62,7 @@ export interface HealthLike {
   status: "pass" | "warn" | "fail";
   detail: string;
   fix?: { label: string } | undefined;
+  org?: string | undefined;
 }
 
 export interface SelfDeps {

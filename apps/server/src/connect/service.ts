@@ -1343,7 +1343,15 @@ export class ConnectService {
         started,
       );
     }
-    if (probe.kind === "unreachable" || probe.kind === "other") {
+    if (probe.kind === "other") {
+      const why = probe.reason === "" ? "" : `: ${probe.reason}`;
+      return this.result(
+        false,
+        `${name} refused majhi's calls (${probe.status}${why}). Your account may not have ${name}'s MCP server enabled. The sign-in is kept.`,
+        started,
+      );
+    }
+    if (probe.kind === "unreachable") {
       return this.result(
         false,
         `majhi could not reach ${hostOf(grant.serverUrl)} just now. The sign-in is kept; try again.`,
@@ -1799,7 +1807,7 @@ function asTokenProbe(probe: ApiProbe): TokenProbe {
     case "invalid":
       return { kind: "invalid" };
     case "forbidden":
-      return { kind: "other" };
+      return { kind: "other", status: 403, reason: "" };
     case "unreachable":
       return { kind: "unreachable" };
   }

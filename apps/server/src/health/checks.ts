@@ -44,6 +44,8 @@ export interface Check {
   detail: string;
   /** A fix majhi can run itself. */
   fix?: { label: string };
+  /** The workspace the thing checked belongs to, when it belongs to one. */
+  org?: string;
 }
 
 const GB = 1_000_000_000;
@@ -135,6 +137,7 @@ async function checkConnections(ctx: CheckContext): Promise<Check[]> {
       id: `connection:${view.id}`,
       group: "connections" as const,
       name: `${view.name} (${view.org})`,
+      org: view.org,
     };
     const result = fresh.get(view.id) ?? view.lastTest;
     if (view.problems.length > 0) {
