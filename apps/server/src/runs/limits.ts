@@ -10,7 +10,25 @@ import type { LimitsSettings, SlotCapacity, SlotRoom } from "@majhi/shared";
  * is in its way instead of waiting for its idle timeout.
  */
 
-export type Limits = Pick<LimitsSettings, "agents_max" | "per_account" | "per_task">;
+export type Limits = Pick<LimitsSettings, "agents_max" | "per_account" | "per_task"> & {
+  /** Machine-wide cap on runs, already resolved (see `runsTotal`). Absent: only `agents_max` applies. */
+  runs_total?: number;
+};
+
+/** The default machine-wide run cap: a third of the cores, at least 2; 3 when the cores are not known. */
+export function defaultRunsTotal(cores: number | undefined): number {
+  return cores === undefined ? 3 : Math.max(2, Math.floor(cores / 3));
+}
+
+/** The cap on runs at once: the owner's `runs_total` or the default, and never above `agents_max`. */
+export function runsTotal(limits: LimitsSettings, cores: number | undefined): number {
+  return Math.min(limits.agents_max, limits.runs_total ?? defaultRunsTotal(cores));
+}
+
+/** The runs that may be in use at once on the machine. */
+export function globalCap(limits: Pick<Limits, "agents_max" | "runs_total">): number {
+  return Math.min(limits.agents_max, limits.runs_total ?? limits.agents_max);
+}
 
 export interface SlotRequest {
   /** One per (task, agent). */
@@ -34,7 +52,7 @@ type Limit = "global" | "account" | "task";
 
 function over(req: SlotRequest, holders: readonly Holder[], limits: Limits): Limit[] {
   const out: Limit[] = [];
-  if (holders.length >= limits.agents_max) out.push("global");
+  if (holders.length >= globalCap(limits)) out.push("global");
   if (holders.filter((h) => h.account === req.account).length >= limits.per_account) out.push("account");
   if (holders.filter((h) => h.task === req.task).length >= limits.per_task) out.push("task");
   return out;
@@ -202,14 +220,14 @@ function room(inUse: number, waiting: number, limit: number): SlotRoom {
  */
 export function capacityOf(
   state: SlotState,
-  limits: Pick<Limits, "agents_max" | "per_account">,
+  limits: Pick<Limits, "agents_max" | "per_account" | "runs_total">,
   accounts: readonly string[] = [],
 ): SlotCapacity {
   const names = [
     ...new Set([...accounts, ...state.holders.map((h) => h.account), ...state.waiting.map((w) => w.account)]),
   ];
   return {
-    agents: room(state.holders.length, state.waiting.length, limits.agents_max),
+    agents: room(state.holders.length, state.waiting.length, globalCap(limits)),
     accounts: names.sort().map((account) => ({
       account,
       ...room(

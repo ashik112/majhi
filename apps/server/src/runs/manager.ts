@@ -65,7 +65,7 @@ import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
 import { handedOffLine, limitPauseText } from "./limit.ts";
-import { capacityOf, Slots } from "./limits.ts";
+import { capacityOf, globalCap, type Limits, runsTotal, Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
@@ -162,6 +162,8 @@ export interface RunDeps {
    * Autonomous mode's say in the line for a slot: `fair` while it is On (slots are shared evenly
    * across workspaces), and `owner` for a task the owner runs, which always goes first (5.18).
    */
+  /** The computer's CPU core count, for the default machine-wide run cap. */
+  cores?: () => number | undefined;
   slotPolicy?: { fair(): boolean; owner(task: string): boolean };
   /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
   onLoopEnd?: (task: string, agent: string) => void;
@@ -253,6 +255,8 @@ export class RunManager {
   private readonly limitStrikes = new Map<string, number>();
   /** Set by `closeAll`: no session starts after shutdown, and queued prompts wait in the store. */
   private closed = false;
+  /** The machine-wide run cap as of the last look, for the line a waiting run shows. */
+  private cap = 0;
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -263,7 +267,7 @@ export class RunManager {
       pause: (run, reason, text) => this.pause(run, reason, text),
     });
     this.slots = new Slots({
-      limits: async () => (await deps.config.settings()).limits,
+      limits: () => this.limits(),
       canEvict: (key) => {
         const run = this.runs.get(key);
         return run !== undefined && run.session !== undefined && !run.turning;
@@ -273,6 +277,20 @@ export class RunManager {
       onQueue: (positions) => this.showLine(positions),
       now: () => this.now().getTime(),
     });
+    void this.limits().catch(() => undefined);
+  }
+
+  /** Runs holding a slot now and the machine-wide cap, for the Machine line. */
+  runUse(): { inUse: number; cap: number } {
+    return { inUse: this.slots.state().holders.length, cap: this.cap };
+  }
+
+  /** The limits now, with the machine-wide run cap resolved from the setting or the core count. */
+  private async limits(): Promise<Limits> {
+    const { limits } = await this.deps.config.settings();
+    const limit = { ...limits, runs_total: runsTotal(limits, this.deps.cores?.()) };
+    this.cap = globalCap(limit);
+    return limit;
   }
 
   /** At server start: runs that were live are over, and prompts nobody can answer any more are cancelled. */
@@ -295,7 +313,7 @@ export class RunManager {
    * captain's own slot is outside the limits and not counted.
    */
   async capacity(accounts: readonly string[] = []): Promise<SlotCapacity> {
-    const { limits } = await this.deps.config.settings();
+    const limits = await this.limits();
     return capacityOf(this.slots.state(), limits, accounts);
   }
 
@@ -774,7 +792,8 @@ export class RunManager {
   }
 
   /** The concurrency limits changed: starts that wait may fit now. */
-  limitsChanged(): Promise<void> {
+  async limitsChanged(): Promise<void> {
+    await this.limits();
     return this.slots.pump();
   }
 
@@ -2213,7 +2232,14 @@ export class RunManager {
     for (const [key, slot] of positions) {
       const run = this.runs.get(key);
       if (run === undefined) continue;
-      this.setLive(run, { status: "queued", slot });
+      const inUse = this.slots.state().holders.length;
+      this.setLive(run, {
+        status: "queued",
+        slot,
+        ...(this.cap > 0 && inUse >= this.cap
+          ? { nowDoing: `Waiting for a free run: ${inUse} of ${this.cap} in use` }
+          : {}),
+      });
       if (!run.queuedNoted) {
         run.queuedNoted = true;
         this.live.system(

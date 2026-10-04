@@ -113,6 +113,7 @@ import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
+import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
@@ -707,6 +708,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     limited: limitedRun,
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
+    cores: () => machine.get()?.host?.cores,
     slotPolicy: { fair: () => autonomy.slotsFair(), owner: (task) => autonomy.ownerRuns(task) },
     onLoopEnd: (task) => autonomy.loopEnded(task),
     // Bound below: the captain's lanes are built after the task service.
@@ -1281,13 +1283,40 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account) => autonomy.laneRest(org, account),
   });
+  const machineDocker = dockerCli(env.runner.cliEnv);
+  const memoryWatch = new MemoryWatch();
+  /** A run container that sits at its memory limit is noted once on its task, so the captain or owner sees it. */
+  const noteHotMemory = async (): Promise<void> => {
+    const hot = memoryWatch.read(machine.get()?.containers ?? []);
+    if (hot.length === 0) return;
+    const rows = await machineDocker([
+      "ps",
+      "--filter",
+      "label=majhi.runner=1",
+      "--format",
+      '{{.Names}}\t{{.Label "majhi.task"}}',
+    ]);
+    for (const line of rows.split("\n")) {
+      const [name, task] = line.split("\t");
+      if (name === undefined || task === undefined || task === "" || !hot.includes(name)) continue;
+      if (store.tasks.get(task) === undefined) continue;
+      room.post(task as TaskId, `memory:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: "An agent on this task is using almost all of its memory limit and may be slow or get stopped. Ask it to do less at once, or stop the task if it keeps stalling.",
+      });
+    }
+  };
   const machine = new MachineSensor({
     host: async () =>
       options.hostLink?.isConnected() === true
         ? await options.hostLink.call("machine.read", {}, 15_000)
         : undefined,
-    docker: dockerCli(env.runner.cliEnv),
-    onChange: () => autonomy.machineRead(),
+    docker: machineDocker,
+    onChange: () => {
+      autonomy.machineRead();
+      void noteHotMemory().catch(() => undefined);
+    },
   });
   const autonomy = new AutonomyService({
     machine: () => machine.get(),
@@ -1733,6 +1762,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     probe: options.probe ?? probeFromSetting(env.netProbe),
     ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
     runners: runner.runner,
+    resumeReady: async () => {
+      if (busyReason(machine.get()?.host) !== undefined) return false;
+      return (await runs.capacity()).agents.free > 0;
+    },
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
