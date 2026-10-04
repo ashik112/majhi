@@ -213,12 +213,62 @@ export async function runMongo(url: string, text: string, timeoutMs: number): Pr
   }
 }
 
-/** Every error out of a driver becomes one fixed phrase. */
+/**
+ * An error out of a driver becomes a fixed phrase that names the cause, chosen by its code, never its
+ * text (which can carry an address or a password). The cause is what lets the owner or the captain act.
+ */
 export function refused(err: unknown): Unavailable {
   if (err instanceof Unavailable) return err;
-  const code = (err as { code?: unknown }).code;
-  if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
-    return new Unavailable("majhi problem: a database driver failed to load in the server.");
+  const e = err as { code?: unknown; errno?: unknown; codeName?: unknown; name?: unknown };
+  const code = typeof e.code === "string" || typeof e.code === "number" ? String(e.code) : "";
+  const known: Record<string, string> = {
+    ERR_MODULE_NOT_FOUND: "majhi problem: a database driver failed to load in the server.",
+    MODULE_NOT_FOUND: "majhi problem: a database driver failed to load in the server.",
+    // Postgres SQLSTATE
+    "28P01": "the database refused the login: wrong user or password",
+    "28000": "the database refused the login: this user may not connect from here (pg_hba or allowed hosts)",
+    "3D000": "the database named in the address does not exist",
+    "42501": "the login may not read that: grant it SELECT on what the query reads",
+    "57014": "the query ran past its time limit",
+    "53300": "the database has no free connections",
+    // MySQL
+    ER_ACCESS_DENIED_ERROR: "the database refused the login: wrong user or password",
+    ER_DBACCESS_DENIED_ERROR: "the login may not use that database",
+    ER_BAD_DB_ERROR: "the database named in the address does not exist",
+    ER_TABLEACCESS_DENIED_ERROR: "the login may not read that table",
+    ER_CON_COUNT_ERROR: "the database has no free connections",
+    // Network
+    ECONNREFUSED: "nothing answered on that host and port: check the address and port",
+    ETIMEDOUT:
+      "the connection timed out: the database's firewall may not allow majhi's address (on DigitalOcean, add it under Trusted sources)",
+    ENOTFOUND: "the host name does not resolve: check the address",
+    EAI_AGAIN: "the host name could not be looked up right now",
+    ECONNRESET: "the database closed the connection: it may need TLS (sslmode=require)",
+    DEPTH_ZERO_SELF_SIGNED_CERT:
+      "the database's certificate is not trusted: use sslmode=require, or give its CA",
+    SELF_SIGNED_CERT_IN_CHAIN:
+      "the database's certificate is not trusted: use sslmode=require, or give its CA",
+    UNABLE_TO_VERIFY_LEAF_SIGNATURE:
+      "the database's certificate is not trusted: use sslmode=require, or give its CA",
+  };
+  if (known[code] !== undefined) return new Unavailable(known[code]);
+  // MongoDB names its errors.
+  if (e.codeName === "AuthenticationFailed" || code === "18") {
+    return new Unavailable("the database refused the login: wrong user or password");
   }
-  return new Unavailable(REFUSED);
+  if (e.codeName === "Unauthorized" || code === "13") {
+    return new Unavailable("the login may not run that command: give it the read role");
+  }
+  if (e.name === "MongoServerSelectionError") {
+    return new Unavailable(
+      "no MongoDB server answered in time: check the address, and that its firewall allows majhi's address",
+    );
+  }
+  // A timeout of the driver's own connect wait has no code.
+  if (/timeout|timed out/i.test(String((err as { message?: unknown }).message ?? ""))) {
+    return new Unavailable(
+      "the connection timed out: the database's firewall may not allow majhi's address (on DigitalOcean, add it under Trusted sources)",
+    );
+  }
+  return new Unavailable(`${REFUSED}${code === "" ? "" : ` (code ${code.slice(0, 20)})`}`);
 }

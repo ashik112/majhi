@@ -197,3 +197,20 @@ describe("driver failures", () => {
     );
   });
 });
+
+describe("why a database refused", () => {
+  it("names the cause by the driver's code, never its text", () => {
+    const err = (fields: Record<string, unknown>) =>
+      Object.assign(new Error("password=hunter2 at 10.0.0.5"), fields);
+    expect(refused(err({ code: "28P01" })).message).toBe(
+      "the database refused the login: wrong user or password",
+    );
+    expect(refused(err({ code: "ETIMEDOUT" })).message).toContain("Trusted sources");
+    expect(refused(err({ code: "ER_ACCESS_DENIED_ERROR" })).message).toContain("wrong user or password");
+    expect(refused(err({ codeName: "AuthenticationFailed" })).message).toContain("wrong user or password");
+    expect(refused(err({ code: "XX999" })).message).toBe(
+      "the database refused or did not answer (code XX999)",
+    );
+    expect(refused(err({ code: "28P01" })).message).not.toContain("hunter2");
+  });
+});
