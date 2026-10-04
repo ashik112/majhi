@@ -28,7 +28,7 @@ import { ScheduleRepo } from "./automation/schedules.ts";
 import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
-import { AutonomyService } from "./autonomy/service.ts";
+import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -36,7 +36,7 @@ import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { Lanes } from "./captain/lanes.ts";
-import { authorityOf } from "./captain/levels.ts";
+import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -103,6 +103,10 @@ import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { GoalsService } from "./playbooks/goals.ts";
+import { OutboundGate } from "./playbooks/outbound.ts";
+import { PlaybookRepo } from "./playbooks/repo.ts";
+import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
@@ -281,6 +285,12 @@ export interface Services {
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
   findings: FindingsService;
+  /** Playbooks: the one scheduler for the captain's standing work (5.18). */
+  playbooks: PlaybookService;
+  /** The owner's goals (5.18). */
+  goals: GoalsService;
+  /** The outbound gate: everything that would leave the machine passes it (5.18). */
+  outbound: OutboundGate;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -946,7 +956,26 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const triggerRows = new TriggerRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
   const cardActions = new CardActions({ tasks, mrs, room });
+  const knownOrg = async (org: string) =>
+    org === PRIVATE || (await config.sections()).orgs[org] !== undefined;
+  const goals = new GoalsService({
+    db: store.raw,
+    knownOrg,
+    changed: () => events.emit(["playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const outbound = new OutboundGate({
+    db: store.raw,
+    knownOrg,
+    tz: async (org) => {
+      const a = (await config.settings()).autonomy;
+      return zoneOr(a.orgs[org]?.tz ?? a.tz);
+    },
+    changed: () => events.emit(["playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
   const inbox = new InboxService({
+    outbound,
     items: () => store.room.waitingDecisions(),
     subject: (id) => {
       const task = store.tasks.get(id);
@@ -989,6 +1018,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         }),
       answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
+      decideDraft: (id, decision) => outbound.decide(id, decision),
+      decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
     },
   });
   const lanes = new Lanes({
@@ -1131,6 +1162,24 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  const playbooks = new PlaybookService({
+    repo: new PlaybookRepo(store.raw),
+    captain,
+    findings,
+    goals,
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    lane: { chat: (org) => lanes.chat(org), tell: (org, text, settled) => lanes.tell(org, text, settled) },
+    laneTokens: (chat, since) => captainRepo.laneSpend(chat, since).tokens,
+    cancelTurn: async (chat) => {
+      await tasks.cancel(chat, undefined);
+    },
+    mode: () => autonomy.mode(),
+    tellOwner: (key, text) => notifier.captain(key, text),
+    changed: () => events.emit(["playbooks", "captain"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  captain.usePlaybooks(playbooks, () => playbooks.sweep());
+  playbooks.boot();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -1372,6 +1421,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     inbox,
     captain,
     findings,
+    playbooks,
+    goals,
+    outbound,
     captainTell: new CaptainTell({
       tasks,
       lanes,
@@ -1401,6 +1453,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       connect.stop();
       autonomy.close();
       captain.close();
+      playbooks.close();
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);

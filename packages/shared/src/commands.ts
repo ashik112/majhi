@@ -198,6 +198,32 @@ import {
 } from "./mrs.ts";
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
+import {
+  GoalCreateInputSchema,
+  GoalRemoveInputSchema,
+  GoalSchema,
+  GoalsListInputSchema,
+  GoalsListSchema,
+  GoalUpdateInputSchema,
+  OutboundBatchInputSchema,
+  OutboundDecideInputSchema,
+  OutboundDecideResultSchema,
+  OutboundListInputSchema,
+  OutboundListSchema,
+  OutboundSetModeInputSchema,
+  OutboundSubmitInputSchema,
+  OutboundSubmitResultSchema,
+  PlaybookReportInputSchema,
+  PlaybookReportResultSchema,
+  PlaybookRunNowInputSchema,
+  PlaybookRunNowResultSchema,
+  PlaybookRunsInputSchema,
+  PlaybookRunsSchema,
+  PlaybooksListInputSchema,
+  PlaybooksListSchema,
+  PlaybookUpdateInputSchema,
+  PlaybookViewSchema,
+} from "./playbooks.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -748,6 +774,101 @@ export const commands = {
       "Dismiss a finding with a reason (it is not worth doing, a duplicate, or wrong). It stays dismissed when reported again. The owner and the captain only; an agent may dismiss its own reports",
     input: FindingDismissInputSchema,
     output: FindingSchema,
+  },
+  // Playbooks, goals and the outbound gate (5.18) -------------------------------
+  "playbooks.list": {
+    risk: "read",
+    summary:
+      "The captain's playbooks in a workspace, grouped by pack: on or off, cadence, goal, last and next run, and how many findings each filed, how many were accepted and dismissed. A playbook is data: a trigger, steps, outputs, a cost tier and a token budget",
+    input: PlaybooksListInputSchema,
+    output: PlaybooksListSchema,
+  },
+  "playbooks.update": {
+    risk: "change",
+    summary:
+      "Turn a playbook on or off in a workspace, change its cadence or quiet hours, link it to a goal, or fill its settings (the URLs of an uptime check). The owner's: the captain never changes its own playbooks",
+    input: PlaybookUpdateInputSchema,
+    output: PlaybookViewSchema,
+  },
+  "playbooks.run": {
+    risk: "change",
+    summary:
+      "Run a playbook now in a workspace, whatever its schedule. It still stops for Autonomous being off, a rest and its budget",
+    input: PlaybookRunNowInputSchema,
+    output: PlaybookRunNowResultSchema,
+  },
+  "playbooks.runs": {
+    risk: "read",
+    summary: "The recent runs of a playbook in a workspace, newest first, with what each found and spent",
+    input: PlaybookRunsInputSchema,
+    output: PlaybookRunsSchema,
+  },
+  "playbooks.report": {
+    risk: "change",
+    summary:
+      "Close the playbook run you were woken for: done (you reported what you found as findings), nothing (nothing new, archived quietly) or blocked (say why). Call it once, as the last step of the run",
+    input: PlaybookReportInputSchema,
+    output: PlaybookReportResultSchema,
+  },
+  "goals.list": {
+    risk: "read",
+    summary:
+      "The owner's goals: per workspace or for the whole business, each with a metric, target, due date and status. A captain lane sees its workspace's and the business's",
+    input: GoalsListInputSchema,
+    output: GoalsListSchema,
+  },
+  "goals.create": {
+    risk: "change",
+    summary:
+      "Add a goal for a workspace or the business. From the owner it is active; from the captain it is a proposal the owner confirms",
+    input: GoalCreateInputSchema,
+    output: GoalSchema,
+  },
+  "goals.update": {
+    risk: "change",
+    summary:
+      "Change a goal's title, metric, target or due date, or confirm, finish or drop it. Changing the status is the owner's",
+    input: GoalUpdateInputSchema,
+    output: GoalSchema,
+  },
+  "goals.remove": {
+    risk: "change",
+    summary: "Delete a goal. The owner's. Playbooks and findings that pointed at it lose the link",
+    input: GoalRemoveInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "outbound.list": {
+    risk: "read",
+    summary:
+      "The outbound gate: each channel's mode (Draft, Batch, Auto) in a workspace and the drafts waiting or recently decided",
+    input: OutboundListInputSchema,
+    output: OutboundListSchema,
+  },
+  "outbound.setMode": {
+    risk: "change",
+    summary:
+      "Set a channel's mode in a workspace: Draft (approve each), Batch (approve a batch at a set hour) or Auto (allowed within a daily limit, only when explicit). The owner's",
+    input: OutboundSetModeInputSchema,
+    output: z.object({ channels: OutboundListSchema.shape.channels }),
+  },
+  "outbound.submit": {
+    risk: "change",
+    summary:
+      "Offer a message, post, comment or form for sending. It never leaves directly: the channel's mode decides whether it waits for the owner's approval as a draft, joins a batch, or (Auto, with a limit) goes. Include the target and the voice you used",
+    input: OutboundSubmitInputSchema,
+    output: OutboundSubmitResultSchema,
+  },
+  "outbound.decide": {
+    risk: "change",
+    summary: "Send or discard one draft. The owner's",
+    input: OutboundDecideInputSchema,
+    output: OutboundDecideResultSchema,
+  },
+  "outbound.decideBatch": {
+    risk: "change",
+    summary: "Send or discard every queued draft of a channel in a workspace. The owner's",
+    input: OutboundBatchInputSchema,
+    output: OutboundDecideResultSchema,
   },
   "notify.pending": {
     risk: "read",
@@ -2010,7 +2131,8 @@ export const commands = {
   },
   "connect.cancel": {
     risk: "change",
-    summary: "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
+    summary:
+      "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
     input: ConnectFlowInputSchema,
     output: ConnectFlowViewSchema,
   },

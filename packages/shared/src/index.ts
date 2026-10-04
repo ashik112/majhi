@@ -33,6 +33,7 @@ export * from "./mrs.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";
 export * from "./paths.ts";
+export * from "./playbooks.ts";
 export * from "./processes.ts";
 export * from "./project-card.ts";
 export * from "./project-create.ts";

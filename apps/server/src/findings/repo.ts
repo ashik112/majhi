@@ -200,6 +200,27 @@ export class FindingsRepo {
     ).map(toFinding);
   }
 
+  /** How many findings a playbook filed in a workspace, and how many were taken up or dismissed. */
+  statsByPlaybook(org: string, playbook: string): { total: number; accepted: number; dismissed: number } {
+    return this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+           COALESCE(SUM(status IN ('task', 'fixed', 'decision')), 0) AS accepted,
+           COALESCE(SUM(status = 'dismissed'), 0) AS dismissed
+         FROM findings WHERE org = ? AND playbook = ?`,
+      )
+      .get(org, playbook) as { total: number; accepted: number; dismissed: number };
+  }
+
+  /** Findings first seen or refreshed at or after `since` that a playbook filed. */
+  countSince(org: string, playbook: string, since: string): number {
+    return (
+      this.db
+        .prepare("SELECT COUNT(*) AS n FROM findings WHERE org = ? AND playbook = ? AND last_seen >= ?")
+        .get(org, playbook, since) as { n: number }
+    ).n;
+  }
+
   /** Findings linked to a task, to follow the task. */
   linked(): Finding[] {
     return (

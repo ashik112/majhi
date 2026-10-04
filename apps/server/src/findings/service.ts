@@ -99,6 +99,21 @@ export class FindingsService {
     }
   }
 
+  /** The finding with this dedupe key in a workspace, if any. */
+  find(org: string, key: string): Finding | undefined {
+    return this.repo.byKey(org, key);
+  }
+
+  /** How many findings a playbook filed, and how many were taken up or dismissed. */
+  statsOf(org: string, playbook: string): { total: number; accepted: number; dismissed: number } {
+    return this.repo.statsByPlaybook(org, playbook);
+  }
+
+  /** How many findings a playbook filed or refreshed since a time. */
+  countSince(org: string, playbook: string, since: string): number {
+    return this.repo.countSince(org, playbook, since);
+  }
+
   get(id: number): Finding {
     const found = this.repo.get(id);
     if (found === undefined) throw new UserError(`Finding ${id} does not exist.`, 404);

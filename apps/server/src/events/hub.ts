@@ -82,6 +82,11 @@ export function topicsFor(command: string): EventTopic[] {
       // Settings and instructions are config commits; the mode and the queue are autonomy's own.
       // The captain's choice per workspace is in the same settings.
       return ["autonomy", "captain", "config", "tasks"];
+    case "playbooks":
+    case "goals":
+    case "outbound":
+      // A draft waits in Decisions; a playbook run files findings and shows in the captain's log.
+      return ["playbooks", "findings", "captain"];
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
