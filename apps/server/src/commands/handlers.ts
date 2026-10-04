@@ -21,6 +21,7 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
+import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
@@ -164,6 +165,7 @@ export function createHandlers({
     ...inboxHandlers(services.inbox),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...backupHandlers(services.backup),
+    ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
     ...mcpHandlers(services.mcpServers),
@@ -505,6 +507,7 @@ export function createHandlers({
           secrets: services.secrets,
           majhiHome,
           connectionDir: (id) => connectionDir(majhiHome, id),
+          oauth: (id) => services.connect.bearer(id),
         },
         task,
       );
@@ -565,6 +568,12 @@ export function createHandlers({
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
+    "tasks.tell": (input, ctx) =>
+      services.captainTell.tell(input, {
+        kind: ctx.meta.actor.kind === "agent" ? "agent" : "owner",
+        ...(ctx.meta.actor.kind === "agent" ? { id: ctx.meta.actor.id } : {}),
+        task: ctx.meta.task,
+      }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
@@ -888,6 +897,14 @@ export function createHandlers({
     "decisions.ask": (input) => services.decisions.ask(input),
     "decisions.recent": async (input) => services.decisions.recent(input.limit, input.offset),
     "decisions.correct": async (input) => services.decisions.correct(input),
+    "decisions.get": async (input) => services.decisions.get(input.id),
+    "decisions.label": async (input) => services.decisions.label(input),
+    "decisions.eval": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner")
+        throw new UserError("Only the owner runs the decision evals.", 409);
+      return services.decisions.runEvals(input.use);
+    },
+    "decisions.slots": async () => services.decisions.slots(),
     "decisions.status": () => services.decisions.status(),
     "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
     "decisions.install": () => services.decisions.install(),

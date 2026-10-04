@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { clockTime, type Tone } from "@/features/autonomy/model";
+import { WrongButton } from "@/features/decisions/wrong-button";
 import { useAutonomyEvents } from "@/lib/autonomy-queries";
 import { useCaptainLog, useCaptainUndo } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
@@ -133,6 +134,7 @@ function EntryRow({
         {full && entry.checked && (
           <span className="text-xs text-fg-faint text-pretty">Checked: {entry.checked}</span>
         )}
+        {action?.decision !== undefined && <WrongButton decision={action.decision} />}
         {full && action?.outcome === "done" && action.undo === "no" && action.undoNote && (
           <span className="text-xs text-fg-faint text-pretty">No Undo: {action.undoNote}</span>
         )}

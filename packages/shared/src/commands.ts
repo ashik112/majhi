@@ -66,6 +66,16 @@ import {
 } from "./captain.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
+  ConnectCatalogSchema,
+  ConnectConfirmInputSchema,
+  ConnectDisconnectResultSchema,
+  ConnectFlowInputSchema,
+  ConnectFlowViewSchema,
+  ConnectNeedScopeInputSchema,
+  ConnectStartInputSchema,
+  ConnectStatusSchema,
+} from "./connect.ts";
+import {
   ConnectionCreateInputSchema,
   ConnectionSetFileInputSchema,
   ConnectionSetSecretInputSchema,
@@ -83,7 +93,15 @@ import {
   ServiceStartInputSchema,
 } from "./containers.ts";
 import {
+  DecisionLabelSchema,
+  EvalInputSchema,
+  EvalReportSchema,
+  LabelInputSchema,
+  SlotStatusSchema,
+} from "./decision-learning.ts";
+import {
   DecideRequestSchema,
+  DecisionCacheStatsSchema,
   DecisionPatchSchema,
   DecisionRecordSchema,
   DecisionResultSchema,
@@ -92,7 +110,6 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
-import { ProjectCardSchema } from "./project-card.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -182,6 +199,7 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
+import { ProjectCardSchema } from "./project-card.ts";
 import {
   ConnectRemoteInputSchema,
   ConnectRemoteSchema,
@@ -1282,6 +1300,18 @@ export const commands = {
     }),
     output: TaskSchema,
   },
+  "tasks.tell": {
+    risk: "change",
+    summary:
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. At most 3 per task in 10 minutes. Only the captain in a lane may call it; an ordinary agent may not",
+    input: z.object({
+      id: TaskIdSchema,
+      /** Default: the task's lead. */
+      agent: IdSchema.optional(),
+      text: z.string().trim().min(1).max(4000),
+    }),
+    output: z.object({ id: TaskIdSchema, agent: IdSchema }),
+  },
   "tasks.setLead": {
     risk: "change",
     summary:
@@ -1949,6 +1979,63 @@ export const commands = {
     output: ConnectionTestResultSchema,
   },
 
+  // Connect (5.14) -------------------------------------------------------------
+  "connect.catalog": {
+    risk: "read",
+    summary:
+      "The services majhi can connect with one click: name, what it is for, whether it is ready, the access it can ask for in plain words, and whether its address was checked. Also the address the service sends the owner back to and whether the host helper can open the browser",
+    input: Empty,
+    output: ConnectCatalogSchema,
+  },
+  "connect.status": {
+    risk: "read",
+    summary:
+      "Where every connected service stands, of one org or all: who signed in, the access it has in plain words, and whether it is connected, needs a new sign-in, needs more access or was revoked. Never returns a token",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(ConnectStatusSchema),
+  },
+  "connect.start": {
+    risk: "change",
+    summary:
+      "Connect a service to an org: opens the service's own sign-in page in the owner's browser and waits for them. Read access first; readwrite also asks to change things. Pass connection to sign in again for an existing one (to renew it, or to give it more access). Only the owner starts this, on the Connections page",
+    input: ConnectStartInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.flow": {
+    risk: "read",
+    summary:
+      "Where one connect attempt stands: waiting for the owner in the browser, checking, connected, or why it ended. Never returns a code or a token",
+    input: ConnectFlowInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.cancel": {
+    risk: "change",
+    summary: "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
+    input: ConnectFlowInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.confirmAccount": {
+    risk: "change",
+    summary:
+      "A reconnect signed in as a different account than the connection had. accept: true replaces the account; false keeps the old one and drops the new sign-in. Only the owner answers this",
+    input: ConnectConfirmInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.disconnect": {
+    risk: "destructive",
+    summary:
+      "Disconnect a service: revokes the grant at the service when it supports that, deletes the tokens and removes the connection. Says what stays at the service when it cannot revoke",
+    input: z.object({ connection: IdSchema }),
+    output: ConnectDisconnectResultSchema,
+  },
+  "connect.needScope": {
+    risk: "change",
+    summary:
+      "Say that a tool call on a connected service failed with 403 insufficient_scope. The connection shows that it needs more access and the owner is asked to allow it. Changes nothing else, and the token keeps working",
+    input: ConnectNeedScopeInputSchema,
+    output: ConnectStatusSchema,
+  },
+
   // Trackers (5.11) -----------------------------------------------------------
   "trackers.test": {
     risk: "read",
@@ -2351,14 +2438,43 @@ export const commands = {
     }),
     output: DecisionRecordSchema,
   },
+  "decisions.get": {
+    risk: "read",
+    summary: "One decision from the log by id, with its request, every probability and its outcome",
+    input: z.object({ id: z.string().min(1).max(40) }),
+    output: DecisionRecordSchema,
+  },
+  "decisions.label": {
+    risk: "change",
+    summary:
+      "Say what the right answer to a decision's question was (Wrong?). Stored as an owner label for the evals and calibration; changes nothing else. question may be left out when the decision asked one",
+    input: LabelInputSchema,
+    output: DecisionLabelSchema,
+  },
+  "decisions.eval": {
+    risk: "change",
+    summary:
+      "Owner only. Run the decision provider on the labeled set and the built-in fixtures of one decision slot (task-size, mention-wake, memory-verdict, ...) or all, and store the report: accuracy, per-class recall, precision and coverage at the gate, calibration error, order consistency, latency and cost. With enough labels it also fits the slot's calibration and moves it between shadow and live",
+    input: EvalInputSchema,
+    output: z.array(EvalReportSchema),
+  },
+  "decisions.slots": {
+    risk: "read",
+    summary:
+      "Every decision slot with its mode (shadow or live), how many labels it has, its calibration and its last eval reports",
+    input: Empty,
+    output: z.array(SlotStatusSchema),
+  },
   "decisions.status": {
     risk: "read",
-    summary: "The provider order and whether each provider can answer now, with Laya's install state",
+    summary:
+      "The provider order and whether each provider can answer now, with Laya's install state and the answer cache's hit rate",
     input: Empty,
     output: z.object({
       settings: DecisionSettingsSchema,
       laya: LayaStatusSchema,
       providers: z.array(z.object({ id: ProviderIdSchema, available: z.boolean(), detail: z.string() })),
+      cache: DecisionCacheStatsSchema,
     }),
   },
   "decisions.set": {

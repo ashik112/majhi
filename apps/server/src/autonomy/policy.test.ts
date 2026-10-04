@@ -460,6 +460,35 @@ describe("decideAutonomously: the authority rows", () => {
   });
 });
 
+describe("what follows the Merge row and Upkeep for the captain's own calls", () => {
+  it("lets the captain ask the lead to resolve conflicts only where Merge is Captain", () => {
+    const resolve = { id: "GLX-1", action: "merge" };
+    // Globex merges; Acme asks.
+    expect(decide(call("tasks.resolveShip", resolve, { org: "globex", boss: true }))).toBe("approved");
+    expect(decide(call("tasks.resolveShip", resolve, { org: "acme", boss: true }))).toBe("left");
+    // An agent of a task is not the captain: it stays a decision even where Merge is Captain.
+    expect(decide(call("tasks.resolveShip", resolve, { org: "globex" }))).toBe("left");
+    // The push row is its own: Acme may push, and still cannot resolve a merge without the Merge row.
+    expect(decide(call("tasks.push", { id: "ACM-1" }))).toBe("approved");
+    expect(decide(call("tasks.resolveShip", { id: "ACM-1" }, { boss: true }))).toBe("left");
+  });
+
+  it("lets the captain register a repo only under Upkeep, and never an agent", () => {
+    const register = { id: "acme-web", org: "acme", path: "/Users/owner/Work/acme/web" };
+    expect(decide(call("projects.register", register, { boss: true }))).toBe("approved");
+    expect(decide(call("projects.register", register))).toBe("left");
+    const quiet = AutonomySettingsSchema.parse({
+      orgs: { acme: { authority: { ...RUNS, upkeep: "ask" } } },
+    });
+    expect(decide(call("projects.register", register, { boss: true }), ctx({ settings: quiet }))).toBe(
+      "left",
+    );
+    // The rest of what agents reach stays the owner's.
+    expect(decide(call("projects.update", { id: "acme-web" }, { boss: true }))).toBe("left");
+    expect(decide(call("projects.remove", { id: "acme-web" }, { boss: true }))).toBe("left");
+  });
+});
+
 describe("callOrg", () => {
   const look = {
     task: (id: string) => (id === "ACM-1" ? "acme" : id === "LOCAL-1" ? null : undefined),

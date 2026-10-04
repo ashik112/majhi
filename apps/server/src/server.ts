@@ -88,6 +88,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
+    connect: services.connect,
     taskFiles: {
       folderOf: (id) => services.store.tasks.get(id)?.folder,
       reposOf: (id) => services.store.tasks.get(id)?.repos,

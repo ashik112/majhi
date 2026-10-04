@@ -4,9 +4,11 @@ import type {
   DecisionOutcome,
   DecisionRecord,
   DecisionResult,
+  LinkKind,
   ProviderId,
 } from "@majhi/shared";
 import type { Difficulty, TaskBrief } from "../runs/difficulty.ts";
+import type { TaskOutcome } from "./labels.ts";
 
 /**
  * What the run manager asks of the decision provider (SPEC 5.12). The decision
@@ -62,6 +64,12 @@ export interface Decisions {
   ): Promise<DecisionResult | undefined>;
   /** Records what majhi did with a decision, for the log and the owner's "Wrong pick". */
   outcome(id: string, outcome: DecisionOutcome): void;
+  /** Holds a decision until the outcome of `ref` is known, so the outcome can label it (5.12). */
+  link?(kind: LinkKind, ref: string, decisionId: string, question: string): void;
+  /** The outcome of `ref` is known: labels the decisions linked to it with `label`, once. */
+  resolve?(kind: LinkKind, ref: string, label: string, note?: string): void;
+  /** A task reached review with this much done: labels its size decisions with how big it turned out. */
+  taskReviewed?(task: string, outcome: TaskOutcome): void;
 }
 
 /** Used until the decision provider is wired: never picks, attaches nothing. */

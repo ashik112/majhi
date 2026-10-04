@@ -7,6 +7,7 @@ import {
   isOwnerChat,
   NotificationsSettingsSchema,
   PRIVATE,
+  type ServiceEntry,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
 } from "@majhi/shared";
@@ -38,11 +39,15 @@ import { Lanes } from "./captain/lanes.ts";
 import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
+import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
+import { GrantStore } from "./connect/grant.ts";
+import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
+import { listTools, remoteTransport } from "./connections/mcp-client.ts";
 import { redactSecrets } from "./connections/redact.ts";
 import type { RemoteRunFn } from "./connections/remote.ts";
 import { sweepRunFiles } from "./connections/run-files.ts";
@@ -51,6 +56,10 @@ import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
+import { builtinRegistry } from "./decisions/builtinSlots.ts";
+import { CalibrationStore } from "./decisions/calibrationStore.ts";
+import { EvalStore } from "./decisions/evalStore.ts";
+import { LabelStore } from "./decisions/labels.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
 import { DecisionLog } from "./decisions/log.ts";
@@ -179,6 +188,10 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces `fetch` for Connect's sign-in calls, so tests reach a fake authorization server. */
+  connectFetch?: Fetch;
+  /** Replaces the service catalog, so tests connect to a fake server. */
+  connectCatalog?: readonly ServiceEntry[];
   /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
   trackerFetch?: typeof fetch;
   /** Replaces the tracker adapters, so tests can play a tracker without its API. */
@@ -201,6 +214,8 @@ export interface Services {
   secretService: SecretService;
   /** Connections of every org: definitions, secrets, files and the last Test of each (5.14). */
   connections: ConnectionService;
+  /** Connect (5.14): joining remote MCP servers with OAuth, and keeping their tokens fresh. */
+  connect: ConnectService;
   /** The Test of each connection, for connections.test and the Health page. */
   connectionTests: ConnectionTester;
   /** Installed skills and the per-agent switches (5.2). */
@@ -266,6 +281,8 @@ export interface Services {
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
   findings: FindingsService;
+  /** `tasks.tell`: the captain writes to a task's lead (5.18). */
+  captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -443,6 +460,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const decisions = new DecisionService({
     config,
     log: new DecisionLog(store.raw),
+    labels: new LabelStore(store.raw),
+    slots: builtinRegistry(),
+    evals: new EvalStore(store.raw),
+    calibrations: new CalibrationStore(store.raw),
     tokens: decideTokens,
     laya: new LayaProvider(options.hostLink, layaDocker),
     acp: new AcpProvider({
@@ -465,8 +486,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => containers.available(),
   );
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
+  // Bearer tokens of connections signed in through Connect (5.14); bound once that service exists.
+  const oauth: { bearer?: (id: string) => Promise<{ token: string } | { problem: string }> } = {};
   const connectionFiles = {
     connectionDir: (id: string) => connectionDir(env.majhiHome, id),
+    oauth: async (id: string) => oauth.bearer?.(id) ?? { problem: "Sign-in is not ready." },
     browsersPath:
       sessionOptions.base.PLAYWRIGHT_BROWSERS_PATH ??
       (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
@@ -644,6 +668,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   memory.useCurator((fact) => curator.curate(fact));
+  // The owner keeping or dropping a fact is the right answer to "is it worth keeping".
+  memory.onOwnerChoice((id, action) =>
+    decisions.resolve(
+      "memory",
+      String(id),
+      action === "approved" ? "keep" : "not-keep",
+      action === "approved" ? "the owner kept it" : "the owner dropped it",
+    ),
+  );
   const housekeeper = new Housekeeper({
     config,
     agents: agentStore,
@@ -655,6 +688,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   // Bound below: the findings store is built after the cards.
   let reportFinding: FindingsService["report"] | undefined;
+  let findingsStore: FindingsService | undefined;
   const cards = createCards({
     store,
     projects,
@@ -730,6 +764,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
+      void labelFinishedTask(id);
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
@@ -751,6 +786,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     setTitle: (id, title) => tasks.autoTitleChat(id, title),
   });
+  /**
+   * A task reached review: its size decisions get a label from what the task turned out to be (the
+   * diff, the turns and the output tokens). A failure here never touches the task.
+   */
+  const labelFinishedTask = async (id: string): Promise<void> => {
+    try {
+      const diffs = await tasks.diff(id);
+      const spent = store.raw
+        .prepare(
+          "SELECT COUNT(*) AS turns, COALESCE(SUM(output_tokens + reasoning_tokens), 0) AS tokens FROM turns WHERE task = ?",
+        )
+        .get(id) as { turns: number; tokens: number };
+      const files = diffs.reduce((n, d) => n + d.files.length + d.omitted, 0);
+      const lines = diffs.reduce((n, d) => n + d.files.reduce((m, f) => m + f.additions + f.deletions, 0), 0);
+      decisions.taskReviewed(id, { files, lines, turns: spent.turns, outputTokens: spent.tokens });
+    } catch {
+      // No label this time; the next review tries again.
+    }
+  };
   /** The task an item belongs to, as notifications and the Decisions inbox name it. */
   const subjectOf = (id: string): Subject | undefined => {
     const task = store.tasks.get(id);
@@ -988,6 +1042,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       runs,
       room,
       quiet: (task) => idleWatch.quiet(task),
+      explained: (task) => autonomy.stallExplained(task),
+      pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
+      findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       projectLines: (org) => cards.digestLines(org),
       store,
       events,
@@ -1014,8 +1071,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
+    appeared: (f) => {
+      if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
+    },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
@@ -1070,6 +1132,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
+  autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   background.run(
@@ -1126,6 +1189,47 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       for (const agent of list) runs.remountAgent(agent);
     },
   });
+  const connect = new ConnectService({
+    grants: new GrantStore(secrets),
+    connections: connections,
+    connectionIds: async () =>
+      Object.entries((await config.sections()).orgs).flatMap(([org, entry]) =>
+        Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
+      ),
+    orgExists: async (org) => (await config.sections()).orgs[org] !== undefined,
+    redirect: `${env.origin}/oauth/callback`,
+    openUrl: async (url) => {
+      if (options.hostLink === undefined || !options.hostLink.isConnected()) return false;
+      return (await options.hostLink.call("openUrl", { url }, 10_000)).opened;
+    },
+    helperConnected: () => options.hostLink?.isConnected() ?? false,
+    ...(options.connectFetch === undefined ? {} : { fetch: options.connectFetch }),
+    ...(options.connectCatalog === undefined ? {} : { catalog: options.connectCatalog }),
+    changed: () => events.emit(["connections"]),
+    listTools: (url, token) =>
+      listTools(remoteTransport(url, { Authorization: `Bearer ${token}` }, "http"), 30_000),
+    inUse: (id) => runs.holdsConnection(id),
+    remount: (id) => runs.remountConnection(id),
+    attention: (item) => {
+      void findings
+        .report(
+          {
+            org: item.org,
+            source: "setup",
+            title: item.title,
+            detail: item.detail,
+            evidence: [],
+            severity: "medium",
+            dedupeKey: item.key,
+          },
+          { kind: "owner" },
+        )
+        .catch(() => undefined);
+    },
+  });
+  oauth.bearer = (id) => connect.bearer(id);
+  connect.startSweeper();
+  connections.onRemoved((id) => connect.removed(id));
   const skills = new SkillService({
     store: skillStore,
     cli: new SkillsCli({
@@ -1160,6 +1264,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hostHome: env.hostHome,
   });
   const connectionTests = new ConnectionTester({
+    oauth: connect,
     connections,
     secrets,
     spawner: sessionOptions.spawner ?? localSpawner,
@@ -1231,6 +1336,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     keyExports: new KeyExports(env.majhiHome, secrets),
     secretService,
     connections,
+    connect,
     skills: skills,
     skillStore,
     mcpServers,
@@ -1266,6 +1372,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     inbox,
     captain,
     findings,
+    captainTell: new CaptainTell({
+      tasks,
+      lanes,
+      store,
+      ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    }),
     lanes,
     bindCaptain: (dispatch) => {
       captainDispatch = dispatch;
@@ -1286,6 +1398,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       // No new hook work from here on (closing runs and processes fires hooks too).
       const settled = background.stop();
       resilience.stop();
+      connect.stop();
       autonomy.close();
       captain.close();
       idleWatch.stop();

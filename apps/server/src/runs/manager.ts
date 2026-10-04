@@ -689,6 +689,24 @@ export class RunManager {
     for (const run of [...this.runs.values()]) if (run.agent === agent) this.remount(run.task, agent);
   }
 
+  /** True while an open session holds the connection (5.14), so Connect renews its token ahead of time. */
+  holdsConnection(connection: string): boolean {
+    for (const run of this.runs.values()) {
+      if (run.session !== undefined && run.connections?.uses.some((u) => u.id === connection)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The connection's token was renewed. Every session that holds it restarts the way `remount` does,
+   * so its next turn has the new header.
+   */
+  remountConnection(connection: string): void {
+    for (const run of [...this.runs.values()]) {
+      if (run.connections?.uses.some((u) => u.id === connection)) this.remount(run.task, run.agent);
+    }
+  }
+
   /** What the agent's open session holds of its connections (5.14), or undefined. */
   connectionsOf(task: string, agent: string): RunConnections | undefined {
     return this.runs.get(this.key(task, agent))?.connections;
@@ -1701,6 +1719,7 @@ export class RunManager {
       run.preambleDue = opened.adminToken !== undefined && !resumed;
 
       let pickLine: string | undefined;
+      let pickDecision: string | undefined;
       if (fm.model === "auto" || fm.effort === "auto") {
         const sections = await deps.config.sections();
         // A price table that does not parse must not stop the start: picks fall back to tiers or the CLI default.
@@ -1729,6 +1748,7 @@ export class RunManager {
         for (const line of result.warnings) this.live.system(run, "warn", line);
         if (result.applied !== undefined) deps.store.runs.setPick(run.runId, result.applied);
         pickLine = result.line;
+        pickDecision = result.decisionId;
       }
       // What the agent runs after the session applied the options: a refused model keeps the default.
       const shownModel = session.models.defaultModel ?? opened.model;
@@ -1738,7 +1758,7 @@ export class RunManager {
         "info",
         `@${run.agent} ${resumed ? "resumed" : "started"} on ${fm.account}, model ${shownModel ?? "default"}, effort ${shownEffort ?? "default"}`,
       );
-      if (pickLine !== undefined) this.live.system(run, "info", pickLine);
+      if (pickLine !== undefined) this.live.system(run, "info", pickLine, pickDecision);
       this.setLive(run, {
         status: "idle",
         slot: undefined,

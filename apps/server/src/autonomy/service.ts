@@ -45,6 +45,7 @@ import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
 import type { AgentStore } from "../agents/store.ts";
+import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
@@ -150,8 +151,9 @@ export interface AutonomyDeps {
 /** What the service tells the driver (part B, `driver.ts`). */
 export interface DriverHooks {
   /** For one workspace, or every workspace where the captain starts work when `org` is absent. */
-  wake(line: string, org?: string): void;
+  wake(line: string, org?: string, kind?: "news" | "soft"): void;
   onMode(mode: AutonomyMode): void;
+  fire(org: string): Promise<void>;
   loopEnded(task: string): void;
   sweep(): void;
   start(): void;
@@ -239,6 +241,22 @@ export class AutonomyService {
     );
   }
 
+  /**
+   * The workspaces where the captain has a lane to think in: where it decides when work starts, and
+   * where it does upkeep while the owner starts work (it hears of findings, follow-ups and review there
+   * and files proposals; its rows still limit what it does).
+   */
+  async thinksIn(): Promise<string[]> {
+    const [sections, settings] = await Promise.all([
+      this.deps.config.sections(),
+      this.deps.config.settings(),
+    ]);
+    return workspaceIds(sections.orgs).filter((org) => {
+      const a = authorityOf(settings.autonomy, org);
+      return a.start === "decide" || a.upkeep === "decide";
+    });
+  }
+
   /** The lanes' chats that exist now. */
   laneChats(): string[] {
     return this.deps.lanes.all().map((l) => l.chat);
@@ -256,7 +274,7 @@ export class AutonomyService {
    */
   async laneChat(org: string): Promise<string | undefined> {
     if (this.repo.state().mode !== "on") return undefined;
-    if (!(await this.runsOrgs()).includes(org)) return undefined;
+    if (!(await this.thinksIn()).includes(org)) return undefined;
     // Outside the workspace's hours or on a freeze date the captain is not woken there.
     const settings = (await this.deps.config.settings()).autonomy;
     const rules = settings.orgs[org];
@@ -314,8 +332,50 @@ export class AutonomyService {
   }
 
   /** A line on why the captain should look again: it goes into the next tick of that workspace's lane, or every lane. */
-  private wake(line: string, org?: string): void {
-    this.driver?.wake(line, org);
+  private wake(line: string, org?: string, kind: "news" | "soft" = "news"): void {
+    this.driver?.wake(line, org, kind);
+  }
+
+  /** Sends a lane's waiting wakes now, without the wait that batches them. */
+  async fireWakes(org: string): Promise<void> {
+    await this.driver?.fire(org);
+  }
+
+  /** Ticks the driver sent and batches it held back because nothing had changed, since majhi started. */
+  readonly wakes = { sent: 0, skipped: 0 };
+
+  /** A batch of wakes was held back: the facts and the news were the captain's already. */
+  skipped(_reasons: readonly string[], _org: string): void {
+    this.wakes.skipped += 1;
+  }
+
+  /**
+   * A news line for a workspace's lane from outside the autonomy service: a finding, a project card.
+   * Every workspace's lane hears of it, whoever decides when work starts there.
+   */
+  news(line: string, org: string): void {
+    this.wake(line, org, "news");
+  }
+
+  /**
+   * Why a running task with no agent working needs no wake: a cap or the owner holds it, a card
+   * waits for the owner, or it waits for an account. Undefined when nothing explains it.
+   */
+  stallExplained(task: string): string | undefined {
+    const found = this.deps.store.tasks.get(task);
+    const row = this.repo.tasks().find((r) => r.task === task);
+    if (row?.held !== undefined) return "held by a cap or the owner";
+    if (holdCovering(this.holds, found?.org ?? PRIVATE, []) !== undefined) return "held by a cap";
+    if (this.deps.store.room.tasksWaitingOnOwner().has(task)) return "waits on the owner";
+    const waits = this.repo.state().queue.some((q) => q.task === task && q.waitFor !== undefined);
+    return waits ? "waits for an account" : undefined;
+  }
+
+  /** Whether a workspace has backlog, an open finding or a decision waiting: a reason for the hourly check. */
+  async pendingWork(org: string, findings: number): Promise<boolean> {
+    if (this.backlog(org).length > 0 || findings > 0) return true;
+    const decisions = (await this.deps.decisions?.().catch(() => [])) ?? [];
+    return decisions.some((d) => (d.org ?? PRIVATE) === org);
   }
 
   // ---------------------------------------------------------------------------
@@ -326,7 +386,8 @@ export class AutonomyService {
     const { mode } = this.repo.state();
     if (mode === "stopping") await this.maybeFinishStop();
     else if (mode !== "off") await this.refreshHolds();
-    if (mode === "on") this.wake("majhi restarted");
+    // A restart is no news: the captain hears of a task that did not come back through the stall check.
+    if (mode === "on") this.wake("majhi restarted", undefined, "soft");
   }
 
   startSweep(): void {
@@ -954,10 +1015,12 @@ export class AutonomyService {
       this.event({ kind: "cap", text: `No longer held: ${lowerFirst(h.text)}.`, ...holdOrg(h) });
     if (started.some((h) => h.kind !== "account")) await this.deps.runs.pauseLimited();
     if (lifted.some((h) => h.kind !== "account")) await this.liftCaps();
-    const first = started[0] ?? lifted[0];
-    if (first !== undefined) {
-      const org = holdOrg(first).org;
-      this.wake(started.length > 0 ? `${first.text}` : `No longer held: ${lowerFirst(first.text)}`, org);
+    // A cap that starts has its question to the owner already, and the captain can do nothing about it:
+    // only a lifted cap and an account that changed are news.
+    const news = lifted[0] ?? started.find((h) => h.kind === "account");
+    if (news !== undefined) {
+      const org = holdOrg(news).org;
+      this.wake(lifted.length > 0 ? `No longer held: ${lowerFirst(news.text)}` : news.text, org);
     }
     return holds;
   }
@@ -1077,7 +1140,8 @@ export class AutonomyService {
           ? (textLimit(call) ?? (await this.laneRefusal(lane, world.org)))
           : (hardLimit(call, world) ??
             (await this.laneRefusal(lane, world.org)) ??
-            (await this.pickRefusal(caller, command, input, world.org, ctx)));
+            (await this.pickRefusal(caller, command, input, world.org, ctx)) ??
+            (await this.gateRefusal(caller, command, input, lane)));
     if (why === undefined) return undefined;
     this.event({
       kind: "refused",
@@ -1128,6 +1192,45 @@ export class AutonomyService {
    * A lane works in its own workspace only (5.18): a call that acts in, or reads, another workspace's
    * tasks or projects is refused, so one workspace's content never reaches another's lane.
    */
+  /** What the lane's ships and repo registrations are held to: the chores' own rules (`LaneGate`). */
+  private async gateRefusal(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    lane: string | undefined,
+  ): Promise<string | undefined> {
+    if (lane === undefined || this.laneGate?.covers(command) !== true) return undefined;
+    if ((await this.callerKind(caller)) !== "boss") return undefined;
+    return this.laneGate.check(lane, command, input);
+  }
+
+  /** A lane's ship ran: it counts in the chore's log. */
+  private shipRan(
+    caller: AdminCaller,
+    command: CommandName,
+    input: unknown,
+    reason: string,
+    done: { ok: boolean; error?: string | undefined },
+  ): void {
+    const lane = this.laneOrg(caller.task);
+    const gate = this.laneGate;
+    if (lane === undefined || gate?.covers(command) !== true) return;
+    void this.callerKind(caller)
+      .then((kind) =>
+        kind === "boss"
+          ? gate.ran(lane, command, (input ?? {}) as Record<string, unknown>, reason, done)
+          : undefined,
+      )
+      .catch(() => undefined);
+  }
+
+  private laneGate: LaneGate | undefined;
+
+  /** The captain service made the gate the lane's ships and registrations pass through. */
+  useLaneGate(gate: LaneGate): void {
+    this.laneGate = gate;
+  }
+
   private async laneRefusal(lane: string | undefined, org: string): Promise<string | undefined> {
     if (lane === undefined || org === lane) return undefined;
     return `Refused: this lane works in ${await this.orgName(lane)} only, and the call is about ${await this.orgName(org)}. Each workspace has its own lane.`;
@@ -1440,7 +1543,13 @@ export class AutonomyService {
     const settings = (await this.deps.config.settings()).autonomy;
     const org = sections.orgs[world.org];
     return decideAutonomously(
-      { command, input, org: world.org, confirm: ask.confirm },
+      {
+        command,
+        input,
+        org: world.org,
+        confirm: ask.confirm,
+        boss: (await this.callerKind(caller)) === "boss",
+      },
       {
         settings,
         orgMerge: org?.merge,
@@ -1497,6 +1606,7 @@ export class AutonomyService {
     done: { ok: boolean; error?: string | undefined },
   ): void {
     if (commands[command].risk === "read" || this.repo.state().mode === "off") return;
+    this.shipRan(caller, command, input, reason, done);
     this.event({
       kind: "decision",
       text: done.ok
@@ -1521,6 +1631,7 @@ export class AutonomyService {
     item: string,
     done: { ok: boolean; error?: string | undefined },
   ): void {
+    this.shipRan(caller, command, input, reason, done);
     this.event({
       kind: "approval",
       text: `Approved: ${summarize(command, input)}. ${why}${done.ok ? "" : `. It failed: ${done.error ?? "error"}`}`,
@@ -1924,6 +2035,7 @@ export class AutonomyService {
 
   /** The driver woke the captain: the feed and the chat say why. */
   ticked(reasons: readonly string[], org?: string, chat?: string): void {
+    this.wakes.sent += 1;
     this.repo.setLastTick(this.now().toISOString());
     const last = reasons.at(-1) ?? "a check";
     const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;

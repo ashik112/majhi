@@ -63,8 +63,8 @@ export interface RunnerDeps {
  * A chore reached a daily cap while it had work: the owner is asked once that day whether to raise
  * it. After a raise the raised cap holds for the rest of the day, with no second question.
  */
-function askToRaise(
-  deps: RunnerDeps,
+export function askToRaise(
+  deps: Pick<RunnerDeps, "repo" | "now" | "capAsked">,
   ws: Workspace,
   chore: CaptainChore,
   kind: CaptainCapAsk["kind"],
