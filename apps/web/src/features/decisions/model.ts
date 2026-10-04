@@ -18,6 +18,7 @@ export const KIND_FILTERS = [
   { id: "access", label: DECISION_KIND_LABEL.approval },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
+  { id: "trust", label: DECISION_KIND_LABEL.trust },
 ] as const;
 export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
 
@@ -32,6 +33,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   paused: "paused",
   draft: "access",
   batch: "access",
+  trust: "trust",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {

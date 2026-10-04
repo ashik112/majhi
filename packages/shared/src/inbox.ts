@@ -19,6 +19,7 @@ export const OwnerDecisionKindSchema = z.enum([
   "secret",
   "draft",
   "batch",
+  "trust",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
@@ -156,6 +157,7 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   secret: "Access",
   draft: "Draft",
   batch: "Batch",
+  trust: "Trust",
 };
 
 export function roomDecisionId(task: string, item: string): string {
@@ -177,7 +179,9 @@ export type ParsedDecisionId =
   | { kind: "budget"; scope: string; day: string }
   | { kind: "signin"; account: string }
   | { kind: "draft"; id: number }
-  | { kind: "batch"; org: string; channel: string };
+  | { kind: "batch"; org: string; channel: string }
+  | { kind: "trust"; id: number }
+  | { kind: "ceiling"; month: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -199,6 +203,12 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   }
   if (head === "batch" && rest.length === 2 && rest.every((p) => p !== "")) {
     return { kind: "batch", org: rest[0] as string, channel: rest[1] as string };
+  }
+  if (head === "trust" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "trust", id: Number(rest[0]) };
+  }
+  if (head === "ceiling" && rest.length === 1 && /^\d{4}-\d{2}$/.test(rest[0] ?? "")) {
+    return { kind: "ceiling", month: rest[0] as string };
   }
   return undefined;
 }
