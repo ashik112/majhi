@@ -156,7 +156,7 @@ describe("connections commands", () => {
     expect(row("acme-lab")).toMatchObject({ level: "warn", detail: "Not tested since majhi started." });
     expect((await h.cmd("connections.get", { id: "acme-lab" })).body.lastTest).toBeUndefined();
     const fixed = await h.cmd("health.fix", { id: "connection:acme-lab" });
-    expect(fixed.body).toEqual({ ok: false, detail: "~/.ssh/config has no Host lab." });
+    expect(fixed.body).toEqual({ ok: false, detail: "~/.ssh/config has no Host lab. Use user@address, like root@203.0.113.10." });
   });
 
   it("sets a file from a connection upload of any type", async () => {
