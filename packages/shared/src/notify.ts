@@ -16,7 +16,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   approval: "Approvals",
   question: "Questions",
   secret: "Secret requests",
-  review: "Ready for review",
+  review: "Ready to ship",
   stopped: "Stopped or stuck",
   update: "Update failed",
   autonomy: "The captain and autonomous mode",

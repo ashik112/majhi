@@ -130,15 +130,19 @@ export const DecisionRecommendInputSchema = z.object({
 });
 export type DecisionRecommendInput = z.infer<typeof DecisionRecommendInputSchema>;
 
+/**
+ * One word per kind, in the queue, the filter chips, the detail head and the bell. Three server kinds share
+ * a word because the owner meets them the same way: a secret and a sign-in are both access.
+ */
 export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   question: "Question",
-  approval: "Approval",
-  ship: "Ready to ship",
-  budget: "Budget",
-  cap: "Daily limit",
+  approval: "Access",
+  ship: "Ship",
+  budget: "Money",
+  cap: "Money",
   paused: "Paused",
-  "sign-in": "Sign-in",
-  secret: "Secret",
+  "sign-in": "Access",
+  secret: "Access",
 };
 
 export function roomDecisionId(task: string, item: string): string {

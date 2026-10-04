@@ -42,7 +42,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "agents":
       return ["agents"];
     case "boss":
-      return ["agents", "config"];
+      // `boss.chat` only opens the captain chat. It must not emit: the page reads it under the agents key, so an
+      // event refetched it, which emitted again, and one open tab kept the server and every page busy.
+      return command === "boss.set" ? ["agents", "config"] : [];
     case "workspaces":
       return ["config"];
     case "projects":

@@ -4,6 +4,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
 import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { throttledInvalidator } from "./throttled-invalidate";
 import { bindTypingSender } from "./typing-signal";
 
 /**
@@ -38,9 +39,10 @@ export function useServerEvents(): void {
       if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
     });
 
+    const throttled = throttledInvalidator(client);
     const invalidate = (topics: readonly (typeof ALL_TOPICS)[number][]) => {
       for (const topic of topics) {
-        for (const queryKey of topicQueryKeys(topic)) void client.invalidateQueries({ queryKey });
+        for (const queryKey of topicQueryKeys(topic)) throttled.invalidate(queryKey);
       }
     };
 
@@ -75,6 +77,7 @@ export function useServerEvents(): void {
       stopped = true;
       window.clearTimeout(timer);
       window.clearInterval(heartbeat);
+      throttled.stop();
       bindTypingSender(null);
       socket?.close();
     };

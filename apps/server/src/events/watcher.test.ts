@@ -80,4 +80,8 @@ describe("topicsFor", () => {
     expect(topicsFor("connections.remove")).toEqual(["connections", "config", "secrets", "agents"]);
     expect(topicsFor("fs.listDirs")).toEqual([]);
   });
+
+  it("does not announce opening the captain chat: the page refetches it on that event, which looped", () => {
+    expect(topicsFor("boss.chat")).toEqual([]);
+  });
 });

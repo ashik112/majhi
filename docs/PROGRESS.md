@@ -1,5 +1,17 @@
 # Progress
 
+## Cohesion pass: one count, one name, a fast Captain page (built)
+
+- **One count.** Everything that waits for the owner is `decisions.list`. `needsYouCount` (`features/decisions/model.ts`) is the one definition and `useNeedsYou` feeds the sidebar, the bell, the tab title, the banner's "And N more", the Board readout (narrowed to the workspace filter), the Captain header and Needs you box, and the Decisions subtitle. The Board's column is now "Waiting" and its readout links to Decisions. Counts of failed health checks read "N to fix"; the agent rail reads "N waiting".
+- **One name per kind.** `DECISION_KIND_LABEL` is the table: Ship, Question, Access (approval, secret, sign-in), Money (budget, daily limit), Paused. The chips, rows, detail head and bell use it. "Ready for review" is "Ready to ship" everywhere. The room's review card runs stored text through `plainAuthorityText` (moved from `apps/server/src/inbox/plain.ts` to `packages/shared`), so "is set to Keeps things tidy" shows the plain authority sentence. `docs/glossary.md` lists the words.
+- **No global strip.** The Autonomous strip is gone. A dot on the sidebar's Captain row and the Captain header chip say a summary is new. The chip shows only the newest summary of today or yesterday that is unseen, and never in red. A hold on Autonomous shows as the tooltip of the sidebar's Autonomous row and in the Captain header sentence.
+- **One health clock.** `healthCheckedAt` takes the newest of every account's check and the page's own run. The sidebar and the Health page both read it.
+- **Sidebar.** "Update ready" is one 36px row above the agent lamps, with the changes in a panel above it. It no longer sits in the scrolling middle, so no navigation row hides: at 1440x900 every row shows, at 1100x760 and 900x700 the list scrolls inside the sidebar.
+- **Captain speed.** The page draws its shell at once (the header fills in when `captain.status` arrives). The Captain chunk and `captain.status` are warmed when the app is idle and when the pointer reaches the Captain row. Server events refetch a query at most once per 300 ms. The cause of the slowness on the live app was a loop: `boss.chat` was announced as a change (`agents`, `config`), the page refetched it on that event, and one open tab kept the server answering about 22 events a second and refetching the config, agents and onboarding lists each time. `boss.chat` no longer announces anything.
+- **Tests.** `features/decisions/model.test.ts` (the count), `lib/naming.test.ts` (retired words in `apps/web/src`), `events/watcher.test.ts` (`boss.chat` emits nothing), `packages/shared/src/plain-text.test.ts`. Shots and rules in `e2e/shots.captain.ts` (`cohesion`).
+- **Left:** Decisions "Merge" is still the action name where the room offers a Ship menu (Merge is one of its entries). The Board column and cards still say "Your turn" and "Finished" from their own lamps. `autonomy.status` takes about 0.6 s and `captain.status` about 0.35 s on the live data; both run on the single server thread and are in the captain and autonomy code, which this pass did not touch.
+
+
 ## Captain step 6b: staffing and lead handover (built)
 
 - **Staffing:** `staffTask` (`tasks/staffing.ts`) picks a lead and a team from slots, usage left, floors, budgets, cost, model tier against size, skills and past results, and gives one reason line. The captain's create or start without a team uses it and the room says why; `tasks.staff` (`majhi_tasks_staff`) shows the proposal.

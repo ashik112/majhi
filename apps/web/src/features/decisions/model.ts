@@ -1,29 +1,35 @@
-import { type DecisionLink, type OwnerDecision, type OwnerDecisionKind, PRIVATE } from "@majhi/shared";
+import {
+  DECISION_KIND_LABEL,
+  type DecisionLink,
+  type OwnerDecision,
+  type OwnerDecisionKind,
+  PRIVATE,
+} from "@majhi/shared";
 import type { BannerAction } from "../shell/model";
 
 /**
- * The kinds the filter offers. The server has eight; the owner thinks in six: a secret is something
- * an agent needs approved, and a daily limit of the captain is a budget question.
+ * The kinds the filter offers, named by the shared table so a chip and a row say the same word. The
+ * server has eight kinds; the owner meets five: an approval, a secret and a sign-in are all access, and
+ * the workspace budget and the captain's own budget are both money.
  */
 export const KIND_FILTERS = [
-  { id: "ship", label: "Ship" },
-  { id: "question", label: "Questions" },
-  { id: "approval", label: "Approvals" },
-  { id: "budget", label: "Budget" },
-  { id: "paused", label: "Paused" },
-  { id: "sign-in", label: "Sign-in" },
+  { id: "ship", label: DECISION_KIND_LABEL.ship },
+  { id: "question", label: DECISION_KIND_LABEL.question },
+  { id: "access", label: DECISION_KIND_LABEL.approval },
+  { id: "money", label: DECISION_KIND_LABEL.budget },
+  { id: "paused", label: DECISION_KIND_LABEL.paused },
 ] as const;
 export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
 
 const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   ship: "ship",
   question: "question",
-  approval: "approval",
-  secret: "approval",
-  budget: "budget",
-  cap: "budget",
+  approval: "access",
+  secret: "access",
+  "sign-in": "access",
+  budget: "money",
+  cap: "money",
   paused: "paused",
-  "sign-in": "sign-in",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {
@@ -159,4 +165,17 @@ export function primaryOption(
 ): OwnerDecision["options"][number] | undefined {
   const free = decision.options.filter((o) => blocked?.[o.id] === undefined);
   return free.find((o) => o.primary === true) ?? free.find((o) => o.text !== true) ?? free[0];
+}
+
+/**
+ * How many decisions wait for the owner: all of them, or one workspace's. The one definition of "needs
+ * you"; `useNeedsYou` feeds it the inbox. Unknown (undefined), not zero, until the list has loaded.
+ */
+export function needsYouCount(
+  decisions: readonly Pick<OwnerDecision, "org" | "task">[] | undefined,
+  org?: string,
+): number | undefined {
+  if (decisions === undefined) return undefined;
+  if (org === undefined) return decisions.length;
+  return decisions.filter((d) => workspaceOf(d) === org).length;
 }

@@ -39,7 +39,7 @@ export class OwnerCards {
   }
 
   /**
-   * "Ready for review", with the lead that "Ask for changes" addresses, and `why` when majhi meant
+   * "Ready to ship", with the lead that "Ask for changes" addresses, and `why` when majhi meant
    * to ship the task itself and could not.
    */
   review(task: Task, why?: string): RoomItem {

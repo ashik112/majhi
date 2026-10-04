@@ -7,12 +7,12 @@ import {
   type DecisionSuggestion,
   type OwnerDecision,
   type OwnerDecisionKind,
+  plainAuthorityText,
   type RoomItem,
   roomDecisionId,
   signInDecisionId,
 } from "@majhi/shared";
 import { oneLine, PAUSE_TEXT, type Subject } from "../notify/attention.ts";
-import { plainText } from "./plain.ts";
 
 /** The captain's stored opinion on a decision. */
 export interface Recommendation {
@@ -183,7 +183,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       if (item.ready === undefined) {
         return {
           kind: "ship",
-          title: `Ready for review: ${oneLine(subject.title, 120)}`,
+          title: `Ready to ship: ${oneLine(subject.title, 120)}`,
           sentence:
             repos === 0
               ? `${who} finished ${name}. It has no repo, so there is nothing to merge: read it, then mark it done or ask for changes.`
@@ -253,7 +253,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     const chosen =
       picked === undefined
         ? undefined
-        : { ...picked, reason: plainText(picked.reason, workspace).slice(0, 600) };
+        : { ...picked, reason: plainAuthorityText(picked.reason, workspace).slice(0, 600) };
     return chosen === undefined
       ? { options }
       : { options: withPrimary(options, chosen.option), suggestion: chosen };

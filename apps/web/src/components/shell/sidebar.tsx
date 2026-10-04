@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 import { useMemo } from "react";
@@ -10,16 +11,18 @@ import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
 import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
+import { useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
 import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
+import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
-import { useDecisions } from "@/lib/decision-queries";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
@@ -49,11 +52,11 @@ export function Sidebar() {
     >
       <Brand />
       <WorkspaceSwitcher />
-      {/* The middle scrolls only when an update notice or a short window needs the room. */}
+      {/* The middle scrolls only when a short window needs the room. The update row sits below it, never over it. */}
       <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pt-0.5 pb-2 scroll-fade">
-        <UpdateNotice />
         <MainNav />
       </div>
+      <UpdateNotice />
       <AgentsNow />
     </aside>
   );
@@ -121,7 +124,7 @@ function MainNav() {
   const checks = useHealthChecks().data?.checks;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const needYou = checksNeedingYou(checks);
-  const waiting = useDecisions().data?.decisions.length ?? 0;
+  const waiting = useNeedsYou() ?? 0;
   const pendingFacts = useFacts({ status: "pending" }).data ?? [];
   const projects = useProjects().data;
   const toReview = pendingFacts.length;
@@ -130,7 +133,7 @@ function MainNav() {
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
-  if (needYou > 0) badge.usage = { text: `${needYou} need you`, alert: true };
+  if (needYou > 0) badge.usage = { text: `${needYou} to fix`, alert: true };
   const isActive = (to: string) =>
     to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
 
@@ -227,11 +230,18 @@ function CaptainRow() {
   const { open, toggle } = useBoss();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const active = pathname.startsWith(PAGE_PATH.captain);
+  const now = useNow(60_000);
+  const summary = useUnseenSummary(now);
+  const client = useQueryClient();
+  const warm = () => prefetchCaptain(client);
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
       <Link
         to={PAGE_PATH.captain}
         search={{}}
+        onPointerEnter={warm}
+        onFocus={warm}
+        aria-description={summary === undefined ? undefined : "A new daily summary is ready"}
         aria-current={active ? "page" : undefined}
         className={cn(
           ITEM,
@@ -240,11 +250,19 @@ function CaptainRow() {
         )}
       >
         <span className="truncate">Captain</span>
+        {summary !== undefined && (
+          <span
+            aria-hidden="true"
+            title="A new daily summary is ready"
+            className="size-1.5 shrink-0 rounded-full bg-lamp-needs shadow-[0_0_6px_currentColor]"
+          />
+        )}
       </Link>
       <button
         type="button"
         aria-pressed={open}
         aria-label="Open the captain chat"
+        onPointerEnter={warm}
         title={`Open the captain chat (${MOD_KEY} J)`}
         onClick={toggle}
         className={cn(
@@ -268,9 +286,11 @@ function CaptainRow() {
 function AutonomyRow() {
   const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
   const lamp = MODE_LAMP[mode];
+  // What holds Autonomous (a budget, an account under its floor) was a banner on every page; it is the tooltip now.
+  const hold = status?.holds[0]?.text;
   return (
     <div
-      title={unavailable}
+      title={hold ?? unavailable}
       className="mb-1 ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
     >
       <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
@@ -294,6 +314,7 @@ function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
+  const checksAt = useHealthChecks().data?.checkedAt;
   const now = useNow(30_000);
   const pulse = useMemo(
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
@@ -333,7 +354,7 @@ function AgentsNow() {
         ))}
       </ul>
       <p className="truncate px-1 text-xs text-fg-faint [@media(max-height:799px)]:hidden">
-        {healthCheckedText(accounts ?? [], now)}
+        {healthCheckedText(accounts ?? [], now, checksAt)}
       </p>
       <div className="hidden items-center gap-3 pl-1 [@media(max-height:799px)]:flex">
         <ul aria-label="Agents right now" className="flex min-w-0 flex-1 items-center gap-3">

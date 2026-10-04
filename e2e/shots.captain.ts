@@ -982,3 +982,151 @@ test("the Now column scrolls as one panel down to Did recently", async ({ page }
     await noPageScroll(page);
   }
 });
+
+// One count, one name, no global strip, an update row that never hides the navigation ------------------
+//
+// The board has more tasks that wait than the inbox has decisions, the update notice is showing, and the
+// summary is either yesterday's (fresh) or two days old (stale). Screenshots go to COHESION_SHOTS.
+
+const COHESION = process.env.COHESION_SHOTS ?? `${SHOTS}/cohesion`;
+const UPDATE = {
+  running: "aaaaaaa1111111",
+  onDisk: "bbbbbbb2222222",
+  canUpdate: true,
+  dirty: false,
+  updateReady: true,
+  changes: [
+    "feat(health): checks with fixes",
+    "fix(shell): banner spacing",
+    "feat(decisions): one name per kind",
+    "fix(captain): the summary chip only shows for the last two days",
+  ],
+};
+
+/** 14 tasks that stopped (in review or paused) next to the usual rows, so the Waiting column is long. */
+function boardRows() {
+  const waiting = Array.from({ length: 14 }, (_, i) => ({
+    ...taskRow(`GOA-${100 + i}`, `Task number ${i + 1} that stopped and waits to be picked up`, "goama"),
+    status: i % 3 === 0 ? "paused" : "review",
+    ...(i % 3 === 0 ? { pausedReason: "limit" } : {}),
+  }));
+  return [...CHATS, ...Object.entries(TITLES).map(([id, title]) => taskRow(id, title)), ...waiting];
+}
+
+async function openCohesion(
+  page: Page,
+  path: string,
+  w: number,
+  h: number,
+  theme: string,
+  summary: "fresh" | "stale" = "fresh",
+) {
+  await page.setViewportSize({ width: w, height: h });
+  await stub(page, REAL_ON, { decisions: decisions() });
+  await page.route("**/api/cmd/tasks.list", (r) => r.fulfill({ json: boardRows() }));
+  await page.route("**/api/cmd/system.version", (r) => r.fulfill({ json: UPDATE }));
+  if (summary === "stale") {
+    const status = autonomy(REAL_ON);
+    await page.route("**/api/cmd/autonomy.status", (r) =>
+      r.fulfill({
+        json: { ...status, summary: status.summary && { ...status.summary, day: "2026-10-02" } },
+      }),
+    );
+  }
+  await page.goto(path);
+  await page.evaluate((t) => {
+    document.documentElement.dataset.theme = t;
+  }, theme);
+  await page.waitForTimeout(900);
+}
+
+for (const [w, h] of [
+  [1440, 900],
+  [1100, 760],
+  [900, 700],
+] as const) {
+  for (const theme of ["dark", "light"]) {
+    test(`cohesion shots ${w} ${theme}`, async ({ page }) => {
+      await openCohesion(page, "/", w, h, theme);
+      await page.screenshot({ path: `${COHESION}/board-${w}-${theme}.png` });
+      await page
+        .locator("aside[aria-label=Sidebar]")
+        .screenshot({ path: `${COHESION}/sidebar-${w}-${theme}.png` });
+      await openCohesion(page, "/captain", w, h, theme);
+      await page.screenshot({ path: `${COHESION}/captain-${w}-${theme}.png` });
+      await openCohesion(page, "/captain", w, h, theme, "stale");
+      await page.screenshot({ path: `${COHESION}/captain-stale-${w}-${theme}.png` });
+      await openCohesion(page, "/decisions", w, h, theme);
+      await page.screenshot({ path: `${COHESION}/decisions-${w}-${theme}.png` });
+    });
+  }
+}
+
+test("cohesion rules: every screen counts the same decisions", async ({ page }) => {
+  await openCohesion(page, "/", 1440, 900, "dark");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav.getByRole("link", { name: /^Decisions/ })).toContainText("5");
+  await expect(page.getByRole("link", { name: /5 need you/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Decisions, 5 need you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Waiting" })).toBeVisible();
+  await page.goto("/captain");
+  await expect(page.getByText("5 decisions wait for you.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Needs you" })).toContainText("5");
+  await page.goto("/decisions");
+  await expect(page.getByText("5 waiting for you")).toBeVisible();
+});
+
+test("cohesion rules: a kind has one name in the chips and the rows", async ({ page }) => {
+  await openCohesion(page, "/decisions", 1440, 900, "dark");
+  await expect(page.getByRole("button", { name: /^Ship \d/ })).toBeVisible();
+  for (const retired of [/Ready for review/, /Daily limit/, /^Approvals/]) {
+    await expect(page.getByText(retired)).toHaveCount(0);
+  }
+});
+
+test("cohesion rules: no strip on any page, a dot on Captain, a chip only for the last two days", async ({
+  page,
+}) => {
+  await openCohesion(page, "/", 1440, 900, "dark");
+  await expect(page.getByRole("region", { name: "Autonomous" })).toHaveCount(0);
+  const row = page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Captain", exact: true });
+  await expect(row).toHaveAccessibleDescription("A new daily summary is ready");
+  await row.click();
+  const chip = page.getByRole("button", { name: /^Yesterday: shipped 30/ });
+  await expect(chip).toBeVisible();
+  await chip.click();
+  await page.keyboard.press("Escape");
+  await expect(row).not.toHaveAccessibleDescription("A new daily summary is ready");
+  await expect(chip).toHaveCount(0);
+
+  await openCohesion(page, "/captain", 1440, 900, "dark", "stale");
+  await expect(page.getByRole("button", { name: /shipped 30/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Summary" })).toBeVisible();
+});
+
+test("cohesion rules: the update row never hides a navigation row", async ({ page }) => {
+  await openCohesion(page, "/", 1440, 900, "dark");
+  const region = page.getByRole("region", { name: "Update ready" });
+  await expect(region).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "Main" });
+  for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
+    await expect(nav.getByRole("link", { name })).toBeInViewport();
+  }
+  for (const [w, h] of [
+    [1100, 760],
+    [900, 700],
+  ] as const) {
+    await openCohesion(page, "/", w, h, "dark");
+    await expect(region).toBeInViewport();
+    for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
+      const link = nav.getByRole("link", { name });
+      await link.scrollIntoViewIfNeeded();
+      await expect(link).toBeInViewport();
+    }
+  }
+  await region.getByRole("button", { name: /Update ready/ }).click();
+  await expect(region.getByRole("list", { name: "Changes" })).toContainText("feat(health)");
+  await page.screenshot({ path: `${COHESION}/update-open-900-dark.png` });
+});

@@ -1,5 +1,5 @@
 import type { CaptainStatus, CommandInput, CommandOutput } from "@majhi/shared";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -15,6 +15,20 @@ export function useCaptainStatus() {
     queryFn: () => cmd("captain.status", {}),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Warms the Captain page: its code and `captain.status` (the sidebar already keeps `autonomy.status`), so opening it paints from the cache. Called when the
+ * app is idle after the first paint and when the pointer reaches the Captain link or the chat button.
+ * `captain.status` is not cheap on the server, so a read newer than `fresh` ms is left alone.
+ */
+export function prefetchCaptain(client: QueryClient, fresh = 30_000): void {
+  void import("@/pages/captain-page");
+  void client.prefetchQuery({
+    queryKey: statusKey,
+    queryFn: () => cmd("captain.status", {}),
+    staleTime: fresh,
   });
 }
 
