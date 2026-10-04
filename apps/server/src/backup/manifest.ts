@@ -100,14 +100,16 @@ export async function checkFiles(root: string, manifest: Manifest): Promise<void
   if (unsafe.length > 0) throw new Damaged(`The backup holds ${unsafe[0]}, which is not a plain file.`);
   const listed = new Map(manifest.files.map((f) => [f.path, f]));
   for (const path of files) {
-    if (path !== MANIFEST_FILE && !listed.has(path)) throw new Damaged(`The backup holds ${path}, which its manifest does not list.`);
+    if (path !== MANIFEST_FILE && !listed.has(path))
+      throw new Damaged(`The backup holds ${path}, which its manifest does not list.`);
   }
   const present = new Set(files);
   for (const file of manifest.files) {
     if (!present.has(file.path)) throw new Damaged(`The backup is missing ${file.path}.`);
     const full = join(root, file.path);
     if ((await lstat(full)).size !== file.bytes) throw new Damaged(`${file.path} has the wrong size.`);
-    if ((await sha256File(full)) !== file.sha256) throw new Damaged(`${file.path} does not match its checksum.`);
+    if ((await sha256File(full)) !== file.sha256)
+      throw new Damaged(`${file.path} does not match its checksum.`);
   }
 }
 

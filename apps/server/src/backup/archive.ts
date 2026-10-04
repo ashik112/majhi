@@ -1,11 +1,11 @@
-import { copyFile, lstat, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { copyFile, lstat, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BackupKind } from "@majhi/shared";
 import Database from "better-sqlite3";
 import type { ConfigHistory } from "../config/history.ts";
 import { errorMessage, UserError } from "../errors.ts";
-import { type Lock, decryptStream, encryptStream } from "./crypto.ts";
+import { decryptStream, encryptStream, type Lock } from "./crypto.ts";
 import {
   BUNDLE_FILE,
   checkFiles,
@@ -28,7 +28,18 @@ export const EXCLUDED = [
 ];
 
 /** Top-level names in the majhi home that never go into an archive, though git may not ignore them. */
-const NEVER = new Set(["backups", "rollback", "restore-staging", "run", "cache", "accounts", "agent-homes", "connections", "logs", "bin"]);
+const NEVER = new Set([
+  "backups",
+  "rollback",
+  "restore-staging",
+  "run",
+  "cache",
+  "accounts",
+  "agent-homes",
+  "connections",
+  "logs",
+  "bin",
+]);
 
 /** Files up to this size are scanned for an age identity before they are copied. */
 const KEY_SCAN_MAX = 4 * 1024 * 1024;
@@ -64,7 +75,8 @@ export function stamp(at: Date): string {
     .replace(/\.\d+Z$/, "Z");
 }
 
-export const ARCHIVE_NAME = /^majhi-(daily|manual|before-update|before-migration|before-restore)-(\d{8}T\d{6}Z)\.age$/;
+export const ARCHIVE_NAME =
+  /^majhi-(daily|manual|before-update|before-migration|before-restore)-(\d{8}T\d{6}Z)\.age$/;
 
 /** Newest applied migration id of a database file, or null when it has no migrations table. */
 export function newestMigration(file: string): number | null {
@@ -84,7 +96,9 @@ export function newestMigration(file: string): number | null {
  * with age while it streams to disk. The archive is written under a `.part` name and renamed only
  * when every byte is on disk, so a full disk or a crash leaves no file that looks like a backup.
  */
-export async function createBackup(opts: CreateOptions): Promise<{ name: string; bytes: number; manifest: Manifest }> {
+export async function createBackup(
+  opts: CreateOptions,
+): Promise<{ name: string; bytes: number; manifest: Manifest }> {
   await mkdir(opts.work, { recursive: true });
   const stage = await mkdtemp(join(opts.work, "backup-"));
   const migrations: Manifest["migrations"] = { majhi: null, memory: null };
@@ -216,6 +230,6 @@ export async function unpackArchive(file: string, lock: Lock, into: string): Pro
     return manifest;
   } catch (err) {
     if (err instanceof UserError) throw err;
-    throw new Damaged(errorMessage(err));
+    throw new Damaged(`the file is cut off or has been changed (${errorMessage(err)})`);
   }
 }

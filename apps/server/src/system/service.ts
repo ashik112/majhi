@@ -151,7 +151,9 @@ export class SystemService {
     if (blocked !== undefined) return blocked;
     try {
       await this.deps.beforeUpdate?.().catch((err: unknown) => {
-        console.error(`The backup before the update failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(
+          `The backup before the update failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       });
       await hostLink.call("update", {});
       return { state: "restarting" };

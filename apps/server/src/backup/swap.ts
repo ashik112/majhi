@@ -1,12 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 
@@ -108,7 +100,10 @@ export function readResult(home: string, now: Date = new Date()): RestoreResult 
 }
 
 /** Records a verified tree to swap in at the next start. Nothing live is touched yet. */
-export function stageSwap(home: string, request: { id: string; name: string; staged: string; now: Date }): Journal {
+export function stageSwap(
+  home: string,
+  request: { id: string; name: string; staged: string; now: Date },
+): Journal {
   const journal: Journal = {
     version: 1,
     id: request.id,
@@ -196,7 +191,11 @@ function pruneRollbacks(home: string): void {
  * step fails, or a previous start died halfway, everything is put back and the failure is recorded
  * for the Backups section. Returns whether a restore was applied.
  */
-export function applyPendingRestore(home: string, fs: SwapFs = realFs, now: () => Date = () => new Date()): boolean {
+export function applyPendingRestore(
+  home: string,
+  fs: SwapFs = realFs,
+  now: () => Date = () => new Date(),
+): boolean {
   const journal = readJournal(home);
   if (journal === undefined) return false;
   if (journal.state === "staged") {
@@ -226,7 +225,9 @@ function abortSwap(home: string, journal: Journal, fs: SwapFs, detail: string, n
     undo(home, journal, fs);
   } catch (err) {
     // The journal stays in `swapping`, so the next start tries to put things back again.
-    console.error(`majhi could not undo a failed restore: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `majhi could not undo a failed restore: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return false;
   }
   finish(home, journal, "rolled-back", { at: now().toISOString(), ok: false, detail });

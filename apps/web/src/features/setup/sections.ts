@@ -57,7 +57,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   e2e: "When the full e2e suite runs on this computer: off, after each merge into main, or daily.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
-  backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",
+  backups: "Encrypted backups of your data: daily, before updates, tested weekly, with restore.",
   history: "Every change to majhi.yaml, by you, the captain or a hand edit.",
 };
 

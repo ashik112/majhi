@@ -1495,3 +1495,19 @@ A fresh clone runs with one command, lets the owner pick workspace roots, and sh
 - Port `7070` on `127.0.0.1`.
 - Scan depth 4 below each root.
 - Answers from the owner: name majhi, first root `~/Work`, config folder `~/.majhi`, stack and memory design approved.
+
+## Backups and restore of majhi's data (built)
+
+**Status.** Built on `worktree-agent-a50a98df07d88978b`, from `main`. Captain v2 essential 10 (`docs/briefs/captain-v2-playbooks.md`). SPEC 5.19; decisions dated 2026-10-04. Replaces the PRV-31 snapshot of `majhi.db` alone.
+
+**What works.**
+- One age-encrypted archive per backup: both databases (online backup API), the config history (git bundle) and its files, and `secrets.age` as it is on disk. Never the key, logins, connection credentials or caches. Manifest with versions, migration ids and checksums.
+- Daily, before `system.update`, before a migration at start, before a restore, and on request. Folder is the default `backups/` or one the owner picks with the folder browser. 7 daily, 4 weekly, 3 of each other kind; the last good backup is never deleted.
+- Test restore (weekly and on demand) into a temp folder; result in Hub setup and the Health checks "Backups" and "Backup test restore".
+- Restore: verify, back up what is there, stage, restart; the next start swaps with a journal, keeps a rollback, and undoes itself on any failure.
+
+**How to try it.** Hub setup, Backups: Back up now, Test restore, Restore on a row. Health shows the two checks. Tests: `npx vitest run apps/server/src/backup`.
+
+**Measured.** 300 MB database: backup 8 s (text-like data, 98 MB archive) to 17 s (incompressible, 302 MB), test restore 4 to 6 s, about 300 MB of memory.
+
+**Left.** The destination check needs a real container with a mounted folder to prove (owner: pick an iCloud or Dropbox folder on a real install and read the mount message). Restore restarts itself only under docker compose; elsewhere the section says to run `make up`. Old `daily-*.db` snapshots are listed and restorable but not written any more.

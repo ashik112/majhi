@@ -23,7 +23,9 @@ export function mountPoints(mountinfo: string): string[] {
  */
 export function isMounted(path: string, mounts: readonly string[]): boolean {
   return mounts.some(
-    (m) => !SYSTEM_MOUNTS.some((s) => m === s || m.startsWith(`${s}/`)) && (path === m || path.startsWith(`${m}/`)),
+    (m) =>
+      !SYSTEM_MOUNTS.some((s) => m === s || m.startsWith(`${s}/`)) &&
+      (path === m || path.startsWith(`${m}/`)),
   );
 }
 
@@ -50,7 +52,9 @@ export async function checkDestination(home: string, input: string, env: Destina
   const rel = relative(home, path);
   const insideHome = rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   if (insideHome && path !== defaultDir(home) && !path.startsWith(`${defaultDir(home)}/`)) {
-    throw new UserError("Choose a folder outside the majhi home. Backups kept inside it would be backed up again.");
+    throw new UserError(
+      "Choose a folder outside the majhi home. Backups kept inside it would be backed up again.",
+    );
   }
   if (env.container && !isMounted(path, mountPoints(env.mountinfo ?? ""))) {
     throw new UserError(

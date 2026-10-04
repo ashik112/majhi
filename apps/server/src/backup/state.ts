@@ -16,7 +16,9 @@ export type BackupSettings = z.infer<typeof SettingsSchema>;
  * folder may be a synced one that majhi should not write bookkeeping into) and the last failure.
  */
 const StateSchema = z.object({
-  verifies: z.record(z.string(), BackupVerifySchema.extend({ damaged: z.boolean().default(false) })).default({}),
+  verifies: z
+    .record(z.string(), BackupVerifySchema.extend({ damaged: z.boolean().default(false) }))
+    .default({}),
   lastVerify: BackupVerifySchema.extend({ name: z.string() }).optional(),
   lastError: z.object({ at: z.string(), detail: z.string() }).optional(),
 });
@@ -66,5 +68,7 @@ export function writeState(home: string, state: BackupState): Promise<void> {
 /** The folder backups go to now. */
 export async function destinationOf(home: string): Promise<{ path: string; custom: boolean }> {
   const { destination } = await readSettings(home);
-  return destination === undefined ? { path: defaultDir(home), custom: false } : { path: destination, custom: true };
+  return destination === undefined
+    ? { path: defaultDir(home), custom: false }
+    : { path: destination, custom: true };
 }

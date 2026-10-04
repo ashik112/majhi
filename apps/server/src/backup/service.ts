@@ -13,8 +13,15 @@ import Database from "better-sqlite3";
 import type { ConfigHistory } from "../config/history.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { decrypts } from "../secrets/store.ts";
-import { ARCHIVE_NAME, createBackup, type DbSource, newestMigration, stamp, unpackArchive } from "./archive.ts";
-import { Locked, type Lock, lockOf } from "./crypto.ts";
+import {
+  ARCHIVE_NAME,
+  createBackup,
+  type DbSource,
+  newestMigration,
+  stamp,
+  unpackArchive,
+} from "./archive.ts";
+import { type Lock, Locked, lockOf } from "./crypto.ts";
 import { checkDestination, type DestinationEnv, hostDestinationEnv, probeWritable } from "./destination.ts";
 import { Damaged, type Manifest } from "./manifest.ts";
 import { selectPrune } from "./retention.ts";
@@ -172,13 +179,21 @@ export class BackupService {
           bytes: f.bytes,
           lock: f.lock,
           legacy: f.legacy,
-          ...(verified === undefined ? {} : { verified: { at: verified.at, ok: verified.ok, detail: verified.detail } }),
+          ...(verified === undefined
+            ? {}
+            : { verified: { at: verified.at, ok: verified.ok, detail: verified.detail } }),
         };
       }),
-      destination: { path: dest.path, custom: dest.custom, ...(unreachable === undefined ? {} : { error: unreachable }) },
+      destination: {
+        path: dest.path,
+        custom: dest.custom,
+        ...(unreachable === undefined ? {} : { error: unreachable }),
+      },
       ...(files[0] === undefined ? {} : { lastAt: files[0].at }),
       ...(newestDaily === undefined ? {} : { lastDaily: newestDaily.at }),
-      nextAt: new Date((newestDaily === undefined ? this.clock().getTime() : Date.parse(newestDaily.at) + DAY_MS)).toISOString(),
+      nextAt: new Date(
+        newestDaily === undefined ? this.clock().getTime() : Date.parse(newestDaily.at) + DAY_MS,
+      ).toISOString(),
       ...(state.lastVerify === undefined ? {} : { lastVerify: state.lastVerify }),
       ...(state.lastError === undefined ? {} : { lastError: state.lastError }),
       ...(pending === undefined ? {} : { pending: "A restore is ready. majhi restarts onto it." }),
@@ -219,7 +234,10 @@ export class BackupService {
     const files = await this.files();
     const entry = name === undefined ? files[0] : files.find((f) => f.name === name);
     if (entry === undefined) {
-      throw new UserError(name === undefined ? "There is no backup to check yet." : `There is no backup named ${name}.`, 404);
+      throw new UserError(
+        name === undefined ? "There is no backup to check yet." : `There is no backup named ${name}.`,
+        404,
+      );
     }
     return this.exclusive("verify", () => this.check(entry, passphrase));
   }
@@ -229,7 +247,10 @@ export class BackupService {
    * copy and restarts majhi. The swap itself runs at the start of the next process, before any file
    * is open (swap.ts), and is undone on any failure.
    */
-  async restore(name: string, passphrase?: string): Promise<{ restored: string; safety: string; restarting: boolean }> {
+  async restore(
+    name: string,
+    passphrase?: string,
+  ): Promise<{ restored: string; safety: string; restarting: boolean }> {
     return this.exclusive("restore", async () => {
       if (readPending(this.home) !== undefined) throw new UserError("A restore is already waiting.", 409);
       const entry = (await this.files()).find((f) => f.name === name);
@@ -248,7 +269,10 @@ export class BackupService {
         safety = await this.take("before-restore");
       } catch (err) {
         await rm(root, { recursive: true, force: true });
-        throw new UserError(`The restore did not start: majhi could not back up the current data first (${errorMessage(err)}).`, 409);
+        throw new UserError(
+          `The restore did not start: majhi could not back up the current data first (${errorMessage(err)}).`,
+          409,
+        );
       }
       stageSwap(this.home, { id, name: entry.name, staged: join(root, "data"), now: this.clock() });
       this.options.restart?.();
@@ -298,7 +322,10 @@ export class BackupService {
     }
     const identity = await this.options.key();
     if (identity === undefined) {
-      throw new UserError("majhi has no secrets key yet, so it cannot lock a backup. Set up secrets first.", 409);
+      throw new UserError(
+        "majhi has no secrets key yet, so it cannot lock a backup. Set up secrets first.",
+        409,
+      );
     }
     return { kind: "key", identity };
   }
@@ -315,12 +342,16 @@ export class BackupService {
         lock,
         now: this.clock(),
         version: this.options.version,
-        databases: this.options.databases().filter((d) => d.rel === "majhi.db" || d.rel === "memory/memory.db"),
+        databases: this.options
+          .databases()
+          .filter((d) => d.rel === "majhi.db" || d.rel === "memory/memory.db"),
         history: this.options.history,
         ...(this.options.beforeWrite === undefined ? {} : { beforeWrite: this.options.beforeWrite }),
       });
       await this.setError(undefined);
-      await this.prune().catch((err: unknown) => console.error(`Could not prune backups: ${errorMessage(err)}`));
+      await this.prune().catch((err: unknown) =>
+        console.error(`Could not prune backups: ${errorMessage(err)}`),
+      );
       return made.name;
     } catch (err) {
       await this.setError(errorMessage(err));
@@ -340,7 +371,12 @@ export class BackupService {
     const state = await readState(this.home);
     const files = await this.files();
     const drop = selectPrune(
-      files.map((f) => ({ name: f.name, kind: f.kind, at: f.at, usable: state.verifies[f.name]?.damaged !== true })),
+      files.map((f) => ({
+        name: f.name,
+        kind: f.kind,
+        at: f.at,
+        usable: state.verifies[f.name]?.damaged !== true,
+      })),
       { daily: BACKUP_KEEP_DAILY, weekly: BACKUP_KEEP_WEEKLY, safety: BACKUP_KEEP_SAFETY },
     );
     for (const name of drop) {
@@ -352,7 +388,11 @@ export class BackupService {
   }
 
   /** Unpacks and validates a backup into `root`. Throws `Locked` when the key or passphrase does not open it. */
-  private async prepare(entry: Entry, passphrase: string | undefined, root: string): Promise<{ manifest: Manifest; detail: string }> {
+  private async prepare(
+    entry: Entry,
+    passphrase: string | undefined,
+    root: string,
+  ): Promise<{ manifest: Manifest; detail: string }> {
     await mkdir(root, { recursive: true });
     if (entry.legacy) {
       await mkdir(join(root, "data"), { recursive: true });
@@ -377,12 +417,16 @@ export class BackupService {
   private async lockToOpen(entry: Entry, passphrase: string | undefined): Promise<Lock> {
     if (entry.lock === "none") throw new Damaged("it is not an encrypted majhi backup");
     if (entry.lock === "passphrase") {
-      if (passphrase === undefined) throw new Locked("This backup is locked with a passphrase. Type it to continue.", 400);
+      if (passphrase === undefined)
+        throw new Locked("This backup is locked with a passphrase. Type it to continue.", 400);
       return { kind: "passphrase", passphrase };
     }
     const identity = await this.options.key();
     if (identity === undefined) {
-      throw new Locked("This backup is locked with the secrets key, which this computer does not have. Restore the key first.", 409);
+      throw new Locked(
+        "This backup is locked with the secrets key, which this computer does not have. Restore the key first.",
+        409,
+      );
     }
     return { kind: "key", identity };
   }
@@ -403,7 +447,10 @@ export class BackupService {
     }
   }
 
-  private async check(entry: Entry, passphrase: string | undefined): Promise<{ name: string; result: BackupVerify }> {
+  private async check(
+    entry: Entry,
+    passphrase: string | undefined,
+  ): Promise<{ name: string; result: BackupVerify }> {
     const scratch = await mkdtemp(await scratchBase(this.home));
     let result: BackupVerify;
     let damaged = false;
@@ -431,14 +478,19 @@ export class BackupService {
   /** Checks the newest key-locked backup when the last check is a week old. */
   private async ensureWeeklyCheck(): Promise<void> {
     const state = await readState(this.home);
-    if (state.lastVerify !== undefined && this.clock().getTime() - Date.parse(state.lastVerify.at) < WEEK_MS) return;
+    if (state.lastVerify !== undefined && this.clock().getTime() - Date.parse(state.lastVerify.at) < WEEK_MS)
+      return;
     const target = (await this.files()).find((f) => f.lock === "key");
     if (target === undefined) return;
     try {
       await this.exclusive("verify", () => this.check(target, undefined));
     } catch (err) {
       if (!(err instanceof Locked)) throw err;
-      await this.remember(target.name, { at: this.clock().toISOString(), ok: false, detail: err.message }, false);
+      await this.remember(
+        target.name,
+        { at: this.clock().toISOString(), ok: false, detail: err.message },
+        false,
+      );
     }
   }
 
@@ -486,7 +538,15 @@ export class BackupService {
       if (m === null) continue;
       const info = await stat(join(old, name)).catch(() => undefined);
       if (info === undefined) continue;
-      out.push({ name, path: join(old, name), kind: m[1] as BackupKind, at: stampToIso(m[2] ?? ""), bytes: info.size, lock: "none", legacy: true });
+      out.push({
+        name,
+        path: join(old, name),
+        kind: m[1] as BackupKind,
+        at: stampToIso(m[2] ?? ""),
+        bytes: info.size,
+        lock: "none",
+        legacy: true,
+      });
     }
     return out.sort((a, b) => (a.at === b.at ? b.name.localeCompare(a.name) : b.at.localeCompare(a.at)));
   }

@@ -11,8 +11,8 @@ import { openMemoryDb } from "../memory/db.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { Store } from "../store/index.ts";
 import { MIGRATIONS, migrate } from "../store/migrations.ts";
-import { prepareStart } from "./boot.ts";
 import { createBackup, type DbSource, unpackArchive } from "./archive.ts";
+import { prepareStart } from "./boot.ts";
 import { Locked } from "./crypto.ts";
 import { isMounted, mountPoints } from "./destination.ts";
 import { walk } from "./manifest.ts";
@@ -60,7 +60,9 @@ function sources(): DbSource[] {
   ];
 }
 
-function makeService(over: { key?: () => Promise<string | undefined>; databases?: () => DbSource[]; dir?: string } = {}): BackupService {
+function makeService(
+  over: { key?: () => Promise<string | undefined>; databases?: () => DbSource[]; dir?: string } = {},
+): BackupService {
   return new BackupService({
     majhiHome: home,
     databases: over.databases ?? sources,
@@ -151,7 +153,15 @@ describe("a backup", () => {
       ]),
     );
     // Not in an archive: logins, connection credentials, the key, the backups themselves.
-    expect(files.some((f) => f.includes("accounts") || f.includes("connections") || f.includes("secrets.key") || f.includes("backups"))).toBe(false);
+    expect(
+      files.some(
+        (f) =>
+          f.includes("accounts") ||
+          f.includes("connections") ||
+          f.includes("secrets.key") ||
+          f.includes("backups"),
+      ),
+    ).toBe(false);
   });
 
   it("never holds a secret or the key in plain text, in the archive or around it", async () => {
@@ -320,7 +330,9 @@ describe("verify", () => {
     expect(result.detail).toMatch(/database ok.*memory ok.*config history at [0-9a-f]{7}/);
     expect(readFileSync(join(home, "majhi.db")).length).toBeGreaterThan(0);
     expect(before.length).toBeGreaterThan(0);
-    expect(await readdir(join(home, "run")).then((n) => n.filter((x) => x.startsWith("backup-check")))).toEqual([]);
+    expect(
+      await readdir(join(home, "run")).then((n) => n.filter((x) => x.startsWith("backup-check"))),
+    ).toEqual([]);
     expect((await backup.list()).lastVerify).toMatchObject({ name, ok: true });
   });
 
@@ -377,7 +389,9 @@ describe("verify", () => {
         backup: async (dest) => {
           await store.raw.backup(dest);
           const copy = new Database(dest);
-          copy.prepare("INSERT INTO migrations (id, name, applied_at) VALUES (99999, 'from the future', 'x')").run();
+          copy
+            .prepare("INSERT INTO migrations (id, name, applied_at) VALUES (99999, 'from the future', 'x')")
+            .run();
           copy.close();
         },
       },
@@ -504,12 +518,21 @@ describe("restore", () => {
       const db = new Database(file);
       migrate(db, MIGRATIONS.slice(0, 5));
       db.close();
-      const env = { majhiHome: old, secretsKeyFile: join(old, "key"), version: "1", commit: "c" } as ServerEnv;
+      const env = {
+        majhiHome: old,
+        secretsKeyFile: join(old, "key"),
+        version: "1",
+        commit: "c",
+      } as ServerEnv;
       await prepareStart(env);
       const made = (await readdir(join(old, "backups"))).filter((n) => n.includes("before-migration"));
       expect(made).toHaveLength(1);
       const out = join(old, "peek");
-      const manifest = await unpackArchive(join(old, "backups", made[0] ?? ""), { kind: "key", identity }, out);
+      const manifest = await unpackArchive(
+        join(old, "backups", made[0] ?? ""),
+        { kind: "key", identity },
+        out,
+      );
       expect(manifest.migrations.majhi).toBe(MIGRATIONS[4]?.id);
       // Once the database is current there is nothing to protect.
       const current = new Database(file);

@@ -29,7 +29,11 @@ describe("selectPrune", () => {
       usable: true,
     }));
     const drop = selectPrune(all, RULES);
-    expect(drop.sort()).toEqual(["majhi-before-update-0.age", "majhi-before-update-1.age", "majhi-before-update-2.age"]);
+    expect(drop.sort()).toEqual([
+      "majhi-before-update-0.age",
+      "majhi-before-update-1.age",
+      "majhi-before-update-2.age",
+    ]);
   });
 
   it("never deletes the only good backup, even when damaged ones are newer and the limits are zero", () => {
@@ -40,7 +44,10 @@ describe("selectPrune", () => {
   });
 
   it("does not let damaged copies take a slot or push good ones out", () => {
-    const all = [...Array.from({ length: 7 }, (_, i) => daily(i)), ...Array.from({ length: 7 }, (_, i) => daily(10 + i, false))];
+    const all = [
+      ...Array.from({ length: 7 }, (_, i) => daily(i)),
+      ...Array.from({ length: 7 }, (_, i) => daily(10 + i, false)),
+    ];
     const drop = new Set(selectPrune(all, RULES));
     for (const good of all.filter((b) => b.usable)) expect(drop.has(good.name)).toBe(false);
   });
@@ -50,7 +57,12 @@ describe("selectPrune", () => {
   });
 
   it("keeps the newest good backup of any kind", () => {
-    const only: Kept = { name: "majhi-before-restore-1.age", kind: "before-restore", at: "2026-09-01T00:00:00.000Z", usable: true };
+    const only: Kept = {
+      name: "majhi-before-restore-1.age",
+      kind: "before-restore",
+      at: "2026-09-01T00:00:00.000Z",
+      usable: true,
+    };
     expect(selectPrune([only], { daily: 0, weekly: 0, safety: 0 })).toEqual([]);
   });
 });

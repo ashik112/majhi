@@ -1,9 +1,27 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyPendingRestore, cancelStaged, JOURNAL_FILE, readPending, readResult, type SwapFs, stageSwap } from "./swap.ts";
+import {
+  applyPendingRestore,
+  cancelStaged,
+  JOURNAL_FILE,
+  readPending,
+  readResult,
+  type SwapFs,
+  stageSwap,
+} from "./swap.ts";
 
 let home: string;
 

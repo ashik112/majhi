@@ -30,7 +30,10 @@ export async function prepareStart(env: ServerEnv): Promise<void> {
     console.error(`majhi could not apply the staged restore: ${errorMessage(err)}`);
   }
   const home = env.majhiHome;
-  if (!behind(join(home, "majhi.db"), MIGRATIONS) && !behind(join(home, "memory", "memory.db"), MEMORY_MIGRATIONS)) {
+  if (
+    !behind(join(home, "majhi.db"), MIGRATIONS) &&
+    !behind(join(home, "memory", "memory.db"), MEMORY_MIGRATIONS)
+  ) {
     return;
   }
   const secrets = new SecretStore(home, env.secretsKeyFile);

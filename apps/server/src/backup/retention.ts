@@ -23,7 +23,8 @@ export function weekOf(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-const newestFirst = (a: Kept, b: Kept) => (a.at === b.at ? b.name.localeCompare(a.name) : b.at.localeCompare(a.at));
+const newestFirst = (a: Kept, b: Kept) =>
+  a.at === b.at ? b.name.localeCompare(a.name) : b.at.localeCompare(a.at);
 
 /**
  * Which backups to delete. Keeps the newest `daily` daily ones, then the newest daily one of each

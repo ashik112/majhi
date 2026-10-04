@@ -361,7 +361,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     key: () => secrets.identityForBackups(),
     version: { version: env.version, commit: env.commit },
     // Under docker compose the container restarts itself (restart: unless-stopped), onto the staged restore.
-    ...(existsSync("/.dockerenv") ? { restart: () => void setTimeout(() => process.kill(process.pid, "SIGTERM"), 1000) } : {}),
+    ...(existsSync("/.dockerenv")
+      ? { restart: () => void setTimeout(() => process.kill(process.pid, "SIGTERM"), 1000) }
+      : {}),
   });
   backup.start();
   memory.project.setLanded(async (task, repo) => {
