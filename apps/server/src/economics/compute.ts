@@ -133,7 +133,11 @@ export function flagsFor(i: FlagInput): EconomicsFlag[] {
           : `Nothing has shipped in ${Math.floor((i.now.getTime() - shippedAt) / DAY_MS)} days.`,
     });
   }
-  if (i.retainerUsd !== undefined && i.retainerUsd > 0 && i.monthSpendUsd >= i.retainerUsd * NEAR_BUDGET_SHARE) {
+  if (
+    i.retainerUsd !== undefined &&
+    i.retainerUsd > 0 &&
+    i.monthSpendUsd >= i.retainerUsd * NEAR_BUDGET_SHARE
+  ) {
     const share = Math.round((i.monthSpendUsd / i.retainerUsd) * 100);
     out.push({
       kind: "near-budget",

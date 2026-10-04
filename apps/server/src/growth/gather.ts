@@ -1,7 +1,7 @@
 import { type CrmContact, PRIVATE } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { SHIP_KINDS } from "../economics/repo.ts";
-import { MAIN_CONTACT_TAGS, type GrowthDeps } from "./ports.ts";
+import { type GrowthDeps, MAIN_CONTACT_TAGS } from "./ports.ts";
 
 /**
  * What code collects for the growth playbooks, before any model is asked. Every list is short and
@@ -18,7 +18,13 @@ export interface ShippedTask {
 }
 
 /** Tasks of a workspace that shipped in a span, newest first. Chats are not work. */
-export function shippedIn(db: Database.Database, org: string, from: string, to: string, limit: number): ShippedTask[] {
+export function shippedIn(
+  db: Database.Database,
+  org: string,
+  from: string,
+  to: string,
+  limit: number,
+): ShippedTask[] {
   const rows = db
     .prepare(
       `SELECT t.id AS id, t.title AS title, MAX(a.at) AS at,
@@ -33,7 +39,13 @@ export function shippedIn(db: Database.Database, org: string, from: string, to: 
 }
 
 /** Merge request and pull request links of a workspace's ships in a span. */
-export function mergeRequests(db: Database.Database, org: string, from: string, to: string, limit: number): string[] {
+export function mergeRequests(
+  db: Database.Database,
+  org: string,
+  from: string,
+  to: string,
+  limit: number,
+): string[] {
   const rows = db
     .prepare(
       `SELECT DISTINCT a.detail AS detail
@@ -68,7 +80,9 @@ export interface MainContact {
  */
 export function mainContact(deps: GrowthDeps, org: string): MainContact | undefined {
   const { contacts } = deps.crm.list({ org, relation: "client", limit: 200 }, { kind: "captain", org });
-  const marked = contacts.filter((c) => c.tags.some((t) => (MAIN_CONTACT_TAGS as readonly string[]).includes(t)));
+  const marked = contacts.filter((c) =>
+    c.tags.some((t) => (MAIN_CONTACT_TAGS as readonly string[]).includes(t)),
+  );
   const mine = marked.find((c) => c.org === org) ?? marked[0];
   return mine === undefined ? undefined : { contact: mine, email: mine.emails[0] };
 }
@@ -81,7 +95,8 @@ export function keywordLines(deps: GrowthDeps, org: string): string[] {
     if (g.status === "active") lines.push(`${g.title} ${g.metric ?? ""}`);
   }
   for (const e of deps.kb.list({ org, limit: 100 }, actor).entries) {
-    if (["about", "product", "positioning", "win"].includes(e.kind)) lines.push(`${e.title} ${e.tags.join(" ")}`);
+    if (["about", "product", "positioning", "win"].includes(e.kind))
+      lines.push(`${e.title} ${e.tags.join(" ")}`);
   }
   return lines;
 }
@@ -107,7 +122,12 @@ export function weekFacts(deps: GrowthDeps, org: string, now: Date): WeekFacts {
     shipped: shippedIn(deps.db, org, from, to, 12),
     merged: mergeRequests(deps.db, org, from, to, 8),
     risks: live
-      .filter((f) => RISK_SOURCES.has(f.source) && f.source !== "incident" && (f.severity === "high" || f.severity === "medium"))
+      .filter(
+        (f) =>
+          RISK_SOURCES.has(f.source) &&
+          f.source !== "incident" &&
+          (f.severity === "high" || f.severity === "medium"),
+      )
       .slice(0, 5)
       .map((f) => f.title),
     incidents: recent

@@ -58,7 +58,10 @@ export function agentMinutes(
         WHERE r.started_at < ? AND COALESCE(r.ended_at, ?) > ? AND t.kind <> 'chat'
         GROUP BY COALESCE(t.org, ?)`,
     )
-    .all(PRIVATE, RUN_CAP_MINUTES, now, to, from, to, now, from, PRIVATE) as { org: string; minutes: number }[];
+    .all(PRIVATE, RUN_CAP_MINUTES, now, to, from, to, now, from, PRIVATE) as {
+    org: string;
+    minutes: number;
+  }[];
 }
 
 /** The tasks of a workspace the owner spent the most actions on in a span (messages, approvals, ships). */

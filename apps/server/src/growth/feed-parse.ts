@@ -42,9 +42,7 @@ function decode(text: string): string {
 /** Text with tags, control characters and runs of space removed, and cut to a length. */
 export function plain(text: string, max: number): string {
   const strip = (t: string): string =>
-    t
-      .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]*>/g, " ");
+    t.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ");
   // Entities are decoded after the first strip, so `&lt;script&gt;` arrives as text; the second strip and
   // the removal of stray angle brackets make sure no markup survives either way.
   const cleaned = strip(decode(strip(text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"))))
@@ -63,7 +61,9 @@ function tag(block: string, name: string): string | undefined {
 
 function atomLink(block: string): string | undefined {
   const links = [...block.matchAll(/<link\b([^>]*)>/gi)];
-  const pick = links.find((l) => /rel=["']alternate["']/i.test(l[1] ?? "")) ?? links.find((l) => !/rel=/i.test(l[1] ?? ""));
+  const pick =
+    links.find((l) => /rel=["']alternate["']/i.test(l[1] ?? "")) ??
+    links.find((l) => !/rel=/i.test(l[1] ?? ""));
   const href = pick === undefined ? undefined : /href=["']([^"']+)["']/i.exec(pick[1] ?? "")?.[1];
   return href === undefined ? undefined : decode(href);
 }
@@ -146,21 +146,20 @@ export function findDeadline(text: string): string | undefined {
   return undefined;
 }
 
-function item(
-  fields: {
-    id?: string | undefined;
-    title: string | undefined;
-    url: string | undefined;
-    summary: string | undefined;
-    published: string | undefined;
-    deadline?: string | undefined;
-  },
-): FeedItem | undefined {
+function item(fields: {
+  id?: string | undefined;
+  title: string | undefined;
+  url: string | undefined;
+  summary: string | undefined;
+  published: string | undefined;
+  deadline?: string | undefined;
+}): FeedItem | undefined {
   const title = plain(fields.title ?? "", TITLE_CHARS);
   if (title === "") return undefined;
   const summary = plain(fields.summary ?? "", SUMMARY_CHARS);
   const url = safeUrl(fields.url);
-  const explicit = fields.deadline === undefined ? undefined : /^\d{4}-\d{2}-\d{2}/.exec(fields.deadline)?.[0];
+  const explicit =
+    fields.deadline === undefined ? undefined : /^\d{4}-\d{2}-\d{2}/.exec(fields.deadline)?.[0];
   return {
     id: plain(fields.id ?? url ?? title, 300),
     title,
@@ -179,8 +178,19 @@ function fromXml(body: string): FeedItem[] {
       id: tag(block, "guid") ?? tag(block, "id"),
       title: tag(block, "title"),
       url: tag(block, "link")?.trim() || atomLink(block),
-      summary: tag(block, "description") ?? tag(block, "summary") ?? tag(block, "content:encoded") ?? tag(block, "content"),
-      published: plain(tag(block, "pubDate") ?? tag(block, "published") ?? tag(block, "updated") ?? tag(block, "dc:date") ?? "", 60),
+      summary:
+        tag(block, "description") ??
+        tag(block, "summary") ??
+        tag(block, "content:encoded") ??
+        tag(block, "content"),
+      published: plain(
+        tag(block, "pubDate") ??
+          tag(block, "published") ??
+          tag(block, "updated") ??
+          tag(block, "dc:date") ??
+          "",
+        60,
+      ),
     });
     if (made !== undefined) out.push(made);
   }
@@ -209,7 +219,8 @@ function fromJson(data: unknown): FeedItem[] | undefined {
       url: str(o.url) ?? str(o.link) ?? str(o.external_url),
       summary: str(o.summary) ?? str(o.description) ?? str(o.content_text) ?? str(o.content_html),
       published: str(o.date_published) ?? str(o.published) ?? str(o.created_at) ?? str(o.date),
-      deadline: str(o.deadline) ?? str(o.closes) ?? str(o.closing_date) ?? str(o.end_date) ?? str(o.date_expires),
+      deadline:
+        str(o.deadline) ?? str(o.closes) ?? str(o.closing_date) ?? str(o.end_date) ?? str(o.date_expires),
     });
     if (made !== undefined) out.push(made);
   }
@@ -234,7 +245,8 @@ export function parseFeed(body: string, contentType: string): FeedRead {
     return items === undefined ? { ok: false, why: "the JSON has no list of items" } : { ok: true, items };
   }
   if (text.startsWith("<")) {
-    if (!/<(rss|feed|rdf:RDF)\b/i.test(text)) return { ok: false, why: "the document is not an RSS or Atom feed" };
+    if (!/<(rss|feed|rdf:RDF)\b/i.test(text))
+      return { ok: false, why: "the document is not an RSS or Atom feed" };
     return { ok: true, items: fromXml(text) };
   }
   return { ok: false, why: "the answer is not a feed" };

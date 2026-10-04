@@ -39,8 +39,10 @@ export function economicsRunner(
       const name = await orgName(ctx.org);
       const week = isoWeek(ctx.now());
       const actor = { kind: "captain" as const, org: ctx.org };
-      const live = ctx.findings.list({ org: ctx.org, source: "analysis", status: "live", limit: 200 }, actor)
-        .findings;
+      const live = ctx.findings.list(
+        { org: ctx.org, source: "analysis", status: "live", limit: 200 },
+        actor,
+      ).findings;
       const mine = live.filter((f) => f.dedupeKey.startsWith(`economics:${ctx.org}:`));
       const thisWeek = new Set<string>();
       let filed = 0;

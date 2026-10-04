@@ -17,6 +17,13 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import {
+  AgendaBriefInputSchema,
+  AgendaConfigureInputSchema,
+  AgendaDismissInputSchema,
+  AgendaTodayInputSchema,
+  AgendaTodaySchema,
+} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -146,14 +153,6 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
-import { EmojiSchema } from "./emoji.ts";
-import {
-  AgendaBriefInputSchema,
-  AgendaConfigureInputSchema,
-  AgendaDismissInputSchema,
-  AgendaTodayInputSchema,
-  AgendaTodaySchema,
-} from "./agenda.ts";
 import {
   EconomicsGetInputSchema,
   EconomicsSchema,
@@ -162,6 +161,7 @@ import {
   FindingProposalInputSchema,
   FindingProposalResultSchema,
 } from "./economics.ts";
+import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
   FindingReportInputSchema,
@@ -277,15 +277,6 @@ import {
   PlaybookUpdateInputSchema,
   PlaybookViewSchema,
 } from "./playbooks.ts";
-import {
-  MoneySetInputSchema,
-  MoneyStatusSchema,
-  ScorecardGetInputSchema,
-  ScorecardSchema,
-  ScorecardSetMinutesInputSchema,
-  TrustListSchema,
-  TrustUnmuteInputSchema,
-} from "./scorecard.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -306,6 +297,15 @@ import {
   RemoteReposSchema,
 } from "./remote-repos.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
+import {
+  MoneySetInputSchema,
+  MoneyStatusSchema,
+  ScorecardGetInputSchema,
+  ScorecardSchema,
+  ScorecardSetMinutesInputSchema,
+  TrustListSchema,
+  TrustUnmuteInputSchema,
+} from "./scorecard.ts";
 import {
   AllowRuleSchema,
   AutonomyPatchSchema,
@@ -1160,7 +1160,8 @@ export const commands = {
   },
   "agenda.configure": {
     risk: "change",
-    summary: "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+    summary:
+      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
     input: AgendaConfigureInputSchema,
     output: AgendaTodaySchema,
   },

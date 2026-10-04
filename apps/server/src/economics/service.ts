@@ -66,7 +66,9 @@ export class EconomicsService {
     const shippedNow = new Map(shippedTasks(db, w.from, w.to).map((r) => [r.org, r.n]));
     const shippedBefore = new Map(shippedTasks(db, w.previousFrom, w.previousTo).map((r) => [r.org, r.n]));
     const agentNow = new Map(agentMinutes(db, w.from, w.to, iso).map((r) => [r.org, r.minutes]));
-    const agentBefore = new Map(agentMinutes(db, w.previousFrom, w.previousTo, iso).map((r) => [r.org, r.minutes]));
+    const agentBefore = new Map(
+      agentMinutes(db, w.previousFrom, w.previousTo, iso).map((r) => [r.org, r.minutes]),
+    );
     const spentNow = monthSpend(db, w.from, w.to);
     const spentBefore = monthSpend(db, w.previousFrom, w.previousTo);
     const spentMonth = monthSpend(db, month.from, month.to);
@@ -86,7 +88,9 @@ export class EconomicsService {
     }
 
     const rows: EconomicsRow[] = [];
-    for (const org of [...names].sort((a, b) => (a === PRIVATE ? 1 : b === PRIVATE ? -1 : a.localeCompare(b)))) {
+    for (const org of [...names].sort((a, b) =>
+      a === PRIVATE ? 1 : b === PRIVATE ? -1 : a.localeCompare(b),
+    )) {
       const rate = rates.get(org) ?? {};
       const spend = round2(spentNow.get(org)?.costUsd ?? 0);
       const spendBefore = round2(spentBefore.get(org)?.costUsd ?? 0);
@@ -94,8 +98,7 @@ export class EconomicsService {
       const mineNow = round1(ownerMinutesOf(ownerNow.get(org), minutes));
       const mineBefore = round1(ownerMinutesOf(ownerBefore.get(org), minutes));
       const value = valueFor(rate.retainerUsd, range);
-      const ownerCost =
-        rate.hourlyUsd === undefined ? undefined : round2((mineNow / 60) * rate.hourlyUsd);
+      const ownerCost = rate.hourlyUsd === undefined ? undefined : round2((mineNow / 60) * rate.hourlyUsd);
       const margin = value === undefined ? undefined : round2(value - spend - (ownerCost ?? 0));
       const lastAt = last.get(org);
       rows.push({

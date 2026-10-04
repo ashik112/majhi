@@ -25,7 +25,8 @@ export const BUSINESS_PLAYBOOKS: Playbook[] = [
     cost: { tier: "rules", tokens: 0 },
     enabledByDefault: true,
     readOnly: true,
-    turnOn: "Files a finding when a workspace spends more without shipping more, goes quiet, or nears its retainer. No model, no tokens.",
+    turnOn:
+      "Files a finding when a workspace spends more without shipping more, goes quiet, or nears its retainer. No model, no tokens.",
     runner: { kind: "rules", id: "economics" },
     settings: [],
   },

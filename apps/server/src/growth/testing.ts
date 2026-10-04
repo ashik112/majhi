@@ -44,7 +44,8 @@ export function desk(over: { write?: Writer } = {}): Desk {
   const findings = new FindingsService({
     repo: new FindingsRepo(db),
     now,
-    projectOrg: async (id) => (id.startsWith("acme") ? "acme" : id.startsWith("globex") ? "globex" : undefined),
+    projectOrg: async (id) =>
+      id.startsWith("acme") ? "acme" : id.startsWith("globex") ? "globex" : undefined,
     taskStatus: () => undefined,
     createTask: async () => ({ id: "ACM-100" }),
   });
@@ -132,7 +133,15 @@ export function desk(over: { write?: Writer } = {}): Desk {
       db.prepare(
         `INSERT INTO tasks (id, title, brief, kind, org, status, folder, team, created_at, updated_at)
          VALUES (?, ?, '', ?, ?, ?, 'x', '[]', ?, ?)`,
-      ).run(id, title, o.kind ?? "code", o.org === PRIVATE ? null : (o.org ?? "acme"), o.status ?? "done", at, at);
+      ).run(
+        id,
+        title,
+        o.kind ?? "code",
+        o.org === PRIVATE ? null : (o.org ?? "acme"),
+        o.status ?? "done",
+        at,
+        at,
+      );
     },
     ship(task, at, o = {}) {
       db.prepare(
@@ -142,7 +151,12 @@ export function desk(over: { write?: Writer } = {}): Desk {
     },
     async kb(o) {
       await deps.kb.upsert(
-        KbUpsertInputSchema.parse({ kind: "product", title: "Acme storefront", body: "A shop for boats.", ...o }),
+        KbUpsertInputSchema.parse({
+          kind: "product",
+          title: "Acme storefront",
+          body: "A shop for boats.",
+          ...o,
+        }),
         { kind: "owner" },
       );
     },

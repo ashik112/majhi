@@ -54,7 +54,11 @@ export const GROWTH_PLAYBOOKS: Playbook[] = [
     runner: { kind: "rules", id: "feeds" },
     settings: [
       { key: "feeds", label: "Feed addresses", hint: "One per line, like https://feeds.example/grants.xml" },
-      { key: "hosts", label: "Allowed hosts", hint: "One per line, like feeds.example. Only these are reached." },
+      {
+        key: "hosts",
+        label: "Allowed hosts",
+        hint: "One per line, like feeds.example. Only these are reached.",
+      },
       { key: "keywords", label: "Extra words to match", hint: "One per line", optional: true },
     ],
   },

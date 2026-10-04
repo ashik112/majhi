@@ -81,7 +81,11 @@ export function templateUpdate(input: {
   signOff: string | undefined;
 }): { subject: string; body: string } {
   const f = input.facts;
-  const lines = [`Hello${input.contactName === undefined ? "" : ` ${input.contactName.split(/\s+/)[0]}`},`, "", "Here is where things stand this week."];
+  const lines = [
+    `Hello${input.contactName === undefined ? "" : ` ${input.contactName.split(/\s+/)[0]}`},`,
+    "",
+    "Here is where things stand this week.",
+  ];
   if (f.shipped.length > 0) lines.push("", "Shipped:", ...f.shipped.slice(0, 8).map((t) => `- ${t.title}`));
   if (f.incidents.length > 0) lines.push("", "Incidents:", ...f.incidents.map((t) => `- ${t}`));
   if (f.risks.length > 0) lines.push("", "Open risks:", ...f.risks.slice(0, 3).map((t) => `- ${t}`));
@@ -119,7 +123,13 @@ export function clientUpdate(deps: GrowthDeps): RulesRunner {
       const voice = deps.voice.get(org, actor);
       const context = await draftContext(
         { kb: deps.kb, voice: deps.voice },
-        { org, about: `${name} client update ${facts.shipped.slice(0, 5).map((t) => t.title).join(" ")}` },
+        {
+          org,
+          about: `${name} client update ${facts.shipped
+            .slice(0, 5)
+            .map((t) => t.title)
+            .join(" ")}`,
+        },
         actor,
       );
       const prompt = updatePrompt({ workspace: name, facts, context, contactName: contact?.contact.name });
@@ -155,7 +165,9 @@ export function clientUpdate(deps: GrowthDeps): RulesRunner {
             target: target ?? "no main contact set",
             subject: final.subject,
             body,
-            ...(voice.effective === undefined ? {} : { voice: voice.inherited ? "business voice" : `${name} voice` }),
+            ...(voice.effective === undefined
+              ? {}
+              : { voice: voice.inherited ? "business voice" : `${name} voice` }),
             playbook: ctx.playbook.id,
           },
           actor,

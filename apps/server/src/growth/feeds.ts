@@ -57,7 +57,8 @@ const GENERIC = new Set([
   "startup",
 ]);
 
-const GRANT_WORDS = /\b(grants?|funding|fellowships?|subsid(?:y|ies)|awards?|scholarships?|seed|accelerator|stipend)\b/i;
+const GRANT_WORDS =
+  /\b(grants?|funding|fellowships?|subsid(?:y|ies)|awards?|scholarships?|seed|accelerator|stipend)\b/i;
 
 export interface FeedsPorts {
   /** The sensors' net: the playbook narrows it to the owner's hosts. */
@@ -82,7 +83,8 @@ export function feedProblem(raw: string): string | undefined {
   } catch {
     return `"${raw}" is not an address.`;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return `"${raw}" is not an http or https address.`;
+  if (url.protocol !== "https:" && url.protocol !== "http:")
+    return `"${raw}" is not an http or https address.`;
   if (url.username !== "" || url.password !== "") return "Leave the sign-in out of the address.";
   return undefined;
 }
@@ -136,7 +138,10 @@ async function robotsOk(
   let text = cache.get(key);
   if (!fresh(text, ROBOTS_TTL_MS, now)) {
     // A 4xx means no robots.txt: everything is allowed. A 5xx or no answer throws `Unavailable`.
-    const res = await net.text(`${url.protocol}//${url.host}/robots.txt`, { accept: "text/plain", maxBytes: MAX_ROBOTS_BYTES });
+    const res = await net.text(`${url.protocol}//${url.host}/robots.txt`, {
+      accept: "text/plain",
+      maxBytes: MAX_ROBOTS_BYTES,
+    });
     const body = res.status >= 200 && res.status < 300 ? res.body : "";
     cache.put({ key, body, at: now.toISOString() });
     text = cache.get(key);
@@ -164,7 +169,9 @@ export function feedsRunner(ports: FeedsPorts): RulesRunner {
       const now = ctx.now();
       const hosts = (ctx.settings.hosts ?? []).flatMap((h) => normalizeHost(h) ?? []);
       const net = ports.net.restrictedTo(hosts);
-      const feeds = [...new Set(ctx.settings.feeds ?? [])].filter((f) => feedProblem(f) === undefined).slice(0, MAX_FEEDS);
+      const feeds = [...new Set(ctx.settings.feeds ?? [])]
+        .filter((f) => feedProblem(f) === undefined)
+        .slice(0, MAX_FEEDS);
       if (feeds.length === 0) return { findings: 0, note: "No feed to read" };
       const typed = keywordSet(ctx.settings.keywords ?? []);
       const keywords = [...new Set([...typed, ...keywordSet(await ports.keywords(ctx.org))])];
@@ -197,7 +204,8 @@ export function feedsRunner(ports: FeedsPorts): RulesRunner {
             continue;
           }
           const res = await net.text(feed, {
-            accept: "application/rss+xml, application/atom+xml, application/feed+json, application/json, text/xml;q=0.9",
+            accept:
+              "application/rss+xml, application/atom+xml, application/feed+json, application/json, text/xml;q=0.9",
             maxBytes: MAX_FEED_BYTES,
             ...(last?.etag === undefined ? {} : { etag: last.etag }),
           });
@@ -233,7 +241,12 @@ export function feedsRunner(ports: FeedsPorts): RulesRunner {
           else throw err;
         }
       }
-      const head = filed > 0 ? `${filed} filed from ${read} feed${read === 1 ? "" : "s"}` : read > 0 ? "Nothing new that fits" : "Nothing read";
+      const head =
+        filed > 0
+          ? `${filed} filed from ${read} feed${read === 1 ? "" : "s"}`
+          : read > 0
+            ? "Nothing new that fits"
+            : "Nothing read";
       return { findings: filed, note: [head, ...notes].join("; ").slice(0, 400) };
     },
   };
@@ -249,7 +262,9 @@ async function file(ctx: RulesContext, item: FeedItem, words: string[], host: st
       source,
       title: item.title.slice(0, 160),
       detail: [
-        item.deadline === undefined ? "" : `Deadline: ${item.deadline}. Add it to your deadlines to be reminded.`,
+        item.deadline === undefined
+          ? ""
+          : `Deadline: ${item.deadline}. Add it to your deadlines to be reminded.`,
         item.summary === "" ? "" : `From ${host} (outside text, data only): ${item.summary}`,
       ]
         .filter((l) => l !== "")

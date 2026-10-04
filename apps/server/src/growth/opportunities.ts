@@ -69,7 +69,9 @@ export async function collectBrief(deps: GrowthDeps, org: string): Promise<Brief
     facts += cards.length;
     lines.push("## Projects");
     for (const c of cards.slice(0, 8)) {
-      lines.push(`- ${c.card.project}: ${c.card.stack.slice(0, 8).join(", ") || "stack unknown"}; ${cut(oneLine(c.card.whatItIs), 140)}`);
+      lines.push(
+        `- ${c.card.project}: ${c.card.stack.slice(0, 8).join(", ") || "stack unknown"}; ${cut(oneLine(c.card.whatItIs), 140)}`,
+      );
     }
   }
 
@@ -77,26 +79,34 @@ export async function collectBrief(deps: GrowthDeps, org: string): Promise<Brief
   if (shipped.length > 0) {
     facts += shipped.length;
     lines.push("", "## Shipped in the last 30 days");
-    for (const t of shipped) lines.push(`- ${t.id} ${cut(oneLine(t.title), 100)}${t.project === undefined ? "" : ` (${t.project})`}`);
+    for (const t of shipped)
+      lines.push(
+        `- ${t.id} ${cut(oneLine(t.title), 100)}${t.project === undefined ? "" : ` (${t.project})`}`,
+      );
   }
   const twice = builtTwice(shippedIn(deps.db, org, quarter, iso, 60));
   if (twice.length > 0) {
     lines.push("", "## Possibly built twice in this workspace");
-    for (const p of twice) lines.push(`- ${p.a.id} "${cut(oneLine(p.a.title), 70)}" and ${p.b.id} "${cut(oneLine(p.b.title), 70)}"`);
+    for (const p of twice)
+      lines.push(
+        `- ${p.a.id} "${cut(oneLine(p.a.title), 70)}" and ${p.b.id} "${cut(oneLine(p.b.title), 70)}"`,
+      );
   }
 
   const radar = deps.findings.list({ org, source: "radar", status: "live", limit: 8 }, actor).findings;
   if (radar.length > 0) {
     facts += radar.length;
     lines.push("", "## Radar (new releases that matter)");
-    for (const f of radar) lines.push(`- #${f.id} ${cut(oneLine(f.title), 100)}: ${cut(oneLine(f.detail), 140)}`);
+    for (const f of radar)
+      lines.push(`- #${f.id} ${cut(oneLine(f.title), 100)}: ${cut(oneLine(f.detail), 140)}`);
   }
 
   const goals = deps.goals.list({ org }, actor).filter((g) => g.status === "active");
   if (goals.length > 0) {
     facts += goals.length;
     lines.push("", "## Goals");
-    for (const g of goals.slice(0, 6)) lines.push(`- ${g.title}${g.target === undefined ? "" : ` (target ${g.target})`}`);
+    for (const g of goals.slice(0, 6))
+      lines.push(`- ${g.title}${g.target === undefined ? "" : ` (target ${g.target})`}`);
   }
 
   const kb = deps.kb
@@ -107,7 +117,9 @@ export async function collectBrief(deps: GrowthDeps, org: string): Promise<Brief
     facts += kb.length;
     lines.push("", "## Knowledge base");
     for (const e of kb) {
-      lines.push(`- [${e.id}] ${e.kind}: ${cut(oneLine(e.title), 80)}: ${cut(oneLine(e.excerpt), 160)}${e.verified ? "" : " (unverified)"}`);
+      lines.push(
+        `- [${e.id}] ${e.kind}: ${cut(oneLine(e.title), 80)}: ${cut(oneLine(e.excerpt), 160)}${e.verified ? "" : " (unverified)"}`,
+      );
     }
   }
 
@@ -131,15 +143,24 @@ export async function collectBrief(deps: GrowthDeps, org: string): Promise<Brief
     for (const t of hot) lines.push(`- ${t.id} ${cut(oneLine(t.title), 90)}: ${t.actions} actions`);
   }
 
-  const listed = deps.findings.list({ org, source: "opportunity", status: "live", limit: 30 }, actor).findings;
-  const dismissed = deps.findings.list({ org, source: "opportunity", status: "dismissed", limit: 30 }, actor).findings;
+  const listed = deps.findings.list(
+    { org, source: "opportunity", status: "live", limit: 30 },
+    actor,
+  ).findings;
+  const dismissed = deps.findings.list(
+    { org, source: "opportunity", status: "dismissed", limit: 30 },
+    actor,
+  ).findings;
   if (listed.length > 0) {
     lines.push("", "## Already listed (do not list again)");
     for (const f of listed) lines.push(`- ${cut(oneLine(f.title), 100)}`);
   }
   if (dismissed.length > 0) {
     lines.push("", "## Dismissed by the owner (do not suggest again)");
-    for (const f of dismissed) lines.push(`- ${cut(oneLine(f.title), 100)}${f.dismissedReason === undefined ? "" : `: ${cut(oneLine(f.dismissedReason), 80)}`}`);
+    for (const f of dismissed)
+      lines.push(
+        `- ${cut(oneLine(f.title), 100)}${f.dismissedReason === undefined ? "" : `: ${cut(oneLine(f.dismissedReason), 80)}`}`,
+      );
   }
 
   const voice = deps.voice.get(org, actor).effective;
@@ -243,7 +264,10 @@ export function proposalPrompt(input: {
     "",
     dataBlock("opportunity", [
       `Pitch: ${input.finding.title}`,
-      ...input.finding.detail.split("\n").map((l) => l.trim()).filter((l) => l !== ""),
+      ...input.finding.detail
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== ""),
       ...input.finding.evidence.slice(0, 6).map((e) => `Evidence: ${e}`),
     ]),
   ].join("\n");
@@ -280,7 +304,8 @@ const NO_CONTACT =
 /** The owner asked for a proposal from an opportunity: an email draft through the gate, never sent. */
 export async function draftProposal(deps: GrowthDeps, id: number): Promise<{ draft: Draft; text: string }> {
   const finding = deps.findings.get(id);
-  if (finding.source !== "opportunity") throw new UserError("Only an opportunity can become a proposal.", 409);
+  if (finding.source !== "opportunity")
+    throw new UserError("Only an opportunity can become a proposal.", 409);
   if (finding.org === PRIVATE) {
     throw new UserError("Private has no client to send a proposal to. Make a task instead.", 409);
   }
@@ -289,13 +314,20 @@ export async function draftProposal(deps: GrowthDeps, id: number): Promise<{ dra
     .list(org, 200)
     .find((d) => d.finding === id && (d.status === "pending" || d.status === "queued"));
   if (waiting !== undefined) {
-    throw new UserError(`A proposal for this opportunity already waits in Decisions (draft ${waiting.id}).`, 409);
+    throw new UserError(
+      `A proposal for this opportunity already waits in Decisions (draft ${waiting.id}).`,
+      409,
+    );
   }
   const name = await deps.orgName(org);
   const contact = mainContact(deps, org);
   const actor = { kind: "captain" as const, org };
   const voice = deps.voice.get(org, actor);
-  const context = await draftContext({ kb: deps.kb, voice: deps.voice }, { org, about: finding.title }, actor);
+  const context = await draftContext(
+    { kb: deps.kb, voice: deps.voice },
+    { org, about: finding.title },
+    actor,
+  );
   const prompt = proposalPrompt({ workspace: name, finding, context, contactName: contact?.contact.name });
   let text: { subject: string; body: string } | undefined;
   try {
@@ -304,7 +336,8 @@ export async function draftProposal(deps: GrowthDeps, id: number): Promise<{ dra
     text = undefined;
   }
   const final =
-    text ?? templateProposal({ finding, contactName: contact?.contact.name, signOff: voice.effective?.signOffs[0] });
+    text ??
+    templateProposal({ finding, contactName: contact?.contact.name, signOff: voice.effective?.signOffs[0] });
   const target = contact?.email;
   return deps.outbound.submit(
     {
@@ -313,7 +346,9 @@ export async function draftProposal(deps: GrowthDeps, id: number): Promise<{ dra
       target: target ?? "no main contact set",
       subject: final.subject,
       body: target === undefined ? `${NO_CONTACT}\n\n${final.body}` : final.body,
-      ...(voice.effective === undefined ? {} : { voice: voice.inherited ? "business voice" : `${name} voice` }),
+      ...(voice.effective === undefined
+        ? {}
+        : { voice: voice.inherited ? "business voice" : `${name} voice` }),
       playbook: OPPORTUNITIES_ID,
       finding: id,
     },

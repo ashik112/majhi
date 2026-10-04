@@ -94,7 +94,9 @@ describe("the flags", () => {
       "spend-outpaces-work",
     ]);
     // Shipped work grew as much: no flag.
-    expect(flagsFor({ ...base, spentUsd: { now: 40, before: 10 }, shipped: { now: 12, before: 3 } })).toEqual([]);
+    expect(flagsFor({ ...base, spentUsd: { now: 40, before: 10 }, shipped: { now: 12, before: 3 } })).toEqual(
+      [],
+    );
     // A rise of three dollars is noise, even when it is 300 percent.
     expect(flagsFor({ ...base, spentUsd: { now: 4, before: 1 } })).toEqual([]);
   });
@@ -126,7 +128,9 @@ describe("the flags", () => {
   });
 
   it("flags spend near the retainer, and never without one", () => {
-    expect(flagsFor({ ...base, retainerUsd: 100, monthSpendUsd: 85 }).map((f) => f.kind)).toEqual(["near-budget"]);
+    expect(flagsFor({ ...base, retainerUsd: 100, monthSpendUsd: 85 }).map((f) => f.kind)).toEqual([
+      "near-budget",
+    ]);
     expect(flagsFor({ ...base, retainerUsd: 100, monthSpendUsd: 50 })).toEqual([]);
     expect(flagsFor({ ...base, retainerUsd: undefined, monthSpendUsd: 5_000 })).toEqual([]);
   });
@@ -266,14 +270,14 @@ describe("the weekly playbook", () => {
       "Acme: spend is growing faster than shipped work",
       "Acme: spend is near the retainer",
     ]);
-    expect(all.every((f) => f.dedupeKey.startsWith("economics:acme:") && f.dedupeKey.endsWith("2026-W41"))).toBe(
-      true,
-    );
+    expect(
+      all.every((f) => f.dedupeKey.startsWith("economics:acme:") && f.dedupeKey.endsWith("2026-W41")),
+    ).toBe(true);
     // A second run the same week adds nothing.
     await run();
-    expect(t.findings.list({ org: "acme", source: "analysis", limit: 50 }, { kind: "owner" }).findings).toHaveLength(
-      3,
-    );
+    expect(
+      t.findings.list({ org: "acme", source: "analysis", limit: 50 }, { kind: "owner" }).findings,
+    ).toHaveLength(3);
   });
 
   it("folds last week's finding into this week's while the flag holds, and closes it when the flag clears", async () => {
@@ -282,7 +286,8 @@ describe("the weekly playbook", () => {
     t.clock.at = new Date(T0.getTime() + 7 * DAY);
     t.turn(new Date(T0.getTime() + 5 * DAY), 1);
     await run();
-    const list = () => t.findings.list({ org: "acme", source: "analysis", limit: 50 }, { kind: "owner" }).findings;
+    const list = () =>
+      t.findings.list({ org: "acme", source: "analysis", limit: 50 }, { kind: "owner" }).findings;
     const live = list().filter((f) => f.status === "open");
     // Spend is still near the retainer this week and the work is still quiet; the growth flag is gone.
     expect(live.map((f) => f.dedupeKey.split(":")[2]).sort()).toEqual(["near-budget", "quiet"]);

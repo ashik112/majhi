@@ -19,7 +19,10 @@ export interface GrowthHandlerDeps extends FindingsHandlerDeps {
 /** A proposal draft and a confirmed deadline are the owner's: the captain only offers them. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(`${ctx.command} is the owner's. Report the opportunity or the deadline as a finding.`, 409);
+    throw new UserError(
+      `${ctx.command} is the owner's. Report the opportunity or the deadline as a finding.`,
+      409,
+    );
   }
 }
 
@@ -30,7 +33,8 @@ export function growthHandlers(deps: GrowthHandlerDeps): Pick<CommandHandlers, G
       const actor = await findingActor(deps, ctx);
       if (actor.kind === "owner") return deps.economics.get(input.range, input.org);
       const own = actor.org ?? PRIVATE;
-      if (input.org !== undefined && input.org !== own) throw new UserError("You read your own workspace only.", 409);
+      if (input.org !== undefined && input.org !== own)
+        throw new UserError("You read your own workspace only.", 409);
       return deps.economics.get(input.range, own);
     },
     "findings.proposal": async (input, ctx) => {

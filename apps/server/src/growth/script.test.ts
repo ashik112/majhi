@@ -40,7 +40,12 @@ async function lane() {
     const done = await h.cmd(name as never, input as never);
     expect(done.status).toBe(200);
   };
-  await seed("kb.upsert", { kind: "product", title: "Acme storefront", body: "A shop for boat yards.", org: "acme" });
+  await seed("kb.upsert", {
+    kind: "product",
+    title: "Acme storefront",
+    body: "A shop for boat yards.",
+    org: "acme",
+  });
   await seed("crm.upsert", {
     name: "Ana Reyes",
     relation: "client",
@@ -52,11 +57,13 @@ async function lane() {
 }
 
 const findings = async (world: BossWorld) =>
-  ((await world.h.cmd("findings.list", { org: "acme", source: "opportunity" })).body as FindingsList).findings;
+  ((await world.h.cmd("findings.list", { org: "acme", source: "opportunity" })).body as FindingsList)
+    .findings;
 const drafts = async (world: BossWorld) =>
   ((await world.h.cmd("outbound.list", { org: "acme" })).body as OutboundList).drafts;
 const runs = async (world: BossWorld) =>
-  (await world.h.cmd("playbooks.runs", { org: "acme", id: "growth-opportunities" })).body.runs as PlaybookRun[];
+  (await world.h.cmd("playbooks.runs", { org: "acme", id: "growth-opportunities" })).body
+    .runs as PlaybookRun[];
 
 describe("the Opportunities playbook through a captain turn", () => {
   it("reads the brief, files opportunities, a reworded one next time is the same, and a proposal waits in Decisions as a draft", async () => {
@@ -104,7 +111,12 @@ describe("the Opportunities playbook through a captain turn", () => {
             },
             {
               tool: "majhi_playbooks_report",
-              args: { run: 1, outcome: "done", summary: "Two opportunities, one proposal drafted.", reason: "done" },
+              args: {
+                run: 1,
+                outcome: "done",
+                summary: "Two opportunities, one proposal drafted.",
+                reason: "done",
+              },
             },
             { say: "Reported." },
           ],
@@ -112,9 +124,9 @@ describe("the Opportunities playbook through a captain turn", () => {
       ],
       { task: chat },
     );
-    expect((await h.cmd("playbooks.update", { org: "acme", id: "growth-opportunities", enabled: true })).status).toBe(
-      200,
-    );
+    expect(
+      (await h.cmd("playbooks.update", { org: "acme", id: "growth-opportunities", enabled: true })).status,
+    ).toBe(200);
     expect((await h.cmd("playbooks.run", { org: "acme", id: "growth-opportunities" })).body).toMatchObject({
       started: true,
     });
@@ -193,7 +205,8 @@ describe("the Opportunities playbook through a captain turn", () => {
       started: true,
     });
     const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline && (await findings(world)).length < 3) await new Promise((r) => setTimeout(r, 100));
+    while (Date.now() < deadline && (await findings(world)).length < 3)
+      await new Promise((r) => setTimeout(r, 100));
     const after = await findings(world);
     expect(after.map((f) => f.title).sort()).toEqual([
       "Move the cart to server components",

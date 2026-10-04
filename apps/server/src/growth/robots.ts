@@ -49,7 +49,12 @@ function matches(rule: string, path: string): boolean {
   if (rule === "") return false;
   const anchored = rule.endsWith("$");
   const body = anchored ? rule.slice(0, -1) : rule;
-  const re = new RegExp(`^${body.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}${anchored ? "$" : ""}`);
+  const re = new RegExp(
+    `^${body
+      .split("*")
+      .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*")}${anchored ? "$" : ""}`,
+  );
   return re.test(path);
 }
 

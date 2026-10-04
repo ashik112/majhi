@@ -78,10 +78,7 @@ export class Net {
    * answer is read up to `maxBytes` and then refused as `TooLarge`, and 429 and 5xx are retried like
    * `json` does. Nothing is sent to a host that is not on the list.
    */
-  async text(
-    url: string,
-    init: { accept?: string; etag?: string; maxBytes: number },
-  ): Promise<TextAnswer> {
+  async text(url: string, init: { accept?: string; etag?: string; maxBytes: number }): Promise<TextAnswer> {
     let current = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       const target = this.guard(current);

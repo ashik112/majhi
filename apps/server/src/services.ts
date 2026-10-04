@@ -21,6 +21,8 @@ import { AdminAccess } from "./admin/access.ts";
 import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
+import { AgendaRepo } from "./agenda/repo.ts";
+import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -36,8 +38,6 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
-import { AgendaRepo } from "./agenda/repo.ts";
-import { AgendaService } from "./agenda/service.ts";
 import { CrmService } from "./business/crm.ts";
 import { DeadlinesService } from "./business/deadlines.ts";
 import { KbService } from "./business/kb.ts";
@@ -75,6 +75,8 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import type { E2eService } from "./e2e/service.ts";
 import { createE2e } from "./e2e/wire.ts";
+import { economicsRunner } from "./economics/playbook.ts";
+import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -84,6 +86,11 @@ import { FindingsService } from "./findings/service.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { feedsRunner } from "./growth/feeds.ts";
+import { keywordLines } from "./growth/gather.ts";
+import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
+import type { GrowthDeps } from "./growth/ports.ts";
+import { clientUpdate } from "./growth/update.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
@@ -110,20 +117,13 @@ import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { OutcomesRepo } from "./outcomes/repo.ts";
+import { OutcomesService } from "./outcomes/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
-import { economicsRunner } from "./economics/playbook.ts";
-import { EconomicsService } from "./economics/service.ts";
-import { keywordLines } from "./growth/gather.ts";
-import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
-import type { GrowthDeps } from "./growth/ports.ts";
-import { clientUpdate } from "./growth/update.ts";
-import { feedsRunner } from "./growth/feeds.ts";
-import { OutcomesRepo } from "./outcomes/repo.ts";
-import { OutcomesService } from "./outcomes/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
@@ -1385,7 +1385,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     db: store.raw,
     tz: async () => zoneOr((await config.settings()).autonomy.tz),
     orgs: async () => workspaceIds((await config.sections()).orgs),
-    orgName: async (org) => (org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org)),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
     authority: async (org) => authorityOf((await config.settings()).autonomy, org),
     setAuthority: async (org, row, choice, reason) => {

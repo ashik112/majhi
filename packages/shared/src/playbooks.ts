@@ -28,8 +28,10 @@ export const PLAYBOOK_PACK_NOTE: Record<PlaybookPack, string> = {
   upkeep: "The captain's standing chores: shipping, cards, questions, memory, projects, triage, cleanup.",
   engineering: "Health checks that file findings. They need sensors that are not built yet.",
   ops: "Checks that a service is up. A failure files an incident and wakes the captain.",
-  business: "What each client costs and earns, and a weekly update drafted for them. Nothing is sent without you.",
-  growth: "Ideas and openings: opportunities from your own work, and hackathons and grants from feeds you list.",
+  business:
+    "What each client costs and earns, and a weekly update drafted for them. Nothing is sent without you.",
+  growth:
+    "Ideas and openings: opportunities from your own work, and hackathons and grants from feeds you list.",
 };
 
 // ---------------------------------------------------------------------------
