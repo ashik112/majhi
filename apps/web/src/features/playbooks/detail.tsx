@@ -1,5 +1,5 @@
 import { type Cadence, cadenceLabel, type PlaybookView, type QuietHours } from "@majhi/shared";
-import { ArrowLeft, Play, Trash2 } from "lucide-react";
+import { ArrowLeft, History, Pencil, Play, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
@@ -9,6 +9,8 @@ import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { Select, Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { HistoryDrawer } from "@/features/actions/history-drawer";
+import { describeAction, describeSpec, formatIn, formatInZone } from "@/features/actions/model";
 import { useCaptainUndo } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { formatTokens } from "@/lib/format";
@@ -21,6 +23,7 @@ import {
   useUpdatePlaybook,
 } from "@/lib/playbook-queries";
 import { CadenceFields } from "./cadence-fields";
+import { ClockForm } from "./clock-form";
 import { KIND_LABEL, kindOf, LIMIT_CHOICES, shortWhen } from "./model";
 
 /** One setting: its label on the left, its control on the right. */
@@ -353,6 +356,9 @@ export function PlaybookDetail({
   const toast = useToast();
   const locked = pb.needs !== undefined;
   const [cadence, setCadence] = useState<Cadence>(view.cadence);
+  const [editClock, setEditClock] = useState(false);
+  const [history, setHistory] = useState(false);
+  const clock = view.clock;
   const saveCadence = (next: Cadence) => {
     if (JSON.stringify(next) === JSON.stringify(view.cadence)) return;
     update.mutate(
@@ -437,29 +443,69 @@ export function PlaybookDetail({
         {!view.enabled && !locked && <p className="m-0 text-sm text-fg-muted text-pretty">{pb.turnOn}</p>}
       </div>
       <div className="flex flex-col gap-3 pb-5">
-        <Row
-          label="Runs"
-          hint={
-            pb.trigger.events.length > 0
-              ? `Also when: ${pb.trigger.events.join("; ").toLowerCase()}`
-              : undefined
-          }
-        >
-          <CadenceFields
-            key={cadenceLabel(view.cadence)}
-            cadence={cadence}
-            withEvents={pb.trigger.events.length > 0}
-            onChange={setCadence}
-            onCommit={saveCadence}
-          />
-        </Row>
-        <Row label="Workspaces">
-          <Workspaces view={view} workspaces={workspaces} />
-        </Row>
-        <Row label="Quiet hours">
-          <QuietRow key={JSON.stringify(view.quiet ?? null)} view={view} />
-        </Row>
-        {view.dailyLimit !== undefined ? (
+        {clock !== undefined && (
+          <>
+            <Row label="Runs" hint={`Time zone ${clock.timeZone}`}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="pt-[7px] text-base text-fg-soft">{describeSpec(clock.when)}</span>
+                <Button size="sm" variant="ghost" onClick={() => setEditClock(true)}>
+                  <Pencil aria-hidden="true" />
+                  Edit
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setHistory(true)}>
+                  <History aria-hidden="true" />
+                  History
+                </Button>
+              </div>
+            </Row>
+            <Row label="Next run">
+              <p className="m-0 pt-[7px] text-base text-fg-soft">
+                {clock.done
+                  ? "Ran once. Edit its time to run it again."
+                  : clock.nextRunAt === null
+                    ? "Not scheduled while it is off"
+                    : `${formatInZone(clock.nextRunAt, clock.timeZone)} (${formatIn(clock.nextRunAt, now)})`}
+              </p>
+            </Row>
+            <Row
+              label="Does"
+              hint={clock.overlap === "skip" ? "Skips a run while the last one goes" : "Runs may overlap"}
+            >
+              <p className="m-0 pt-[7px] text-base text-fg-soft text-pretty">
+                {describeAction(clock.action)}
+              </p>
+            </Row>
+          </>
+        )}
+        {clock === undefined && (
+          <Row
+            label="Runs"
+            hint={
+              pb.trigger.events.length > 0
+                ? `Also when: ${pb.trigger.events.join("; ").toLowerCase()}`
+                : undefined
+            }
+          >
+            <CadenceFields
+              key={cadenceLabel(view.cadence)}
+              cadence={cadence}
+              withEvents={pb.trigger.events.length > 0}
+              onChange={setCadence}
+              onCommit={saveCadence}
+            />
+          </Row>
+        )}
+        {clock === undefined && (
+          <Row label="Workspaces">
+            <Workspaces view={view} workspaces={workspaces} />
+          </Row>
+        )}
+        {clock === undefined && (
+          <Row label="Quiet hours">
+            <QuietRow key={JSON.stringify(view.quiet ?? null)} view={view} />
+          </Row>
+        )}
+        {clock !== undefined ? null : view.dailyLimit !== undefined ? (
           <Row label="Daily limit">
             <Select
               aria-label="Daily limit"
@@ -494,18 +540,24 @@ export function PlaybookDetail({
             </p>
           </Row>
         )}
-        <Row label="Goal">
-          <GoalRow view={view} />
-        </Row>
+        {clock === undefined && (
+          <Row label="Goal">
+            <GoalRow view={view} />
+          </Row>
+        )}
         <TextSettings key={JSON.stringify(view.settings)} view={view} />
       </div>
       <Outcomes key={JSON.stringify([view.outcomes, view.orDo])} view={view} />
-      {pb.custom === true && (
+      {pb.custom === true && clock === undefined && (
         <DetailSection title="Steps" note="What the captain follows. Text it reads along the way is data.">
           <p className="m-0 text-base text-fg-soft text-pretty whitespace-pre-wrap">{pb.steps}</p>
         </DetailSection>
       )}
       <LastRuns view={view} now={now} />
+      {editClock && <ClockForm org={view.org} view={view} onClose={() => setEditClock(false)} />}
+      {history && clock !== undefined && (
+        <HistoryDrawer id={pb.id} name={pb.name} zone={clock.timeZone} onClose={() => setHistory(false)} />
+      )}
     </DetailPane>
   );
 }

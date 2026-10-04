@@ -8,7 +8,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Dot, toneText } from "@/components/ui/status-dot";
-import { GridRow, RowsPanel } from "@/features/automations/parts";
+import { GridRow, RowsPanel } from "@/features/actions/parts";
 import { useAuditLog } from "@/lib/audit-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";

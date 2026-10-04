@@ -28,7 +28,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "containers":
       return [queryKeys.containers];
     case "schedules":
-      return [queryKeys.schedules];
+      return [queryKeys.schedules, queryKeys.playbooks];
     case "triggers":
       return [queryKeys.triggers];
     case "connections":

@@ -1,10 +1,11 @@
 import {
+  type ClockAction,
+  clockPlaybookSpec,
   cronProblem,
   nextRunAfter,
-  type OrgView,
+  type PlaybookView,
   parseSchedulePhrase,
   type ScheduleSpec,
-  type ScheduleView,
   upcomingRuns,
 } from "@majhi/shared";
 import { useMemo, useState } from "react";
@@ -13,11 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useAutomationCommand } from "@/lib/automation-queries";
+import { ActionFields, actionToDraft, draftToAction, EMPTY_ACTION } from "@/features/actions/action-fields";
+import { FormGroup, FormShell } from "@/features/actions/form-shell";
+import { BROWSER_ZONE, formatInZone, specToPhrase, yourTime, zoneOptions } from "@/features/actions/model";
 import { describeError } from "@/lib/errors";
-import { ActionFields, actionToDraft, draftToAction, EMPTY_ACTION } from "./action-fields";
-import { FormGroup, FormShell } from "./form-shell";
-import { BROWSER_ZONE, formatInZone, specToPhrase, yourTime, zoneOptions } from "./model";
+import { useCreatePlaybook, useUpdatePlaybook } from "@/lib/playbook-queries";
 
 type Mode = "phrase" | "cron" | "once";
 
@@ -63,106 +64,98 @@ function specOf(when: WhenState, zone: string): { spec: ScheduleSpec } | { error
     : { spec };
 }
 
-/** Make a schedule, or edit one. The time zone defaults to the browser's and is sent with it. */
-export function ScheduleForm({
-  schedule,
-  orgs,
-  defaultOrg,
+/**
+ * Make a playbook that runs an action on a clock (start a task, post in a room, run a process), or
+ * edit one. Majhi's own code runs it, no model. The time zone defaults to the browser's.
+ */
+export function ClockForm({
+  org,
+  view,
   onClose,
+  onDone,
 }: {
-  schedule?: ScheduleView | undefined;
-  orgs: readonly OrgView[];
-  defaultOrg: string | undefined;
+  org: string;
+  /** Editing: the clock playbook. */
+  view?: PlaybookView | undefined;
   onClose: () => void;
+  onDone?: ((id: string) => void) | undefined;
 }) {
-  const create = useAutomationCommand("schedules.create");
-  const update = useAutomationCommand("schedules.update");
-  const [name, setName] = useState(schedule?.name ?? "");
-  const [org, setOrg] = useState(schedule?.org ?? defaultOrg ?? orgs[0]?.id ?? "private");
-  const [zone, setZone] = useState(schedule?.timeZone ?? BROWSER_ZONE);
-  const [when, setWhen] = useState(() => whenOf(schedule?.spec));
+  const create = useCreatePlaybook();
+  const update = useUpdatePlaybook();
+  const clock = view?.clock;
+  const [name, setName] = useState(view?.playbook.name ?? "");
+  const [zone, setZone] = useState(clock?.timeZone ?? BROWSER_ZONE);
+  const [when, setWhen] = useState(() => whenOf(clock?.when));
   const [action, setAction] = useState(() =>
-    schedule === undefined ? EMPTY_ACTION : actionToDraft(schedule.action),
+    clock === undefined ? EMPTY_ACTION : actionToDraft(clock.action),
   );
-  const [skip, setSkip] = useState((schedule?.overlap ?? "skip") === "skip");
+  const [skip, setSkip] = useState((clock?.overlap ?? "skip") === "skip");
   const [problem, setProblem] = useState<string>();
 
-  const zones = useMemo(() => zoneOptions(schedule?.timeZone), [schedule?.timeZone]);
+  const zones = useMemo(() => zoneOptions(clock?.timeZone), [clock?.timeZone]);
   const read = specOf(when, zone);
   const preview = read !== undefined && "spec" in read ? upcomingRuns(read.spec, zone, new Date(), 3) : [];
 
   const save = () => {
     setProblem(undefined);
-    if (name.trim() === "") return setProblem("Give the schedule a name.");
+    if (name.trim() === "") return setProblem("Give it a name.");
     if (read === undefined) return setProblem("Say when it runs.");
     if ("error" in read) return setProblem(read.error);
     const built = draftToAction(action);
     if ("error" in built) return setProblem(built.error);
-    const done = { onSuccess: onClose, onError: (e: unknown) => setProblem(describeError(e)) };
     const overlap = skip ? "skip" : "allow";
-    if (schedule === undefined) {
+    const fail = (e: unknown) => setProblem(describeError(e));
+    if (view === undefined) {
+      const next: ClockAction = { org, when: read.spec, timeZone: zone, action: built.action, overlap };
       create.mutate(
-        { org, name: name.trim(), spec: read.spec, timeZone: zone, action: built.action, overlap },
-        done,
+        { org, spec: clockPlaybookSpec(name.trim(), next) },
+        {
+          onSuccess: (r) => {
+            onDone?.(r.playbook.id);
+            onClose();
+          },
+          onError: fail,
+        },
       );
       return;
     }
-    const timeChanged =
-      zone !== schedule.timeZone || JSON.stringify(read.spec) !== JSON.stringify(schedule.spec);
+    const timeChanged = zone !== clock?.timeZone || JSON.stringify(read.spec) !== JSON.stringify(clock?.when);
     update.mutate(
       {
-        id: schedule.id,
-        name: name.trim(),
-        action: built.action,
-        overlap,
-        ...(timeChanged ? { spec: read.spec, timeZone: zone } : {}),
+        org: view.org,
+        id: view.playbook.id,
+        clock: {
+          name: name.trim(),
+          action: built.action,
+          overlap,
+          ...(timeChanged ? { spec: read.spec, timeZone: zone } : {}),
+        },
       },
-      done,
+      { onSuccess: onClose, onError: fail },
     );
   };
 
   return (
     <FormShell
-      title={schedule === undefined ? "New schedule" : `Edit ${schedule.name}`}
-      saveLabel={schedule === undefined ? "Create schedule" : "Save"}
+      title={view === undefined ? "Run an action on a schedule" : `Edit ${view.playbook.name}`}
+      saveLabel={view === undefined ? "Create" : "Save"}
       busy={create.isPending || update.isPending}
       problem={problem}
       onSave={save}
       onClose={onClose}
     >
-      <FormGroup title="Schedule">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Name">
-            {(p) => (
-              <Input
-                {...p}
-                value={name}
-                maxLength={120}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Nightly check"
-              />
-            )}
-          </Field>
-          <Field label="Workspace" hint={schedule === undefined ? undefined : "A workspace cannot change."}>
-            {(p) => (
-              <Select
-                {...p}
-                value={org}
-                disabled={schedule !== undefined}
-                onChange={(e) => {
-                  setOrg(e.target.value);
-                  setAction(EMPTY_ACTION);
-                }}
-              >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        </div>
+      <FormGroup title="Name">
+        <Field label="Name">
+          {(p) => (
+            <Input
+              {...p}
+              value={name}
+              maxLength={60}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nightly check"
+            />
+          )}
+        </Field>
       </FormGroup>
 
       <FormGroup title="When">
@@ -224,7 +217,7 @@ export function ScheduleForm({
         )}
         <Field
           label="Time zone"
-          hint="The schedule runs on this zone's clock, including its clock changes. New schedules start on your browser's zone."
+          hint="It runs on this zone's clock, including its clock changes. New ones start on your browser's zone."
         >
           {(p) => (
             <Select {...p} value={zone} onChange={(e) => setZone(e.target.value)}>

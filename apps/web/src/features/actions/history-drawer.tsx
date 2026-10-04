@@ -5,32 +5,29 @@ import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { Modal } from "@/components/ui/modal";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { TaskRef } from "@/features/task-drawer/task-ref";
-import { useScheduleRuns, useTriggerRuns } from "@/lib/automation-queries";
+import { useScheduleRuns } from "@/lib/automation-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatInZone, RUN_STATUS, runSpan } from "./model";
 
 /**
- * The runs of one schedule or trigger, newest first, in a drawer over the page: status, when it
+ * The runs of one clock playbook, newest first, in a drawer over the page: status, when it
  * started and ended, what happened, and a link to the task or process it made.
  */
 export function HistoryDrawer({
-  kind,
   id,
   name,
   zone,
   onClose,
 }: {
-  kind: "schedule" | "trigger";
+  /** A clock playbook's id. */
   id: string;
   name: string;
   /** The zone the times are shown in: a schedule's own. */
   zone: string;
   onClose: () => void;
 }) {
-  const schedule = useScheduleRuns(kind === "schedule" ? id : undefined);
-  const trigger = useTriggerRuns(kind === "trigger" ? id : undefined);
-  const runs = kind === "schedule" ? schedule : trigger;
+  const runs = useScheduleRuns(id);
   return (
     <Modal
       label={`History of ${name}`}

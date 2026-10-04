@@ -22,6 +22,7 @@ import {
   useSaveWatch,
   useSnoozeWatch,
 } from "@/lib/watch-queries";
+import { ActionSection } from "./action-section";
 import { Timeline } from "./detail";
 import { HistoryChart } from "./history-chart";
 import { STATUS_LAMP } from "./rows";
@@ -363,6 +364,7 @@ export function WatchDetail({
           />
         </Row>
         {isPrice && <p className="m-0 text-sm text-fg-faint">Never buys. Purchases stay yours.</p>}
+        <ActionSection watch={watch} now={now} />
         <h4 className="m-0 mt-1 text-sm font-semibold text-fg">When it recovers</h4>
         <Switch
           label="Tell me and close the incident with how long it lasted"
