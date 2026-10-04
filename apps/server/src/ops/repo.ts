@@ -400,7 +400,7 @@ export class OpsRepo {
   }
 }
 
-/** Timeline lines fit the 300 characters the views allow; one long line must not break every list. */
+/** Timeline lines fit the 8000 characters the views allow; one huge line must not break every list. */
 function fitTimeline(timeline: OpsTimelineEntry[]): OpsTimelineEntry[] {
-  return timeline.map((t) => (t.text.length <= 300 ? t : { ...t, text: `${t.text.slice(0, 299)}…` }));
+  return timeline.map((t) => (t.text.length <= 8000 ? t : { ...t, text: `${t.text.slice(0, 7999)}…` }));
 }
