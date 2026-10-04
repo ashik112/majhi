@@ -170,7 +170,7 @@ describe("update", () => {
     const up = docker.findIndex((a) => a.startsWith("compose up -d --wait"));
     const prune = docker.indexOf("image prune -f");
     expect(prune).toBeGreaterThan(up);
-    expect(docker).toContain("builder prune -f --max-used-space 3gb");
+    expect(docker).toContain("builder prune -f --max-used-space 16gb");
     // Never volumes, never everything: only dangling images and old cache.
     expect(docker.some((a) => a.includes("volume") || a.includes("system prune") || a.includes("-a"))).toBe(
       false,
@@ -180,7 +180,7 @@ describe("update", () => {
   it("finishes the update when the clean-up fails, trying the older Docker flag first", async () => {
     const s = setup({ selfIsBundle: true, failOn: "builder prune" });
     expect((await s.run()).state).toBe("done");
-    expect(s.calls.map((c) => c.args)).toContain("builder prune -f --keep-storage 3gb");
+    expect(s.calls.map((c) => c.args)).toContain("builder prune -f --keep-storage 16gb");
   });
 
   it("cleans nothing when the build fails: the previous image may be needed to go back", async () => {
