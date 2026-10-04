@@ -384,6 +384,10 @@ export const WatchQuestionSchema = z.object({
   options: z.array(z.object({ id: z.string(), label: z.string(), primary: z.boolean().optional() })),
 });
 
+/** Who paused a watch. `unrecorded`: paused before majhi kept a reason. */
+export const WatchPausedBySchema = z.enum(["owner", "agent", "unrecorded"]);
+export type WatchPausedBy = z.infer<typeof WatchPausedBySchema>;
+
 export const WatchViewSchema = z.object({
   id: WatchIdSchema,
   org: IdSchema,
@@ -401,6 +405,8 @@ export const WatchViewSchema = z.object({
   quietKind: z.enum(["snooze", "maintenance"]).optional(),
   /** Why the last look could not tell. */
   unavailable: z.string().optional(),
+  /** Set while the watch is paused: who did it and why, in one sentence. */
+  paused: z.object({ by: WatchPausedBySchema, why: z.string() }).optional(),
   samples24: z.array(WatchSampleSchema),
   samples90: z.array(WatchSampleSchema),
   /** The price before it changed. */
@@ -457,7 +463,12 @@ export const WatchSaveInputSchema = z.object({
   def: WatchDefSchema,
 });
 export const WatchIdInputSchema = z.object({ id: WatchIdSchema });
-export const WatchPauseInputSchema = z.object({ id: WatchIdSchema, paused: z.boolean() });
+export const WatchPauseInputSchema = z.object({
+  id: WatchIdSchema,
+  paused: z.boolean(),
+  /** Why, in a line. An agent must say; a watch an agent paused resumes by itself once it reads fine. */
+  note: z.string().trim().max(200).optional(),
+});
 export const WatchSnoozeInputSchema = z.object({
   id: WatchIdSchema,
   /** 0 clears it. */

@@ -147,6 +147,7 @@ export function WatchDetail({
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="tnum min-w-0 truncate font-mono text-xl text-fg">{watch.value}</span>
           {watch.stat !== undefined && <span className="text-sm text-lamp-done">{watch.stat}</span>}
+          {watch.paused !== undefined && <span className="text-sm text-fg-faint">{watch.paused.why}</span>}
           {watch.unavailable !== undefined && (
             <span className="text-sm text-fg-faint">Could not read it: {watch.unavailable}</span>
           )}
