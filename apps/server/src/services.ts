@@ -112,6 +112,7 @@ import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
 import { PlaybookService } from "./playbooks/service.ts";
+import { OutcomesService } from "./outcomes/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
@@ -303,6 +304,8 @@ export interface Services {
   goals: GoalsService;
   /** The outbound gate: everything that would leave the machine passes it (5.18). */
   outbound: OutboundGate;
+  /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
+  outcomes: OutcomesService;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -987,9 +990,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["playbooks"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // Bound below, after the playbooks: the trust ladder decides which channels may be Auto.
+  let outcomesService: OutcomesService | undefined;
   const outbound = new OutboundGate({
     db: store.raw,
     knownOrg,
+    autoAllowed: (org, channel) => outcomesService?.autoAccepted(org, channel) ?? false,
     tz: async (org) => {
       const a = (await config.settings()).autonomy;
       return zoneOr(a.orgs[org]?.tz ?? a.tz);
@@ -1043,7 +1049,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
       decideDraft: (id, decision) => outbound.decide(id, decision),
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
+      answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
+      answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
     },
+    extras: () => outcomesService?.decisions() ?? [],
+    answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({
     repo: captainRepo,
@@ -1076,6 +1086,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await inbox.recommend(input, lane);
       events.emit(["tasks"]);
     },
+    ceilingHeld: () => outcomesService?.ceilingHeld(),
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
@@ -1232,6 +1243,37 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   captain.usePlaybooks(playbooks, () => playbooks.sweep());
   playbooks.boot();
+  const outcomes = new OutcomesService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    orgName: async (org) => (org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org)),
+    playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
+    authority: async (org) => authorityOf((await config.settings()).autonomy, org),
+    setAuthority: async (org, row, choice, reason) => {
+      await autonomy.configure(
+        { orgs: { [org]: { authority: { [row]: choice } } } },
+        { command: "trust.ladder", meta: { actor: { kind: "owner" }, reason } },
+      );
+    },
+    outbound: {
+      mode: (org, channel) => outbound.mode(org, channel),
+      applyLadder: (org, channel, mode) => outbound.applyLadder(org, channel, mode),
+    },
+    playbooks: {
+      name: (id) => playbooks.catalog.get(id)?.name ?? id,
+      state: (org, id) => playbooks.stateOf(org, id),
+      setCadence: async (org, id, cadence) => {
+        await playbooks.update({ org, id, cadence });
+      },
+    },
+    changed: () => events.emit(["captain", "playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  outcomesService = outcomes;
+  void outcomes.sweep().catch(() => undefined);
+  const outcomeSweep = setInterval(() => void outcomes.sweep().catch(() => undefined), 5 * 60_000);
+  outcomeSweep.unref();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -1476,6 +1518,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     playbooks,
     goals,
     outbound,
+    outcomes,
     business,
     captainTell: new CaptainTell({
       tasks,
@@ -1508,6 +1551,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captain.close();
       playbooks.close();
       idleWatch.stop();
+      clearInterval(outcomeSweep);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(pruneSweep);

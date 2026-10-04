@@ -49,6 +49,7 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
+import { outcomesHandlers } from "../outcomes/handlers.ts";
 import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
 import { commitBy } from "../runs/checkpoint.ts";
@@ -174,6 +175,12 @@ export function createHandlers({
       playbooks: services.playbooks,
       goals: services.goals,
       outbound: services.outbound,
+    }),
+    ...outcomesHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      outcomes: services.outcomes,
     }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),

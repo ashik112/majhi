@@ -8,7 +8,7 @@ import { type GateActor, OutboundGate, type OutboundTransport } from "./outbound
 const CAPTAIN: GateActor = { kind: "captain", org: "acme" };
 const OWNER: GateActor = { kind: "owner" };
 
-function setup(transport?: OutboundTransport) {
+function setup(transport?: OutboundTransport, autoAllowed: () => boolean = () => true) {
   const clock = { at: new Date("2026-10-04T07:00:00.000Z") };
   const send = vi.fn(async (_d: Draft) => ({ ok: true, detail: "Sent" }));
   const sender: OutboundTransport | undefined = transport ?? { send };
@@ -18,6 +18,7 @@ function setup(transport?: OutboundTransport) {
     tz: async () => "UTC",
     knownOrg: async (o) => o === "acme" || o === "globex",
     transports: { email: sender, post: sender, message: sender },
+    autoAllowed,
   });
   const submit = (over: Partial<OutboundSubmitInput> = {}, actor: GateActor = CAPTAIN) =>
     gate.submit(
@@ -139,6 +140,19 @@ describe("Auto", () => {
   it("is not selectable without saying so on purpose", () => {
     const t = setup();
     expect(() => t.gate.setMode({ org: "acme", channel: "email", mode: "auto" })).toThrow(/trust ladder/);
+    expect(t.gate.mode("acme", "email")).toBe("draft");
+  });
+
+  it("is not selectable, even on purpose, until a promotion to Auto was accepted", () => {
+    const t = setup(undefined, () => false);
+    expect(() => t.gate.setMode({ org: "acme", channel: "email", mode: "auto", explicit: true })).toThrow(
+      /Accept that proposal/,
+    );
+    expect(t.gate.mode("acme", "email")).toBe("draft");
+    // The ladder itself moves a channel: up on an accepted promotion, back down by itself.
+    t.gate.applyLadder("acme", "email", "auto");
+    expect(t.gate.mode("acme", "email")).toBe("auto");
+    t.gate.applyLadder("acme", "email", "draft");
     expect(t.gate.mode("acme", "email")).toBe("draft");
   });
 

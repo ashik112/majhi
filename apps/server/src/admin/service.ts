@@ -21,6 +21,7 @@ import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
+import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS } from "../playbooks/handlers.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
@@ -197,7 +198,8 @@ export class AdminService {
       if (
         FINDINGS_TOOL_COMMANDS.has(spec.command) ||
         BUSINESS_TOOL_COMMANDS.has(spec.command) ||
-        PLAYBOOK_TOOL_COMMANDS.has(spec.command)
+        PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
+        OUTCOMES_TOOL_COMMANDS.has(spec.command)
       ) {
         const checked = commands[spec.command].input.safeParse(input);
         if (!checked.success) {

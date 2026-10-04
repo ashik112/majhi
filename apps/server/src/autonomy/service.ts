@@ -148,6 +148,11 @@ export interface AutonomyDeps {
   typing?: (task: string) => boolean;
   /** Projects the owner protects: Own work never approves a change in one of them. */
   protectedProjects?: () => Promise<ReadonlySet<string>>;
+  /**
+   * Why the one monthly ceiling holds new starts now, or undefined. Read where something would start;
+   * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
+   */
+  ceilingHeld?: () => string | undefined;
   now?: () => Date;
 }
 
@@ -1391,6 +1396,8 @@ export class AutonomyService {
     raw: Record<string, unknown>,
   ): Promise<string | undefined> {
     if (this.repo.state().mode !== "on" || !startsWork(command, input)) return undefined;
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined) return `Not started: ${ceiling}. It can start when the owner raises the ceiling or the month ends.`;
     const { world, sections } = await this.context(caller, command, raw);
     const hold = holdCovering(
       await this.refreshHolds(),
@@ -2633,6 +2640,8 @@ export class AutonomyService {
    * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.
    */
   async laneRest(org: string, account: string): Promise<string | undefined> {
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined) return ceiling;
     const m = await this.measure();
     if (m.spend.total.reached) return "the day budget is used up";
     const own = m.spend.orgs.find((o) => o.org === org);
