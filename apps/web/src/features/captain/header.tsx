@@ -2,6 +2,7 @@ import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
 import { BarChart3, History, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
+import { Segmented } from "@/components/ui/segmented";
 import { capTone } from "@/features/autonomy/model";
 import { useAutonomousSwitch } from "@/features/autonomy/switch";
 import { cn } from "@/lib/cn";
@@ -27,6 +28,8 @@ export function CaptainHeader({
   onSummary,
   onResults,
   onHistory,
+  view,
+  onView,
 }: {
   /** Undefined while `captain.status` loads: the header draws at once and fills in. */
   captain: CaptainStatus | undefined;
@@ -36,6 +39,8 @@ export function CaptainHeader({
   onSummary: () => void;
   onResults: () => void;
   onHistory: () => void;
+  view: "dashboard" | "captain";
+  onView: (view: "dashboard" | "captain") => void;
 }) {
   const { toggle, dialogs, unavailable } = useAutonomousSwitch();
   const month = useMoney().data;
@@ -51,6 +56,15 @@ export function CaptainHeader({
       )}
     >
       <h1 className="text-lg leading-5 font-semibold text-fg">Captain</h1>
+      <Segmented
+        label="Captain view"
+        value={view}
+        onChange={onView}
+        segments={[
+          { value: "dashboard", label: "Dashboard" },
+          { value: "captain", label: "Chat" },
+        ]}
+      />
       <div title={unavailable} className="flex items-center gap-2 text-base font-medium text-fg-soft">
         Auto-pilot
         {toggle}

@@ -352,6 +352,26 @@ export const AutonomyEventsInputSchema = z.object({
   task: TaskIdSchema.optional(),
 });
 
+/** `autonomy.report`: the charts of the Auto-pilot dashboard. `days` is how far back finished tasks go. */
+export const AutonomyReportInputSchema = z.object({ days: z.number().int().min(1).max(30).default(14) });
+
+/** `autonomy.report`: today's spend by hour and the tasks the captain finished, by day and workspace. */
+export const AutonomyReportSchema = z.object({
+  tz: z.string(),
+  /** Today in `tz`, `YYYY-MM-DD`. */
+  today: z.string(),
+  /** Auto-pilot spend today, one entry per hour from midnight to the end of the current hour (UTC ISO start). */
+  hours: z.array(z.object({ start: z.string(), cost: z.number(), tokens: z.number().int() })),
+  /** Tasks that reached review, an MR or done, one entry per day oldest first, today last. */
+  days: z.array(
+    z.object({
+      day: z.string(),
+      orgs: z.array(z.object({ org: z.string(), count: z.number().int().positive() })),
+    }),
+  ),
+});
+export type AutonomyReport = z.infer<typeof AutonomyReportSchema>;
+
 /** `autonomy.plan`: the captain replaces its queue. */
 export const AutonomyPlanInputSchema = z.object({ items: z.array(QueueItemSchema).max(20) });
 

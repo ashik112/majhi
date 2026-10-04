@@ -6,6 +6,7 @@ import type { AutonomyService } from "./service.ts";
 type AutonomyCommand =
   | "autonomy.status"
   | "autonomy.events"
+  | "autonomy.report"
   | "autonomy.start"
   | "autonomy.pause"
   | "autonomy.stop"
@@ -41,6 +42,7 @@ export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandler
       return autonomy.status();
     },
     "autonomy.events": async (input) => autonomy.events(input),
+    "autonomy.report": async (input) => autonomy.report(input.days),
     "autonomy.start": async (input, ctx) => {
       ownerOnly(ctx);
       return autonomy.start(input.resumeStopped);

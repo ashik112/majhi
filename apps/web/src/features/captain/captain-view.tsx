@@ -13,6 +13,7 @@ import { GLASS } from "@/lib/glass";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
 import { Conversation } from "./conversation";
+import { AutopilotDashboard } from "./dashboard/dashboard";
 import { DelegationSheet } from "./delegation";
 import { FindingsSheet } from "./findings";
 import { CaptainHeader } from "./header";
@@ -21,6 +22,8 @@ import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
 import { ScorecardSheet } from "./scorecard";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
+
+type View = "dashboard" | "captain";
 
 type Open = "delegation" | "log" | "summary" | "findings" | "scorecard";
 
@@ -48,6 +51,13 @@ export function CaptainView() {
   const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
   const thread = search.thread;
   const tab = search.tab;
+  // The dashboard is the top view while Auto-pilot is on, and a tab when it is off. Old links to a
+  // thread or to a sheet's tab open the conversation.
+  const [picked, setPicked] = useState<View | undefined>(() =>
+    tab === "dashboard" ? "dashboard" : undefined,
+  );
+  const forced = thread !== undefined || (tab !== undefined && tab !== "dashboard");
+  const view: View = forced ? "captain" : (picked ?? (autonomy?.mode === "on" ? "dashboard" : "captain"));
   // A link to a thread (an old address of a lane chat) selects it in the conversation.
   useEffect(() => {
     if (thread !== undefined) setTab(wsTab(thread));
@@ -93,23 +103,32 @@ export function CaptainView() {
         onSummary={openSummary}
         onResults={() => setOpen("scorecard")}
         onHistory={() => setOpen("log")}
+        view={view}
+        onView={(v) => {
+          setPicked(v);
+          if (tab !== undefined || thread !== undefined) close();
+        }}
       />
-      <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
-        <section
-          aria-label="Conversation"
-          className={`flex min-h-0 min-w-0 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
-        >
-          <Conversation />
-        </section>
-        <NowColumn
-          captain={status}
-          autonomy={autonomy}
-          now={now}
-          onLog={() => setOpen("log")}
-          onFindings={() => setOpen("findings")}
-          onSummary={summary === undefined ? undefined : openSummary}
-        />
-      </div>
+      {view === "dashboard" ? (
+        <AutopilotDashboard autonomy={autonomy} now={now} />
+      ) : (
+        <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
+          <section
+            aria-label="Conversation"
+            className={`flex min-h-0 min-w-0 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
+          >
+            <Conversation />
+          </section>
+          <NowColumn
+            captain={status}
+            autonomy={autonomy}
+            now={now}
+            onLog={() => setOpen("log")}
+            onFindings={() => setOpen("findings")}
+            onSummary={summary === undefined ? undefined : openSummary}
+          />
+        </div>
+      )}
       {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
       {open === "log" && status && (
         <Sheet title="History" subtitle="What the captain did, and why" onClose={close}>
