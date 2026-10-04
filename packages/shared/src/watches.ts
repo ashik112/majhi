@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AutomationActionSchema, AutomationRunSchema, OverlapPolicySchema } from "./automation.ts";
 import { IdSchema } from "./ids.ts";
 import { OpsIncidentSchema } from "./ops.ts";
+import { TaskIdSchema } from "./tasks.ts";
 
 /**
  * Watch anything (SPEC 5.18, Ops watch): one watch is one thing the owner wants to know about, with a
@@ -22,6 +23,12 @@ export const WATCH_KINDS = [
   "price",
   "metric",
   "path",
+  "task",
+  "mr",
+  "branch",
+  "process",
+  "usage",
+  "command",
   "custom",
 ] as const;
 export const WatchSortSchema = z.enum(WATCH_KINDS);
@@ -36,6 +43,12 @@ export const WATCH_KIND_LABEL: Record<WatchSort, string> = {
   price: "Prices and pages",
   metric: "Metrics",
   path: "Files",
+  task: "Tasks",
+  mr: "Merge requests",
+  branch: "Branches",
+  process: "Processes",
+  usage: "Usage",
+  command: "Commands",
   custom: "Custom",
 };
 
@@ -48,6 +61,12 @@ export const WATCH_KIND_ONE: Record<WatchSort, string> = {
   price: "Price or page",
   metric: "Metric",
   path: "File or folder",
+  task: "Task status",
+  mr: "Merge request",
+  branch: "Branch",
+  process: "Background process",
+  usage: "Usage or cost",
+  command: "Command output",
   custom: "In words",
 };
 
@@ -130,6 +149,45 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     path: z.string().trim().min(1).max(500),
   }),
   z.object({
+    kind: z.literal("task"),
+    /** One task, or every task of the workspace. It fires when a task gets to the status. */
+    task: TaskIdSchema.optional(),
+    /** `failed`: paused on an error. `needs-you`: in review, an MR is open, or paused. */
+    to: z.enum(["done", "failed", "needs-you"]),
+  }),
+  z.object({
+    kind: z.literal("mr"),
+    /** One task, or every task of the workspace. */
+    task: TaskIdSchema.optional(),
+    /** `opened`, `merged`, `failed` (its checks fail) or `any` change of state or checks. */
+    on: z.enum(["opened", "merged", "failed", "any"]),
+  }),
+  z.object({
+    kind: z.literal("branch"),
+    project: IdSchema,
+    /** A local branch of the project's checkout. It fires when it gets new commits. */
+    branch: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    kind: z.literal("process"),
+    task: TaskIdSchema,
+    /** A process id or name, or any process of the task. */
+    process: z.string().trim().min(1).max(80).optional(),
+    on: z.enum(["any", "failure"]),
+  }),
+  z.object({
+    kind: z.literal("usage"),
+    metric: z.enum(["costUsd", "totalTokens"]),
+    period: z.enum(["today", "week", "month"]),
+  }),
+  z.object({
+    kind: z.literal("command"),
+    /** The command runs as a process of this task, in the task's sandbox, never in majhi's own environment. */
+    task: TaskIdSchema,
+    command: z.string().trim().min(1).max(4_000),
+    cwd: z.string().trim().min(1).max(1_000).optional(),
+  }),
+  z.object({
     kind: z.literal("custom"),
     /** What to check, in words. The captain looks on the schedule and reports a value or a state. */
     instruction: z.string().trim().min(3).max(600),
@@ -204,6 +262,10 @@ export const WatchFireSchema = z.object({
    */
   run: AutomationActionSchema.optional(),
   runOverlap: OverlapPolicySchema.default("skip"),
+  /** A change must hold this long before it fires (the old trigger's settle time). */
+  settleMin: z.number().int().min(0).max(1440).default(0),
+  /** After it fires it waits this long before it fires again, the change kept for then. */
+  cooldownMin: z.number().int().min(0).max(1440).default(0),
   tellOnRecover: z.boolean().default(true),
 });
 export type WatchFire = z.infer<typeof WatchFireSchema>;

@@ -272,3 +272,17 @@ export class ActionRunner {
     return { status: "failed", detail: "The run did not finish: majhi stopped while it started." };
   }
 }
+
+/** `{{event}}` in the text of an action, so a message or a task can say what happened. */
+export function withEvent(action: AutomationAction, event: string): AutomationAction {
+  const fill = (text: string): string => text.split("{{event}}").join(event);
+  switch (action.kind) {
+    case "room.post":
+      return { ...action, text: fill(action.text) };
+    case "task.start":
+      return { ...action, title: fill(action.title), text: fill(action.text) };
+    case "process.run":
+      // A command is never filled in: what matched may hold anything a repo or a page says.
+      return action;
+  }
+}

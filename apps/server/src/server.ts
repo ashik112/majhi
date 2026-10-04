@@ -215,7 +215,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.cards.start();
       services.resilience.start();
       services.automation.scheduler.start();
-      services.automation.triggerEngine.start();
       services.autonomy.startSweep();
       services.captain.startSweep();
       stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);

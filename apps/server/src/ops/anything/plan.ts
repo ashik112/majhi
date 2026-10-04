@@ -1,4 +1,5 @@
 import {
+  type AutomationAction,
   type WatchCheck,
   WatchCheckSchema,
   type WatchCondition,
@@ -15,7 +16,109 @@ import type { FixConnection } from "./fixes.ts";
  * is the owner's own words, but a model's reading of it is still only a proposal the owner starts or not.
  */
 
-export type Core = Pick<WatchDef, "name" | "spec" | "condition" | "everyMin">;
+export type Core = Pick<WatchDef, "name" | "spec" | "condition" | "everyMin"> & {
+  /** What majhi's own code does when it fires, read from "then start a task to ..." */
+  run?: AutomationAction | undefined;
+};
+
+/** What the planner may look up about a task: its workspace and the project a started task opens in. */
+export type TaskLookup = (id: string) => { org: string; project: string | undefined } | undefined;
+
+const TASK_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/;
+
+/** "then start a task to deploy": the action, when the sentence has one. */
+function runOf(
+  t: string,
+  task: { project: string | undefined } | undefined,
+  taskId: string | undefined,
+): AutomationAction | undefined {
+  const m =
+    /\b(?:then\s+)?(?:start|open|create|run)\s+a\s+(?:new\s+)?task\s+(?:to|that|for|:)?\s*(.+)$/i.exec(t);
+  if (m === null) return undefined;
+  const what = (m[1] ?? "").trim().replace(/[.!]+$/, "");
+  if (what === "") return undefined;
+  if (task?.project === undefined) {
+    throw new PlanProblem(`Name the task (like ${taskId ?? "ACM-3"}) whose project the new task opens in.`);
+  }
+  const title = `${what.charAt(0).toUpperCase()}${what.slice(1)}`.slice(0, 120);
+  return {
+    kind: "task.start",
+    project: task.project,
+    title,
+    text: `${title}.\n\n{{event}}`,
+  } as AutomationAction;
+}
+
+/** Tasks, merge requests, processes and usage in a sentence, when it names a task or a limit. */
+function eventPlan(t: string, tasks: TaskLookup | undefined): Core | undefined {
+  const id = TASK_ID.exec(t)?.[1];
+  const known = id === undefined ? undefined : tasks?.(id);
+  const any = /\bany task\b|\bevery task\b|\ba task\b/i.test(t);
+  const mr = /\b(mr|merge request|pull request|pr)\b/i.test(t);
+  const proc =
+    /\b(process|server|build|dev server|job)\b.*\b(exits?|crash(?:es|ed)?|dies|stops?|fail(?:s|ed)?)\b/i.test(
+      t,
+    );
+  const done = /\b(done|finish(?:es|ed)?|complete[ds]?)\b/i.test(t);
+  const failed = /\b(fail(?:s|ed)?|breaks?|errors?)\b/i.test(t);
+  const needs = /\bneeds?\s+(?:me|you|my|review|approval|attention)\b/i.test(t);
+  const run = (): AutomationAction | undefined => runOf(t, known, id);
+  const base = { everyMin: everyOf(t, 1) };
+  if (id !== undefined && known === undefined)
+    throw new PlanProblem(`I do not know a task ${id} in this workspace.`);
+  if (mr && (id !== undefined || any)) {
+    const on = /\bmerged\b/i.test(t)
+      ? "merged"
+      : /\b(open(?:s|ed)?|created|raised)\b/i.test(t)
+        ? "opened"
+        : /\b(fail|failing|red|broken)\b/i.test(t)
+          ? "failed"
+          : "any";
+    return {
+      name: `${id ?? "Any task"}: merge request ${on === "any" ? "changes" : on}`,
+      spec: WatchCheckSchema.parse({ kind: "mr", ...(id === undefined ? {} : { task: id }), on }),
+      condition: { type: "changed" },
+      run: run(),
+      ...base,
+    };
+  }
+  if (proc && id !== undefined) {
+    const on = /\b(fail(?:s|ed)?|crash(?:es|ed)?|error)\b/i.test(t) ? "failure" : "any";
+    return {
+      name: `${id}: a process exits${on === "failure" ? " with an error" : ""}`,
+      spec: WatchCheckSchema.parse({ kind: "process", task: id, on }),
+      condition: { type: "changed" },
+      run: run(),
+      ...base,
+    };
+  }
+  if ((id !== undefined || any) && (needs || done || failed)) {
+    const to = needs ? "needs-you" : failed && !done ? "failed" : "done";
+    return {
+      name: `${id ?? "Any task"} ${to === "done" ? "is done" : to === "failed" ? "fails" : "needs you"}`,
+      spec: WatchCheckSchema.parse({ kind: "task", ...(id === undefined ? {} : { task: id }), to }),
+      condition: { type: "changed" },
+      run: run(),
+      ...base,
+    };
+  }
+  const limit = /\b(over|above|more than|exceeds?|beyond)\s+\$?\s*([\d][\d,]*(?:\.\d+)?)\s*(k|m)?\b/i.exec(t);
+  if (limit !== null && /\b(cost|spend|spent|tokens?|usage|budget)\b/i.test(t)) {
+    const tokens = /\btokens?\b/i.test(t);
+    const mult =
+      (limit[3] ?? "").toLowerCase() === "k" ? 1000 : (limit[3] ?? "").toLowerCase() === "m" ? 1_000_000 : 1;
+    const value = Number((limit[2] ?? "0").replace(/,/g, "")) * mult;
+    const period = /\bmonth/i.test(t) ? "month" : /\bweek/i.test(t) ? "week" : "today";
+    return {
+      name: `${tokens ? "Tokens" : "Cost"} ${period === "today" ? "today" : `this ${period}`}`,
+      spec: WatchCheckSchema.parse({ kind: "usage", metric: tokens ? "totalTokens" : "costUsd", period }),
+      condition: { type: "above", value, forMin: 0 },
+      run: run(),
+      ...base,
+    };
+  }
+  return undefined;
+}
 
 const URL_RE = /https?:\/\/[^\s"'<>)]+/i;
 const NUM = "\\$?([\\d][\\d,]*(?:\\.\\d+)?)";
@@ -88,8 +191,14 @@ const IDENT = /^[A-Za-z_][\w.]{0,60}$/;
 export class PlanProblem extends Error {}
 
 /** The common phrasings. Throws PlanProblem with a sentence for what is missing, undefined for "not a kind I know". */
-export function rulesPlan(text: string, conns: readonly FixConnection[]): Core | undefined {
+export function rulesPlan(
+  text: string,
+  conns: readonly FixConnection[],
+  tasks?: TaskLookup,
+): Core | undefined {
   const t = text.trim();
+  const event = eventPlan(t, tasks);
+  if (event !== undefined) return event;
   const low = t.toLowerCase();
   const url = URL_RE.exec(t)?.[0].replace(/[.,;]+$/, "");
   const th = thresholdOf(t);
@@ -264,7 +373,7 @@ export function modelPrompt(text: string, conns: readonly FixConnection[]): stri
   return [
     "Turn the owner's sentence into one watch. Reply with one JSON object and nothing else.",
     "Shape: {name, spec, condition, everyMin}.",
-    'spec is one of: {kind:"website",url,jsonPath?} | {kind:"database",connection,engine:"postgres"|"mysql",query,label?,unit?} | {kind:"redis",connection,metric:"memory_ratio"|"clients"|"keys"} | {kind:"server",connection,metric:"disk"|"cpu"|"memory"} | {kind:"queue",connection,source:"redis_list",key} | {kind:"queue",connection,source:"sql",engine,query} | {kind:"price",url,mode:"value"|"text",selector?,pattern?} | {kind:"metric",connection,tool,args,path,label?} | {kind:"custom",instruction}.',
+    'spec is one of: {kind:"website",url,jsonPath?} | {kind:"database",connection,engine:"postgres"|"mysql",query,label?,unit?} | {kind:"redis",connection,metric:"memory_ratio"|"clients"|"keys"} | {kind:"server",connection,metric:"disk"|"cpu"|"memory"} | {kind:"queue",connection,source:"redis_list",key} | {kind:"queue",connection,source:"sql",engine,query} | {kind:"price",url,mode:"value"|"text",selector?,pattern?} | {kind:"metric",connection,tool,args,path,label?} | {kind:"task",task?,to:"done"|"failed"|"needs-you"} | {kind:"mr",task?,on:"opened"|"merged"|"failed"|"any"} | {kind:"branch",project,branch} | {kind:"process",task,process?,on:"any"|"failure"} | {kind:"usage",metric:"costUsd"|"totalTokens",period:"today"|"week"|"month"} (with condition above) | {kind:"custom",instruction}. task, mr, branch and process use condition changed.',
     'condition is one of: {type:"above",value,forMin} | {type:"below",value,forMin} | {type:"changed"} | {type:"contains",text} | {type:"notContains",text} | {type:"down"}.',
     "A database query must be one SELECT, SHOW or EXPLAIN that returns one number. Use only a connection id from the list. Use custom when nothing else fits. everyMin is minutes.",
     `Connections: ${JSON.stringify(conns.map((c) => ({ id: c.id, name: c.name, type: c.type })))}`,
@@ -336,6 +445,31 @@ export function planLine(
   now: string,
 ): string {
   const c = def.condition;
+  const spec = def.spec;
+  if (
+    spec.kind === "task" ||
+    spec.kind === "mr" ||
+    spec.kind === "process" ||
+    spec.kind === "branch" ||
+    spec.kind === "usage" ||
+    spec.kind === "command"
+  ) {
+    const who = def.fire.run === undefined ? "alert you" : "act";
+    const then =
+      def.fire.run?.kind === "task.start"
+        ? `, and start a task: "${def.fire.run.title}"`
+        : def.fire.run?.kind === "room.post"
+          ? `, and post in ${def.fire.run.task}'s room`
+          : def.fire.run?.kind === "process.run"
+            ? ", and run a process"
+            : "";
+    const when =
+      spec.kind === "usage"
+        ? `it goes **over ${c.type === "above" ? c.value.toLocaleString("en-US") : ""}${spec.metric === "costUsd" ? " USD" : " tokens"}** ${spec.period === "today" ? "today" : `this ${spec.period}`}`
+        : `**${def.name}**`;
+    const first = `I'll look **every ${every(def.everyMin)}** and ${who} when ${when}${then}.`;
+    return `${first} ${now}`.trim();
+  }
   const unit = unitFor(def.spec);
   const what = whatOf(def.spec);
   const forTxt = "forMin" in c && c.forMin > 0 ? ` for ${c.forMin} min` : "";

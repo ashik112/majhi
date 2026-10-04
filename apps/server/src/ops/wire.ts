@@ -6,7 +6,6 @@ import type {
   OwnerDecision,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
-import { pathPrint } from "../automation/triggers/probe.ts";
 import type { ConnectionTester } from "../connections/tester.ts";
 import { errorMessage } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -14,7 +13,9 @@ import { inQuietHours } from "../notify/attention.ts";
 import type { Notifier } from "../notify/service.ts";
 import { type ConnInfo, Unavailable, type WatchPorts } from "./anything/checks.ts";
 import { WatchEngine } from "./anything/engine.ts";
+import type { WatchHost } from "./anything/host.ts";
 import type { Core } from "./anything/plan.ts";
+import { pathPrint } from "./anything/probe.ts";
 import { realWatchPorts } from "./anything/real-ports.ts";
 import { WatchRepo } from "./anything/repo.ts";
 import { PhoneChannel, SECRET_KEY, type SecretsPort } from "./phone.ts";
@@ -37,6 +38,8 @@ export interface OpsWiring {
   projectOrg: (project: string) => Promise<string | undefined>;
   /** The workspace and checkout folder of a project, for the file and folder watches. */
   projectCheckout?: ((project: string) => Promise<{ org: string; path: string } | undefined>) | undefined;
+  /** What the task, process, usage, branch and command watches look at. */
+  host?: WatchHost | undefined;
   /** What a watch's action does when it fires (the schedules' action runner). */
   action?: {
     validate(org: string, action: AutomationAction): Promise<void>;
@@ -192,6 +195,13 @@ export function createOps(w: OpsWiring): Ops {
       now,
       connection: async (id): Promise<ConnInfo | undefined> => w.tester.valuesForWatch?.(id),
       monitor: (id, tool, args) => w.tester.callRemoteTool(id, tool, args),
+      checkout: async (org, project) => {
+        const found = await w.projectCheckout?.(project);
+        if (found === undefined) throw new Unavailable("the project is gone");
+        if (found.org !== org) throw new Unavailable("the project belongs to another workspace");
+        return found.path;
+      },
+      ...(w.host === undefined ? {} : { host: w.host }),
       pathPrint: async (org, project, path) => {
         const found = await w.projectCheckout?.(project);
         if (found === undefined) throw new Unavailable("the project is gone");

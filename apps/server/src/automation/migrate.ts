@@ -1,15 +1,15 @@
 import {
   AutomationActionSchema,
   clockPlaybookSpec,
-  defaultPollSeconds,
   OverlapPolicySchema,
   ScheduleSpecSchema,
-  WatchDefSchema,
-  WatchFireSchema,
+  triggerWatchDef,
+  type WatchDef,
+  type WatchSpec,
   WatchSpecSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
-import { WatchStateSchema } from "../ops/anything/repo.ts";
+import { type WatchState, WatchStateSchema } from "../ops/anything/repo.ts";
 
 /**
  * Automations were folded into Playbooks and Watch. This copies what was there, once:
@@ -17,10 +17,9 @@ import { WatchStateSchema } from "../ops/anything/repo.ts";
  * - every schedule becomes a clock playbook with the schedule's own id (so its run history, kept in
  *   `automation_runs` under that id, shows on it unchanged), the same time, zone, action and overlap
  *   rule, and the same switch and next run;
- * - every trigger that watches a file or folder, or a URL, becomes a watch with the trigger's action
- *   and its run history moved to it. The other kinds of trigger (task status, merge request, branch,
- *   process exit, usage, command output) have no Watch check yet: they stay where they are and keep
- *   running on the old trigger engine.
+ * - every trigger becomes a watch with the trigger's action, its settle time and cooldown, and its run
+ *   history moved to it (same id with `wch-` for `trg-`). Every kind has a Watch check now: files and
+ *   folders, URLs, task status, merge requests, branches, process exits, usage and command output.
  *
  * The old rows are marked with `migrated_to` and are never read again. A row that no longer parses
  * is left alone and unmarked. Safe to run on every start: marked rows are skipped, inserts ignore an
@@ -30,7 +29,7 @@ import { WatchStateSchema } from "../ops/anything/repo.ts";
 export interface MigrationReport {
   schedules: number;
   triggers: number;
-  /** Rows left where they were: a row that does not parse, or a trigger of a kind Watch cannot check. */
+  /** Rows left where they were: a row that does not parse. */
   left: { schedules: string[]; triggers: string[] };
 }
 
@@ -59,8 +58,11 @@ interface TriggerRow {
   overlap: string;
   paused: number;
   poll_seconds: number | null;
+  settle_seconds: number;
+  cooldown_seconds: number;
   baseline: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 function json(raw: string): unknown {
@@ -123,6 +125,38 @@ function migrateSchedules(db: Database.Database, report: MigrationReport): void 
   }
 }
 
+/**
+ * What the watch starts from, so a change made while majhi was down still fires and nothing fires
+ * twice. A set watch (tasks, processes) keeps the subjects that were on; a branch and a path keep what
+ * they last saw; a usage watch that was over stays over. A page, a merge request and a command are read
+ * differently now: their first look sets the baseline.
+ */
+function startState(w: WatchSpec, baseline: Record<string, string> | null, at: string): WatchState {
+  if (baseline === null) return WatchStateSchema.parse({});
+  switch (w.kind) {
+    case "task.status":
+    case "process.exit": {
+      const on = Object.entries(baseline)
+        .filter(([, v]) => v === "on")
+        .map(([k]) => k)
+        .sort()
+        .join(",");
+      return WatchStateSchema.parse({ baseline: on, signature: on });
+    }
+    case "branch.changed":
+    case "path.changed": {
+      const print = baseline[""];
+      return WatchStateSchema.parse(print === undefined ? {} : { baseline: print, signature: print });
+    }
+    case "usage.over":
+      return WatchStateSchema.parse(
+        baseline[""] === "on" ? { firing: true, firingSince: at, breachSince: at } : {},
+      );
+    default:
+      return WatchStateSchema.parse({});
+  }
+}
+
 function migrateTriggers(db: Database.Database, report: MigrationReport): void {
   const rows = db
     .prepare("SELECT * FROM triggers WHERE migrated_to IS NULL ORDER BY created_at, id")
@@ -135,45 +169,27 @@ function migrateTriggers(db: Database.Database, report: MigrationReport): void {
       report.left.triggers.push(r.id);
       continue;
     }
-    const w = watch.data;
-    if (w.kind !== "path.changed" && w.kind !== "url.changed") {
+    let def: WatchDef;
+    try {
+      def = triggerWatchDef({
+        name: r.name,
+        watch: watch.data,
+        action: action.data,
+        overlap: overlap.data,
+        pollSeconds: r.poll_seconds,
+        settleSeconds: r.settle_seconds,
+        cooldownSeconds: r.cooldown_seconds,
+      });
+    } catch {
       report.left.triggers.push(r.id);
       continue;
     }
-    const poll = r.poll_seconds ?? defaultPollSeconds(w.kind);
-    const def = WatchDefSchema.safeParse({
-      name: r.name.slice(0, 100),
-      spec:
-        w.kind === "path.changed"
-          ? { kind: "path", project: w.project, path: w.path }
-          : { kind: "price", url: w.url, mode: "text", compare: [] },
-      condition: { type: "changed" },
-      everyMin: Math.min(10_080, Math.max(1, Math.ceil(poll / 60))),
-      // The action is the point: no incident, no phone, no recovery notice.
-      fire: WatchFireSchema.parse({
-        alert: { on: false, phone: false },
-        run: action.data,
-        runOverlap: overlap.data,
-        tellOnRecover: false,
-      }),
-    });
-    if (!def.success) {
-      report.left.triggers.push(r.id);
-      continue;
-    }
-    // A path's fingerprint is the same text the Watch check makes, so a change made while majhi was
-    // down still fires. A page is read differently now: its first look sets the baseline.
-    const baseline =
-      w.kind === "path.changed"
-        ? (json(r.baseline ?? "null") as Record<string, string> | null)?.[""]
-        : undefined;
-    const state = WatchStateSchema.parse({
-      ...(baseline === undefined ? {} : { baseline, signature: baseline }),
-    });
+    const baseline = r.baseline === null ? null : (json(r.baseline) as Record<string, string> | null);
+    const state = startState(watch.data, baseline, r.updated_at);
     const id = watchIdOf(r.id);
     db.prepare(
       "INSERT OR IGNORE INTO watches (id, org, def, state, paused, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(id, r.org, JSON.stringify(def.data), JSON.stringify(state), r.paused === 1 ? 1 : 0, r.created_at);
+    ).run(id, r.org, JSON.stringify(def), JSON.stringify(state), r.paused === 1 ? 1 : 0, r.created_at);
     db.prepare(
       "UPDATE automation_runs SET source_kind = 'watch', source_id = ? WHERE source_kind = 'trigger' AND source_id = ?",
     ).run(id, r.id);

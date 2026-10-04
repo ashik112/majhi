@@ -29,9 +29,8 @@ import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
 import { type Automation, createAutomation } from "./automation/index.ts";
+import { watchIdOf } from "./automation/migrate.ts";
 import { ScheduleRepo } from "./automation/schedules.ts";
-import { createWatchHost } from "./automation/triggers/host.ts";
-import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
 import { WakeGate } from "./autonomy/wake-gate.ts";
@@ -129,6 +128,7 @@ import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
+import { createWatchHost } from "./ops/anything/host.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
 import type { OpsWatch } from "./ops/watch.ts";
@@ -1023,15 +1023,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
+  const watchHost = createWatchHost({ store, processes, usage: usageService, actions: actionHost });
   const playbookCatalog = new Catalog();
   const automation = createAutomation({
     db: store.raw,
     catalog: playbookCatalog,
     host: actionHost,
-    watch: createWatchHost({ store, processes, projects, usage: usageService, actions: actionHost }),
     orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
     changed: () => events.emit(["schedules"]),
-    triggersChanged: () => events.emit(["triggers"]),
   });
   const coordinator = new RoomCoordinator({
     store,
@@ -1055,7 +1054,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const scheduleRows = new ScheduleRepo(store.raw);
-  const triggerRows = new TriggerRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
   const cardActions = new CardActions({ tasks, mrs, room });
   const knownOrg = async (org: string) =>
@@ -1173,7 +1171,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ceilingHeld: () => outcomesService?.ceilingHeld(),
     automationAction: (kind, id) =>
-      (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
+      kind === "schedule"
+        ? scheduleRows.get(id)?.action.kind
+        : opsEngine?.actionKind(id.startsWith("trg-") ? watchIdOf(id) : id),
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
     rateSize: (t) =>
       decisions.rateTask({
@@ -1744,6 +1744,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
       orgOf: async (id) => (await connections.find(id))?.org,
     },
+    host: watchHost,
     tester: connectionTests,
     orgs: async () => Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
     askModel: async (task, prompt, parse) => {
@@ -1917,7 +1918,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       backup.stop();
       notifier.close();
       automation.scheduler.stop();
-      automation.triggerEngine.stop();
       e2e?.close();
       cards.close();
       layaDocker?.close();

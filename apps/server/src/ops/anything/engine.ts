@@ -17,11 +17,20 @@ import {
   type WatchTestResult,
   type WatchView,
 } from "@majhi/shared";
-import { withEvent } from "../../automation/triggers/engine.ts";
+import { refuseSecrets, withEvent } from "../../automation/actions.ts";
 import { errorMessage, UserError } from "../../errors.ts";
 import { urlProblem } from "../probes.ts";
 import type { OpsWatch, Subject } from "../watch.ts";
-import { fmt, publicHostProblem, type Reading, readWatch, Unavailable, type WatchPorts } from "./checks.ts";
+import {
+  fmt,
+  forgetCommand,
+  Pending,
+  publicHostProblem,
+  type Reading,
+  readWatch,
+  Unavailable,
+  type WatchPorts,
+} from "./checks.ts";
 import {
   defaultFire,
   executableFixes,
@@ -41,6 +50,7 @@ import {
   parseModelReply,
   planLine,
   rulesPlan,
+  type TaskLookup,
 } from "./plan.ts";
 import { type StoredWatch, type WatchRepo, type WatchState, WatchStateSchema } from "./repo.ts";
 
@@ -105,7 +115,18 @@ function span(ms: number): string {
   return min % 60 === 0 ? `${h} h` : `${h} h ${min % 60} min`;
 }
 
-const NUMERIC_KINDS = new Set(["website", "database", "redis", "server", "queue", "metric", "custom"]);
+const NUMERIC_KINDS = new Set([
+  "website",
+  "database",
+  "redis",
+  "server",
+  "queue",
+  "metric",
+  "usage",
+  "custom",
+]);
+/** Kinds that watch for something to happen: they only alert on a change. */
+const EVENT_KINDS = new Set(["task", "mr", "branch", "process"]);
 
 /** What the condition says when it is breached, as a fixed phrase. */
 function breachLine(c: WatchCondition, r: Reading): string {
@@ -165,9 +186,20 @@ export class WatchEngine {
     }
     if (
       (c.type === "contains" || c.type === "notContains") &&
-      !(spec.kind === "price" || spec.kind === "custom")
+      !(spec.kind === "price" || spec.kind === "custom" || spec.kind === "command")
     ) {
-      return "Only a page or a described check can look for text.";
+      return "Only a page, a command or a described check can look for text.";
+    }
+    if (EVENT_KINDS.has(spec.kind) && c.type !== "changed") {
+      return "This kind fires when something happens. Alert on a change.";
+    }
+    if (
+      spec.kind === "command" &&
+      c.type !== "changed" &&
+      c.type !== "contains" &&
+      c.type !== "notContains"
+    ) {
+      return "A command's output can only alert on a change or on text.";
     }
     if (spec.kind === "website" || spec.kind === "price") {
       const bad = urlProblem(spec.url);
@@ -211,6 +243,8 @@ export class WatchEngine {
         return `"${spec.path}" must be inside the project: use a path relative to it.`;
       }
     }
+    const eventProblem = await this.eventProblem(org, spec);
+    if (eventProblem !== undefined) return eventProblem;
     if (def.fire.run !== undefined) {
       if (this.deps.action === undefined) return "This watch cannot run an action here.";
       try {
@@ -229,6 +263,46 @@ export class WatchEngine {
       if (bad !== undefined) return bad;
     }
     return undefined;
+  }
+
+  /** Why a task, merge request, branch, process or command watch names something it may not, or undefined. */
+  private async eventProblem(org: string, spec: WatchDef["spec"]): Promise<string | undefined> {
+    const ownTask = (id: string): string | undefined => {
+      const host = this.deps.ports.host;
+      if (host === undefined) return "This watch cannot look at tasks here.";
+      const task = host.tasks().find((t) => t.id === id);
+      if (task === undefined) return `Task ${id} does not exist.`;
+      if (task.org !== org) return `Task ${id} belongs to another workspace.`;
+      return undefined;
+    };
+    switch (spec.kind) {
+      case "task":
+      case "mr":
+        return spec.task === undefined ? undefined : ownTask(spec.task);
+      case "process":
+        return ownTask(spec.task);
+      case "command": {
+        try {
+          refuseSecrets(spec.command);
+        } catch (err) {
+          return errorMessage(err);
+        }
+        return ownTask(spec.task);
+      }
+      case "branch": {
+        const owner = await this.deps.projectOrg(spec.project);
+        if (owner === undefined) return `Project ${spec.project} does not exist.`;
+        if (owner !== org) return `Project ${spec.project} belongs to another workspace.`;
+        if (spec.branch.startsWith("-") || /[\s~^:?*[\\]|\.\.|\.lock$/.test(spec.branch)) {
+          return `"${spec.branch}" is not a branch name.`;
+        }
+        return undefined;
+      }
+      case "usage":
+        return this.deps.ports.host === undefined ? "This watch cannot read usage here." : undefined;
+      default:
+        return undefined;
+    }
   }
 
   // Commands ---------------------------------------------------------------------------
@@ -257,6 +331,7 @@ export class WatchEngine {
       paused: existing?.paused ?? false,
       createdAt: existing?.createdAt ?? this.at(),
     };
+    if (!sameCheck) forgetCommand(stored.id);
     this.deps.repo.save(stored);
     this.deps.changed();
     if (existing === undefined) await this.look(stored.id, true);
@@ -266,6 +341,7 @@ export class WatchEngine {
   async remove(id: string): Promise<void> {
     const w = this.mustGet(id);
     this.deps.action?.forget(id);
+    forgetCommand(id);
     await this.deps.ops.closeSubject(id, "No longer watched");
     this.deps.repo.remove(w.id);
     this.deps.changed();
@@ -273,7 +349,13 @@ export class WatchEngine {
 
   async pause(id: string, paused: boolean): Promise<WatchView> {
     const w = this.mustGet(id);
-    this.deps.repo.save({ ...w, paused });
+    // An action-only watch looks afresh on resume: what changed while it was paused does not fire it.
+    const afresh = w.paused && !paused && w.def.fire.run !== undefined && !w.def.fire.alert.on;
+    if (afresh) forgetCommand(id);
+    const state = afresh
+      ? WatchStateSchema.parse({ ...w.state, baseline: undefined, signature: undefined })
+      : w.state;
+    this.deps.repo.save({ ...w, state, paused });
     this.deps.changed();
     return this.view(this.mustGet(id), await this.ctx(w.org));
   }
@@ -291,6 +373,39 @@ export class WatchEngine {
     this.deps.repo.save({ ...w, state });
     this.deps.changed();
     return this.view(this.mustGet(id), await this.ctx(w.org));
+  }
+
+  /** The kind of action a watch runs when it fires, for the autonomy policy. */
+  actionKind(id: string): string | undefined {
+    return this.deps.repo.get(id)?.def.fire.run?.kind;
+  }
+
+  /** One watch as a view. */
+  async show(id: string): Promise<WatchView> {
+    const w = this.mustGet(id);
+    return this.view(w, await this.ctx(w.org));
+  }
+
+  /** The last runs of a watch's action, newest first. */
+  runsOf(id: string, limit: number): AutomationRun[] {
+    this.mustGet(id);
+    return this.deps.action?.runs(id, limit) ?? [];
+  }
+
+  /** Runs the watch's action now, as a test. The overlap rule applies; what the watch sees is left alone. */
+  async runNow(id: string): Promise<AutomationRun> {
+    const w = this.mustGet(id);
+    const act = w.def.fire.run;
+    if (act === undefined || this.deps.action === undefined) {
+      throw new UserError("This watch has no action to run.", 409);
+    }
+    const run = await this.deps.action.run(
+      { kind: "watch", id: w.id, org: w.org, name: w.def.name },
+      withEvent(act, `${w.def.name}: run by hand, nothing changed`),
+      w.def.fire.runOverlap,
+    );
+    this.deps.changed();
+    return run;
   }
 
   async checkNow(id: string): Promise<WatchView> {
@@ -342,6 +457,12 @@ export class WatchEngine {
     const bad = await this.problem(org, def);
     if (bad !== undefined) return { ok: false, value: bad };
     if (def.spec.kind === "custom") return { ok: true, value: "The captain checks this one on its schedule" };
+    if (def.spec.kind === "command") {
+      return {
+        ok: true,
+        value: "Runs on its schedule. The first run sets what later ones are compared with",
+      };
+    }
     try {
       const r = await readWatch(def.spec, org, this.deps.ports);
       return { ok: true, value: r.display, ...(r.number === undefined ? {} : { number: r.number }) };
@@ -356,7 +477,11 @@ export class WatchEngine {
   // The sentence -----------------------------------------------------------------------
 
   async plan(input: { text: string; org?: string | undefined }): Promise<WatchPlan> {
-    const org = input.org ?? (await this.orgFor(input.text));
+    const lookup: TaskLookup = (id) => {
+      const t = this.deps.ports.host?.tasks().find((x) => x.id === id);
+      return t?.org === undefined ? undefined : { org: t.org, project: t.project };
+    };
+    const org = input.org ?? (await this.orgFor(input.text, lookup));
     const conns = await this.deps.connections(org);
     let core: Core | undefined;
     let by: "model" | "rules" = "rules";
@@ -381,14 +506,19 @@ export class WatchEngine {
     }
     if (core === undefined) {
       try {
-        core = rulesPlan(input.text, conns) ?? customPlan(input.text);
+        core = rulesPlan(input.text, conns, lookup) ?? customPlan(input.text);
       } catch (err) {
         if (err instanceof PlanProblem) throw new UserError(err.message, 400);
         throw err;
       }
     }
     const base = WatchDefSchema.parse({ ...core, fire: {} });
-    const fire = defaultFire(base, { connections: conns });
+    const defaults = defaultFire(base, { connections: conns });
+    // An action is the point of "then start a task": no incident, no phone.
+    const fire =
+      core.run === undefined
+        ? defaults
+        : { ...defaults, alert: { on: false, phone: false }, investigate: false, run: core.run };
     const def = WatchDefSchema.parse({ ...core, fire });
     if (def.spec.kind === "custom") def.everyMin = Math.max(def.everyMin, CUSTOM_MIN_EVERY);
     const bad = await this.problem(org, def);
@@ -405,7 +535,10 @@ export class WatchEngine {
   }
 
   /** With no workspace given: the one whose connection the sentence names, else Private. */
-  private async orgFor(text: string): Promise<string> {
+  private async orgFor(text: string, lookup: TaskLookup): Promise<string> {
+    const id = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/.exec(text)?.[1];
+    const taskOrg = id === undefined ? undefined : lookup(id)?.org;
+    if (taskOrg !== undefined) return taskOrg;
     const t = text.toLowerCase();
     const orgs = await this.deps.orgs();
     for (const o of [{ id: PRIVATE, name: "Private" }, ...orgs.filter((x) => x.id !== PRIVATE)]) {
@@ -458,8 +591,10 @@ export class WatchEngine {
     try {
       let outcome: Reading | Unavailable;
       try {
-        outcome = await readWatch(w.def.spec, w.org, this.deps.ports);
+        outcome = await readWatch(w.def.spec, w.org, this.deps.ports, w.id);
       } catch (err) {
+        // A command still running has nothing to say yet: the next look asks again.
+        if (err instanceof Pending) return;
         outcome = err instanceof Unavailable ? err : new Unavailable("the check failed");
       }
       await this.apply(this.mustGet(id), outcome);
@@ -518,6 +653,13 @@ export class WatchEngine {
         break;
       case "changed":
         if (state.baseline === undefined && r.signature !== undefined) state.baseline = r.signature;
+        if (r.matched !== undefined && state.baseline !== undefined) {
+          // A set (tasks, merge requests, processes): it fires when something joins it, not when it leaves.
+          const known = new Set(state.baseline.split(",").filter((x) => x !== ""));
+          breach = r.matched.some((m) => !known.has(m));
+          if (!breach && r.signature !== undefined) state.baseline = r.signature;
+          break;
+        }
         breach = r.signature !== undefined && state.baseline !== undefined && r.signature !== state.baseline;
         if (!breach && w.def.spec.kind === "price" && w.def.spec.mode === "text") state.display = "no change";
         break;
@@ -536,13 +678,29 @@ export class WatchEngine {
     // An action with no alert is the whole point of the watch: no incident, no phone.
     const actionOnly = act !== undefined && !w.def.fire.alert.on;
     let firing = false;
+    const settleMin = w.def.fire.settleMin;
     if (breach) {
+      // A change that moves again restarts the settle time.
+      if (c.type === "changed" && settleMin > 0 && w.state.signature !== r.signature)
+        delete state.breachSince;
       state.breachSince ??= at;
       state.fails = (state.fails ?? 0) + 1;
-      const forMs = (c.type === "above" || c.type === "below" ? c.forMin : 0) * MIN;
+      const forMs =
+        (c.type === "above" || c.type === "below" ? c.forMin : c.type === "changed" ? settleMin : 0) * MIN;
       firing =
         this.deps.now().getTime() - Date.parse(state.breachSince) >= forMs &&
         (c.type !== "down" || state.fails >= 2);
+      // After a firing it waits out the cooldown. The change stays, so it fires then.
+      const cool = w.def.fire.cooldownMin;
+      if (
+        firing &&
+        !w.state.firing &&
+        cool > 0 &&
+        state.lastFiredAt !== undefined &&
+        this.deps.now().getTime() - Date.parse(state.lastFiredAt) < cool * MIN
+      ) {
+        firing = false;
+      }
     } else {
       delete state.breachSince;
       state.fails = 0;
@@ -557,10 +715,11 @@ export class WatchEngine {
       firing = false;
       edge = true;
     }
+    if (edge) state.lastFiredAt = at;
     if (firing) state.firingSince ??= at;
     else delete state.firingSince;
     state.firing = firing;
-    const detail = breach ? breachLine(c, r) : r.display;
+    const detail = breach ? (r.matched !== undefined ? r.display : breachLine(c, r)) : r.display;
     this.deps.repo.save({ ...w, state });
     if (!this.quiet(state)) {
       if (!actionOnly) {
@@ -970,6 +1129,24 @@ export class WatchEngine {
       case "path":
         what = `${spec.path} in ${spec.project}`;
         break;
+      case "task":
+        what = `${spec.task === undefined ? "any task" : `task ${spec.task}`} ${spec.to === "needs-you" ? "needs you" : spec.to === "failed" ? "fails" : "is done"}`;
+        break;
+      case "mr":
+        what = `${spec.task === undefined ? "any task's" : `task ${spec.task}'s`} merge request ${spec.on === "any" ? "changes" : spec.on === "failed" ? "fails its checks" : `is ${spec.on}`}`;
+        break;
+      case "branch":
+        what = `branch ${spec.branch} of ${spec.project}`;
+        break;
+      case "process":
+        what = `${spec.process === undefined ? "a process" : `process ${spec.process}`} of ${spec.task} exits${spec.on === "failure" ? " with an error" : ""}`;
+        break;
+      case "usage":
+        what = `${spec.metric === "costUsd" ? "cost" : "tokens"} ${spec.period === "today" ? "today" : `this ${spec.period}`}`;
+        break;
+      case "command":
+        what = `a command in ${spec.task}'s sandbox`;
+        break;
       case "custom":
         what = "the captain, on a strict budget";
         break;
@@ -1088,6 +1265,18 @@ function kindWord(def: WatchDef): string {
       return "metric";
     case "path":
       return "file";
+    case "task":
+      return "task";
+    case "mr":
+      return "merge request";
+    case "branch":
+      return "branch";
+    case "process":
+      return "process";
+    case "usage":
+      return "usage";
+    case "command":
+      return "command";
     case "custom":
       return "in words";
   }
